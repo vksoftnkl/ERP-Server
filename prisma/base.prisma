@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public"]
+}
+generator dbml {
+  provider   = "prisma-dbml-generator"
+  output     = "../dbml"
+  outputName = "awesome.dbml"
+  projectName = "Project Name"
+  projectDatabaseType = "PostgreSQL"
+  projectNote = "Test project description"
+}
+generator docs {
+  provider = "node node_modules/prisma-docs-generator"
+  output = "../../docs"
+}
+
+model User {
+  user_id        String    @id @default(uuid()) @db.Uuid
+
+  user_name  String    @unique @db.VarChar(50)   // <-- Added field
+  user_password  String    @db.Text
+
+  @@map("users")
+  @@schema("public")
+}

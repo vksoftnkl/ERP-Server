@@ -1,0 +1,35 @@
+model ItemBrandMaster {
+  brand_id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  brand_name        String   @unique @db.VarChar(150)
+  brand_alias       String?  @db.VarChar(150)
+  brand_short       String?  @db.VarChar(50)
+  brand_description String?  @db.VarChar(250)
+
+  brand_photo       Bytes?
+  brand_photo_url   String?
+
+  brand_parent_id   String?  @db.Uuid
+  brand_sort        Int?
+  brand_level       Int?
+  brand_path_ids    String[] @default([]) @db.Uuid
+
+  brand_is_active   Boolean  @default(true)
+  brand_is_deleted  Boolean  @default(false)
+
+  brand_sync_date   DateTime? @db.Timestamptz(6)
+  brand_created_on  DateTime  @default(now()) @db.Timestamptz(6)
+  brand_created_by  String?   @db.VarChar(100)
+  brand_modified_on DateTime  @default(now()) @db.Timestamptz(6)
+  brand_modified_by String?   @db.VarChar(100)
+
+  // self relation (parent -> children)
+  parent   ItemBrandMaster?  @relation("BrandHierarchy", fields: [brand_parent_id], references: [brand_id], onUpdate: Cascade, onDelete: Restrict)
+  children ItemBrandMaster[] @relation("BrandHierarchy")
+
+  @@map("item_brand_master")
+  @@schema("public")
+
+  @@index([brand_parent_id], map: "idx_brand_parent_id")
+  @@index([brand_is_active], map: "idx_brand_active")
+}

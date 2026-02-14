@@ -1,0 +1,49 @@
+export interface ItemSectionErrorDetail {
+  field: string;
+  message: string;
+}
+
+export interface ItemSectionErrorResponse {
+  success: false;
+  message: string;
+  errors: ItemSectionErrorDetail[];
+}
+
+export interface ItemSectionSuccessResponse<T, TMeta = Record<string, unknown>> {
+  success: true;
+  message: string;
+  data: T;
+  meta?: TMeta;
+}
+
+export interface ItemSectionPayload {
+  sec_id: string;
+  sec_name: string;
+  sec_alias: string | null;
+  sec_short: string | null;
+  sec_description: string | null;
+  sec_company_id: string;
+  sec_parent_id: string | null;
+  sec_sort: number | null;
+  sec_level: number | null;
+  sec_path_ids: string[];
+  sec_position: number | null;
+  sec_color_code: string | null;
+  sec_icon: string | null;
+  sec_photo: string | null;
+  sec_photo_url: string | null;
+  sec_sync_date: string | null;
+  sec_is_active: boolean;
+  sec_is_deleted: boolean;
+  sec_created_on: string;
+  sec_created_by: string | null;
+  sec_modified_on: string;
+  sec_modified_by: string | null;
+}
+
+export interface ItemSectionListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+}

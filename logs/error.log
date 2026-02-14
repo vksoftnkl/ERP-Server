@@ -1,0 +1,79 @@
+2026-02-12T06:27:19.741Z ERROR [SmokeTest] separate error file smoke test
+2026-02-12T06:27:19.741Z FATAL [SmokeTest] separate fatal smoke test
+2026-02-12T06:27:48.794Z ERROR [AllExceptionsFilter] GET /api/v1/users
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.user.findMany()` invocation in
+/home/vk/Dev/ERP server/src/modules/users/users.service.ts:28:29
+
+  25 }
+  26 
+  27 async findAll(): Promise<User[]> {
+→ 28   return this.prisma.user.findMany(
+The column `users.firstName` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+2026-02-12T06:29:55.730Z ERROR [AllExceptionsFilter] GET /api/v1/users
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.user.findMany()` invocation in
+/home/vk/Dev/ERP server/src/modules/users/users.service.ts:28:29
+
+  25 }
+  26 
+  27 async findAll(): Promise<User[]> {
+→ 28   return this.prisma.user.findMany(
+The column `users.firstName` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+2026-02-13T06:02:03.773Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-13T06:51:08.585Z ERROR [ExceptionHandler] Config validation error: "JWT_SECRET" is required
+Error: Config validation error: "JWT_SECRET" is required
+    at ConfigModule.forRoot (/home/vk/Dev/ERP server/node_modules/@nestjs/config/dist/config.module.js:86:23)
+    at Object.<anonymous> (/home/vk/Dev/ERP server/src/app.module.ts:27:18)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Object..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16)
+2026-02-13T06:52:41.818Z ERROR [ExceptionHandler] Config validation error: "JWT_SECRET" is required
+Error: Config validation error: "JWT_SECRET" is required
+    at ConfigModule.forRoot (/home/vk/Dev/ERP server/node_modules/@nestjs/config/dist/config.module.js:86:23)
+    at Object.<anonymous> (/home/vk/Dev/ERP server/src/app.module.ts:27:18)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Object..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16)
+2026-02-13T06:53:24.179Z ERROR [ExceptionHandler] Config validation error: "JWT_SECRET" length must be at least 16 characters long
+Error: Config validation error: "JWT_SECRET" length must be at least 16 characters long
+    at ConfigModule.forRoot (/home/vk/Dev/ERP server/node_modules/@nestjs/config/dist/config.module.js:86:23)
+    at Object.<anonymous> (/home/vk/Dev/ERP server/src/app.module.ts:27:18)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Object..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16)
+2026-02-13T12:29:26.978Z ERROR [AllExceptionsFilter] POST /api/v1/item-groups/create
+PayloadTooLargeError: request entity too large
+    at readStream (/home/vk/Dev/ERP server/node_modules/raw-body/index.js:163:17)
+    at getRawBody (/home/vk/Dev/ERP server/node_modules/raw-body/index.js:116:12)
+    at read (/home/vk/Dev/ERP server/node_modules/body-parser/lib/read.js:79:3)
+    at jsonParser (/home/vk/Dev/ERP server/node_modules/body-parser/lib/types/json.js:138:5)
+    at Layer.handle [as handle_request] (/home/vk/Dev/ERP server/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:328:13)
+    at /home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:280:10)
+    at cors (/home/vk/Dev/ERP server/node_modules/cors/lib/index.js:188:7)

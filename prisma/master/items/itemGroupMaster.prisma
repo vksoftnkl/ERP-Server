@@ -1,0 +1,43 @@
+model ItemGroupMaster {
+  itgId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("itg_id")
+  
+  itgName           String   @db.VarChar(150) @map("itg_name")
+  itgAlias          String?  @db.VarChar(100) @map("itg_alias")
+  itgShort          String?  @db.VarChar(50)  @map("itg_short")
+  itgDescription    String?  @db.VarChar(250) @map("itg_description")
+
+  // Hierarchy
+  itgParentId       String?  @db.Uuid @map("itg_parent_id")
+  parent            ItemGroupMaster? @relation("ItemGroupParent", fields: [itgParentId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
+  children          ItemGroupMaster[] @relation("ItemGroupParent")
+
+  itgSort           Int?     @map("itg_sort")
+  itgLevel          Int?     @map("itg_level")
+  itgPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("itg_path_ids_cache")
+  itgTaxClaim       Boolean? @map("itg_tax_claim")
+
+  // Defaults / pricing rules
+  itgDefaultTaxId   String?  @db.Uuid @map("itg_default_tax_id")
+  itgDefaultHsn     String?  @db.VarChar(20) @map("itg_default_hsn")
+  itgDefaultUomId   String?  @db.Uuid @map("itg_default_uom_id")
+
+  // Media
+  itgPhoto          Bytes?   @map("itg_photo")
+  itgPhotoUrl       String?  @db.Text @map("itg_photo_url")
+
+  // Status / audit
+  itgIsActive       Boolean   @default(true)  @map("itg_is_active")
+  itgIsDeleted      Boolean   @default(false) @map("itg_is_deleted")
+
+  itgSyncDate       DateTime? @db.Timestamptz(6) @map("itg_sync_date")
+  itgCreatedOn      DateTime  @default(now())    @db.Timestamptz(6) @map("itg_created_on")
+  itgCreatedBy      String?   @db.VarChar(100)   @map("itg_created_by")
+  itgModifiedOn     DateTime  @default(now())    @db.Timestamptz(6) @map("itg_modified_on")
+  itgModifiedBy     String?   @db.VarChar(100)   @map("itg_modified_by")
+
+  @@map("item_group_master")
+  @@schema("public")
+  @@unique([itgName], map: "uq_itg_name")
+  @@index([itgParentId], map: "idx_itg_parent_id")
+  @@index([itgIsActive], map: "idx_itg_active")
+}

@@ -1,0 +1,128 @@
+//// ------------------------------------------------------
+//// THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+//// ------------------------------------------------------
+
+Project "Project Name" {
+  database_type: 'PostgreSQL'
+  Note: 'Test project description'
+}
+
+Table users {
+  user_id String [pk]
+  user_name String [unique, not null]
+  user_password String [not null]
+}
+
+Table item_brand_master {
+  brand_id String [pk]
+  brand_name String [unique, not null]
+  brand_alias String
+  brand_short String
+  brand_description String
+  brand_photo Bytes
+  brand_photo_url String
+  brand_parent_id String
+  brand_sort Int
+  brand_level Int
+  brand_path_ids String[] [not null]
+  brand_is_active Boolean [not null, default: true]
+  brand_is_deleted Boolean [not null, default: false]
+  brand_sync_date DateTime
+  brand_created_on DateTime [default: `now()`, not null]
+  brand_created_by String
+  brand_modified_on DateTime [default: `now()`, not null]
+  brand_modified_by String
+  parent item_brand_master
+  children item_brand_master [not null]
+}
+
+Table item_group_master {
+  itgId String [pk]
+  itgName String [unique, not null]
+  itgAlias String
+  itgShort String
+  itgDescription String
+  itgParentId String
+  parent item_group_master
+  children item_group_master [not null]
+  itgSort Int
+  itgLevel Int
+  itgPathIdsCache String[] [not null]
+  itgTaxClaim Boolean
+  itgDefaultTaxId String
+  itgDefaultHsn String
+  itgDefaultUomId String
+  itgPhoto Bytes
+  itgPhotoUrl String
+  itgIsActive Boolean [not null, default: true]
+  itgIsDeleted Boolean [not null, default: false]
+  itgSyncDate DateTime
+  itgCreatedOn DateTime [default: `now()`, not null]
+  itgCreatedBy String
+  itgModifiedOn DateTime [default: `now()`, not null]
+  itgModifiedBy String
+}
+
+Table item_section_master {
+  secId String [pk]
+  secName String [not null]
+  secAlias String
+  secShort String
+  secDescription String
+  secCompanyId String [not null]
+  secParentId String
+  parent item_section_master
+  children item_section_master [not null]
+  secSort Int
+  secLevel Int
+  secPathIds String[] [not null]
+  secPosition Int
+  secColorCode String
+  secIcon String
+  secPhoto Bytes
+  secPhotoUrl String
+  secIsActive Boolean [not null, default: true]
+  secIsDeleted Boolean [not null, default: false]
+  secSyncDate DateTime
+  secCreatedOn DateTime [default: `now()`, not null]
+  secCreatedBy String
+  secModifiedOn DateTime [default: `now()`, not null]
+  secModifiedBy String
+
+  indexes {
+    (secCompanyId, secName) [unique]
+  }
+}
+
+Table units {
+  unit_id Int [pk, increment]
+  unit_name String [unique, not null]
+  unit_alias String
+  unit_code String
+  unit_description String
+  unit_decimal_count Int [not null, default: 0]
+  unit_weight Decimal
+  unit_loading Decimal
+  unit_unloading Decimal
+  unit_attach_charge Decimal
+  unit_is_pack_unit Boolean [not null, default: false]
+  unit_base_unit_id Int
+  unit_conversion Decimal
+  unit_is_active Boolean [not null, default: true]
+  unit_is_deleted Boolean [not null, default: false]
+  unit_sync_date DateTime
+  unit_created_on DateTime [default: `now()`, not null]
+  unit_created_by String
+  unit_modified_on DateTime [default: `now()`, not null]
+  unit_modified_by String
+  baseUnit units
+  packUnits units [not null]
+}
+
+Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
+
+Ref: item_group_master.itgParentId - item_group_master.itgId [delete: Restrict]
+
+Ref: item_section_master.secParentId - item_section_master.secId [delete: Restrict]
+
+Ref: units.unit_base_unit_id - units.unit_id [delete: Restrict]
