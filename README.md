@@ -88,6 +88,17 @@ HTTPS_KEY_PATH=certs/server.key
 - Deploy pending migrations: `npm run migration:run`
 - Reset local DB: `npm run prisma:migrate:reset`
 
+## Performance and load testing
+
+Built-in load test runner commands:
+
+- `npm run perf:smoke`
+- `npm run perf:baseline`
+- `npm run perf:stress`
+- `npm run perf:custom`
+
+Full guide: `docs/performance-load-testing.md`
+
 ## Suggested next enterprise steps
 
 - Add authentication (JWT + refresh token rotation)

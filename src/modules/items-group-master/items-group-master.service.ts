@@ -11,6 +11,7 @@ import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import {
   ItemGroupErrorDetail,
   ItemGroupErrorResponse,
+  ItemGroupListItem,
   ItemGroupListMeta,
   ItemGroupPayload,
 } from './types/item-group-api.types';
@@ -18,6 +19,10 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
+const ITEM_GROUP_TABLE_NAME = 'item_group_master';
+const GRID_SQL_FORBIDDEN_TOKENS =
+  /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
+const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 
 @Injectable()
 export class ItemsGroupMasterService {
@@ -33,10 +38,21 @@ export class ItemsGroupMasterService {
 
   async list(
     queryDto: ListItemGroupQueryDto,
-  ): Promise<{ items: ItemGroupPayload[]; meta: ItemGroupListMeta }> {
+  ): Promise<{ items: ItemGroupListItem[]; meta: ItemGroupListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
+    const hasStructuredFilters =
+      queryDto.itg_parent_id !== undefined ||
+      queryDto.itg_is_active !== undefined ||
+      Boolean(queryDto.search?.trim());
+
+    if (!hasStructuredFilters) {
+      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      if (configuredList) {
+        return configuredList;
+      }
+    }
 
     const where: Prisma.ItemGroupMasterWhereInput = {
       itgIsDeleted: false,
@@ -78,6 +94,131 @@ export class ItemsGroupMasterService {
         total_pages: Math.ceil(total / limit),
       },
     };
+  }
+
+  private async listFromConfiguredGridSql(
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<{ items: ItemGroupListItem[]; meta: ItemGroupListMeta } | null> {
+    const configuredGrid = await this.prisma.gridDetails.findFirst({
+      where: {
+        gridIsDeleted: false,
+        gridStatus: true,
+        gridSql: {
+          not: null,
+          contains: ITEM_GROUP_TABLE_NAME,
+          mode: 'insensitive',
+        },
+      },
+      orderBy: [{ gridSortOrder: 'asc' }, { gridId: 'desc' }],
+      select: {
+        gridSql: true,
+      },
+    });
+
+    const rawGridSql = configuredGrid?.gridSql?.trim();
+    if (!rawGridSql) {
+      return null;
+    }
+
+    const baseSql = this.validateConfiguredGridSql(rawGridSql);
+    const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS item_group_grid`;
+    const rowsSql = `SELECT * FROM (${baseSql}) AS item_group_grid LIMIT $1 OFFSET $2`;
+
+    try {
+      const [countResult, rows] = await Promise.all([
+        this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql),
+        this.prisma.$queryRawUnsafe<ItemGroupListItem[]>(rowsSql, limit, skip),
+      ]);
+
+      const total = this.parseCountValue(countResult[0]?.total);
+
+      return {
+        items: rows,
+        meta: {
+          page,
+          limit,
+          total,
+          total_pages: Math.ceil(total / limit),
+        },
+      };
+    } catch {
+      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
+        {
+          field: 'grid_sql',
+          message: 'Configured query could not be executed for item_group_master',
+        },
+      ]);
+    }
+  }
+
+  private validateConfiguredGridSql(sql: string): string {
+    const normalized = sql.trim().replace(/;+\s*$/g, '');
+
+    if (!/^select\b/i.test(normalized)) {
+      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
+        {
+          field: 'grid_sql',
+          message: 'Only SELECT query is allowed',
+        },
+      ]);
+    }
+
+    if (normalized.includes(';')) {
+      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
+        {
+          field: 'grid_sql',
+          message: 'Multiple statements are not allowed',
+        },
+      ]);
+    }
+
+    if (GRID_SQL_COMMENT_PATTERN.test(normalized)) {
+      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
+        {
+          field: 'grid_sql',
+          message: 'Comments are not allowed in configured query',
+        },
+      ]);
+    }
+
+    if (GRID_SQL_FORBIDDEN_TOKENS.test(normalized)) {
+      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
+        {
+          field: 'grid_sql',
+          message: 'Write/DDL statements are not allowed',
+        },
+      ]);
+    }
+
+    if (!/\bitem_group_master\b/i.test(normalized)) {
+      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
+        {
+          field: 'grid_sql',
+          message: 'Configured query must reference item_group_master table',
+        },
+      ]);
+    }
+
+    return normalized;
+  }
+
+  private parseCountValue(value: bigint | number | string | undefined): number {
+    if (typeof value === 'bigint') {
+      return Number(value);
+    }
+
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
   }
 
   async getById(itgId: string): Promise<ItemGroupPayload> {

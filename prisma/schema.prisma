@@ -8,7 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["public"]
+  schemas  = ["public", "grid"]
 }
 generator dbml {
   provider   = "prisma-dbml-generator"
@@ -31,6 +31,62 @@ model User {
 
   @@map("users")
   @@schema("public")
+}
+
+// ----- prisma/grid/gridColumns.prisma -----
+model GridColumn {
+  gridSerialId              BigInt   @id @default(autoincrement()) @map("grid_serialid")
+
+  gridId                    BigInt   @map("grid_id")
+  grid                      GridDetails @relation(fields: [gridId], references: [gridId], onDelete: Cascade, onUpdate: Cascade)
+
+  gridColumnNumber          Int      @map("grid_column_number")
+  gridColumnName            String   @db.Text @map("grid_column_name")
+
+  gridColumnWidth           Decimal? @db.Decimal(12, 2) @map("grid_column_width")
+  gridColumnAlignment       String?  @db.Text @map("grid_column_alignment")
+  gridColumnVisibility      Boolean  @default(true)  @map("grid_column_visibility")
+  gridColumnFilter          Boolean  @default(false) @map("grid_column_filter")
+
+  gridColumnCondition       String?  @db.Text @map("grid_column_condition")
+  gridColumnConditionColor  String?  @db.Text @map("grid_column_condition_color")
+
+  gridColumnGroup           Boolean  @default(false) @map("grid_column_group")
+  gridColumnTotal           Boolean  @default(false) @map("grid_column_total")
+
+  gridColumnDataType        String?  @db.Text @map("grid_column_data_type")
+  gridColumnColor           String?  @db.Text @map("grid_column_color")
+  gridColumnNotes           String?  @db.Text @map("grid_column_notes")
+
+  gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
+
+  @@map("grid_columns")
+  @@schema("grid")
+
+  @@index([gridId], map: "idx_grid_columns_grid_id")
+  @@index([gridId, gridColumnFilter], map: "idx_grid_columns_filter")
+  @@index([gridId, gridColumnIsDeleted], map: "idx_grid_columns_deleted")
+}
+
+// ----- prisma/grid/gridDetails.prisma -----
+model GridDetails {
+  gridId          BigInt   @id @default(autoincrement()) @map("grid_id")
+  gridName        String   @db.Text @map("grid_name")
+  gridDescription String?  @db.Text @map("grid_description")
+
+  gridSortColumn  Int?     @map("grid_sort_column")
+  gridSortOrder   Int?     @map("grid_sort_order")
+
+  gridSql         String?  @db.Text @map("grid_sql")
+  gridStatus      Boolean  @default(true)  @map("grid_status")
+  gridIsDeleted   Boolean  @default(false) @map("grid_is_deleted")
+
+  columns         GridColumn[]
+
+  @@map("grid_details")
+  @@schema("grid")
+  @@index([gridStatus], map: "idx_grid_details_status")
+  @@index([gridIsDeleted], map: "idx_grid_details_deleted")
 }
 
 // ----- prisma/master/items/itemBrandMaster.prisma -----

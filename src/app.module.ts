@@ -15,6 +15,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ItemsBrandMasterModule } from './modules/items-brand-master/items-brand-master.module';
 import { UnitsMasterModule } from './modules/units-master/units-master.module';
 import { ItemsSectionMasterModule } from './modules/items-section-master/items-section-master.module';
+import { GridDetailsModule } from './modules/grid-details/grid-details.module';
+import { GridColumnsModule } from './modules/grid-columns/grid-columns.module';
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -47,6 +49,8 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     ItemsBrandMasterModule,
     ItemsSectionMasterModule,
     UnitsMasterModule,
+    GridDetailsModule,
+    GridColumnsModule,
     AuthModule,
   ],
   providers: [

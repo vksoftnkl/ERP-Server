@@ -4,9 +4,7 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import { ItemsGroupMasterService } from './items-group-master.service';
-
 const ITEM_GROUP_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678';
-
 type PrismaMock = {
   itemGroupMaster: {
     create: jest.Mock<Promise<ItemGroupMaster>, [Prisma.ItemGroupMasterCreateArgs]>;
@@ -16,8 +14,14 @@ type PrismaMock = {
     update: jest.Mock<Promise<ItemGroupMaster>, [Prisma.ItemGroupMasterUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.ItemGroupMasterUpdateManyArgs]>;
   };
+  gridDetails: {
+    findFirst: jest.Mock<
+      Promise<{ gridSql: string | null } | null>,
+      [Prisma.GridDetailsFindFirstArgs]
+    >;
+  };
+  $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
 };
-
 const makeRecord = (overrides: Partial<ItemGroupMaster> = {}): ItemGroupMaster =>
   ({
     itgId: ITEM_GROUP_ID,
@@ -44,11 +48,9 @@ const makeRecord = (overrides: Partial<ItemGroupMaster> = {}): ItemGroupMaster =
     itgModifiedBy: 'tester',
     ...overrides,
   }) as ItemGroupMaster;
-
 describe('ItemsGroupMasterService', () => {
   let service: ItemsGroupMasterService;
   let prisma: PrismaMock;
-
   beforeEach(() => {
     prisma = {
       itemGroupMaster: {
@@ -62,7 +64,15 @@ describe('ItemsGroupMasterService', () => {
         update: jest.fn<Promise<ItemGroupMaster>, [Prisma.ItemGroupMasterUpdateArgs]>(),
         updateMany: jest.fn<Promise<Prisma.BatchPayload>, [Prisma.ItemGroupMasterUpdateManyArgs]>(),
       },
+      gridDetails: {
+        findFirst: jest.fn<
+          Promise<{ gridSql: string | null } | null>,
+          [Prisma.GridDetailsFindFirstArgs]
+        >(),
+      },
+      $queryRawUnsafe: jest.fn<Promise<unknown>, [string, ...unknown[]]>(),
     };
+    prisma.gridDetails.findFirst.mockResolvedValue(null);
 
     service = new ItemsGroupMasterService(prisma as unknown as PrismaService);
   });
@@ -73,26 +83,20 @@ describe('ItemsGroupMasterService', () => {
     const input: SaveItemGroupDto = {
       itg_name: 'Raw Materials',
     };
-
     const result = await service.save(input);
-
     expect(prisma.itemGroupMaster.create).toHaveBeenCalledTimes(1);
     const createArgs = prisma.itemGroupMaster.create.mock.calls[0][0];
     expect(createArgs.data.itgName).toBe('Raw Materials');
     expect(result.itg_id).toBe(ITEM_GROUP_ID);
   });
-
   it('updates an item group when itg_id is provided', async () => {
     prisma.itemGroupMaster.findFirst.mockResolvedValue(makeRecord());
     prisma.itemGroupMaster.update.mockResolvedValue(makeRecord({ itgName: 'Updated Group' }));
-
     const input: SaveItemGroupDto = {
       itg_id: ITEM_GROUP_ID,
       itg_name: 'Updated Group',
     };
-
     const result = await service.save(input);
-
     expect(prisma.itemGroupMaster.update).toHaveBeenCalledTimes(1);
     const updateArgs = prisma.itemGroupMaster.update.mock.calls[0][0];
     expect(updateArgs.where.itgId).toBe(ITEM_GROUP_ID);
@@ -100,66 +104,50 @@ describe('ItemsGroupMasterService', () => {
     expect(updateArgs.data.itgModifiedBy).toBe('system');
     expect(result.itg_name).toBe('Updated Group');
   });
-
   it('rejects duplicate name with 409', async () => {
     prisma.itemGroupMaster.create.mockRejectedValue({ code: 'P2002' });
-
     const input: SaveItemGroupDto = {
       itg_name: 'Raw Materials',
     };
-
     await expect(service.save(input)).rejects.toBeInstanceOf(ConflictException);
   });
-
   it('rejects self-parent updates', async () => {
     prisma.itemGroupMaster.findFirst.mockResolvedValue(makeRecord());
-
     const input: SaveItemGroupDto = {
       itg_id: ITEM_GROUP_ID,
       itg_name: 'Raw Materials',
       itg_parent_id: ITEM_GROUP_ID,
     };
-
     await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
   });
-
   it('returns 404 in getById when row is missing or soft deleted', async () => {
     prisma.itemGroupMaster.findFirst.mockResolvedValue(null);
-
     await expect(service.getById(ITEM_GROUP_ID)).rejects.toBeInstanceOf(NotFoundException);
-
     expect(prisma.itemGroupMaster.findFirst).toHaveBeenCalledTimes(1);
     const findFirstArgs = prisma.itemGroupMaster.findFirst.mock.calls[0][0];
     expect(findFirstArgs.where?.itgId).toBe(ITEM_GROUP_ID);
     expect(findFirstArgs.where?.itgIsDeleted).toBe(false);
   });
-
   it('excludes deleted rows in list', async () => {
     prisma.itemGroupMaster.count.mockResolvedValue(1);
     prisma.itemGroupMaster.findMany.mockResolvedValue([makeRecord()]);
-
     const query: ListItemGroupQueryDto = {};
-
     await service.list(query);
-
     expect(prisma.itemGroupMaster.count).toHaveBeenCalledTimes(1);
     const countArgs = prisma.itemGroupMaster.count.mock.calls[0][0];
     expect(countArgs.where?.itgIsDeleted).toBe(false);
   });
-
   it('applies pagination and search filters correctly', async () => {
     prisma.itemGroupMaster.count.mockResolvedValue(35);
     prisma.itemGroupMaster.findMany.mockResolvedValue([makeRecord()]);
-
     const query: ListItemGroupQueryDto = {
       itg_is_active: true,
       search: 'raw',
       page: 2,
       limit: 10,
     };
-
     const result = await service.list(query);
-
+    expect(prisma.gridDetails.findFirst).not.toHaveBeenCalled();
     expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
     const findManyArgs = prisma.itemGroupMaster.findMany.mock.calls[0][0];
     expect(findManyArgs.skip).toBe(10);
@@ -171,7 +159,6 @@ describe('ItemsGroupMasterService', () => {
       { itgAlias: { contains: 'raw', mode: 'insensitive' } },
       { itgDescription: { contains: 'raw', mode: 'insensitive' } },
     ]);
-
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,
@@ -179,15 +166,49 @@ describe('ItemsGroupMasterService', () => {
       total_pages: 4,
     });
   });
-
+  it('uses configured grid_sql for plain get-all list', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql:
+        'SELECT itg_id AS \"itemGroupId\", itg_name AS \"groupName\" FROM item_group_master WHERE itg_is_deleted = false',
+    });
+    prisma.$queryRawUnsafe
+      .mockResolvedValueOnce([{ total: BigInt(1) }])
+      .mockResolvedValueOnce([{ itemGroupId: ITEM_GROUP_ID, groupName: 'Raw Materials' }]);
+    const result = await service.list({});
+    expect(prisma.itemGroupMaster.findMany).not.toHaveBeenCalled();
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('COUNT(*)::bigint AS total'),
+    );
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('LIMIT $1 OFFSET $2'),
+      20,
+      0,
+    );
+    expect(result).toEqual({
+      items: [{ itemGroupId: ITEM_GROUP_ID, groupName: 'Raw Materials' }],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+    });
+  });
+  it('rejects invalid configured grid_sql in list', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql: 'DELETE FROM item_group_master',
+    });
+    await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
   it('soft deletes item groups instead of physical removal', async () => {
     prisma.itemGroupMaster.updateMany.mockResolvedValue({ count: 1 });
-
     await expect(service.softDelete(ITEM_GROUP_ID)).resolves.toEqual({
       itg_id: ITEM_GROUP_ID,
       deleted: true,
     });
-
     expect(prisma.itemGroupMaster.updateMany).toHaveBeenCalledTimes(1);
     const updateManyArgs = prisma.itemGroupMaster.updateMany.mock.calls[0][0];
     if (!updateManyArgs.where) {
@@ -198,28 +219,22 @@ describe('ItemsGroupMasterService', () => {
     expect(updateManyArgs.data.itgIsDeleted).toBe(true);
     expect(updateManyArgs.data.itgModifiedBy).toBe('system');
   });
-
   it('rejects invalid base64 image input', async () => {
     const input: SaveItemGroupDto = {
       itg_name: 'Raw Materials',
       itg_photo: 'not-valid-base64',
     };
-
     await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
   });
-
   it('stores valid base64 image input into itgPhoto bytes', async () => {
     prisma.itemGroupMaster.create.mockResolvedValue(
       makeRecord({ itgPhoto: Buffer.from('sample-image') }),
     );
-
     const input: SaveItemGroupDto = {
       itg_name: 'Raw Materials',
       itg_photo: 'data:image/png;base64,c2FtcGxlLWltYWdl',
     };
-
     await service.save(input);
-
     expect(prisma.itemGroupMaster.create).toHaveBeenCalledTimes(1);
     const createArgs = prisma.itemGroupMaster.create.mock.calls[0][0];
     expect(createArgs.data.itgPhoto).toEqual(new Uint8Array(Buffer.from('sample-image')));

@@ -77,3 +77,6 @@ PayloadTooLargeError: request entity too large
     at Function.process_params (/home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:346:12)
     at next (/home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:280:10)
     at cors (/home/vk/Dev/ERP server/node_modules/cors/lib/index.js:188:7)
+2026-02-14T08:18:58.740Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-17T11:03:30.222Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3000
+2026-02-17T11:03:38.982Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3000

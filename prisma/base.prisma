@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["public"]
+  schemas  = ["public", "grid"]
 }
 generator dbml {
   provider   = "prisma-dbml-generator"

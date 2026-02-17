@@ -13,6 +13,42 @@ Table users {
   user_password String [not null]
 }
 
+Table grid_columns {
+  gridSerialId BigInt [pk, increment]
+  gridId BigInt [not null]
+  grid grid_details [not null]
+  gridColumnNumber Int [not null]
+  gridColumnName String [not null]
+  gridColumnWidth Decimal
+  gridColumnAlignment String
+  gridColumnVisibility Boolean [not null, default: true]
+  gridColumnFilter Boolean [not null, default: false]
+  gridColumnCondition String
+  gridColumnConditionColor String
+  gridColumnGroup Boolean [not null, default: false]
+  gridColumnTotal Boolean [not null, default: false]
+  gridColumnDataType String
+  gridColumnColor String
+  gridColumnNotes String
+  gridColumnIsDeleted Boolean [not null, default: false]
+
+  indexes {
+    (gridId, gridColumnNumber) [unique]
+  }
+}
+
+Table grid_details {
+  gridId BigInt [pk, increment]
+  gridName String [not null]
+  gridDescription String
+  gridSortColumn Int
+  gridSortOrder Int
+  gridSql String
+  gridStatus Boolean [not null, default: true]
+  gridIsDeleted Boolean [not null, default: false]
+  columns grid_columns [not null]
+}
+
 Table item_brand_master {
   brand_id String [pk]
   brand_name String [unique, not null]
@@ -118,6 +154,8 @@ Table units {
   baseUnit units
   packUnits units [not null]
 }
+
+Ref: grid_columns.gridId > grid_details.gridId [delete: Cascade]
 
 Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
 

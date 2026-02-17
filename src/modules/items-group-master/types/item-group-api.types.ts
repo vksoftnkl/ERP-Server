@@ -41,6 +41,8 @@ export interface ItemGroupPayload {
   itg_modified_by: string | null;
 }
 
+export type ItemGroupListItem = ItemGroupPayload | Record<string, unknown>;
+
 export interface ItemGroupListMeta {
   page: number;
   limit: number;

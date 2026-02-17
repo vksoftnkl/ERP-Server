@@ -37,6 +37,7 @@ import { ItemGroupExceptionFilter } from './item-group-exception.filter';
 import { ItemsGroupMasterService } from './items-group-master.service';
 import {
   ItemGroupListMeta,
+  ItemGroupListItem,
   ItemGroupPayload,
   ItemGroupSuccessResponse,
 } from './types/item-group-api.types';
@@ -84,7 +85,7 @@ export class ItemsGroupMasterController {
   @ApiBadRequestResponse({ type: ItemGroupErrorResponseDto })
   async list(
     @Query() queryDto: ListItemGroupQueryDto,
-  ): Promise<ItemGroupSuccessResponse<ItemGroupPayload[], ItemGroupListMeta>> {
+  ): Promise<ItemGroupSuccessResponse<ItemGroupListItem[], ItemGroupListMeta>> {
     const result = await this.itemsGroupMasterService.list(queryDto);
 
     return {

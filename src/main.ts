@@ -1,6 +1,6 @@
 import 'reflect-metadata';
-import { readFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import * as compression from 'compression';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
@@ -20,8 +20,32 @@ const parseBoolean = (value: string | undefined, defaultValue = false): boolean 
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 };
 
-const resolveFilePath = (filePath: string): string =>
-  isAbsolute(filePath) ? filePath : resolve(process.cwd(), filePath);
+const resolveFilePath = (filePath: string): string => {
+  const isPkgRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
+
+  if (isAbsolute(filePath)) {
+    return filePath;
+  }
+
+  const cwdPath = resolve(process.cwd(), filePath);
+  if (existsSync(cwdPath)) {
+    return cwdPath;
+  }
+
+  if (isPkgRuntime) {
+    const execDirPath = resolve(dirname(process.execPath), filePath);
+    if (existsSync(execDirPath)) {
+      return execDirPath;
+    }
+
+    const snapshotPath = resolve(__dirname, '..', filePath);
+    if (existsSync(snapshotPath)) {
+      return snapshotPath;
+    }
+  }
+
+  return cwdPath;
+};
 
 const normalizeUrlPath = (path: string): string => {
   const cleanedPath = path.replace(/^\/+|\/+$/g, '');
