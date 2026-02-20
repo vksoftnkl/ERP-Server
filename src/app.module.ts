@@ -17,6 +17,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ItemsBrandMasterModule } from './modules/items-brand-master/items-brand-master.module';
 import { UnitsMasterModule } from './modules/units-master/units-master.module';
 import { ItemsSectionMasterModule } from './modules/items-section-master/items-section-master.module';
+import { ItemsCategoryMasterModule } from './modules/items-category-master/items-category-master.module';
 import { GridDetailsModule } from './modules/grid-details/grid-details.module';
 import { GridColumnsModule } from './modules/grid-columns/grid-columns.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
@@ -56,6 +57,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     ItemsGroupMasterModule,
     ItemsBrandMasterModule,
     ItemsSectionMasterModule,
+    ItemsCategoryMasterModule,
     UnitsMasterModule,
     ItemsTaxMasterModule,
     GodownsMasterModule,

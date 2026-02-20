@@ -18,6 +18,7 @@ import { GridDetailsModule } from './modules/grid-details/grid-details.module';
 import { GodownsMasterModule } from './modules/godowns-master/godowns-master.module';
 import { HealthModule } from './modules/health/health.module';
 import { ItemsBrandMasterModule } from './modules/items-brand-master/items-brand-master.module';
+import { ItemsCategoryMasterModule } from './modules/items-category-master/items-category-master.module';
 import { ItemsGroupMasterModule } from './modules/items-group-master/items-group-master.module';
 import { ItemsSectionMasterModule } from './modules/items-section-master/items-section-master.module';
 import { ItemsTaxMasterModule } from './modules/items-tax-master/items-tax-master.module';
@@ -198,6 +199,12 @@ async function bootstrap(): Promise<void> {
       title: 'Item Section API',
       description: 'Item section module endpoints',
       include: [ItemsSectionMasterModule],
+    },
+    {
+      path: 'items-category-master',
+      title: 'Item Category API',
+      description: 'Item category module endpoints',
+      include: [ItemsCategoryMasterModule],
     },
     {
       path: 'units-master',
