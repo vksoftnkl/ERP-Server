@@ -1,6 +1,6 @@
 model Unit {
   // Identity
-  unit_id Int @id @default(autoincrement())
+  unit_id  String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("unit_id")
 
   // Master fields
   unit_name        String  @unique @db.VarChar(50)
@@ -17,7 +17,7 @@ model Unit {
 
   // Packing / conversion
   unit_is_pack_unit Boolean  @default(false)
-  unit_base_unit_id Int?
+  unit_base_unit_id String?  @db.Uuid
   unit_conversion   Decimal? @db.Decimal
 
   // Notes / status
@@ -34,6 +34,10 @@ model Unit {
   // Self relation (base unit -> pack units)
   baseUnit Unit?   @relation("UnitBase", fields: [unit_base_unit_id], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   packUnits Unit[] @relation("UnitBase")
+  eanCodes ItemEanCode[]
+  itemMasters ItemMaster[]
+  itemPrices  ItemPriceMaster[]
+  itemReorders ItemReorder[]
 
   @@map("units")
   @@schema("public")

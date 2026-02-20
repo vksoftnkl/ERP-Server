@@ -17,7 +17,7 @@ export interface UnitSuccessResponse<T, TMeta = Record<string, unknown>> {
 }
 
 export interface UnitPayload {
-  unit_id: number;
+  unit_id: string;
   unit_name: string;
   unit_alias: string | null;
   unit_code: string | null;
@@ -28,7 +28,7 @@ export interface UnitPayload {
   unit_unloading: number | null;
   unit_attach_charge: number | null;
   unit_is_pack_unit: boolean;
-  unit_base_unit_id: number | null;
+  unit_base_unit_id: string | null;
   unit_conversion: number | null;
   unit_is_active: boolean;
   unit_is_deleted: boolean;
@@ -38,6 +38,8 @@ export interface UnitPayload {
   unit_modified_on: string;
   unit_modified_by: string | null;
 }
+
+export type UnitListItem = UnitPayload | Record<string, unknown>;
 
 export interface UnitListMeta {
   page: number;

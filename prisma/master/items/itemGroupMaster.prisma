@@ -10,6 +10,7 @@ model ItemGroupMaster {
   itgParentId       String?  @db.Uuid @map("itg_parent_id")
   parent            ItemGroupMaster? @relation("ItemGroupParent", fields: [itgParentId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
   children          ItemGroupMaster[] @relation("ItemGroupParent")
+  items             ItemMaster[]
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")

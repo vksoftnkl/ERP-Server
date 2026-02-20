@@ -1,0 +1,65 @@
+
+/* =========================================================
+   Enums
+   ========================================================= */
+
+
+enum AuditLogAction {
+  insert
+  update
+  approve
+  cancel
+
+  @@map("audit_log_action")
+  @@schema("audit")
+}
+
+
+model AuditLog {
+  logId             String          @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("log_id")
+
+  logDate           DateTime        @default(now()) @db.Timestamptz(6) @map("log_date")
+  logAction         AuditLogAction  @map("log_action")
+
+  logScreenId       Int             @map("log_screen_id")
+  auditScreen       AuditScreen     @relation(fields: [logScreenId], references: [screenId], onUpdate: Cascade, onDelete: Restrict)
+
+  // Entity / record identity
+  logTableName      String          @db.Text @map("log_table_name")
+  logPk             String?            @map("log_pk")
+  logEntityId       String?         @db.Uuid @map("log_entity_id")
+  logDisplayName    String?         @db.Text @map("log_display_name")
+
+  // Before/after snapshots
+  logOriginalRecord Json?           @db.JsonB @map("log_original_record")
+  logModifiedRecord Json?           @db.JsonB @map("log_modified_record")
+  logChangedFields  Json?           @db.JsonB @map("log_changed_fields")
+
+
+  // Actor / scope
+  logUserId         String?         @db.Uuid @map("log_user_id")
+  logBranchId       String?         @db.Uuid @map("log_branch_id")
+
+  // Client info
+  logDeviceName     String?         @db.Text @map("log_device_name")
+  logIp             Unsupported("inet")? @map("log_ip")          // keep inet type in Postgres
+  logAppName        String?         @db.Text @map("log_app_name")
+
+  // Notes
+  logNotes          String?         @db.Text @map("log_notes")
+
+
+  @@index([logDate], map: "idx_audit_log_date")
+  @@index([logScreenId, logDate], map: "idx_audit_log_screen_date")
+  @@index([logUserId, logDate], map: "idx_audit_log_user_date")
+  @@index([logBranchId, logDate], map: "idx_audit_log_branch_date")
+  @@index([logTableName, logDate], map: "idx_audit_log_table_date")
+
+  // NOTE: Prisma can't fully express GIN(jsonb) indexes.
+  // Create these with raw SQL migrations:
+  //   CREATE INDEX ... USING GIN (log_modified_record);
+  //   CREATE INDEX ... USING GIN (log_changed_fields);
+
+  @@map("audit_log")
+  @@schema("audit")
+}

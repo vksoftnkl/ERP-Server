@@ -8,7 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["public", "grid"]
+  schemas  = ["public", "grid","audit"]
 }
 generator dbml {
   provider   = "prisma-dbml-generator"
@@ -31,6 +31,110 @@ model User {
 
   @@map("users")
   @@schema("public")
+}
+
+// ----- prisma/auditlogs/auditLog.prisma -----
+/* =========================================================
+   Enums
+   ========================================================= */
+
+
+enum AuditLogAction {
+  insert
+  update
+  approve
+  cancel
+
+  @@map("audit_log_action")
+  @@schema("audit")
+}
+
+
+model AuditLog {
+  logId             String          @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("log_id")
+
+  logDate           DateTime        @default(now()) @db.Timestamptz(6) @map("log_date")
+  logAction         AuditLogAction  @map("log_action")
+
+  logScreenId       Int             @map("log_screen_id")
+  auditScreen       AuditScreen     @relation(fields: [logScreenId], references: [screenId], onUpdate: Cascade, onDelete: Restrict)
+
+  // Entity / record identity
+  logTableName      String          @db.Text @map("log_table_name")
+  logPk             String?            @map("log_pk")
+  logEntityId       String?         @db.Uuid @map("log_entity_id")
+  logDisplayName    String?         @db.Text @map("log_display_name")
+
+  // Before/after snapshots
+  logOriginalRecord Json?           @db.JsonB @map("log_original_record")
+  logModifiedRecord Json?           @db.JsonB @map("log_modified_record")
+  logChangedFields  Json?           @db.JsonB @map("log_changed_fields")
+
+
+  // Actor / scope
+  logUserId         String?         @db.Uuid @map("log_user_id")
+  logBranchId       String?         @db.Uuid @map("log_branch_id")
+
+  // Client info
+  logDeviceName     String?         @db.Text @map("log_device_name")
+  logIp             Unsupported("inet")? @map("log_ip")          // keep inet type in Postgres
+  logAppName        String?         @db.Text @map("log_app_name")
+
+  // Notes
+  logNotes          String?         @db.Text @map("log_notes")
+
+
+  @@index([logDate], map: "idx_audit_log_date")
+  @@index([logScreenId, logDate], map: "idx_audit_log_screen_date")
+  @@index([logUserId, logDate], map: "idx_audit_log_user_date")
+  @@index([logBranchId, logDate], map: "idx_audit_log_branch_date")
+  @@index([logTableName, logDate], map: "idx_audit_log_table_date")
+
+  // NOTE: Prisma can't fully express GIN(jsonb) indexes.
+  // Create these with raw SQL migrations:
+  //   CREATE INDEX ... USING GIN (log_modified_record);
+  //   CREATE INDEX ... USING GIN (log_changed_fields);
+
+  @@map("audit_log")
+  @@schema("audit")
+}
+
+// ----- prisma/auditlogs/auditScreen.prisma -----
+/* =========================================================
+   Enums
+   ========================================================= */
+
+enum AuditScreenType {
+  master
+  transaction
+  settings
+  other
+
+  @@map("audit_screen_type")
+  @@schema("audit")
+}
+
+
+model AuditScreen {
+  screenId          Int             @id @default(autoincrement()) @map("screen_id")
+
+  screenName        String          @db.Text @map("screen_name")
+  screenType        AuditScreenType @default(other) @map("screen_type")
+  screenStatus      Boolean         @default(true) @map("screen_status")
+  screenModule      String?         @db.Text @map("screen_module")
+
+  screenCreatedOn   DateTime        @default(now()) @db.Timestamptz(6) @map("screen_created_on")
+  screenCreatedBy   String?         @db.Uuid @map("screen_created_by")
+
+  screenModifiedOn  DateTime?       @db.Timestamptz(6) @map("screen_modified_on")
+  screenModifiedBy  String?         @db.Uuid @map("screen_modified_by")
+
+  // Relations
+  auditLogs         AuditLog[]
+
+  @@index([screenStatus], map: "idx_audit_screen_status")
+  @@map("audit_screen")
+  @@schema("audit")
 }
 
 // ----- prisma/grid/gridColumns.prisma -----
@@ -89,6 +193,110 @@ model GridDetails {
   @@index([gridIsDeleted], map: "idx_grid_details_deleted")
 }
 
+// ----- prisma/master/items/categoryMaster.prisma -----
+model categoryMaster {
+  categoryId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("category_id")
+  
+  categoryName           String   @db.VarChar(150) @map("category_name")
+  categoryAlias          String?  @db.VarChar(100) @map("category_alias")
+  categoryShort          String?  @db.VarChar(50)  @map("category_short")
+  categoryDescription    String?  @db.VarChar(250) @map("category_description")
+
+  // Hierarchy
+  categoryParentId       String?  @db.Uuid @map("category_parent_id")
+  parent                 categoryMaster? @relation("CategoryParent", fields: [categoryParentId], references: [categoryId], onUpdate: Cascade, onDelete: Restrict)
+  children               categoryMaster[] @relation("CategoryParent")
+  items             ItemMaster[]
+
+  categorySort           Int?     @map("category_sort")
+  categoryLevel          Int?     @map("category_level")
+  categoryPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("category_path_ids_cache")
+  categoryTaxClaim       Boolean? @map("category_tax_claim")
+
+  // Defaults / pricing rules
+  categoryDefaultTaxId   String?  @db.Uuid @map("category_default_tax_id")
+  categoryDefaultHsn     String?  @db.VarChar(20) @map("category_default_hsn")
+  categoryDefaultUomId   String?  @db.Uuid @map("category_default_uom_id")
+
+  // Media
+  categoryPhoto          Bytes?   @map("category_photo")
+  categoryPhotoUrl       String?  @db.Text @map("category_photo_url")
+
+  // Status / audit
+  categoryIsActive       Boolean   @default(true)  @map("category_is_active")
+  categoryIsDeleted      Boolean   @default(false) @map("category_is_deleted")
+
+  categorySyncDate       DateTime? @db.Timestamptz(6) @map("category_sync_date")
+  categoryCreatedOn      DateTime  @default(now())    @db.Timestamptz(6) @map("category_created_on")
+  categoryCreatedBy      String?   @db.VarChar(100)   @map("category_created_by")
+  categoryModifiedOn     DateTime  @default(now())    @db.Timestamptz(6) @map("category_modified_on")
+  categoryModifiedBy     String?   @db.VarChar(100)   @map("category_modified_by")
+
+  @@map("category_master")
+  @@schema("public")
+  @@unique([categoryName], map: "uq_category_name")
+  @@index([categoryParentId], map: "idx_category_parent_id")
+  @@index([categoryIsActive], map: "idx_category_active")
+}
+
+// ----- prisma/master/items/godownMaster.prisma -----
+model GodownLocation {
+  gdlId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")
+
+  
+  gdlGodownId       String   @db.Uuid @map("gdl_godown_id")
+  gdlBranchId       String   @db.Uuid @map("gdl_branch_id")
+
+  // Names / Codes
+  gdlName           String   @db.VarChar(200) @map("gdl_name")
+  gdlShort          String?  @db.VarChar(50)  @map("gdl_short")
+  gdlCode           String?  @db.VarChar(30)  @map("gdl_code")
+
+  gdlType           String   @default("BIN") @db.VarChar(20) @map("gdl_type")
+
+  // Hierarchy
+  gdlParentId       String?  @db.Uuid @map("gdl_parent_id")
+  gdlSort           Int      @default(0) @map("gdl_sort")
+  gdlLevel          Int      @default(0) @map("gdl_level")
+  gdlPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("gdl_path_ids_cache")
+
+  // Attributes
+  gdlDelSheet       Boolean  @default(false) @map("gdl_del_sheet")
+  gdlSplitStock     Boolean  @default(false) @map("gdl_split_stock")
+  gdlNegativeStock  Boolean  @default(false) @map("gdl_negative_stock")
+  gdlVolume         Decimal  @default(0) @db.Decimal(15, 4) @map("gdl_volume")
+
+  // Status / Audit
+  gdlIsActive       Boolean   @default(true)  @map("gdl_is_active")
+  gdlIsDeleted      Boolean   @default(false) @map("gdl_is_deleted")
+
+  gdlCreatedOn      DateTime  @default(now()) @db.Timestamptz(6) @map("gdl_created_on")
+  gdlCreatedBy      String?   @db.VarChar(100) @map("gdl_created_by")
+  gdlModifiedOn     DateTime  @default(now()) @db.Timestamptz(6) @map("gdl_modified_on")
+  gdlModifiedBy     String?   @db.VarChar(100) @map("gdl_modified_by")
+
+  gdlRemarks        String?   @db.VarChar(250) @map("gdl_remarks")
+
+  // Self relation for hierarchy
+  parent            GodownLocation?  @relation("GodownLocationToParent", fields: [gdlParentId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
+  children          GodownLocation[] @relation("GodownLocationToParent")
+
+  @@map("godown_locations")
+  @@schema("public")
+
+  // Indexes
+ // @@index([gdlCompanyId, gdlGodownId], map: "idx_gdl_godown")
+  @@index([gdlParentId], map: "idx_gdl_parent")
+  @@index([gdlGodownId, gdlParentId, gdlSort], map: "idx_gdl_sort")
+
+  // This is the UNIQUE constraint you defined
+  @@unique([gdlGodownId, gdlParentId, gdlName], map: "uq_gdl_unique_name_per_parent")
+
+  // NOTE:
+  // - Partial index (idx_gdl_active WHERE ...) is not expressible in Prisma schema.
+  // - GIN index on array is also not expressible in Prisma schema.
+}
+
 // ----- prisma/master/items/itemBrandMaster.prisma -----
 model ItemBrandMaster {
   brand_id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
@@ -126,6 +334,94 @@ model ItemBrandMaster {
   @@index([brand_is_active], map: "idx_brand_active")
 }
 
+// ----- prisma/master/items/itemCustRates.prisma -----
+model CustItemRate {
+  csrId          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("csr_id")
+
+  csrBranchId    String?  @db.Uuid @map("csr_branch_id")
+
+  // Customer + Item Rate Link
+  csrCustomerId  String   @db.Uuid @map("csr_customer_id")
+  csrUnitRateId  String   @db.Uuid @map("csr_unit_rate_id")
+
+  // Pricing / Discount Override
+  csrRateType    String   @default("FIXED") @db.VarChar(20) @map("csr_rate_type")
+  csrItemRate    Decimal  @default(0) @db.Decimal(15, 4) @map("csr_item_rate")
+
+  csrDiscPerc    Decimal  @default(0) @db.Decimal(7, 3)  @map("csr_disc_perc")
+  csrDiscQty     Decimal  @default(0) @db.Decimal(15, 4) @map("csr_disc_qty")
+
+  // Optional price level (A/B/C/D) — because your SQL CHECK mentions csr_price_level
+  csrPriceLevel  String?  @db.Char(1) @map("csr_price_level")
+
+  // Validity / Priority
+  csrValidFrom   DateTime? @db.Date @map("csr_valid_from")
+  csrValidTo     DateTime? @db.Date @map("csr_valid_to")
+  csrPriority    Int       @default(0) @map("csr_priority")
+
+  // Status / Audit
+  csrIsActive    Boolean   @default(true)  @map("csr_is_active")
+  csrIsDeleted   Boolean   @default(false) @map("csr_is_deleted")
+
+  csrCreatedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("csr_created_on")
+  csrCreatedBy   String?   @db.VarChar(100) @map("csr_created_by")
+  csrModifiedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("csr_modified_on")
+  csrModifiedBy  String?   @db.VarChar(100) @map("csr_modified_by")
+
+  csrUploadedAt  DateTime? @db.Timestamptz(6) @map("csr_uploaded_at")
+  csrUploadedBy  String?   @db.VarChar(100) @map("csr_uploaded_by")
+
+  csrRemarks     String?   @db.VarChar(250) @map("csr_remarks")
+
+  @@map("cust_item_rates")
+  @@schema("public")
+
+  @@index([csrCustomerId], map: "idx_csr_customer")
+  @@index([csrUnitRateId], map: "idx_csr_unit_rate")
+  @@index([csrBranchId], map: "idx_csr_branch")
+  @@index([csrIsDeleted, csrIsActive], map: "idx_csr_active_deleted")
+}
+
+// ----- prisma/master/items/itemEanCode.prisma -----
+model ItemEanCode {
+  eanId        String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ean_id")
+
+  // Link
+  eanItemId    String  @db.Uuid @map("ean_item_id")
+  eanUnitId    String  @db.Uuid @map("ean_unit_id")
+  eanCode      String  @db.VarChar(64) @map("ean_code")
+
+  // Optional scoping for default-barcode rule
+  eanGodownId  String? @db.Uuid @map("ean_godown_id")
+  eanIsDefault Boolean @default(false) @map("ean_is_default")
+
+  // Status / audit
+  eanIsActive  Boolean  @default(true)  @map("ean_is_active")
+  eanIsDeleted Boolean  @default(false) @map("ean_is_deleted")
+
+  eanCreatedOn DateTime @default(now()) @db.Timestamptz(6) @map("ean_created_on")
+  eanCreatedBy String?  @db.VarChar(100) @map("ean_created_by")
+  eanModifiedOn DateTime @default(now()) @db.Timestamptz(6) @map("ean_modified_on")
+  eanModifiedBy String?  @db.VarChar(100) @map("ean_modified_by")
+
+  eanRemarks   String?  @db.VarChar(250) @map("ean_remarks")
+
+  // Relation
+  unit         Unit       @relation(fields: [eanUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("item_ean_codes")
+  @@schema("public")
+
+  // uq_ean_code UNIQUE (ean_code)
+  @@unique([eanCode], map: "uq_ean_code")
+
+  @@index([eanCode], map: "idx_ean_code")
+  @@index([eanItemId], map: "idx_ean_item")
+
+  // NOTE: partial unique index uq_ean_one_default cannot be expressed in Prisma schema.
+  // Keep it in SQL migration.
+}
+
 // ----- prisma/master/items/itemGroupMaster.prisma -----
 model ItemGroupMaster {
   itgId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("itg_id")
@@ -139,6 +435,7 @@ model ItemGroupMaster {
   itgParentId       String?  @db.Uuid @map("itg_parent_id")
   parent            ItemGroupMaster? @relation("ItemGroupParent", fields: [itgParentId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
   children          ItemGroupMaster[] @relation("ItemGroupParent")
+  items             ItemMaster[]
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")
@@ -171,6 +468,289 @@ model ItemGroupMaster {
   @@index([itgIsActive], map: "idx_itg_active")
 }
 
+// ----- prisma/master/items/itemMaster.prisma -----
+model ItemMaster {
+  itemId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("item_id")
+
+  itemBranchId         String?  @db.Uuid @map("item_branch_id")
+
+  // Names / Codes
+  itemCode             String?  @db.VarChar(50)  @map("item_code")
+  itemSku              String?  @db.VarChar(60)  @map("item_sku")
+  itemNameEn           String   @db.VarChar(200) @map("item_name_en")
+  itemNameTa           String?  @db.VarChar(200) @map("item_name_ta")
+  itemAlias            String?  @db.VarChar(200) @map("item_alias")
+  itemStockType        String   @default("FG") @db.VarChar(20) @map("item_stock_type")
+
+  itemDefaultBarcode   String?  @db.VarChar(200) @map("item_default_barcode")
+
+  // Classification
+  itemGroupId          String   @db.Uuid @map("item_group_id")
+  itemCategoryId       String?  @db.Uuid @map("item_category_id")
+  itemBrandId          String?  @db.Uuid @map("item_brand_id")
+  itemSectionId        String?  @db.Uuid @map("item_section_id")
+  itemCompanyCategoryId String? @db.Uuid @map("item_company_category_id")
+  itemMfgrId           String?  @db.Uuid @map("item_mfgr_id")
+  itemSupplierId       String?  @db.Uuid @map("item_supplier_id")
+
+  // Units / Batch / Expiry
+  itemBaseUnitId       String   @db.Uuid @map("item_base_unit_id")
+  itemIsService        Boolean  @default(false) @map("item_is_service")
+  itemIsBatchBased     Boolean  @default(false) @map("item_is_batch_based")
+  itemIsExpiryItem     Boolean  @default(false) @map("item_is_expiry_item")
+
+  itemExpiryDays       Int?     @map("item_expiry_days")
+  itemIntimateBeforeDays Int?   @map("item_intimate_before_days")
+
+  // Sales / Purchase flags
+  itemAllowSales       Boolean  @default(true) @map("item_allow_sales")
+  itemAllowSalesReturn Boolean  @default(true) @map("item_allow_sales_return")
+  itemAllowPurchase    Boolean  @default(true) @map("item_allow_purchase")
+  itemAllowPo          Boolean  @default(true) @map("item_allow_po")
+  itemAllowSo          Boolean  @default(true) @map("item_allow_so")
+
+  itemAllowNegStock    Boolean  @default(true) @map("item_allow_neg_stock")
+  itemAllowNegativeSo  Boolean  @default(true) @map("item_allow_negative_so")
+
+  // Pricing / POS / Features
+  itemPriceList        Boolean  @default(false) @map("item_price_list")
+  itemWeighScale       Boolean  @default(false) @map("item_weigh_scale")
+  itemRetailItem       Boolean  @default(true)  @map("item_retail_item")
+
+  itemIsKit            Boolean  @default(false) @map("item_is_kit")
+  itemAutoBreak        Boolean  @default(false) @map("item_auto_break")
+  itemAutoMake         Boolean  @default(false) @map("item_auto_make")
+
+  itemAllowLoyalty     Boolean  @default(false) @map("item_allow_loyalty")
+  itemAllowPromo       Boolean  @default(false) @map("item_allow_promo")
+  itemHasOffer         Boolean  @default(false) @map("item_has_offer")
+
+  itemDamagableProduct Boolean  @default(false) @map("item_damagable_product")
+  itemIsDemand         Boolean  @default(false) @map("item_is_demand")
+
+  itemAllowLoading     Boolean  @default(false) @map("item_allow_loading")
+  itemAllowFreight     Boolean  @default(false) @map("item_allow_freight")
+  itemRandomStock      Boolean  @default(false) @map("item_random_stock")
+
+  itemBarcodeSticker   Boolean  @default(false) @map("item_barcode_sticker")
+  itemBarcodeStickerId String?  @db.Uuid @map("item_barcode_sticker_id")
+
+  // Tax / HSN
+  itemDefaultTaxId     String?  @db.Uuid @map("item_default_tax_id")
+  itemHsnCode          String?  @db.VarChar(10) @map("item_hsn_code")
+
+  // UI / misc
+  itemBatchConfig      Int      @default(0) @map("item_batch_config")
+  itemSortOrder        Int?     @map("item_sort_order")
+  itemPhoto            Bytes?   @map("item_photo")
+  itemImageUrl         String?  @db.Text @map("item_image_url")
+  itemNotes            String?  @db.VarChar(250) @map("item_notes")
+  itemStorageLocation  String?  @db.VarChar(250) @map("item_storage_location")
+
+  itemPackingItemIds   String[] @db.Uuid @map("item_packing_item_ids")
+
+  // Status / Audit
+  itemIsActive         Boolean  @default(true)  @map("item_is_active")
+  itemIsDeleted        Boolean  @default(false) @map("item_is_deleted")
+
+  itemCreatedOn        DateTime @default(now()) @db.Timestamptz(6) @map("item_created_on")
+  itemCreatedBy        String?  @db.VarChar(100) @map("item_created_by")
+  itemModifiedOn       DateTime @default(now()) @db.Timestamptz(6) @map("item_modified_on")
+  itemModifiedBy       String?  @db.VarChar(100) @map("item_modified_by")
+
+  // Relations
+  group                ItemGroupMaster @relation(fields: [itemGroupId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
+  category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
+  baseUnit             Unit            @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+  prices               ItemPriceMaster[]
+  reorders             ItemReorder[]
+  taxHistory           ItemTaxHistory[]
+
+  @@map("item_master")
+  @@schema("public")
+
+  // UNIQUE item_name_en globally (since company removed)
+  @@unique([itemNameEn], map: "uq_item_name_en_global")
+
+  @@index([itemGroupId], map: "idx_item_group")
+  @@index([itemNameEn], map: "idx_item_name_en")
+  @@index([itemDefaultBarcode], map: "idx_item_barcode")
+}
+
+// ----- prisma/master/items/itemPriceMaster.prisma -----
+model ItemPriceMaster {
+  ipmUnitRateId          String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ipm_unit_rate_id")
+
+  ipmItemId              String  @db.Uuid @map("ipm_item_id")
+  ipmUnitId              String  @db.Uuid @map("ipm_unit_id")
+  ipmGodownId            String? @db.Uuid @map("ipm_godown_id") // NULL = global price
+
+  ipmUnitSlno            Int     @default(0) @map("ipm_unit_slno")
+
+  ipmConversionFactor    Decimal @default(1) @db.Decimal(18, 6) @map("ipm_conversion_factor")
+
+  // COST
+  ipmCostPrice           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_cost_price")
+  ipmCostWot             Decimal @default(0) @db.Decimal(15, 4) @map("ipm_cost_wot")
+
+  // SALES prices (A/B/C/D)
+  ipmSalesPriceA         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_a")
+  ipmSalesPriceB         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_b")
+  ipmSalesPriceC         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_c")
+  ipmSalesPriceD         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_d")
+
+  // Without tax
+  ipmPriceAWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_a_wot")
+  ipmPriceBWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_b_wot")
+  ipmPriceCWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_c_wot")
+  ipmPriceDWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_d_wot")
+
+  // Margin
+  ipmPriceAMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_a_margin")
+  ipmPriceBMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_b_margin")
+  ipmPriceCMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_c_margin")
+  ipmPriceDMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_d_margin")
+
+  // Controls
+  ipmMaxPrice            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_max_price")
+  ipmMinPrice            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_min_price")
+
+  ipmDiscPerc            Decimal @default(0) @db.Decimal(7, 3)  @map("ipm_disc_perc")
+  ipmDiscQty             Decimal @default(0) @db.Decimal(15, 4) @map("ipm_disc_qty")
+  ipmAddlCess            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_addl_cess")
+
+  ipmProfitType          String  @db.VarChar(20) @map("ipm_profit_type") // BY % / BY RS / BY USER
+  ipmRoundOff            Decimal @default(0) @db.Decimal(10, 4) @map("ipm_round_off")
+
+  ipmBigUnit             Boolean @default(false) @map("ipm_big_unit")
+  ipmUomWeight           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_uom_weight")
+  ipmLoadingCharge       Decimal @default(0) @db.Decimal(15, 4) @map("ipm_loading_charge")
+  ipmFreightCharge       Decimal @default(0) @db.Decimal(15, 4) @map("ipm_freight_charge")
+
+  ipmRemarks             String? @db.VarChar(250) @map("ipm_remarks")
+
+  ipmIsActive            Boolean @default(true) @map("ipm_is_active")
+
+  ipmCreatedOn           DateTime @default(now()) @db.Timestamptz(6) @map("ipm_created_on")
+  ipmCreatedBy           String?  @db.VarChar(100) @map("ipm_created_by")
+  ipmModifiedOn          DateTime @default(now()) @db.Timestamptz(6) @map("ipm_modified_on")
+  ipmModifiedBy          String?  @db.VarChar(100) @map("ipm_modified_by")
+
+  // Relations
+  item                  ItemMaster @relation(fields: [ipmItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
+  unit                  Unit       @relation(fields: [ipmUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  qtywiseRates          ItemQtywiseRate[]
+
+  @@map("item_price_master")
+  @@schema("public")
+
+  // one rate per combination (without company)
+  @@unique([ipmItemId, ipmUnitId, ipmGodownId], map: "uq_ipm_item_unit_godown")
+}
+
+// ----- prisma/master/items/itemQtyWiseRateMaster.prisma -----
+model ItemQtywiseRate {
+  iqrId          String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iqr_id")
+
+  iqrBranchId    String? @db.Uuid @map("iqr_branch_id")
+
+  // Link to base unit-rate row (item+unit+godown)
+  iqrUnitRateId  String  @db.Uuid @map("iqr_unit_rate_id")
+
+  // Price Level + Quantity Slab
+  iqrPriceLevel  Int     @map("iqr_price_level")
+
+  iqrStartQty    Decimal @db.Decimal(15, 4) @map("iqr_start_qty")
+  iqrEndQty      Decimal? @db.Decimal(15, 4) @map("iqr_end_qty")     // NULL = open-ended
+  iqrEachQty     Decimal @db.Decimal(15, 4) @map("iqr_each_qty")
+
+  // Pricing + Discount
+  iqrSalesPrice  Decimal @default(0) @db.Decimal(15, 4) @map("iqr_sales_price")
+  iqrPriceWot    Decimal @default(0) @db.Decimal(15, 4) @map("iqr_price_wot")
+  iqrPriceMargin Decimal @default(0) @db.Decimal(15, 4) @map("iqr_price_margin")
+
+  iqrDiscPerc    Decimal @default(0) @db.Decimal(7, 3)  @map("iqr_disc_perc")
+  iqrDiscQty     Decimal @default(0) @db.Decimal(15, 4) @map("iqr_disc_qty")
+
+  // Validity
+  iqrValidFrom   DateTime? @db.Date @map("iqr_valid_from")
+  iqrValidTo     DateTime? @db.Date @map("iqr_valid_to")
+  iqrPriority    Int       @default(0) @map("iqr_priority")
+
+  // Status / Audit
+  iqrIsActive    Boolean  @default(true)  @map("iqr_is_active")
+  iqrIsDeleted   Boolean  @default(false) @map("iqr_is_deleted")
+
+  iqrCreatedOn   DateTime @default(now()) @db.Timestamptz(6) @map("iqr_created_on")
+  iqrCreatedBy   String?  @db.VarChar(100) @map("iqr_created_by")
+  iqrModifiedOn  DateTime @default(now()) @db.Timestamptz(6) @map("iqr_modified_on")
+  iqrModifiedBy  String?  @db.VarChar(100) @map("iqr_modified_by")
+
+  iqrRemarks     String?  @db.VarChar(250) @map("iqr_remarks")
+
+  // Relation
+  unitRate       ItemPriceMaster @relation(fields: [iqrUnitRateId], references: [ipmUnitRateId], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("item_qtywise_rates")
+  @@schema("public")
+
+  @@index([iqrUnitRateId], map: "idx_iqr_unit_rate")
+  @@index([iqrBranchId], map: "idx_iqr_branch")
+  @@index([iqrIsDeleted, iqrIsActive], map: "idx_iqr_active_deleted")
+}
+
+// ----- prisma/master/items/itemReorder.prisma -----
+model ItemReorder {
+  irId               String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ir_id")
+
+  // Scope / link
+  irBranchId          String? @db.Uuid @map("ir_branch_id")
+  irItemId            String  @db.Uuid @map("ir_item_id")
+  irUnitId            String  @db.Uuid @map("ir_unit_id")
+  irGodownId          String? @db.Uuid @map("ir_godown_id") // NULL = global reorder rule
+
+  // Core reorder controls
+  irMinLevel          Decimal @default(0) @db.Decimal(15, 4) @map("ir_min_level")
+  irMaxLevel          Decimal @default(0) @db.Decimal(15, 4) @map("ir_max_level")
+  irReorderLevel      Decimal @default(0) @db.Decimal(15, 4) @map("ir_reorder_level")
+  irReorderQty        Decimal @default(0) @db.Decimal(15, 4) @map("ir_reorder_qty")
+
+  // Time parameters
+  irLeadTimeDays      Int     @default(0) @map("ir_lead_time_days")
+  irReviewCycleDays   Int     @default(0) @map("ir_review_cycle_days")
+  irReorderDays       Int     @default(0) @map("ir_reorder_days")
+  irExpiryBufferDays  Int     @default(0) @map("ir_expiry_buffer_days")
+
+  // Policy / type
+  irReorderType       String  @default("MIN_MAX") @db.VarChar(20) @map("ir_reorder_type")
+
+  // Flags
+  irIsActive          Boolean @default(true)  @map("ir_is_active")
+  irIsDeleted         Boolean @default(false) @map("ir_is_deleted")
+
+  // Notes / audit
+  irRemarks           String?  @db.VarChar(250) @map("ir_remarks")
+  irCreatedOn         DateTime @default(now()) @db.Timestamptz(6) @map("ir_created_on")
+  irCreatedBy         String?  @db.VarChar(100) @map("ir_created_by")
+  irModifiedOn        DateTime @default(now()) @db.Timestamptz(6) @map("ir_modified_on")
+  irModifiedBy        String?  @db.VarChar(100) @map("ir_modified_by")
+
+  // Relations
+  item                ItemMaster @relation(fields: [irItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
+  unit                Unit       @relation(fields: [irUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("item_reorders")
+  @@schema("public")
+
+  // Prevent duplicates per scope (no company)
+  @@unique([irItemId, irUnitId, irGodownId], map: "uq_ir_item_unit_godown")
+
+  @@index([irItemId], map: "idx_ir_item")
+  @@index([irUnitId], map: "idx_ir_unit")
+  @@index([irGodownId], map: "idx_ir_godown")
+}
+
 // ----- prisma/master/items/itemSections.prisma -----
 model ItemSectionMaster {
   secId          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sec_id")
@@ -181,8 +761,6 @@ model ItemSectionMaster {
   secShort       String?  @db.VarChar(50)  @map("sec_short")
   secDescription String?  @db.VarChar(250) @map("sec_description")
 
-  // Company scope (needed because your SQL has UNIQUE (sec_company_id, sec_name))
-  secCompanyId   String   @db.Uuid @map("sec_company_id")
 
   // Hierarchy
   secParentId    String?  @db.Uuid @map("sec_parent_id")
@@ -215,20 +793,117 @@ model ItemSectionMaster {
   @@map("item_section_master")
   @@schema("public")
 
-  // Unique per company
-  @@unique([secCompanyId, secName], map: "uq_sec_name_per_company")
 
   // Indexes (match your SQL intent)
-  @@index([secCompanyId], map: "idx_sec_company_id")
   @@index([secParentId],  map: "idx_sec_parent_id")
   @@index([secIsActive],  map: "idx_sec_active")
   @@index([secPosition],  map: "idx_sec_position")
 }
 
+// ----- prisma/master/items/itemTaxHistory.prisma -----
+model ItemTaxHistory {
+  ithId            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ith_id")
+
+  
+  ithItemId        String   @db.Uuid @map("ith_item_id")
+  ithTaxId         String   @db.Uuid @map("ith_tax_id")
+
+  ithEffectiveFrom DateTime @db.Date @map("ith_effective_from")
+  ithEffectiveTo   DateTime? @db.Date @map("ith_effective_to")
+
+  ithReason        String?  @db.VarChar(250) @map("ith_reason")
+
+  ithCreatedOn     DateTime @default(now()) @db.Timestamptz(6) @map("ith_created_on")
+  ithCreatedBy     String?  @db.VarChar(100) @map("ith_created_by")
+
+  // Relations
+  item             ItemMaster    @relation(fields: [ithItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
+  tax              ItemTaxMaster  @relation(fields: [ithTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("item_tax_history")
+  @@schema("public")
+
+  @@index([ithItemId, ithEffectiveFrom, ithEffectiveTo], map: "idx_ith_item_dates")
+}
+
+// ----- prisma/master/items/itemTaxMaster.prisma -----
+model ItemTaxMaster {
+  taxId                   String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("tax_id")
+
+  taxName                 String  @db.VarChar(100) @map("tax_name")
+  taxCode                 String? @db.VarChar(30)  @map("tax_code")
+
+  taxTaxabilityType       String  @default("TAXABLE") @db.VarChar(30) @map("tax_taxability_type")
+  taxIsReverseCharge      Boolean @default(false) @map("tax_is_reverse_charge")
+
+  // Component rates (Sales)
+  taxCgstPerc             Decimal @default(0) @db.Decimal(7, 3) @map("tax_cgst_perc")
+  taxSgstPerc             Decimal @default(0) @db.Decimal(7, 3) @map("tax_sgst_perc")
+  taxIgstPerc             Decimal @default(0) @db.Decimal(7, 3) @map("tax_igst_perc")
+
+  // Component rates (Purchase)
+  taxCgstPurPerc          Decimal @default(0) @db.Decimal(7, 3) @map("tax_cgst_pur_perc")
+  taxSgstPurPerc          Decimal @default(0) @db.Decimal(7, 3) @map("tax_sgst_pur_perc")
+  taxIgstPurPerc          Decimal @default(0) @db.Decimal(7, 3) @map("tax_igst_pur_perc")
+
+  // Cess
+  taxCessType             String  @default("NONE") @db.VarChar(20) @map("tax_cess_type")
+  taxCessPerc             Decimal @default(0) @db.Decimal(7, 3) @map("tax_cess_perc")
+  taxCessUnit             Decimal @default(0) @db.Decimal(15, 4) @map("tax_cess_unit")
+  taxCessPurPerc          Decimal @default(0) @db.Decimal(7, 3) @map("tax_cess_pur_perc")
+  taxCessPurUnit          Decimal @default(0) @db.Decimal(15, 4) @map("tax_cess_pur_unit")
+
+  // Convenience total
+  taxGstRateTotal         Decimal @default(0) @db.Decimal(7, 3) @map("tax_gst_rate_total")
+
+  // Taxable value posting ledgers (ONE per slab)
+  taxSalesLedgerId        String? @db.Uuid @map("tax_sales_ledger_id")
+  taxSalesReturnLedgerId  String? @db.Uuid @map("tax_sales_return_ledger_id")
+  taxPurchaseLedgerId     String? @db.Uuid @map("tax_purchase_ledger_id")
+  taxPurchaseReturnLedgerId String? @db.Uuid @map("tax_purchase_return_ledger_id")
+
+  // Output (Sales tax ledgers)
+  taxCgstOutputLedgerId   String? @db.Uuid @map("tax_cgst_output_ledger_id")
+  taxSgstOutputLedgerId   String? @db.Uuid @map("tax_sgst_output_ledger_id")
+  taxIgstOutputLedgerId   String? @db.Uuid @map("tax_igst_output_ledger_id")
+  taxCessOutputLedgerId   String? @db.Uuid @map("tax_cess_output_ledger_id")
+
+  // Input (Purchase tax ledgers)
+  taxCgstInputLedgerId    String? @db.Uuid @map("tax_cgst_input_ledger_id")
+  taxSgstInputLedgerId    String? @db.Uuid @map("tax_sgst_input_ledger_id")
+  taxIgstInputLedgerId    String? @db.Uuid @map("tax_igst_input_ledger_id")
+  taxCessInputLedgerId    String? @db.Uuid @map("tax_cess_input_ledger_id")
+
+  taxIsActive             Boolean  @default(true)  @map("tax_is_active")
+  taxIsDeleted            Boolean  @default(false) @map("tax_is_deleted")
+
+  taxSyncDate             DateTime? @db.Timestamptz(6) @map("tax_sync_date")
+  taxCreatedOn            DateTime  @default(now()) @db.Timestamptz(6) @map("tax_created_on")
+  taxCreatedBy            String?   @db.VarChar(100) @map("tax_created_by")
+  taxModifiedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("tax_modified_on")
+  taxModifiedBy           String?   @db.VarChar(100) @map("tax_modified_by")
+
+  defaultItems            ItemMaster[]
+  taxHistory              ItemTaxHistory[]
+
+  @@map("item_tax_master")
+  @@schema("public")
+
+  // unique slab name globally (since company removed)
+  @@unique([taxName], map: "uq_tax_name_global")
+
+  @@index([taxIsActive], map: "idx_tax_active")
+  @@index([taxGstRateTotal], map: "idx_tax_rate_total")
+  @@index([taxSalesLedgerId], map: "idx_tax_sales_ledger")
+  @@index([taxCgstOutputLedgerId], map: "idx_tax_cgst_out")
+  @@index([taxSgstOutputLedgerId], map: "idx_tax_sgst_out")
+  @@index([taxIgstOutputLedgerId], map: "idx_tax_igst_out")
+}
+
 // ----- prisma/master/items/itemUnitsMaster.prisma -----
 model Unit {
   // Identity
-  unit_id Int @id @default(autoincrement())
+  unit_id  String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("unit_id")
 
   // Master fields
   unit_name        String  @unique @db.VarChar(50)
@@ -245,7 +920,7 @@ model Unit {
 
   // Packing / conversion
   unit_is_pack_unit Boolean  @default(false)
-  unit_base_unit_id Int?
+  unit_base_unit_id String?  @db.Uuid
   unit_conversion   Decimal? @db.Decimal
 
   // Notes / status
@@ -262,6 +937,10 @@ model Unit {
   // Self relation (base unit -> pack units)
   baseUnit Unit?   @relation("UnitBase", fields: [unit_base_unit_id], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   packUnits Unit[] @relation("UnitBase")
+  eanCodes ItemEanCode[]
+  itemMasters ItemMaster[]
+  itemPrices  ItemPriceMaster[]
+  itemReorders ItemReorder[]
 
   @@map("units")
   @@schema("public")

@@ -1,0 +1,69 @@
+model ItemPriceMaster {
+  ipmUnitRateId          String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ipm_unit_rate_id")
+
+  ipmItemId              String  @db.Uuid @map("ipm_item_id")
+  ipmUnitId              String  @db.Uuid @map("ipm_unit_id")
+  ipmGodownId            String? @db.Uuid @map("ipm_godown_id") // NULL = global price
+
+  ipmUnitSlno            Int     @default(0) @map("ipm_unit_slno")
+
+  ipmConversionFactor    Decimal @default(1) @db.Decimal(18, 6) @map("ipm_conversion_factor")
+
+  // COST
+  ipmCostPrice           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_cost_price")
+  ipmCostWot             Decimal @default(0) @db.Decimal(15, 4) @map("ipm_cost_wot")
+
+  // SALES prices (A/B/C/D)
+  ipmSalesPriceA         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_a")
+  ipmSalesPriceB         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_b")
+  ipmSalesPriceC         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_c")
+  ipmSalesPriceD         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_d")
+
+  // Without tax
+  ipmPriceAWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_a_wot")
+  ipmPriceBWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_b_wot")
+  ipmPriceCWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_c_wot")
+  ipmPriceDWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_d_wot")
+
+  // Margin
+  ipmPriceAMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_a_margin")
+  ipmPriceBMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_b_margin")
+  ipmPriceCMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_c_margin")
+  ipmPriceDMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_d_margin")
+
+  // Controls
+  ipmMaxPrice            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_max_price")
+  ipmMinPrice            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_min_price")
+
+  ipmDiscPerc            Decimal @default(0) @db.Decimal(7, 3)  @map("ipm_disc_perc")
+  ipmDiscQty             Decimal @default(0) @db.Decimal(15, 4) @map("ipm_disc_qty")
+  ipmAddlCess            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_addl_cess")
+
+  ipmProfitType          String  @db.VarChar(20) @map("ipm_profit_type") // BY % / BY RS / BY USER
+  ipmRoundOff            Decimal @default(0) @db.Decimal(10, 4) @map("ipm_round_off")
+
+  ipmBigUnit             Boolean @default(false) @map("ipm_big_unit")
+  ipmUomWeight           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_uom_weight")
+  ipmLoadingCharge       Decimal @default(0) @db.Decimal(15, 4) @map("ipm_loading_charge")
+  ipmFreightCharge       Decimal @default(0) @db.Decimal(15, 4) @map("ipm_freight_charge")
+
+  ipmRemarks             String? @db.VarChar(250) @map("ipm_remarks")
+
+  ipmIsActive            Boolean @default(true) @map("ipm_is_active")
+
+  ipmCreatedOn           DateTime @default(now()) @db.Timestamptz(6) @map("ipm_created_on")
+  ipmCreatedBy           String?  @db.VarChar(100) @map("ipm_created_by")
+  ipmModifiedOn          DateTime @default(now()) @db.Timestamptz(6) @map("ipm_modified_on")
+  ipmModifiedBy          String?  @db.VarChar(100) @map("ipm_modified_by")
+
+  // Relations
+  item                  ItemMaster @relation(fields: [ipmItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
+  unit                  Unit       @relation(fields: [ipmUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  qtywiseRates          ItemQtywiseRate[]
+
+  @@map("item_price_master")
+  @@schema("public")
+
+  // one rate per combination (without company)
+  @@unique([ipmItemId, ipmUnitId, ipmGodownId], map: "uq_ipm_item_unit_godown")
+}

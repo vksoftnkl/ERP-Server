@@ -1,0 +1,38 @@
+model ItemEanCode {
+  eanId        String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ean_id")
+
+  // Link
+  eanItemId    String  @db.Uuid @map("ean_item_id")
+  eanUnitId    String  @db.Uuid @map("ean_unit_id")
+  eanCode      String  @db.VarChar(64) @map("ean_code")
+
+  // Optional scoping for default-barcode rule
+  eanGodownId  String? @db.Uuid @map("ean_godown_id")
+  eanIsDefault Boolean @default(false) @map("ean_is_default")
+
+  // Status / audit
+  eanIsActive  Boolean  @default(true)  @map("ean_is_active")
+  eanIsDeleted Boolean  @default(false) @map("ean_is_deleted")
+
+  eanCreatedOn DateTime @default(now()) @db.Timestamptz(6) @map("ean_created_on")
+  eanCreatedBy String?  @db.VarChar(100) @map("ean_created_by")
+  eanModifiedOn DateTime @default(now()) @db.Timestamptz(6) @map("ean_modified_on")
+  eanModifiedBy String?  @db.VarChar(100) @map("ean_modified_by")
+
+  eanRemarks   String?  @db.VarChar(250) @map("ean_remarks")
+
+  // Relation
+  unit         Unit       @relation(fields: [eanUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("item_ean_codes")
+  @@schema("public")
+
+  // uq_ean_code UNIQUE (ean_code)
+  @@unique([eanCode], map: "uq_ean_code")
+
+  @@index([eanCode], map: "idx_ean_code")
+  @@index([eanItemId], map: "idx_ean_item")
+
+  // NOTE: partial unique index uq_ean_one_default cannot be expressed in Prisma schema.
+  // Keep it in SQL migration.
+}

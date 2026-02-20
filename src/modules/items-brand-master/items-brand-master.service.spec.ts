@@ -6,6 +6,10 @@ import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemsBrandMasterService } from './items-brand-master.service';
 
 const BRAND_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678';
+const PARENT_BRAND_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45679';
+const GRAND_PARENT_BRAND_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45680';
+const NEW_PARENT_BRAND_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45681';
+const CHILD_BRAND_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45682';
 
 type PrismaMock = {
   itemBrandMaster: {
@@ -16,6 +20,14 @@ type PrismaMock = {
     update: jest.Mock<Promise<ItemBrandMaster>, [Prisma.ItemBrandMasterUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.ItemBrandMasterUpdateManyArgs]>;
   };
+  gridDetails: {
+    findFirst: jest.Mock<
+      Promise<{ gridSql: string | null } | null>,
+      [Prisma.GridDetailsFindFirstArgs]
+    >;
+  };
+  $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
+  $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
 const makeRecord = (overrides: Partial<ItemBrandMaster> = {}): ItemBrandMaster =>
@@ -58,13 +70,36 @@ describe('ItemsBrandMasterService', () => {
         update: jest.fn<Promise<ItemBrandMaster>, [Prisma.ItemBrandMasterUpdateArgs]>(),
         updateMany: jest.fn<Promise<Prisma.BatchPayload>, [Prisma.ItemBrandMasterUpdateManyArgs]>(),
       },
+      gridDetails: {
+        findFirst: jest.fn<
+          Promise<{ gridSql: string | null } | null>,
+          [Prisma.GridDetailsFindFirstArgs]
+        >(),
+      },
+      $queryRawUnsafe: jest.fn<Promise<unknown>, [string, ...unknown[]]>(),
+      $transaction: jest.fn<
+        Promise<unknown>,
+        [(tx: Prisma.TransactionClient) => Promise<unknown>]
+      >(),
     };
+    prisma.gridDetails.findFirst.mockResolvedValue(null);
+    prisma.itemBrandMaster.findMany.mockResolvedValue([]);
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
+        callback(prisma as unknown as Prisma.TransactionClient),
+    );
 
     service = new ItemsBrandMasterService(prisma as unknown as PrismaService);
   });
 
-  it('creates an item brand when brand_id is not provided', async () => {
-    prisma.itemBrandMaster.create.mockResolvedValue(makeRecord());
+  it('creates a root item brand and stores self brand_id in brand_path_ids', async () => {
+    const createdRecord = makeRecord({ brand_path_ids: [] });
+    const createdWithPath = makeRecord({ brand_path_ids: [BRAND_ID] });
+
+    prisma.itemBrandMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemBrandMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemBrandMaster.update.mockResolvedValueOnce(createdWithPath);
+    prisma.itemBrandMaster.findFirst.mockResolvedValueOnce(createdWithPath);
 
     const input: SaveItemBrandDto = {
       brand_name: 'Acme',
@@ -76,11 +111,21 @@ describe('ItemsBrandMasterService', () => {
     const createArgs = prisma.itemBrandMaster.create.mock.calls[0][0];
     expect(createArgs.data.brand_name).toBe('Acme');
     expect(result.brand_id).toBe(BRAND_ID);
+    expect(result.brand_path_ids).toEqual([BRAND_ID]);
   });
 
   it('updates an item brand when brand_id is provided', async () => {
-    prisma.itemBrandMaster.findFirst.mockResolvedValue(makeRecord());
-    prisma.itemBrandMaster.update.mockResolvedValue(makeRecord({ brand_name: 'Updated Brand' }));
+    const existingRecord = makeRecord({ brand_path_ids: [BRAND_ID] });
+    const updatedRecord = makeRecord({
+      brand_name: 'Updated Brand',
+      brand_path_ids: [BRAND_ID],
+    });
+
+    prisma.itemBrandMaster.findFirst
+      .mockResolvedValueOnce(existingRecord)
+      .mockResolvedValueOnce(updatedRecord);
+    prisma.itemBrandMaster.findMany.mockResolvedValueOnce([updatedRecord]);
+    prisma.itemBrandMaster.update.mockResolvedValueOnce(updatedRecord);
 
     const input: SaveItemBrandDto = {
       brand_id: BRAND_ID,
@@ -117,6 +162,247 @@ describe('ItemsBrandMasterService', () => {
     };
 
     await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('adds newly created child id to parent and grandparent caches', async () => {
+    const createdChild = makeRecord({
+      brand_id: CHILD_BRAND_ID,
+      brand_name: 'Child Brand',
+      brand_parent_id: PARENT_BRAND_ID,
+      brand_path_ids: [],
+    });
+    const childWithPath = makeRecord({
+      brand_id: CHILD_BRAND_ID,
+      brand_name: 'Child Brand',
+      brand_parent_id: PARENT_BRAND_ID,
+      brand_path_ids: [CHILD_BRAND_ID],
+    });
+    const parent = makeRecord({
+      brand_id: PARENT_BRAND_ID,
+      brand_parent_id: GRAND_PARENT_BRAND_ID,
+      brand_path_ids: [PARENT_BRAND_ID],
+    });
+    const grandParent = makeRecord({
+      brand_id: GRAND_PARENT_BRAND_ID,
+      brand_parent_id: null,
+      brand_path_ids: [GRAND_PARENT_BRAND_ID],
+    });
+
+    prisma.itemBrandMaster.create.mockResolvedValue(createdChild);
+    prisma.itemBrandMaster.findFirst
+      .mockResolvedValueOnce(parent)
+      .mockResolvedValueOnce(parent)
+      .mockResolvedValueOnce(grandParent)
+      .mockResolvedValueOnce(childWithPath);
+    prisma.itemBrandMaster.findMany
+      .mockResolvedValueOnce([createdChild])
+      .mockResolvedValueOnce([parent, grandParent]);
+    prisma.itemBrandMaster.update
+      .mockResolvedValueOnce(childWithPath)
+      .mockResolvedValueOnce(
+        makeRecord({
+          brand_id: PARENT_BRAND_ID,
+          brand_parent_id: GRAND_PARENT_BRAND_ID,
+          brand_path_ids: [PARENT_BRAND_ID, CHILD_BRAND_ID],
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeRecord({
+          brand_id: GRAND_PARENT_BRAND_ID,
+          brand_parent_id: null,
+          brand_path_ids: [GRAND_PARENT_BRAND_ID, CHILD_BRAND_ID],
+        }),
+      );
+
+    const result = await service.save({
+      brand_name: 'Child Brand',
+      brand_parent_id: PARENT_BRAND_ID,
+    });
+
+    expect(result.brand_id).toBe(CHILD_BRAND_ID);
+
+    const parentUpdateArgs = prisma.itemBrandMaster.update.mock.calls[1][0];
+    expect(parentUpdateArgs.where.brand_id).toBe(PARENT_BRAND_ID);
+    expect(parentUpdateArgs.data.brand_path_ids).toEqual([PARENT_BRAND_ID, CHILD_BRAND_ID]);
+
+    const grandParentUpdateArgs = prisma.itemBrandMaster.update.mock.calls[2][0];
+    expect(grandParentUpdateArgs.where.brand_id).toBe(GRAND_PARENT_BRAND_ID);
+    expect(grandParentUpdateArgs.data.brand_path_ids).toEqual([
+      GRAND_PARENT_BRAND_ID,
+      CHILD_BRAND_ID,
+    ]);
+  });
+
+  it('does not duplicate ids when ancestor cache already contains child id', async () => {
+    const createdChild = makeRecord({
+      brand_id: CHILD_BRAND_ID,
+      brand_name: 'Child Brand',
+      brand_parent_id: PARENT_BRAND_ID,
+      brand_path_ids: [],
+    });
+    const childWithPath = makeRecord({
+      brand_id: CHILD_BRAND_ID,
+      brand_name: 'Child Brand',
+      brand_parent_id: PARENT_BRAND_ID,
+      brand_path_ids: [CHILD_BRAND_ID],
+    });
+    const parentWithChildAlready = makeRecord({
+      brand_id: PARENT_BRAND_ID,
+      brand_parent_id: null,
+      brand_path_ids: [PARENT_BRAND_ID, CHILD_BRAND_ID],
+    });
+
+    prisma.itemBrandMaster.create.mockResolvedValue(createdChild);
+    prisma.itemBrandMaster.findFirst
+      .mockResolvedValueOnce(parentWithChildAlready)
+      .mockResolvedValueOnce(parentWithChildAlready)
+      .mockResolvedValueOnce(childWithPath);
+    prisma.itemBrandMaster.findMany
+      .mockResolvedValueOnce([createdChild])
+      .mockResolvedValueOnce([parentWithChildAlready]);
+    prisma.itemBrandMaster.update.mockResolvedValueOnce(childWithPath);
+
+    await service.save({
+      brand_name: 'Child Brand',
+      brand_parent_id: PARENT_BRAND_ID,
+    });
+
+    expect(prisma.itemBrandMaster.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves subtree ids from old ancestors to new ancestors on reparent', async () => {
+    const existing = makeRecord({
+      brand_id: BRAND_ID,
+      brand_parent_id: PARENT_BRAND_ID,
+      brand_path_ids: [BRAND_ID, CHILD_BRAND_ID],
+    });
+    const child = makeRecord({
+      brand_id: CHILD_BRAND_ID,
+      brand_parent_id: BRAND_ID,
+      brand_path_ids: [CHILD_BRAND_ID],
+    });
+    const updatedWithoutSelf = makeRecord({
+      brand_id: BRAND_ID,
+      brand_name: 'Updated Brand',
+      brand_parent_id: NEW_PARENT_BRAND_ID,
+      brand_path_ids: [CHILD_BRAND_ID],
+    });
+    const refreshedWithSelf = makeRecord({
+      brand_id: BRAND_ID,
+      brand_name: 'Updated Brand',
+      brand_parent_id: NEW_PARENT_BRAND_ID,
+      brand_path_ids: [CHILD_BRAND_ID, BRAND_ID],
+    });
+    const oldParent = makeRecord({
+      brand_id: PARENT_BRAND_ID,
+      brand_parent_id: null,
+      brand_path_ids: [PARENT_BRAND_ID, BRAND_ID, CHILD_BRAND_ID],
+    });
+    const newParent = makeRecord({
+      brand_id: NEW_PARENT_BRAND_ID,
+      brand_parent_id: null,
+      brand_path_ids: [NEW_PARENT_BRAND_ID],
+    });
+
+    prisma.itemBrandMaster.findFirst
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(newParent)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(child)
+      .mockResolvedValueOnce(oldParent)
+      .mockResolvedValueOnce(newParent)
+      .mockResolvedValueOnce(refreshedWithSelf);
+    prisma.itemBrandMaster.findMany
+      .mockResolvedValueOnce([child])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([updatedWithoutSelf])
+      .mockResolvedValueOnce([oldParent])
+      .mockResolvedValueOnce([newParent]);
+    prisma.itemBrandMaster.update
+      .mockResolvedValueOnce(updatedWithoutSelf)
+      .mockResolvedValueOnce(refreshedWithSelf)
+      .mockResolvedValueOnce(
+        makeRecord({
+          brand_id: PARENT_BRAND_ID,
+          brand_parent_id: null,
+          brand_path_ids: [PARENT_BRAND_ID],
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeRecord({
+          brand_id: NEW_PARENT_BRAND_ID,
+          brand_parent_id: null,
+          brand_path_ids: [NEW_PARENT_BRAND_ID, BRAND_ID, CHILD_BRAND_ID],
+        }),
+      );
+
+    const result = await service.save({
+      brand_id: BRAND_ID,
+      brand_name: 'Updated Brand',
+      brand_parent_id: NEW_PARENT_BRAND_ID,
+    });
+
+    expect(result.brand_parent_id).toBe(NEW_PARENT_BRAND_ID);
+
+    const oldParentUpdateArgs = prisma.itemBrandMaster.update.mock.calls[2][0];
+    expect(oldParentUpdateArgs.where.brand_id).toBe(PARENT_BRAND_ID);
+    expect(oldParentUpdateArgs.data.brand_path_ids).toEqual([PARENT_BRAND_ID]);
+
+    const newParentUpdateArgs = prisma.itemBrandMaster.update.mock.calls[3][0];
+    expect(newParentUpdateArgs.where.brand_id).toBe(NEW_PARENT_BRAND_ID);
+    expect(newParentUpdateArgs.data.brand_path_ids).toEqual([
+      NEW_PARENT_BRAND_ID,
+      BRAND_ID,
+      CHILD_BRAND_ID,
+    ]);
+  });
+
+  it('removes subtree ids from old ancestors when reparented to root', async () => {
+    const existing = makeRecord({
+      brand_id: BRAND_ID,
+      brand_parent_id: PARENT_BRAND_ID,
+      brand_path_ids: [BRAND_ID],
+    });
+    const refreshed = makeRecord({
+      brand_id: BRAND_ID,
+      brand_parent_id: null,
+      brand_path_ids: [BRAND_ID],
+    });
+    const oldParent = makeRecord({
+      brand_id: PARENT_BRAND_ID,
+      brand_parent_id: null,
+      brand_path_ids: [PARENT_BRAND_ID, BRAND_ID],
+    });
+
+    prisma.itemBrandMaster.findFirst
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(oldParent)
+      .mockResolvedValueOnce(refreshed);
+    prisma.itemBrandMaster.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([refreshed])
+      .mockResolvedValueOnce([oldParent]);
+    prisma.itemBrandMaster.update
+      .mockResolvedValueOnce(refreshed)
+      .mockResolvedValueOnce(
+        makeRecord({
+          brand_id: PARENT_BRAND_ID,
+          brand_parent_id: null,
+          brand_path_ids: [PARENT_BRAND_ID],
+        }),
+      );
+
+    const result = await service.save({
+      brand_id: BRAND_ID,
+      brand_name: 'Acme',
+      brand_parent_id: null,
+    });
+
+    expect(result.brand_parent_id).toBeNull();
+    const oldParentUpdateArgs = prisma.itemBrandMaster.update.mock.calls[1][0];
+    expect(oldParentUpdateArgs.where.brand_id).toBe(PARENT_BRAND_ID);
+    expect(oldParentUpdateArgs.data.brand_path_ids).toEqual([PARENT_BRAND_ID]);
   });
 
   it('returns 404 in getById when row is missing or soft deleted', async () => {
@@ -156,6 +442,7 @@ describe('ItemsBrandMasterService', () => {
 
     const result = await service.list(query);
 
+    expect(prisma.gridDetails.findFirst).not.toHaveBeenCalled();
     expect(prisma.itemBrandMaster.findMany).toHaveBeenCalledTimes(1);
     const findManyArgs = prisma.itemBrandMaster.findMany.mock.calls[0][0];
     expect(findManyArgs.skip).toBe(10);
@@ -176,8 +463,82 @@ describe('ItemsBrandMasterService', () => {
     });
   });
 
-  it('soft deletes item brands instead of physical removal', async () => {
+  it('uses configured grid_sql for plain get-all list', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql:
+        'SELECT brand_id AS "itemBrandId", brand_name AS "brandName" FROM item_brand_master WHERE brand_is_deleted = false',
+    });
+    prisma.$queryRawUnsafe
+      .mockResolvedValueOnce([{ total: BigInt(1) }])
+      .mockResolvedValueOnce([{ itemBrandId: BRAND_ID, brandName: 'Acme' }]);
+
+    const result = await service.list({});
+
+    expect(prisma.itemBrandMaster.findMany).not.toHaveBeenCalled();
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('COUNT(*)::bigint AS total'),
+    );
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('LIMIT $1 OFFSET $2'),
+      20,
+      0,
+    );
+    expect(result).toEqual({
+      items: [{ itemBrandId: BRAND_ID, brandName: 'Acme' }],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+    });
+  });
+
+  it('rejects invalid configured grid_sql in list', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql: 'DELETE FROM item_brand_master',
+    });
+
+    await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('soft delete removes subtree ids from ancestor caches', async () => {
+    const parent = makeRecord({
+      brand_id: PARENT_BRAND_ID,
+      brand_parent_id: null,
+      brand_path_ids: [PARENT_BRAND_ID, BRAND_ID, CHILD_BRAND_ID],
+    });
+    const node = makeRecord({
+      brand_id: BRAND_ID,
+      brand_parent_id: PARENT_BRAND_ID,
+      brand_path_ids: [BRAND_ID, CHILD_BRAND_ID],
+    });
+    const child = makeRecord({
+      brand_id: CHILD_BRAND_ID,
+      brand_parent_id: BRAND_ID,
+      brand_path_ids: [CHILD_BRAND_ID],
+    });
+
+    prisma.itemBrandMaster.findFirst
+      .mockResolvedValueOnce(node)
+      .mockResolvedValueOnce(node)
+      .mockResolvedValueOnce(child)
+      .mockResolvedValueOnce(parent);
+    prisma.itemBrandMaster.findMany
+      .mockResolvedValueOnce([child])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([parent]);
     prisma.itemBrandMaster.updateMany.mockResolvedValue({ count: 1 });
+    prisma.itemBrandMaster.update.mockResolvedValueOnce(
+      makeRecord({
+        brand_id: PARENT_BRAND_ID,
+        brand_parent_id: null,
+        brand_path_ids: [PARENT_BRAND_ID],
+      }),
+    );
 
     await expect(service.softDelete(BRAND_ID)).resolves.toEqual({
       brand_id: BRAND_ID,
@@ -193,6 +554,11 @@ describe('ItemsBrandMasterService', () => {
     expect(updateManyArgs.where.brand_is_deleted).toBe(false);
     expect(updateManyArgs.data.brand_is_deleted).toBe(true);
     expect(updateManyArgs.data.brand_modified_by).toBe('system');
+
+    expect(prisma.itemBrandMaster.update).toHaveBeenCalledTimes(1);
+    const ancestorUpdateArgs = prisma.itemBrandMaster.update.mock.calls[0][0];
+    expect(ancestorUpdateArgs.where.brand_id).toBe(PARENT_BRAND_ID);
+    expect(ancestorUpdateArgs.data.brand_path_ids).toEqual([PARENT_BRAND_ID]);
   });
 
   it('rejects invalid base64 image input', async () => {
@@ -205,9 +571,16 @@ describe('ItemsBrandMasterService', () => {
   });
 
   it('stores valid base64 image input into brand_photo bytes', async () => {
-    prisma.itemBrandMaster.create.mockResolvedValue(
-      makeRecord({ brand_photo: Buffer.from('sample-image') }),
-    );
+    const createdRecord = makeRecord({ brand_photo: Buffer.from('sample-image'), brand_path_ids: [] });
+    const refreshedRecord = makeRecord({
+      brand_photo: Buffer.from('sample-image'),
+      brand_path_ids: [BRAND_ID],
+    });
+
+    prisma.itemBrandMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemBrandMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemBrandMaster.update.mockResolvedValueOnce(refreshedRecord);
+    prisma.itemBrandMaster.findFirst.mockResolvedValueOnce(refreshedRecord);
 
     const input: SaveItemBrandDto = {
       brand_name: 'Acme',

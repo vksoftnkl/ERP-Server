@@ -1,0 +1,56 @@
+model GodownLocation {
+  gdlId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")
+
+  
+  gdlGodownId       String   @db.Uuid @map("gdl_godown_id")
+  gdlBranchId       String   @db.Uuid @map("gdl_branch_id")
+
+  // Names / Codes
+  gdlName           String   @db.VarChar(200) @map("gdl_name")
+  gdlShort          String?  @db.VarChar(50)  @map("gdl_short")
+  gdlCode           String?  @db.VarChar(30)  @map("gdl_code")
+
+  gdlType           String   @default("BIN") @db.VarChar(20) @map("gdl_type")
+
+  // Hierarchy
+  gdlParentId       String?  @db.Uuid @map("gdl_parent_id")
+  gdlSort           Int      @default(0) @map("gdl_sort")
+  gdlLevel          Int      @default(0) @map("gdl_level")
+  gdlPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("gdl_path_ids_cache")
+
+  // Attributes
+  gdlDelSheet       Boolean  @default(false) @map("gdl_del_sheet")
+  gdlSplitStock     Boolean  @default(false) @map("gdl_split_stock")
+  gdlNegativeStock  Boolean  @default(false) @map("gdl_negative_stock")
+  gdlVolume         Decimal  @default(0) @db.Decimal(15, 4) @map("gdl_volume")
+
+  // Status / Audit
+  gdlIsActive       Boolean   @default(true)  @map("gdl_is_active")
+  gdlIsDeleted      Boolean   @default(false) @map("gdl_is_deleted")
+
+  gdlCreatedOn      DateTime  @default(now()) @db.Timestamptz(6) @map("gdl_created_on")
+  gdlCreatedBy      String?   @db.VarChar(100) @map("gdl_created_by")
+  gdlModifiedOn     DateTime  @default(now()) @db.Timestamptz(6) @map("gdl_modified_on")
+  gdlModifiedBy     String?   @db.VarChar(100) @map("gdl_modified_by")
+
+  gdlRemarks        String?   @db.VarChar(250) @map("gdl_remarks")
+
+  // Self relation for hierarchy
+  parent            GodownLocation?  @relation("GodownLocationToParent", fields: [gdlParentId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
+  children          GodownLocation[] @relation("GodownLocationToParent")
+
+  @@map("godown_locations")
+  @@schema("public")
+
+  // Indexes
+ // @@index([gdlCompanyId, gdlGodownId], map: "idx_gdl_godown")
+  @@index([gdlParentId], map: "idx_gdl_parent")
+  @@index([gdlGodownId, gdlParentId, gdlSort], map: "idx_gdl_sort")
+
+  // This is the UNIQUE constraint you defined
+  @@unique([gdlGodownId, gdlParentId, gdlName], map: "uq_gdl_unique_name_per_parent")
+
+  // NOTE:
+  // - Partial index (idx_gdl_active WHERE ...) is not expressible in Prisma schema.
+  // - GIN index on array is also not expressible in Prisma schema.
+}

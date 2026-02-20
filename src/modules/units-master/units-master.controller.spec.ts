@@ -4,7 +4,7 @@ import { SaveUnitDto } from './dto/save-unit.dto';
 import { UnitsMasterController } from './units-master.controller';
 import { UnitsMasterService } from './units-master.service';
 
-const UNIT_ID = 1;
+const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
 
 const unitPayload = {
   unit_id: UNIT_ID,

@@ -1,5 +1,4 @@
 import {
-  IsArray,
   IsBoolean,
   IsInt,
   IsNotEmpty,
@@ -140,12 +139,6 @@ export class SaveItemGroupDto {
   @IsOptional()
   @IsInt()
   itg_level?: number;
-
-  @ApiPropertyOptional({ type: [String], example: [] })
-  @IsOptional()
-  @IsArray()
-  @IsUUID('all', { each: true })
-  itg_path_ids_cache?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()

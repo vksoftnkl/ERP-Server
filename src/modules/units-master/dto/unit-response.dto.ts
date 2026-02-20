@@ -20,8 +20,8 @@ export class UnitErrorResponseDto {
 }
 
 export class UnitPayloadDto {
-  @ApiProperty({ example: 1 })
-  unit_id!: number;
+  @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
+  unit_id!: string;
 
   @ApiProperty({ maxLength: 50 })
   unit_name!: string;
@@ -53,8 +53,12 @@ export class UnitPayloadDto {
   @ApiProperty({ example: false })
   unit_is_pack_unit!: boolean;
 
-  @ApiPropertyOptional({ nullable: true, example: 1 })
-  unit_base_unit_id!: number | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    example: '019c6f6c-be87-7a11-8905-36092c46fd06',
+  })
+  unit_base_unit_id!: string | null;
 
   @ApiPropertyOptional({ nullable: true, example: 10 })
   unit_conversion!: number | null;
@@ -96,8 +100,8 @@ export class UnitListMetaDto {
 }
 
 export class UnitDeleteResultDto {
-  @ApiProperty({ example: 1 })
-  unit_id!: number;
+  @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
+  unit_id!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;

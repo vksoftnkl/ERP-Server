@@ -4,7 +4,7 @@ export class ItemSectionErrorFieldDto {
   @ApiProperty({ example: 'sec_name' })
   field!: string;
 
-  @ApiProperty({ example: 'Duplicate sec_name is not allowed within sec_company_id' })
+  @ApiProperty({ example: 'Duplicate sec_name is not allowed' })
   message!: string;
 }
 
@@ -35,8 +35,6 @@ export class ItemSectionPayloadDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   sec_description!: string | null;
 
-  @ApiProperty({ format: 'uuid' })
-  sec_company_id!: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sec_parent_id!: string | null;

@@ -22,7 +22,6 @@ export interface ItemSectionPayload {
   sec_alias: string | null;
   sec_short: string | null;
   sec_description: string | null;
-  sec_company_id: string;
   sec_parent_id: string | null;
   sec_sort: number | null;
   sec_level: number | null;

@@ -4,7 +4,7 @@ import {
   Delete,
   Get,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Post,
   Query,
   UseFilters,
@@ -29,7 +29,12 @@ import {
   UnitSuccessSingleDto,
 } from './dto/unit-response.dto';
 import { UnitExceptionFilter } from './unit-exception.filter';
-import { UnitListMeta, UnitPayload, UnitSuccessResponse } from './types/unit-api.types';
+import {
+  UnitListItem,
+  UnitListMeta,
+  UnitPayload,
+  UnitSuccessResponse,
+} from './types/unit-api.types';
 import { UnitsMasterService } from './units-master.service';
 
 @ApiTags('Units')
@@ -62,7 +67,7 @@ export class UnitsMasterController {
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   async list(
     @Query() queryDto: ListUnitQueryDto,
-  ): Promise<UnitSuccessResponse<UnitPayload[], UnitListMeta>> {
+  ): Promise<UnitSuccessResponse<UnitListItem[], UnitListMeta>> {
     const result = await this.unitsMasterService.list(queryDto);
 
     return {
@@ -76,12 +81,12 @@ export class UnitsMasterController {
   @Get('get/:unit_id')
   @Version('1')
   @ApiOperation({ summary: 'Get unit by id' })
-  @ApiParam({ name: 'unit_id', type: Number })
+  @ApiParam({ name: 'unit_id', format: 'uuid' })
   @ApiOkResponse({ type: UnitSuccessSingleDto })
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   @ApiNotFoundResponse({ type: UnitErrorResponseDto })
   async getById(
-    @Param('unit_id', ParseIntPipe) unitId: number,
+    @Param('unit_id', new ParseUUIDPipe({ version: '7' })) unitId: string,
   ): Promise<UnitSuccessResponse<UnitPayload>> {
     const data = await this.unitsMasterService.getById(unitId);
 
@@ -95,13 +100,13 @@ export class UnitsMasterController {
   @Delete('delete/:unit_id')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete unit by id' })
-  @ApiParam({ name: 'unit_id', type: Number })
+  @ApiParam({ name: 'unit_id', format: 'uuid' })
   @ApiOkResponse({ type: UnitSuccessDeleteDto })
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   @ApiNotFoundResponse({ type: UnitErrorResponseDto })
   async remove(
-    @Param('unit_id', ParseIntPipe) unitId: number,
-  ): Promise<UnitSuccessResponse<{ unit_id: number; deleted: true }>> {
+    @Param('unit_id', new ParseUUIDPipe({ version: '7' })) unitId: string,
+  ): Promise<UnitSuccessResponse<{ unit_id: string; deleted: true }>> {
     const data = await this.unitsMasterService.softDelete(unitId);
 
     return {

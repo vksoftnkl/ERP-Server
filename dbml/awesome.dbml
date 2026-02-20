@@ -13,6 +13,39 @@ Table users {
   user_password String [not null]
 }
 
+Table audit_log {
+  logId String [pk]
+  logDate DateTime [default: `now()`, not null]
+  logAction AuditLogAction [not null]
+  logScreenId Int [not null]
+  auditScreen audit_screen [not null]
+  logTableName String [not null]
+  logPk String
+  logEntityId String
+  logDisplayName String
+  logOriginalRecord Json
+  logModifiedRecord Json
+  logChangedFields Json
+  logUserId String
+  logBranchId String
+  logDeviceName String
+  logAppName String
+  logNotes String
+}
+
+Table audit_screen {
+  screenId Int [pk, increment]
+  screenName String [not null]
+  screenType AuditScreenType [not null, default: 'other']
+  screenStatus Boolean [not null, default: true]
+  screenModule String
+  screenCreatedOn DateTime [default: `now()`, not null]
+  screenCreatedBy String
+  screenModifiedOn DateTime
+  screenModifiedBy String
+  auditLogs audit_log [not null]
+}
+
 Table grid_columns {
   gridSerialId BigInt [pk, increment]
   gridId BigInt [not null]
@@ -31,10 +64,6 @@ Table grid_columns {
   gridColumnColor String
   gridColumnNotes String
   gridColumnIsDeleted Boolean [not null, default: false]
-
-  indexes {
-    (gridId, gridColumnNumber) [unique]
-  }
 }
 
 Table grid_details {
@@ -47,6 +76,65 @@ Table grid_details {
   gridStatus Boolean [not null, default: true]
   gridIsDeleted Boolean [not null, default: false]
   columns grid_columns [not null]
+}
+
+Table category_master {
+  categoryId String [pk]
+  categoryName String [unique, not null]
+  categoryAlias String
+  categoryShort String
+  categoryDescription String
+  categoryParentId String
+  parent category_master
+  children category_master [not null]
+  items item_master [not null]
+  categorySort Int
+  categoryLevel Int
+  categoryPathIdsCache String[] [not null]
+  categoryTaxClaim Boolean
+  categoryDefaultTaxId String
+  categoryDefaultHsn String
+  categoryDefaultUomId String
+  categoryPhoto Bytes
+  categoryPhotoUrl String
+  categoryIsActive Boolean [not null, default: true]
+  categoryIsDeleted Boolean [not null, default: false]
+  categorySyncDate DateTime
+  categoryCreatedOn DateTime [default: `now()`, not null]
+  categoryCreatedBy String
+  categoryModifiedOn DateTime [default: `now()`, not null]
+  categoryModifiedBy String
+}
+
+Table godown_locations {
+  gdlId String [pk]
+  gdlGodownId String [not null]
+  gdlBranchId String [not null]
+  gdlName String [not null]
+  gdlShort String
+  gdlCode String
+  gdlType String [not null, default: 'BIN']
+  gdlParentId String
+  gdlSort Int [not null, default: 0]
+  gdlLevel Int [not null, default: 0]
+  gdlPathIdsCache String[] [not null]
+  gdlDelSheet Boolean [not null, default: false]
+  gdlSplitStock Boolean [not null, default: false]
+  gdlNegativeStock Boolean [not null, default: false]
+  gdlVolume Decimal [not null, default: 0]
+  gdlIsActive Boolean [not null, default: true]
+  gdlIsDeleted Boolean [not null, default: false]
+  gdlCreatedOn DateTime [default: `now()`, not null]
+  gdlCreatedBy String
+  gdlModifiedOn DateTime [default: `now()`, not null]
+  gdlModifiedBy String
+  gdlRemarks String
+  parent godown_locations
+  children godown_locations [not null]
+
+  indexes {
+    (gdlGodownId, gdlParentId, gdlName) [unique]
+  }
 }
 
 Table item_brand_master {
@@ -72,6 +160,47 @@ Table item_brand_master {
   children item_brand_master [not null]
 }
 
+Table cust_item_rates {
+  csrId String [pk]
+  csrBranchId String
+  csrCustomerId String [not null]
+  csrUnitRateId String [not null]
+  csrRateType String [not null, default: 'FIXED']
+  csrItemRate Decimal [not null, default: 0]
+  csrDiscPerc Decimal [not null, default: 0]
+  csrDiscQty Decimal [not null, default: 0]
+  csrPriceLevel String
+  csrValidFrom DateTime
+  csrValidTo DateTime
+  csrPriority Int [not null, default: 0]
+  csrIsActive Boolean [not null, default: true]
+  csrIsDeleted Boolean [not null, default: false]
+  csrCreatedOn DateTime [default: `now()`, not null]
+  csrCreatedBy String
+  csrModifiedOn DateTime [default: `now()`, not null]
+  csrModifiedBy String
+  csrUploadedAt DateTime
+  csrUploadedBy String
+  csrRemarks String
+}
+
+Table item_ean_codes {
+  eanId String [pk]
+  eanItemId String [not null]
+  eanUnitId String [not null]
+  eanCode String [unique, not null]
+  eanGodownId String
+  eanIsDefault Boolean [not null, default: false]
+  eanIsActive Boolean [not null, default: true]
+  eanIsDeleted Boolean [not null, default: false]
+  eanCreatedOn DateTime [default: `now()`, not null]
+  eanCreatedBy String
+  eanModifiedOn DateTime [default: `now()`, not null]
+  eanModifiedBy String
+  eanRemarks String
+  unit units [not null]
+}
+
 Table item_group_master {
   itgId String [pk]
   itgName String [unique, not null]
@@ -81,6 +210,7 @@ Table item_group_master {
   itgParentId String
   parent item_group_master
   children item_group_master [not null]
+  items item_master [not null]
   itgSort Int
   itgLevel Int
   itgPathIdsCache String[] [not null]
@@ -99,13 +229,185 @@ Table item_group_master {
   itgModifiedBy String
 }
 
+Table item_master {
+  itemId String [pk]
+  itemBranchId String
+  itemCode String
+  itemSku String
+  itemNameEn String [unique, not null]
+  itemNameTa String
+  itemAlias String
+  itemStockType String [not null, default: 'FG']
+  itemDefaultBarcode String
+  itemGroupId String [not null]
+  itemCategoryId String
+  itemBrandId String
+  itemSectionId String
+  itemCompanyCategoryId String
+  itemMfgrId String
+  itemSupplierId String
+  itemBaseUnitId String [not null]
+  itemIsService Boolean [not null, default: false]
+  itemIsBatchBased Boolean [not null, default: false]
+  itemIsExpiryItem Boolean [not null, default: false]
+  itemExpiryDays Int
+  itemIntimateBeforeDays Int
+  itemAllowSales Boolean [not null, default: true]
+  itemAllowSalesReturn Boolean [not null, default: true]
+  itemAllowPurchase Boolean [not null, default: true]
+  itemAllowPo Boolean [not null, default: true]
+  itemAllowSo Boolean [not null, default: true]
+  itemAllowNegStock Boolean [not null, default: true]
+  itemAllowNegativeSo Boolean [not null, default: true]
+  itemPriceList Boolean [not null, default: false]
+  itemWeighScale Boolean [not null, default: false]
+  itemRetailItem Boolean [not null, default: true]
+  itemIsKit Boolean [not null, default: false]
+  itemAutoBreak Boolean [not null, default: false]
+  itemAutoMake Boolean [not null, default: false]
+  itemAllowLoyalty Boolean [not null, default: false]
+  itemAllowPromo Boolean [not null, default: false]
+  itemHasOffer Boolean [not null, default: false]
+  itemDamagableProduct Boolean [not null, default: false]
+  itemIsDemand Boolean [not null, default: false]
+  itemAllowLoading Boolean [not null, default: false]
+  itemAllowFreight Boolean [not null, default: false]
+  itemRandomStock Boolean [not null, default: false]
+  itemBarcodeSticker Boolean [not null, default: false]
+  itemBarcodeStickerId String
+  itemDefaultTaxId String
+  itemHsnCode String
+  itemBatchConfig Int [not null, default: 0]
+  itemSortOrder Int
+  itemPhoto Bytes
+  itemImageUrl String
+  itemNotes String
+  itemStorageLocation String
+  itemPackingItemIds String[] [not null]
+  itemIsActive Boolean [not null, default: true]
+  itemIsDeleted Boolean [not null, default: false]
+  itemCreatedOn DateTime [default: `now()`, not null]
+  itemCreatedBy String
+  itemModifiedOn DateTime [default: `now()`, not null]
+  itemModifiedBy String
+  group item_group_master [not null]
+  category category_master
+  baseUnit units [not null]
+  defaultTax item_tax_master
+  prices item_price_master [not null]
+  reorders item_reorders [not null]
+  taxHistory item_tax_history [not null]
+}
+
+Table item_price_master {
+  ipmUnitRateId String [pk]
+  ipmItemId String [not null]
+  ipmUnitId String [not null]
+  ipmGodownId String
+  ipmUnitSlno Int [not null, default: 0]
+  ipmConversionFactor Decimal [not null, default: 1]
+  ipmCostPrice Decimal [not null, default: 0]
+  ipmCostWot Decimal [not null, default: 0]
+  ipmSalesPriceA Decimal [not null, default: 0]
+  ipmSalesPriceB Decimal [not null, default: 0]
+  ipmSalesPriceC Decimal [not null, default: 0]
+  ipmSalesPriceD Decimal [not null, default: 0]
+  ipmPriceAWot Decimal [not null, default: 0]
+  ipmPriceBWot Decimal [not null, default: 0]
+  ipmPriceCWot Decimal [not null, default: 0]
+  ipmPriceDWot Decimal [not null, default: 0]
+  ipmPriceAMargin Decimal [not null, default: 0]
+  ipmPriceBMargin Decimal [not null, default: 0]
+  ipmPriceCMargin Decimal [not null, default: 0]
+  ipmPriceDMargin Decimal [not null, default: 0]
+  ipmMaxPrice Decimal [not null, default: 0]
+  ipmMinPrice Decimal [not null, default: 0]
+  ipmDiscPerc Decimal [not null, default: 0]
+  ipmDiscQty Decimal [not null, default: 0]
+  ipmAddlCess Decimal [not null, default: 0]
+  ipmProfitType String [not null]
+  ipmRoundOff Decimal [not null, default: 0]
+  ipmBigUnit Boolean [not null, default: false]
+  ipmUomWeight Decimal [not null, default: 0]
+  ipmLoadingCharge Decimal [not null, default: 0]
+  ipmFreightCharge Decimal [not null, default: 0]
+  ipmRemarks String
+  ipmIsActive Boolean [not null, default: true]
+  ipmCreatedOn DateTime [default: `now()`, not null]
+  ipmCreatedBy String
+  ipmModifiedOn DateTime [default: `now()`, not null]
+  ipmModifiedBy String
+  item item_master [not null]
+  unit units [not null]
+  qtywiseRates item_qtywise_rates [not null]
+
+  indexes {
+    (ipmItemId, ipmUnitId, ipmGodownId) [unique]
+  }
+}
+
+Table item_qtywise_rates {
+  iqrId String [pk]
+  iqrBranchId String
+  iqrUnitRateId String [not null]
+  iqrPriceLevel Int [not null]
+  iqrStartQty Decimal [not null]
+  iqrEndQty Decimal
+  iqrEachQty Decimal [not null]
+  iqrSalesPrice Decimal [not null, default: 0]
+  iqrPriceWot Decimal [not null, default: 0]
+  iqrPriceMargin Decimal [not null, default: 0]
+  iqrDiscPerc Decimal [not null, default: 0]
+  iqrDiscQty Decimal [not null, default: 0]
+  iqrValidFrom DateTime
+  iqrValidTo DateTime
+  iqrPriority Int [not null, default: 0]
+  iqrIsActive Boolean [not null, default: true]
+  iqrIsDeleted Boolean [not null, default: false]
+  iqrCreatedOn DateTime [default: `now()`, not null]
+  iqrCreatedBy String
+  iqrModifiedOn DateTime [default: `now()`, not null]
+  iqrModifiedBy String
+  iqrRemarks String
+  unitRate item_price_master [not null]
+}
+
+Table item_reorders {
+  irId String [pk]
+  irBranchId String
+  irItemId String [not null]
+  irUnitId String [not null]
+  irGodownId String
+  irMinLevel Decimal [not null, default: 0]
+  irMaxLevel Decimal [not null, default: 0]
+  irReorderLevel Decimal [not null, default: 0]
+  irReorderQty Decimal [not null, default: 0]
+  irLeadTimeDays Int [not null, default: 0]
+  irReviewCycleDays Int [not null, default: 0]
+  irReorderDays Int [not null, default: 0]
+  irExpiryBufferDays Int [not null, default: 0]
+  irReorderType String [not null, default: 'MIN_MAX']
+  irIsActive Boolean [not null, default: true]
+  irIsDeleted Boolean [not null, default: false]
+  irRemarks String
+  irCreatedOn DateTime [default: `now()`, not null]
+  irCreatedBy String
+  irModifiedOn DateTime [default: `now()`, not null]
+  irModifiedBy String
+  item item_master [not null]
+  unit units [not null]
+
+  indexes {
+    (irItemId, irUnitId, irGodownId) [unique]
+  }
+}
+
 Table item_section_master {
   secId String [pk]
   secName String [not null]
   secAlias String
   secShort String
   secDescription String
-  secCompanyId String [not null]
   secParentId String
   parent item_section_master
   children item_section_master [not null]
@@ -124,14 +426,64 @@ Table item_section_master {
   secCreatedBy String
   secModifiedOn DateTime [default: `now()`, not null]
   secModifiedBy String
+}
 
-  indexes {
-    (secCompanyId, secName) [unique]
-  }
+Table item_tax_history {
+  ithId String [pk]
+  ithItemId String [not null]
+  ithTaxId String [not null]
+  ithEffectiveFrom DateTime [not null]
+  ithEffectiveTo DateTime
+  ithReason String
+  ithCreatedOn DateTime [default: `now()`, not null]
+  ithCreatedBy String
+  item item_master [not null]
+  tax item_tax_master [not null]
+}
+
+Table item_tax_master {
+  taxId String [pk]
+  taxName String [unique, not null]
+  taxCode String
+  taxTaxabilityType String [not null, default: 'TAXABLE']
+  taxIsReverseCharge Boolean [not null, default: false]
+  taxCgstPerc Decimal [not null, default: 0]
+  taxSgstPerc Decimal [not null, default: 0]
+  taxIgstPerc Decimal [not null, default: 0]
+  taxCgstPurPerc Decimal [not null, default: 0]
+  taxSgstPurPerc Decimal [not null, default: 0]
+  taxIgstPurPerc Decimal [not null, default: 0]
+  taxCessType String [not null, default: 'NONE']
+  taxCessPerc Decimal [not null, default: 0]
+  taxCessUnit Decimal [not null, default: 0]
+  taxCessPurPerc Decimal [not null, default: 0]
+  taxCessPurUnit Decimal [not null, default: 0]
+  taxGstRateTotal Decimal [not null, default: 0]
+  taxSalesLedgerId String
+  taxSalesReturnLedgerId String
+  taxPurchaseLedgerId String
+  taxPurchaseReturnLedgerId String
+  taxCgstOutputLedgerId String
+  taxSgstOutputLedgerId String
+  taxIgstOutputLedgerId String
+  taxCessOutputLedgerId String
+  taxCgstInputLedgerId String
+  taxSgstInputLedgerId String
+  taxIgstInputLedgerId String
+  taxCessInputLedgerId String
+  taxIsActive Boolean [not null, default: true]
+  taxIsDeleted Boolean [not null, default: false]
+  taxSyncDate DateTime
+  taxCreatedOn DateTime [default: `now()`, not null]
+  taxCreatedBy String
+  taxModifiedOn DateTime [default: `now()`, not null]
+  taxModifiedBy String
+  defaultItems item_master [not null]
+  taxHistory item_tax_history [not null]
 }
 
 Table units {
-  unit_id Int [pk, increment]
+  unit_id String [pk]
   unit_name String [unique, not null]
   unit_alias String
   unit_code String
@@ -142,7 +494,7 @@ Table units {
   unit_unloading Decimal
   unit_attach_charge Decimal
   unit_is_pack_unit Boolean [not null, default: false]
-  unit_base_unit_id Int
+  unit_base_unit_id String
   unit_conversion Decimal
   unit_is_active Boolean [not null, default: true]
   unit_is_deleted Boolean [not null, default: false]
@@ -153,14 +505,62 @@ Table units {
   unit_modified_by String
   baseUnit units
   packUnits units [not null]
+  eanCodes item_ean_codes [not null]
+  itemMasters item_master [not null]
+  itemPrices item_price_master [not null]
+  itemReorders item_reorders [not null]
 }
+
+Enum AuditLogAction {
+  insert
+  update
+  approve
+  cancel
+}
+
+Enum AuditScreenType {
+  master
+  transaction
+  settings
+  other
+}
+
+Ref: audit_log.logScreenId > audit_screen.screenId [delete: Restrict]
 
 Ref: grid_columns.gridId > grid_details.gridId [delete: Cascade]
 
+Ref: category_master.categoryParentId - category_master.categoryId [delete: Restrict]
+
+Ref: godown_locations.gdlParentId - godown_locations.gdlId [delete: Restrict]
+
 Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
+
+Ref: item_ean_codes.eanUnitId > units.unit_id [delete: Restrict]
 
 Ref: item_group_master.itgParentId - item_group_master.itgId [delete: Restrict]
 
+Ref: item_master.itemGroupId > item_group_master.itgId [delete: Restrict]
+
+Ref: item_master.itemCategoryId > category_master.categoryId [delete: Set Null]
+
+Ref: item_master.itemBaseUnitId > units.unit_id [delete: Restrict]
+
+Ref: item_master.itemDefaultTaxId > item_tax_master.taxId [delete: Restrict]
+
+Ref: item_price_master.ipmItemId > item_master.itemId [delete: Restrict]
+
+Ref: item_price_master.ipmUnitId > units.unit_id [delete: Restrict]
+
+Ref: item_qtywise_rates.iqrUnitRateId > item_price_master.ipmUnitRateId [delete: Restrict]
+
+Ref: item_reorders.irItemId > item_master.itemId [delete: Restrict]
+
+Ref: item_reorders.irUnitId > units.unit_id [delete: Restrict]
+
 Ref: item_section_master.secParentId - item_section_master.secId [delete: Restrict]
+
+Ref: item_tax_history.ithItemId > item_master.itemId [delete: Restrict]
+
+Ref: item_tax_history.ithTaxId > item_tax_master.taxId [delete: Restrict]
 
 Ref: units.unit_base_unit_id - units.unit_id [delete: Restrict]

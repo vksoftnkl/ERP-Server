@@ -7,8 +7,6 @@ model ItemSectionMaster {
   secShort       String?  @db.VarChar(50)  @map("sec_short")
   secDescription String?  @db.VarChar(250) @map("sec_description")
 
-  // Company scope (needed because your SQL has UNIQUE (sec_company_id, sec_name))
-  secCompanyId   String   @db.Uuid @map("sec_company_id")
 
   // Hierarchy
   secParentId    String?  @db.Uuid @map("sec_parent_id")
@@ -41,11 +39,8 @@ model ItemSectionMaster {
   @@map("item_section_master")
   @@schema("public")
 
-  // Unique per company
-  @@unique([secCompanyId, secName], map: "uq_sec_name_per_company")
 
   // Indexes (match your SQL intent)
-  @@index([secCompanyId], map: "idx_sec_company_id")
   @@index([secParentId],  map: "idx_sec_parent_id")
   @@index([secIsActive],  map: "idx_sec_active")
   @@index([secPosition],  map: "idx_sec_position")

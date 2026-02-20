@@ -143,7 +143,7 @@ export class ItemsSectionMasterController {
 
     return {
       ...saveItemSectionDto,
-      sec_photo: secPhotoFile.buffer.toString('base64'),
+      sec_photo: secPhotoFile.buffer,
     };
   }
 }

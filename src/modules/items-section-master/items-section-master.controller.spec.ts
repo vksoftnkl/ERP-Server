@@ -5,7 +5,6 @@ import { ItemsSectionMasterController } from './items-section-master.controller'
 import { ItemsSectionMasterService } from './items-section-master.service';
 
 const ITEM_SECTION_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45679';
-const COMPANY_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45681';
 
 const itemSectionPayload = {
   sec_id: ITEM_SECTION_ID,
@@ -13,7 +12,6 @@ const itemSectionPayload = {
   sec_alias: null,
   sec_short: null,
   sec_description: null,
-  sec_company_id: COMPANY_ID,
   sec_parent_id: null,
   sec_sort: null,
   sec_level: null,
@@ -62,7 +60,6 @@ describe('ItemsSectionMasterController', () => {
 
     const payload: SaveItemSectionDto = {
       sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
     };
 
     await expect(controller.save(payload)).resolves.toEqual({
@@ -78,7 +75,6 @@ describe('ItemsSectionMasterController', () => {
     const payload: SaveItemSectionDto = {
       sec_id: ITEM_SECTION_ID,
       sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
     };
 
     await expect(controller.save(payload)).resolves.toEqual({
@@ -143,12 +139,11 @@ describe('ItemsSectionMasterController', () => {
     });
   });
 
-  it('maps uploaded sec_photo file to base64 before calling service', async () => {
+  it('maps uploaded sec_photo file bytes before calling service', async () => {
     serviceMock.save.mockResolvedValue(itemSectionPayload);
 
     const payload: SaveItemSectionDto = {
       sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
     };
     const file = {
       buffer: Buffer.from('sample-image'),
@@ -158,7 +153,7 @@ describe('ItemsSectionMasterController', () => {
 
     expect(serviceMock.save).toHaveBeenCalledWith({
       ...payload,
-      sec_photo: Buffer.from('sample-image').toString('base64'),
+      sec_photo: Buffer.from('sample-image'),
     });
   });
 });

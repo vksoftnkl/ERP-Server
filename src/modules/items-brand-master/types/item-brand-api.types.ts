@@ -2,20 +2,17 @@ export interface ItemBrandErrorDetail {
   field: string;
   message: string;
 }
-
 export interface ItemBrandErrorResponse {
   success: false;
   message: string;
   errors: ItemBrandErrorDetail[];
 }
-
 export interface ItemBrandSuccessResponse<T, TMeta = Record<string, unknown>> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
 }
-
 export interface ItemBrandPayload {
   brand_id: string;
   brand_name: string;
@@ -36,7 +33,7 @@ export interface ItemBrandPayload {
   brand_modified_on: string;
   brand_modified_by: string | null;
 }
-
+export type ItemBrandListItem = ItemBrandPayload | Record<string, unknown>;
 export interface ItemBrandListMeta {
   page: number;
   limit: number;

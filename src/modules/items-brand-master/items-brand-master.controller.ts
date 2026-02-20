@@ -36,21 +36,19 @@ import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemBrandExceptionFilter } from './item-brand-exception.filter';
 import { ItemsBrandMasterService } from './items-brand-master.service';
 import {
+  ItemBrandListItem,
   ItemBrandListMeta,
   ItemBrandPayload,
   ItemBrandSuccessResponse,
 } from './types/item-brand-api.types';
-
 type UploadedPhotoFile = {
   buffer: Buffer;
 };
-
 @ApiTags('Item Brands')
 @Controller('item-brands')
 @UseFilters(ItemBrandExceptionFilter)
 export class ItemsBrandMasterController {
   constructor(private readonly itemsBrandMasterService: ItemsBrandMasterService) {}
-
   @Post('create')
   @Version('1')
   @UseInterceptors(FileInterceptor('brand_photo'))
@@ -67,7 +65,6 @@ export class ItemsBrandMasterController {
   ): Promise<ItemBrandSuccessResponse<ItemBrandPayload>> {
     const payload = this.withUploadedPhoto(saveItemBrandDto, brandPhotoFile);
     const data = await this.itemsBrandMasterService.save(payload);
-
     return {
       success: true,
       message: payload.brand_id
@@ -76,7 +73,6 @@ export class ItemsBrandMasterController {
       data,
     };
   }
-
   @Get('list')
   @Version('1')
   @ApiOperation({ summary: 'List item brands with filter/search/pagination' })
@@ -84,9 +80,8 @@ export class ItemsBrandMasterController {
   @ApiBadRequestResponse({ type: ItemBrandErrorResponseDto })
   async list(
     @Query() queryDto: ListItemBrandQueryDto,
-  ): Promise<ItemBrandSuccessResponse<ItemBrandPayload[], ItemBrandListMeta>> {
+  ): Promise<ItemBrandSuccessResponse<ItemBrandListItem[], ItemBrandListMeta>> {
     const result = await this.itemsBrandMasterService.list(queryDto);
-
     return {
       success: true,
       message: 'Item brands fetched successfully',
@@ -94,7 +89,6 @@ export class ItemsBrandMasterController {
       meta: result.meta,
     };
   }
-
   @Get('get/:brand_id')
   @Version('1')
   @ApiOperation({ summary: 'Get item brand by id' })
@@ -106,14 +100,12 @@ export class ItemsBrandMasterController {
     @Param('brand_id', new ParseUUIDPipe({ version: '7' })) brandId: string,
   ): Promise<ItemBrandSuccessResponse<ItemBrandPayload>> {
     const data = await this.itemsBrandMasterService.getById(brandId);
-
     return {
       success: true,
       message: 'Item brand fetched successfully',
       data,
     };
   }
-
   @Delete('delete/:brand_id')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item brand by id' })
@@ -125,14 +117,12 @@ export class ItemsBrandMasterController {
     @Param('brand_id', new ParseUUIDPipe({ version: '7' })) brandId: string,
   ): Promise<ItemBrandSuccessResponse<{ brand_id: string; deleted: true }>> {
     const data = await this.itemsBrandMasterService.softDelete(brandId);
-
     return {
       success: true,
       message: 'Item brand deleted successfully',
       data,
     };
   }
-
   private withUploadedPhoto(
     saveItemBrandDto: SaveItemBrandDto,
     brandPhotoFile?: UploadedPhotoFile,
@@ -140,7 +130,6 @@ export class ItemsBrandMasterController {
     if (!brandPhotoFile) {
       return saveItemBrandDto;
     }
-
     return {
       ...saveItemBrandDto,
       brand_photo: brandPhotoFile.buffer.toString('base64'),

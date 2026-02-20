@@ -7,8 +7,9 @@ import { ItemsSectionMasterService } from './items-section-master.service';
 
 const ITEM_SECTION_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45679';
 const PARENT_SECTION_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45680';
-const COMPANY_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45681';
-const OTHER_COMPANY_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45682';
+const GRAND_PARENT_SECTION_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45681';
+const NEW_PARENT_SECTION_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45682';
+const CHILD_SECTION_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45683';
 
 type PrismaMock = {
   itemSectionMaster: {
@@ -25,6 +26,7 @@ type PrismaMock = {
       [Prisma.ItemSectionMasterUpdateManyArgs]
     >;
   };
+  $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
 const makeRecord = (overrides: Partial<ItemSectionMaster> = {}): ItemSectionMaster =>
@@ -34,7 +36,6 @@ const makeRecord = (overrides: Partial<ItemSectionMaster> = {}): ItemSectionMast
     secAlias: 'DAI',
     secShort: 'DRY',
     secDescription: 'Dairy section',
-    secCompanyId: COMPANY_ID,
     secParentId: null,
     secSort: 1,
     secLevel: 0,
@@ -77,17 +78,32 @@ describe('ItemsSectionMasterService', () => {
           [Prisma.ItemSectionMasterUpdateManyArgs]
         >(),
       },
+      $transaction: jest.fn<
+        Promise<unknown>,
+        [(tx: Prisma.TransactionClient) => Promise<unknown>]
+      >(),
     };
+
+    prisma.itemSectionMaster.findMany.mockResolvedValue([]);
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
+        callback(prisma as unknown as Prisma.TransactionClient),
+    );
 
     service = new ItemsSectionMasterService(prisma as unknown as PrismaService);
   });
 
-  it('creates an item section when sec_id is not provided', async () => {
-    prisma.itemSectionMaster.create.mockResolvedValue(makeRecord());
+  it('creates a root item section and stores self sec_id in sec_path_ids', async () => {
+    const createdRecord = makeRecord({ secPathIds: [] });
+    const createdWithPath = makeRecord({ secPathIds: [ITEM_SECTION_ID] });
+
+    prisma.itemSectionMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemSectionMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemSectionMaster.update.mockResolvedValueOnce(createdWithPath);
+    prisma.itemSectionMaster.findFirst.mockResolvedValueOnce(createdWithPath);
 
     const input: SaveItemSectionDto = {
       sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
     };
 
     const result = await service.save(input);
@@ -95,18 +111,26 @@ describe('ItemsSectionMasterService', () => {
     expect(prisma.itemSectionMaster.create).toHaveBeenCalledTimes(1);
     const createArgs = prisma.itemSectionMaster.create.mock.calls[0][0];
     expect(createArgs.data.secName).toBe('Dairy');
-    expect(createArgs.data.secCompanyId).toBe(COMPANY_ID);
     expect(result.sec_id).toBe(ITEM_SECTION_ID);
+    expect(result.sec_path_ids).toEqual([ITEM_SECTION_ID]);
   });
 
   it('updates an item section when sec_id is provided', async () => {
-    prisma.itemSectionMaster.findFirst.mockResolvedValue(makeRecord());
-    prisma.itemSectionMaster.update.mockResolvedValue(makeRecord({ secName: 'Updated Section' }));
+    const existingRecord = makeRecord({ secPathIds: [ITEM_SECTION_ID] });
+    const updatedRecord = makeRecord({
+      secName: 'Updated Section',
+      secPathIds: [ITEM_SECTION_ID],
+    });
+
+    prisma.itemSectionMaster.findFirst
+      .mockResolvedValueOnce(existingRecord)
+      .mockResolvedValueOnce(updatedRecord);
+    prisma.itemSectionMaster.findMany.mockResolvedValueOnce([updatedRecord]);
+    prisma.itemSectionMaster.update.mockResolvedValueOnce(updatedRecord);
 
     const input: SaveItemSectionDto = {
       sec_id: ITEM_SECTION_ID,
       sec_name: 'Updated Section',
-      sec_company_id: COMPANY_ID,
     };
 
     const result = await service.save(input);
@@ -115,7 +139,6 @@ describe('ItemsSectionMasterService', () => {
     const updateArgs = prisma.itemSectionMaster.update.mock.calls[0][0];
     expect(updateArgs.where.secId).toBe(ITEM_SECTION_ID);
     expect(updateArgs.data.secName).toBe('Updated Section');
-    expect(updateArgs.data.secCompanyId).toBe(COMPANY_ID);
     expect(updateArgs.data.secModifiedBy).toBe('system');
     expect(result.sec_name).toBe('Updated Section');
   });
@@ -125,7 +148,6 @@ describe('ItemsSectionMasterService', () => {
 
     const input: SaveItemSectionDto = {
       sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
     };
 
     await expect(service.save(input)).rejects.toBeInstanceOf(ConflictException);
@@ -137,28 +159,251 @@ describe('ItemsSectionMasterService', () => {
     const input: SaveItemSectionDto = {
       sec_id: ITEM_SECTION_ID,
       sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
       sec_parent_id: ITEM_SECTION_ID,
     };
 
     await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('rejects parent section from another company', async () => {
-    prisma.itemSectionMaster.findFirst.mockResolvedValue(
-      makeRecord({
-        secId: PARENT_SECTION_ID,
-        secCompanyId: OTHER_COMPANY_ID,
-      }),
-    );
+  it('adds newly created child id to parent and grandparent caches', async () => {
+    const createdChild = makeRecord({
+      secId: CHILD_SECTION_ID,
+      secName: 'Child Section',
+      secParentId: PARENT_SECTION_ID,
+      secPathIds: [],
+    });
+    const childWithPath = makeRecord({
+      secId: CHILD_SECTION_ID,
+      secName: 'Child Section',
+      secParentId: PARENT_SECTION_ID,
+      secPathIds: [CHILD_SECTION_ID],
+    });
+    const parent = makeRecord({
+      secId: PARENT_SECTION_ID,
+      secParentId: GRAND_PARENT_SECTION_ID,
+      secPathIds: [PARENT_SECTION_ID],
+    });
+    const grandParent = makeRecord({
+      secId: GRAND_PARENT_SECTION_ID,
+      secParentId: null,
+      secPathIds: [GRAND_PARENT_SECTION_ID],
+    });
 
-    const input: SaveItemSectionDto = {
-      sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
+    prisma.itemSectionMaster.create.mockResolvedValue(createdChild);
+    prisma.itemSectionMaster.findFirst
+      .mockResolvedValueOnce(parent)
+      .mockResolvedValueOnce(parent)
+      .mockResolvedValueOnce(grandParent)
+      .mockResolvedValueOnce(childWithPath);
+    prisma.itemSectionMaster.findMany
+      .mockResolvedValueOnce([createdChild])
+      .mockResolvedValueOnce([parent, grandParent]);
+    prisma.itemSectionMaster.update
+      .mockResolvedValueOnce(childWithPath)
+      .mockResolvedValueOnce(
+        makeRecord({
+          secId: PARENT_SECTION_ID,
+          secParentId: GRAND_PARENT_SECTION_ID,
+          secPathIds: [PARENT_SECTION_ID, CHILD_SECTION_ID],
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeRecord({
+          secId: GRAND_PARENT_SECTION_ID,
+          secParentId: null,
+          secPathIds: [GRAND_PARENT_SECTION_ID, CHILD_SECTION_ID],
+        }),
+      );
+
+    const result = await service.save({
+      sec_name: 'Child Section',
       sec_parent_id: PARENT_SECTION_ID,
-    };
+    });
 
-    await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
+    expect(result.sec_id).toBe(CHILD_SECTION_ID);
+
+    const parentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[1][0];
+    expect(parentUpdateArgs.where.secId).toBe(PARENT_SECTION_ID);
+    expect(parentUpdateArgs.data.secPathIds).toEqual([PARENT_SECTION_ID, CHILD_SECTION_ID]);
+
+    const grandParentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[2][0];
+    expect(grandParentUpdateArgs.where.secId).toBe(GRAND_PARENT_SECTION_ID);
+    expect(grandParentUpdateArgs.data.secPathIds).toEqual([
+      GRAND_PARENT_SECTION_ID,
+      CHILD_SECTION_ID,
+    ]);
+  });
+
+  it('does not duplicate ids when ancestor cache already contains child id', async () => {
+    const createdChild = makeRecord({
+      secId: CHILD_SECTION_ID,
+      secName: 'Child Section',
+      secParentId: PARENT_SECTION_ID,
+      secPathIds: [],
+    });
+    const childWithPath = makeRecord({
+      secId: CHILD_SECTION_ID,
+      secName: 'Child Section',
+      secParentId: PARENT_SECTION_ID,
+      secPathIds: [CHILD_SECTION_ID],
+    });
+    const parentWithChildAlready = makeRecord({
+      secId: PARENT_SECTION_ID,
+      secParentId: null,
+      secPathIds: [PARENT_SECTION_ID, CHILD_SECTION_ID],
+    });
+
+    prisma.itemSectionMaster.create.mockResolvedValue(createdChild);
+    prisma.itemSectionMaster.findFirst
+      .mockResolvedValueOnce(parentWithChildAlready)
+      .mockResolvedValueOnce(parentWithChildAlready)
+      .mockResolvedValueOnce(childWithPath);
+    prisma.itemSectionMaster.findMany
+      .mockResolvedValueOnce([createdChild])
+      .mockResolvedValueOnce([parentWithChildAlready]);
+    prisma.itemSectionMaster.update.mockResolvedValueOnce(childWithPath);
+
+    await service.save({
+      sec_name: 'Child Section',
+      sec_parent_id: PARENT_SECTION_ID,
+    });
+
+    expect(prisma.itemSectionMaster.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves subtree ids from old ancestors to new ancestors on reparent', async () => {
+    const existing = makeRecord({
+      secId: ITEM_SECTION_ID,
+      secParentId: PARENT_SECTION_ID,
+      secPathIds: [ITEM_SECTION_ID, CHILD_SECTION_ID],
+    });
+    const child = makeRecord({
+      secId: CHILD_SECTION_ID,
+      secParentId: ITEM_SECTION_ID,
+      secPathIds: [CHILD_SECTION_ID],
+    });
+    const updatedWithoutSelf = makeRecord({
+      secId: ITEM_SECTION_ID,
+      secName: 'Updated Section',
+      secParentId: NEW_PARENT_SECTION_ID,
+      secPathIds: [CHILD_SECTION_ID],
+    });
+    const refreshedWithSelf = makeRecord({
+      secId: ITEM_SECTION_ID,
+      secName: 'Updated Section',
+      secParentId: NEW_PARENT_SECTION_ID,
+      secPathIds: [CHILD_SECTION_ID, ITEM_SECTION_ID],
+    });
+    const oldParent = makeRecord({
+      secId: PARENT_SECTION_ID,
+      secParentId: null,
+      secPathIds: [PARENT_SECTION_ID, ITEM_SECTION_ID, CHILD_SECTION_ID],
+    });
+    const newParent = makeRecord({
+      secId: NEW_PARENT_SECTION_ID,
+      secParentId: null,
+      secPathIds: [NEW_PARENT_SECTION_ID],
+    });
+
+    prisma.itemSectionMaster.findFirst
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(newParent)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(child)
+      .mockResolvedValueOnce(oldParent)
+      .mockResolvedValueOnce(newParent)
+      .mockResolvedValueOnce(refreshedWithSelf);
+    prisma.itemSectionMaster.findMany
+      .mockResolvedValueOnce([child])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([updatedWithoutSelf])
+      .mockResolvedValueOnce([oldParent])
+      .mockResolvedValueOnce([newParent]);
+    prisma.itemSectionMaster.update
+      .mockResolvedValueOnce(updatedWithoutSelf)
+      .mockResolvedValueOnce(refreshedWithSelf)
+      .mockResolvedValueOnce(
+        makeRecord({
+          secId: PARENT_SECTION_ID,
+          secParentId: null,
+          secPathIds: [PARENT_SECTION_ID],
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeRecord({
+          secId: NEW_PARENT_SECTION_ID,
+          secParentId: null,
+          secPathIds: [NEW_PARENT_SECTION_ID, ITEM_SECTION_ID, CHILD_SECTION_ID],
+        }),
+      );
+
+    const result = await service.save({
+      sec_id: ITEM_SECTION_ID,
+      sec_name: 'Updated Section',
+      sec_parent_id: NEW_PARENT_SECTION_ID,
+    });
+
+    expect(result.sec_parent_id).toBe(NEW_PARENT_SECTION_ID);
+
+    const oldParentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[2][0];
+    expect(oldParentUpdateArgs.where.secId).toBe(PARENT_SECTION_ID);
+    expect(oldParentUpdateArgs.data.secPathIds).toEqual([PARENT_SECTION_ID]);
+
+    const newParentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[3][0];
+    expect(newParentUpdateArgs.where.secId).toBe(NEW_PARENT_SECTION_ID);
+    expect(newParentUpdateArgs.data.secPathIds).toEqual([
+      NEW_PARENT_SECTION_ID,
+      ITEM_SECTION_ID,
+      CHILD_SECTION_ID,
+    ]);
+  });
+
+  it('removes subtree ids from old ancestors when reparented to root', async () => {
+    const existing = makeRecord({
+      secId: ITEM_SECTION_ID,
+      secParentId: PARENT_SECTION_ID,
+      secPathIds: [ITEM_SECTION_ID],
+    });
+    const refreshed = makeRecord({
+      secId: ITEM_SECTION_ID,
+      secParentId: null,
+      secPathIds: [ITEM_SECTION_ID],
+    });
+    const oldParent = makeRecord({
+      secId: PARENT_SECTION_ID,
+      secParentId: null,
+      secPathIds: [PARENT_SECTION_ID, ITEM_SECTION_ID],
+    });
+
+    prisma.itemSectionMaster.findFirst
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(oldParent)
+      .mockResolvedValueOnce(refreshed);
+    prisma.itemSectionMaster.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([refreshed])
+      .mockResolvedValueOnce([oldParent]);
+    prisma.itemSectionMaster.update
+      .mockResolvedValueOnce(refreshed)
+      .mockResolvedValueOnce(
+        makeRecord({
+          secId: PARENT_SECTION_ID,
+          secParentId: null,
+          secPathIds: [PARENT_SECTION_ID],
+        }),
+      );
+
+    const result = await service.save({
+      sec_id: ITEM_SECTION_ID,
+      sec_name: 'Dairy',
+      sec_parent_id: null,
+    });
+
+    expect(result.sec_parent_id).toBeNull();
+    const oldParentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[1][0];
+    expect(oldParentUpdateArgs.where.secId).toBe(PARENT_SECTION_ID);
+    expect(oldParentUpdateArgs.data.secPathIds).toEqual([PARENT_SECTION_ID]);
   });
 
   it('returns 404 in getById when row is missing or soft deleted', async () => {
@@ -185,12 +430,11 @@ describe('ItemsSectionMasterService', () => {
     expect(countArgs.where?.secIsDeleted).toBe(false);
   });
 
-  it('applies company, pagination, and search filters correctly', async () => {
+  it('applies pagination and search filters correctly', async () => {
     prisma.itemSectionMaster.count.mockResolvedValue(35);
     prisma.itemSectionMaster.findMany.mockResolvedValue([makeRecord()]);
 
     const query: ListItemSectionQueryDto = {
-      sec_company_id: COMPANY_ID,
       sec_is_active: true,
       search: 'dairy',
       page: 2,
@@ -204,7 +448,6 @@ describe('ItemsSectionMasterService', () => {
     expect(findManyArgs.skip).toBe(10);
     expect(findManyArgs.take).toBe(10);
     expect(findManyArgs.where?.secIsDeleted).toBe(false);
-    expect(findManyArgs.where?.secCompanyId).toBe(COMPANY_ID);
     expect(findManyArgs.where?.secIsActive).toBe(true);
     expect(findManyArgs.where?.OR).toEqual([
       { secName: { contains: 'dairy', mode: 'insensitive' } },
@@ -220,8 +463,40 @@ describe('ItemsSectionMasterService', () => {
     });
   });
 
-  it('soft deletes item sections instead of physical removal', async () => {
+  it('soft delete removes subtree ids from ancestor caches', async () => {
+    const parent = makeRecord({
+      secId: PARENT_SECTION_ID,
+      secParentId: null,
+      secPathIds: [PARENT_SECTION_ID, ITEM_SECTION_ID, CHILD_SECTION_ID],
+    });
+    const node = makeRecord({
+      secId: ITEM_SECTION_ID,
+      secParentId: PARENT_SECTION_ID,
+      secPathIds: [ITEM_SECTION_ID, CHILD_SECTION_ID],
+    });
+    const child = makeRecord({
+      secId: CHILD_SECTION_ID,
+      secParentId: ITEM_SECTION_ID,
+      secPathIds: [CHILD_SECTION_ID],
+    });
+
+    prisma.itemSectionMaster.findFirst
+      .mockResolvedValueOnce(node)
+      .mockResolvedValueOnce(node)
+      .mockResolvedValueOnce(child)
+      .mockResolvedValueOnce(parent);
+    prisma.itemSectionMaster.findMany
+      .mockResolvedValueOnce([child])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([parent]);
     prisma.itemSectionMaster.updateMany.mockResolvedValue({ count: 1 });
+    prisma.itemSectionMaster.update.mockResolvedValueOnce(
+      makeRecord({
+        secId: PARENT_SECTION_ID,
+        secParentId: null,
+        secPathIds: [PARENT_SECTION_ID],
+      }),
+    );
 
     await expect(service.softDelete(ITEM_SECTION_ID)).resolves.toEqual({
       sec_id: ITEM_SECTION_ID,
@@ -237,12 +512,16 @@ describe('ItemsSectionMasterService', () => {
     expect(updateManyArgs.where.secIsDeleted).toBe(false);
     expect(updateManyArgs.data.secIsDeleted).toBe(true);
     expect(updateManyArgs.data.secModifiedBy).toBe('system');
+
+    expect(prisma.itemSectionMaster.update).toHaveBeenCalledTimes(1);
+    const ancestorUpdateArgs = prisma.itemSectionMaster.update.mock.calls[0][0];
+    expect(ancestorUpdateArgs.where.secId).toBe(PARENT_SECTION_ID);
+    expect(ancestorUpdateArgs.data.secPathIds).toEqual([PARENT_SECTION_ID]);
   });
 
   it('rejects invalid base64 image input', async () => {
     const input: SaveItemSectionDto = {
       sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
       sec_photo: 'not-valid-base64',
     };
 
@@ -250,13 +529,18 @@ describe('ItemsSectionMasterService', () => {
   });
 
   it('stores valid base64 image input into secPhoto bytes', async () => {
-    prisma.itemSectionMaster.create.mockResolvedValue(
-      makeRecord({ secPhoto: Buffer.from('sample-image') }),
-    );
+    const createdRecord = makeRecord({ secPhoto: Buffer.from('sample-image'), secPathIds: [] });
+    const refreshedRecord = makeRecord({
+      secPhoto: Buffer.from('sample-image'),
+      secPathIds: [ITEM_SECTION_ID],
+    });
+    prisma.itemSectionMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemSectionMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemSectionMaster.update.mockResolvedValueOnce(refreshedRecord);
+    prisma.itemSectionMaster.findFirst.mockResolvedValueOnce(refreshedRecord);
 
     const input: SaveItemSectionDto = {
       sec_name: 'Dairy',
-      sec_company_id: COMPANY_ID,
       sec_photo: 'data:image/png;base64,c2FtcGxlLWltYWdl',
     };
 
@@ -265,5 +549,26 @@ describe('ItemsSectionMasterService', () => {
     expect(prisma.itemSectionMaster.create).toHaveBeenCalledTimes(1);
     const createArgs = prisma.itemSectionMaster.create.mock.calls[0][0];
     expect(createArgs.data.secPhoto).toEqual(new Uint8Array(Buffer.from('sample-image')));
+  });
+
+  it('stores raw photo bytes into secPhoto without base64 conversion', async () => {
+    const rawPhoto = Buffer.from('sample-image');
+    const createdRecord = makeRecord({ secPhoto: rawPhoto, secPathIds: [] });
+    const refreshedRecord = makeRecord({ secPhoto: rawPhoto, secPathIds: [ITEM_SECTION_ID] });
+    prisma.itemSectionMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemSectionMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemSectionMaster.update.mockResolvedValueOnce(refreshedRecord);
+    prisma.itemSectionMaster.findFirst.mockResolvedValueOnce(refreshedRecord);
+
+    const input: SaveItemSectionDto = {
+      sec_name: 'Dairy',
+      sec_photo: rawPhoto,
+    };
+
+    await service.save(input);
+
+    expect(prisma.itemSectionMaster.create).toHaveBeenCalledTimes(1);
+    const createArgs = prisma.itemSectionMaster.create.mock.calls[0][0];
+    expect(createArgs.data.secPhoto).toEqual(new Uint8Array(rawPhoto));
   });
 });

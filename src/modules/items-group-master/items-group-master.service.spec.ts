@@ -5,6 +5,10 @@ import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import { ItemsGroupMasterService } from './items-group-master.service';
 const ITEM_GROUP_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678';
+const PARENT_GROUP_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45679';
+const GRAND_PARENT_GROUP_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45680';
+const NEW_PARENT_GROUP_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45681';
+const CHILD_GROUP_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45682';
 type PrismaMock = {
   itemGroupMaster: {
     create: jest.Mock<Promise<ItemGroupMaster>, [Prisma.ItemGroupMasterCreateArgs]>;
@@ -20,7 +24,14 @@ type PrismaMock = {
       [Prisma.GridDetailsFindFirstArgs]
     >;
   };
+  gridColumn: {
+    findMany: jest.Mock<
+      Promise<Array<{ gridColumnName: string }>>,
+      [Prisma.GridColumnFindManyArgs]
+    >;
+  };
   $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
+  $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 const makeRecord = (overrides: Partial<ItemGroupMaster> = {}): ItemGroupMaster =>
   ({
@@ -70,15 +81,35 @@ describe('ItemsGroupMasterService', () => {
           [Prisma.GridDetailsFindFirstArgs]
         >(),
       },
+      gridColumn: {
+        findMany: jest.fn<
+          Promise<Array<{ gridColumnName: string }>>,
+          [Prisma.GridColumnFindManyArgs]
+        >(),
+      },
       $queryRawUnsafe: jest.fn<Promise<unknown>, [string, ...unknown[]]>(),
+      $transaction: jest.fn<
+        Promise<unknown>,
+        [(tx: Prisma.TransactionClient) => Promise<unknown>]
+      >(),
     };
     prisma.gridDetails.findFirst.mockResolvedValue(null);
+    prisma.gridColumn.findMany.mockResolvedValue([]);
+    prisma.itemGroupMaster.findMany.mockResolvedValue([]);
+    prisma.$transaction.mockImplementation(
+      async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
+        callback(prisma as unknown as Prisma.TransactionClient),
+    );
 
     service = new ItemsGroupMasterService(prisma as unknown as PrismaService);
   });
-
   it('creates an item group when itg_id is not provided', async () => {
-    prisma.itemGroupMaster.create.mockResolvedValue(makeRecord());
+    const createdRecord = makeRecord({ itgPathIdsCache: [] });
+    const createdWithPath = makeRecord({ itgPathIdsCache: [ITEM_GROUP_ID] });
+    prisma.itemGroupMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemGroupMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(createdWithPath);
+    prisma.itemGroupMaster.findFirst.mockResolvedValueOnce(createdWithPath);
 
     const input: SaveItemGroupDto = {
       itg_name: 'Raw Materials',
@@ -88,10 +119,19 @@ describe('ItemsGroupMasterService', () => {
     const createArgs = prisma.itemGroupMaster.create.mock.calls[0][0];
     expect(createArgs.data.itgName).toBe('Raw Materials');
     expect(result.itg_id).toBe(ITEM_GROUP_ID);
+    expect(result.itg_path_ids_cache).toEqual([ITEM_GROUP_ID]);
   });
   it('updates an item group when itg_id is provided', async () => {
-    prisma.itemGroupMaster.findFirst.mockResolvedValue(makeRecord());
-    prisma.itemGroupMaster.update.mockResolvedValue(makeRecord({ itgName: 'Updated Group' }));
+    const existingRecord = makeRecord({ itgPathIdsCache: [ITEM_GROUP_ID] });
+    const updatedRecord = makeRecord({
+      itgName: 'Updated Group',
+      itgPathIdsCache: [ITEM_GROUP_ID],
+    });
+    prisma.itemGroupMaster.findFirst
+      .mockResolvedValueOnce(existingRecord)
+      .mockResolvedValueOnce(updatedRecord);
+    prisma.itemGroupMaster.findMany.mockResolvedValueOnce([updatedRecord]);
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(updatedRecord);
     const input: SaveItemGroupDto = {
       itg_id: ITEM_GROUP_ID,
       itg_name: 'Updated Group',
@@ -120,6 +160,241 @@ describe('ItemsGroupMasterService', () => {
     };
     await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
   });
+  it('adds newly created child id to parent and grandparent caches', async () => {
+    const createdChild = makeRecord({
+      itgId: CHILD_GROUP_ID,
+      itgName: 'Child Group',
+      itgParentId: PARENT_GROUP_ID,
+      itgPathIdsCache: [],
+    });
+    const childWithPath = makeRecord({
+      itgId: CHILD_GROUP_ID,
+      itgName: 'Child Group',
+      itgParentId: PARENT_GROUP_ID,
+      itgPathIdsCache: [CHILD_GROUP_ID],
+    });
+    const parent = makeRecord({
+      itgId: PARENT_GROUP_ID,
+      itgParentId: GRAND_PARENT_GROUP_ID,
+      itgPathIdsCache: [PARENT_GROUP_ID],
+    });
+    const grandParent = makeRecord({
+      itgId: GRAND_PARENT_GROUP_ID,
+      itgParentId: null,
+      itgPathIdsCache: [GRAND_PARENT_GROUP_ID],
+    });
+
+    prisma.itemGroupMaster.create.mockResolvedValue(createdChild);
+    prisma.itemGroupMaster.findFirst
+      .mockResolvedValueOnce(parent)
+      .mockResolvedValueOnce(parent)
+      .mockResolvedValueOnce(grandParent)
+      .mockResolvedValueOnce(childWithPath);
+    prisma.itemGroupMaster.findMany
+      .mockResolvedValueOnce([createdChild])
+      .mockResolvedValueOnce([parent, grandParent]);
+    prisma.itemGroupMaster.update
+      .mockResolvedValueOnce(childWithPath)
+      .mockResolvedValueOnce(
+        makeRecord({
+          itgId: PARENT_GROUP_ID,
+          itgParentId: GRAND_PARENT_GROUP_ID,
+          itgPathIdsCache: [PARENT_GROUP_ID, CHILD_GROUP_ID],
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeRecord({
+          itgId: GRAND_PARENT_GROUP_ID,
+          itgParentId: null,
+          itgPathIdsCache: [GRAND_PARENT_GROUP_ID, CHILD_GROUP_ID],
+        }),
+      );
+
+    const result = await service.save({
+      itg_name: 'Child Group',
+      itg_parent_id: PARENT_GROUP_ID,
+    });
+
+    expect(result.itg_id).toBe(CHILD_GROUP_ID);
+    const parentUpdateArgs = prisma.itemGroupMaster.update.mock.calls[1][0];
+    expect(parentUpdateArgs.where.itgId).toBe(PARENT_GROUP_ID);
+    expect(parentUpdateArgs.data.itgPathIdsCache).toEqual([PARENT_GROUP_ID, CHILD_GROUP_ID]);
+
+    const grandParentUpdateArgs = prisma.itemGroupMaster.update.mock.calls[2][0];
+    expect(grandParentUpdateArgs.where.itgId).toBe(GRAND_PARENT_GROUP_ID);
+    expect(grandParentUpdateArgs.data.itgPathIdsCache).toEqual([
+      GRAND_PARENT_GROUP_ID,
+      CHILD_GROUP_ID,
+    ]);
+  });
+  it('does not duplicate ids when ancestor cache already contains a child id', async () => {
+    const createdChild = makeRecord({
+      itgId: CHILD_GROUP_ID,
+      itgName: 'Child Group',
+      itgParentId: PARENT_GROUP_ID,
+      itgPathIdsCache: [],
+    });
+    const childWithPath = makeRecord({
+      itgId: CHILD_GROUP_ID,
+      itgName: 'Child Group',
+      itgParentId: PARENT_GROUP_ID,
+      itgPathIdsCache: [CHILD_GROUP_ID],
+    });
+    const parentWithChildAlready = makeRecord({
+      itgId: PARENT_GROUP_ID,
+      itgParentId: null,
+      itgPathIdsCache: [PARENT_GROUP_ID, CHILD_GROUP_ID],
+    });
+
+    prisma.itemGroupMaster.create.mockResolvedValue(createdChild);
+    prisma.itemGroupMaster.findFirst
+      .mockResolvedValueOnce(parentWithChildAlready)
+      .mockResolvedValueOnce(parentWithChildAlready)
+      .mockResolvedValueOnce(childWithPath);
+    prisma.itemGroupMaster.findMany
+      .mockResolvedValueOnce([createdChild])
+      .mockResolvedValueOnce([parentWithChildAlready]);
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(childWithPath);
+
+    await service.save({
+      itg_name: 'Child Group',
+      itg_parent_id: PARENT_GROUP_ID,
+    });
+
+    expect(prisma.itemGroupMaster.update).toHaveBeenCalledTimes(1);
+  });
+  it('moves subtree ids from old ancestors to new ancestors on reparent', async () => {
+    const existing = makeRecord({
+      itgId: ITEM_GROUP_ID,
+      itgParentId: PARENT_GROUP_ID,
+      itgPathIdsCache: [ITEM_GROUP_ID, CHILD_GROUP_ID],
+    });
+    const child = makeRecord({
+      itgId: CHILD_GROUP_ID,
+      itgParentId: ITEM_GROUP_ID,
+      itgPathIdsCache: [CHILD_GROUP_ID],
+    });
+    const updatedWithoutSelf = makeRecord({
+      itgId: ITEM_GROUP_ID,
+      itgName: 'Updated Group',
+      itgParentId: NEW_PARENT_GROUP_ID,
+      itgPathIdsCache: [CHILD_GROUP_ID],
+    });
+    const refreshed = makeRecord({
+      itgId: ITEM_GROUP_ID,
+      itgName: 'Updated Group',
+      itgParentId: NEW_PARENT_GROUP_ID,
+      itgPathIdsCache: [CHILD_GROUP_ID, ITEM_GROUP_ID],
+    });
+    const oldParent = makeRecord({
+      itgId: PARENT_GROUP_ID,
+      itgParentId: null,
+      itgPathIdsCache: [PARENT_GROUP_ID, ITEM_GROUP_ID, CHILD_GROUP_ID],
+    });
+    const newParent = makeRecord({
+      itgId: NEW_PARENT_GROUP_ID,
+      itgParentId: null,
+      itgPathIdsCache: [NEW_PARENT_GROUP_ID],
+    });
+
+    prisma.itemGroupMaster.findFirst
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(newParent)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(child)
+      .mockResolvedValueOnce(oldParent)
+      .mockResolvedValueOnce(newParent)
+      .mockResolvedValueOnce(refreshed);
+    prisma.itemGroupMaster.findMany
+      .mockResolvedValueOnce([child])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([updatedWithoutSelf])
+      .mockResolvedValueOnce([oldParent])
+      .mockResolvedValueOnce([newParent]);
+    prisma.itemGroupMaster.update
+      .mockResolvedValueOnce(updatedWithoutSelf)
+      .mockResolvedValueOnce(refreshed)
+      .mockResolvedValueOnce(
+        makeRecord({
+          itgId: PARENT_GROUP_ID,
+          itgParentId: null,
+          itgPathIdsCache: [PARENT_GROUP_ID],
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeRecord({
+          itgId: NEW_PARENT_GROUP_ID,
+          itgParentId: null,
+          itgPathIdsCache: [NEW_PARENT_GROUP_ID, ITEM_GROUP_ID, CHILD_GROUP_ID],
+        }),
+      );
+
+    const result = await service.save({
+      itg_id: ITEM_GROUP_ID,
+      itg_name: 'Updated Group',
+      itg_parent_id: NEW_PARENT_GROUP_ID,
+    });
+
+    expect(result.itg_parent_id).toBe(NEW_PARENT_GROUP_ID);
+    const oldParentUpdateArgs = prisma.itemGroupMaster.update.mock.calls[2][0];
+    expect(oldParentUpdateArgs.where.itgId).toBe(PARENT_GROUP_ID);
+    expect(oldParentUpdateArgs.data.itgPathIdsCache).toEqual([PARENT_GROUP_ID]);
+
+    const newParentUpdateArgs = prisma.itemGroupMaster.update.mock.calls[3][0];
+    expect(newParentUpdateArgs.where.itgId).toBe(NEW_PARENT_GROUP_ID);
+    expect(newParentUpdateArgs.data.itgPathIdsCache).toEqual([
+      NEW_PARENT_GROUP_ID,
+      ITEM_GROUP_ID,
+      CHILD_GROUP_ID,
+    ]);
+  });
+  it('removes subtree ids from old ancestors when reparented to root', async () => {
+    const existing = makeRecord({
+      itgId: ITEM_GROUP_ID,
+      itgParentId: PARENT_GROUP_ID,
+      itgPathIdsCache: [ITEM_GROUP_ID],
+    });
+    const refreshed = makeRecord({
+      itgId: ITEM_GROUP_ID,
+      itgParentId: null,
+      itgPathIdsCache: [ITEM_GROUP_ID],
+    });
+    const oldParent = makeRecord({
+      itgId: PARENT_GROUP_ID,
+      itgParentId: null,
+      itgPathIdsCache: [PARENT_GROUP_ID, ITEM_GROUP_ID],
+    });
+
+    prisma.itemGroupMaster.findFirst
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(existing)
+      .mockResolvedValueOnce(oldParent)
+      .mockResolvedValueOnce(refreshed);
+    prisma.itemGroupMaster.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([refreshed])
+      .mockResolvedValueOnce([oldParent]);
+    prisma.itemGroupMaster.update
+      .mockResolvedValueOnce(refreshed)
+      .mockResolvedValueOnce(
+        makeRecord({
+          itgId: PARENT_GROUP_ID,
+          itgParentId: null,
+          itgPathIdsCache: [PARENT_GROUP_ID],
+        }),
+      );
+
+    const result = await service.save({
+      itg_id: ITEM_GROUP_ID,
+      itg_name: 'Raw Materials',
+      itg_parent_id: null,
+    });
+
+    expect(result.itg_parent_id).toBeNull();
+    const oldParentUpdateArgs = prisma.itemGroupMaster.update.mock.calls[1][0];
+    expect(oldParentUpdateArgs.where.itgId).toBe(PARENT_GROUP_ID);
+    expect(oldParentUpdateArgs.data.itgPathIdsCache).toEqual([PARENT_GROUP_ID]);
+  });
   it('returns 404 in getById when row is missing or soft deleted', async () => {
     prisma.itemGroupMaster.findFirst.mockResolvedValue(null);
     await expect(service.getById(ITEM_GROUP_ID)).rejects.toBeInstanceOf(NotFoundException);
@@ -147,7 +422,7 @@ describe('ItemsGroupMasterService', () => {
       limit: 10,
     };
     const result = await service.list(query);
-    expect(prisma.gridDetails.findFirst).not.toHaveBeenCalled();
+    expect(prisma.gridDetails.findFirst).toHaveBeenCalledTimes(1);
     expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
     const findManyArgs = prisma.itemGroupMaster.findMany.mock.calls[0][0];
     expect(findManyArgs.skip).toBe(10);
@@ -166,6 +441,125 @@ describe('ItemsGroupMasterService', () => {
       total_pages: 4,
     });
   });
+  it('uses configured grid_sql even when filters and search are provided', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql:
+        'SELECT itg_id AS "item group id", itg_name AS "item group name", itg_alias AS "item group short", itg_description, itg_parent_id, itg_is_active FROM item_group_master WHERE itg_is_deleted = false',
+    });
+    prisma.gridColumn.findMany.mockResolvedValue([
+      { gridColumnName: 'item group name' },
+      { gridColumnName: 'item group short' },
+    ]);
+    prisma.$queryRawUnsafe
+      .mockResolvedValueOnce([{ total: BigInt(1) }])
+      .mockResolvedValueOnce([
+        {
+          'item group id': ITEM_GROUP_ID,
+          'item group name': 'Raw Materials',
+          'item group short': 'RM',
+          itg_description: 'Default description',
+          itg_parent_id: null,
+          itg_is_active: true,
+        },
+      ]);
+
+    const result = await service.list({
+      itg_is_active: true,
+      search: 'raw',
+      page: 1,
+      limit: 20,
+    });
+    expect(prisma.itemGroupMaster.findMany).not.toHaveBeenCalled();
+    expect(prisma.itemGroupMaster.count).not.toHaveBeenCalled();
+    expect(prisma.gridColumn.findMany).toHaveBeenCalledWith({
+      where: {
+        gridId: BigInt(1),
+        gridColumnIsDeleted: false,
+        gridColumnFilter: true,
+        grid: {
+          gridIsDeleted: false,
+        },
+      },
+      orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
+      select: {
+        gridColumnName: true,
+      },
+    });
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE grid_kv.key = $2'),
+      true,
+      'item group name',
+      '%raw%',
+      'item group short',
+      '%raw%',
+    );
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('LIMIT $6 OFFSET $7'),
+      true,
+      'item group name',
+      '%raw%',
+      'item group short',
+      '%raw%',
+      20,
+      0,
+    );
+    expect(result.meta.total).toBe(1);
+  });
+  it('applies ordered search fields when grid column names do not match sql field names', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql:
+        'SELECT itg_name, itg_alias, itg_description, itg_short FROM item_group_master WHERE itg_is_deleted = false',
+    });
+    prisma.gridColumn.findMany.mockResolvedValue([
+      { gridColumnName: 'column one' },
+      { gridColumnName: 'column two' },
+      { gridColumnName: 'column three' },
+      { gridColumnName: 'column four' },
+    ]);
+    prisma.$queryRawUnsafe
+      .mockResolvedValueOnce([{ total: BigInt(1) }])
+      .mockResolvedValueOnce([
+        {
+          itg_name: 'Raw Materials',
+          itg_alias: 'RM',
+          itg_description: 'Default description',
+          itg_short: 'RAW',
+        },
+      ]);
+    await service.list({
+      search: 'raw',
+      page: 1,
+      limit: 20,
+    });
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE grid_kv.key = $1'),
+      'itg_name',
+      '%raw%',
+      'itg_alias',
+      '%raw%',
+      'itg_description',
+      '%raw%',
+      'itg_short',
+      '%raw%',
+    );
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('LIMIT $9 OFFSET $10'),
+      'itg_name',
+      '%raw%',
+      'itg_alias',
+      '%raw%',
+      'itg_description',
+      '%raw%',
+      'itg_short',
+      '%raw%',
+      20,
+      0,
+    );
+  });
   it('uses configured grid_sql for plain get-all list', async () => {
     prisma.gridDetails.findFirst.mockResolvedValue({
       gridSql:
@@ -175,6 +569,20 @@ describe('ItemsGroupMasterService', () => {
       .mockResolvedValueOnce([{ total: BigInt(1) }])
       .mockResolvedValueOnce([{ itemGroupId: ITEM_GROUP_ID, groupName: 'Raw Materials' }]);
     const result = await service.list({});
+    expect(prisma.gridDetails.findFirst).toHaveBeenCalledWith({
+      where: {
+        gridId: BigInt(1),
+        gridIsDeleted: false,
+        gridStatus: true,
+        gridSql: {
+          not: null,
+        },
+      },
+      select: {
+        gridSql: true,
+      },
+    });
+    expect(prisma.gridColumn.findMany).not.toHaveBeenCalled();
     expect(prisma.itemGroupMaster.findMany).not.toHaveBeenCalled();
     expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
       1,
@@ -203,8 +611,41 @@ describe('ItemsGroupMasterService', () => {
     await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
-  it('soft deletes item groups instead of physical removal', async () => {
+  it('soft delete removes subtree ids from ancestor caches', async () => {
+    const parent = makeRecord({
+      itgId: PARENT_GROUP_ID,
+      itgParentId: null,
+      itgPathIdsCache: [PARENT_GROUP_ID, ITEM_GROUP_ID, CHILD_GROUP_ID],
+    });
+    const node = makeRecord({
+      itgId: ITEM_GROUP_ID,
+      itgParentId: PARENT_GROUP_ID,
+      itgPathIdsCache: [ITEM_GROUP_ID, CHILD_GROUP_ID],
+    });
+    const child = makeRecord({
+      itgId: CHILD_GROUP_ID,
+      itgParentId: ITEM_GROUP_ID,
+      itgPathIdsCache: [CHILD_GROUP_ID],
+    });
+
+    prisma.itemGroupMaster.findFirst
+      .mockResolvedValueOnce(node)
+      .mockResolvedValueOnce(node)
+      .mockResolvedValueOnce(child)
+      .mockResolvedValueOnce(parent);
+    prisma.itemGroupMaster.findMany
+      .mockResolvedValueOnce([child])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([parent]);
     prisma.itemGroupMaster.updateMany.mockResolvedValue({ count: 1 });
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(
+      makeRecord({
+        itgId: PARENT_GROUP_ID,
+        itgParentId: null,
+        itgPathIdsCache: [PARENT_GROUP_ID],
+      }),
+    );
+
     await expect(service.softDelete(ITEM_GROUP_ID)).resolves.toEqual({
       itg_id: ITEM_GROUP_ID,
       deleted: true,
@@ -218,6 +659,11 @@ describe('ItemsGroupMasterService', () => {
     expect(updateManyArgs.where.itgIsDeleted).toBe(false);
     expect(updateManyArgs.data.itgIsDeleted).toBe(true);
     expect(updateManyArgs.data.itgModifiedBy).toBe('system');
+
+    expect(prisma.itemGroupMaster.update).toHaveBeenCalledTimes(1);
+    const ancestorUpdateArgs = prisma.itemGroupMaster.update.mock.calls[0][0];
+    expect(ancestorUpdateArgs.where.itgId).toBe(PARENT_GROUP_ID);
+    expect(ancestorUpdateArgs.data.itgPathIdsCache).toEqual([PARENT_GROUP_ID]);
   });
   it('rejects invalid base64 image input', async () => {
     const input: SaveItemGroupDto = {
@@ -227,9 +673,15 @@ describe('ItemsGroupMasterService', () => {
     await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
   });
   it('stores valid base64 image input into itgPhoto bytes', async () => {
-    prisma.itemGroupMaster.create.mockResolvedValue(
-      makeRecord({ itgPhoto: Buffer.from('sample-image') }),
-    );
+    const createdRecord = makeRecord({ itgPhoto: Buffer.from('sample-image'), itgPathIdsCache: [] });
+    const refreshedRecord = makeRecord({
+      itgPhoto: Buffer.from('sample-image'),
+      itgPathIdsCache: [ITEM_GROUP_ID],
+    });
+    prisma.itemGroupMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemGroupMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(refreshedRecord);
+    prisma.itemGroupMaster.findFirst.mockResolvedValueOnce(refreshedRecord);
     const input: SaveItemGroupDto = {
       itg_name: 'Raw Materials',
       itg_photo: 'data:image/png;base64,c2FtcGxlLWltYWdl',

@@ -1,0 +1,49 @@
+model ItemQtywiseRate {
+  iqrId          String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iqr_id")
+
+  iqrBranchId    String? @db.Uuid @map("iqr_branch_id")
+
+  // Link to base unit-rate row (item+unit+godown)
+  iqrUnitRateId  String  @db.Uuid @map("iqr_unit_rate_id")
+
+  // Price Level + Quantity Slab
+  iqrPriceLevel  Int     @map("iqr_price_level")
+
+  iqrStartQty    Decimal @db.Decimal(15, 4) @map("iqr_start_qty")
+  iqrEndQty      Decimal? @db.Decimal(15, 4) @map("iqr_end_qty")     // NULL = open-ended
+  iqrEachQty     Decimal @db.Decimal(15, 4) @map("iqr_each_qty")
+
+  // Pricing + Discount
+  iqrSalesPrice  Decimal @default(0) @db.Decimal(15, 4) @map("iqr_sales_price")
+  iqrPriceWot    Decimal @default(0) @db.Decimal(15, 4) @map("iqr_price_wot")
+  iqrPriceMargin Decimal @default(0) @db.Decimal(15, 4) @map("iqr_price_margin")
+
+  iqrDiscPerc    Decimal @default(0) @db.Decimal(7, 3)  @map("iqr_disc_perc")
+  iqrDiscQty     Decimal @default(0) @db.Decimal(15, 4) @map("iqr_disc_qty")
+
+  // Validity
+  iqrValidFrom   DateTime? @db.Date @map("iqr_valid_from")
+  iqrValidTo     DateTime? @db.Date @map("iqr_valid_to")
+  iqrPriority    Int       @default(0) @map("iqr_priority")
+
+  // Status / Audit
+  iqrIsActive    Boolean  @default(true)  @map("iqr_is_active")
+  iqrIsDeleted   Boolean  @default(false) @map("iqr_is_deleted")
+
+  iqrCreatedOn   DateTime @default(now()) @db.Timestamptz(6) @map("iqr_created_on")
+  iqrCreatedBy   String?  @db.VarChar(100) @map("iqr_created_by")
+  iqrModifiedOn  DateTime @default(now()) @db.Timestamptz(6) @map("iqr_modified_on")
+  iqrModifiedBy  String?  @db.VarChar(100) @map("iqr_modified_by")
+
+  iqrRemarks     String?  @db.VarChar(250) @map("iqr_remarks")
+
+  // Relation
+  unitRate       ItemPriceMaster @relation(fields: [iqrUnitRateId], references: [ipmUnitRateId], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("item_qtywise_rates")
+  @@schema("public")
+
+  @@index([iqrUnitRateId], map: "idx_iqr_unit_rate")
+  @@index([iqrBranchId], map: "idx_iqr_branch")
+  @@index([iqrIsDeleted, iqrIsActive], map: "idx_iqr_active_deleted")
+}

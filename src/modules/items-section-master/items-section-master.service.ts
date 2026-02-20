@@ -18,6 +18,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
+type ItemSectionWriteClient = Prisma.TransactionClient | PrismaService;
 
 @Injectable()
 export class ItemsSectionMasterService {
@@ -42,9 +43,6 @@ export class ItemsSectionMasterService {
       secIsDeleted: false,
     };
 
-    if (queryDto.sec_company_id !== undefined) {
-      where.secCompanyId = queryDto.sec_company_id;
-    }
 
     if (queryDto.sec_parent_id !== undefined) {
       where.secParentId = queryDto.sec_parent_id;
@@ -100,56 +98,91 @@ export class ItemsSectionMasterService {
   }
 
   async softDelete(secId: string): Promise<{ sec_id: string; deleted: true }> {
-    const result = await this.prisma.itemSectionMaster.updateMany({
-      where: {
-        secId,
-        secIsDeleted: false,
-      },
-      data: {
-        secIsDeleted: true,
-        secModifiedOn: new Date(),
-        secModifiedBy: DEFAULT_ACTOR,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.itemSectionMaster.findFirst({
+        where: {
+          secId,
+          secIsDeleted: false,
+        },
+        select: {
+          secParentId: true,
+        },
+      });
+
+      if (!existing) {
+        this.throwNotFound(secId);
+      }
+
+      const subtreeIds = await this.getActiveSubtreeIds(tx, secId);
+      const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
+      const result = await tx.itemSectionMaster.updateMany({
+        where: {
+          secId,
+          secIsDeleted: false,
+        },
+        data: {
+          secIsDeleted: true,
+          secModifiedOn: new Date(),
+          secModifiedBy: DEFAULT_ACTOR,
+        },
+      });
+
+      if (result.count === 0) {
+        this.throwNotFound(secId);
+      }
+
+      await this.removePathIds(tx, ancestorIds, subtreeIds);
+      return {
+        sec_id: secId,
+        deleted: true,
+      };
     });
-
-    if (result.count === 0) {
-      this.throwNotFound(secId);
-    }
-
-    return {
-      sec_id: secId,
-      deleted: true,
-    };
   }
 
   private async createItemSection(
     saveItemSectionDto: SaveItemSectionDto,
   ): Promise<ItemSectionPayload> {
-    if (saveItemSectionDto.sec_parent_id) {
-      await this.ensureParentExistsAndSameCompany(
-        saveItemSectionDto.sec_parent_id,
-        saveItemSectionDto.sec_company_id,
-      );
-    }
-
-    const now = new Date();
-    const createdBy = DEFAULT_ACTOR;
-    const modifiedBy = createdBy;
-
-    const data: Prisma.ItemSectionMasterUncheckedCreateInput = {
-      secName: saveItemSectionDto.sec_name.trim(),
-      secCompanyId: saveItemSectionDto.sec_company_id,
-      secCreatedOn: now,
-      secCreatedBy: createdBy,
-      secModifiedOn: now,
-      secModifiedBy: modifiedBy,
-    };
-
-    this.applyOptionalFields(data, saveItemSectionDto);
-
     try {
-      const created = await this.prisma.itemSectionMaster.create({ data });
-      return this.toPayload(created);
+      return await this.prisma.$transaction(async (tx) => {
+        if (saveItemSectionDto.sec_parent_id) {
+          await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
+        }
+
+        const now = new Date();
+        const createdBy = DEFAULT_ACTOR;
+        const modifiedBy = createdBy;
+
+        const data: Prisma.ItemSectionMasterUncheckedCreateInput = {
+          secName: saveItemSectionDto.sec_name.trim(),
+          secCreatedOn: now,
+          secCreatedBy: createdBy,
+          secModifiedOn: now,
+          secModifiedBy: modifiedBy,
+        };
+
+        this.applyOptionalFields(data, saveItemSectionDto);
+        const created = await tx.itemSectionMaster.create({ data });
+        await this.ensureSelfInPath(tx, created.secId);
+
+        if (saveItemSectionDto.sec_parent_id) {
+          const ancestorIds = await this.getAncestorIds(tx, saveItemSectionDto.sec_parent_id);
+          await this.appendPathIds(tx, ancestorIds, [created.secId]);
+        }
+
+        const refreshed = await tx.itemSectionMaster.findFirst({
+          where: {
+            secId: created.secId,
+            secIsDeleted: false,
+          },
+        });
+        if (!refreshed) {
+          return this.toPayload({
+            ...created,
+            secPathIds: this.mergePathIds(created.secPathIds, [created.secId]),
+          });
+        }
+        return this.toPayload(refreshed);
+      });
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;
@@ -160,67 +193,81 @@ export class ItemsSectionMasterService {
     saveItemSectionDto: SaveItemSectionDto,
   ): Promise<ItemSectionPayload> {
     const secId = saveItemSectionDto.sec_id!;
-
-    const existing = await this.prisma.itemSectionMaster.findFirst({
-      where: {
-        secId,
-        secIsDeleted: false,
-      },
-    });
-
-    if (!existing) {
-      this.throwNotFound(secId);
-    }
-
-    if (saveItemSectionDto.sec_parent_id === secId) {
-      this.throwBadRequest('Item section cannot be its own parent', [
-        {
-          field: 'sec_parent_id',
-          message: 'sec_parent_id cannot be same as sec_id',
-        },
-      ]);
-    }
-
-    if (saveItemSectionDto.sec_parent_id) {
-      await this.ensureParentExistsAndSameCompany(
-        saveItemSectionDto.sec_parent_id,
-        saveItemSectionDto.sec_company_id,
-      );
-    }
-
-    const data: Prisma.ItemSectionMasterUncheckedUpdateInput = {
-      secName: saveItemSectionDto.sec_name.trim(),
-      secCompanyId: saveItemSectionDto.sec_company_id,
-      secModifiedOn: new Date(),
-      secModifiedBy: DEFAULT_ACTOR,
-    };
-
-    this.applyOptionalFields(data, saveItemSectionDto);
-
     try {
-      const updated = await this.prisma.itemSectionMaster.update({
-        where: {
-          secId,
-        },
-        data,
-      });
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.itemSectionMaster.findFirst({
+          where: {
+            secId,
+            secIsDeleted: false,
+          },
+        });
 
-      return this.toPayload(updated);
+        if (!existing) {
+          this.throwNotFound(secId);
+        }
+
+        if (saveItemSectionDto.sec_parent_id === secId) {
+          this.throwBadRequest('Item section cannot be its own parent', [
+            {
+              field: 'sec_parent_id',
+              message: 'sec_parent_id cannot be same as sec_id',
+            },
+          ]);
+        }
+
+        if (saveItemSectionDto.sec_parent_id) {
+          await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
+        }
+
+        const hasParentField = this.hasOwnProperty(saveItemSectionDto, 'sec_parent_id');
+        const nextParentId = hasParentField ? (saveItemSectionDto.sec_parent_id ?? null) : existing.secParentId;
+        const isParentChanged = hasParentField && nextParentId !== existing.secParentId;
+        const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, secId) : [];
+        const oldAncestorIds = isParentChanged ? await this.getAncestorIds(tx, existing.secParentId) : [];
+
+        const data: Prisma.ItemSectionMasterUncheckedUpdateInput = {
+          secName: saveItemSectionDto.sec_name.trim(),
+          secModifiedOn: new Date(),
+          secModifiedBy: DEFAULT_ACTOR,
+        };
+
+        this.applyOptionalFields(data, saveItemSectionDto);
+        const updated = await tx.itemSectionMaster.update({
+          where: {
+            secId,
+          },
+          data,
+        });
+
+        await this.ensureSelfInPath(tx, secId);
+        if (isParentChanged) {
+          const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
+          await this.removePathIds(tx, oldAncestorIds, subtreeIds);
+          await this.appendPathIds(tx, newAncestorIds, subtreeIds);
+        }
+
+        const refreshed = await tx.itemSectionMaster.findFirst({
+          where: {
+            secId,
+            secIsDeleted: false,
+          },
+        });
+        return this.toPayload(refreshed ?? updated);
+      });
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;
     }
   }
 
-  private async ensureParentExistsAndSameCompany(parentId: string, companyId: string): Promise<void> {
-    const parent = await this.prisma.itemSectionMaster.findFirst({
+  private async ensureParentExists(parentId: string, tx: ItemSectionWriteClient): Promise<void> {
+    const parent = await tx.itemSectionMaster.findFirst({
       where: {
         secId: parentId,
         secIsDeleted: false,
       },
       select: {
         secId: true,
-        secCompanyId: true,
       },
     });
 
@@ -229,15 +276,6 @@ export class ItemsSectionMasterService {
         {
           field: 'sec_parent_id',
           message: `No active item section found with id ${parentId}`,
-        },
-      ]);
-    }
-
-    if (parent.secCompanyId !== companyId) {
-      this.throwBadRequest('Parent item section must belong to the same company', [
-        {
-          field: 'sec_parent_id',
-          message: 'sec_parent_id must reference a section in the same sec_company_id',
         },
       ]);
     }
@@ -273,10 +311,6 @@ export class ItemsSectionMasterService {
       data.secLevel = saveItemSectionDto.sec_level;
     }
 
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_path_ids')) {
-      data.secPathIds = saveItemSectionDto.sec_path_ids;
-    }
-
     if (this.hasOwnProperty(saveItemSectionDto, 'sec_position')) {
       data.secPosition = saveItemSectionDto.sec_position;
     }
@@ -298,8 +332,205 @@ export class ItemsSectionMasterService {
     }
   }
 
+  private async getAncestorIds(
+    tx: ItemSectionWriteClient,
+    startParentId: string | null | undefined,
+  ): Promise<string[]> {
+    const ancestorIds: string[] = [];
+    const visited = new Set<string>();
+    let currentParentId = startParentId;
+
+    while (currentParentId) {
+      if (visited.has(currentParentId)) {
+        break;
+      }
+      visited.add(currentParentId);
+
+      const parent = await tx.itemSectionMaster.findFirst({
+        where: {
+          secId: currentParentId,
+          secIsDeleted: false,
+        },
+        select: {
+          secId: true,
+          secParentId: true,
+        },
+      });
+      if (!parent) {
+        break;
+      }
+
+      ancestorIds.push(parent.secId);
+      currentParentId = parent.secParentId;
+    }
+
+    return ancestorIds;
+  }
+
+  private async getActiveSubtreeIds(tx: ItemSectionWriteClient, rootId: string): Promise<string[]> {
+    const subtreeIds: string[] = [];
+    const visited = new Set<string>();
+    const queue: string[] = [rootId];
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) {
+        continue;
+      }
+      visited.add(currentId);
+
+      const node = await tx.itemSectionMaster.findFirst({
+        where: {
+          secId: currentId,
+          secIsDeleted: false,
+        },
+        select: {
+          secId: true,
+        },
+      });
+      if (!node) {
+        continue;
+      }
+      subtreeIds.push(node.secId);
+
+      const children = await tx.itemSectionMaster.findMany({
+        where: {
+          secParentId: node.secId,
+          secIsDeleted: false,
+        },
+        select: {
+          secId: true,
+        },
+      });
+      for (const child of children) {
+        if (!visited.has(child.secId)) {
+          queue.push(child.secId);
+        }
+      }
+    }
+
+    return subtreeIds;
+  }
+
+  private async appendPathIds(
+    tx: ItemSectionWriteClient,
+    targetIds: string[],
+    idsToAdd: string[],
+  ): Promise<void> {
+    const normalizedTargetIds = this.toUniqueIds(targetIds);
+    const normalizedIdsToAdd = this.toUniqueIds(idsToAdd);
+    if (normalizedTargetIds.length === 0 || normalizedIdsToAdd.length === 0) {
+      return;
+    }
+
+    const records = await tx.itemSectionMaster.findMany({
+      where: {
+        secId: {
+          in: normalizedTargetIds,
+        },
+        secIsDeleted: false,
+      },
+      select: {
+        secId: true,
+        secPathIds: true,
+      },
+    });
+
+    for (const record of records) {
+      const nextPathIds = this.mergePathIds(record.secPathIds, normalizedIdsToAdd);
+      if (this.areSameIds(record.secPathIds, nextPathIds)) {
+        continue;
+      }
+      await tx.itemSectionMaster.update({
+        where: {
+          secId: record.secId,
+        },
+        data: {
+          secPathIds: nextPathIds,
+        },
+      });
+    }
+  }
+
+  private async removePathIds(
+    tx: ItemSectionWriteClient,
+    targetIds: string[],
+    idsToRemove: string[],
+  ): Promise<void> {
+    const normalizedTargetIds = this.toUniqueIds(targetIds);
+    const normalizedIdsToRemove = this.toUniqueIds(idsToRemove);
+    if (normalizedTargetIds.length === 0 || normalizedIdsToRemove.length === 0) {
+      return;
+    }
+
+    const records = await tx.itemSectionMaster.findMany({
+      where: {
+        secId: {
+          in: normalizedTargetIds,
+        },
+        secIsDeleted: false,
+      },
+      select: {
+        secId: true,
+        secPathIds: true,
+      },
+    });
+
+    for (const record of records) {
+      const nextPathIds = this.excludePathIds(record.secPathIds, normalizedIdsToRemove);
+      if (this.areSameIds(record.secPathIds, nextPathIds)) {
+        continue;
+      }
+      await tx.itemSectionMaster.update({
+        where: {
+          secId: record.secId,
+        },
+        data: {
+          secPathIds: nextPathIds,
+        },
+      });
+    }
+  }
+
+  private async ensureSelfInPath(tx: ItemSectionWriteClient, secId: string): Promise<void> {
+    await this.appendPathIds(tx, [secId], [secId]);
+  }
+
+  private mergePathIds(existingIds: readonly string[], idsToAdd: readonly string[]): string[] {
+    return this.toUniqueIds([...existingIds, ...idsToAdd]);
+  }
+
+  private excludePathIds(existingIds: readonly string[], idsToRemove: readonly string[]): string[] {
+    const removeSet = new Set(idsToRemove);
+    return existingIds.filter((id) => !removeSet.has(id));
+  }
+
+  private toUniqueIds(ids: readonly string[]): string[] {
+    const uniqueIds: string[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        uniqueIds.push(id);
+      }
+    }
+    return uniqueIds;
+  }
+
+  private areSameIds(left: readonly string[], right: readonly string[]): boolean {
+    if (left.length !== right.length) {
+      return false;
+    }
+    for (let i = 0; i < left.length; i += 1) {
+      if (left[i] !== right[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private decodePhotoInput(
-    photo: string | null | undefined,
+    photo: string | Buffer | Uint8Array | null | undefined,
   ): Uint8Array<ArrayBuffer> | null | undefined {
     if (photo === undefined) {
       return undefined;
@@ -307,6 +538,32 @@ export class ItemsSectionMasterService {
 
     if (photo === null) {
       return null;
+    }
+
+    if (Buffer.isBuffer(photo)) {
+      if (photo.length === 0) {
+        this.throwBadRequest('Invalid image provided', [
+          {
+            field: 'sec_photo',
+            message: 'sec_photo must contain binary image data',
+          },
+        ]);
+      }
+
+      return new Uint8Array(photo);
+    }
+
+    if (photo instanceof Uint8Array) {
+      if (photo.length === 0) {
+        this.throwBadRequest('Invalid image provided', [
+          {
+            field: 'sec_photo',
+            message: 'sec_photo must contain binary image data',
+          },
+        ]);
+      }
+
+      return new Uint8Array(photo);
     }
 
     const trimmed = photo.trim();
@@ -341,7 +598,6 @@ export class ItemsSectionMasterService {
       sec_alias: record.secAlias,
       sec_short: record.secShort,
       sec_description: record.secDescription,
-      sec_company_id: record.secCompanyId,
       sec_parent_id: record.secParentId,
       sec_sort: record.secSort,
       sec_level: record.secLevel,
@@ -364,10 +620,10 @@ export class ItemsSectionMasterService {
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
-        this.buildErrorResponse('Item section name already exists for this company', [
+        this.buildErrorResponse('Item section name already exists', [
           {
             field: 'sec_name',
-            message: 'Duplicate sec_name is not allowed within sec_company_id',
+            message: 'Duplicate sec_name is not allowed',
           },
         ]),
       );
