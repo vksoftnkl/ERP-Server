@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import { ItemsGroupMasterService } from './items-group-master.service';
@@ -62,6 +63,7 @@ const makeRecord = (overrides: Partial<ItemGroupMaster> = {}): ItemGroupMaster =
 describe('ItemsGroupMasterService', () => {
   let service: ItemsGroupMasterService;
   let prisma: PrismaMock;
+  let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   beforeEach(() => {
     prisma = {
       itemGroupMaster: {
@@ -100,8 +102,14 @@ describe('ItemsGroupMasterService', () => {
       async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
         callback(prisma as unknown as Prisma.TransactionClient),
     );
+    auditLogService = {
+      logEntityChange: jest.fn().mockResolvedValue(undefined),
+    };
 
-    service = new ItemsGroupMasterService(prisma as unknown as PrismaService);
+    service = new ItemsGroupMasterService(
+      prisma as unknown as PrismaService,
+      auditLogService as AuditLogService,
+    );
   });
   it('creates an item group when itg_id is not provided', async () => {
     const createdRecord = makeRecord({ itgPathIdsCache: [] });
@@ -120,6 +128,21 @@ describe('ItemsGroupMasterService', () => {
     expect(createArgs.data.itgName).toBe('Raw Materials');
     expect(result.itg_id).toBe(ITEM_GROUP_ID);
     expect(result.itg_path_ids_cache).toEqual([ITEM_GROUP_ID]);
+  });
+  it('fails create when audit logging fails (fail-closed)', async () => {
+    const createdRecord = makeRecord({ itgPathIdsCache: [] });
+    const createdWithPath = makeRecord({ itgPathIdsCache: [ITEM_GROUP_ID] });
+    prisma.itemGroupMaster.create.mockResolvedValue(createdRecord);
+    prisma.itemGroupMaster.findMany.mockResolvedValueOnce([createdRecord]);
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(createdWithPath);
+    prisma.itemGroupMaster.findFirst.mockResolvedValueOnce(createdWithPath);
+    (auditLogService.logEntityChange as jest.Mock).mockRejectedValueOnce(new Error('audit failed'));
+
+    await expect(
+      service.save({
+        itg_name: 'Raw Materials',
+      }),
+    ).rejects.toThrow('audit failed');
   });
   it('updates an item group when itg_id is provided', async () => {
     const existingRecord = makeRecord({ itgPathIdsCache: [ITEM_GROUP_ID] });
@@ -374,15 +397,13 @@ describe('ItemsGroupMasterService', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([refreshed])
       .mockResolvedValueOnce([oldParent]);
-    prisma.itemGroupMaster.update
-      .mockResolvedValueOnce(refreshed)
-      .mockResolvedValueOnce(
-        makeRecord({
-          itgId: PARENT_GROUP_ID,
-          itgParentId: null,
-          itgPathIdsCache: [PARENT_GROUP_ID],
-        }),
-      );
+    prisma.itemGroupMaster.update.mockResolvedValueOnce(refreshed).mockResolvedValueOnce(
+      makeRecord({
+        itgId: PARENT_GROUP_ID,
+        itgParentId: null,
+        itgPathIdsCache: [PARENT_GROUP_ID],
+      }),
+    );
 
     const result = await service.save({
       itg_id: ITEM_GROUP_ID,
@@ -450,18 +471,16 @@ describe('ItemsGroupMasterService', () => {
       { gridColumnName: 'item group name' },
       { gridColumnName: 'item group short' },
     ]);
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([{ total: BigInt(1) }])
-      .mockResolvedValueOnce([
-        {
-          'item group id': ITEM_GROUP_ID,
-          'item group name': 'Raw Materials',
-          'item group short': 'RM',
-          itg_description: 'Default description',
-          itg_parent_id: null,
-          itg_is_active: true,
-        },
-      ]);
+    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
+      {
+        'item group id': ITEM_GROUP_ID,
+        'item group name': 'Raw Materials',
+        'item group short': 'RM',
+        itg_description: 'Default description',
+        itg_parent_id: null,
+        itg_is_active: true,
+      },
+    ]);
 
     const result = await service.list({
       itg_is_active: true,
@@ -518,16 +537,14 @@ describe('ItemsGroupMasterService', () => {
       { gridColumnName: 'column three' },
       { gridColumnName: 'column four' },
     ]);
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([{ total: BigInt(1) }])
-      .mockResolvedValueOnce([
-        {
-          itg_name: 'Raw Materials',
-          itg_alias: 'RM',
-          itg_description: 'Default description',
-          itg_short: 'RAW',
-        },
-      ]);
+    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
+      {
+        itg_name: 'Raw Materials',
+        itg_alias: 'RM',
+        itg_description: 'Default description',
+        itg_short: 'RAW',
+      },
+    ]);
     await service.list({
       search: 'raw',
       page: 1,
@@ -673,7 +690,10 @@ describe('ItemsGroupMasterService', () => {
     await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
   });
   it('stores valid base64 image input into itgPhoto bytes', async () => {
-    const createdRecord = makeRecord({ itgPhoto: Buffer.from('sample-image'), itgPathIdsCache: [] });
+    const createdRecord = makeRecord({
+      itgPhoto: Buffer.from('sample-image'),
+      itgPathIdsCache: [],
+    });
     const refreshedRecord = makeRecord({
       itgPhoto: Buffer.from('sample-image'),
       itgPathIdsCache: [ITEM_GROUP_ID],

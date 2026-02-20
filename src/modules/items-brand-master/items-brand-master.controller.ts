@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiBody,
   ApiConflictResponse,
@@ -24,7 +25,9 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListItemBrandQueryDto } from './dto/list-item-brand-query.dto';
 import {
   ItemBrandErrorResponseDto,
@@ -45,6 +48,8 @@ type UploadedPhotoFile = {
   buffer: Buffer;
 };
 @ApiTags('Item Brands')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @Controller('item-brands')
 @UseFilters(ItemBrandExceptionFilter)
 export class ItemsBrandMasterController {

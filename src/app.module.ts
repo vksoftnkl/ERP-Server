@@ -4,7 +4,9 @@ import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
+import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
+import { RequestContextModule } from './common/request-context/request-context.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma/prisma.module';
@@ -17,6 +19,10 @@ import { UnitsMasterModule } from './modules/units-master/units-master.module';
 import { ItemsSectionMasterModule } from './modules/items-section-master/items-section-master.module';
 import { GridDetailsModule } from './modules/grid-details/grid-details.module';
 import { GridColumnsModule } from './modules/grid-columns/grid-columns.module';
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
+import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
+import { GodownsMasterModule } from './modules/godowns-master/godowns-master.module';
+import { ItemsTaxMasterModule } from './modules/items-tax-master/items-tax-master.module';
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -36,6 +42,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
       load: [configuration],
       validationSchema: envValidationSchema,
     }),
+    RequestContextModule,
     ThrottlerModule.forRoot([
       {
         ttl: parseNumber(process.env.THROTTLE_TTL, 60) * 1000,
@@ -43,18 +50,26 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
       },
     ]),
     PrismaModule,
+    AuditLogModule,
     HealthModule,
     UsersModule,
     ItemsGroupMasterModule,
     ItemsBrandMasterModule,
     ItemsSectionMasterModule,
     UnitsMasterModule,
+    ItemsTaxMasterModule,
+    GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,
     AuthModule,
   ],
   providers: [
+    RequestContextMiddleware,
     RequestLoggerMiddleware,
+    {
+      provide: APP_GUARD,
+      useClass: AccessTokenGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
@@ -71,6 +86,6 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestLoggerMiddleware).forRoutes('*');
+    consumer.apply(RequestContextMiddleware, RequestLoggerMiddleware).forRoutes('*');
   }
 }

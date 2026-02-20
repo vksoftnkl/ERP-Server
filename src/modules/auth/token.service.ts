@@ -1,10 +1,15 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
-type AccessTokenClaims = {
+export type AccessTokenClaims = {
   sub: string;
   user_name: string;
+};
+
+export type AccessTokenPayload = AccessTokenClaims & {
+  iat: number;
+  exp: number;
 };
 
 @Injectable()
@@ -43,7 +48,93 @@ export class TokenService {
     };
   }
 
+  verifyAccessToken(token: string): AccessTokenPayload {
+    if (!this.secret) {
+      throw new InternalServerErrorException('JWT secret is not configured');
+    }
+
+    const tokenSegments = token.split('.');
+    if (tokenSegments.length !== 3) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    const [headerSegment, payloadSegment, signatureSegment] = tokenSegments;
+    const header = this.decodeSegment<Record<string, unknown>>(headerSegment);
+    if (header.alg !== 'HS256' || header.typ !== 'JWT') {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    const unsignedToken = `${headerSegment}.${payloadSegment}`;
+    const expectedSignature = createHmac('sha256', this.secret)
+      .update(unsignedToken)
+      .digest('base64url');
+    if (!this.compareSignatures(signatureSegment, expectedSignature)) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    const payloadRecord = this.decodeSegment<Record<string, unknown>>(payloadSegment);
+    const payload = this.validatePayload(payloadRecord);
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp <= now) {
+      throw new UnauthorizedException('Access token has expired');
+    }
+
+    return payload;
+  }
+
   private encodeBase64Url(data: Record<string, unknown>): string {
     return Buffer.from(JSON.stringify(data)).toString('base64url');
+  }
+
+  private decodeSegment<T>(segment: string): T {
+    try {
+      const json = Buffer.from(segment, 'base64url').toString('utf8');
+      return JSON.parse(json) as T;
+    } catch {
+      throw new UnauthorizedException('Invalid access token');
+    }
+  }
+
+  private compareSignatures(receivedSignature: string, expectedSignature: string): boolean {
+    const receivedBuffer = Buffer.from(receivedSignature, 'utf8');
+    const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+    if (receivedBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(receivedBuffer, expectedBuffer);
+  }
+
+  private validatePayload(payload: Record<string, unknown>): AccessTokenPayload {
+    const sub = payload.sub;
+    const userName = payload.user_name;
+    const issuedAt = payload.iat;
+    const expiresAt = payload.exp;
+
+    if (typeof sub !== 'string' || sub.length === 0) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    if (typeof userName !== 'string' || userName.length === 0) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    if (
+      typeof issuedAt !== 'number' ||
+      !Number.isInteger(issuedAt) ||
+      issuedAt < 0 ||
+      typeof expiresAt !== 'number' ||
+      !Number.isInteger(expiresAt) ||
+      expiresAt <= issuedAt
+    ) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    return {
+      sub,
+      user_name: userName,
+      iat: issuedAt,
+      exp: expiresAt,
+    };
   }
 }

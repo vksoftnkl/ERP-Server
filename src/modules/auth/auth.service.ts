@@ -22,7 +22,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const isPasswordValid = await this.verifyPassword(loginAuthDto.user_password, user.user_password);
+    const isPasswordValid = await this.verifyPassword(
+      loginAuthDto.user_password,
+      user.user_password,
+    );
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }

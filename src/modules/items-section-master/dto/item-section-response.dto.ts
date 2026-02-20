@@ -35,7 +35,6 @@ export class ItemSectionPayloadDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   sec_description!: string | null;
 
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sec_parent_id!: string | null;
 

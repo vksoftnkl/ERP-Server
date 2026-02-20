@@ -11,6 +11,7 @@ import {
   Version,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -19,7 +20,9 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListUnitQueryDto } from './dto/list-unit-query.dto';
 import { SaveUnitDto } from './dto/save-unit.dto';
 import {
@@ -38,6 +41,8 @@ import {
 import { UnitsMasterService } from './units-master.service';
 
 @ApiTags('Units')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @Controller('units')
 @UseFilters(UnitExceptionFilter)
 export class UnitsMasterController {

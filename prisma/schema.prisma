@@ -240,6 +240,26 @@ model categoryMaster {
 }
 
 // ----- prisma/master/items/godownMaster.prisma -----
+model Godown {
+  godown_id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  godown_name           String?
+  godown_short          String?
+  godown_is_del_sheet   Boolean? @default(false)
+  godown_split_stock    Boolean? @default(false)
+  godown_default_godown Boolean? @default(false)
+  godown_volume         Decimal?
+  godown_sort           Int?
+  godown_active         String?  @default("Y") @db.Char(1)
+  godown_is_active      Boolean? @default(true)
+  godown_is_deleted     Boolean? @default(false)
+  godown_negative_stock Boolean? @default(true)
+  godown_group          Int?
+
+  @@map("godowns")
+  @@schema("public")
+  @@index([godown_id], map: "idx_godown_id")
+}
+
 model GodownLocation {
   gdlId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")
 

@@ -1,3 +1,4 @@
+
 model GodownLocation {
   gdlId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")
 

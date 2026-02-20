@@ -106,6 +106,22 @@ Table category_master {
   categoryModifiedBy String
 }
 
+Table godowns {
+  godown_id String [pk]
+  godown_name String
+  godown_short String
+  godown_is_del_sheet Boolean [default: false]
+  godown_split_stock Boolean [default: false]
+  godown_default_godown Boolean [default: false]
+  godown_volume Decimal
+  godown_sort Int
+  godown_active String [default: 'Y']
+  godown_is_active Boolean [default: true]
+  godown_is_deleted Boolean [default: false]
+  godown_negative_stock Boolean [default: true]
+  godown_group Int
+}
+
 Table godown_locations {
   gdlId String [pk]
   gdlGodownId String [not null]

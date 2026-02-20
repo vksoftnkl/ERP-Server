@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiBody,
   ApiConflictResponse,
@@ -24,7 +25,9 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
 import {
   ItemSectionErrorResponseDto,
@@ -46,6 +49,8 @@ type UploadedPhotoFile = {
 };
 
 @ApiTags('Item Sections')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @Controller('item-sections')
 @UseFilters(ItemSectionExceptionFilter)
 export class ItemsSectionMasterController {

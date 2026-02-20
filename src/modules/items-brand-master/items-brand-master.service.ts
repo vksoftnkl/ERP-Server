@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemBrandQueryDto } from './dto/list-item-brand-query.dto';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import {
@@ -19,13 +20,17 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ITEM_BRAND_TABLE_NAME = 'item_brand_master';
+const ITEM_BRAND_AUDIT_SCREEN_NAME = 'Item Brand Master';
 const GRID_SQL_FORBIDDEN_TOKENS =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 type ItemBrandWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()
 export class ItemsBrandMasterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
   async save(saveItemBrandDto: SaveItemBrandDto): Promise<ItemBrandPayload> {
     if (saveItemBrandDto.brand_id) {
       return this.updateItemBrand(saveItemBrandDto);
@@ -211,9 +216,6 @@ export class ItemsBrandMasterService {
           brand_id: brandId,
           brand_is_deleted: false,
         },
-        select: {
-          brand_parent_id: true,
-        },
       });
       if (!existing) {
         this.throwNotFound(brandId);
@@ -221,6 +223,7 @@ export class ItemsBrandMasterService {
 
       const subtreeIds = await this.getActiveSubtreeIds(tx, brandId);
       const ancestorIds = await this.getAncestorIds(tx, existing.brand_parent_id);
+      const modifiedOn = new Date();
       const result = await tx.itemBrandMaster.updateMany({
         where: {
           brand_id: brandId,
@@ -228,7 +231,7 @@ export class ItemsBrandMasterService {
         },
         data: {
           brand_is_deleted: true,
-          brand_modified_on: new Date(),
+          brand_modified_on: modifiedOn,
           brand_modified_by: DEFAULT_ACTOR,
         },
       });
@@ -237,6 +240,30 @@ export class ItemsBrandMasterService {
       }
 
       await this.removePathIds(tx, ancestorIds, subtreeIds);
+
+      const originalRecord = this.toPayload(existing);
+      const modifiedRecord = this.toPayload({
+        ...existing,
+        brand_is_deleted: true,
+        brand_modified_on: modifiedOn,
+        brand_modified_by: DEFAULT_ACTOR,
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: ITEM_BRAND_TABLE_NAME,
+          screenName: ITEM_BRAND_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: brandId,
+          displayName: existing.brand_name,
+          originalRecord,
+          modifiedRecord,
+          userId: DEFAULT_ACTOR,
+          notes: 'Item brand soft deleted',
+        },
+        tx,
+      );
+
       return {
         brand_id: brandId,
         deleted: true,
@@ -275,13 +302,28 @@ export class ItemsBrandMasterService {
             brand_is_deleted: false,
           },
         });
-        if (!refreshed) {
-          return this.toPayload({
-            ...created,
-            brand_path_ids: this.mergePathIds(created.brand_path_ids, [created.brand_id]),
-          });
-        }
-        return this.toPayload(refreshed);
+        const payload = !refreshed
+          ? this.toPayload({
+              ...created,
+              brand_path_ids: this.mergePathIds(created.brand_path_ids, [created.brand_id]),
+            })
+          : this.toPayload(refreshed);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'New',
+            tableName: ITEM_BRAND_TABLE_NAME,
+            screenName: ITEM_BRAND_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: payload.brand_id,
+            displayName: payload.brand_name,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: DEFAULT_ACTOR,
+            notes: 'Item brand created',
+          },
+          tx,
+        );
+        return payload;
       });
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -349,7 +391,23 @@ export class ItemsBrandMasterService {
             brand_is_deleted: false,
           },
         });
-        return this.toPayload(refreshed ?? updated);
+        const payload = this.toPayload(refreshed ?? updated);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: ITEM_BRAND_TABLE_NAME,
+            screenName: ITEM_BRAND_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: brandId,
+            displayName: payload.brand_name,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: payload,
+            userId: DEFAULT_ACTOR,
+            notes: 'Item brand updated',
+          },
+          tx,
+        );
+        return payload;
       });
     } catch (error: unknown) {
       this.handleWriteError(error);

@@ -39,7 +39,7 @@ const toNullableInteger = (value: unknown): number | null | undefined => {
   }
 
   if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : (value as number);
+    return Number.isInteger(value) ? value : value;
   }
 
   if (typeof value === 'string') {

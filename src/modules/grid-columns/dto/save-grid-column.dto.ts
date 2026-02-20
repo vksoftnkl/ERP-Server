@@ -40,7 +40,7 @@ const toNullableInteger = (value: unknown): number | null | undefined => {
   }
 
   if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : (value as number);
+    return Number.isInteger(value) ? value : value;
   }
 
   if (typeof value === 'string') {
@@ -66,7 +66,7 @@ const toNullableNumber = (value: unknown): number | null | undefined => {
   }
 
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : (value as number);
+    return Number.isFinite(value) ? value : value;
   }
 
   if (typeof value === 'string') {

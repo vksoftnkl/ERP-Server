@@ -10,6 +10,7 @@ import {
   Version,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -18,7 +19,9 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListGridColumnQueryDto } from './dto/list-grid-column-query.dto';
 import {
   GridColumnErrorResponseDto,
@@ -36,6 +39,8 @@ import {
 } from './types/grid-column-api.types';
 
 @ApiTags('Grid Columns')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @Controller('grid-columns')
 @UseFilters(GridColumnExceptionFilter)
 export class GridColumnsController {

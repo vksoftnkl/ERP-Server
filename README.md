@@ -41,6 +41,17 @@ npm run start:dev
 Base URL:
 - `http://localhost:3000/api/v1`
 - Request payload limit is configurable with `REQUEST_BODY_LIMIT` (default `10mb`).
+- Bind host/IP is configurable with `HOST` (default `0.0.0.0`).
+
+VLAN hosting example (`.env`):
+
+```bash
+HOST=192.168.10.25
+PORT=3000
+```
+
+Then access from VLAN:
+- `http://192.168.10.25:3000/api/v1`
 
 Logs:
 - Application and request logs are automatically appended to `logs/app.log` on every run.

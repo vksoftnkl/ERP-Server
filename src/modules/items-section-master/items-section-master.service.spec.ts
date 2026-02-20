@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import { ItemsSectionMasterService } from './items-section-master.service';
@@ -21,10 +22,7 @@ type PrismaMock = {
     findMany: jest.Mock<Promise<ItemSectionMaster[]>, [Prisma.ItemSectionMasterFindManyArgs]>;
     count: jest.Mock<Promise<number>, [Prisma.ItemSectionMasterCountArgs]>;
     update: jest.Mock<Promise<ItemSectionMaster>, [Prisma.ItemSectionMasterUpdateArgs]>;
-    updateMany: jest.Mock<
-      Promise<Prisma.BatchPayload>,
-      [Prisma.ItemSectionMasterUpdateManyArgs]
-    >;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.ItemSectionMasterUpdateManyArgs]>;
   };
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
@@ -58,6 +56,7 @@ const makeRecord = (overrides: Partial<ItemSectionMaster> = {}): ItemSectionMast
 describe('ItemsSectionMasterService', () => {
   let service: ItemsSectionMasterService;
   let prisma: PrismaMock;
+  let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
 
   beforeEach(() => {
     prisma = {
@@ -67,10 +66,7 @@ describe('ItemsSectionMasterService', () => {
           Promise<ItemSectionMaster | null>,
           [Prisma.ItemSectionMasterFindFirstArgs]
         >(),
-        findMany: jest.fn<
-          Promise<ItemSectionMaster[]>,
-          [Prisma.ItemSectionMasterFindManyArgs]
-        >(),
+        findMany: jest.fn<Promise<ItemSectionMaster[]>, [Prisma.ItemSectionMasterFindManyArgs]>(),
         count: jest.fn<Promise<number>, [Prisma.ItemSectionMasterCountArgs]>(),
         update: jest.fn<Promise<ItemSectionMaster>, [Prisma.ItemSectionMasterUpdateArgs]>(),
         updateMany: jest.fn<
@@ -89,8 +85,14 @@ describe('ItemsSectionMasterService', () => {
       async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
         callback(prisma as unknown as Prisma.TransactionClient),
     );
+    auditLogService = {
+      logEntityChange: jest.fn().mockResolvedValue(undefined),
+    };
 
-    service = new ItemsSectionMasterService(prisma as unknown as PrismaService);
+    service = new ItemsSectionMasterService(
+      prisma as unknown as PrismaService,
+      auditLogService as AuditLogService,
+    );
   });
 
   it('creates a root item section and stores self sec_id in sec_path_ids', async () => {
@@ -384,15 +386,13 @@ describe('ItemsSectionMasterService', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([refreshed])
       .mockResolvedValueOnce([oldParent]);
-    prisma.itemSectionMaster.update
-      .mockResolvedValueOnce(refreshed)
-      .mockResolvedValueOnce(
-        makeRecord({
-          secId: PARENT_SECTION_ID,
-          secParentId: null,
-          secPathIds: [PARENT_SECTION_ID],
-        }),
-      );
+    prisma.itemSectionMaster.update.mockResolvedValueOnce(refreshed).mockResolvedValueOnce(
+      makeRecord({
+        secId: PARENT_SECTION_ID,
+        secParentId: null,
+        secPathIds: [PARENT_SECTION_ID],
+      }),
+    );
 
     const result = await service.save({
       sec_id: ITEM_SECTION_ID,

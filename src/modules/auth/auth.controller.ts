@@ -6,6 +6,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Public } from '../../common/decorators/public.decorator';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { AuthService } from './auth.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
@@ -16,6 +17,7 @@ import { LoginResponseDto } from './dto/login-response.dto';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Public()
   @Post('login')
   @Version('1')
   @HttpCode(HttpStatus.OK)

@@ -37,6 +37,7 @@ const buildDatabaseUrl = (): string => {
 export default () => ({
   app: {
     nodeEnv: process.env.NODE_ENV ?? 'development',
+    host: process.env.HOST ?? '0.0.0.0',
     port: parseNumber(process.env.PORT, 3010),
     apiPrefix: process.env.API_PREFIX ?? 'api',
     requestBodyLimit: process.env.REQUEST_BODY_LIMIT ?? '10mb',

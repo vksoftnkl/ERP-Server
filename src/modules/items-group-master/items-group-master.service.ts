@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import {
@@ -19,13 +20,18 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ITEM_GROUP_GRID_ID = BigInt(1);
+const ITEM_GROUP_TABLE_NAME = 'item_group_master';
+const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 const GRID_SQL_FORBIDDEN_TOKENS =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 type ItemGroupWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()
 export class ItemsGroupMasterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
   async save(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload> {
     if (saveItemGroupDto.itg_id) {
       return this.updateItemGroup(saveItemGroupDto);
@@ -403,9 +409,7 @@ export class ItemsGroupMasterService {
       return null;
     }
 
-    const explicitAliasMatch = trimmed.match(
-      /\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i,
-    );
+    const explicitAliasMatch = trimmed.match(/\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
     if (explicitAliasMatch) {
       return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
     }
@@ -512,9 +516,6 @@ export class ItemsGroupMasterService {
           itgId,
           itgIsDeleted: false,
         },
-        select: {
-          itgParentId: true,
-        },
       });
       if (!existing) {
         this.throwNotFound(itgId);
@@ -522,6 +523,7 @@ export class ItemsGroupMasterService {
 
       const subtreeIds = await this.getActiveSubtreeIds(tx, itgId);
       const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
+      const modifiedOn = new Date();
       const result = await tx.itemGroupMaster.updateMany({
         where: {
           itgId,
@@ -529,7 +531,7 @@ export class ItemsGroupMasterService {
         },
         data: {
           itgIsDeleted: true,
-          itgModifiedOn: new Date(),
+          itgModifiedOn: modifiedOn,
           itgModifiedBy: DEFAULT_ACTOR,
         },
       });
@@ -538,6 +540,30 @@ export class ItemsGroupMasterService {
       }
 
       await this.removePathIds(tx, ancestorIds, subtreeIds);
+
+      const originalRecord = this.toPayload(existing);
+      const modifiedRecord = this.toPayload({
+        ...existing,
+        itgIsDeleted: true,
+        itgModifiedOn: modifiedOn,
+        itgModifiedBy: DEFAULT_ACTOR,
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: ITEM_GROUP_TABLE_NAME,
+          screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: itgId,
+          displayName: existing.itgName,
+          originalRecord,
+          modifiedRecord,
+          userId: DEFAULT_ACTOR,
+          notes: 'Item group soft deleted',
+        },
+        tx,
+      );
+
       return {
         itg_id: itgId,
         deleted: true,
@@ -575,13 +601,29 @@ export class ItemsGroupMasterService {
             itgIsDeleted: false,
           },
         });
-        if (!refreshed) {
-          return this.toPayload({
-            ...created,
-            itgPathIdsCache: this.mergePathIds(created.itgPathIdsCache, [created.itgId]),
-          });
-        }
-        return this.toPayload(refreshed);
+        const payload = !refreshed
+          ? this.toPayload({
+              ...created,
+              itgPathIdsCache: this.mergePathIds(created.itgPathIdsCache, [created.itgId]),
+            })
+          : this.toPayload(refreshed);
+
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'New',
+            tableName: ITEM_GROUP_TABLE_NAME,
+            screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: payload.itg_id,
+            displayName: payload.itg_name,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: DEFAULT_ACTOR,
+            notes: 'Item group created',
+          },
+          tx,
+        );
+        return payload;
       });
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -614,10 +656,14 @@ export class ItemsGroupMasterService {
         }
 
         const hasParentField = this.hasOwnProperty(saveItemGroupDto, 'itg_parent_id');
-        const nextParentId = hasParentField ? (saveItemGroupDto.itg_parent_id ?? null) : existing.itgParentId;
+        const nextParentId = hasParentField
+          ? (saveItemGroupDto.itg_parent_id ?? null)
+          : existing.itgParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.itgParentId;
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, itgId) : [];
-        const oldAncestorIds = isParentChanged ? await this.getAncestorIds(tx, existing.itgParentId) : [];
+        const oldAncestorIds = isParentChanged
+          ? await this.getAncestorIds(tx, existing.itgParentId)
+          : [];
 
         const data: Prisma.ItemGroupMasterUncheckedUpdateInput = {
           itgName: saveItemGroupDto.itg_name.trim(),
@@ -645,7 +691,23 @@ export class ItemsGroupMasterService {
             itgIsDeleted: false,
           },
         });
-        return this.toPayload(refreshed ?? updated);
+        const payload = this.toPayload(refreshed ?? updated);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: ITEM_GROUP_TABLE_NAME,
+            screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: itgId,
+            displayName: payload.itg_name,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: payload,
+            userId: DEFAULT_ACTOR,
+            notes: 'Item group updated',
+          },
+          tx,
+        );
+        return payload;
       });
     } catch (error: unknown) {
       this.handleWriteError(error);

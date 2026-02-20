@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemBrandQueryDto } from './dto/list-item-brand-query.dto';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemsBrandMasterService } from './items-brand-master.service';
@@ -56,6 +57,7 @@ const makeRecord = (overrides: Partial<ItemBrandMaster> = {}): ItemBrandMaster =
 describe('ItemsBrandMasterService', () => {
   let service: ItemsBrandMasterService;
   let prisma: PrismaMock;
+  let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
 
   beforeEach(() => {
     prisma = {
@@ -88,8 +90,14 @@ describe('ItemsBrandMasterService', () => {
       async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
         callback(prisma as unknown as Prisma.TransactionClient),
     );
+    auditLogService = {
+      logEntityChange: jest.fn().mockResolvedValue(undefined),
+    };
 
-    service = new ItemsBrandMasterService(prisma as unknown as PrismaService);
+    service = new ItemsBrandMasterService(
+      prisma as unknown as PrismaService,
+      auditLogService as AuditLogService,
+    );
   });
 
   it('creates a root item brand and stores self brand_id in brand_path_ids', async () => {
@@ -383,15 +391,13 @@ describe('ItemsBrandMasterService', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([refreshed])
       .mockResolvedValueOnce([oldParent]);
-    prisma.itemBrandMaster.update
-      .mockResolvedValueOnce(refreshed)
-      .mockResolvedValueOnce(
-        makeRecord({
-          brand_id: PARENT_BRAND_ID,
-          brand_parent_id: null,
-          brand_path_ids: [PARENT_BRAND_ID],
-        }),
-      );
+    prisma.itemBrandMaster.update.mockResolvedValueOnce(refreshed).mockResolvedValueOnce(
+      makeRecord({
+        brand_id: PARENT_BRAND_ID,
+        brand_parent_id: null,
+        brand_path_ids: [PARENT_BRAND_ID],
+      }),
+    );
 
     const result = await service.save({
       brand_id: BRAND_ID,
@@ -571,7 +577,10 @@ describe('ItemsBrandMasterService', () => {
   });
 
   it('stores valid base64 image input into brand_photo bytes', async () => {
-    const createdRecord = makeRecord({ brand_photo: Buffer.from('sample-image'), brand_path_ids: [] });
+    const createdRecord = makeRecord({
+      brand_photo: Buffer.from('sample-image'),
+      brand_path_ids: [],
+    });
     const refreshedRecord = makeRecord({
       brand_photo: Buffer.from('sample-image'),
       brand_path_ids: [BRAND_ID],

@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { GridColumn, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { ListGridColumnQueryDto } from './dto/list-grid-column-query.dto';
@@ -16,6 +12,7 @@ import {
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
+type GridColumnWriteClient = Prisma.TransactionClient | PrismaService;
 
 @Injectable()
 export class GridColumnsService {
@@ -108,78 +105,99 @@ export class GridColumnsService {
   async softDelete(gridSerialId: string): Promise<{ grid_serialid: string; deleted: true }> {
     const parsedGridSerialId = this.parseBigIntId('grid_serialid', gridSerialId);
 
-    const result = await this.prisma.gridColumn.updateMany({
-      where: {
-        gridSerialId: parsedGridSerialId,
-        gridColumnIsDeleted: false,
-      },
-      data: {
-        gridColumnIsDeleted: true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.gridColumn.findFirst({
+        where: {
+          gridSerialId: parsedGridSerialId,
+          gridColumnIsDeleted: false,
+        },
+      });
+
+      if (!existing) {
+        this.throwNotFound(gridSerialId);
+      }
+
+      const result = await tx.gridColumn.updateMany({
+        where: {
+          gridSerialId: parsedGridSerialId,
+          gridColumnIsDeleted: false,
+        },
+        data: {
+          gridColumnIsDeleted: true,
+        },
+      });
+
+      if (result.count === 0) {
+        this.throwNotFound(gridSerialId);
+      }
+
+      return {
+        grid_serialid: gridSerialId,
+        deleted: true,
+      };
     });
-
-    if (result.count === 0) {
-      this.throwNotFound(gridSerialId);
-    }
-
-    return {
-      grid_serialid: gridSerialId,
-      deleted: true,
-    };
   }
 
   private async createGridColumn(saveGridColumnDto: SaveGridColumnDto): Promise<GridColumnPayload> {
     const parsedGridId = this.parseBigIntId('grid_id', saveGridColumnDto.grid_id);
-    await this.ensureGridExists(parsedGridId, saveGridColumnDto.grid_id);
 
-    const data: Prisma.GridColumnUncheckedCreateInput = {
-      gridId: parsedGridId,
-      gridColumnNumber: saveGridColumnDto.grid_column_number,
-      gridColumnName: saveGridColumnDto.grid_column_name.trim(),
-    };
+    return this.prisma.$transaction(async (tx) => {
+      await this.ensureGridExists(parsedGridId, saveGridColumnDto.grid_id, tx);
 
-    this.applyOptionalFields(data, saveGridColumnDto);
-    const created = await this.prisma.gridColumn.create({ data });
-    return this.toPayload(created);
+      const data: Prisma.GridColumnUncheckedCreateInput = {
+        gridId: parsedGridId,
+        gridColumnNumber: saveGridColumnDto.grid_column_number,
+        gridColumnName: saveGridColumnDto.grid_column_name.trim(),
+      };
+
+      this.applyOptionalFields(data, saveGridColumnDto);
+      const created = await tx.gridColumn.create({ data });
+      return this.toPayload(created);
+    });
   }
 
   private async updateGridColumn(saveGridColumnDto: SaveGridColumnDto): Promise<GridColumnPayload> {
     const gridSerialId = saveGridColumnDto.grid_serialid!;
     const parsedGridSerialId = this.parseBigIntId('grid_serialid', gridSerialId);
-
-    const existing = await this.prisma.gridColumn.findFirst({
-      where: {
-        gridSerialId: parsedGridSerialId,
-        gridColumnIsDeleted: false,
-      },
-    });
-
-    if (!existing) {
-      this.throwNotFound(gridSerialId);
-    }
-
     const parsedGridId = this.parseBigIntId('grid_id', saveGridColumnDto.grid_id);
-    await this.ensureGridExists(parsedGridId, saveGridColumnDto.grid_id);
 
-    const data: Prisma.GridColumnUncheckedUpdateInput = {
-      gridId: parsedGridId,
-      gridColumnNumber: saveGridColumnDto.grid_column_number,
-      gridColumnName: saveGridColumnDto.grid_column_name.trim(),
-    };
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.gridColumn.findFirst({
+        where: {
+          gridSerialId: parsedGridSerialId,
+          gridColumnIsDeleted: false,
+        },
+      });
 
-    this.applyOptionalFields(data, saveGridColumnDto);
-    const updated = await this.prisma.gridColumn.update({
-      where: {
-        gridSerialId: parsedGridSerialId,
-      },
-      data,
+      if (!existing) {
+        this.throwNotFound(gridSerialId);
+      }
+
+      await this.ensureGridExists(parsedGridId, saveGridColumnDto.grid_id, tx);
+
+      const data: Prisma.GridColumnUncheckedUpdateInput = {
+        gridId: parsedGridId,
+        gridColumnNumber: saveGridColumnDto.grid_column_number,
+        gridColumnName: saveGridColumnDto.grid_column_name.trim(),
+      };
+
+      this.applyOptionalFields(data, saveGridColumnDto);
+      const updated = await tx.gridColumn.update({
+        where: {
+          gridSerialId: parsedGridSerialId,
+        },
+        data,
+      });
+      return this.toPayload(updated);
     });
-
-    return this.toPayload(updated);
   }
 
-  private async ensureGridExists(gridId: bigint, rawGridId: string): Promise<void> {
-    const parentGrid = await this.prisma.gridDetails.findFirst({
+  private async ensureGridExists(
+    gridId: bigint,
+    rawGridId: string,
+    tx: GridColumnWriteClient = this.prisma,
+  ): Promise<void> {
+    const parentGrid = await tx.gridDetails.findFirst({
       where: {
         gridId,
         gridIsDeleted: false,

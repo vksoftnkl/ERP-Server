@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, Unit } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListUnitQueryDto } from './dto/list-unit-query.dto';
 import { SaveUnitDto } from './dto/save-unit.dto';
 import {
@@ -19,12 +20,16 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const UNIT_TABLE_NAME = 'units';
+const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
 const GRID_SQL_FORBIDDEN_TOKENS =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 @Injectable()
 export class UnitsMasterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
   async save(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
     if (saveUnitDto.unit_id) {
       return this.updateUnit(saveUnitDto);
@@ -172,7 +177,7 @@ export class UnitsMasterService {
           message: 'Configured query must reference units table',
         },
       ]);
-        }
+    }
     return normalized;
   }
   private parseCountValue(value: bigint | number | string | undefined): number {
@@ -201,24 +206,61 @@ export class UnitsMasterService {
     return this.toPayload(record);
   }
   async softDelete(unitId: string): Promise<{ unit_id: string; deleted: true }> {
-    const result = await this.prisma.unit.updateMany({
-      where: {
-        unit_id: unitId,
-        unit_is_deleted: false,
-      },
-      data: {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.unit.findFirst({
+        where: {
+          unit_id: unitId,
+          unit_is_deleted: false,
+        },
+      });
+      if (!existing) {
+        this.throwNotFound(unitId);
+      }
+
+      const modifiedOn = new Date();
+      const result = await tx.unit.updateMany({
+        where: {
+          unit_id: unitId,
+          unit_is_deleted: false,
+        },
+        data: {
+          unit_is_deleted: true,
+          unit_modified_on: modifiedOn,
+          unit_modified_by: DEFAULT_ACTOR,
+        },
+      });
+      if (result.count === 0) {
+        this.throwNotFound(unitId);
+      }
+
+      const originalRecord = this.toPayload(existing);
+      const modifiedRecord = this.toPayload({
+        ...existing,
         unit_is_deleted: true,
-        unit_modified_on: new Date(),
+        unit_modified_on: modifiedOn,
         unit_modified_by: DEFAULT_ACTOR,
-      },
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: UNIT_TABLE_NAME,
+          screenName: UNIT_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: unitId,
+          displayName: existing.unit_name,
+          originalRecord,
+          modifiedRecord,
+          userId: DEFAULT_ACTOR,
+          notes: 'Unit soft deleted',
+        },
+        tx,
+      );
+
+      return {
+        unit_id: unitId,
+        deleted: true,
+      };
     });
-    if (result.count === 0) {
-      this.throwNotFound(unitId);
-    }
-    return {
-      unit_id: unitId,
-      deleted: true,
-    };
   }
   private async createUnit(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
     const baseUnitId = this.hasOwnProperty(saveUnitDto, 'unit_base_unit_id')
@@ -240,8 +282,26 @@ export class UnitsMasterService {
     };
     this.applyOptionalFields(data, saveUnitDto);
     try {
-      const created = await this.prisma.unit.create({ data });
-      return this.toPayload(created);
+      return await this.prisma.$transaction(async (tx) => {
+        const created = await tx.unit.create({ data });
+        const payload = this.toPayload(created);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'New',
+            tableName: UNIT_TABLE_NAME,
+            screenName: UNIT_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: payload.unit_id,
+            displayName: payload.unit_name,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: createdBy,
+            notes: 'Unit created',
+          },
+          tx,
+        );
+        return payload;
+      });
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;
@@ -249,44 +309,62 @@ export class UnitsMasterService {
   }
   private async updateUnit(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
     const unitId = saveUnitDto.unit_id!;
-    const existing = await this.prisma.unit.findFirst({
-      where: {
-        unit_id: unitId,
-        unit_is_deleted: false,
-      },
-    });
-    if (!existing) {
-      this.throwNotFound(unitId);
-    }
-    const baseUnitId = this.hasOwnProperty(saveUnitDto, 'unit_base_unit_id')
-      ? (saveUnitDto.unit_base_unit_id ?? null)
-      : existing.unit_base_unit_id;
-    const conversion = this.hasOwnProperty(saveUnitDto, 'unit_conversion')
-      ? (saveUnitDto.unit_conversion ?? null)
-      : this.toNullableNumber(existing.unit_conversion);
-    if (baseUnitId !== null && baseUnitId === unitId) {
-      this.throwBadRequest('Validation error', [
-        {
-          field: 'unit_base_unit_id',
-          message: 'unit_base_unit_id cannot be same as unit_id',
-        },
-      ]);
-    }
-    this.validateConversionRules(baseUnitId, conversion);
-    const data: Prisma.UnitUncheckedUpdateInput = {
-      unit_name: saveUnitDto.unit_name.trim(),
-      unit_modified_on: new Date(),
-      unit_modified_by: this.resolveActor(saveUnitDto.unit_modified_by),
-    };
-    this.applyOptionalFields(data, saveUnitDto);
     try {
-      const updated = await this.prisma.unit.update({
-        where: {
-          unit_id: unitId,
-        },
-        data,
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.unit.findFirst({
+          where: {
+            unit_id: unitId,
+            unit_is_deleted: false,
+          },
+        });
+        if (!existing) {
+          this.throwNotFound(unitId);
+        }
+        const baseUnitId = this.hasOwnProperty(saveUnitDto, 'unit_base_unit_id')
+          ? (saveUnitDto.unit_base_unit_id ?? null)
+          : existing.unit_base_unit_id;
+        const conversion = this.hasOwnProperty(saveUnitDto, 'unit_conversion')
+          ? (saveUnitDto.unit_conversion ?? null)
+          : this.toNullableNumber(existing.unit_conversion);
+        if (baseUnitId !== null && baseUnitId === unitId) {
+          this.throwBadRequest('Validation error', [
+            {
+              field: 'unit_base_unit_id',
+              message: 'unit_base_unit_id cannot be same as unit_id',
+            },
+          ]);
+        }
+        this.validateConversionRules(baseUnitId, conversion);
+        const data: Prisma.UnitUncheckedUpdateInput = {
+          unit_name: saveUnitDto.unit_name.trim(),
+          unit_modified_on: new Date(),
+          unit_modified_by: this.resolveActor(saveUnitDto.unit_modified_by),
+        };
+        this.applyOptionalFields(data, saveUnitDto);
+        const updated = await tx.unit.update({
+          where: {
+            unit_id: unitId,
+          },
+          data,
+        });
+        const payload = this.toPayload(updated);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: UNIT_TABLE_NAME,
+            screenName: UNIT_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: unitId,
+            displayName: payload.unit_name,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: payload,
+            userId: payload.unit_modified_by,
+            notes: 'Unit updated',
+          },
+          tx,
+        );
+        return payload;
       });
-      return this.toPayload(updated);
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;

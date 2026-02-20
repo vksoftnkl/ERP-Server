@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import {
@@ -18,11 +19,16 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
+const ITEM_SECTION_TABLE_NAME = 'item_section_master';
+const ITEM_SECTION_AUDIT_SCREEN_NAME = 'Item Section Master';
 type ItemSectionWriteClient = Prisma.TransactionClient | PrismaService;
 
 @Injectable()
 export class ItemsSectionMasterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   async save(saveItemSectionDto: SaveItemSectionDto): Promise<ItemSectionPayload> {
     if (saveItemSectionDto.sec_id) {
@@ -42,7 +48,6 @@ export class ItemsSectionMasterService {
     const where: Prisma.ItemSectionMasterWhereInput = {
       secIsDeleted: false,
     };
-
 
     if (queryDto.sec_parent_id !== undefined) {
       where.secParentId = queryDto.sec_parent_id;
@@ -104,9 +109,6 @@ export class ItemsSectionMasterService {
           secId,
           secIsDeleted: false,
         },
-        select: {
-          secParentId: true,
-        },
       });
 
       if (!existing) {
@@ -115,6 +117,7 @@ export class ItemsSectionMasterService {
 
       const subtreeIds = await this.getActiveSubtreeIds(tx, secId);
       const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
+      const modifiedOn = new Date();
       const result = await tx.itemSectionMaster.updateMany({
         where: {
           secId,
@@ -122,7 +125,7 @@ export class ItemsSectionMasterService {
         },
         data: {
           secIsDeleted: true,
-          secModifiedOn: new Date(),
+          secModifiedOn: modifiedOn,
           secModifiedBy: DEFAULT_ACTOR,
         },
       });
@@ -132,6 +135,30 @@ export class ItemsSectionMasterService {
       }
 
       await this.removePathIds(tx, ancestorIds, subtreeIds);
+
+      const originalRecord = this.toPayload(existing);
+      const modifiedRecord = this.toPayload({
+        ...existing,
+        secIsDeleted: true,
+        secModifiedOn: modifiedOn,
+        secModifiedBy: DEFAULT_ACTOR,
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: ITEM_SECTION_TABLE_NAME,
+          screenName: ITEM_SECTION_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: secId,
+          displayName: existing.secName,
+          originalRecord,
+          modifiedRecord,
+          userId: DEFAULT_ACTOR,
+          notes: 'Item section soft deleted',
+        },
+        tx,
+      );
+
       return {
         sec_id: secId,
         deleted: true,
@@ -175,13 +202,28 @@ export class ItemsSectionMasterService {
             secIsDeleted: false,
           },
         });
-        if (!refreshed) {
-          return this.toPayload({
-            ...created,
-            secPathIds: this.mergePathIds(created.secPathIds, [created.secId]),
-          });
-        }
-        return this.toPayload(refreshed);
+        const payload = !refreshed
+          ? this.toPayload({
+              ...created,
+              secPathIds: this.mergePathIds(created.secPathIds, [created.secId]),
+            })
+          : this.toPayload(refreshed);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'New',
+            tableName: ITEM_SECTION_TABLE_NAME,
+            screenName: ITEM_SECTION_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: payload.sec_id,
+            displayName: payload.sec_name,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: DEFAULT_ACTOR,
+            notes: 'Item section created',
+          },
+          tx,
+        );
+        return payload;
       });
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -220,10 +262,14 @@ export class ItemsSectionMasterService {
         }
 
         const hasParentField = this.hasOwnProperty(saveItemSectionDto, 'sec_parent_id');
-        const nextParentId = hasParentField ? (saveItemSectionDto.sec_parent_id ?? null) : existing.secParentId;
+        const nextParentId = hasParentField
+          ? (saveItemSectionDto.sec_parent_id ?? null)
+          : existing.secParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.secParentId;
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, secId) : [];
-        const oldAncestorIds = isParentChanged ? await this.getAncestorIds(tx, existing.secParentId) : [];
+        const oldAncestorIds = isParentChanged
+          ? await this.getAncestorIds(tx, existing.secParentId)
+          : [];
 
         const data: Prisma.ItemSectionMasterUncheckedUpdateInput = {
           secName: saveItemSectionDto.sec_name.trim(),
@@ -252,7 +298,23 @@ export class ItemsSectionMasterService {
             secIsDeleted: false,
           },
         });
-        return this.toPayload(refreshed ?? updated);
+        const payload = this.toPayload(refreshed ?? updated);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: ITEM_SECTION_TABLE_NAME,
+            screenName: ITEM_SECTION_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: secId,
+            displayName: payload.sec_name,
+            originalRecord: this.toPayload(existing),
+            modifiedRecord: payload,
+            userId: DEFAULT_ACTOR,
+            notes: 'Item section updated',
+          },
+          tx,
+        );
+        return payload;
       });
     } catch (error: unknown) {
       this.handleWriteError(error);

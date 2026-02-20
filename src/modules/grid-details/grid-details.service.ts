@@ -91,6 +91,17 @@ export class GridDetailsService {
     const parsedGridId = this.parseBigIntId('grid_id', gridId);
 
     const result = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.gridDetails.findFirst({
+        where: {
+          gridId: parsedGridId,
+          gridIsDeleted: false,
+        },
+      });
+
+      if (!existing) {
+        return 0;
+      }
+
       const updatedGrid = await tx.gridDetails.updateMany({
         where: {
           gridId: parsedGridId,
@@ -129,44 +140,51 @@ export class GridDetailsService {
     };
   }
 
-  private async createGridDetails(saveGridDetailDto: SaveGridDetailDto): Promise<GridDetailPayload> {
+  private async createGridDetails(
+    saveGridDetailDto: SaveGridDetailDto,
+  ): Promise<GridDetailPayload> {
     const data: Prisma.GridDetailsUncheckedCreateInput = {
       gridName: saveGridDetailDto.grid_name.trim(),
     };
 
     this.applyOptionalFields(data, saveGridDetailDto);
 
-    const created = await this.prisma.gridDetails.create({ data });
-    return this.toPayload(created);
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.gridDetails.create({ data });
+      return this.toPayload(created);
+    });
   }
 
-  private async updateGridDetails(saveGridDetailDto: SaveGridDetailDto): Promise<GridDetailPayload> {
+  private async updateGridDetails(
+    saveGridDetailDto: SaveGridDetailDto,
+  ): Promise<GridDetailPayload> {
     const gridId = saveGridDetailDto.grid_id!;
     const parsedGridId = this.parseBigIntId('grid_id', gridId);
 
-    const existing = await this.prisma.gridDetails.findFirst({
-      where: {
-        gridId: parsedGridId,
-        gridIsDeleted: false,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.gridDetails.findFirst({
+        where: {
+          gridId: parsedGridId,
+          gridIsDeleted: false,
+        },
+      });
+
+      if (!existing) {
+        this.throwNotFound(gridId);
+      }
+
+      const data: Prisma.GridDetailsUncheckedUpdateInput = {
+        gridName: saveGridDetailDto.grid_name.trim(),
+      };
+
+      this.applyOptionalFields(data, saveGridDetailDto);
+
+      const updated = await tx.gridDetails.update({
+        where: { gridId: parsedGridId },
+        data,
+      });
+      return this.toPayload(updated);
     });
-
-    if (!existing) {
-      this.throwNotFound(gridId);
-    }
-
-    const data: Prisma.GridDetailsUncheckedUpdateInput = {
-      gridName: saveGridDetailDto.grid_name.trim(),
-    };
-
-    this.applyOptionalFields(data, saveGridDetailDto);
-
-    const updated = await this.prisma.gridDetails.update({
-      where: { gridId: parsedGridId },
-      data,
-    });
-
-    return this.toPayload(updated);
   }
 
   private applyOptionalFields(

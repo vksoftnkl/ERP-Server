@@ -14,7 +14,10 @@ type UsersServiceMock = {
 };
 
 type TokenServiceMock = {
-  signAccessToken: jest.Mock<{ token: string; expiresIn: number }, [{ sub: string; user_name: string }]>;
+  signAccessToken: jest.Mock<
+    { token: string; expiresIn: number },
+    [{ sub: string; user_name: string }]
+  >;
 };
 
 const hashPasswordForTest = async (plainPassword: string): Promise<string> => {

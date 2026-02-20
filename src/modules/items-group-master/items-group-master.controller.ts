@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBearerAuth,
   ApiBody,
   ApiBadRequestResponse,
   ApiConsumes,
@@ -24,7 +25,9 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import {
   ItemGroupErrorResponseDto,
@@ -47,6 +50,8 @@ type UploadedPhotoFile = {
 };
 
 @ApiTags('Item Groups')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @Controller('item-groups')
 @UseFilters(ItemGroupExceptionFilter)
 export class ItemsGroupMasterController {
