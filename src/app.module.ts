@@ -25,6 +25,10 @@ import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
 import { GodownsMasterModule } from './modules/godowns-master/godowns-master.module';
 import { ItemsTaxMasterModule } from './modules/items-tax-master/items-tax-master.module';
 import { ItemsEanCodeMasterModule } from './modules/items-ean-code-master/items-ean-code-master.module';
+import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
+import { ItemsPriceMasterModule } from './modules/items-price-master/items-price-master.module';
+import { ItemsQtywiseRatesMasterModule } from './modules/items-qtywise-rates-master/items-qtywise-rates-master.module';
+import { ItemsReorderMasterModule } from './modules/items-reorder-master/items-reorder-master.module';
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -62,6 +66,10 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     UnitsMasterModule,
     ItemsTaxMasterModule,
     ItemsEanCodeMasterModule,
+    ItemsCustRatesMasterModule,
+    ItemsPriceMasterModule,
+    ItemsQtywiseRatesMasterModule,
+    ItemsReorderMasterModule,
     GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,
