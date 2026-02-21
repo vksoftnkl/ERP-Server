@@ -1,0 +1,20 @@
+model GspProviderMaster {
+  gspProviderId       String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("gsp_provider_id")
+  gspProviderCode     String    @db.VarChar(50)                                  @map("gsp_provider_code")
+  gspProviderName     String    @db.VarChar(150)                                 @map("gsp_provider_name")
+  gspBaseUrl          String                                                      @map("gsp_base_url")
+  gspRoute            String                                                      @map("gsp_route")
+  gspIpAddress        String    @db.Inet                                          @map("gsp_ip_address")
+  gspUserName         String                                                      @map("gsp_user_name")
+  gspUserPassword     String                                                      @map("gsp_user_password")
+  gspIsActive         Boolean   @default(true)                                    @map("gsp_is_active")
+  gspIsDeleted        Boolean   @default(false)                                   @map("gsp_is_deleted")
+  gspCreatedOn        DateTime  @default(now()) @db.Timestamptz                  @map("gsp_created_on")
+  gspCreatedBy        String?   @db.VarChar(100)                                 @map("gsp_created_by")
+  gspModifiedOn       DateTime  @default(now()) @db.Timestamptz                  @map("gsp_modified_on")
+  gspModifiedBy       String?   @db.VarChar(100)                                 @map("gsp_modified_by")
+
+  @@index([gspIsActive], name: "idx_gsp_provider_active")
+  @@map("gsp_provider_master")
+  @@schema("accounts")
+}

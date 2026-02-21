@@ -1,0 +1,16 @@
+model CompanyGroupMaster {
+  cogGroupId      String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("cog_group_id")
+  cogGroupName    String    @db.VarChar(80)                                  @map("cog_group_name")
+  cogCompanyIds   String[]  @db.Uuid                                         @map("cog_company_ids")
+  cogIsActive     Boolean   @default(true)                                   @map("cog_is_active")
+  cogIsDeleted    Boolean   @default(false)                                  @map("cog_is_deleted")
+  cogSyncDate     DateTime? @db.Timestamptz                                 @map("cog_sync_date")
+  cogCreatedOn    DateTime  @default(now()) @db.Timestamptz                 @map("cog_created_on")
+  cogCreatedBy    String?   @db.VarChar(100)                                @map("cog_created_by")
+  cogModifiedOn   DateTime  @default(now()) @db.Timestamptz                 @map("cog_modified_on")
+  cogModifiedBy   String?   @db.VarChar(100)                                @map("cog_modified_by")
+
+  @@index([cogIsActive], name: "idx_cog_group_active")
+  @@map("company_group_master")
+  @@schema("accounts")
+}

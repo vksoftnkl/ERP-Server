@@ -1,0 +1,26 @@
+model GspCompanyService {
+  csgCompanyServiceId      String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("csg_company_service_id")
+  csgCompanyId             Int                                                        @map("csg_company_id")
+  csgGspProviderId         String    @db.Uuid                                          @map("csg_gsp_provider_id")
+  csgServiceType           String    @db.VarChar(20)                                  @map("csg_service_type")
+  csgEuserName             String                                                      @map("csg_euser_name")
+  csgEuserPassword         String                                                      @map("csg_euser_password")
+  csgAuthToken             String?                                                     @map("csg_auth_token")
+  csgAuthTokenValidTill    DateTime? @db.Timestamptz                                  @map("csg_auth_token_valid_till")
+  csgIsActive              Boolean   @default(true)                                    @map("csg_is_active")
+  csgIsDeleted             Boolean   @default(false)                                   @map("csg_is_deleted")
+  csgSyncDate              DateTime? @db.Timestamptz                                  @map("csg_sync_date")
+  csgCreatedOn             DateTime  @default(now()) @db.Timestamptz                  @map("csg_created_on")
+  csgCreatedBy             String?   @db.VarChar(100)                                 @map("csg_created_by")
+  csgModifiedOn            DateTime  @default(now()) @db.Timestamptz                  @map("csg_modified_on")
+  csgModifiedBy            String?   @db.VarChar(100)                                 @map("csg_modified_by")
+
+  // Relations
+  company                  Company   @relation(fields: [csgCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+
+  @@index([csgCompanyId],   name: "idx_gsp_company_service_company")
+  @@index([csgServiceType], name: "idx_gsp_company_service_service")
+  @@index([csgIsActive],    name: "idx_gsp_company_service_active")
+  @@map("gsp_company_service")
+  @@schema("accounts")
+}

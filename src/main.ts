@@ -11,19 +11,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FileLoggerService } from './common/logging/file-logger.service';
 import { PrismaService } from './database/prisma/prisma.service';
-import { AuditLogModule } from './modules/audit-log/audit-log.module';
-import { AuthModule } from './modules/auth/auth.module';
-import { GridColumnsModule } from './modules/grid-columns/grid-columns.module';
-import { GridDetailsModule } from './modules/grid-details/grid-details.module';
-import { GodownsMasterModule } from './modules/godowns-master/godowns-master.module';
-import { HealthModule } from './modules/health/health.module';
-import { ItemsBrandMasterModule } from './modules/items-brand-master/items-brand-master.module';
-import { ItemsCategoryMasterModule } from './modules/items-category-master/items-category-master.module';
-import { ItemsGroupMasterModule } from './modules/items-group-master/items-group-master.module';
-import { ItemsSectionMasterModule } from './modules/items-section-master/items-section-master.module';
-import { ItemsTaxMasterModule } from './modules/items-tax-master/items-tax-master.module';
-import { UnitsMasterModule } from './modules/units-master/units-master.module';
-import { UsersModule } from './modules/users/users.module';
+import { swaggerModuleDocuments } from './utils/swaggerDocs';
 
 const parseBoolean = (value: string | undefined, defaultValue = false): boolean => {
   if (value === undefined) {
@@ -121,7 +109,7 @@ async function bootstrap(): Promise<void> {
   app.useLogger(logger);
   const configService = app.get(ConfigService);
   const requestBodyLimit = configService.get<string>('app.requestBodyLimit', '10mb');
-
+  const swaggerModuleDocs = swaggerModuleDocuments;
   app.enableShutdownHooks();
   app.use(json({ limit: requestBodyLimit }));
   app.use(urlencoded({ extended: true, limit: requestBodyLimit }));
@@ -163,87 +151,7 @@ async function bootstrap(): Promise<void> {
   );
   SwaggerModule.setup(allDocsPath, app, allSwaggerDocument);
 
-  const swaggerModuleDocs = [
-    {
-      path: 'auth',
-      title: 'Auth API',
-      description: 'Auth module endpoints',
-      include: [AuthModule],
-    },
-    {
-      path: 'health',
-      title: 'Health API',
-      description: 'Health module endpoints',
-      include: [HealthModule],
-    },
-    {
-      path: 'users',
-      title: 'Users API',
-      description: 'Users module endpoints',
-      include: [UsersModule],
-    },
-    {
-      path: 'items-group-master',
-      title: 'Item Group API',
-      description: 'Item group module endpoints',
-      include: [ItemsGroupMasterModule],
-    },
-    {
-      path: 'items-brand-master',
-      title: 'Item Brand API',
-      description: 'Item brand module endpoints',
-      include: [ItemsBrandMasterModule],
-    },
-    {
-      path: 'items-section-master',
-      title: 'Item Section API',
-      description: 'Item section module endpoints',
-      include: [ItemsSectionMasterModule],
-    },
-    {
-      path: 'items-category-master',
-      title: 'Item Category API',
-      description: 'Item category module endpoints',
-      include: [ItemsCategoryMasterModule],
-    },
-    {
-      path: 'units-master',
-      title: 'Units API',
-      description: 'Units module endpoints',
-      include: [UnitsMasterModule],
-    },
-    {
-      path: 'items-tax-master',
-      title: 'Item Tax API',
-      description: 'Item tax module endpoints',
-      include: [ItemsTaxMasterModule],
-    },
-    {
-      path: 'godowns-master',
-      title: 'Godowns API',
-      description: 'Godowns module endpoints',
-      include: [GodownsMasterModule],
-    },
-    {
-      path: 'grid-details',
-      title: 'Grid Details API',
-      description: 'Grid details module endpoints',
-      include: [GridDetailsModule],
-    },
-    {
-      path: 'grid-columns',
-      title: 'Grid Columns API',
-      description: 'Grid columns module endpoints',
-      include: [GridColumnsModule],
-    },
-    {
-      path: 'audit-log',
-      title: 'Audit Log API',
-      description: 'Audit log module endpoints',
-      include: [AuditLogModule],
-    },
-  ];
-
+   
   for (const docs of swaggerModuleDocs) {
     const docsPath = apiPrefix ? `${apiPrefix}/docs/${docs.path}` : `docs/${docs.path}`;
     const moduleSwaggerDocument = SwaggerModule.createDocument(

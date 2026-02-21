@@ -1,0 +1,49 @@
+model AccShipAddr {
+  saaId          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("saa_id")
+  saaCompanyId   Int?     @map("saa_company_id")
+  saaLedgerId    String   @db.Uuid @map("saa_ledger_id")
+
+  saaAddrType    String   @default("SHIP_TO") @db.VarChar(20) @map("saa_addr_type")
+  saaIsDefault   Boolean  @default(false) @map("saa_is_default")
+  saaSort        Int      @default(0) @map("saa_sort")
+
+  saaTrdnm       String?  @db.VarChar(200) @map("saa_trdnm")
+  saaContactName String?  @db.VarChar(150) @map("saa_contact_name")
+
+  saaAddr1       String?  @db.VarChar(250) @map("saa_addr1")
+  saaAddr2       String?  @db.VarChar(250) @map("saa_addr2")
+  saaAddr3       String?  @db.VarChar(250) @map("saa_addr3")
+  saaLoc         String?  @db.VarChar(200) @map("saa_loc")
+  saaPin         String?  @db.VarChar(10)  @map("saa_pin")
+  saaStateCode   String?  @db.Char(2)      @map("saa_state_code")
+  saaStateName   String?  @db.VarChar(100) @map("saa_state_name")
+
+  saaDistanceKm  Int?     @map("saa_distance_km")
+
+  saaPhone       String?  @db.VarChar(20)  @map("saa_phone")
+  saaEmail       String?  @db.VarChar(120) @map("saa_email")
+
+  saaGstin       String?  @db.VarChar(15)  @map("saa_gstin")
+  saaPan         String?  @db.VarChar(10)  @map("saa_pan")
+
+  saaSyncDate    DateTime? @db.Timestamptz(6) @map("saa_sync_date")
+  saaIsActive    Boolean   @default(true) @map("saa_is_active")
+  saaIsDeleted   Boolean   @default(false) @map("saa_is_deleted")
+
+  saaCreatedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("saa_created_on")
+  saaCreatedBy   String?   @db.VarChar(100) @map("saa_created_by")
+  saaModifiedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("saa_modified_on")
+  saaModifiedBy  String?   @db.VarChar(100) @map("saa_modified_by")
+
+  saaRemarks     String?   @db.VarChar(250) @map("saa_remarks")
+
+  /// Relations
+  company Company? @relation(fields: [saaCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  ledger  AccLedgerMaster @relation(fields: [saaLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("acc_ship_addrs")
+  @@index([saaCompanyId], map: "idx_saa_company")
+  @@index([saaLedgerId], map: "idx_saa_ledger")
+  @@index([saaLedgerId, saaIsDefault], map: "idx_saa_ledger_default")
+  @@schema("accounts")
+}

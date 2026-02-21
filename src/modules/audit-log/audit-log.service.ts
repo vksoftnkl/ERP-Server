@@ -155,18 +155,13 @@ export class AuditLogService {
       logChangedFields: this.toJsonInput(input.changedFields),
       logUserId: resolvedUserId,
       logBranchId: this.normalizeUuid(input.branchId),
+      logIp: resolvedIpAddress,
       logNotes: this.normalizeOptionalText(input.notes),
     };
 
-    const createdAuditLog = await client.auditLog.create({
+    await client.auditLog.create({
       data,
-      select: {
-        logId: true,
-      },
     });
-    if (resolvedIpAddress) {
-      await this.persistAuditLogIpAddress(createdAuditLog.logId, resolvedIpAddress, client);
-    }
   }
 
   async logEntityChange(input: LogEntityChangeInput, tx?: Prisma.TransactionClient): Promise<void> {
@@ -553,17 +548,5 @@ export class AuditLogService {
     }
 
     return isIP(normalized) === 0 ? null : normalized;
-  }
-
-  private async persistAuditLogIpAddress(
-    logId: string,
-    ipAddress: string,
-    client: AuditWriteClient,
-  ): Promise<void> {
-    await client.$executeRaw`
-      UPDATE "audit"."audit_log"
-      SET "log_ip" = ${ipAddress}::inet
-      WHERE "log_id" = ${logId}::uuid
-    `;
   }
 }

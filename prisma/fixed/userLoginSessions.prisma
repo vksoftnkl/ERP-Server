@@ -1,0 +1,43 @@
+model UserLoginSession {
+  ulsId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("uls_id")
+
+  // 1) Identity / Scope
+  ulsBranchId         String    @db.Uuid                                          @map("uls_branch_id")
+  ulsUserId           String    @db.Uuid                                          @map("uls_user_id")
+  ulsDeviceId         String?   @db.Uuid                                          @map("uls_device_id")
+
+  // 2) Session / Tokens
+  ulsSessionId        String?   @db.Uuid                                          @map("uls_session_id")
+  ulsSessionToken     String?   @db.VarChar(200)                                 @map("uls_session_token")
+  ulsRefreshTokenId   String?   @db.VarChar(200)                                 @map("uls_refresh_token_id")
+
+  // 3) Event Info
+  ulsLoginOn          DateTime  @default(now()) @db.Timestamptz                  @map("uls_login_on")
+  ulsLogoutOn         DateTime? @db.Timestamptz                                  @map("uls_logout_on")
+  ulsLogoutType       String?   @db.VarChar(20)                                  @map("uls_logout_type")
+  ulsLoginStatus      String    @default("SUCCESS") @db.VarChar(20)              @map("uls_login_status")
+  ulsFailReason       String?   @db.VarChar(250)                                 @map("uls_fail_reason")
+
+  // 4) Client Info
+  ulsIpAddress        String?   @db.Inet                                          @map("uls_ip_address")
+  ulsUserAgent        String?                                                     @map("uls_user_agent")
+  ulsAppVersion       String?   @db.VarChar(40)                                  @map("uls_app_version")
+
+  // 5) Derived / Status
+  ulsIsActiveSession  Boolean   @default(true)                                    @map("uls_is_active_session")
+  ulsIsActive         Boolean   @default(true)                                    @map("uls_is_active")
+  ulsIsDeleted        Boolean   @default(false)                                   @map("uls_is_deleted")
+
+  // 6) Audit / Sync
+  ulsSyncDate         DateTime? @db.Timestamptz                                  @map("uls_sync_date")
+  ulsCreatedOn        DateTime  @default(now()) @db.Timestamptz                  @map("uls_created_on")
+  ulsCreatedBy        String?   @db.VarChar(100)                                 @map("uls_created_by")
+  ulsModifiedOn       DateTime  @default(now()) @db.Timestamptz                  @map("uls_modified_on")
+  ulsModifiedBy       String?   @db.VarChar(100)                                 @map("uls_modified_by")
+
+  @@index([ulsUserId],          name: "idx_uls_user")
+  @@index([ulsIsActiveSession], name: "idx_uls_active_session")
+  @@index([ulsDeviceId],        name: "idx_uls_device_date")
+  @@map("user_login_sessions")
+  @@schema("fixed")
+}

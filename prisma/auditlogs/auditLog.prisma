@@ -42,7 +42,7 @@ model AuditLog {
 
   // Client info
   logDeviceName     String?         @db.Text @map("log_device_name")
-  logIp             Unsupported("inet")? @map("log_ip")          // keep inet type in Postgres
+  logIp             String?         @db.Text @map("log_ip")
   logAppName        String?         @db.Text @map("log_app_name")
 
   // Notes

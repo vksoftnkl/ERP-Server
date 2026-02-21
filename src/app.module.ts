@@ -24,6 +24,7 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
 import { GodownsMasterModule } from './modules/godowns-master/godowns-master.module';
 import { ItemsTaxMasterModule } from './modules/items-tax-master/items-tax-master.module';
+import { ItemsEanCodeMasterModule } from './modules/items-ean-code-master/items-ean-code-master.module';
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -60,6 +61,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     ItemsCategoryMasterModule,
     UnitsMasterModule,
     ItemsTaxMasterModule,
+    ItemsEanCodeMasterModule,
     GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,

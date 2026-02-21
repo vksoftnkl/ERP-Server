@@ -1,0 +1,21 @@
+model EmployeeDesignation {
+  edId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("ed_id")
+  edName        String    @db.VarChar(150)                                 @map("ed_name")
+  edCode        String?   @db.VarChar(50)                                  @map("ed_code")
+  edIsDefault   Boolean   @default(false)                                  @map("ed_is_default")
+  edRemarks     String?   @db.VarChar(250)                                 @map("ed_remarks")
+  edIsActive    Boolean   @default(true)                                   @map("ed_is_active")
+  edIsDeleted   Boolean   @default(false)                                  @map("ed_is_deleted")
+  edSyncDate    DateTime? @db.Timestamptz                                  @map("ed_sync_date")
+  edCreatedOn   DateTime  @default(now()) @db.Timestamptz                  @map("ed_created_on")
+  edCreatedBy   String?   @db.VarChar(100)                                 @map("ed_created_by")
+  edModifiedOn  DateTime  @default(now()) @db.Timestamptz                  @map("ed_modified_on")
+  edModifiedBy  String?   @db.VarChar(100)                                 @map("ed_modified_by")
+
+  // Relations
+  employees     EmpMaster[]
+
+  @@index([edIsActive], name: "idx_ed_active")
+  @@map("employee_designations")
+  @@schema("accounts")
+}

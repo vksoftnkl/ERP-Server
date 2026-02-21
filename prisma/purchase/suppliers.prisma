@@ -1,0 +1,74 @@
+model Supplier {
+  supId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  // 1) Scope / Link
+  supBranchId          String?   @db.Uuid
+  supGroupId           String    @db.Uuid
+  supPurchaseType      String    @db.VarChar(20)
+
+  // 2) Names / Contact
+  supName              String    @db.VarChar(200)
+  supShort             String?   @db.VarChar(50)
+  supAddr1             String?   @db.VarChar(250)
+  supAddr2             String?   @db.VarChar(250)
+  supAddr3             String?   @db.VarChar(250)
+  supCity              String?   @db.VarChar(250)
+  supDistrict          String?   @db.VarChar(250)
+  supStateName         String    @db.VarChar(100)
+  supCountry           String?   @default("India") @db.VarChar(60)
+  supPincode           String?   @db.VarChar(10)
+  supTel               String?   @db.VarChar(20)
+  supPhone             String?   @db.VarChar(20)
+  supMailId            String?   @db.VarChar(120)
+  supWhatsappNo        String?   @db.VarChar(20)
+  supWebsiteAddress    String?   @db.VarChar(200)
+  supChequePreName     String?   @db.VarChar(200)
+  supNotes             String?   @db.VarChar(250)
+
+  // 3) Credit / Discount
+  supCreditDays        Int       @default(0)
+  supCashDiscPerc      Decimal   @default(0) @db.Decimal(7, 3)
+
+  // 5) Collection / Schedules
+  supCollectionDays    Int[]
+
+  // 6) Tax / Compliance
+  supGstNo             String?   @db.VarChar(15)
+  supStateCode         String    @db.Char(2)
+  supPanNo             String?   @db.VarChar(10)
+  supGstType           String    @db.VarChar(30)
+  supSupCst            String?   @db.VarChar(25)
+  supDrugLiscenceNo    String?   @db.VarChar(100)
+
+  // 7) Regional (Tally style) fields
+  supRegionName        String?   @db.VarChar(200)
+  supRegionAddr1       String?   @db.VarChar(250)
+  supRegionAddr2       String?   @db.VarChar(250)
+  supRegionAddr3       String?   @db.VarChar(250)
+  supRegionCity        String?   @db.VarChar(250)
+  supRegionDistrict    String?   @db.VarChar(250)
+  supRegionStateName   String?   @db.VarChar(100)
+  supRegionCountry     String?   @default("India") @db.VarChar(60)
+
+  // 8) Stats
+  supBilledDate        DateTime? @db.Date
+  supSortOrder         Int?      @default(0)
+
+  // 9) Status / Audit / Sync
+  supIsActive          Boolean   @default(true)
+  supIsDeleted         Boolean   @default(false)
+  supSyncDate          DateTime? @db.Timestamptz
+  supCreatedOn         DateTime  @default(now()) @db.Timestamptz
+  supCreatedBy         String?   @db.VarChar(100)
+  supModifiedOn        DateTime  @default(now()) @db.Timestamptz
+  supModifiedBy        String?   @db.VarChar(100)
+
+  // Relations
+  supplierGroup        SupplierGroup @relation(fields: [supGroupId], references: [spgId])
+
+  @@index([supGroupId],  name: "idx_sup_group")
+  @@index([supGstNo],    name: "idx_sup_gst")
+  @@index([supIsActive], name: "idx_sup_active")
+  @@map("suppliers")
+  @@schema("purchase")
+}
