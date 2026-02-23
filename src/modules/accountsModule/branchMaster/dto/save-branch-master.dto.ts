@@ -11,7 +11,6 @@ import {
   IsUUID,
   Length,
   MaxLength,
-  Min,
   ValidateIf,
   isUUID,
 } from 'class-validator';
@@ -72,8 +71,16 @@ const toNullableDate = (value: unknown): Date | null | undefined => {
     return null;
   }
 
-  const parsed = value instanceof Date ? value : new Date(String(value));
-  return Number.isNaN(parsed.getTime()) ? (value as Date) : parsed;
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return value as unknown as Date;
+  }
+
+  const parsed = new Date(value as string | number);
+  return Number.isNaN(parsed.getTime()) ? (value as unknown as Date) : parsed;
 };
 
 export class SaveBranchMasterDto {
@@ -88,7 +95,7 @@ export class SaveBranchMasterDto {
   @ApiProperty({ type: Number })
   @Type(() => Number)
   @IsInt()
-  compId!: number;
+  compId!: string;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @IsOptional()

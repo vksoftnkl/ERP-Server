@@ -51,7 +51,7 @@ const toNullableString = (value: unknown): string | null | undefined => {
   return trimmed ? trimmed : null;
 };
 
-const toOptionalTypeCode = (value: unknown): string | unknown => {
+const toOptionalTypeCode = (value: unknown): unknown => {
   if (typeof value !== 'string') {
     return value;
   }
@@ -68,10 +68,12 @@ export class SaveAccountGroupDto {
   @IsUUID('all')
   accGroupId?: string;
 
-  @ApiPropertyOptional({ type: Number })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
-  @IsInt()
-  accGroupCompanyId?: number;
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  accGroupCompanyId?: string | null;
 
   @ApiProperty({ maxLength: 150 })
   @IsString()

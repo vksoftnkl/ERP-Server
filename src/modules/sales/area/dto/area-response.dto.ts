@@ -54,14 +54,12 @@ export class AreaPayloadDto {
   armSyncDate!: string | null;
 
   @ApiProperty()
-  
   armCreatedOn!: string;
 
   @ApiPropertyOptional({ nullable: true })
   armCreatedBy!: string | null;
 
   @ApiProperty()
-  
   armModifiedOn!: string;
 
   @ApiPropertyOptional({ nullable: true })

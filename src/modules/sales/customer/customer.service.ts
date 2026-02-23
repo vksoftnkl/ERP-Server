@@ -114,9 +114,9 @@ export class CustomerService {
   }
 
   private async listFromConfiguredGridSql(
-    page: any,
-    limit: any,
-    skip: any,
+    page: number,
+    limit: number,
+    skip: number,
   ): Promise<{ items: CustomerListItem[]; meta: CustomerListMeta } | null> {
     const configuredGrid = await this.prisma.gridDetails.findFirst({
       where: {
@@ -309,7 +309,10 @@ export class CustomerService {
   }
 
   private async createCustomer(saveCustomerDto: SaveCustomerDto): Promise<CustomerPayload> {
-    const normalizedStateName = this.normalizeRequiredText(saveCustomerDto.cusStateName, 'cusStateName');
+    const normalizedStateName = this.normalizeRequiredText(
+      saveCustomerDto.cusStateName,
+      'cusStateName',
+    );
     const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
     const now = new Date();
     const createdBy = this.resolveActor(saveCustomerDto.cusCreatedBy);
@@ -461,10 +464,7 @@ export class CustomerService {
     }
   }
 
-  private async ensureCustomerGroupExists(
-    tx: CustomerWriteClient,
-    groupId: string,
-  ): Promise<void> {
+  private async ensureCustomerGroupExists(tx: CustomerWriteClient, groupId: string): Promise<void> {
     const group = await tx.custGroup.findFirst({
       where: {
         cgrId: groupId,
@@ -770,10 +770,7 @@ export class CustomerService {
     return normalized;
   }
 
-  private toDateOrNull(
-    value: string | null | undefined,
-    field: string,
-  ): Date | null | undefined {
+  private toDateOrNull(value: string | null | undefined, field: string): Date | null | undefined {
     if (value === undefined) {
       return undefined;
     }

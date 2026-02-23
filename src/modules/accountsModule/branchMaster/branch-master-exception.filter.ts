@@ -1,6 +1,9 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
-import { BranchMasterErrorDetail, BranchMasterErrorResponse } from './types/branch-master-api.types';
+import {
+  BranchMasterErrorDetail,
+  BranchMasterErrorResponse,
+} from './types/branch-master-api.types';
 
 type ValidationExceptionPayload = {
   message?: string | string[];

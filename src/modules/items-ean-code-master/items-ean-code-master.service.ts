@@ -241,11 +241,7 @@ export class ItemsEanCodeMasterService {
           data,
         });
 
-        await this.enforceSingleDefaultInScope(
-          tx,
-          updated,
-          updated.eanModifiedBy ?? DEFAULT_ACTOR,
-        );
+        await this.enforceSingleDefaultInScope(tx, updated, updated.eanModifiedBy ?? DEFAULT_ACTOR);
 
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(

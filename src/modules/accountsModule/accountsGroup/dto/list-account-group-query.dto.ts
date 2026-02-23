@@ -44,11 +44,10 @@ const toOptionalBoolean = (value: unknown): boolean | undefined => {
 };
 
 export class ListAccountGroupQueryDto {
-  @ApiPropertyOptional({ type: Number })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  accGroupCompanyId?: number;
+  @IsUUID('all')
+  accGroupCompanyId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()

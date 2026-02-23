@@ -32,7 +32,9 @@ export class GspCompanyServiceService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  async save(saveGspCompanyServiceDto: SaveGspCompanyServiceDto): Promise<GspCompanyServicePayload> {
+  async save(
+    saveGspCompanyServiceDto: SaveGspCompanyServiceDto,
+  ): Promise<GspCompanyServicePayload> {
     if (saveGspCompanyServiceDto.csgCompanyServiceId) {
       return this.updateGspCompanyService(saveGspCompanyServiceDto);
     }
@@ -80,7 +82,11 @@ export class GspCompanyServiceService {
       this.prisma.gspCompanyService.count({ where }),
       this.prisma.gspCompanyService.findMany({
         where,
-        orderBy: [{ csgCompanyId: 'asc' }, { csgServiceType: 'asc' }, { csgCompanyServiceId: 'asc' }],
+        orderBy: [
+          { csgCompanyId: 'asc' },
+          { csgServiceType: 'asc' },
+          { csgCompanyServiceId: 'asc' },
+        ],
         skip,
         take: limit,
       }),
@@ -112,7 +118,9 @@ export class GspCompanyServiceService {
     return this.toPayload(record);
   }
 
-  async softDelete(csgCompanyServiceId: string): Promise<{ csgCompanyServiceId: string; deleted: true }> {
+  async softDelete(
+    csgCompanyServiceId: string,
+  ): Promise<{ csgCompanyServiceId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.gspCompanyService.findFirst({
         where: {
@@ -334,7 +342,10 @@ export class GspCompanyServiceService {
     }
   }
 
-  private async ensureCompanyExists(companyId: number, tx: GspCompanyServiceWriteClient): Promise<void> {
+  private async ensureCompanyExists(
+    companyId: string,
+    tx: GspCompanyServiceWriteClient,
+  ): Promise<void> {
     const company = await tx.company.findFirst({
       where: {
         compId: companyId,

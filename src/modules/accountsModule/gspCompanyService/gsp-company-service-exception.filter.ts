@@ -67,7 +67,9 @@ export class GspCompanyServiceExceptionFilter implements ExceptionFilter {
     return typeof candidate.message === 'string' || Array.isArray(candidate.message);
   }
 
-  private mapValidationPayload(payload: ValidationExceptionPayload): GspCompanyServiceErrorResponse {
+  private mapValidationPayload(
+    payload: ValidationExceptionPayload,
+  ): GspCompanyServiceErrorResponse {
     const messages = Array.isArray(payload.message)
       ? payload.message
       : payload.message

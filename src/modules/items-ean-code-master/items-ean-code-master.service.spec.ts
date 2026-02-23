@@ -56,8 +56,10 @@ describe('ItemsEanCodeMasterService', () => {
         update: jest.fn<Promise<ItemEanCode>, [Prisma.ItemEanCodeUpdateArgs]>(),
         updateMany: jest.fn<Promise<Prisma.BatchPayload>, [Prisma.ItemEanCodeUpdateManyArgs]>(),
       },
-      $transaction: jest.fn<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>(
-      ),
+      $transaction: jest.fn<
+        Promise<unknown>,
+        [(tx: Prisma.TransactionClient) => Promise<unknown>]
+      >(),
     };
 
     prisma.$transaction.mockImplementation(

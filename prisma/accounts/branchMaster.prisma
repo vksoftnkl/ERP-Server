@@ -1,5 +1,5 @@
 model BranchMaster {
-  brId                  Int       @id @default(autoincrement())                    @map("br_id")
+  brId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("br_id")
   compId                String    @db.Uuid                                         @map("comp_id")
 
   // 1) Identity / Reference

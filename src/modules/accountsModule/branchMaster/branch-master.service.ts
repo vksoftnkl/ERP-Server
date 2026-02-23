@@ -30,7 +30,7 @@ export class BranchMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-  ) {}
+  ) { }
 
   async save(saveBranchMasterDto: SaveBranchMasterDto): Promise<BranchMasterPayload> {
     if (saveBranchMasterDto.brId) {
@@ -182,7 +182,9 @@ export class BranchMasterService {
     });
   }
 
-  private async createBranch(saveBranchMasterDto: SaveBranchMasterDto): Promise<BranchMasterPayload> {
+  private async createBranch(
+    saveBranchMasterDto: SaveBranchMasterDto,
+  ): Promise<BranchMasterPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
@@ -235,7 +237,9 @@ export class BranchMasterService {
     }
   }
 
-  private async updateBranch(saveBranchMasterDto: SaveBranchMasterDto): Promise<BranchMasterPayload> {
+  private async updateBranch(
+    saveBranchMasterDto: SaveBranchMasterDto,
+  ): Promise<BranchMasterPayload> {
     const brId = saveBranchMasterDto.brId!;
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -302,7 +306,7 @@ export class BranchMasterService {
     }
   }
 
-  private async ensureCompanyExists(compId: number, tx: BranchMasterWriteClient): Promise<void> {
+  private async ensureCompanyExists(compId: string, tx: BranchMasterWriteClient): Promise<void> {
     const company = await tx.company.findFirst({
       where: {
         compId,
@@ -339,10 +343,10 @@ export class BranchMasterService {
         },
         ...(excludeBrId !== undefined
           ? {
-              brId: {
-                not: excludeBrId,
-              },
-            }
+            brId: {
+              not: excludeBrId,
+            },
+          }
           : {}),
       },
       select: {
@@ -379,10 +383,10 @@ export class BranchMasterService {
         },
         ...(excludeBrId !== undefined
           ? {
-              brId: {
-                not: excludeBrId,
-              },
-            }
+            brId: {
+              not: excludeBrId,
+            },
+          }
           : {}),
       },
       select: {
@@ -404,7 +408,7 @@ export class BranchMasterService {
 
   private async clearDefaultBranch(
     tx: BranchMasterWriteClient,
-    compId: number,
+    compId: string,
     excludeBrId?: number,
   ): Promise<void> {
     await tx.branchMaster.updateMany({
@@ -414,10 +418,10 @@ export class BranchMasterService {
         brIsDefault: true,
         ...(excludeBrId !== undefined
           ? {
-              brId: {
-                not: excludeBrId,
-              },
-            }
+            brId: {
+              not: excludeBrId,
+            },
+          }
           : {}),
       },
       data: {

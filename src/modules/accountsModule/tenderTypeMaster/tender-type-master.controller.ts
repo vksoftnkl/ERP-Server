@@ -76,7 +76,9 @@ export class TenderTypeMasterController {
   @ApiBadRequestResponse({ type: TenderTypeMasterErrorResponseDto })
   async list(
     @Query() queryDto: ListTenderTypeMasterQueryDto,
-  ): Promise<TenderTypeMasterSuccessResponse<TenderTypeMasterListItem[], TenderTypeMasterListMeta>> {
+  ): Promise<
+    TenderTypeMasterSuccessResponse<TenderTypeMasterListItem[], TenderTypeMasterListMeta>
+  > {
     const result = await this.tenderTypeMasterService.list(queryDto);
 
     return {

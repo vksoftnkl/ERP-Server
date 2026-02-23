@@ -32,7 +32,9 @@ export class CompanyGroupMasterService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  async save(saveCompanyGroupMasterDto: SaveCompanyGroupMasterDto): Promise<CompanyGroupMasterPayload> {
+  async save(
+    saveCompanyGroupMasterDto: SaveCompanyGroupMasterDto,
+  ): Promise<CompanyGroupMasterPayload> {
     if (saveCompanyGroupMasterDto.cogGroupId) {
       return this.updateGroup(saveCompanyGroupMasterDto);
     }

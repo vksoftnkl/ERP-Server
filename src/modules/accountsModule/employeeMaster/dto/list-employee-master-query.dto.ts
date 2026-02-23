@@ -57,12 +57,10 @@ const toOptionalTrimmedString = (value: unknown): string | undefined => {
 };
 
 export class ListEmployeeMasterQueryDto {
-  @ApiPropertyOptional({ type: Number })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  @Min(1)
-  empCompanyId?: number;
+  @IsUUID('all')
+  empCompanyId?: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()

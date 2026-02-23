@@ -67,7 +67,9 @@ export class EmployeeDesignationMasterExceptionFilter implements ExceptionFilter
     return typeof candidate.message === 'string' || Array.isArray(candidate.message);
   }
 
-  private mapValidationPayload(payload: ValidationExceptionPayload): EmployeeDesignationMasterErrorResponse {
+  private mapValidationPayload(
+    payload: ValidationExceptionPayload,
+  ): EmployeeDesignationMasterErrorResponse {
     const messages = Array.isArray(payload.message)
       ? payload.message
       : payload.message

@@ -55,7 +55,9 @@ export class ItemsTaxMasterController {
   @ApiBadRequestResponse({ type: ItemTaxErrorResponseDto })
   @ApiConflictResponse({ type: ItemTaxErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemTaxErrorResponseDto })
-  async save(@Body() saveItemTaxDto: SaveItemTaxDto): Promise<ItemTaxSuccessResponse<ItemTaxPayload>> {
+  async save(
+    @Body() saveItemTaxDto: SaveItemTaxDto,
+  ): Promise<ItemTaxSuccessResponse<ItemTaxPayload>> {
     const data = await this.itemsTaxMasterService.save(saveItemTaxDto);
 
     return {

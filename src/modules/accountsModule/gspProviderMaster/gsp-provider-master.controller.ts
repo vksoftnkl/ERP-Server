@@ -76,7 +76,9 @@ export class GspProviderMasterController {
   @ApiBadRequestResponse({ type: GspProviderMasterErrorResponseDto })
   async list(
     @Query() queryDto: ListGspProviderMasterQueryDto,
-  ): Promise<GspProviderMasterSuccessResponse<GspProviderMasterListItem[], GspProviderMasterListMeta>> {
+  ): Promise<
+    GspProviderMasterSuccessResponse<GspProviderMasterListItem[], GspProviderMasterListMeta>
+  > {
     const result = await this.gspProviderMasterService.list(queryDto);
 
     return {

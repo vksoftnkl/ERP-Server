@@ -48,14 +48,12 @@ export class CityPayloadDto {
   ctmSyncDate!: string | null;
 
   @ApiProperty()
-  
   ctmCreatedOn!: string;
 
   @ApiPropertyOptional({ nullable: true })
   ctmCreatedBy!: string | null;
 
   @ApiProperty()
-  
   ctmModifiedOn!: string;
 
   @ApiPropertyOptional({ nullable: true })

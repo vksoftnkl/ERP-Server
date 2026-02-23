@@ -419,7 +419,7 @@ export class AccountsGroupService {
   private async ensureNameIsUnique(
     tx: AccountGroupWriteClient,
     groupName: string,
-    companyId: number | null,
+    companyId: string | null,
     excludeId?: string,
   ): Promise<void> {
     const existing = await tx.accountGroup.findFirst({

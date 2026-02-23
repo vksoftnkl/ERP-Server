@@ -317,7 +317,7 @@ export class EmployeeMasterService {
     }
   }
 
-  private async ensureCompanyExists(compId: number, tx: EmployeeMasterWriteClient): Promise<void> {
+  private async ensureCompanyExists(compId: string, tx: EmployeeMasterWriteClient): Promise<void> {
     const company = await tx.company.findFirst({
       where: {
         compId,

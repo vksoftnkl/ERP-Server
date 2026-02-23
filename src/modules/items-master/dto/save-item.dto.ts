@@ -152,7 +152,7 @@ const toUuidArray = (value: unknown): string[] | undefined => {
       .filter((entry) => entry.length > 0);
   }
 
-  return [String(value)];
+  return [value as string];
 };
 
 export class SaveItemDto {

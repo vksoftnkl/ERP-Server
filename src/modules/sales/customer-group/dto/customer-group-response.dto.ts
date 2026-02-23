@@ -42,50 +42,39 @@ export class CustomerGroupPayloadDto {
   cgrNarration!: string | null;
 
   @ApiProperty()
-  
   cgrOrder!: number;
 
   @ApiProperty()
-  
   cgrDiscPerc!: number;
 
   @ApiProperty({ type: [Number], example: [] })
   cgrCollectionDays!: number[];
 
   @ApiProperty()
-  
   cgrDebitAllowed!: boolean;
 
   @ApiProperty()
-  
   cgrDebitDays!: number;
 
   @ApiProperty()
-  
   cgrDebitLimit!: number;
 
   @ApiProperty()
-  
   cgrBillsLimit!: number;
 
   @ApiProperty()
-  
   cgrOverdueBilling!: boolean;
 
   @ApiProperty()
-  
   cgrIsActive!: boolean;
 
   @ApiProperty()
-  
   cgrIsDeleted!: boolean;
 
   @ApiProperty()
-  
   cgrCreatedOn!: string;
 
   @ApiProperty()
-  
   cgrModifiedOn!: string;
 }
 

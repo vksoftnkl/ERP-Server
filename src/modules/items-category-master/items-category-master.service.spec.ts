@@ -66,8 +66,10 @@ describe('ItemsCategoryMasterService', () => {
         update: jest.fn<Promise<categoryMaster>, [Prisma.categoryMasterUpdateArgs]>(),
         updateMany: jest.fn<Promise<Prisma.BatchPayload>, [Prisma.categoryMasterUpdateManyArgs]>(),
       },
-      $transaction: jest.fn<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>(
-      ),
+      $transaction: jest.fn<
+        Promise<unknown>,
+        [(tx: Prisma.TransactionClient) => Promise<unknown>]
+      >(),
     };
 
     prisma.categoryMaster.findMany.mockResolvedValue([]);

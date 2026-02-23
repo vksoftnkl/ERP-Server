@@ -557,7 +557,7 @@ export class ItemsMasterService {
     }
 
     const bytes = Uint8Array.from(Buffer.from(normalized, 'base64'));
-    return bytes as Uint8Array<ArrayBuffer>;
+    return bytes;
   }
 
   private toPayload(record: ItemMaster): ItemPayload {

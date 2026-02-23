@@ -85,7 +85,7 @@ export class SaveLedgerShippingAddressDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  saaCompanyId?: number | null;
+  saaCompanyId?: string | null;
 
   @ApiProperty({ format: 'uuid' })
   @IsUUID('all')

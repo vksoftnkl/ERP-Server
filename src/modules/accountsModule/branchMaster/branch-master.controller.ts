@@ -62,7 +62,9 @@ export class BranchMasterController {
 
     return {
       success: true,
-      message: saveBranchMasterDto.brId ? 'Branch updated successfully' : 'Branch created successfully',
+      message: saveBranchMasterDto.brId
+        ? 'Branch updated successfully'
+        : 'Branch created successfully',
       data,
     };
   }

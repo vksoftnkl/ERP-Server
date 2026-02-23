@@ -67,7 +67,9 @@ export class CompanyGroupMasterExceptionFilter implements ExceptionFilter {
     return typeof candidate.message === 'string' || Array.isArray(candidate.message);
   }
 
-  private mapValidationPayload(payload: ValidationExceptionPayload): CompanyGroupMasterErrorResponse {
+  private mapValidationPayload(
+    payload: ValidationExceptionPayload,
+  ): CompanyGroupMasterErrorResponse {
     const messages = Array.isArray(payload.message)
       ? payload.message
       : payload.message

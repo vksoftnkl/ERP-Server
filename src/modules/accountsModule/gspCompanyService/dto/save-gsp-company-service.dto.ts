@@ -38,8 +38,16 @@ const toNullableDate = (value: unknown): Date | null | undefined => {
     return null;
   }
 
-  const parsed = value instanceof Date ? value : new Date(String(value));
-  return Number.isNaN(parsed.getTime()) ? (value as Date) : parsed;
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return value as unknown as Date;
+  }
+
+  const parsed = new Date(value as string | number);
+  return Number.isNaN(parsed.getTime()) ? (value as unknown as Date) : parsed;
 };
 
 const toTrimmedUpper = (value: unknown): unknown => {
@@ -59,9 +67,9 @@ export class SaveGspCompanyServiceDto {
   @IsUUID('all')
   csgCompanyServiceId?: string;
 
-  @ApiProperty({ type: Number, example: 1 })
-  @IsInt()
-  csgCompanyId!: number;
+  @ApiProperty({ type: String, example: 'c7f8c0c0-0000-0000-0000-000000000001' })
+  @IsString ()
+  csgCompanyId!: string;
 
   @ApiProperty({ format: 'uuid' })
   @IsUUID('all')

@@ -76,7 +76,9 @@ export class AccountLedgerMastersController {
   @ApiBadRequestResponse({ type: AccountLedgerMasterErrorResponseDto })
   async list(
     @Query() queryDto: ListAccountLedgerMasterQueryDto,
-  ): Promise<AccountLedgerMasterSuccessResponse<AccountLedgerMasterListItem[], AccountLedgerMasterListMeta>> {
+  ): Promise<
+    AccountLedgerMasterSuccessResponse<AccountLedgerMasterListItem[], AccountLedgerMasterListMeta>
+  > {
     const result = await this.accountLedgerMastersService.list(queryDto);
 
     return {

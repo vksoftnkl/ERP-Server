@@ -151,7 +151,6 @@ async function bootstrap(): Promise<void> {
   );
   SwaggerModule.setup(allDocsPath, app, allSwaggerDocument);
 
-   
   for (const docs of swaggerModuleDocs) {
     const docsPath = apiPrefix ? `${apiPrefix}/docs/${docs.path}` : `docs/${docs.path}`;
     const moduleSwaggerDocument = SwaggerModule.createDocument(

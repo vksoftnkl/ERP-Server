@@ -53,12 +53,10 @@ const toTrimmedUpper = (value: unknown): unknown => {
 };
 
 export class ListGspCompanyServiceQueryDto {
-  @ApiPropertyOptional({ type: Number, example: 1 })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  @Min(1)
-  csgCompanyId?: number;
+  @IsUUID('all')
+  csgCompanyId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()

@@ -45,14 +45,12 @@ export class StatePayloadDto {
   stmSyncDate!: string | null;
 
   @ApiProperty()
-  
   stmCreatedOn!: string;
 
   @ApiPropertyOptional({ nullable: true })
   stmCreatedBy!: string | null;
 
   @ApiProperty()
-  
   stmModifiedOn!: string;
 
   @ApiPropertyOptional({ nullable: true })

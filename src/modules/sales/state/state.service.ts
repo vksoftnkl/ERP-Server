@@ -98,9 +98,9 @@ export class StateService {
   }
 
   private async listFromConfiguredGridSql(
-    page: any,
-    limit: any,
-    skip: any,
+    page: number,
+    limit: number,
+    skip: number,
   ): Promise<{ items: StateListItem[]; meta: StateListMeta } | null> {
     const configuredGrid = await this.prisma.gridDetails.findFirst({
       where: {

@@ -51,8 +51,16 @@ const toNullableDate = (value: unknown): Date | null | undefined => {
     return null;
   }
 
-  const parsed = value instanceof Date ? value : new Date(String(value));
-  return Number.isNaN(parsed.getTime()) ? (value as Date) : parsed;
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return value as unknown as Date;
+  }
+
+  const parsed = new Date(value as string | number);
+  return Number.isNaN(parsed.getTime()) ? (value as unknown as Date) : parsed;
 };
 
 const toNullableUuid = (value: unknown): string | null | undefined => {
@@ -77,10 +85,12 @@ const toNullableUuid = (value: unknown): string | null | undefined => {
 };
 
 export class SaveCompanyMasterDto {
-  @ApiPropertyOptional({ type: Number, description: 'When provided, request updates the company' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'When provided, request updates the company' })
   @IsOptional()
-  @IsInt()
-  compId?: number;
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  compId?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @IsOptional()

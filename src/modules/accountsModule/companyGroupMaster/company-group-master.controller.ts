@@ -76,7 +76,9 @@ export class CompanyGroupMasterController {
   @ApiBadRequestResponse({ type: CompanyGroupMasterErrorResponseDto })
   async list(
     @Query() queryDto: ListCompanyGroupMasterQueryDto,
-  ): Promise<CompanyGroupMasterSuccessResponse<CompanyGroupMasterListItem[], CompanyGroupMasterListMeta>> {
+  ): Promise<
+    CompanyGroupMasterSuccessResponse<CompanyGroupMasterListItem[], CompanyGroupMasterListMeta>
+  > {
     const result = await this.companyGroupMasterService.list(queryDto);
 
     return {

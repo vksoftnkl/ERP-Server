@@ -46,7 +46,9 @@ import {
 @Controller('employee-designation-masters')
 @UseFilters(EmployeeDesignationMasterExceptionFilter)
 export class EmployeeDesignationMasterController {
-  constructor(private readonly employeeDesignationMasterService: EmployeeDesignationMasterService) {}
+  constructor(
+    private readonly employeeDesignationMasterService: EmployeeDesignationMasterService,
+  ) {}
 
   @Post('create')
   @Version('1')

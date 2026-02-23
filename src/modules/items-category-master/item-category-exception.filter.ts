@@ -1,6 +1,9 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
-import { ItemCategoryErrorDetail, ItemCategoryErrorResponse } from './types/item-category-api.types';
+import {
+  ItemCategoryErrorDetail,
+  ItemCategoryErrorResponse,
+} from './types/item-category-api.types';
 
 type ValidationExceptionPayload = {
   message?: string | string[];

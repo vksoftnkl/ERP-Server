@@ -405,18 +405,16 @@ describe('GodownsMasterService', () => {
       .mockResolvedValueOnce(parent)
       .mockResolvedValueOnce(childWithPath);
     prisma.godownLocation.create.mockResolvedValue(createdChild);
-    prisma.godownLocation.findMany.mockResolvedValueOnce([createdChild]).mockResolvedValueOnce([
-      parent,
-    ]);
-    prisma.godownLocation.update
-      .mockResolvedValueOnce(childWithPath)
-      .mockResolvedValueOnce(
-        makeRecord({
-          gdlId: PARENT_ID,
-          gdlParentId: null,
-          gdlPathIdsCache: [PARENT_ID, CHILD_ID],
-        }),
-      );
+    prisma.godownLocation.findMany
+      .mockResolvedValueOnce([createdChild])
+      .mockResolvedValueOnce([parent]);
+    prisma.godownLocation.update.mockResolvedValueOnce(childWithPath).mockResolvedValueOnce(
+      makeRecord({
+        gdlId: PARENT_ID,
+        gdlParentId: null,
+        gdlPathIdsCache: [PARENT_ID, CHILD_ID],
+      }),
+    );
 
     const result = await service.save({
       gdl_godown_id: GODOWN_ID,
@@ -492,9 +490,10 @@ describe('GodownsMasterService', () => {
       .mockResolvedValueOnce(node)
       .mockResolvedValueOnce(child)
       .mockResolvedValueOnce(parent);
-    prisma.godownLocation.findMany.mockResolvedValueOnce([child]).mockResolvedValueOnce([]).mockResolvedValueOnce([
-      parent,
-    ]);
+    prisma.godownLocation.findMany
+      .mockResolvedValueOnce([child])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([parent]);
     prisma.godownLocation.updateMany.mockResolvedValue({ count: 1 });
     prisma.godownLocation.update.mockResolvedValueOnce(
       makeRecord({

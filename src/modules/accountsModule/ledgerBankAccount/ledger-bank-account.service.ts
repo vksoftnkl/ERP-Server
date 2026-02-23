@@ -30,7 +30,7 @@ export class LedgerBankAccountService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-  ) {}
+  ) { }
 
   async save(
     saveLedgerBankAccountDto: SaveLedgerBankAccountDto,
@@ -54,7 +54,7 @@ export class LedgerBankAccountService {
     };
 
     if (queryDto.lbaCompanyId !== undefined) {
-      where.lbaCompanyId = queryDto.lbaCompanyId as string | null;
+      where.lbaCompanyId = queryDto.lbaCompanyId as string | "";
     }
 
     if (queryDto.lbaLedgerId?.trim()) {
@@ -361,7 +361,7 @@ export class LedgerBankAccountService {
   private async ensureLedgerExists(
     lbaLedgerId: string,
     tx: LedgerBankAccountWriteClient,
-  ): Promise<{ ledId: string; ledCompanyId: number | null }> {
+  ): Promise<{ ledId: string; ledCompanyId: string | null }> {
     const ledger = await tx.accLedgerMaster.findFirst({
       where: {
         ledId: lbaLedgerId,
@@ -386,7 +386,7 @@ export class LedgerBankAccountService {
   }
 
   private async ensureCompanyExists(
-    compId: number,
+    compId: string,
     tx: LedgerBankAccountWriteClient,
   ): Promise<void> {
     const company = await tx.company.findFirst({
@@ -410,11 +410,11 @@ export class LedgerBankAccountService {
   }
 
   private async resolveCompanyId(
-    requestedCompanyId: number | null | undefined,
-    fallbackCompanyId: number | null,
-    ledgerCompanyId: number | null,
+    requestedCompanyId: string | null | undefined,
+    fallbackCompanyId: string | null,
+    ledgerCompanyId: string | null,
     tx: LedgerBankAccountWriteClient,
-  ): Promise<number | null> {
+  ): Promise<string | null> {
     let companyId = requestedCompanyId === undefined ? fallbackCompanyId : requestedCompanyId;
 
     if (ledgerCompanyId !== null) {
@@ -453,10 +453,10 @@ export class LedgerBankAccountService {
         },
         ...(excludeLbaId
           ? {
-              lbaId: {
-                not: excludeLbaId,
-              },
-            }
+            lbaId: {
+              not: excludeLbaId,
+            },
+          }
           : {}),
       },
       select: {
@@ -488,10 +488,10 @@ export class LedgerBankAccountService {
         lbaIsDefault: true,
         ...(excludeLbaId
           ? {
-              lbaId: {
-                not: excludeLbaId,
-              },
-            }
+            lbaId: {
+              not: excludeLbaId,
+            },
+          }
           : {}),
       },
       data: {

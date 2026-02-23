@@ -81,9 +81,7 @@ export interface AccountLedgerMasterPayload {
   ledModifiedBy: string | null;
 }
 
-export type AccountLedgerMasterListItem =
-  | AccountLedgerMasterPayload
-  | Record<string, unknown>;
+export type AccountLedgerMasterListItem = AccountLedgerMasterPayload | Record<string, unknown>;
 
 export interface AccountLedgerMasterListMeta {
   page: number;

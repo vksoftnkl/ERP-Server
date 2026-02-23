@@ -562,10 +562,7 @@ export class ItemsCategoryMasterService {
     }
   }
 
-  private async ensureSelfInPath(
-    tx: ItemCategoryWriteClient,
-    categoryId: string,
-  ): Promise<void> {
+  private async ensureSelfInPath(tx: ItemCategoryWriteClient, categoryId: string): Promise<void> {
     await this.appendPathIds(tx, [categoryId], [categoryId]);
   }
 
@@ -602,7 +599,9 @@ export class ItemsCategoryMasterService {
     return true;
   }
 
-  private decodePhotoInput(photo: string | null | undefined): Uint8Array<ArrayBuffer> | null | undefined {
+  private decodePhotoInput(
+    photo: string | null | undefined,
+  ): Uint8Array<ArrayBuffer> | null | undefined {
     if (photo === undefined) {
       return undefined;
     }
@@ -646,7 +645,9 @@ export class ItemsCategoryMasterService {
       category_default_tax_id: record.categoryDefaultTaxId,
       category_default_hsn: record.categoryDefaultHsn,
       category_default_uom_id: record.categoryDefaultUomId,
-      category_photo: record.categoryPhoto ? Buffer.from(record.categoryPhoto).toString('base64') : null,
+      category_photo: record.categoryPhoto
+        ? Buffer.from(record.categoryPhoto).toString('base64')
+        : null,
       category_photo_url: record.categoryPhotoUrl,
       category_sync_date: record.categorySyncDate ? record.categorySyncDate.toISOString() : null,
       category_is_active: record.categoryIsActive,

@@ -50,7 +50,9 @@ export class GspCompanyServiceController {
 
   @Post('create')
   @Version('1')
-  @ApiOperation({ summary: 'Create or update GSP company service (by csgCompanyServiceId presence)' })
+  @ApiOperation({
+    summary: 'Create or update GSP company service (by csgCompanyServiceId presence)',
+  })
   @ApiCreatedResponse({ type: GspCompanyServiceSuccessSingleDto })
   @ApiBadRequestResponse({ type: GspCompanyServiceErrorResponseDto })
   @ApiConflictResponse({ type: GspCompanyServiceErrorResponseDto })
@@ -76,7 +78,9 @@ export class GspCompanyServiceController {
   @ApiBadRequestResponse({ type: GspCompanyServiceErrorResponseDto })
   async list(
     @Query() queryDto: ListGspCompanyServiceQueryDto,
-  ): Promise<GspCompanyServiceSuccessResponse<GspCompanyServiceListItem[], GspCompanyServiceListMeta>> {
+  ): Promise<
+    GspCompanyServiceSuccessResponse<GspCompanyServiceListItem[], GspCompanyServiceListMeta>
+  > {
     const result = await this.gspCompanyServiceService.list(queryDto);
 
     return {

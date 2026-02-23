@@ -233,3 +233,4 @@ Potential solutions:
     at async InstanceLoader.createInstancesOfProviders (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/instance-loader.js:55:9)
 2026-02-20T09:52:13.011Z ERROR [NestApplication] Error: listen EADDRNOTAVAIL: address not available 192.168.10.25:3010
 2026-02-20T09:52:16.101Z ERROR [NestApplication] Error: listen EADDRNOTAVAIL: address not available 192.168.10.106:3010
+2026-02-23T09:49:41.010Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010

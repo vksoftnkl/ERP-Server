@@ -670,7 +670,9 @@ export class GodownsMasterService {
         });
 
         const hasParentField = this.hasOwnProperty(saveGodownDto, 'gdl_parent_id');
-        const nextParentId = hasParentField ? (saveGodownDto.gdl_parent_id ?? null) : existing.gdlParentId;
+        const nextParentId = hasParentField
+          ? (saveGodownDto.gdl_parent_id ?? null)
+          : existing.gdlParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.gdlParentId;
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, gdlId) : [];
         const oldAncestorIds = isParentChanged

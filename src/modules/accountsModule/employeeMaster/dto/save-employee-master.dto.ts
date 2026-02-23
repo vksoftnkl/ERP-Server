@@ -139,11 +139,11 @@ export class SaveEmployeeMasterDto {
   @IsUUID('all')
   empId?: string;
 
-  @ApiProperty({ type: Number })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  empCompanyId!: number;
+  @ApiProperty({ format: 'uuid' })
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  empCompanyId!: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()

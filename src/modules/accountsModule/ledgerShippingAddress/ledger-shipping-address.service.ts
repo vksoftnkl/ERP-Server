@@ -366,7 +366,7 @@ export class LedgerShippingAddressService {
   }
 
   private async ensureCompanyExists(
-    companyId: number,
+    companyId: string,
     tx: LedgerShippingAddressWriteClient,
   ): Promise<void> {
     const company = await tx.company.findFirst({

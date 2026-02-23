@@ -56,7 +56,7 @@ export class ListBranchMasterQueryDto {
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsInt()
-  compId?: number;
+  compId?: string;
 
   @ApiPropertyOptional({ maxLength: 2 })
   @IsOptional()

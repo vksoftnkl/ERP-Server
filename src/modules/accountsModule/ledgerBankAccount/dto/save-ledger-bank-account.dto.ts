@@ -9,8 +9,30 @@ import {
   Length,
   MaxLength,
   ValidateIf,
+  isUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+const toNullableUuid = (value: unknown): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return isUUID(trimmed, 'all') ? trimmed : null;
+};
 
 const toNullableString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
@@ -45,12 +67,12 @@ export class SaveLedgerBankAccountDto {
   @IsOptional()
   @IsUUID('all')
   lbaId?: string;
-
-  @ApiPropertyOptional({ type: Number, nullable: true })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  lbaCompanyId?: number | null;
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  lbaCompanyId?: string | null;
 
   @ApiProperty({ format: 'uuid' })
   @IsUUID('all')

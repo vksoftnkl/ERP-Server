@@ -90,59 +90,45 @@ export class CustomerPayloadDto {
   cusDistanceKm!: number | null;
 
   @ApiProperty()
-  
   cusCreditAllowed!: boolean;
 
   @ApiProperty()
-  
   cusCreditBillLimit!: number;
 
   @ApiProperty()
-  
   cusCreditAmtLimit!: number;
 
   @ApiProperty()
-  
   cusCreditDays!: number;
 
   @ApiProperty()
-  
   cusDebitBalance!: number;
 
   @ApiProperty()
-  
   cusDiscPerc!: number;
 
   @ApiProperty()
-  
   cusDebitGraceDays!: number;
 
   @ApiProperty()
-  
   cusEnableSms!: boolean;
 
   @ApiProperty()
-  
   cusOverdueSms!: boolean;
 
   @ApiProperty()
-  
   cusOverdueBilling!: boolean;
 
   @ApiProperty()
-  
   cusAllowPromotion!: boolean;
 
   @ApiProperty()
-  
   cusAllowLoyalty!: boolean;
 
   @ApiProperty()
-  
   cusAllowDiscount!: boolean;
 
   @ApiProperty()
-  
   cusSortOrder!: number;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
@@ -179,15 +165,12 @@ export class CustomerPayloadDto {
   cusTransportName!: string | null;
 
   @ApiProperty()
-  
   cusFreightCharge!: boolean;
 
   @ApiProperty()
-  
   cusLoadingCharge!: boolean;
 
   @ApiProperty()
-  
   cusUnloadingCharge!: boolean;
 
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
@@ -203,11 +186,9 @@ export class CustomerPayloadDto {
   cusEcommerceGstin!: string | null;
 
   @ApiProperty()
-  
   cusTcsApplicable!: boolean;
 
   @ApiProperty()
-  
   cusItcollExempted!: boolean;
 
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
@@ -223,14 +204,12 @@ export class CustomerPayloadDto {
   cusDefaultSalesman!: string | null;
 
   @ApiProperty()
-  
   cusPriceLevelId!: number;
 
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   cusBilledDate!: string | null;
 
   @ApiProperty()
-  
   cusBilledCount!: number;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
@@ -246,25 +225,21 @@ export class CustomerPayloadDto {
   cusGroupId!: string;
 
   @ApiProperty()
-  
   cusIsActive!: boolean;
 
   @ApiProperty()
-  
   cusIsDeleted!: boolean;
 
   @ApiPropertyOptional({ nullable: true })
   cusSyncDate!: string | null;
 
   @ApiProperty()
-  
   cusCreatedOn!: string;
 
   @ApiPropertyOptional({ nullable: true })
   cusCreatedBy!: string | null;
 
   @ApiProperty()
-  
   cusModifiedOn!: string;
 
   @ApiPropertyOptional({ nullable: true })

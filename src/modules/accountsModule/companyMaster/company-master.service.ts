@@ -30,7 +30,7 @@ export class CompanyMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-  ) {}
+  ) { }
 
   async save(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload> {
     if (saveCompanyMasterDto.compId) {
@@ -100,7 +100,7 @@ export class CompanyMasterService {
     };
   }
 
-  async getById(compId: number): Promise<CompanyMasterPayload> {
+  async getById(compId: string): Promise<CompanyMasterPayload> {
     const record = await this.prisma.company.findFirst({
       where: {
         compId,
@@ -115,7 +115,7 @@ export class CompanyMasterService {
     return this.toPayload(record);
   }
 
-  async softDelete(compId: number): Promise<{ compId: number; deleted: true }> {
+  async softDelete(compId: string): Promise<{ compId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.company.findFirst({
         where: {
@@ -180,11 +180,17 @@ export class CompanyMasterService {
     });
   }
 
-  private async createCompany(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload> {
+  private async createCompany(
+    saveCompanyMasterDto: SaveCompanyMasterDto,
+  ): Promise<CompanyMasterPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const compName = this.normalizeRequiredName(saveCompanyMasterDto.compName, 'compName');
-        const compStateCode = this.normalizeLengthCode(saveCompanyMasterDto.compStateCode, 2, 'compStateCode');
+        const compStateCode = this.normalizeLengthCode(
+          saveCompanyMasterDto.compStateCode,
+          2,
+          'compStateCode',
+        );
 
         await this.ensureNameIsUnique(tx, compName);
         await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null);
@@ -234,7 +240,9 @@ export class CompanyMasterService {
     }
   }
 
-  private async updateCompany(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload> {
+  private async updateCompany(
+    saveCompanyMasterDto: SaveCompanyMasterDto,
+  ): Promise<CompanyMasterPayload> {
     const compId = saveCompanyMasterDto.compId!;
 
     try {
@@ -251,7 +259,11 @@ export class CompanyMasterService {
         }
 
         const compName = this.normalizeRequiredName(saveCompanyMasterDto.compName, 'compName');
-        const compStateCode = this.normalizeLengthCode(saveCompanyMasterDto.compStateCode, 2, 'compStateCode');
+        const compStateCode = this.normalizeLengthCode(
+          saveCompanyMasterDto.compStateCode,
+          2,
+          'compStateCode',
+        );
 
         await this.ensureNameIsUnique(tx, compName, compId);
         await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null, compId);
@@ -306,7 +318,7 @@ export class CompanyMasterService {
   private async ensureNameIsUnique(
     tx: CompanyWriteClient,
     compName: string,
-    excludeCompId?: number,
+    excludeCompId?: string,
   ): Promise<void> {
     const existing = await tx.company.findFirst({
       where: {
@@ -316,10 +328,10 @@ export class CompanyMasterService {
         },
         ...(excludeCompId !== undefined
           ? {
-              compId: {
-                not: excludeCompId,
-              },
-            }
+            compId: {
+              not: excludeCompId,
+            },
+          }
           : {}),
       },
       select: {
@@ -342,7 +354,7 @@ export class CompanyMasterService {
   private async ensureCodeIsUnique(
     tx: CompanyWriteClient,
     compCode: string | null,
-    excludeCompId?: number,
+    excludeCompId?: string,
   ): Promise<void> {
     if (!compCode) {
       return;
@@ -356,10 +368,10 @@ export class CompanyMasterService {
         },
         ...(excludeCompId !== undefined
           ? {
-              compId: {
-                not: excludeCompId,
-              },
-            }
+            compId: {
+              not: excludeCompId,
+            },
+          }
           : {}),
       },
       select: {
@@ -382,7 +394,7 @@ export class CompanyMasterService {
   private async ensureGstinIsUnique(
     tx: CompanyWriteClient,
     compGstinNo: string | null,
-    excludeCompId?: number,
+    excludeCompId?: string,
   ): Promise<void> {
     if (!compGstinNo) {
       return;
@@ -396,10 +408,10 @@ export class CompanyMasterService {
         },
         ...(excludeCompId !== undefined
           ? {
-              compId: {
-                not: excludeCompId,
-              },
-            }
+            compId: {
+              not: excludeCompId,
+            },
+          }
           : {}),
       },
       select: {
@@ -419,17 +431,17 @@ export class CompanyMasterService {
     }
   }
 
-  private async clearDefaultCompany(tx: CompanyWriteClient, excludeCompId?: number): Promise<void> {
+  private async clearDefaultCompany(tx: CompanyWriteClient, excludeCompId?: string): Promise<void> {
     await tx.company.updateMany({
       where: {
         compIsDeleted: false,
         compDefault: true,
         ...(excludeCompId !== undefined
           ? {
-              compId: {
-                not: excludeCompId,
-              },
-            }
+            compId: {
+              not: excludeCompId,
+            },
+          }
           : {}),
       },
       data: {
@@ -668,7 +680,9 @@ export class CompanyMasterService {
       compWebsiteName: record.compWebsiteName,
       compFinYearFrom: record.compFinYearFrom ? record.compFinYearFrom.toISOString() : null,
       compFinYearTo: record.compFinYearTo ? record.compFinYearTo.toISOString() : null,
-      compBooksBeginFrom: record.compBooksBeginFrom ? record.compBooksBeginFrom.toISOString() : null,
+      compBooksBeginFrom: record.compBooksBeginFrom
+        ? record.compBooksBeginFrom.toISOString()
+        : null,
       compGstApplicable: record.compGstApplicable,
       compTcsApplicable: record.compTcsApplicable,
       compSmsApplicable: record.compSmsApplicable,
@@ -738,7 +752,7 @@ export class CompanyMasterService {
     return (error as { code?: string }).code === 'P2002';
   }
 
-  private throwNotFound(compId: number): never {
+  private throwNotFound(compId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Company not found', [
         {
