@@ -22,10 +22,16 @@ const DEFAULT_LIMIT = 20;
 const ITEM_GROUP_GRID_ID = BigInt(1);
 const ITEM_GROUP_TABLE_NAME = 'item_group_master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
+const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
 const GRID_SQL_FORBIDDEN_TOKENS =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 type ItemGroupWriteClient = Prisma.TransactionClient | PrismaService;
+type SearchColumnDescriptor = {
+  normalized: string;
+  tokens: string[];
+  lastToken: string;
+};
 @Injectable()
 export class ItemsGroupMasterService {
   constructor(
@@ -211,50 +217,146 @@ export class ItemsGroupMasterService {
       orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
       select: {
         gridColumnName: true,
+        gridColumnNumber: true,
       },
     });
 
-    const filteredColumnNames: string[] = [];
-    for (const column of configuredColumns) {
-      const columnName = column.gridColumnName.trim();
-      if (!columnName) {
-        continue;
-      }
-      filteredColumnNames.push(columnName);
-    }
-
     const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
       fieldName,
-      normalizedFieldName: this.normalizeSearchColumnName(fieldName),
+      descriptor: this.describeSearchColumnName(fieldName),
     }));
     const usedSqlFieldIndexes = new Set<number>();
     const matchedFieldNames: string[] = [];
 
-    for (const columnName of filteredColumnNames) {
-      const normalizedColumnName = this.normalizeSearchColumnName(columnName);
-      if (!normalizedColumnName) {
-        continue;
+    for (const column of configuredColumns) {
+      const columnName = column.gridColumnName.trim();
+      let matchedSqlFieldIndex = -1;
+      const columnDescriptor = this.describeSearchColumnName(columnName);
+
+      if (columnDescriptor.normalized) {
+        let bestScore = -1;
+        let nextBestScore = -1;
+        let bestScoreIsAmbiguous = false;
+
+        for (let index = 0; index < normalizedSqlFields.length; index += 1) {
+          if (usedSqlFieldIndexes.has(index)) {
+            continue;
+          }
+          const score = this.getSearchColumnMatchScore(
+            columnDescriptor,
+            normalizedSqlFields[index].descriptor,
+          );
+          if (score > bestScore) {
+            nextBestScore = bestScore;
+            bestScore = score;
+            matchedSqlFieldIndex = index;
+            bestScoreIsAmbiguous = false;
+            continue;
+          }
+
+          if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
+            bestScoreIsAmbiguous = true;
+            continue;
+          }
+
+          if (score > nextBestScore) {
+            nextBestScore = score;
+          }
+        }
+
+        if (
+          bestScore < MIN_CONFIDENT_COLUMN_MATCH_SCORE ||
+          bestScore === nextBestScore ||
+          bestScoreIsAmbiguous
+        ) {
+          matchedSqlFieldIndex = -1;
+        }
       }
 
-      const matchedSqlFieldIndex = normalizedSqlFields.findIndex(
-        (sqlField, index) =>
-          !usedSqlFieldIndexes.has(index) && sqlField.normalizedFieldName === normalizedColumnName,
-      );
+      if (matchedSqlFieldIndex === -1) {
+        const sqlFieldIndexFromColumnNumber = column.gridColumnNumber - 1;
+        if (
+          sqlFieldIndexFromColumnNumber >= 0 &&
+          sqlFieldIndexFromColumnNumber < normalizedSqlFields.length &&
+          !usedSqlFieldIndexes.has(sqlFieldIndexFromColumnNumber)
+        ) {
+          matchedSqlFieldIndex = sqlFieldIndexFromColumnNumber;
+        }
+      }
+
       if (matchedSqlFieldIndex !== -1) {
         usedSqlFieldIndexes.add(matchedSqlFieldIndex);
         matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
       }
     }
-
-    if (matchedFieldNames.length > 0) {
-      return matchedFieldNames;
+    return matchedFieldNames;
+  }
+  private tokenizeSearchColumnName(value: string): string[] {
+    const normalizedSpacing = value
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[^a-z0-9]+/gi, ' ')
+      .trim()
+      .toLowerCase();
+    return normalizedSpacing ? normalizedSpacing.split(/\s+/) : [];
+  }
+  private describeSearchColumnName(value: string): SearchColumnDescriptor {
+    const tokens = this.tokenizeSearchColumnName(value);
+    return {
+      normalized: tokens.join(''),
+      tokens,
+      lastToken: tokens[tokens.length - 1] ?? '',
+    };
+  }
+  private getSearchColumnMatchScore(
+    source: SearchColumnDescriptor,
+    target: SearchColumnDescriptor,
+  ): number {
+    if (!source.normalized || !target.normalized) {
+      return -1;
     }
 
-    const fallbackFieldCount = Math.min(filteredColumnNames.length, sqlFieldNames.length);
-    return sqlFieldNames.slice(0, fallbackFieldCount);
-  }
-  private normalizeSearchColumnName(value: string): string {
-    return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (source.normalized === target.normalized) {
+      return 4;
+    }
+
+    if (
+      source.normalized.includes(target.normalized) ||
+      target.normalized.includes(source.normalized)
+    ) {
+      return 3;
+    }
+
+    const sourceWithoutBooleanPrefix = source.normalized.replace(/^is/, '');
+    const targetWithoutBooleanPrefix = target.normalized.replace(/^is/, '');
+    if (
+      sourceWithoutBooleanPrefix &&
+      targetWithoutBooleanPrefix &&
+      (sourceWithoutBooleanPrefix === targetWithoutBooleanPrefix ||
+        sourceWithoutBooleanPrefix.endsWith(targetWithoutBooleanPrefix) ||
+        targetWithoutBooleanPrefix.endsWith(sourceWithoutBooleanPrefix))
+    ) {
+      return 2;
+    }
+
+    if (source.lastToken && source.lastToken === target.lastToken) {
+      return 2;
+    }
+
+    if (
+      source.lastToken &&
+      target.lastToken &&
+      (source.lastToken.startsWith(target.lastToken) ||
+        target.lastToken.startsWith(source.lastToken))
+    ) {
+      return 2;
+    }
+
+    const sharedTokens = source.tokens.filter((token) => target.tokens.includes(token));
+    if (sharedTokens.length >= 2) {
+      return 1;
+    }
+
+    return -1;
   }
   private extractSelectFieldNames(sql: string): string[] {
     const selectClause = this.extractTopLevelSelectClause(sql);
@@ -414,6 +516,15 @@ export class ItemsGroupMasterService {
       return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
     }
 
+    const implicitAliasMatch = trimmed.match(/\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
+    if (implicitAliasMatch) {
+      const aliasToken = implicitAliasMatch[1];
+      const expressionWithoutAlias = trimmed.slice(0, trimmed.length - aliasToken.length).trim();
+      if (expressionWithoutAlias) {
+        return this.parseSqlIdentifierToken(aliasToken);
+      }
+    }
+
     const simpleColumnMatch = trimmed.match(
       /^((?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)\.)*(?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)$/i,
     );
@@ -435,7 +546,8 @@ export class ItemsGroupMasterService {
     }
 
     if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
-      return trimmed;
+      // PostgreSQL folds unquoted identifiers to lowercase.
+      return trimmed.toLowerCase();
     }
 
     return null;

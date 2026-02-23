@@ -241,6 +241,7 @@ Table companys {
   ledgerBankAccounts acc_ledger_bank_accounts [not null]
   gspCompanyServices gsp_company_service [not null]
   shipAddrs acc_ship_addrs [not null]
+  custGroup cust_groups [not null]
 }
 
 Table company_group_master {
@@ -1253,26 +1254,25 @@ Table customers {
 
 Table cust_groups {
   cgrId String [pk]
+  cgrCompanyId Int
   cgrBranchId String
   cgrName String [not null]
   cgrAlias String
   cgrShort String
   cgrNarration String
-  cgrOrder Decimal [default: 0]
-  cgrDiscPerc Decimal [not null, default: 0]
+  cgrOrder Decimal [not null]
+  cgrDiscPerc Decimal [not null]
   cgrCollectionDays Int[] [not null]
   cgrDebitAllowed Boolean [not null, default: false]
   cgrDebitDays Int [not null, default: 0]
-  cgrDebitLimit Decimal [not null, default: 0]
+  cgrDebitLimit Decimal [not null]
   cgrBillsLimit Int [not null, default: 0]
   cgrOverdueBilling Boolean [not null, default: false]
   cgrIsActive Boolean [not null, default: true]
   cgrIsDeleted Boolean [not null, default: false]
-  cgrSyncDate DateTime
   cgrCreatedOn DateTime [default: `now()`, not null]
-  cgrCreatedBy String
-  cgrModifiedOn DateTime [default: `now()`, not null]
-  cgrModifiedBy String
+  cgrModifiedOn DateTime [not null]
+  company companys
   customers customers [not null]
 }
 
@@ -1408,3 +1408,5 @@ Ref: city_master.ctmStateId > state_master.stmId
 Ref: customers.cusAreaId > area_master.armId
 
 Ref: customers.cusGroupId > cust_groups.cgrId
+
+Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]

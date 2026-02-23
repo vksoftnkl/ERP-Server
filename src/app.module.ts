@@ -29,6 +29,21 @@ import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/it
 import { ItemsPriceMasterModule } from './modules/items-price-master/items-price-master.module';
 import { ItemsQtywiseRatesMasterModule } from './modules/items-qtywise-rates-master/items-qtywise-rates-master.module';
 import { ItemsReorderMasterModule } from './modules/items-reorder-master/items-reorder-master.module';
+import { ItemsTaxHistoryMasterModule } from './modules/items-tax-history-master/items-tax-history-master.module';
+import { ItemsMasterModule } from './modules/items-master/items-master.module';
+import { AccountsGroupModule } from './modules/accountsModule/accountsGroup/accounts-group.module';
+import { AccountLedgerMastersModule } from './modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
+import { LedgerBankAccountModule } from './modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
+import { BranchMasterModule } from './modules/accountsModule/branchMaster/branch-master.module';
+import { CompanyMasterModule } from './modules/accountsModule/companyMaster/company-master.module';
+import { CompanyGroupMasterModule } from './modules/accountsModule/companyGroupMaster/company-group-master.module';
+import { EmployeeDesignationMasterModule } from './modules/accountsModule/employeeDesignationMaster/employee-designation-master.module';
+import { EmployeeMasterModule } from './modules/accountsModule/employeeMaster/employee-master.module';
+import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
+import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaster/tender-type-master.module';
+import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
+import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
+import { GspCompanyServiceModule } from './modules/accountsModule/gspCompanyService/gsp-company-service.module';
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -70,6 +85,21 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     ItemsPriceMasterModule,
     ItemsQtywiseRatesMasterModule,
     ItemsReorderMasterModule,
+    ItemsTaxHistoryMasterModule,
+    ItemsMasterModule,
+    AccountsGroupModule,
+    AccountLedgerMastersModule,
+    LedgerBankAccountModule,
+    LedgerShippingAddressModule,
+    BranchMasterModule,
+    CompanyMasterModule,
+    CompanyGroupMasterModule,
+    EmployeeDesignationMasterModule,
+    EmployeeMasterModule,
+    TenderMasterModule,
+    TenderTypeMasterModule,
+    GspProviderMasterModule,
+    GspCompanyServiceModule,
     GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,

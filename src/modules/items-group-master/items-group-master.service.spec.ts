@@ -27,7 +27,7 @@ type PrismaMock = {
   };
   gridColumn: {
     findMany: jest.Mock<
-      Promise<Array<{ gridColumnName: string }>>,
+      Promise<Array<{ gridColumnName: string; gridColumnNumber: number }>>,
       [Prisma.GridColumnFindManyArgs]
     >;
   };
@@ -85,7 +85,7 @@ describe('ItemsGroupMasterService', () => {
       },
       gridColumn: {
         findMany: jest.fn<
-          Promise<Array<{ gridColumnName: string }>>,
+          Promise<Array<{ gridColumnName: string; gridColumnNumber: number }>>,
           [Prisma.GridColumnFindManyArgs]
         >(),
       },
@@ -468,8 +468,8 @@ describe('ItemsGroupMasterService', () => {
         'SELECT itg_id AS "item group id", itg_name AS "item group name", itg_alias AS "item group short", itg_description, itg_parent_id, itg_is_active FROM item_group_master WHERE itg_is_deleted = false',
     });
     prisma.gridColumn.findMany.mockResolvedValue([
-      { gridColumnName: 'item group name' },
-      { gridColumnName: 'item group short' },
+      { gridColumnName: 'item group name', gridColumnNumber: 2 },
+      { gridColumnName: 'item group short', gridColumnNumber: 3 },
     ]);
     prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
       {
@@ -502,6 +502,7 @@ describe('ItemsGroupMasterService', () => {
       orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
       select: {
         gridColumnName: true,
+        gridColumnNumber: true,
       },
     });
     expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
@@ -526,16 +527,109 @@ describe('ItemsGroupMasterService', () => {
     );
     expect(result.meta.total).toBe(1);
   });
-  it('applies ordered search fields when grid column names do not match sql field names', async () => {
+  it('searches unquoted camelCase aliases from grid_sql using filtered grid columns', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql:
+        'SELECT igm.itg_id AS itemGroupId, igm.itg_name AS itemGroupName, igm.itg_alias AS groupAlias, igm.itg_short AS groupShort, igm.itg_is_active AS isActive FROM item_group_master igm WHERE igm.itg_is_deleted = false',
+    });
+    prisma.gridColumn.findMany.mockResolvedValue([
+      { gridColumnName: 'item group name', gridColumnNumber: 1 },
+      { gridColumnName: 'item group short', gridColumnNumber: 2 },
+      { gridColumnName: 'item group alias', gridColumnNumber: 3 },
+      { gridColumnName: 'item group active', gridColumnNumber: 4 },
+    ]);
+    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
+      {
+        itemgroupid: ITEM_GROUP_ID,
+        itemgroupname: 'Shoes',
+        groupalias: 'Footwear',
+        groupshort: 'SH',
+        isactive: true,
+      },
+    ]);
+
+    const result = await service.list({
+      search: 'sh',
+      page: 1,
+      limit: 20,
+    });
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE grid_kv.key = $1'),
+      'itemgroupname',
+      '%sh%',
+      'groupshort',
+      '%sh%',
+      'groupalias',
+      '%sh%',
+      'isactive',
+      '%sh%',
+    );
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('LIMIT $9 OFFSET $10'),
+      'itemgroupname',
+      '%sh%',
+      'groupshort',
+      '%sh%',
+      'groupalias',
+      '%sh%',
+      'isactive',
+      '%sh%',
+      20,
+      0,
+    );
+    expect(result.meta.total).toBe(1);
+  });
+  it('dynamically includes newly added description field when filter is enabled', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql:
+        'SELECT igm.itg_id AS itemGroupId, igm.itg_name AS itemGroupName, igm.itg_alias AS groupAlias, igm.itg_short AS groupShort, igm.itg_description AS itemGroupDesc FROM item_group_master igm WHERE igm.itg_is_deleted = false',
+    });
+    prisma.gridColumn.findMany.mockResolvedValue([
+      { gridColumnName: 'item group description', gridColumnNumber: 5 },
+    ]);
+    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
+      {
+        itemgroupid: ITEM_GROUP_ID,
+        itemgroupname: 'Shoes',
+        groupalias: 'Footwear',
+        groupshort: 'SH',
+        itemgroupdesc: 'Leather shoes',
+      },
+    ]);
+
+    const result = await service.list({
+      search: 'leather',
+      page: 1,
+      limit: 20,
+    });
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('WHERE grid_kv.key = $1'),
+      'itemgroupdesc',
+      '%leather%',
+    );
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('LIMIT $3 OFFSET $4'),
+      'itemgroupdesc',
+      '%leather%',
+      20,
+      0,
+    );
+    expect(result.meta.total).toBe(1);
+  });
+  it('maps search fields by grid_column_number when names do not match sql fields', async () => {
     prisma.gridDetails.findFirst.mockResolvedValue({
       gridSql:
         'SELECT itg_name, itg_alias, itg_description, itg_short FROM item_group_master WHERE itg_is_deleted = false',
     });
     prisma.gridColumn.findMany.mockResolvedValue([
-      { gridColumnName: 'column one' },
-      { gridColumnName: 'column two' },
-      { gridColumnName: 'column three' },
-      { gridColumnName: 'column four' },
+      { gridColumnName: 'column one', gridColumnNumber: 1 },
+      { gridColumnName: 'column three', gridColumnNumber: 3 },
     ]);
     prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
       {
@@ -555,23 +649,15 @@ describe('ItemsGroupMasterService', () => {
       expect.stringContaining('WHERE grid_kv.key = $1'),
       'itg_name',
       '%raw%',
-      'itg_alias',
-      '%raw%',
       'itg_description',
-      '%raw%',
-      'itg_short',
       '%raw%',
     );
     expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('LIMIT $9 OFFSET $10'),
+      expect.stringContaining('LIMIT $5 OFFSET $6'),
       'itg_name',
       '%raw%',
-      'itg_alias',
-      '%raw%',
       'itg_description',
-      '%raw%',
-      'itg_short',
       '%raw%',
       20,
       0,

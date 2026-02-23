@@ -1,4 +1,12 @@
 import { AuditLogModule } from '../modules/audit-log/audit-log.module';
+import { AccountLedgerMastersModule } from '../modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
+import { AccountsGroupModule } from '../modules/accountsModule/accountsGroup/accounts-group.module';
+import { LedgerBankAccountModule } from '../modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
+import { BranchMasterModule } from '../modules/accountsModule/branchMaster/branch-master.module';
+import { CompanyGroupMasterModule } from '../modules/accountsModule/companyGroupMaster/company-group-master.module';
+import { CompanyMasterModule } from '../modules/accountsModule/companyMaster/company-master.module';
+import { EmployeeDesignationMasterModule } from '../modules/accountsModule/employeeDesignationMaster/employee-designation-master.module';
+import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tender-master.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { GridColumnsModule } from '../modules/grid-columns/grid-columns.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
@@ -67,6 +75,54 @@ export const swaggerModuleDocuments = [
     title: 'Item Tax API',
     description: 'Item tax module endpoints',
     include: [ItemsTaxMasterModule],
+  },
+  {
+    path: 'accounts-group',
+    title: 'Account Group API',
+    description: 'Account group module endpoints',
+    include: [AccountsGroupModule],
+  },
+  {
+    path: 'account-ledger-masters',
+    title: 'Account Ledger Masters API',
+    description: 'Account ledger masters module endpoints',
+    include: [AccountLedgerMastersModule],
+  },
+  {
+    path: 'ledger-bank-accounts',
+    title: 'Ledger Bank Accounts API',
+    description: 'Ledger bank accounts module endpoints',
+    include: [LedgerBankAccountModule],
+  },
+  {
+    path: 'branch-master',
+    title: 'Branch Master API',
+    description: 'Branch master module endpoints',
+    include: [BranchMasterModule],
+  },
+  {
+    path: 'company-master',
+    title: 'Company Master API',
+    description: 'Company master module endpoints',
+    include: [CompanyMasterModule],
+  },
+  {
+    path: 'company-group-master',
+    title: 'Company Group Master API',
+    description: 'Company group master module endpoints',
+    include: [CompanyGroupMasterModule],
+  },
+  {
+    path: 'employee-designation-master',
+    title: 'Employee Designation Master API',
+    description: 'Employee designation master module endpoints',
+    include: [EmployeeDesignationMasterModule],
+  },
+  {
+    path: 'tender-master',
+    title: 'Tender Master API',
+    description: 'Tender master module endpoints',
+    include: [TenderMasterModule],
   },
   {
     path: 'items-ean-code-master',

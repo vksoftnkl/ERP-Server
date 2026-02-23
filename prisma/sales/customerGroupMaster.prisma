@@ -1,29 +1,40 @@
 model CustGroup {
-  cgrId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("cgr_id")
-  cgrBranchId        String?   @db.Uuid                                         @map("cgr_branch_id")
-  cgrName            String                                                      @map("cgr_name")
-  cgrAlias           String?                                                     @map("cgr_alias")
-  cgrShort           String?   @db.VarChar(50)                                  @map("cgr_short")
-  cgrNarration       String?   @db.VarChar(250)                                 @map("cgr_narration")
-  cgrOrder           Decimal?  @default(0.0) @db.Decimal                        @map("cgr_order")
-  cgrDiscPerc        Decimal   @default(0) @db.Decimal(7, 3)                    @map("cgr_disc_perc")
-  cgrCollectionDays  Int[]                                                       @map("cgr_collection_days")
-  cgrDebitAllowed    Boolean   @default(false)                                   @map("cgr_debit_allowed")
-  cgrDebitDays       Int       @default(0)                                       @map("cgr_debit_days")
-  cgrDebitLimit      Decimal   @default(0) @db.Decimal(15, 4)                   @map("cgr_debit_limit")
-  cgrBillsLimit      Int       @default(0)                                       @map("cgr_bills_limit")
-  cgrOverdueBilling  Boolean   @default(false)                                   @map("cgr_overdue_billing")
-  cgrIsActive        Boolean   @default(true)                                    @map("cgr_is_active")
-  cgrIsDeleted       Boolean   @default(false)                                   @map("cgr_is_deleted")
-  cgrSyncDate        DateTime? @db.Timestamptz                                  @map("cgr_sync_date")
-  cgrCreatedOn       DateTime  @default(now()) @db.Timestamptz                  @map("cgr_created_on")
-  cgrCreatedBy       String?   @db.VarChar(100)                                 @map("cgr_created_by")
-  cgrModifiedOn      DateTime  @default(now()) @db.Timestamptz                  @map("cgr_modified_on")
-  cgrModifiedBy      String?   @db.VarChar(100)                                 @map("cgr_modified_by")
-  // Relations
+  cgrId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("cgr_id")
+
+  // scope
+  cgrCompanyId       Int?      @map("cgr_company_id")
+  cgrBranchId        String?   @db.Uuid @map("cgr_branch_id")
+
+  cgrName            String    @db.VarChar @map("cgr_name")
+  cgrAlias           String?   @db.VarChar @map("cgr_alias")
+  cgrShort           String?   @db.VarChar(50) @map("cgr_short")
+  cgrNarration       String?   @db.VarChar(250) @map("cgr_narration")
+
+  cgrOrder           Decimal   @default(dbgenerated("0")) @db.Decimal @map("cgr_order")
+  cgrDiscPerc        Decimal   @default(dbgenerated("0")) @db.Decimal(7, 3) @map("cgr_disc_perc")
+
+  // arrays
+  cgrCollectionDays  Int[]     @map("cgr_collection_days")
+
+  cgrDebitAllowed    Boolean   @default(false) @map("cgr_debit_allowed")
+  cgrDebitDays       Int       @default(0) @map("cgr_debit_days")
+  cgrDebitLimit      Decimal   @default(dbgenerated("0")) @db.Decimal(15, 4) @map("cgr_debit_limit")
+  cgrBillsLimit      Int       @default(0) @map("cgr_bills_limit")
+  cgrOverdueBilling  Boolean   @default(false) @map("cgr_overdue_billing")
+
+  // status
+  cgrIsActive        Boolean   @default(true) @map("cgr_is_active")
+  cgrIsDeleted       Boolean   @default(false) @map("cgr_is_deleted")
+
+  cgrCreatedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("cgr_created_on")
+  cgrModifiedOn      DateTime  @updatedAt @db.Timestamptz(6) @map("cgr_modified_on")
+
+  // relation (assumes you have Company model mapped to public.companys(comp_id))
+  company            Company?  @relation(fields: [cgrCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   customers          Customer[]
 
-  @@index([cgrIsActive], name: "idx_cgr_active")
   @@map("cust_groups")
+  @@index([cgrCompanyId], map: "idx_cgr_company")
+  @@index([cgrCompanyId, cgrIsActive], map: "idx_cgr_active")
   @@schema("sales")
 }

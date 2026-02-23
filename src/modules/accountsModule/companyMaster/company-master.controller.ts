@@ -1,0 +1,127 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+  UseFilters,
+  Version,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
+import { CompanyMasterExceptionFilter } from './company-master-exception.filter';
+import {
+  CompanyMasterErrorResponseDto,
+  CompanyMasterSuccessDeleteDto,
+  CompanyMasterSuccessListDto,
+  CompanyMasterSuccessSingleDto,
+} from './dto/company-master-response.dto';
+import { ListCompanyMasterQueryDto } from './dto/list-company-master-query.dto';
+import { SaveCompanyMasterDto } from './dto/save-company-master.dto';
+import { CompanyMasterService } from './company-master.service';
+import {
+  CompanyMasterListItem,
+  CompanyMasterListMeta,
+  CompanyMasterPayload,
+  CompanyMasterSuccessResponse,
+} from './types/company-master-api.types';
+
+@ApiTags('Company Master')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@Controller('company-masters')
+@UseFilters(CompanyMasterExceptionFilter)
+export class CompanyMasterController {
+  constructor(private readonly companyMasterService: CompanyMasterService) {}
+
+  @Post('create')
+  @Version('1')
+  @ApiOperation({ summary: 'Create or update company (by compId presence)' })
+  @ApiCreatedResponse({ type: CompanyMasterSuccessSingleDto })
+  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiConflictResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
+  async save(
+    @Body() saveCompanyMasterDto: SaveCompanyMasterDto,
+  ): Promise<CompanyMasterSuccessResponse<CompanyMasterPayload>> {
+    const data = await this.companyMasterService.save(saveCompanyMasterDto);
+
+    return {
+      success: true,
+      message: saveCompanyMasterDto.compId
+        ? 'Company updated successfully'
+        : 'Company created successfully',
+      data,
+    };
+  }
+
+  @Get('list')
+  @Version('1')
+  @ApiOperation({ summary: 'List companies with filter/search/pagination' })
+  @ApiOkResponse({ type: CompanyMasterSuccessListDto })
+  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
+  async list(
+    @Query() queryDto: ListCompanyMasterQueryDto,
+  ): Promise<CompanyMasterSuccessResponse<CompanyMasterListItem[], CompanyMasterListMeta>> {
+    const result = await this.companyMasterService.list(queryDto);
+
+    return {
+      success: true,
+      message: 'Companies fetched successfully',
+      data: result.items,
+      meta: result.meta,
+    };
+  }
+
+  @Get('get/:compId')
+  @Version('1')
+  @ApiOperation({ summary: 'Get company by id' })
+  @ApiParam({ name: 'compId', type: Number, example: 1 })
+  @ApiOkResponse({ type: CompanyMasterSuccessSingleDto })
+  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
+  async getById(
+    @Param('compId', ParseIntPipe) compId: number,
+  ): Promise<CompanyMasterSuccessResponse<CompanyMasterPayload>> {
+    const data = await this.companyMasterService.getById(compId);
+
+    return {
+      success: true,
+      message: 'Company fetched successfully',
+      data,
+    };
+  }
+
+  @Delete('delete/:compId')
+  @Version('1')
+  @ApiOperation({ summary: 'Soft delete company by id' })
+  @ApiParam({ name: 'compId', type: Number, example: 1 })
+  @ApiOkResponse({ type: CompanyMasterSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
+  async remove(
+    @Param('compId', ParseIntPipe) compId: number,
+  ): Promise<CompanyMasterSuccessResponse<{ compId: number; deleted: true }>> {
+    const data = await this.companyMasterService.softDelete(compId);
+
+    return {
+      success: true,
+      message: 'Company deleted successfully',
+      data,
+    };
+  }
+}

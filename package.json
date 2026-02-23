@@ -23,6 +23,7 @@
     "perf:baseline": "node scripts/perf/load-test.js --scenario baseline",
     "perf:stress": "node scripts/perf/load-test.js --scenario stress",
     "perf:custom": "node scripts/perf/load-test.js --routes-file scripts/perf/routes.example.json",
+    "seed:item-groups": "node scripts/seed-item-group-master.js",
     "prisma:schema:build": "node scripts/build-prisma-schema.js",
     "prisma:generate": "npm run prisma:schema:build && prisma generate --schema prisma/schema.prisma",
     "prisma:migrate:dev": "npm run prisma:schema:build && prisma migrate dev --schema prisma/schema.prisma",
