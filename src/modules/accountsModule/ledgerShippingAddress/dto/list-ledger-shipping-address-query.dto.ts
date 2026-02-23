@@ -56,7 +56,7 @@ export class ListLedgerShippingAddressQueryDto {
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsInt()
-  saaCompanyId?: number;
+  saaCompanyId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()

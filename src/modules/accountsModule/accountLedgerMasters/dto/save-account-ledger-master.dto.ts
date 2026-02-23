@@ -4,7 +4,6 @@ import {
   IsDate,
   IsEmail,
   IsIn,
-  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -64,7 +63,12 @@ const toNullableDate = (value: unknown): Date | null | undefined => {
     return null;
   }
 
-  const parsed = value instanceof Date ? value : new Date(String(value));
+  const parsed =
+    value instanceof Date
+      ? value
+      : typeof value === 'string' || typeof value === 'number'
+        ? new Date(value)
+        : new Date(Number.NaN);
   return Number.isNaN(parsed.getTime()) ? (value as Date) : parsed;
 };
 
@@ -85,10 +89,12 @@ export class SaveAccountLedgerMasterDto {
   @IsUUID('all')
   ledId?: string;
 
-  @ApiPropertyOptional({ type: Number })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
-  @IsInt()
-  ledCompanyId?: number;
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  ledCompanyId?: string | null;
 
   @ApiProperty({ format: 'uuid' })
   @IsUUID('all')

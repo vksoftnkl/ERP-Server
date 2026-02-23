@@ -52,7 +52,7 @@ export class BranchMasterService {
     };
 
     if (queryDto.compId !== undefined) {
-      where.compId = queryDto.compId;
+      where.compId = queryDto.compId as string;
     }
 
     if (queryDto.brStateCode !== undefined) {
@@ -325,7 +325,7 @@ export class BranchMasterService {
 
   private async ensureNameIsUnique(
     tx: BranchMasterWriteClient,
-    compId: number,
+    compId: string,
     brName: string,
     excludeBrId?: number,
   ): Promise<void> {

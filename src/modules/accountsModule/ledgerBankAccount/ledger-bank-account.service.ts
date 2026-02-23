@@ -54,7 +54,7 @@ export class LedgerBankAccountService {
     };
 
     if (queryDto.lbaCompanyId !== undefined) {
-      where.lbaCompanyId = queryDto.lbaCompanyId;
+      where.lbaCompanyId = queryDto.lbaCompanyId as string | null;
     }
 
     if (queryDto.lbaLedgerId?.trim()) {

@@ -18,7 +18,7 @@ export interface AccountLedgerMasterSuccessResponse<T, TMeta = Record<string, un
 
 export interface AccountLedgerMasterPayload {
   ledId: string;
-  ledCompanyId: number | null;
+  ledCompanyId: string | null;
   ledGroupId: string;
   ledName: string;
   ledAlias: string | null;

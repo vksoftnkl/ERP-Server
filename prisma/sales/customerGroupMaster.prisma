@@ -2,7 +2,7 @@ model CustGroup {
   cgrId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("cgr_id")
 
   // scope
-  cgrCompanyId       Int?      @map("cgr_company_id")
+  cgrCompanyId       String?   @db.Uuid                            @map("cgr_company_id")
   cgrBranchId        String?   @db.Uuid @map("cgr_branch_id")
 
   cgrName            String    @db.VarChar @map("cgr_name")

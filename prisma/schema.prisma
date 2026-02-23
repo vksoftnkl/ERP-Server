@@ -36,7 +36,7 @@ model User {
 // ----- prisma/accounts/accountGroups.prisma -----
 model AccountGroup {
   accGroupId                  String         @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("acc_group_id")
-  accGroupCompanyId           Int?                                                             @map("acc_group_company_id")
+  accGroupCompanyId           String?        @db.Uuid                                         @map("acc_group_company_id")
 
   // Master fields
   accGroupName                String         @db.VarChar(150)                                 @map("acc_group_name")
@@ -93,7 +93,7 @@ model AccountGroup {
 // ----- prisma/accounts/accountLedgerMasters.prisma -----
 model AccLedgerMaster {
   ledId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("led_id")
-  ledCompanyId           Int?                                                       @map("led_company_id")
+  ledCompanyId           String?        @db.Uuid                                   @map("led_company_id")
 
   // 1) Identity / Reference
   ledGroupId             String    @db.Uuid                                          @map("led_group_id")
@@ -193,7 +193,7 @@ model AccLedgerMaster {
 // ----- prisma/accounts/branchMaster.prisma -----
 model BranchMaster {
   brId                  Int       @id @default(autoincrement())                    @map("br_id")
-  compId                Int                                                         @map("comp_id")
+  compId                String    @db.Uuid                                         @map("comp_id")
 
   // 1) Identity / Reference
   brCode                String?   @unique @db.VarChar(20)                          @map("br_code")
@@ -270,7 +270,7 @@ model BranchMaster {
 
 // ----- prisma/accounts/company.prisma -----
 model Company {
-  compId                Int       @id @default(autoincrement())                    @map("comp_id")
+  compId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("comp_id")
 
   // 1) Identity / Codes
   compCode              String?   @unique @db.VarChar(20)                          @map("comp_code")
@@ -413,7 +413,7 @@ model EmpMaster {
   empId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("emp_id")
 
   // Identity / Scope
-  empCompanyId         Int                                                        @map("emp_company_id")
+  empCompanyId         String    @db.Uuid                                         @map("emp_company_id")
   empBranchId          String?   @db.Uuid                                          @map("emp_branch_id")
 
   // Codes / Names
@@ -508,7 +508,7 @@ model EmpMaster {
 // ----- prisma/accounts/GSPcompanyService.prisma -----
 model GspCompanyService {
   csgCompanyServiceId      String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("csg_company_service_id")
-  csgCompanyId             Int                                                        @map("csg_company_id")
+  csgCompanyId             String    @db.Uuid                                         @map("csg_company_id")
   csgGspProviderId         String    @db.Uuid                                          @map("csg_gsp_provider_id")
   csgServiceType           String    @db.VarChar(20)                                  @map("csg_service_type")
   csgEuserName             String                                                      @map("csg_euser_name")
@@ -558,7 +558,7 @@ model GspProviderMaster {
 // ----- prisma/accounts/ledgeerShippingAddress.prisma -----
 model AccShipAddr {
   saaId          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("saa_id")
-  saaCompanyId   Int?     @map("saa_company_id")
+  saaCompanyId   String?  @db.Uuid                               @map("saa_company_id")
   saaLedgerId    String   @db.Uuid @map("saa_ledger_id")
 
   saaAddrType    String   @default("SHIP_TO") @db.VarChar(20) @map("saa_addr_type")
@@ -609,7 +609,7 @@ model AccShipAddr {
 // ----- prisma/accounts/ledgerBankAccount.prisma -----
 model AccLedgerBankAccount {
   lbaId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("lba_id")
-  lbaCompanyId        Int?                                                       @map("lba_company_id")
+  lbaCompanyId        String?  @db.Uuid                                          @map("lba_company_id")
   lbaLedgerId         String    @db.Uuid                                          @map("lba_ledger_id")
 
   // Bank Details
@@ -2083,7 +2083,7 @@ model CustGroup {
   cgrId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("cgr_id")
 
   // scope
-  cgrCompanyId       Int?      @map("cgr_company_id")
+  cgrCompanyId       String?   @db.Uuid                            @map("cgr_company_id")
   cgrBranchId        String?   @db.Uuid @map("cgr_branch_id")
 
   cgrName            String    @db.VarChar @map("cgr_name")

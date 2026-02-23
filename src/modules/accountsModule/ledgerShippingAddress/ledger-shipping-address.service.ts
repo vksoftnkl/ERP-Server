@@ -55,7 +55,7 @@ export class LedgerShippingAddressService {
     };
 
     if (queryDto.saaCompanyId !== undefined) {
-      where.saaCompanyId = queryDto.saaCompanyId;
+      where.saaCompanyId = queryDto.saaCompanyId as string | null;
     }
 
     if (queryDto.saaLedgerId !== undefined) {

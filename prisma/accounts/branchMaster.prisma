@@ -1,6 +1,6 @@
 model BranchMaster {
   brId                  Int       @id @default(autoincrement())                    @map("br_id")
-  compId                Int                                                         @map("comp_id")
+  compId                String    @db.Uuid                                         @map("comp_id")
 
   // 1) Identity / Reference
   brCode                String?   @unique @db.VarChar(20)                          @map("br_code")

@@ -18,7 +18,7 @@ export interface EmployeeMasterSuccessResponse<T, TMeta = Record<string, unknown
 
 export interface EmployeeMasterPayload {
   empId: string;
-  empCompanyId: number;
+  empCompanyId: string;
   empBranchId: string | null;
   empCode: string | null;
   empName: string;

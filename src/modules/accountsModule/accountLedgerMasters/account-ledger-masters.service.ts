@@ -32,7 +32,9 @@ export class AccountLedgerMastersService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  async save(saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto): Promise<AccountLedgerMasterPayload> {
+  async save(
+    saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
+  ): Promise<AccountLedgerMasterPayload> {
     if (saveAccountLedgerMasterDto.ledId) {
       return this.updateLedger(saveAccountLedgerMasterDto);
     }
@@ -334,7 +336,7 @@ export class AccountLedgerMastersService {
   private async ensureNameIsUnique(
     tx: AccountLedgerWriteClient,
     ledgerName: string,
-    companyId: number | null,
+    companyId: string | null,
     groupId: string,
     excludeId?: string,
   ): Promise<void> {

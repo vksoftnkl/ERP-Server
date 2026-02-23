@@ -54,7 +54,7 @@ export class EmployeeMasterService {
     };
 
     if (queryDto.empCompanyId !== undefined) {
-      where.empCompanyId = queryDto.empCompanyId;
+      where.empCompanyId = queryDto.empCompanyId as string;
     }
 
     if (queryDto.empDesignationId !== undefined) {

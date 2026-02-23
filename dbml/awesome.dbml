@@ -15,7 +15,7 @@ Table users {
 
 Table account_groups {
   accGroupId String [pk]
-  accGroupCompanyId Int
+  accGroupCompanyId String
   accGroupName String [not null]
   accGroupAlias String
   accGroupShort String
@@ -47,7 +47,7 @@ Table account_groups {
 
 Table acc_ledger_master {
   ledId String [pk]
-  ledCompanyId Int
+  ledCompanyId String
   ledGroupId String [not null]
   ledName String [not null]
   ledAlias String
@@ -117,7 +117,7 @@ Table acc_ledger_master {
 
 Table branch_master {
   brId Int [pk, increment]
-  compId Int [not null]
+  compId String [not null]
   brCode String [unique]
   brName String [not null]
   brMailingName String
@@ -171,7 +171,7 @@ Table branch_master {
 }
 
 Table companys {
-  compId Int [pk, increment]
+  compId String [pk]
   compCode String [unique]
   compName String [unique, not null]
   compShort String
@@ -275,7 +275,7 @@ Table employee_designations {
 
 Table emp_master {
   empId String [pk]
-  empCompanyId Int [not null]
+  empCompanyId String [not null]
   empBranchId String
   empCode String
   empName String [not null]
@@ -334,7 +334,7 @@ Table emp_master {
 
 Table gsp_company_service {
   csgCompanyServiceId String [pk]
-  csgCompanyId Int [not null]
+  csgCompanyId String [not null]
   csgGspProviderId String [not null]
   csgServiceType String [not null]
   csgEuserName String [not null]
@@ -370,7 +370,7 @@ Table gsp_provider_master {
 
 Table acc_ship_addrs {
   saaId String [pk]
-  saaCompanyId Int
+  saaCompanyId String
   saaLedgerId String [not null]
   saaAddrType String [not null, default: 'SHIP_TO']
   saaIsDefault Boolean [not null, default: false]
@@ -403,7 +403,7 @@ Table acc_ship_addrs {
 
 Table acc_ledger_bank_accounts {
   lbaId String [pk]
-  lbaCompanyId Int
+  lbaCompanyId String
   lbaLedgerId String [not null]
   lbaAccountHolder String [not null]
   lbaBankName String [not null]
@@ -1256,7 +1256,7 @@ Table customers {
 
 Table cust_groups {
   cgrId String [pk]
-  cgrCompanyId Int
+  cgrCompanyId String
   cgrBranchId String
   cgrName String [not null]
   cgrAlias String

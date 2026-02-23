@@ -18,7 +18,7 @@ export interface BranchMasterSuccessResponse<T, TMeta = Record<string, unknown>>
 
 export interface BranchMasterPayload {
   brId: number;
-  compId: number;
+  compId: string;
   brCode: string | null;
   brName: string;
   brMailingName: string | null;

@@ -1,5 +1,5 @@
 model Company {
-  compId                Int       @id @default(autoincrement())                    @map("comp_id")
+  compId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("comp_id")
 
   // 1) Identity / Codes
   compCode              String?   @unique @db.VarChar(20)                          @map("comp_code")

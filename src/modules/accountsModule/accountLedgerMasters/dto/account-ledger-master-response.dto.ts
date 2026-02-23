@@ -24,7 +24,7 @@ export class AccountLedgerMasterPayloadDto {
   ledId!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  ledCompanyId!: number | null;
+  ledCompanyId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   ledGroupId!: string;

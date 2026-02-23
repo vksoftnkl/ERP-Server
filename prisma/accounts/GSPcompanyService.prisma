@@ -1,6 +1,6 @@
 model GspCompanyService {
   csgCompanyServiceId      String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("csg_company_service_id")
-  csgCompanyId             Int                                                        @map("csg_company_id")
+  csgCompanyId             String    @db.Uuid                                         @map("csg_company_id")
   csgGspProviderId         String    @db.Uuid                                          @map("csg_gsp_provider_id")
   csgServiceType           String    @db.VarChar(20)                                  @map("csg_service_type")
   csgEuserName             String                                                      @map("csg_euser_name")

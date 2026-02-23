@@ -44,11 +44,10 @@ const toOptionalBoolean = (value: unknown): boolean | undefined => {
 };
 
 export class ListAccountLedgerMasterQueryDto {
-  @ApiPropertyOptional({ type: Number })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  ledCompanyId?: number;
+  @IsUUID('all')
+  ledCompanyId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()

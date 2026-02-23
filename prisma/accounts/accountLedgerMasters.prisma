@@ -1,6 +1,6 @@
 model AccLedgerMaster {
   ledId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("led_id")
-  ledCompanyId           Int?                                                       @map("led_company_id")
+  ledCompanyId           String?        @db.Uuid                                   @map("led_company_id")
 
   // 1) Identity / Reference
   ledGroupId             String    @db.Uuid                                          @map("led_group_id")

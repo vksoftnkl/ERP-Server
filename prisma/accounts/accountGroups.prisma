@@ -1,6 +1,6 @@
 model AccountGroup {
   accGroupId                  String         @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("acc_group_id")
-  accGroupCompanyId           Int?                                                             @map("acc_group_company_id")
+  accGroupCompanyId           String?        @db.Uuid                                         @map("acc_group_company_id")
 
   // Master fields
   accGroupName                String         @db.VarChar(150)                                 @map("acc_group_name")

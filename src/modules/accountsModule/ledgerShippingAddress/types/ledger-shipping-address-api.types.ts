@@ -18,7 +18,7 @@ export interface LedgerShippingAddressSuccessResponse<T, TMeta = Record<string, 
 
 export interface LedgerShippingAddressPayload {
   saaId: string;
-  saaCompanyId: number | null;
+  saaCompanyId: string | null;
   saaLedgerId: string;
   saaAddrType: string;
   saaIsDefault: boolean;

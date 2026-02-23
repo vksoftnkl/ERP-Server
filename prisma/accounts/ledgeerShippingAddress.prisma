@@ -1,6 +1,6 @@
 model AccShipAddr {
   saaId          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("saa_id")
-  saaCompanyId   Int?     @map("saa_company_id")
+  saaCompanyId   String?  @db.Uuid                               @map("saa_company_id")
   saaLedgerId    String   @db.Uuid @map("saa_ledger_id")
 
   saaAddrType    String   @default("SHIP_TO") @db.VarChar(20) @map("saa_addr_type")

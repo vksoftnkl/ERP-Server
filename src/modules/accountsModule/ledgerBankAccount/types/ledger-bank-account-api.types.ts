@@ -18,7 +18,7 @@ export interface LedgerBankAccountSuccessResponse<T, TMeta = Record<string, unkn
 
 export interface LedgerBankAccountPayload {
   lbaId: string;
-  lbaCompanyId: number | null;
+  lbaCompanyId: string | null;
   lbaLedgerId: string;
   lbaAccountHolder: string;
   lbaBankName: string;

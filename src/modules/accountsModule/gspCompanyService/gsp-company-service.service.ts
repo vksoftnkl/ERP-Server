@@ -52,7 +52,7 @@ export class GspCompanyServiceService {
     };
 
     if (queryDto.csgCompanyId !== undefined) {
-      where.csgCompanyId = queryDto.csgCompanyId;
+      where.csgCompanyId = queryDto.csgCompanyId as string;
     }
 
     if (queryDto.csgGspProviderId !== undefined) {

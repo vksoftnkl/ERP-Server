@@ -52,7 +52,7 @@ export class AccountsGroupService {
     };
 
     if (queryDto.accGroupCompanyId !== undefined) {
-      where.accGroupCompanyId = queryDto.accGroupCompanyId;
+      where.accGroupCompanyId = queryDto.accGroupCompanyId as string | null;
     }
 
     if (queryDto.accGroupParentId !== undefined) {

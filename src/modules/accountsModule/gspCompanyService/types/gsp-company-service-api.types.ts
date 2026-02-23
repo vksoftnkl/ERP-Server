@@ -18,7 +18,7 @@ export interface GspCompanyServiceSuccessResponse<T, TMeta = Record<string, unkn
 
 export interface GspCompanyServicePayload {
   csgCompanyServiceId: string;
-  csgCompanyId: number;
+  csgCompanyId: string;
   csgGspProviderId: string;
   csgServiceType: string;
   csgEuserName: string;

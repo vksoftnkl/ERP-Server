@@ -1,6 +1,6 @@
 model AccLedgerBankAccount {
   lbaId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("lba_id")
-  lbaCompanyId        Int?                                                       @map("lba_company_id")
+  lbaCompanyId        String?  @db.Uuid                                          @map("lba_company_id")
   lbaLedgerId         String    @db.Uuid                                          @map("lba_ledger_id")
 
   // Bank Details

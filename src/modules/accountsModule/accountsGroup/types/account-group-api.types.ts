@@ -18,7 +18,7 @@ export interface AccountGroupSuccessResponse<T, TMeta = Record<string, unknown>>
 
 export interface AccountGroupPayload {
   accGroupId: string;
-  accGroupCompanyId: number | null;
+  accGroupCompanyId: string | null;
   accGroupName: string;
   accGroupAlias: string | null;
   accGroupShort: string | null;

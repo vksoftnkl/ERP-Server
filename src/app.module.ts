@@ -46,6 +46,11 @@ import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMas
 import { GspCompanyServiceModule } from './modules/accountsModule/gspCompanyService/gsp-company-service.module';
 import { SupplierGroupModule } from './modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from './modules/purchase/suppliers/suppliers.module';
+import { AreaModule } from './modules/sales/area/area.module';
+import { CityModule } from './modules/sales/city/city.module';
+import { StateModule } from './modules/sales/state/state.module';
+import { CustomerModule } from './modules/sales/customer/customer.module';
+import { CustomerGroupModule } from './modules/sales/customer-group/customer-group.module';
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -104,6 +109,11 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     GspCompanyServiceModule,
     SupplierGroupModule,
     SuppliersModule,
+    StateModule,
+    CityModule,
+    AreaModule,
+    CustomerModule,
+    CustomerGroupModule,
     GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,

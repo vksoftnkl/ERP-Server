@@ -17,7 +17,7 @@ export interface CompanyMasterSuccessResponse<T, TMeta = Record<string, unknown>
 }
 
 export interface CompanyMasterPayload {
-  compId: number;
+  compId: string;
   compCode: string | null;
   compName: string;
   compShort: string | null;

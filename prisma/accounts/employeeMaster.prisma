@@ -2,7 +2,7 @@ model EmpMaster {
   empId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("emp_id")
 
   // Identity / Scope
-  empCompanyId         Int                                                        @map("emp_company_id")
+  empCompanyId         String    @db.Uuid                                         @map("emp_company_id")
   empBranchId          String?   @db.Uuid                                          @map("emp_branch_id")
 
   // Codes / Names
