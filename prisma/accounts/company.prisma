@@ -92,6 +92,9 @@ model Company {
   gspCompanyServices    GspCompanyService[]
   shipAddrs             AccShipAddr[]
   custGroup             CustGroup[]
+  itemMaster            ItemMaster[]
+  ErpDeviceMaster       ErpDeviceMaster[]
+  UserLoginSession      UserLoginSession[]
   @@map("companys")
   @@schema("accounts")
 }

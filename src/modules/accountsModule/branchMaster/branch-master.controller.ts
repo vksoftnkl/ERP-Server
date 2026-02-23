@@ -4,7 +4,7 @@ import {
   Delete,
   Get,
   Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Post,
   Query,
   UseFilters,
@@ -46,7 +46,7 @@ import {
 @Controller('branch-masters')
 @UseFilters(BranchMasterExceptionFilter)
 export class BranchMasterController {
-  constructor(private readonly branchMasterService: BranchMasterService) {}
+  constructor(private readonly branchMasterService: BranchMasterService) { }
 
   @Post('create')
   @Version('1')
@@ -90,12 +90,12 @@ export class BranchMasterController {
   @Get('get/:brId')
   @Version('1')
   @ApiOperation({ summary: 'Get branch by id' })
-  @ApiParam({ name: 'brId', type: Number, example: 1 })
+  @ApiParam({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: BranchMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: BranchMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: BranchMasterErrorResponseDto })
   async getById(
-    @Param('brId', ParseIntPipe) brId: number,
+    @Param('brId', ParseUUIDPipe) brId: string,
   ): Promise<BranchMasterSuccessResponse<BranchMasterPayload>> {
     const data = await this.branchMasterService.getById(brId);
 
@@ -109,13 +109,13 @@ export class BranchMasterController {
   @Delete('delete/:brId')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete branch by id' })
-  @ApiParam({ name: 'brId', type: Number, example: 1 })
+  @ApiParam({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: BranchMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: BranchMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: BranchMasterErrorResponseDto })
   async remove(
-    @Param('brId', ParseIntPipe) brId: number,
-  ): Promise<BranchMasterSuccessResponse<{ brId: number; deleted: true }>> {
+    @Param('brId', ParseUUIDPipe) brId: string,
+  ): Promise<BranchMasterSuccessResponse<{ brId: string; deleted: true }>> {
     const data = await this.branchMasterService.softDelete(brId);
 
     return {

@@ -68,13 +68,6 @@ export class SaveAccountGroupDto {
   @IsUUID('all')
   accGroupId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
-  accGroupCompanyId?: string | null;
-
   @ApiProperty({ maxLength: 150 })
   @IsString()
   @IsNotEmpty()
@@ -105,30 +98,6 @@ export class SaveAccountGroupDto {
   @MaxLength(250)
   accGroupDescription?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 150 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(150)
-  accGroupTallyName?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 150 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(150)
-  accGroupPrimaryName?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 20 })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
-  accGroupNature?: string | null;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
@@ -150,34 +119,4 @@ export class SaveAccountGroupDto {
   @IsString()
   @Length(2, 2)
   accGroupTypeCode!: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  accGroupIsDefault?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  accGroupBehaveAsSubledger?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  accGroupNetDebitCredit?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  accGroupUsedForCalculation?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  accGroupAffectsGrossProfit?: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
-  accGroupIsActive?: boolean;
 }

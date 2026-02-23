@@ -1,3 +1,5 @@
+import type { LedGstPartyRegType, LedObType } from '@prisma/client';
+
 export interface AccountLedgerMasterErrorDetail {
   field: string;
   message: string;
@@ -19,6 +21,7 @@ export interface AccountLedgerMasterSuccessResponse<T, TMeta = Record<string, un
 export interface AccountLedgerMasterPayload {
   ledId: string;
   ledCompanyId: string | null;
+  ledBranchId: string;
   ledGroupId: string;
   ledName: string;
   ledAlias: string | null;
@@ -46,6 +49,7 @@ export interface AccountLedgerMasterPayload {
   ledStateCode: string | null;
   ledPin: string | null;
   ledCountry: string | null;
+  ledRegionName: string | null;
   ledRegionAddr1: string | null;
   ledRegionAddr2: string | null;
   ledRegionAddr3: string | null;
@@ -53,7 +57,7 @@ export interface AccountLedgerMasterPayload {
   ledRegionDistrict: string | null;
   ledRegionStateName: string | null;
   ledRegionCountry: string | null;
-  ledGstPartyRegType: string | null;
+  ledGstPartyRegType: LedGstPartyRegType | null;
   ledGstinNo: string | null;
   ledPanNo: string | null;
   ledAadharNo: string | null;
@@ -66,8 +70,11 @@ export interface AccountLedgerMasterPayload {
   ledBankIfsc: string | null;
   ledUpiId: string | null;
   ledObAmount: number;
-  ledObType: string;
+  ledObType: LedObType;
   ledObAsOn: string | null;
+  ledTotalDr: number;
+  ledTotalCr: number;
+  ledTotalBalance: number;
   ledIsActive: boolean;
   ledIsDeleted: boolean;
   ledAllowEdit: boolean;

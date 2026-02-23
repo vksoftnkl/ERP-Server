@@ -18,6 +18,7 @@ export interface ItemSuccessResponse<T, TMeta = Record<string, unknown>> {
 
 export interface ItemPayload {
   item_id: string;
+  item_company_id: string;
   item_branch_id: string | null;
   item_code: string | null;
   item_sku: string | null;

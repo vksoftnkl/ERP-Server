@@ -91,108 +91,132 @@ model AccountGroup {
 }
 
 // ----- prisma/accounts/accountLedgerMasters.prisma -----
+enum LedGstPartyRegType {
+  REGULAR
+  COMPOSITION
+  UNREGISTERED
+
+  @@schema("accounts")
+}
+
+enum LedObType {
+  DR
+  CR
+
+  @@schema("accounts")
+}
+
 model AccLedgerMaster {
-  ledId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("led_id")
-  ledCompanyId           String?        @db.Uuid                                   @map("led_company_id")
+  ledId                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("led_id")
+  ledCompanyId             String    @db.Uuid                                        @map("led_company_id")
+  ledBranchId              String    @db.Uuid                                        @map("led_branch_id")
+  ledGroupId               String    @db.Uuid                                        @map("led_group_id")
 
   // 1) Identity / Reference
-  ledGroupId             String    @db.Uuid                                          @map("led_group_id")
-  ledName                String    @db.VarChar(200)                                 @map("led_name")
-  ledAlias               String?   @db.VarChar(100)                                 @map("led_alias")
-  ledShort               String?   @db.VarChar(50)                                  @map("led_short")
-  ledTallyName           String?   @db.VarChar(200)                                 @map("led_tally_name")
-  ledTallyGroupName      String?   @db.VarChar(150)                                 @map("led_tally_group_name")
-  ledTallyGuid           String?   @db.VarChar(64)                                  @map("led_tally_guid")
+  ledName                  String    @db.VarChar(200)                                 @map("led_name")
+  ledAlias                 String?   @db.VarChar(100)                                 @map("led_alias")
+  ledShort                 String?   @db.VarChar(50)                                  @map("led_short")
+  ledTallyName             String?   @db.VarChar(200)                                 @map("led_tally_name")
+  ledTallyGroupName        String?   @db.VarChar(150)                                 @map("led_tally_group_name")
+  ledTallyGuid             String?   @db.VarChar(64)                                  @map("led_tally_guid")
 
   // 2) Ledger category / behaviour
-  ledCategory            String    @default("GENERAL") @db.VarChar(30)              @map("led_category")
-  ledIsBillByBill        Boolean   @default(false)                                   @map("led_is_bill_by_bill")
-  ledIsCostCenterReq     Boolean   @default(false)                                   @map("led_is_cost_center_req")
-  ledIsInterestApplicable Boolean  @default(false)                                   @map("led_is_interest_applicable")
-  ledInterestRate        Decimal?  @db.Decimal                                       @map("led_interest_rate")
+  ledCategory              String    @default("GENERAL") @db.VarChar(30)              @map("led_category")
+  ledIsBillByBill          Boolean   @default(false)                                   @map("led_is_bill_by_bill")
+  ledIsCostCenterReq       Boolean   @default(false)                                   @map("led_is_cost_center_req")
+  ledIsInterestApplicable  Boolean   @default(false)                                   @map("led_is_interest_applicable")
+  ledInterestRate          Decimal?  @db.Decimal                                       @map("led_interest_rate")
 
   // 3) Contact
-  ledContactPerson       String?   @db.VarChar(150)                                 @map("led_contact_person")
-  ledEmail               String?   @db.VarChar(150)                                 @map("led_email")
-  ledTel                 String?   @db.VarChar(20)                                  @map("led_tel")
-  ledPhone1              String?   @db.VarChar(20)                                  @map("led_phone1")
-  ledPhone2              String?   @db.VarChar(20)                                  @map("led_phone2")
-  ledWhatsappNo          String?   @db.VarChar(20)                                  @map("led_whatsapp_no")
+  ledContactPerson         String?   @db.VarChar(150)                                 @map("led_contact_person")
+  ledEmail                 String?   @db.VarChar(150)                                 @map("led_email")
+  ledTel                   String?   @db.VarChar(20)                                  @map("led_tel")
+  ledPhone1                String?   @db.VarChar(20)                                  @map("led_phone1")
+  ledPhone2                String?   @db.VarChar(20)                                  @map("led_phone2")
+  ledWhatsappNo            String?   @db.VarChar(20)                                  @map("led_whatsapp_no")
 
   // 4) Address (Mailing)
-  ledAddr1               String?   @db.VarChar(200)                                 @map("led_addr1")
-  ledAddr2               String?   @db.VarChar(200)                                 @map("led_addr2")
-  ledAddr3               String?   @db.VarChar(200)                                 @map("led_addr3")
-  ledCity                String?   @db.VarChar(100)                                 @map("led_city")
-  ledDistrict            String?   @db.VarChar(100)                                 @map("led_district")
-  ledStateName           String?   @db.VarChar(100)                                 @map("led_state_name")
-  ledStateCode           String?   @db.Char(2)                                      @map("led_state_code")
-  ledPin                 String?   @db.VarChar(10)                                  @map("led_pin")
-  ledCountry             String?   @default("India") @db.VarChar(60)               @map("led_country")
+  ledAddr1                 String?   @db.VarChar(200)                                 @map("led_addr1")
+  ledAddr2                 String?   @db.VarChar(200)                                 @map("led_addr2")
+  ledAddr3                 String?   @db.VarChar(200)                                 @map("led_addr3")
+  ledCity                  String?   @db.VarChar(100)                                 @map("led_city")
+  ledDistrict              String?   @db.VarChar(100)                                 @map("led_district")
+  ledStateName             String?   @db.VarChar(100)                                 @map("led_state_name")
+  ledStateCode             String?   @db.Char(2)                                      @map("led_state_code")
+  ledPin                   String?   @db.VarChar(10)                                  @map("led_pin")
+  ledCountry               String?   @default("India") @db.VarChar(60)                @map("led_country")
 
-  // 4) Regional (Mailing)
-  ledRegionAddr1         String?   @db.VarChar(200)                                 @map("led_region_addr1")
-  ledRegionAddr2         String?   @db.VarChar(200)                                 @map("led_region_addr2")
-  ledRegionAddr3         String?   @db.VarChar(200)                                 @map("led_region_addr3")
-  ledRegionCity          String?   @db.VarChar(100)                                 @map("led_region_city")
-  ledRegionDistrict      String?   @db.VarChar(100)                                 @map("led_region_district")
-  ledRegionStateName     String?   @db.VarChar(100)                                 @map("led_region_state_name")
-  ledRegionCountry       String?   @default("India") @db.VarChar(60)               @map("led_region_country")
+  // 5) Regional (Mailing)
+  ledRegionName            String?   @db.Text                                          @map("led_region_name")
+  ledRegionAddr1           String?   @db.VarChar(200)                                 @map("led_region_addr1")
+  ledRegionAddr2           String?   @db.VarChar(200)                                 @map("led_region_addr2")
+  ledRegionAddr3           String?   @db.VarChar(200)                                 @map("led_region_addr3")
+  ledRegionCity            String?   @db.VarChar(100)                                 @map("led_region_city")
+  ledRegionDistrict        String?   @db.VarChar(100)                                 @map("led_region_district")
+  ledRegionStateName       String?   @db.VarChar(100)                                 @map("led_region_state_name")
+  ledRegionCountry         String?   @default("India") @db.VarChar(60)                @map("led_region_country")
 
-  // 5) GST / Statutory
-  ledGstPartyRegType     String?   @db.VarChar(30)                                  @map("led_gst_party_reg_type")
-  ledGstinNo             String?   @db.VarChar(15)                                  @map("led_gstin_no")
-  ledPanNo               String?   @db.VarChar(10)                                  @map("led_pan_no")
-  ledAadharNo            String?   @db.VarChar(20)                                  @map("led_aadhar_no")
-  ledEcommerceGstin      String?   @db.VarChar(15)                                  @map("led_ecommerce_gstin")
-  ledIsSez               Boolean   @default(false)                                   @map("led_is_sez")
+  // 6) GST / Statutory
+  ledGstPartyRegType       LedGstPartyRegType?                                         @map("led_gst_party_reg_type")
+  ledGstinNo               String?   @db.VarChar(15)                                  @map("led_gstin_no")
+  ledPanNo                 String?   @db.VarChar(10)                                  @map("led_pan_no")
+  ledAadharNo              String?   @db.VarChar(20)                                  @map("led_aadhar_no")
+  ledEcommerceGstin        String?   @db.VarChar(15)                                  @map("led_ecommerce_gstin")
+  ledIsSez                 Boolean   @default(false)                                   @map("led_is_sez")
 
-  // 6) Bank / Payment
-  ledChequeName          String?   @db.VarChar(80)                                  @map("led_cheque_name")
-  ledBankName            String?   @db.VarChar(120)                                 @map("led_bank_name")
-  ledBankBranch          String?   @db.VarChar(120)                                 @map("led_bank_branch")
-  ledBankAcNo            String?   @db.VarChar(40)                                  @map("led_bank_ac_no")
-  ledBankIfsc            String?   @db.VarChar(15)                                  @map("led_bank_ifsc")
-  ledUpiId               String?   @db.VarChar(80)                                  @map("led_upi_id")
+  // 7) Bank / Payment
+  ledChequeName            String?   @db.VarChar(80)                                  @map("led_cheque_name")
+  ledBankName              String?   @db.VarChar(120)                                 @map("led_bank_name")
+  ledBankBranch            String?   @db.VarChar(120)                                 @map("led_bank_branch")
+  ledBankAcNo              String?   @db.VarChar(40)                                  @map("led_bank_ac_no")
+  ledBankIfsc              String?   @db.VarChar(15)                                  @map("led_bank_ifsc")
+  ledUpiId                 String?   @db.VarChar(80)                                  @map("led_upi_id")
 
-  // 7) Opening Balance
-  ledObAmount            Decimal   @default(0) @db.Decimal                          @map("led_ob_amount")
-  ledObType              String    @default("DR") @db.Char(2)                       @map("led_ob_type")
-  ledObAsOn              DateTime? @db.Date                                          @map("led_ob_as_on")
+  // 8) Opening / Running Balance
+  ledObAmount              Decimal   @default(0) @db.Decimal                          @map("led_ob_amount")
+  ledObType                LedObType @default(DR)                                      @map("led_ob_type")
+  ledObAsOn                DateTime? @db.Date                                          @map("led_ob_as_on")
+  ledTotalDr               Decimal   @default(0) @db.Decimal                          @map("led_total_dr")
+  ledTotalCr               Decimal   @default(0) @db.Decimal                          @map("led_total_cr")
+  ledTotalBalance          Decimal   @default(0) @db.Decimal                          @map("led_total_balance")
 
-  // 8) Status / Notes
-  ledIsActive            Boolean   @default(true)                                    @map("led_is_active")
-  ledIsDeleted           Boolean   @default(false)                                   @map("led_is_deleted")
-  ledAllowEdit           Boolean   @default(false)                                   @map("led_allow_edit")
-  ledIsEntry             Boolean   @default(false)                                   @map("led_is_entry")
-  ledAllowSms            Boolean   @default(false)                                   @map("led_allow_sms")
-  ledRemarks             String?   @db.VarChar(250)                                 @map("led_remarks")
+  // 9) Status / Notes
+  ledIsActive              Boolean   @default(true)                                    @map("led_is_active")
+  ledIsDeleted             Boolean   @default(false)                                   @map("led_is_deleted")
+  ledAllowEdit             Boolean   @default(false)                                   @map("led_allow_edit")
+  ledIsEntry               Boolean   @default(false)                                   @map("led_is_entry")
+  ledAllowSms              Boolean   @default(false)                                   @map("led_allow_sms")
+  ledRemarks               String?   @db.VarChar(250)                                 @map("led_remarks")
 
-  // 9) Audit / Sync
-  ledSyncDate            DateTime? @db.Timestamptz                                  @map("led_sync_date")
-  ledCreatedOn           DateTime  @default(now()) @db.Timestamptz                  @map("led_created_on")
-  ledCreatedBy           String?   @db.VarChar(100)                                 @map("led_created_by")
-  ledModifiedOn          DateTime  @default(now()) @db.Timestamptz                  @map("led_modified_on")
-  ledModifiedBy          String?   @db.VarChar(100)                                 @map("led_modified_by")
+  // 10) Audit / Sync
+  ledSyncDate              DateTime? @db.Timestamptz                                  @map("led_sync_date")
+  ledCreatedOn             DateTime  @default(now()) @db.Timestamptz                  @map("led_created_on")
+  ledCreatedBy             String?   @db.VarChar(100)                                 @map("led_created_by")
+  ledModifiedOn            DateTime  @default(now()) @db.Timestamptz                  @map("led_modified_on")
+  ledModifiedBy            String?   @db.VarChar(100)                                 @map("led_modified_by")
 
   // Relations
-  company                Company?              @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  accountGroup           AccountGroup          @relation(fields: [ledGroupId], references: [accGroupId])
-  bankAccounts           AccLedgerBankAccount[]
-  shipAddrs              AccShipAddr[]
-  tenders                TenderMaster[]
+  company                  Company                @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  accountGroup             AccountGroup           @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
+  branches                 BranchMaster           @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
+  bankAccounts             AccLedgerBankAccount[]
+  shipAddrs                AccShipAddr[]
+  tenders                  TenderMaster[]
 
+  @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
+  @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
-  @@index([ledGroupId],   name: "idx_led_group_id")
-  @@index([ledIsActive],  name: "idx_led_active")
-  @@index([ledGstinNo],   name: "idx_led_gstin")
+  @@index([ledBranchId], name: "idx_led_branch_id")
+  @@index([ledGroupId], name: "idx_led_group_id")
+  @@index([ledIsActive], name: "idx_led_active")
+  @@index([ledGstinNo], name: "idx_led_gstin")
   @@map("acc_ledger_master")
   @@schema("accounts")
 }
 
 // ----- prisma/accounts/branchMaster.prisma -----
 model BranchMaster {
-  brId                  Int       @id @default(autoincrement())                    @map("br_id")
+  brId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("br_id")
   compId                String    @db.Uuid                                         @map("comp_id")
 
   // 1) Identity / Reference
@@ -262,6 +286,7 @@ model BranchMaster {
 
   // Relations
   company               Company   @relation(fields: [compId], references: [compId])
+  accountLedgerMaster   AccLedgerMaster[]
   @@index([compId],      name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
@@ -363,6 +388,9 @@ model Company {
   gspCompanyServices    GspCompanyService[]
   shipAddrs             AccShipAddr[]
   custGroup             CustGroup[]
+  itemMaster            ItemMaster[]
+  ErpDeviceMaster       ErpDeviceMaster[]
+  UserLoginSession      UserLoginSession[]
   @@map("companys")
   @@schema("accounts")
 }
@@ -880,49 +908,76 @@ model BankMaster {
 
 // ----- prisma/fixed/deviceListMaster.prisma -----
 model ErpDeviceMaster {
-  devId            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("dev_id")
-
+  // =========================================================
   // 1) Identity / Scope
-  devBranchId      String?   @db.Uuid                                          @map("dev_branch_id")
-  devUserId        String?   @db.Uuid                                          @map("dev_user_id")
+  // =========================================================
+  devId         String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("dev_id")
 
+  devCompanyId  String? @db.Uuid @map("dev_company_id")
+  devBranchId   String? @db.Uuid @map("dev_branch_id")
+  devUserId     String? @db.Uuid @map("dev_user_id")
+
+  // =========================================================
   // 2) Device Identity
-  devDeviceUid     String    @db.VarChar(120)                                 @map("dev_device_uid")
-  devDeviceName    String?   @db.VarChar(120)                                 @map("dev_device_name")
-  devDeviceType    String    @db.VarChar(30)                                  @map("dev_device_type")
-  devPlatform      String?   @db.VarChar(30)                                  @map("dev_platform")
-  devOsVersion     String?   @db.VarChar(40)                                  @map("dev_os_version")
-  devAppVersion    String?   @db.VarChar(40)                                  @map("dev_app_version")
-  devSerialNo      String?   @db.VarChar(120)                                 @map("dev_serial_no")
-  devImei          String?   @db.VarChar(30)                                  @map("dev_imei")
-  devMacAddress    String?   @db.VarChar(50)                                  @map("dev_mac_address")
-  devProductKey    String?                                                     @map("dev_product_key")
+  // =========================================================
+  devDeviceUid   String  @db.VarChar(120) @map("dev_device_uid")
+  devDeviceName  String? @db.VarChar(120) @map("dev_device_name")
+  devDeviceType  String  @db.VarChar(30)  @map("dev_device_type")
+  devPlatform    String? @db.VarChar(30)  @map("dev_platform")
+  devOsVersion   String? @db.VarChar(40)  @map("dev_os_version")
+  devAppVersion  String? @db.VarChar(40)  @map("dev_app_version")
 
+  devSerialNo    String? @db.VarChar(120) @map("dev_serial_no")
+  devImei        String? @db.VarChar(30)  @map("dev_imei")
+  devMacAddress  String? @db.VarChar(50)  @map("dev_mac_address")
+  devProductKey  String? @db.Text         @map("dev_product_key")
+
+  // =========================================================
   // 3) Access Control
-  devIsAllowed     Boolean   @default(false)                                   @map("dev_is_allowed")
-  devIsBlocked     Boolean   @default(false)                                   @map("dev_is_blocked")
-  devAllowReason   String?   @db.VarChar(250)                                 @map("dev_allow_reason")
-  devBlockReason   String?   @db.VarChar(250)                                 @map("dev_block_reason")
+  // =========================================================
+  devIsAllowed    Boolean @default(false) @map("dev_is_allowed")
+  devIsBlocked    Boolean @default(false) @map("dev_is_blocked")
+  devAllowReason  String? @db.VarChar(250) @map("dev_allow_reason")
+  devBlockReason  String? @db.VarChar(250) @map("dev_block_reason")
 
+  // =========================================================
   // 4) Tracking
-  devLastSeenOn    DateTime? @db.Timestamptz                                  @map("dev_last_seen_on")
-  devLastIp        String?   @db.Inet                                          @map("dev_last_ip")
-  devLastLoginOn   DateTime? @db.Timestamptz                                  @map("dev_last_login_on")
+  // =========================================================
+  devLastSeenOn   DateTime? @db.Timestamptz(6) @map("dev_last_seen_on")
+  devLastIp       String?   @db.Inet          @map("dev_last_ip")
+  devLastLoginOn  DateTime? @db.Timestamptz(6) @map("dev_last_login_on")
 
-  // 5) Status
-  devIsActive      Boolean   @default(true)                                    @map("dev_is_active")
-  devIsDeleted     Boolean   @default(false)                                   @map("dev_is_deleted")
+  // =========================================================
+  // 5) Status (Soft delete)
+  // =========================================================
+  devIsActive     Boolean @default(true)  @map("dev_is_active")
+  devIsDeleted    Boolean @default(false) @map("dev_is_deleted")
 
+  // =========================================================
   // 6) Audit / Sync
-  devSyncDate      DateTime? @db.Timestamptz                                  @map("dev_sync_date")
-  devCreatedOn     DateTime  @default(now()) @db.Timestamptz                  @map("dev_created_on")
-  devCreatedBy     String?   @db.VarChar(100)                                 @map("dev_created_by")
-  devModifiedOn    DateTime  @default(now()) @db.Timestamptz                  @map("dev_modified_on")
-  devModifiedBy    String?   @db.VarChar(100)                                 @map("dev_modified_by")
+  // =========================================================
+  devSyncDate     DateTime? @db.Timestamptz(6) @map("dev_sync_date")
+  devCreatedOn    DateTime  @default(now())    @db.Timestamptz(6) @map("dev_created_on")
+  devCreatedBy    String?   @db.VarChar(100)   @map("dev_created_by")
+  devModifiedOn   DateTime  @default(now())    @db.Timestamptz(6) @map("dev_modified_on")
+  devModifiedBy   String?   @db.VarChar(100)   @map("dev_modified_by")
 
-  @@unique([devDeviceUid],          name: "uq_erp_device_uid")
-  @@index([devDeviceUid],           name: "idx_dev_login_check")
-  @@index([devIsAllowed, devIsBlocked], name: "idx_dev_allowed")
+  // =========================================================
+  // 7) Relations
+  // =========================================================
+  company         Company?  @relation(fields: [devCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+
+  // =========================================================
+  // 8) Constraints / Indexes
+  // =========================================================
+  @@unique([devCompanyId, devDeviceUid], map: "uq_erp_device_company_uid")
+
+  // CREATE INDEX idx_dev_login_check ON (...) WHERE dev_is_deleted = false;
+  @@index([devCompanyId, devDeviceUid], map: "idx_dev_login_check")
+
+  // CREATE INDEX idx_dev_allowed ON (...) WHERE dev_is_deleted = false;
+  @@index([devCompanyId, devIsAllowed, devIsBlocked], map: "idx_dev_allowed")
+
   @@map("erp_device_master")
   @@schema("fixed")
 }
@@ -949,47 +1004,77 @@ model StateCode {
 
 // ----- prisma/fixed/userLoginSessions.prisma -----
 model UserLoginSession {
-  ulsId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("uls_id")
-
+  // =========================================================
   // 1) Identity / Scope
-  ulsBranchId         String    @db.Uuid                                          @map("uls_branch_id")
-  ulsUserId           String    @db.Uuid                                          @map("uls_user_id")
-  ulsDeviceId         String?   @db.Uuid                                          @map("uls_device_id")
+  // =========================================================
+  ulsId        String @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("uls_id")
 
+  ulsCompanyId String @db.Uuid @map("uls_company_id")
+  ulsBranchId  String @db.Uuid @map("uls_branch_id")
+  ulsUserId    String @db.Uuid @map("uls_user_id")
+  ulsDeviceId  String? @db.Uuid @map("uls_device_id")
+
+  // =========================================================
   // 2) Session / Tokens
-  ulsSessionId        String?   @db.Uuid                                          @map("uls_session_id")
-  ulsSessionToken     String?   @db.VarChar(200)                                 @map("uls_session_token")
-  ulsRefreshTokenId   String?   @db.VarChar(200)                                 @map("uls_refresh_token_id")
+  // =========================================================
+  ulsSessionId       String? @db.Uuid         @map("uls_session_id")
+  ulsSessionToken    String? @db.VarChar(200) @map("uls_session_token")
+  ulsRefreshTokenId  String? @db.VarChar(200) @map("uls_refresh_token_id")
 
+  // =========================================================
   // 3) Event Info
-  ulsLoginOn          DateTime  @default(now()) @db.Timestamptz                  @map("uls_login_on")
-  ulsLogoutOn         DateTime? @db.Timestamptz                                  @map("uls_logout_on")
-  ulsLogoutType       String?   @db.VarChar(20)                                  @map("uls_logout_type")
-  ulsLoginStatus      String    @default("SUCCESS") @db.VarChar(20)              @map("uls_login_status")
-  ulsFailReason       String?   @db.VarChar(250)                                 @map("uls_fail_reason")
+  // =========================================================
+  ulsLoginOn      DateTime @default(now()) @db.Timestamptz(6) @map("uls_login_on")
+  ulsLogoutOn     DateTime? @db.Timestamptz(6) @map("uls_logout_on")
 
+  ulsLogoutType   String? @db.VarChar(20) @map("uls_logout_type")
+  ulsLoginStatus  String  @default("SUCCESS") @db.VarChar(20) @map("uls_login_status")
+  ulsFailReason   String? @db.VarChar(250) @map("uls_fail_reason")
+
+  // =========================================================
   // 4) Client Info
-  ulsIpAddress        String?   @db.Inet                                          @map("uls_ip_address")
-  ulsUserAgent        String?                                                     @map("uls_user_agent")
-  ulsAppVersion       String?   @db.VarChar(40)                                  @map("uls_app_version")
+  // =========================================================
+  ulsIpAddress   String? @db.Inet @map("uls_ip_address")
+  ulsUserAgent   String? @db.Text @map("uls_user_agent")
+  ulsAppVersion  String? @db.VarChar(40) @map("uls_app_version")
 
+  // =========================================================
   // 5) Derived / Status
-  ulsIsActiveSession  Boolean   @default(true)                                    @map("uls_is_active_session")
-  ulsIsActive         Boolean   @default(true)                                    @map("uls_is_active")
-  ulsIsDeleted        Boolean   @default(false)                                   @map("uls_is_deleted")
+  // =========================================================
+  ulsIsActiveSession Boolean @default(true)  @map("uls_is_active_session")
+  ulsIsActive        Boolean @default(true)  @map("uls_is_active")
+  ulsIsDeleted       Boolean @default(false) @map("uls_is_deleted")
 
+  // =========================================================
   // 6) Audit / Sync
-  ulsSyncDate         DateTime? @db.Timestamptz                                  @map("uls_sync_date")
-  ulsCreatedOn        DateTime  @default(now()) @db.Timestamptz                  @map("uls_created_on")
-  ulsCreatedBy        String?   @db.VarChar(100)                                 @map("uls_created_by")
-  ulsModifiedOn       DateTime  @default(now()) @db.Timestamptz                  @map("uls_modified_on")
-  ulsModifiedBy       String?   @db.VarChar(100)                                 @map("uls_modified_by")
+  // =========================================================
+  ulsSyncDate     DateTime? @db.Timestamptz(6) @map("uls_sync_date")
+  ulsCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("uls_created_on")
+  ulsCreatedBy    String?   @db.VarChar(100) @map("uls_created_by")
+  ulsModifiedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("uls_modified_on")
+  ulsModifiedBy   String?   @db.VarChar(100) @map("uls_modified_by")
 
-  @@index([ulsUserId],          name: "idx_uls_user")
-  @@index([ulsIsActiveSession], name: "idx_uls_active_session")
-  @@index([ulsDeviceId],        name: "idx_uls_device_date")
-  @@map("user_login_sessions")
+  // =========================================================
+  // 7) Relations
+  // =========================================================
+  company         Company   @relation(fields: [ulsCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+
+  // =========================================================
+  // 8) Indexes (partial)
+  // =========================================================
+
+  // CREATE INDEX idx_uls_active_session
+  // ON (uls_company_id, uls_user_id, uls_login_on DESC)
+  // WHERE uls_is_deleted = false AND uls_is_active_session = true;
+  @@index([ulsCompanyId, ulsUserId, ulsLoginOn(sort: Desc)], map: "idx_uls_active_session")
+
+  // CREATE INDEX idx_uls_device_date
+  // ON (uls_device_id, uls_login_on DESC)
+  // WHERE uls_is_deleted = false;
+  @@index([ulsDeviceId, ulsLoginOn(sort: Desc)], map: "idx_uls_device_date")
+
   @@schema("fixed")
+  @@map("user_login_sessions")
 }
 
 // ----- prisma/grid/gridColumns.prisma -----
@@ -1326,7 +1411,7 @@ model ItemGroupMaster {
 // ----- prisma/master/items/itemMaster.prisma -----
 model ItemMaster {
   itemId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("item_id")
-
+  itemCompanyId        String   @db.Uuid @map("item_company_id")
   itemBranchId         String?  @db.Uuid @map("item_branch_id")
 
   // Names / Codes
@@ -1421,6 +1506,7 @@ model ItemMaster {
   prices               ItemPriceMaster[]
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
+  company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_master")
   @@schema("public")

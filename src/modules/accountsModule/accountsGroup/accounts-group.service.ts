@@ -51,10 +51,6 @@ export class AccountsGroupService {
       accGroupIsDeleted: false,
     };
 
-    if (queryDto.accGroupCompanyId !== undefined) {
-      where.accGroupCompanyId = queryDto.accGroupCompanyId as string | null;
-    }
-
     if (queryDto.accGroupParentId !== undefined) {
       where.accGroupParentId = queryDto.accGroupParentId;
     }
@@ -221,10 +217,7 @@ export class AccountsGroupService {
           await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx);
         }
 
-        const companyId = this.hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
-          ? (saveAccountGroupDto.accGroupCompanyId ?? null)
-          : null;
-        await this.ensureNameIsUnique(tx, normalizedName, companyId);
+        await this.ensureNameIsUnique(tx, normalizedName);
 
         const now = new Date();
         const createdBy = DEFAULT_ACTOR;
@@ -331,9 +324,7 @@ export class AccountsGroupService {
           ]);
         }
 
-        const nextCompanyId = this.hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
-          ? (saveAccountGroupDto.accGroupCompanyId ?? null)
-          : existing.accGroupCompanyId;
+        const nextCompanyId = existing.accGroupCompanyId;
         await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, accGroupId);
 
         const oldAncestorIds = isParentChanged
@@ -419,7 +410,7 @@ export class AccountsGroupService {
   private async ensureNameIsUnique(
     tx: AccountGroupWriteClient,
     groupName: string,
-    companyId: string | null,
+    companyId?: string | null,
     excludeId?: string,
   ): Promise<void> {
     const existing = await tx.accountGroup.findFirst({
@@ -459,10 +450,6 @@ export class AccountsGroupService {
     data: Prisma.AccountGroupUncheckedCreateInput | Prisma.AccountGroupUncheckedUpdateInput,
     saveAccountGroupDto: SaveAccountGroupDto,
   ): void {
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')) {
-      data.accGroupCompanyId = saveAccountGroupDto.accGroupCompanyId;
-    }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupAlias')) {
       data.accGroupAlias = saveAccountGroupDto.accGroupAlias;
     }
@@ -475,48 +462,12 @@ export class AccountsGroupService {
       data.accGroupDescription = saveAccountGroupDto.accGroupDescription;
     }
 
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupTallyName')) {
-      data.accGroupTallyName = saveAccountGroupDto.accGroupTallyName;
-    }
-
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupPrimaryName')) {
-      data.accGroupPrimaryName = saveAccountGroupDto.accGroupPrimaryName;
-    }
-
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupNature')) {
-      data.accGroupNature = saveAccountGroupDto.accGroupNature;
-    }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupParentId')) {
       data.accGroupParentId = saveAccountGroupDto.accGroupParentId;
     }
 
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupSort')) {
       data.accGroupSort = saveAccountGroupDto.accGroupSort;
-    }
-
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupIsDefault')) {
-      data.accGroupIsDefault = saveAccountGroupDto.accGroupIsDefault;
-    }
-
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupBehaveAsSubledger')) {
-      data.accGroupBehaveAsSubledger = saveAccountGroupDto.accGroupBehaveAsSubledger;
-    }
-
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupNetDebitCredit')) {
-      data.accGroupNetDebitCredit = saveAccountGroupDto.accGroupNetDebitCredit;
-    }
-
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupUsedForCalculation')) {
-      data.accGroupUsedForCalculation = saveAccountGroupDto.accGroupUsedForCalculation;
-    }
-
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupAffectsGrossProfit')) {
-      data.accGroupAffectsGrossProfit = saveAccountGroupDto.accGroupAffectsGrossProfit;
-    }
-
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupIsActive')) {
-      data.accGroupIsActive = saveAccountGroupDto.accGroupIsActive;
     }
   }
 

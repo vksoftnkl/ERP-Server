@@ -1,9 +1,10 @@
 import { Transform, Type } from 'class-transformer';
+import { LedGstPartyRegType, LedObType } from '@prisma/client';
 import {
   IsBoolean,
   IsDate,
   IsEmail,
-  IsIn,
+  IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -12,29 +13,15 @@ import {
   MaxLength,
   Min,
   ValidateIf,
-  isUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-const toNullableUuid = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
+const toOptionalTrimmedString = (value: unknown): unknown => {
   if (typeof value !== 'string') {
-    return null;
+    return value;
   }
 
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return isUUID(trimmed, 'all') ? trimmed : null;
+  return value.trim();
 };
 
 const toNullableString = (value: unknown): string | null | undefined => {
@@ -89,12 +76,15 @@ export class SaveAccountLedgerMasterDto {
   @IsUUID('all')
   ledId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Transform(({ value }) => toOptionalTrimmedString(value))
   @IsUUID('all')
-  ledCompanyId?: string | null;
+  ledCompanyId?: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID('all')
+  ledBranchId!: string;
 
   @ApiProperty({ format: 'uuid' })
   @IsUUID('all')
@@ -293,6 +283,13 @@ export class SaveAccountLedgerMasterDto {
   @MaxLength(60)
   ledCountry?: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  ledRegionName?: string | null;
+
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -349,13 +346,16 @@ export class SaveAccountLedgerMasterDto {
   @MaxLength(60)
   ledRegionCountry?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  @ApiPropertyOptional({
+    enum: LedGstPartyRegType,
+    enumName: 'LedGstPartyRegType',
+    nullable: true,
+  })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
+  @Transform(({ value }) => toNullableString(toUpper(value)))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(30)
-  ledGstPartyRegType?: string | null;
+  @IsEnum(LedGstPartyRegType)
+  ledGstPartyRegType?: LedGstPartyRegType | null;
 
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
   @IsOptional()
@@ -449,12 +449,14 @@ export class SaveAccountLedgerMasterDto {
   @Min(0)
   ledObAmount?: number;
 
-  @ApiPropertyOptional({ enum: ['DR', 'CR'] })
+  @ApiPropertyOptional({
+    enum: LedObType,
+    enumName: 'LedObType',
+  })
   @IsOptional()
   @Transform(({ value }) => toUpper(value))
-  @IsString()
-  @IsIn(['DR', 'CR'])
-  ledObType?: string;
+  @IsEnum(LedObType)
+  ledObType?: LedObType;
 
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   @IsOptional()
@@ -463,6 +465,24 @@ export class SaveAccountLedgerMasterDto {
   @Type(() => Date)
   @IsDate()
   ledObAsOn?: Date | null;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledTotalDr?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledTotalCr?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledTotalBalance?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -1,98 +1,122 @@
+enum LedGstPartyRegType {
+  REGULAR
+  COMPOSITION
+  UNREGISTERED
+
+  @@schema("accounts")
+}
+
+enum LedObType {
+  DR
+  CR
+
+  @@schema("accounts")
+}
+
 model AccLedgerMaster {
-  ledId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("led_id")
-  ledCompanyId           String?        @db.Uuid                                   @map("led_company_id")
+  ledId                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("led_id")
+  ledCompanyId             String    @db.Uuid                                        @map("led_company_id")
+  ledBranchId              String    @db.Uuid                                        @map("led_branch_id")
+  ledGroupId               String    @db.Uuid                                        @map("led_group_id")
 
   // 1) Identity / Reference
-  ledGroupId             String    @db.Uuid                                          @map("led_group_id")
-  ledName                String    @db.VarChar(200)                                 @map("led_name")
-  ledAlias               String?   @db.VarChar(100)                                 @map("led_alias")
-  ledShort               String?   @db.VarChar(50)                                  @map("led_short")
-  ledTallyName           String?   @db.VarChar(200)                                 @map("led_tally_name")
-  ledTallyGroupName      String?   @db.VarChar(150)                                 @map("led_tally_group_name")
-  ledTallyGuid           String?   @db.VarChar(64)                                  @map("led_tally_guid")
+  ledName                  String    @db.VarChar(200)                                 @map("led_name")
+  ledAlias                 String?   @db.VarChar(100)                                 @map("led_alias")
+  ledShort                 String?   @db.VarChar(50)                                  @map("led_short")
+  ledTallyName             String?   @db.VarChar(200)                                 @map("led_tally_name")
+  ledTallyGroupName        String?   @db.VarChar(150)                                 @map("led_tally_group_name")
+  ledTallyGuid             String?   @db.VarChar(64)                                  @map("led_tally_guid")
 
   // 2) Ledger category / behaviour
-  ledCategory            String    @default("GENERAL") @db.VarChar(30)              @map("led_category")
-  ledIsBillByBill        Boolean   @default(false)                                   @map("led_is_bill_by_bill")
-  ledIsCostCenterReq     Boolean   @default(false)                                   @map("led_is_cost_center_req")
-  ledIsInterestApplicable Boolean  @default(false)                                   @map("led_is_interest_applicable")
-  ledInterestRate        Decimal?  @db.Decimal                                       @map("led_interest_rate")
+  ledCategory              String    @default("GENERAL") @db.VarChar(30)              @map("led_category")
+  ledIsBillByBill          Boolean   @default(false)                                   @map("led_is_bill_by_bill")
+  ledIsCostCenterReq       Boolean   @default(false)                                   @map("led_is_cost_center_req")
+  ledIsInterestApplicable  Boolean   @default(false)                                   @map("led_is_interest_applicable")
+  ledInterestRate          Decimal?  @db.Decimal                                       @map("led_interest_rate")
 
   // 3) Contact
-  ledContactPerson       String?   @db.VarChar(150)                                 @map("led_contact_person")
-  ledEmail               String?   @db.VarChar(150)                                 @map("led_email")
-  ledTel                 String?   @db.VarChar(20)                                  @map("led_tel")
-  ledPhone1              String?   @db.VarChar(20)                                  @map("led_phone1")
-  ledPhone2              String?   @db.VarChar(20)                                  @map("led_phone2")
-  ledWhatsappNo          String?   @db.VarChar(20)                                  @map("led_whatsapp_no")
+  ledContactPerson         String?   @db.VarChar(150)                                 @map("led_contact_person")
+  ledEmail                 String?   @db.VarChar(150)                                 @map("led_email")
+  ledTel                   String?   @db.VarChar(20)                                  @map("led_tel")
+  ledPhone1                String?   @db.VarChar(20)                                  @map("led_phone1")
+  ledPhone2                String?   @db.VarChar(20)                                  @map("led_phone2")
+  ledWhatsappNo            String?   @db.VarChar(20)                                  @map("led_whatsapp_no")
 
   // 4) Address (Mailing)
-  ledAddr1               String?   @db.VarChar(200)                                 @map("led_addr1")
-  ledAddr2               String?   @db.VarChar(200)                                 @map("led_addr2")
-  ledAddr3               String?   @db.VarChar(200)                                 @map("led_addr3")
-  ledCity                String?   @db.VarChar(100)                                 @map("led_city")
-  ledDistrict            String?   @db.VarChar(100)                                 @map("led_district")
-  ledStateName           String?   @db.VarChar(100)                                 @map("led_state_name")
-  ledStateCode           String?   @db.Char(2)                                      @map("led_state_code")
-  ledPin                 String?   @db.VarChar(10)                                  @map("led_pin")
-  ledCountry             String?   @default("India") @db.VarChar(60)               @map("led_country")
+  ledAddr1                 String?   @db.VarChar(200)                                 @map("led_addr1")
+  ledAddr2                 String?   @db.VarChar(200)                                 @map("led_addr2")
+  ledAddr3                 String?   @db.VarChar(200)                                 @map("led_addr3")
+  ledCity                  String?   @db.VarChar(100)                                 @map("led_city")
+  ledDistrict              String?   @db.VarChar(100)                                 @map("led_district")
+  ledStateName             String?   @db.VarChar(100)                                 @map("led_state_name")
+  ledStateCode             String?   @db.Char(2)                                      @map("led_state_code")
+  ledPin                   String?   @db.VarChar(10)                                  @map("led_pin")
+  ledCountry               String?   @default("India") @db.VarChar(60)                @map("led_country")
 
-  // 4) Regional (Mailing)
-  ledRegionAddr1         String?   @db.VarChar(200)                                 @map("led_region_addr1")
-  ledRegionAddr2         String?   @db.VarChar(200)                                 @map("led_region_addr2")
-  ledRegionAddr3         String?   @db.VarChar(200)                                 @map("led_region_addr3")
-  ledRegionCity          String?   @db.VarChar(100)                                 @map("led_region_city")
-  ledRegionDistrict      String?   @db.VarChar(100)                                 @map("led_region_district")
-  ledRegionStateName     String?   @db.VarChar(100)                                 @map("led_region_state_name")
-  ledRegionCountry       String?   @default("India") @db.VarChar(60)               @map("led_region_country")
+  // 5) Regional (Mailing)
+  ledRegionName            String?   @db.Text                                          @map("led_region_name")
+  ledRegionAddr1           String?   @db.VarChar(200)                                 @map("led_region_addr1")
+  ledRegionAddr2           String?   @db.VarChar(200)                                 @map("led_region_addr2")
+  ledRegionAddr3           String?   @db.VarChar(200)                                 @map("led_region_addr3")
+  ledRegionCity            String?   @db.VarChar(100)                                 @map("led_region_city")
+  ledRegionDistrict        String?   @db.VarChar(100)                                 @map("led_region_district")
+  ledRegionStateName       String?   @db.VarChar(100)                                 @map("led_region_state_name")
+  ledRegionCountry         String?   @default("India") @db.VarChar(60)                @map("led_region_country")
 
-  // 5) GST / Statutory
-  ledGstPartyRegType     String?   @db.VarChar(30)                                  @map("led_gst_party_reg_type")
-  ledGstinNo             String?   @db.VarChar(15)                                  @map("led_gstin_no")
-  ledPanNo               String?   @db.VarChar(10)                                  @map("led_pan_no")
-  ledAadharNo            String?   @db.VarChar(20)                                  @map("led_aadhar_no")
-  ledEcommerceGstin      String?   @db.VarChar(15)                                  @map("led_ecommerce_gstin")
-  ledIsSez               Boolean   @default(false)                                   @map("led_is_sez")
+  // 6) GST / Statutory
+  ledGstPartyRegType       LedGstPartyRegType?                                         @map("led_gst_party_reg_type")
+  ledGstinNo               String?   @db.VarChar(15)                                  @map("led_gstin_no")
+  ledPanNo                 String?   @db.VarChar(10)                                  @map("led_pan_no")
+  ledAadharNo              String?   @db.VarChar(20)                                  @map("led_aadhar_no")
+  ledEcommerceGstin        String?   @db.VarChar(15)                                  @map("led_ecommerce_gstin")
+  ledIsSez                 Boolean   @default(false)                                   @map("led_is_sez")
 
-  // 6) Bank / Payment
-  ledChequeName          String?   @db.VarChar(80)                                  @map("led_cheque_name")
-  ledBankName            String?   @db.VarChar(120)                                 @map("led_bank_name")
-  ledBankBranch          String?   @db.VarChar(120)                                 @map("led_bank_branch")
-  ledBankAcNo            String?   @db.VarChar(40)                                  @map("led_bank_ac_no")
-  ledBankIfsc            String?   @db.VarChar(15)                                  @map("led_bank_ifsc")
-  ledUpiId               String?   @db.VarChar(80)                                  @map("led_upi_id")
+  // 7) Bank / Payment
+  ledChequeName            String?   @db.VarChar(80)                                  @map("led_cheque_name")
+  ledBankName              String?   @db.VarChar(120)                                 @map("led_bank_name")
+  ledBankBranch            String?   @db.VarChar(120)                                 @map("led_bank_branch")
+  ledBankAcNo              String?   @db.VarChar(40)                                  @map("led_bank_ac_no")
+  ledBankIfsc              String?   @db.VarChar(15)                                  @map("led_bank_ifsc")
+  ledUpiId                 String?   @db.VarChar(80)                                  @map("led_upi_id")
 
-  // 7) Opening Balance
-  ledObAmount            Decimal   @default(0) @db.Decimal                          @map("led_ob_amount")
-  ledObType              String    @default("DR") @db.Char(2)                       @map("led_ob_type")
-  ledObAsOn              DateTime? @db.Date                                          @map("led_ob_as_on")
+  // 8) Opening / Running Balance
+  ledObAmount              Decimal   @default(0) @db.Decimal                          @map("led_ob_amount")
+  ledObType                LedObType @default(DR)                                      @map("led_ob_type")
+  ledObAsOn                DateTime? @db.Date                                          @map("led_ob_as_on")
+  ledTotalDr               Decimal   @default(0) @db.Decimal                          @map("led_total_dr")
+  ledTotalCr               Decimal   @default(0) @db.Decimal                          @map("led_total_cr")
+  ledTotalBalance          Decimal   @default(0) @db.Decimal                          @map("led_total_balance")
 
-  // 8) Status / Notes
-  ledIsActive            Boolean   @default(true)                                    @map("led_is_active")
-  ledIsDeleted           Boolean   @default(false)                                   @map("led_is_deleted")
-  ledAllowEdit           Boolean   @default(false)                                   @map("led_allow_edit")
-  ledIsEntry             Boolean   @default(false)                                   @map("led_is_entry")
-  ledAllowSms            Boolean   @default(false)                                   @map("led_allow_sms")
-  ledRemarks             String?   @db.VarChar(250)                                 @map("led_remarks")
+  // 9) Status / Notes
+  ledIsActive              Boolean   @default(true)                                    @map("led_is_active")
+  ledIsDeleted             Boolean   @default(false)                                   @map("led_is_deleted")
+  ledAllowEdit             Boolean   @default(false)                                   @map("led_allow_edit")
+  ledIsEntry               Boolean   @default(false)                                   @map("led_is_entry")
+  ledAllowSms              Boolean   @default(false)                                   @map("led_allow_sms")
+  ledRemarks               String?   @db.VarChar(250)                                 @map("led_remarks")
 
-  // 9) Audit / Sync
-  ledSyncDate            DateTime? @db.Timestamptz                                  @map("led_sync_date")
-  ledCreatedOn           DateTime  @default(now()) @db.Timestamptz                  @map("led_created_on")
-  ledCreatedBy           String?   @db.VarChar(100)                                 @map("led_created_by")
-  ledModifiedOn          DateTime  @default(now()) @db.Timestamptz                  @map("led_modified_on")
-  ledModifiedBy          String?   @db.VarChar(100)                                 @map("led_modified_by")
+  // 10) Audit / Sync
+  ledSyncDate              DateTime? @db.Timestamptz                                  @map("led_sync_date")
+  ledCreatedOn             DateTime  @default(now()) @db.Timestamptz                  @map("led_created_on")
+  ledCreatedBy             String?   @db.VarChar(100)                                 @map("led_created_by")
+  ledModifiedOn            DateTime  @default(now()) @db.Timestamptz                  @map("led_modified_on")
+  ledModifiedBy            String?   @db.VarChar(100)                                 @map("led_modified_by")
 
   // Relations
-  company                Company?              @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  accountGroup           AccountGroup          @relation(fields: [ledGroupId], references: [accGroupId])
-  bankAccounts           AccLedgerBankAccount[]
-  shipAddrs              AccShipAddr[]
-  tenders                TenderMaster[]
+  company                  Company                @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  accountGroup             AccountGroup           @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
+  branches                 BranchMaster           @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
+  bankAccounts             AccLedgerBankAccount[]
+  shipAddrs                AccShipAddr[]
+  tenders                  TenderMaster[]
 
+  @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
+  @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
-  @@index([ledGroupId],   name: "idx_led_group_id")
-  @@index([ledIsActive],  name: "idx_led_active")
-  @@index([ledGstinNo],   name: "idx_led_gstin")
+  @@index([ledBranchId], name: "idx_led_branch_id")
+  @@index([ledGroupId], name: "idx_led_group_id")
+  @@index([ledIsActive], name: "idx_led_active")
+  @@index([ledGstinNo], name: "idx_led_gstin")
   @@map("acc_ledger_master")
   @@schema("accounts")
 }

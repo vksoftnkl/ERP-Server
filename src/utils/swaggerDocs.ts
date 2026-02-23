@@ -20,6 +20,7 @@ import { ItemsSectionMasterModule } from '../modules/items-section-master/items-
 import { ItemsTaxMasterModule } from '../modules/items-tax-master/items-tax-master.module';
 import { UnitsMasterModule } from '../modules/units-master/units-master.module';
 import { UsersModule } from '../modules/users/users.module';
+import { MasterLookupModule } from '../modules/master-lookup/master-lookup.module';
 
 export const swaggerModuleDocuments = [
   {
@@ -147,6 +148,12 @@ export const swaggerModuleDocuments = [
     title: 'Grid Columns API',
     description: 'Grid columns module endpoints',
     include: [GridColumnsModule],
+  },
+  {
+    path: 'master-lookups',
+    title: 'Master Lookup API',
+    description: 'Centralized id-name lookup endpoints for accounts and master modules',
+    include: [MasterLookupModule],
   },
   {
     path: 'audit-log',

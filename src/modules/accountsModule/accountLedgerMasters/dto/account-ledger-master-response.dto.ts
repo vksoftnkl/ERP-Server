@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LedGstPartyRegType, LedObType } from '@prisma/client';
 
 export class AccountLedgerMasterErrorFieldDto {
   @ApiProperty({ example: 'ledName' })
@@ -25,6 +26,9 @@ export class AccountLedgerMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   ledCompanyId!: string | null;
+
+  @ApiProperty({ format: 'uuid' })
+  ledBranchId!: string;
 
   @ApiProperty({ format: 'uuid' })
   ledGroupId!: string;
@@ -108,6 +112,9 @@ export class AccountLedgerMasterPayloadDto {
   ledCountry!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
+  ledRegionName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   ledRegionAddr1!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
@@ -128,8 +135,12 @@ export class AccountLedgerMasterPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   ledRegionCountry!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  ledGstPartyRegType!: string | null;
+  @ApiPropertyOptional({
+    enum: LedGstPartyRegType,
+    enumName: 'LedGstPartyRegType',
+    nullable: true,
+  })
+  ledGstPartyRegType!: LedGstPartyRegType | null;
 
   @ApiPropertyOptional({ nullable: true })
   ledGstinNo!: string | null;
@@ -167,11 +178,23 @@ export class AccountLedgerMasterPayloadDto {
   @ApiProperty()
   ledObAmount!: number;
 
-  @ApiProperty()
-  ledObType!: string;
+  @ApiProperty({
+    enum: LedObType,
+    enumName: 'LedObType',
+  })
+  ledObType!: LedObType;
 
   @ApiPropertyOptional({ nullable: true })
   ledObAsOn!: string | null;
+
+  @ApiProperty()
+  ledTotalDr!: number;
+
+  @ApiProperty()
+  ledTotalCr!: number;
+
+  @ApiProperty()
+  ledTotalBalance!: number;
 
   @ApiProperty()
   ledIsActive!: boolean;

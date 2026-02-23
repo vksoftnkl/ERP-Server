@@ -51,6 +51,12 @@ import { CityModule } from './modules/sales/city/city.module';
 import { StateModule } from './modules/sales/state/state.module';
 import { CustomerModule } from './modules/sales/customer/customer.module';
 import { CustomerGroupModule } from './modules/sales/customer-group/customer-group.module';
+import { AccountVoucherTypeModule } from './modules/fixed/account-voucher-type/account-voucher-type.module';
+import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
+import { DeviceListMasterModule } from './modules/fixed/device-list-master/device-list-master.module';
+import { StateCodeMasterModule } from './modules/fixed/state-code-master/state-code-master.module';
+import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
+import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -114,6 +120,12 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     AreaModule,
     CustomerModule,
     CustomerGroupModule,
+    AccountVoucherTypeModule,
+    BankListModule,
+    DeviceListMasterModule,
+    StateCodeMasterModule,
+    UserLoginSessionsModule,
+    MasterLookupModule,
     GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,

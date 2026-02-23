@@ -47,7 +47,8 @@ Table account_groups {
 
 Table acc_ledger_master {
   ledId String [pk]
-  ledCompanyId String
+  ledCompanyId String [not null]
+  ledBranchId String [not null]
   ledGroupId String [not null]
   ledName String [not null]
   ledAlias String
@@ -75,6 +76,7 @@ Table acc_ledger_master {
   ledStateCode String
   ledPin String
   ledCountry String [default: 'India']
+  ledRegionName String
   ledRegionAddr1 String
   ledRegionAddr2 String
   ledRegionAddr3 String
@@ -82,7 +84,7 @@ Table acc_ledger_master {
   ledRegionDistrict String
   ledRegionStateName String
   ledRegionCountry String [default: 'India']
-  ledGstPartyRegType String
+  ledGstPartyRegType LedGstPartyRegType
   ledGstinNo String
   ledPanNo String
   ledAadharNo String
@@ -95,8 +97,11 @@ Table acc_ledger_master {
   ledBankIfsc String
   ledUpiId String
   ledObAmount Decimal [not null, default: 0]
-  ledObType String [not null, default: 'DR']
+  ledObType LedObType [not null, default: 'DR']
   ledObAsOn DateTime
+  ledTotalDr Decimal [not null, default: 0]
+  ledTotalCr Decimal [not null, default: 0]
+  ledTotalBalance Decimal [not null, default: 0]
   ledIsActive Boolean [not null, default: true]
   ledIsDeleted Boolean [not null, default: false]
   ledAllowEdit Boolean [not null, default: false]
@@ -108,15 +113,21 @@ Table acc_ledger_master {
   ledCreatedBy String
   ledModifiedOn DateTime [default: `now()`, not null]
   ledModifiedBy String
-  company companys
+  company companys [not null]
   accountGroup account_groups [not null]
+  branches branch_master [not null]
   bankAccounts acc_ledger_bank_accounts [not null]
   shipAddrs acc_ship_addrs [not null]
   tenders tender_master [not null]
+
+  indexes {
+    (ledCompanyId, ledName) [unique]
+    (ledCompanyId, ledTallyName) [unique]
+  }
 }
 
 Table branch_master {
-  brId Int [pk, increment]
+  brId String [pk]
   compId String [not null]
   brCode String [unique]
   brName String [not null]
@@ -168,6 +179,7 @@ Table branch_master {
   brModifiedOn DateTime [default: `now()`, not null]
   brModifiedBy String
   company companys [not null]
+  accountLedgerMaster acc_ledger_master [not null]
 }
 
 Table companys {
@@ -242,6 +254,9 @@ Table companys {
   gspCompanyServices gsp_company_service [not null]
   shipAddrs acc_ship_addrs [not null]
   custGroup cust_groups [not null]
+  itemMaster item_master [not null]
+  ErpDeviceMaster erp_device_master [not null]
+  UserLoginSession user_login_sessions [not null]
 }
 
 Table company_group_master {
@@ -534,9 +549,10 @@ Table bank_master {
 
 Table erp_device_master {
   devId String [pk]
+  devCompanyId String
   devBranchId String
   devUserId String
-  devDeviceUid String [unique, not null]
+  devDeviceUid String [not null]
   devDeviceName String
   devDeviceType String [not null]
   devPlatform String
@@ -560,6 +576,11 @@ Table erp_device_master {
   devCreatedBy String
   devModifiedOn DateTime [default: `now()`, not null]
   devModifiedBy String
+  company companys
+
+  indexes {
+    (devCompanyId, devDeviceUid) [unique]
+  }
 }
 
 Table state_codes {
@@ -578,6 +599,7 @@ Table state_codes {
 
 Table user_login_sessions {
   ulsId String [pk]
+  ulsCompanyId String [not null]
   ulsBranchId String [not null]
   ulsUserId String [not null]
   ulsDeviceId String
@@ -600,6 +622,7 @@ Table user_login_sessions {
   ulsCreatedBy String
   ulsModifiedOn DateTime [default: `now()`, not null]
   ulsModifiedBy String
+  company companys [not null]
 }
 
 Table grid_columns {
@@ -787,6 +810,7 @@ Table item_group_master {
 
 Table item_master {
   itemId String [pk]
+  itemCompanyId String [not null]
   itemBranchId String
   itemCode String
   itemSku String
@@ -853,6 +877,7 @@ Table item_master {
   prices item_price_master [not null]
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
+  company companys [not null]
 }
 
 Table item_price_master {
@@ -1294,6 +1319,17 @@ Table state_master {
   cities city_master [not null]
 }
 
+Enum LedGstPartyRegType {
+  REGULAR
+  COMPOSITION
+  UNREGISTERED
+}
+
+Enum LedObType {
+  DR
+  CR
+}
+
 Enum AuditLogAction {
   insert
   update
@@ -1339,7 +1375,9 @@ Ref: account_groups.accGroupCompanyId > companys.compId [delete: Restrict]
 
 Ref: acc_ledger_master.ledCompanyId > companys.compId [delete: Restrict]
 
-Ref: acc_ledger_master.ledGroupId > account_groups.accGroupId
+Ref: acc_ledger_master.ledGroupId > account_groups.accGroupId [delete: Restrict]
+
+Ref: acc_ledger_master.ledBranchId > branch_master.brId [delete: Restrict]
 
 Ref: branch_master.compId > companys.compId
 
@@ -1363,6 +1401,10 @@ Ref: tender_master.tndLedgerId > acc_ledger_master.ledId
 
 Ref: audit_log.logScreenId > audit_screen.screenId [delete: Restrict]
 
+Ref: erp_device_master.devCompanyId > companys.compId [delete: Restrict]
+
+Ref: user_login_sessions.ulsCompanyId > companys.compId [delete: Restrict]
+
 Ref: grid_columns.gridId > grid_details.gridId [delete: Cascade]
 
 Ref: category_master.categoryParentId - category_master.categoryId [delete: Restrict]
@@ -1382,6 +1424,8 @@ Ref: item_master.itemCategoryId > category_master.categoryId [delete: Set Null]
 Ref: item_master.itemBaseUnitId > units.unit_id [delete: Restrict]
 
 Ref: item_master.itemDefaultTaxId > item_tax_master.taxId [delete: Restrict]
+
+Ref: item_master.itemCompanyId > companys.compId [delete: Restrict]
 
 Ref: item_price_master.ipmItemId > item_master.itemId [delete: Restrict]
 

@@ -1,47 +1,74 @@
 model ErpDeviceMaster {
-  devId            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("dev_id")
-
+  // =========================================================
   // 1) Identity / Scope
-  devBranchId      String?   @db.Uuid                                          @map("dev_branch_id")
-  devUserId        String?   @db.Uuid                                          @map("dev_user_id")
+  // =========================================================
+  devId         String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("dev_id")
 
+  devCompanyId  String? @db.Uuid @map("dev_company_id")
+  devBranchId   String? @db.Uuid @map("dev_branch_id")
+  devUserId     String? @db.Uuid @map("dev_user_id")
+
+  // =========================================================
   // 2) Device Identity
-  devDeviceUid     String    @db.VarChar(120)                                 @map("dev_device_uid")
-  devDeviceName    String?   @db.VarChar(120)                                 @map("dev_device_name")
-  devDeviceType    String    @db.VarChar(30)                                  @map("dev_device_type")
-  devPlatform      String?   @db.VarChar(30)                                  @map("dev_platform")
-  devOsVersion     String?   @db.VarChar(40)                                  @map("dev_os_version")
-  devAppVersion    String?   @db.VarChar(40)                                  @map("dev_app_version")
-  devSerialNo      String?   @db.VarChar(120)                                 @map("dev_serial_no")
-  devImei          String?   @db.VarChar(30)                                  @map("dev_imei")
-  devMacAddress    String?   @db.VarChar(50)                                  @map("dev_mac_address")
-  devProductKey    String?                                                     @map("dev_product_key")
+  // =========================================================
+  devDeviceUid   String  @db.VarChar(120) @map("dev_device_uid")
+  devDeviceName  String? @db.VarChar(120) @map("dev_device_name")
+  devDeviceType  String  @db.VarChar(30)  @map("dev_device_type")
+  devPlatform    String? @db.VarChar(30)  @map("dev_platform")
+  devOsVersion   String? @db.VarChar(40)  @map("dev_os_version")
+  devAppVersion  String? @db.VarChar(40)  @map("dev_app_version")
 
+  devSerialNo    String? @db.VarChar(120) @map("dev_serial_no")
+  devImei        String? @db.VarChar(30)  @map("dev_imei")
+  devMacAddress  String? @db.VarChar(50)  @map("dev_mac_address")
+  devProductKey  String? @db.Text         @map("dev_product_key")
+
+  // =========================================================
   // 3) Access Control
-  devIsAllowed     Boolean   @default(false)                                   @map("dev_is_allowed")
-  devIsBlocked     Boolean   @default(false)                                   @map("dev_is_blocked")
-  devAllowReason   String?   @db.VarChar(250)                                 @map("dev_allow_reason")
-  devBlockReason   String?   @db.VarChar(250)                                 @map("dev_block_reason")
+  // =========================================================
+  devIsAllowed    Boolean @default(false) @map("dev_is_allowed")
+  devIsBlocked    Boolean @default(false) @map("dev_is_blocked")
+  devAllowReason  String? @db.VarChar(250) @map("dev_allow_reason")
+  devBlockReason  String? @db.VarChar(250) @map("dev_block_reason")
 
+  // =========================================================
   // 4) Tracking
-  devLastSeenOn    DateTime? @db.Timestamptz                                  @map("dev_last_seen_on")
-  devLastIp        String?   @db.Inet                                          @map("dev_last_ip")
-  devLastLoginOn   DateTime? @db.Timestamptz                                  @map("dev_last_login_on")
+  // =========================================================
+  devLastSeenOn   DateTime? @db.Timestamptz(6) @map("dev_last_seen_on")
+  devLastIp       String?   @db.Inet          @map("dev_last_ip")
+  devLastLoginOn  DateTime? @db.Timestamptz(6) @map("dev_last_login_on")
 
-  // 5) Status
-  devIsActive      Boolean   @default(true)                                    @map("dev_is_active")
-  devIsDeleted     Boolean   @default(false)                                   @map("dev_is_deleted")
+  // =========================================================
+  // 5) Status (Soft delete)
+  // =========================================================
+  devIsActive     Boolean @default(true)  @map("dev_is_active")
+  devIsDeleted    Boolean @default(false) @map("dev_is_deleted")
 
+  // =========================================================
   // 6) Audit / Sync
-  devSyncDate      DateTime? @db.Timestamptz                                  @map("dev_sync_date")
-  devCreatedOn     DateTime  @default(now()) @db.Timestamptz                  @map("dev_created_on")
-  devCreatedBy     String?   @db.VarChar(100)                                 @map("dev_created_by")
-  devModifiedOn    DateTime  @default(now()) @db.Timestamptz                  @map("dev_modified_on")
-  devModifiedBy    String?   @db.VarChar(100)                                 @map("dev_modified_by")
+  // =========================================================
+  devSyncDate     DateTime? @db.Timestamptz(6) @map("dev_sync_date")
+  devCreatedOn    DateTime  @default(now())    @db.Timestamptz(6) @map("dev_created_on")
+  devCreatedBy    String?   @db.VarChar(100)   @map("dev_created_by")
+  devModifiedOn   DateTime  @default(now())    @db.Timestamptz(6) @map("dev_modified_on")
+  devModifiedBy   String?   @db.VarChar(100)   @map("dev_modified_by")
 
-  @@unique([devDeviceUid],          name: "uq_erp_device_uid")
-  @@index([devDeviceUid],           name: "idx_dev_login_check")
-  @@index([devIsAllowed, devIsBlocked], name: "idx_dev_allowed")
+  // =========================================================
+  // 7) Relations
+  // =========================================================
+  company         Company?  @relation(fields: [devCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+
+  // =========================================================
+  // 8) Constraints / Indexes
+  // =========================================================
+  @@unique([devCompanyId, devDeviceUid], map: "uq_erp_device_company_uid")
+
+  // CREATE INDEX idx_dev_login_check ON (...) WHERE dev_is_deleted = false;
+  @@index([devCompanyId, devDeviceUid], map: "idx_dev_login_check")
+
+  // CREATE INDEX idx_dev_allowed ON (...) WHERE dev_is_deleted = false;
+  @@index([devCompanyId, devIsAllowed, devIsBlocked], map: "idx_dev_allowed")
+
   @@map("erp_device_master")
   @@schema("fixed")
 }

@@ -1,6 +1,6 @@
 model ItemMaster {
   itemId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("item_id")
-
+  itemCompanyId        String   @db.Uuid @map("item_company_id")
   itemBranchId         String?  @db.Uuid @map("item_branch_id")
 
   // Names / Codes
@@ -95,6 +95,7 @@ model ItemMaster {
   prices               ItemPriceMaster[]
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
+  company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_master")
   @@schema("public")

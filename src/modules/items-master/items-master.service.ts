@@ -30,7 +30,7 @@ export class ItemsMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-  ) {}
+  ) { }
 
   async save(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     if (saveItemDto.item_id) {
@@ -156,6 +156,7 @@ export class ItemsMasterService {
     const createdBy = this.resolveActor(saveItemDto.item_created_by);
     const modifiedBy = this.resolveActor(saveItemDto.item_modified_by, createdBy);
     const data: Prisma.ItemMasterUncheckedCreateInput = {
+      itemCompanyId: saveItemDto.item_company_id,
       itemNameEn,
       itemGroupId: saveItemDto.item_group_id,
       itemBaseUnitId: saveItemDto.item_base_unit_id,
@@ -326,6 +327,10 @@ export class ItemsMasterService {
     data: Prisma.ItemMasterUncheckedCreateInput | Prisma.ItemMasterUncheckedUpdateInput,
     saveItemDto: SaveItemDto,
   ): void {
+    if (this.hasOwnProperty(saveItemDto, 'item_company_id')) {
+      data.itemCompanyId = saveItemDto.item_company_id;
+    }
+
     if (this.hasOwnProperty(saveItemDto, 'item_branch_id')) {
       data.itemBranchId = saveItemDto.item_branch_id;
     }
@@ -563,6 +568,7 @@ export class ItemsMasterService {
   private toPayload(record: ItemMaster): ItemPayload {
     return {
       item_id: record.itemId,
+      item_company_id: record.itemCompanyId,
       item_branch_id: record.itemBranchId,
       item_code: record.itemCode,
       item_sku: record.itemSku,

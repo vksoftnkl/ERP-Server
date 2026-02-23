@@ -104,7 +104,7 @@ export class BranchMasterService {
     };
   }
 
-  async getById(brId: number): Promise<BranchMasterPayload> {
+  async getById(brId: string): Promise<BranchMasterPayload> {
     const record = await this.prisma.branchMaster.findFirst({
       where: {
         brId,
@@ -119,7 +119,7 @@ export class BranchMasterService {
     return this.toPayload(record);
   }
 
-  async softDelete(brId: number): Promise<{ brId: number; deleted: true }> {
+  async softDelete(brId: string): Promise<{ brId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.branchMaster.findFirst({
         where: {
@@ -331,7 +331,7 @@ export class BranchMasterService {
     tx: BranchMasterWriteClient,
     compId: string,
     brName: string,
-    excludeBrId?: number,
+    excludeBrId?: string,
   ): Promise<void> {
     const existing = await tx.branchMaster.findFirst({
       where: {
@@ -369,7 +369,7 @@ export class BranchMasterService {
   private async ensureCodeIsUnique(
     tx: BranchMasterWriteClient,
     brCode: string | null,
-    excludeBrId?: number,
+    excludeBrId?: string,
   ): Promise<void> {
     if (!brCode) {
       return;
@@ -409,7 +409,7 @@ export class BranchMasterService {
   private async clearDefaultBranch(
     tx: BranchMasterWriteClient,
     compId: string,
-    excludeBrId?: number,
+    excludeBrId?: string,
   ): Promise<void> {
     await tx.branchMaster.updateMany({
       where: {
@@ -678,7 +678,7 @@ export class BranchMasterService {
     return (error as { code?: string }).code === 'P2002';
   }
 
-  private throwNotFound(brId: number): never {
+  private throwNotFound(brId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Branch not found', [
         {

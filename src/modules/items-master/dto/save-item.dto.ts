@@ -165,6 +165,11 @@ export class SaveItemDto {
   @IsUUID('all')
   item_id?: string;
 
+  @ApiProperty({ format: 'uuid', description: 'Company UUID this item belongs to' })
+  @Transform(({ value }) => toRequiredTrimmedString(value))
+  @IsUUID('all')
+  item_company_id!: string;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))

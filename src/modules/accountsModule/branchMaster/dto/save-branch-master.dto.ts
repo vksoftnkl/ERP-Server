@@ -3,7 +3,6 @@ import {
   IsBoolean,
   IsDate,
   IsEmail,
-  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -85,16 +84,16 @@ const toNullableDate = (value: unknown): Date | null | undefined => {
 
 export class SaveBranchMasterDto {
   @ApiPropertyOptional({
-    type: Number,
+    type: String,
+    format: 'uuid',
     description: 'When provided, request updates the existing branch',
   })
   @IsOptional()
-  @IsInt()
-  brId?: number;
+  @IsUUID('all')
+  brId?: string;
 
-  @ApiProperty({ type: Number })
-  @Type(() => Number)
-  @IsInt()
+  @ApiProperty({ type: String, format: 'uuid' })
+  @IsUUID('all')
   compId!: string;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })

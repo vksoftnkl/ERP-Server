@@ -195,16 +195,26 @@ export class AccountLedgerMastersService {
 
         await this.ensureGroupExists(saveAccountLedgerMasterDto.ledGroupId, tx);
 
-        const companyId = this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')
-          ? (saveAccountLedgerMasterDto.ledCompanyId ?? null)
-          : null;
+        const companyId = saveAccountLedgerMasterDto.ledCompanyId?.trim();
+        if (!companyId) {
+          this.throwBadRequest('Validation failed', [
+            {
+              field: 'ledCompanyId',
+              message: 'ledCompanyId is required',
+            },
+          ]);
+        }
+
+        const branchId = saveAccountLedgerMasterDto.ledBranchId;
         const groupId = saveAccountLedgerMasterDto.ledGroupId;
-        await this.ensureNameIsUnique(tx, normalizedName, companyId, groupId);
+        await this.ensureNameIsUnique(tx, normalizedName, companyId);
 
         const now = new Date();
         const createdBy = DEFAULT_ACTOR;
 
         const data: Prisma.AccLedgerMasterUncheckedCreateInput = {
+          ledCompanyId: companyId,
+          ledBranchId: branchId,
           ledGroupId: groupId,
           ledName: normalizedName,
           ledCreatedOn: now,
@@ -266,11 +276,21 @@ export class AccountLedgerMastersService {
         await this.ensureGroupExists(nextGroupId, tx);
 
         const nextCompanyId = this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')
-          ? (saveAccountLedgerMasterDto.ledCompanyId ?? null)
+          ? saveAccountLedgerMasterDto.ledCompanyId?.trim()
           : existing.ledCompanyId;
-        await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, nextGroupId, ledId);
+        if (!nextCompanyId) {
+          this.throwBadRequest('Validation failed', [
+            {
+              field: 'ledCompanyId',
+              message: 'ledCompanyId is required',
+            },
+          ]);
+        }
+
+        await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, ledId);
 
         const data: Prisma.AccLedgerMasterUncheckedUpdateInput = {
+          ledBranchId: saveAccountLedgerMasterDto.ledBranchId,
           ledGroupId: nextGroupId,
           ledName: normalizedName,
           ledModifiedOn: new Date(),
@@ -336,15 +356,13 @@ export class AccountLedgerMastersService {
   private async ensureNameIsUnique(
     tx: AccountLedgerWriteClient,
     ledgerName: string,
-    companyId: string | null,
-    groupId: string,
+    companyId: string,
     excludeId?: string,
   ): Promise<void> {
     const existing = await tx.accLedgerMaster.findFirst({
       where: {
         ledIsDeleted: false,
         ledCompanyId: companyId,
-        ledGroupId: groupId,
         ledName: {
           equals: ledgerName,
           mode: 'insensitive',
@@ -364,10 +382,10 @@ export class AccountLedgerMastersService {
 
     if (existing) {
       throw new ConflictException(
-        this.buildErrorResponse('Account ledger name already exists for this company and group', [
+        this.buildErrorResponse('Account ledger name already exists for this company', [
           {
             field: 'ledName',
-            message: 'Duplicate ledName is not allowed for this company and group',
+            message: 'Duplicate ledName is not allowed for this company',
           },
         ]),
       );
@@ -380,6 +398,10 @@ export class AccountLedgerMastersService {
   ): void {
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')) {
       data.ledCompanyId = saveAccountLedgerMasterDto.ledCompanyId;
+    }
+
+    if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledBranchId')) {
+      data.ledBranchId = saveAccountLedgerMasterDto.ledBranchId;
     }
 
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledAlias')) {
@@ -482,6 +504,10 @@ export class AccountLedgerMastersService {
       data.ledCountry = saveAccountLedgerMasterDto.ledCountry;
     }
 
+    if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionName')) {
+      data.ledRegionName = saveAccountLedgerMasterDto.ledRegionName;
+    }
+
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionAddr1')) {
       data.ledRegionAddr1 = saveAccountLedgerMasterDto.ledRegionAddr1;
     }
@@ -570,6 +596,18 @@ export class AccountLedgerMastersService {
       data.ledObAsOn = saveAccountLedgerMasterDto.ledObAsOn;
     }
 
+    if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalDr')) {
+      data.ledTotalDr = saveAccountLedgerMasterDto.ledTotalDr;
+    }
+
+    if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalCr')) {
+      data.ledTotalCr = saveAccountLedgerMasterDto.ledTotalCr;
+    }
+
+    if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalBalance')) {
+      data.ledTotalBalance = saveAccountLedgerMasterDto.ledTotalBalance;
+    }
+
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsActive')) {
       data.ledIsActive = saveAccountLedgerMasterDto.ledIsActive;
     }
@@ -609,6 +647,7 @@ export class AccountLedgerMastersService {
     return {
       ledId: record.ledId,
       ledCompanyId: record.ledCompanyId,
+      ledBranchId: record.ledBranchId,
       ledGroupId: record.ledGroupId,
       ledName: record.ledName,
       ledAlias: record.ledAlias,
@@ -636,6 +675,7 @@ export class AccountLedgerMastersService {
       ledStateCode: record.ledStateCode,
       ledPin: record.ledPin,
       ledCountry: record.ledCountry,
+      ledRegionName: record.ledRegionName,
       ledRegionAddr1: record.ledRegionAddr1,
       ledRegionAddr2: record.ledRegionAddr2,
       ledRegionAddr3: record.ledRegionAddr3,
@@ -658,6 +698,9 @@ export class AccountLedgerMastersService {
       ledObAmount: this.toNumber(record.ledObAmount),
       ledObType: record.ledObType,
       ledObAsOn: record.ledObAsOn ? record.ledObAsOn.toISOString() : null,
+      ledTotalDr: this.toNumber(record.ledTotalDr),
+      ledTotalCr: this.toNumber(record.ledTotalCr),
+      ledTotalBalance: this.toNumber(record.ledTotalBalance),
       ledIsActive: record.ledIsActive,
       ledIsDeleted: record.ledIsDeleted,
       ledAllowEdit: record.ledAllowEdit,
