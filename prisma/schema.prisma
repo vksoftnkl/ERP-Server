@@ -262,7 +262,6 @@ model BranchMaster {
 
   // Relations
   company               Company   @relation(fields: [compId], references: [compId])
-
   @@index([compId],      name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
@@ -364,7 +363,6 @@ model Company {
   gspCompanyServices    GspCompanyService[]
   shipAddrs             AccShipAddr[]
   custGroup             CustGroup[]
-
   @@map("companys")
   @@schema("accounts")
 }
@@ -1808,78 +1806,91 @@ model Unit {
 
 // ----- prisma/purchase/suppliers.prisma -----
 model Supplier {
-  supId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  supId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sup_id")
 
   // 1) Scope / Link
-  supBranchId          String?   @db.Uuid
-  supGroupId           String    @db.Uuid
-  supPurchaseType      String    @db.VarChar(20)
+  supCompanyId         String?  @db.Uuid @map("sup_company_id")
+  supBranchId          String?  @db.Uuid @map("sup_branch_id")
+  supGroupId           String   @db.Uuid @map("sup_group_id")
+  supPurchaseType      String   @db.VarChar(20) @map("sup_purchase_type")
 
   // 2) Names / Contact
-  supName              String    @db.VarChar(200)
-  supShort             String?   @db.VarChar(50)
-  supAddr1             String?   @db.VarChar(250)
-  supAddr2             String?   @db.VarChar(250)
-  supAddr3             String?   @db.VarChar(250)
-  supCity              String?   @db.VarChar(250)
-  supDistrict          String?   @db.VarChar(250)
-  supStateName         String    @db.VarChar(100)
-  supCountry           String?   @default("India") @db.VarChar(60)
-  supPincode           String?   @db.VarChar(10)
-  supTel               String?   @db.VarChar(20)
-  supPhone             String?   @db.VarChar(20)
-  supMailId            String?   @db.VarChar(120)
-  supWhatsappNo        String?   @db.VarChar(20)
-  supWebsiteAddress    String?   @db.VarChar(200)
-  supChequePreName     String?   @db.VarChar(200)
-  supNotes             String?   @db.VarChar(250)
+  supName              String   @db.VarChar(200) @map("sup_name")
+  supShort             String?  @db.VarChar(50) @map("sup_short")
+
+  supAddr1             String?  @db.VarChar(250) @map("sup_addr1")
+  supAddr2             String?  @db.VarChar(250) @map("sup_addr2")
+  supAddr3             String?  @db.VarChar(250) @map("sup_addr3")
+  supCity              String?  @db.VarChar(250) @map("sup_city")
+  supDistrict          String?  @db.VarChar(250) @map("sup_district")
+  supStateName         String   @db.VarChar(100) @map("sup_state_name")
+  supCountry           String?  @default("India") @db.VarChar(60) @map("sup_country")
+
+  supPincode           String?  @db.VarChar(10) @map("sup_pincode")
+  supTel               String?  @db.VarChar(20) @map("sup_tel")
+  supPhone             String?  @db.VarChar(20) @map("sup_phone")
+  supMailId            String?  @db.VarChar(120) @map("sup_mail_id")
+  supWhatsappNo        String?  @db.VarChar(20) @map("sup_whatsapp_no")
+  supWebsiteAddress    String?  @db.VarChar(200) @map("sup_website_address")
+  supChequePreName     String?  @db.VarChar(200) @map("sup_cheque_pre_name")
+  supNotes             String?  @db.VarChar(250) @map("sup_notes")
 
   // 3) Credit / Discount
-  supCreditDays        Int       @default(0)
-  supCashDiscPerc      Decimal   @default(0) @db.Decimal(7, 3)
+  supCreditDays        Int      @default(0) @map("sup_credit_days")
+  supCashDiscPerc      Decimal  @default(dbgenerated("0")) @db.Decimal(7, 3) @map("sup_cash_disc_perc")
 
   // 5) Collection / Schedules
-  supCollectionDays    Int[]
+  supCollectionDays    Int[]    @default([]) @map("sup_collection_days")
 
   // 6) Tax / Compliance
-  supGstNo             String?   @db.VarChar(15)
-  supStateCode         String    @db.Char(2)
-  supPanNo             String?   @db.VarChar(10)
-  supGstType           String    @db.VarChar(30)
-  supSupCst            String?   @db.VarChar(25)
-  supDrugLiscenceNo    String?   @db.VarChar(100)
+  supGstNo             String?  @db.VarChar(15) @map("sup_gst_no")
+  supStateCode         String   @db.Char(2) @map("sup_state_code")
+  supPanNo             String?  @db.VarChar(10) @map("sup_pan_no")
+  supGstType           String   @db.VarChar(30) @map("sup_gst_type")
+  supSupCst            String?  @db.VarChar(25) @map("sup_sup_cst")
+  supDrugLiscenceNo    String?  @db.VarChar(100) @map("sup_drug_liscence_no")
 
-  // 7) Regional (Tally style) fields
-  supRegionName        String?   @db.VarChar(200)
-  supRegionAddr1       String?   @db.VarChar(250)
-  supRegionAddr2       String?   @db.VarChar(250)
-  supRegionAddr3       String?   @db.VarChar(250)
-  supRegionCity        String?   @db.VarChar(250)
-  supRegionDistrict    String?   @db.VarChar(250)
-  supRegionStateName   String?   @db.VarChar(100)
-  supRegionCountry     String?   @default("India") @db.VarChar(60)
+  // 7) Regional (Tally style)
+  supRegionName        String?  @db.VarChar(200) @map("sup_region_name")
+  supRegionAddr1       String?  @db.VarChar(250) @map("sup_region_addr1")
+  supRegionAddr2       String?  @db.VarChar(250) @map("sup_region_addr2")
+  supRegionAddr3       String?  @db.VarChar(250) @map("sup_region_addr3")
+  supRegionCity        String?  @db.VarChar(250) @map("sup_region_city")
+  supRegionDistrict    String?  @db.VarChar(250) @map("sup_region_district")
+  supRegionStateName   String?  @db.VarChar(100) @map("sup_region_state_name")
+  supRegionCountry     String?  @default("India") @db.VarChar(60) @map("sup_region_country")
 
   // 8) Stats
-  supBilledDate        DateTime? @db.Date
-  supSortOrder         Int?      @default(0)
+  supBilledDate        DateTime? @db.Date @map("sup_billed_date")
+  supSortOrder         Int?      @default(0) @map("sup_sort_order")
 
   // 9) Status / Audit / Sync
-  supIsActive          Boolean   @default(true)
-  supIsDeleted         Boolean   @default(false)
-  supSyncDate          DateTime? @db.Timestamptz
-  supCreatedOn         DateTime  @default(now()) @db.Timestamptz
-  supCreatedBy         String?   @db.VarChar(100)
-  supModifiedOn        DateTime  @default(now()) @db.Timestamptz
-  supModifiedBy        String?   @db.VarChar(100)
+  supIsActive          Boolean   @default(true) @map("sup_is_active")
+  supIsDeleted         Boolean   @default(false) @map("sup_is_deleted")
 
-  // Relations
-  supplierGroup        SupplierGroup @relation(fields: [supGroupId], references: [spgId])
+  supSyncDate          DateTime? @db.Timestamptz(6) @map("sup_sync_date")
 
-  @@index([supGroupId],  name: "idx_sup_group")
-  @@index([supGstNo],    name: "idx_sup_gst")
-  @@index([supIsActive], name: "idx_sup_active")
+  supCreatedOn         DateTime  @default(now()) @db.Timestamptz(6) @map("sup_created_on")
+  supCreatedBy         String?   @db.VarChar(100) @map("sup_created_by")
+  supModifiedOn        DateTime  @updatedAt @db.Timestamptz(6) @map("sup_modified_on")
+  supModifiedBy        String?   @db.VarChar(100) @map("sup_modified_by")
+
+  // 11) FK fields + relations
+  // NOTE: sup_state_id column was missing in your DDL snippet, but FK references it.
+  supStateId           String?   @db.Uuid @map("sup_state_id")
+
+  group                SupplierGroup   @relation(fields: [supGroupId], references: [spgId], onUpdate: Cascade, onDelete: Restrict)
+  
   @@map("suppliers")
   @@schema("purchase")
+
+  @@index([supCompanyId], map: "idx_sup_company")
+  @@index([supGroupId], map: "idx_sup_group")
+  @@index([supGstNo], map: "idx_sup_gst")
+
+  // NOTE: Partial indexes can't be expressed in Prisma schema:
+  // idx_sup_active (WHERE sup_is_deleted = false)
+  // uq_sup_company_name (WHERE sup_is_deleted = false)
 }
 
 // ----- prisma/purchase/suppliersGroup.prisma -----

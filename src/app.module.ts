@@ -44,6 +44,8 @@ import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaste
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { GspCompanyServiceModule } from './modules/accountsModule/gspCompanyService/gsp-company-service.module';
+import { SupplierGroupModule } from './modules/purchase/supplier-group/supplier-group.module';
+import { SuppliersModule } from './modules/purchase/suppliers/suppliers.module';
 
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
@@ -100,6 +102,8 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     TenderTypeMasterModule,
     GspProviderMasterModule,
     GspCompanyServiceModule,
+    SupplierGroupModule,
+    SuppliersModule,
     GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,

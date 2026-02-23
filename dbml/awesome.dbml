@@ -1069,6 +1069,7 @@ Table units {
 
 Table suppliers {
   supId String [pk]
+  supCompanyId String
   supBranchId String
   supGroupId String [not null]
   supPurchaseType String [not null]
@@ -1090,7 +1091,7 @@ Table suppliers {
   supChequePreName String
   supNotes String
   supCreditDays Int [not null, default: 0]
-  supCashDiscPerc Decimal [not null, default: 0]
+  supCashDiscPerc Decimal [not null]
   supCollectionDays Int[] [not null]
   supGstNo String
   supStateCode String [not null]
@@ -1113,9 +1114,10 @@ Table suppliers {
   supSyncDate DateTime
   supCreatedOn DateTime [default: `now()`, not null]
   supCreatedBy String
-  supModifiedOn DateTime [default: `now()`, not null]
+  supModifiedOn DateTime [not null]
   supModifiedBy String
-  supplierGroup supplier_groups [not null]
+  supStateId String
+  group supplier_groups [not null]
 }
 
 Table supplier_groups {
@@ -1399,7 +1401,7 @@ Ref: item_tax_history.ithTaxId > item_tax_master.taxId [delete: Restrict]
 
 Ref: units.unit_base_unit_id - units.unit_id [delete: Restrict]
 
-Ref: suppliers.supGroupId > supplier_groups.spgId
+Ref: suppliers.supGroupId > supplier_groups.spgId [delete: Restrict]
 
 Ref: area_master.armCityId > city_master.ctmId
 

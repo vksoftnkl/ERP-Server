@@ -92,7 +92,6 @@ model Company {
   gspCompanyServices    GspCompanyService[]
   shipAddrs             AccShipAddr[]
   custGroup             CustGroup[]
-
   @@map("companys")
   @@schema("accounts")
 }
