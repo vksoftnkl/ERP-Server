@@ -11,7 +11,7 @@ import {
 } from './types/master-lookup-api.types';
 
 const DEFAULT_SEARCH_LIMIT = 20;
-const MAX_LOOKUP_LIMIT = 100;
+const MAX_LOOKUP_LIMIT = 20;
 
 @Injectable()
 export class MasterLookupService {

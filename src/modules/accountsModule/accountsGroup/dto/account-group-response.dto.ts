@@ -23,8 +23,8 @@ export class AccountGroupPayloadDto {
   @ApiProperty({ format: 'uuid' })
   accGroupId!: string;
 
-  @ApiPropertyOptional({ nullable: true })
-  accGroupCompanyId!: number | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  accGroupCompanyId!: string | null;
 
   @ApiProperty({ maxLength: 150 })
   accGroupName!: string;

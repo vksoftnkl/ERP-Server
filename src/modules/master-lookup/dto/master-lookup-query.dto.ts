@@ -47,7 +47,7 @@ export class MasterLookupQueryDto {
   @ApiPropertyOptional({
     description: 'Max number of records to return per module',
     minimum: 1,
-    maximum: 100,
+    maximum: 20,
     default: 20,
   })
   @IsOptional()

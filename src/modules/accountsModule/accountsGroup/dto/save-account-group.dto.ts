@@ -1,6 +1,7 @@
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDate,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -59,6 +60,32 @@ const toOptionalTypeCode = (value: unknown): unknown => {
   return value.trim().toUpperCase();
 };
 
+const toNullableDate = (value: unknown): Date | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? (value as unknown as Date) : value;
+  }
+
+  if (typeof value !== 'string') {
+    return value as Date;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isNaN(parsed.getTime()) ? (value as unknown as Date) : parsed;
+};
+
 export class SaveAccountGroupDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -67,6 +94,13 @@ export class SaveAccountGroupDto {
   @IsOptional()
   @IsUUID('all')
   accGroupId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  accGroupCompanyId?: string | null;
 
   @ApiProperty({ maxLength: 150 })
   @IsString()
@@ -98,6 +132,30 @@ export class SaveAccountGroupDto {
   @MaxLength(250)
   accGroupDescription?: string | null;
 
+  @ApiPropertyOptional({ maxLength: 150 })
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(150)
+  accGroupTallyName?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 150 })
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(150)
+  accGroupPrimaryName?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 20 })
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(20)
+  accGroupNature?: string | null;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
@@ -119,4 +177,42 @@ export class SaveAccountGroupDto {
   @IsString()
   @Length(2, 2)
   accGroupTypeCode!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  accGroupIsDefault?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  accGroupBehaveAsSubledger?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  accGroupNetDebitCredit?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  accGroupUsedForCalculation?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  accGroupAffectsGrossProfit?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  accGroupIsActive?: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableDate(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Type(() => Date)
+  @IsDate()
+  accGroupSyncDate?: Date | null;
 }

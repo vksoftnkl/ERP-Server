@@ -22,8 +22,23 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ACCOUNT_GROUP_TABLE_NAME = 'account_groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
+const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
+const GRID_SQL_FORBIDDEN_TOKENS =
+  /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
+const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 
 type AccountGroupWriteClient = Prisma.TransactionClient | PrismaService;
+
+type SearchColumnDescriptor = {
+  normalized: string;
+  tokens: string[];
+  lastToken: string;
+};
+
+type AccountGroupParentRecord = {
+  accGroupId: string;
+  accGroupCompanyId: string | null;
+};
 
 @Injectable()
 export class AccountsGroupService {
@@ -47,9 +62,18 @@ export class AccountsGroupService {
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
 
+    const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
+    if (configuredList) {
+      return configuredList;
+    }
+
     const where: Prisma.AccountGroupWhereInput = {
       accGroupIsDeleted: false,
     };
+
+    if (queryDto.accGroupCompanyId !== undefined) {
+      where.accGroupCompanyId = queryDto.accGroupCompanyId;
+    }
 
     if (queryDto.accGroupParentId !== undefined) {
       where.accGroupParentId = queryDto.accGroupParentId;
@@ -91,6 +115,646 @@ export class AccountsGroupService {
         total_pages: Math.ceil(total / limit),
       },
     };
+  }
+
+  private async listFromConfiguredGridSql(
+    queryDto: ListAccountGroupQueryDto,
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<{ items: AccountGroupListItem[]; meta: AccountGroupListMeta } | null> {
+    const configuredGrids = await this.prisma.gridDetails.findMany({
+      where: {
+        gridIsDeleted: false,
+        gridStatus: true,
+        gridSql: {
+          not: null,
+          contains: ACCOUNT_GROUP_TABLE_NAME,
+          mode: 'insensitive',
+        },
+      },
+      orderBy: [{ gridSortOrder: 'asc' }, { gridId: 'desc' }],
+      select: {
+        gridId: true,
+        gridSql: true,
+      },
+    });
+    if (configuredGrids.length === 0) {
+      return null;
+    }
+
+    const preferredConfiguredGrids = configuredGrids.filter((configuredGrid) =>
+      this.referencesAccountGroupsAsPrimaryFromTable(configuredGrid.gridSql),
+    );
+    const candidateConfiguredGrids =
+      preferredConfiguredGrids.length > 0 ? preferredConfiguredGrids : configuredGrids;
+
+    for (const configuredGrid of candidateConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+
+      try {
+        const baseSql = this.validateConfiguredGridSql(rawGridSql);
+        const searchableFieldNames = queryDto.search?.trim()
+          ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
+          : [];
+        const { sql: filteredSql, params } = this.buildConfiguredGridListSql(
+          baseSql,
+          queryDto,
+          searchableFieldNames,
+        );
+        const countSql = `SELECT COUNT(*)::bigint AS total FROM (${filteredSql}) AS account_group_grid_count`;
+        const rowsSql = `SELECT * FROM (${filteredSql}) AS account_group_grid_rows LIMIT $${
+          params.length + 1
+        } OFFSET $${params.length + 2}`;
+        const [countResult, rows] = await Promise.all([
+          this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(
+            countSql,
+            ...params,
+          ),
+          this.prisma.$queryRawUnsafe<AccountGroupListItem[]>(rowsSql, ...params, limit, skip),
+        ]);
+        const total = this.parseCountValue(countResult[0]?.total);
+
+        return {
+          items: rows,
+          meta: {
+            page,
+            limit,
+            total,
+            total_pages: Math.ceil(total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private referencesAccountGroupsAsPrimaryFromTable(sql: string | null): boolean {
+    if (!sql) {
+      return false;
+    }
+
+    return this.extractTopLevelFromTableName(sql) === ACCOUNT_GROUP_TABLE_NAME;
+  }
+
+  private buildConfiguredGridListSql(
+    baseSql: string,
+    queryDto: ListAccountGroupQueryDto,
+    searchableFieldNames: string[],
+  ): { sql: string; params: unknown[] } {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (queryDto.accGroupCompanyId !== undefined) {
+      params.push(queryDto.accGroupCompanyId);
+      conditions.push(`account_group_grid.acc_group_company_id = $${params.length}`);
+    }
+
+    if (queryDto.accGroupParentId !== undefined) {
+      params.push(queryDto.accGroupParentId);
+      conditions.push(`account_group_grid.acc_group_parent_id = $${params.length}`);
+    }
+
+    if (queryDto.accGroupIsActive !== undefined) {
+      params.push(queryDto.accGroupIsActive);
+      conditions.push(`account_group_grid.acc_group_is_active = $${params.length}`);
+    }
+
+    if (queryDto.search?.trim()) {
+      const searchText = `%${queryDto.search.trim()}%`;
+      if (searchableFieldNames.length > 0) {
+        const searchConditions: string[] = [];
+        for (const fieldName of searchableFieldNames) {
+          params.push(fieldName);
+          const columnParamIndex = params.length;
+          params.push(searchText);
+          const valueParamIndex = params.length;
+          searchConditions.push(
+            `EXISTS (` +
+              `SELECT 1 FROM jsonb_each_text(row_to_json(account_group_grid)::jsonb) AS grid_kv(key, value) ` +
+              `WHERE grid_kv.key = $${columnParamIndex} ` +
+              `AND grid_kv.value ILIKE $${valueParamIndex}` +
+              `)`,
+          );
+        }
+        conditions.push(`(${searchConditions.join(' OR ')})`);
+      } else {
+        conditions.push('1 = 0');
+      }
+    }
+
+    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    return {
+      sql: `SELECT * FROM (${baseSql}) AS account_group_grid${whereClause}`,
+      params,
+    };
+  }
+
+  private async getConfiguredSearchableFieldNames(
+    gridId: bigint,
+    baseSql: string,
+  ): Promise<string[]> {
+    const sqlFieldNames = this.extractSelectFieldNames(baseSql);
+    if (sqlFieldNames.length === 0) {
+      return [];
+    }
+
+    const configuredColumns = await this.prisma.gridColumn.findMany({
+      where: {
+        gridId,
+        gridColumnIsDeleted: false,
+        gridColumnFilter: true,
+        grid: {
+          gridIsDeleted: false,
+        },
+      },
+      orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
+      select: {
+        gridColumnName: true,
+        gridColumnNumber: true,
+      },
+    });
+
+    const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
+      fieldName,
+      descriptor: this.describeSearchColumnName(fieldName),
+    }));
+    const usedSqlFieldIndexes = new Set<number>();
+    const matchedFieldNames: string[] = [];
+
+    for (const column of configuredColumns) {
+      const columnName = column.gridColumnName.trim();
+      let matchedSqlFieldIndex = -1;
+      const columnDescriptor = this.describeSearchColumnName(columnName);
+
+      if (columnDescriptor.normalized) {
+        let bestScore = -1;
+        let nextBestScore = -1;
+        let bestScoreIsAmbiguous = false;
+
+        for (let index = 0; index < normalizedSqlFields.length; index += 1) {
+          if (usedSqlFieldIndexes.has(index)) {
+            continue;
+          }
+          const score = this.getSearchColumnMatchScore(
+            columnDescriptor,
+            normalizedSqlFields[index].descriptor,
+          );
+          if (score > bestScore) {
+            nextBestScore = bestScore;
+            bestScore = score;
+            matchedSqlFieldIndex = index;
+            bestScoreIsAmbiguous = false;
+            continue;
+          }
+
+          if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
+            bestScoreIsAmbiguous = true;
+            continue;
+          }
+
+          if (score > nextBestScore) {
+            nextBestScore = score;
+          }
+        }
+
+        if (
+          bestScore < MIN_CONFIDENT_COLUMN_MATCH_SCORE ||
+          bestScore === nextBestScore ||
+          bestScoreIsAmbiguous
+        ) {
+          matchedSqlFieldIndex = -1;
+        }
+      }
+
+      if (matchedSqlFieldIndex === -1) {
+        const sqlFieldIndexFromColumnNumber = column.gridColumnNumber - 1;
+        if (
+          sqlFieldIndexFromColumnNumber >= 0 &&
+          sqlFieldIndexFromColumnNumber < normalizedSqlFields.length &&
+          !usedSqlFieldIndexes.has(sqlFieldIndexFromColumnNumber)
+        ) {
+          matchedSqlFieldIndex = sqlFieldIndexFromColumnNumber;
+        }
+      }
+
+      if (matchedSqlFieldIndex !== -1) {
+        usedSqlFieldIndexes.add(matchedSqlFieldIndex);
+        matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
+      }
+    }
+    return matchedFieldNames;
+  }
+
+  private tokenizeSearchColumnName(value: string): string[] {
+    const normalizedSpacing = value
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[^a-z0-9]+/gi, ' ')
+      .trim()
+      .toLowerCase();
+    return normalizedSpacing ? normalizedSpacing.split(/\s+/) : [];
+  }
+
+  private describeSearchColumnName(value: string): SearchColumnDescriptor {
+    const tokens = this.tokenizeSearchColumnName(value);
+    return {
+      normalized: tokens.join(''),
+      tokens,
+      lastToken: tokens[tokens.length - 1] ?? '',
+    };
+  }
+
+  private getSearchColumnMatchScore(
+    source: SearchColumnDescriptor,
+    target: SearchColumnDescriptor,
+  ): number {
+    if (!source.normalized || !target.normalized) {
+      return -1;
+    }
+
+    if (source.normalized === target.normalized) {
+      return 4;
+    }
+
+    if (
+      source.normalized.includes(target.normalized) ||
+      target.normalized.includes(source.normalized)
+    ) {
+      return 3;
+    }
+
+    const sourceWithoutBooleanPrefix = source.normalized.replace(/^is/, '');
+    const targetWithoutBooleanPrefix = target.normalized.replace(/^is/, '');
+    if (
+      sourceWithoutBooleanPrefix &&
+      targetWithoutBooleanPrefix &&
+      (sourceWithoutBooleanPrefix === targetWithoutBooleanPrefix ||
+        sourceWithoutBooleanPrefix.endsWith(targetWithoutBooleanPrefix) ||
+        targetWithoutBooleanPrefix.endsWith(sourceWithoutBooleanPrefix))
+    ) {
+      return 2;
+    }
+
+    if (source.lastToken && source.lastToken === target.lastToken) {
+      return 2;
+    }
+
+    if (
+      source.lastToken &&
+      target.lastToken &&
+      (source.lastToken.startsWith(target.lastToken) ||
+        target.lastToken.startsWith(source.lastToken))
+    ) {
+      return 2;
+    }
+
+    const sharedTokens = source.tokens.filter((token) => target.tokens.includes(token));
+    if (sharedTokens.length >= 2) {
+      return 1;
+    }
+
+    return -1;
+  }
+
+  private extractSelectFieldNames(sql: string): string[] {
+    const selectClause = this.extractTopLevelSelectClause(sql);
+    if (!selectClause) {
+      return [];
+    }
+
+    const expressions = this.splitTopLevelCommaSeparated(selectClause);
+    const fieldNames: string[] = [];
+    for (const expression of expressions) {
+      const outputFieldName = this.extractSqlOutputFieldName(expression);
+      if (!outputFieldName) {
+        continue;
+      }
+      if (!fieldNames.includes(outputFieldName)) {
+        fieldNames.push(outputFieldName);
+      }
+    }
+    return fieldNames;
+  }
+
+  private extractTopLevelFromTableName(sql: string): string | null {
+    const trimmed = sql.trim();
+    const selectMatch = trimmed.match(/^select\b/i);
+    if (!selectMatch) {
+      return null;
+    }
+
+    const selectStartIndex = selectMatch[0].length;
+    let depth = 0;
+    let insideSingleQuote = false;
+    let insideDoubleQuote = false;
+
+    for (let index = selectStartIndex; index < trimmed.length; index += 1) {
+      const current = trimmed[index];
+      const next = trimmed[index + 1];
+
+      if (insideSingleQuote) {
+        if (current === "'" && next === "'") {
+          index += 1;
+          continue;
+        }
+        if (current === "'") {
+          insideSingleQuote = false;
+        }
+        continue;
+      }
+
+      if (insideDoubleQuote) {
+        if (current === '"' && next === '"') {
+          index += 1;
+          continue;
+        }
+        if (current === '"') {
+          insideDoubleQuote = false;
+        }
+        continue;
+      }
+
+      if (current === "'") {
+        insideSingleQuote = true;
+        continue;
+      }
+      if (current === '"') {
+        insideDoubleQuote = true;
+        continue;
+      }
+      if (current === '(') {
+        depth += 1;
+        continue;
+      }
+      if (current === ')') {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
+
+      if (
+        depth === 0 &&
+        /^from$/i.test(trimmed.slice(index, index + 4)) &&
+        (index === 0 || /\s/.test(trimmed[index - 1])) &&
+        (index + 4 >= trimmed.length || /\s/.test(trimmed[index + 4]))
+      ) {
+        const fromClause = trimmed.slice(index + 4).trimStart();
+        const identifierPattern = '(?:"(?:""|[^"])+"|[a-z_][a-z0-9_$]*)';
+        const relationPattern = new RegExp(
+          `^(?:${identifierPattern}\\s*\\.\\s*)?(${identifierPattern})`,
+          'i',
+        );
+        const relationMatch = fromClause.match(relationPattern);
+        if (!relationMatch) {
+          return null;
+        }
+        return this.parseSqlIdentifierToken(relationMatch[1]);
+      }
+    }
+
+    return null;
+  }
+
+  private extractTopLevelSelectClause(sql: string): string | null {
+    const trimmed = sql.trim();
+    const selectMatch = trimmed.match(/^select\b/i);
+    if (!selectMatch) {
+      return null;
+    }
+
+    const selectStartIndex = selectMatch[0].length;
+    let depth = 0;
+    let insideSingleQuote = false;
+    let insideDoubleQuote = false;
+
+    for (let index = selectStartIndex; index < trimmed.length; index += 1) {
+      const current = trimmed[index];
+      const next = trimmed[index + 1];
+
+      if (insideSingleQuote) {
+        if (current === "'" && next === "'") {
+          index += 1;
+          continue;
+        }
+        if (current === "'") {
+          insideSingleQuote = false;
+        }
+        continue;
+      }
+
+      if (insideDoubleQuote) {
+        if (current === '"' && next === '"') {
+          index += 1;
+          continue;
+        }
+        if (current === '"') {
+          insideDoubleQuote = false;
+        }
+        continue;
+      }
+
+      if (current === "'") {
+        insideSingleQuote = true;
+        continue;
+      }
+      if (current === '"') {
+        insideDoubleQuote = true;
+        continue;
+      }
+      if (current === '(') {
+        depth += 1;
+        continue;
+      }
+      if (current === ')') {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
+
+      if (
+        depth === 0 &&
+        /^from$/i.test(trimmed.slice(index, index + 4)) &&
+        (index === 0 || /\s/.test(trimmed[index - 1])) &&
+        (index + 4 >= trimmed.length || /\s/.test(trimmed[index + 4]))
+      ) {
+        return trimmed.slice(selectStartIndex, index).trim();
+      }
+    }
+
+    return null;
+  }
+
+  private splitTopLevelCommaSeparated(value: string): string[] {
+    const chunks: string[] = [];
+    let startIndex = 0;
+    let depth = 0;
+    let insideSingleQuote = false;
+    let insideDoubleQuote = false;
+
+    for (let index = 0; index < value.length; index += 1) {
+      const current = value[index];
+      const next = value[index + 1];
+
+      if (insideSingleQuote) {
+        if (current === "'" && next === "'") {
+          index += 1;
+          continue;
+        }
+        if (current === "'") {
+          insideSingleQuote = false;
+        }
+        continue;
+      }
+
+      if (insideDoubleQuote) {
+        if (current === '"' && next === '"') {
+          index += 1;
+          continue;
+        }
+        if (current === '"') {
+          insideDoubleQuote = false;
+        }
+        continue;
+      }
+
+      if (current === "'") {
+        insideSingleQuote = true;
+        continue;
+      }
+      if (current === '"') {
+        insideDoubleQuote = true;
+        continue;
+      }
+      if (current === '(') {
+        depth += 1;
+        continue;
+      }
+      if (current === ')') {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
+      if (current === ',' && depth === 0) {
+        chunks.push(value.slice(startIndex, index).trim());
+        startIndex = index + 1;
+      }
+    }
+
+    const tail = value.slice(startIndex).trim();
+    if (tail) {
+      chunks.push(tail);
+    }
+    return chunks;
+  }
+
+  private extractSqlOutputFieldName(expression: string): string | null {
+    const trimmed = expression.trim();
+    if (!trimmed || trimmed === '*' || /\.\*$/.test(trimmed)) {
+      return null;
+    }
+
+    const explicitAliasMatch = trimmed.match(/\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
+    if (explicitAliasMatch) {
+      return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
+    }
+
+    const implicitAliasMatch = trimmed.match(/\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
+    if (implicitAliasMatch) {
+      const aliasToken = implicitAliasMatch[1];
+      const expressionWithoutAlias = trimmed.slice(0, trimmed.length - aliasToken.length).trim();
+      if (expressionWithoutAlias) {
+        return this.parseSqlIdentifierToken(aliasToken);
+      }
+    }
+
+    const simpleColumnMatch = trimmed.match(
+      /^((?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)\.)*(?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)$/i,
+    );
+    if (simpleColumnMatch) {
+      const parts = trimmed.split('.');
+      return this.parseSqlIdentifierToken(parts[parts.length - 1]);
+    }
+
+    return null;
+  }
+
+  private parseSqlIdentifierToken(token: string): string | null {
+    const trimmed = token.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (/^"([^"]|"")+"$/.test(trimmed)) {
+      return trimmed.slice(1, -1).replace(/""/g, '"');
+    }
+
+    if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+
+    return null;
+  }
+
+  private validateConfiguredGridSql(sql: string): string {
+    const normalized = sql.trim().replace(/;+\s*$/g, '');
+    if (!/^select\b/i.test(normalized)) {
+      this.throwBadRequest('Invalid grid_sql configuration for account group list', [
+        {
+          field: 'grid_sql',
+          message: 'Only SELECT query is allowed',
+        },
+      ]);
+    }
+    if (normalized.includes(';')) {
+      this.throwBadRequest('Invalid grid_sql configuration for account group list', [
+        {
+          field: 'grid_sql',
+          message: 'Multiple statements are not allowed',
+        },
+      ]);
+    }
+    if (GRID_SQL_COMMENT_PATTERN.test(normalized)) {
+      this.throwBadRequest('Invalid grid_sql configuration for account group list', [
+        {
+          field: 'grid_sql',
+          message: 'Comments are not allowed in configured query',
+        },
+      ]);
+    }
+    if (GRID_SQL_FORBIDDEN_TOKENS.test(normalized)) {
+      this.throwBadRequest('Invalid grid_sql configuration for account group list', [
+        {
+          field: 'grid_sql',
+          message: 'Write/DDL statements are not allowed',
+        },
+      ]);
+    }
+    if (!/\baccount_groups\b/i.test(normalized)) {
+      this.throwBadRequest('Invalid grid_sql configuration for account group list', [
+        {
+          field: 'grid_sql',
+          message: 'Configured query must reference account_groups table',
+        },
+      ]);
+    }
+    return normalized;
+  }
+
+  private parseCountValue(value: bigint | number | string | undefined): number {
+    if (typeof value === 'bigint') {
+      return Number(value);
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : 0;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
   }
 
   async getById(accGroupId: string): Promise<AccountGroupPayload> {
@@ -213,15 +877,25 @@ export class AccountsGroupService {
         const normalizedName = this.normalizeRequiredName(saveAccountGroupDto.accGroupName);
         const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
 
-        if (saveAccountGroupDto.accGroupParentId) {
-          await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx);
-        }
+        const parent = saveAccountGroupDto.accGroupParentId
+          ? await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx)
+          : null;
+        const requestedCompanyId = this.hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
+          ? (saveAccountGroupDto.accGroupCompanyId ?? null)
+          : undefined;
+        const companyId = await this.resolveCompanyId(
+          requestedCompanyId,
+          null,
+          parent?.accGroupCompanyId ?? null,
+          tx,
+        );
 
-        await this.ensureNameIsUnique(tx, normalizedName);
+        await this.ensureNameIsUnique(tx, normalizedName, companyId);
 
         const now = new Date();
         const createdBy = DEFAULT_ACTOR;
         const data: Prisma.AccountGroupUncheckedCreateInput = {
+          accGroupCompanyId: companyId,
           accGroupName: normalizedName,
           accGroupTypeCode: normalizedTypeCode,
           accGroupChildIds: [],
@@ -234,6 +908,7 @@ export class AccountsGroupService {
         this.applyOptionalFields(data, saveAccountGroupDto);
 
         const created = await tx.accountGroup.create({ data });
+        await this.ensureSelfInChildIds(tx, created.accGroupId);
 
         if (created.accGroupParentId) {
           const ancestorIds = await this.getAncestorIds(tx, created.accGroupParentId);
@@ -247,7 +922,14 @@ export class AccountsGroupService {
           },
         });
 
-        const payload = this.toPayload(refreshed ?? created);
+        const payload = !refreshed
+          ? this.toPayload({
+              ...created,
+              accGroupChildIds: this.mergeChildIds(created.accGroupChildIds, [
+                created.accGroupId,
+              ]),
+            })
+          : this.toPayload(refreshed);
 
         await this.auditLogService.logEntityChange(
           {
@@ -303,10 +985,6 @@ export class AccountsGroupService {
           ]);
         }
 
-        if (saveAccountGroupDto.accGroupParentId) {
-          await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx);
-        }
-
         const hasParentField = this.hasOwnProperty(saveAccountGroupDto, 'accGroupParentId');
         const nextParentId = hasParentField
           ? (saveAccountGroupDto.accGroupParentId ?? null)
@@ -314,7 +992,6 @@ export class AccountsGroupService {
         const isParentChanged = hasParentField && nextParentId !== existing.accGroupParentId;
 
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, accGroupId) : [];
-
         if (isParentChanged && nextParentId && subtreeIds.includes(nextParentId)) {
           this.throwBadRequest('Circular hierarchy is not allowed', [
             {
@@ -324,7 +1001,17 @@ export class AccountsGroupService {
           ]);
         }
 
-        const nextCompanyId = existing.accGroupCompanyId;
+        const parent = nextParentId ? await this.ensureParentExists(nextParentId, tx) : null;
+        const requestedCompanyId = this.hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
+          ? (saveAccountGroupDto.accGroupCompanyId ?? null)
+          : undefined;
+        const nextCompanyId = await this.resolveCompanyId(
+          requestedCompanyId,
+          existing.accGroupCompanyId,
+          parent?.accGroupCompanyId ?? null,
+          tx,
+        );
+
         await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, accGroupId);
 
         const oldAncestorIds = isParentChanged
@@ -332,6 +1019,7 @@ export class AccountsGroupService {
           : [];
 
         const data: Prisma.AccountGroupUncheckedUpdateInput = {
+          accGroupCompanyId: nextCompanyId,
           accGroupName: normalizedName,
           accGroupTypeCode: normalizedTypeCode,
           accGroupModifiedOn: new Date(),
@@ -347,6 +1035,7 @@ export class AccountsGroupService {
           data,
         });
 
+        await this.ensureSelfInChildIds(tx, accGroupId);
         if (isParentChanged) {
           const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
           await this.removeChildIds(tx, oldAncestorIds, subtreeIds);
@@ -386,7 +1075,10 @@ export class AccountsGroupService {
     }
   }
 
-  private async ensureParentExists(parentId: string, tx: AccountGroupWriteClient): Promise<void> {
+  private async ensureParentExists(
+    parentId: string,
+    tx: AccountGroupWriteClient,
+  ): Promise<AccountGroupParentRecord> {
     const parent = await tx.accountGroup.findFirst({
       where: {
         accGroupId: parentId,
@@ -394,6 +1086,7 @@ export class AccountsGroupService {
       },
       select: {
         accGroupId: true,
+        accGroupCompanyId: true,
       },
     });
 
@@ -405,6 +1098,57 @@ export class AccountsGroupService {
         },
       ]);
     }
+
+    return parent;
+  }
+
+  private async ensureCompanyExists(compId: string, tx: AccountGroupWriteClient): Promise<void> {
+    const company = await tx.company.findFirst({
+      where: {
+        compId,
+        compIsDeleted: false,
+      },
+      select: {
+        compId: true,
+      },
+    });
+
+    if (!company) {
+      this.throwBadRequest('Company does not exist', [
+        {
+          field: 'accGroupCompanyId',
+          message: `No active company found with id ${compId}`,
+        },
+      ]);
+    }
+  }
+
+  private async resolveCompanyId(
+    requestedCompanyId: string | null | undefined,
+    fallbackCompanyId: string | null,
+    parentCompanyId: string | null,
+    tx: AccountGroupWriteClient,
+  ): Promise<string | null> {
+    let companyId = requestedCompanyId === undefined ? fallbackCompanyId : requestedCompanyId;
+
+    if (parentCompanyId !== null) {
+      if (companyId === null) {
+        companyId = parentCompanyId;
+      } else if (companyId !== parentCompanyId) {
+        this.throwBadRequest('Parent/company mismatch', [
+          {
+            field: 'accGroupCompanyId',
+            message: `accGroupCompanyId ${companyId} must match parent company id ${parentCompanyId}`,
+          },
+        ]);
+      }
+    }
+
+    if (companyId !== null) {
+      await this.ensureCompanyExists(companyId, tx);
+    }
+
+    return companyId;
   }
 
   private async ensureNameIsUnique(
@@ -462,12 +1206,52 @@ export class AccountsGroupService {
       data.accGroupDescription = saveAccountGroupDto.accGroupDescription;
     }
 
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupTallyName')) {
+      data.accGroupTallyName = saveAccountGroupDto.accGroupTallyName;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupPrimaryName')) {
+      data.accGroupPrimaryName = saveAccountGroupDto.accGroupPrimaryName;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupNature')) {
+      data.accGroupNature = saveAccountGroupDto.accGroupNature;
+    }
+
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupParentId')) {
       data.accGroupParentId = saveAccountGroupDto.accGroupParentId;
     }
 
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupSort')) {
       data.accGroupSort = saveAccountGroupDto.accGroupSort;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupIsDefault')) {
+      data.accGroupIsDefault = saveAccountGroupDto.accGroupIsDefault;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupBehaveAsSubledger')) {
+      data.accGroupBehaveAsSubledger = saveAccountGroupDto.accGroupBehaveAsSubledger;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupNetDebitCredit')) {
+      data.accGroupNetDebitCredit = saveAccountGroupDto.accGroupNetDebitCredit;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupUsedForCalculation')) {
+      data.accGroupUsedForCalculation = saveAccountGroupDto.accGroupUsedForCalculation;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupAffectsGrossProfit')) {
+      data.accGroupAffectsGrossProfit = saveAccountGroupDto.accGroupAffectsGrossProfit;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupIsActive')) {
+      data.accGroupIsActive = saveAccountGroupDto.accGroupIsActive;
+    }
+
+    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupSyncDate')) {
+      data.accGroupSyncDate = saveAccountGroupDto.accGroupSyncDate;
     }
   }
 
@@ -640,6 +1424,13 @@ export class AccountsGroupService {
     }
   }
 
+  private async ensureSelfInChildIds(
+    tx: AccountGroupWriteClient,
+    accGroupId: string,
+  ): Promise<void> {
+    await this.appendChildIds(tx, [accGroupId], [accGroupId]);
+  }
+
   private mergeChildIds(existingIds: readonly string[], idsToAdd: readonly string[]): string[] {
     return this.toUniqueIds([...existingIds, ...idsToAdd]);
   }
@@ -747,6 +1538,15 @@ export class AccountsGroupService {
         ]),
       );
     }
+
+    if (this.isForeignKeyConstraintError(error)) {
+      this.throwBadRequest('Invalid reference value provided', [
+        {
+          field: 'accGroupCompanyId',
+          message: 'Referenced company or parent account group does not exist',
+        },
+      ]);
+    }
   }
 
   private isUniqueConstraintError(error: unknown): boolean {
@@ -755,6 +1555,14 @@ export class AccountsGroupService {
     }
 
     return (error as { code?: string }).code === 'P2002';
+  }
+
+  private isForeignKeyConstraintError(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+      return false;
+    }
+
+    return (error as { code?: string }).code === 'P2003';
   }
 
   private throwNotFound(accGroupId: string): never {
