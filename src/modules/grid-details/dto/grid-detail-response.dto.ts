@@ -30,10 +30,10 @@ export class GridDetailPayloadDto {
   grid_description!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  grid_sort_column!: number | null;
+  grid_sort_column!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  grid_sort_order!: number | null;
+  grid_sort_order!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   grid_sql!: string | null;

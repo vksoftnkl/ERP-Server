@@ -1,0 +1,17 @@
+model HsnMaster {
+  hsnId Int @id @default(autoincrement()) @map("hsn_id")
+
+  hsnCode        String  @db.VarChar(50)  @map("hsn_code")
+  hsnName        String  @db.VarChar(200) @map("hsn_name")
+  hsnDescription String? @db.Text         @map("hsn_description")
+
+  hsnIsService Boolean @default(false) @map("hsn_is_service")
+  hsnUqc       String? @db.VarChar(10) @map("hsn_uqc")
+  hsnIsActive  Boolean @default(true)  @map("hsn_is_active")
+
+ hsnRateOfTax Decimal @default(0) @db.Decimal(7, 4) @map("hsn_rate_of_tax")
+
+  @@index([hsnCode])
+  @@map("hsn_master")
+  @@schema("fixed")
+}

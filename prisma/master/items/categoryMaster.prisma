@@ -15,13 +15,7 @@ model categoryMaster {
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
   categoryPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("category_path_ids_cache")
-  categoryTaxClaim       Boolean? @map("category_tax_claim")
-
-  // Defaults / pricing rules
-  categoryDefaultTaxId   String?  @db.Uuid @map("category_default_tax_id")
-  categoryDefaultHsn     String?  @db.VarChar(20) @map("category_default_hsn")
-  categoryDefaultUomId   String?  @db.Uuid @map("category_default_uom_id")
-
+  
   // Media
   categoryPhoto          Bytes?   @map("category_photo")
   categoryPhotoUrl       String?  @db.Text @map("category_photo_url")

@@ -236,3 +236,5 @@ Potential solutions:
 2026-02-23T09:49:41.010Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
 2026-02-23T11:37:38.829Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
 2026-02-24T09:59:43.589Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-02-25T12:27:33.754Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-25T12:51:32.868Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010

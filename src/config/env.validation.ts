@@ -5,6 +5,8 @@ export const envValidationSchema = Joi.object({
   HOST: Joi.string().trim().default('0.0.0.0'),
   PORT: Joi.number().port().default(3000),
   API_PREFIX: Joi.string().default('api'),
+  CORS_ORIGINS: Joi.string().allow('').default(''),
+  CORS_CREDENTIALS: Joi.boolean().optional(),
   REQUEST_BODY_LIMIT: Joi.string().trim().default('10mb'),
   LOG_FILE_PATH: Joi.string().default('logs/app.log'),
   ERROR_LOG_FILE_PATH: Joi.string().default('logs/error.log'),

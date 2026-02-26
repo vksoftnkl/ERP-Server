@@ -32,7 +32,7 @@ npm run perf:stress
 ## 3. Run with overrides
 
 ```bash
-npm run perf:load -- --base-url http://localhost:3000 --duration 90s --concurrency 40
+npm run perf:load -- --base-url https://localhost:3010 --duration 90s --concurrency 40
 ```
 
 Common options:

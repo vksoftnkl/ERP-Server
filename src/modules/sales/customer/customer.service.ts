@@ -118,7 +118,7 @@ export class CustomerService {
     limit: number,
     skip: number,
   ): Promise<{ items: CustomerListItem[]; meta: CustomerListMeta } | null> {
-    const configuredGrid = await this.prisma.gridDetails.findFirst({
+    const configuredGrids = await this.prisma.gridDetails.findMany({
       where: {
         gridIsDeleted: false,
         gridStatus: true,
@@ -133,34 +133,150 @@ export class CustomerService {
         gridSql: true,
       },
     });
-
-    const rawGridSql = configuredGrid?.gridSql?.trim();
-    if (!rawGridSql) {
+    if (configuredGrids.length === 0) {
       return null;
     }
 
-    try {
-      const baseSql = this.validateConfiguredGridSql(rawGridSql);
-      const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS customer_grid`;
-      const rowsSql = `SELECT * FROM (${baseSql}) AS customer_grid LIMIT $1 OFFSET $2`;
-      const [countResult, rows] = await Promise.all([
-        this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql),
-        this.prisma.$queryRawUnsafe<CustomerListItem[]>(rowsSql, limit, skip),
-      ]);
-      const total = this.parseCountValue(countResult[0]?.total);
+    const preferredConfiguredGrids = configuredGrids.filter((configuredGrid) =>
+      this.referencesCustomerAsPrimaryFromTable(configuredGrid.gridSql),
+    );
+    const candidateConfiguredGrids =
+      preferredConfiguredGrids.length > 0 ? preferredConfiguredGrids : configuredGrids;
 
-      return {
-        items: rows,
-        meta: {
-          page,
-          limit,
-          total,
-          total_pages: Math.ceil(total / limit),
-        },
-      };
-    } catch {
+    for (const configuredGrid of candidateConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+
+      try {
+        const baseSql = this.validateConfiguredGridSql(rawGridSql);
+        const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS customer_grid`;
+        const rowsSql = `SELECT * FROM (${baseSql}) AS customer_grid LIMIT $1 OFFSET $2`;
+        const [countResult, rows] = await Promise.all([
+          this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql),
+          this.prisma.$queryRawUnsafe<CustomerListItem[]>(rowsSql, limit, skip),
+        ]);
+        const total = this.parseCountValue(countResult[0]?.total);
+
+        return {
+          items: rows,
+          meta: {
+            page,
+            limit,
+            total,
+            total_pages: Math.ceil(total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private referencesCustomerAsPrimaryFromTable(sql: string | null): boolean {
+    if (!sql) {
+      return false;
+    }
+
+    return this.extractTopLevelFromTableName(sql) === CUSTOMER_TABLE_NAME;
+  }
+
+  private extractTopLevelFromTableName(sql: string): string | null {
+    const trimmed = sql.trim();
+    const selectMatch = trimmed.match(/^select\b/i);
+    if (!selectMatch) {
       return null;
     }
+
+    const selectStartIndex = selectMatch[0].length;
+    let depth = 0;
+    let insideSingleQuote = false;
+    let insideDoubleQuote = false;
+
+    for (let index = selectStartIndex; index < trimmed.length; index += 1) {
+      const current = trimmed[index];
+      const next = trimmed[index + 1];
+
+      if (insideSingleQuote) {
+        if (current === "'" && next === "'") {
+          index += 1;
+          continue;
+        }
+        if (current === "'") {
+          insideSingleQuote = false;
+        }
+        continue;
+      }
+
+      if (insideDoubleQuote) {
+        if (current === '"' && next === '"') {
+          index += 1;
+          continue;
+        }
+        if (current === '"') {
+          insideDoubleQuote = false;
+        }
+        continue;
+      }
+
+      if (current === "'") {
+        insideSingleQuote = true;
+        continue;
+      }
+      if (current === '"') {
+        insideDoubleQuote = true;
+        continue;
+      }
+      if (current === '(') {
+        depth += 1;
+        continue;
+      }
+      if (current === ')') {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
+
+      if (
+        depth === 0 &&
+        /^from$/i.test(trimmed.slice(index, index + 4)) &&
+        (index === 0 || /\s/.test(trimmed[index - 1])) &&
+        (index + 4 >= trimmed.length || /\s/.test(trimmed[index + 4]))
+      ) {
+        const fromClause = trimmed.slice(index + 4).trimStart();
+        const identifierPattern = '(?:"(?:""|[^"])+"|[a-z_][a-z0-9_$]*)';
+        const relationPattern = new RegExp(
+          `^(?:${identifierPattern}\\s*\\.\\s*)?(${identifierPattern})`,
+          'i',
+        );
+        const relationMatch = fromClause.match(relationPattern);
+        if (!relationMatch) {
+          return null;
+        }
+        return this.parseSqlIdentifierToken(relationMatch[1]);
+      }
+    }
+
+    return null;
+  }
+
+  private parseSqlIdentifierToken(token: string): string | null {
+    const trimmed = token.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (/^"([^"]|"")+"$/.test(trimmed)) {
+      return trimmed.slice(1, -1).replace(/""/g, '"');
+    }
+
+    if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
+      return trimmed.toLowerCase();
+    }
+
+    return null;
   }
 
   private validateConfiguredGridSql(sql: string): string {

@@ -832,6 +832,54 @@ model AuditScreen {
   @@schema("audit")
 }
 
+// ----- prisma/dropdown/dropdownColumns.prisma -----
+model DropdownColumns {
+  dropColumnsSerialId BigInt @id @default(autoincrement()) @map("dropColumns_serial_id")
+
+  // FK -> dropdown_details.dropdown_id
+  dropColumnsDropdownId Int            @map("dropColumns_dropdown_id")
+  dropdown              DropdownDetails @relation(fields: [dropColumnsDropdownId], references: [dropdownId], onDelete: Cascade, onUpdate: Cascade)
+
+  dropColumnsColumnNo Int    @map("dropColumns_column_no")
+  dropColumnsDataType String @db.VarChar(50) @map("dropColumns_data_type")
+
+  dropColumnsColumnName      String  @db.VarChar(200) @map("dropColumns_column_name")
+  dropColumnsColumnAlias     String? @db.VarChar(200) @map("dropColumns_column_alias")
+  dropColumnsColumnWidth     Decimal? @db.Decimal(12, 2) @map("dropColumns_column_width")
+  dropColumnsColumnVisiblity Boolean @default(true) @map("dropColumns_column_visiblity") // kept your spelling
+  dropColumnsColumnAllignment String? @db.VarChar(30) @map("dropColumns_column_allignment")
+  dropColumnsColumnFilter     Boolean @default(false) @map("dropColumns_column_filter")
+
+  dropColumnsCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("dropColumns_created_on")
+  dropColumnsModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropColumns_modified_on")
+
+  @@index([dropColumnsDropdownId])
+  @@index([dropColumnsDropdownId, dropColumnsColumnNo])
+  @@map("dropdown_columns")
+  @@schema("fixed")
+}
+
+// ----- prisma/dropdown/dropdownDetails.prisma -----
+model DropdownDetails {
+  dropdownId Int @id @default(autoincrement()) @map("dropdown_id")
+
+  dropdownName        String  @db.VarChar(200) @map("dropdown_name")
+  dropdownDescription String? @db.Text         @map("dropdown_description")
+  dropdownSql         String  @db.Text         @map("dropdown_sql")
+
+  dropdownSortOrder  String? @db.VarChar(20)  @map("dropdown_sort_order")   // ASC / DESC
+  dropdownSortColumn String? @db.VarChar(100) @map("dropdown_sort_column")  // kept your spelling
+  dropdownCompletion  String? @db.Text         @map("dropdown_completion")
+  dropdownSqlRegional String? @db.Text        @map("dropdown_sql_regional")
+  dropdownMaxVisibleItems Int     @default(10)   @map("dropdown_max_visible_items")
+  dropdownShowHeader      Boolean @default(true) @map("dropdown_show_header")
+  dropdownWidth            Int?    @map("dropdown_width")
+  dropdownColumns         DropdownColumns[]
+
+  @@map("dropdown_details")
+  @@schema("fixed")
+}
+
 // ----- prisma/fixed/accountVoucherType.prisma -----
 enum AvtDrcrType {
   DR
@@ -982,6 +1030,58 @@ model ErpDeviceMaster {
   @@schema("fixed")
 }
 
+// ----- prisma/fixed/hscnCode.prisma -----
+model HsnMaster {
+  hsnId Int @id @default(autoincrement()) @map("hsn_id")
+
+  hsnCode        String  @db.VarChar(50)  @map("hsn_code")
+  hsnName        String  @db.VarChar(200) @map("hsn_name")
+  hsnDescription String? @db.Text         @map("hsn_description")
+
+  hsnIsService Boolean @default(false) @map("hsn_is_service")
+  hsnUqc       String? @db.VarChar(10) @map("hsn_uqc")
+  hsnIsActive  Boolean @default(true)  @map("hsn_is_active")
+
+ hsnRateOfTax Decimal @default(0) @db.Decimal(7, 4) @map("hsn_rate_of_tax")
+
+  @@index([hsnCode])
+  @@map("hsn_master")
+  @@schema("fixed")
+}
+
+// ----- prisma/fixed/menu.prisma -----
+model Menu {
+  menuId       Int   @id @default(autoincrement()) @map("menu_id")
+
+  // Self parent/child hierarchy
+  menuParentId Int?  @map("menu_parent")
+  parent       Menu? @relation("MenuHierarchy", fields: [menuParentId], references: [menuId], onDelete: SetNull, onUpdate: Cascade)
+  children     Menu[] @relation("MenuHierarchy")
+
+  menuName      String  @db.VarChar(200) @map("menu_name")
+  menuAlias     String? @db.VarChar(200) @map("menu_alias")
+
+  // Note: column name is "menu_visiblity" (typo kept as-is in @map)
+  menuVisibility Boolean @default(true) @map("menu_visiblity")
+
+  menuPosition  Decimal? @db.Decimal(12, 2) @map("menu_position")
+
+  menuIconLocationDesktop String? @db.Text @map("menu_icon_location_desktop")
+  menuIconLocationWeb     String? @db.Text @map("menu_icon_location_web")
+  menuIconLocationMobile  String? @db.Text @map("menu_icon_location_mobile")
+
+  menuCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("menu_created_on")
+  menuModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("menu_modified_on")
+  menuSyncDate   DateTime?               @db.Timestamptz(6) @map("menu_sync_date")
+
+  @@index([menuParentId])
+  @@index([menuPosition])
+
+  // Change this to your actual table name
+  @@map("menu_master")
+  @@schema("fixed")
+}
+
 // ----- prisma/fixed/stateCodes.prisma -----
 model StateCode {
   stateCode     String    @id @db.Char(2)                                     @map("state_code")
@@ -1118,8 +1218,8 @@ model GridDetails {
   gridName        String   @db.Text @map("grid_name")
   gridDescription String?  @db.Text @map("grid_description")
 
-  gridSortColumn  Int?     @map("grid_sort_column")
-  gridSortOrder   Int?     @map("grid_sort_order")
+  gridSortColumn  String?     @map("grid_sort_column")
+  gridSortOrder   String?     @map("grid_sort_order")
 
   gridSql         String?  @db.Text @map("grid_sql")
   gridStatus      Boolean  @default(true)  @map("grid_status")
@@ -1151,13 +1251,7 @@ model categoryMaster {
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
   categoryPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("category_path_ids_cache")
-  categoryTaxClaim       Boolean? @map("category_tax_claim")
-
-  // Defaults / pricing rules
-  categoryDefaultTaxId   String?  @db.Uuid @map("category_default_tax_id")
-  categoryDefaultHsn     String?  @db.VarChar(20) @map("category_default_hsn")
-  categoryDefaultUomId   String?  @db.Uuid @map("category_default_uom_id")
-
+  
   // Media
   categoryPhoto          Bytes?   @map("category_photo")
   categoryPhotoUrl       String?  @db.Text @map("category_photo_url")

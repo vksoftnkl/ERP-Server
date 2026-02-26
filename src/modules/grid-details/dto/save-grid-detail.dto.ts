@@ -1,13 +1,11 @@
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
-  IsInt,
   IsNotEmpty,
   IsNumberString,
   IsOptional,
   IsString,
   MaxLength,
-  Min,
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -29,7 +27,7 @@ const toNullableString = (value: unknown): string | null | undefined => {
   return trimmed ? trimmed : null;
 };
 
-const toNullableInteger = (value: unknown): number | null | undefined => {
+const toNullableScalarString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
     return undefined;
   }
@@ -38,21 +36,17 @@ const toNullableInteger = (value: unknown): number | null | undefined => {
     return null;
   }
 
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : value;
-  }
-
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const parsed = Number(trimmed);
-    return Number.isInteger(parsed) ? parsed : (value as unknown as number);
+    return trimmed ? trimmed : null;
   }
 
-  return value as number;
+  if (typeof value === 'number' || typeof value === 'bigint' || typeof value === 'boolean') {
+    const normalized = String(value).trim();
+    return normalized ? normalized : null;
+  }
+
+  return value as string;
 };
 
 const toOptionalIdString = (value: unknown): string | undefined => {
@@ -95,19 +89,17 @@ export class SaveGridDetailDto {
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
+  @Transform(({ value }) => toNullableScalarString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
-  grid_sort_column?: number | null;
+  @IsString()
+  grid_sort_column?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
+  @Transform(({ value }) => toNullableScalarString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(0)
-  grid_sort_order?: number | null;
+  @IsString()
+  grid_sort_order?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

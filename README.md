@@ -39,19 +39,24 @@ npm run start:dev
 ```
 
 Base URL:
-- `http://localhost:3000/api/v1`
+- `https://localhost:3010/api/v1`
 - Request payload limit is configurable with `REQUEST_BODY_LIMIT` (default `10mb`).
 - Bind host/IP is configurable with `HOST` (default `0.0.0.0`).
 
-VLAN hosting example (`.env`):
+LAN hosting example (`.env`):
 
 ```bash
-HOST=192.168.10.25
-PORT=3000
+HOST=0.0.0.0
+PORT=3010
+CORS_ORIGINS=https://localhost:3000,https://127.0.0.1:3000,https://192.168.10.25:3000
+CORS_CREDENTIALS=false
 ```
 
-Then access from VLAN:
-- `http://192.168.10.25:3000/api/v1`
+Then access from LAN:
+- `https://192.168.10.25:3010/api/v1`
+
+If `HTTPS_ENABLED=true` with a cert generated for `localhost`, browsers will warn on LAN IP access.
+Generate a certificate whose SAN includes your LAN host/IP to avoid warnings.
 
 Logs:
 - Application and request logs are automatically appended to `logs/app.log` on every run.
@@ -81,7 +86,7 @@ HTTPS_KEY_PATH=certs/server.key
 ```
 
 3. Restart the app and use:
-- `https://localhost:3000/api/v1`
+- `https://localhost:3010/api/v1`
 
 ## API endpoints
 

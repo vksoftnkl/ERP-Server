@@ -3,6 +3,37 @@ import { Transform } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { LOOKUP_MODULE_KEYS, LookupModuleKey } from '../types/master-lookup-api.types';
 
+const LOOKUP_MODULE_ALIAS_MAP: Record<string, LookupModuleKey> = {
+  area: 'areas',
+  state: 'states',
+  city: 'cities',
+  customer: 'customers',
+};
+
+const toOptionalLookupModule = (value: unknown): LookupModuleKey | string | undefined => {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    return value as string;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const canonical = LOOKUP_MODULE_KEYS.find(
+    (moduleKey) => moduleKey.toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (canonical) {
+    return canonical;
+  }
+
+  return LOOKUP_MODULE_ALIAS_MAP[trimmed.toLowerCase()] ?? trimmed;
+};
+
 const toOptionalTrimmedString = (value: unknown): string | undefined => {
   if (value === undefined || value === null) {
     return undefined;
@@ -28,9 +59,11 @@ const toOptionalNumber = (value: unknown): number | undefined => {
 export class MasterLookupQueryDto {
   @ApiPropertyOptional({
     enum: LOOKUP_MODULE_KEYS,
-    description: 'When provided, returns only the selected module id-name list',
+    description:
+      'When provided, returns only the selected module id-name list. Also accepts aliases: area, state, city, customer',
   })
   @IsOptional()
+  @Transform(({ value }) => toOptionalLookupModule(value))
   @IsIn(LOOKUP_MODULE_KEYS)
   module?: LookupModuleKey;
 

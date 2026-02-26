@@ -21,6 +21,17 @@ const parseBoolean = (value: string | undefined, defaultValue = false): boolean 
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 };
 
+const parseCsv = (value: string | undefined): string[] => {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
 const resolveFilePath = (filePath: string): string => {
   const isPkgRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
 
@@ -115,10 +126,16 @@ async function bootstrap(): Promise<void> {
   app.use(urlencoded({ extended: true, limit: requestBodyLimit }));
   app.use(helmet());
   app.use(compression());
-  app.enableCors({
-    origin: true,
-    credentials: true,
-  });
+  const corsOrigins = parseCsv(process.env.CORS_ORIGINS);
+  const allowAnyCorsOrigin = corsOrigins.includes('*');
+  const corsCredentialsDefault = allowAnyCorsOrigin ? false : true;
+  const corsCredentials = parseBoolean(process.env.CORS_CREDENTIALS, corsCredentialsDefault);
+  if (allowAnyCorsOrigin || corsOrigins.length > 0) {
+    app.enableCors({
+      origin: allowAnyCorsOrigin ? true : corsOrigins,
+      credentials: corsCredentials,
+    });
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({

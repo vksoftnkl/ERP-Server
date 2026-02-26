@@ -512,6 +512,37 @@ Table audit_screen {
   auditLogs audit_log [not null]
 }
 
+Table dropdown_columns {
+  dropColumnsSerialId BigInt [pk, increment]
+  dropColumnsDropdownId Int [not null]
+  dropdown dropdown_details [not null]
+  dropColumnsColumnNo Int [not null]
+  dropColumnsDataType String [not null]
+  dropColumnsColumnName String [not null]
+  dropColumnsColumnAlias String
+  dropColumnsColumnWidth Decimal
+  dropColumnsColumnVisiblity Boolean [not null, default: true]
+  dropColumnsColumnAllignment String
+  dropColumnsColumnFilter Boolean [not null, default: false]
+  dropColumnsCreatedOn DateTime [default: `now()`, not null]
+  dropColumnsModifiedOn DateTime
+}
+
+Table dropdown_details {
+  dropdownId Int [pk, increment]
+  dropdownName String [not null]
+  dropdownDescription String
+  dropdownSql String [not null]
+  dropdownSortOrder String
+  dropdownSortColumn String
+  dropdownCompletion String
+  dropdownSqlRegional String
+  dropdownMaxVisibleItems Int [not null, default: 10]
+  dropdownShowHeader Boolean [not null, default: true]
+  dropdownWidth Int
+  dropdownColumns dropdown_columns [not null]
+}
+
 Table avt_voucher_type_master {
   avtId String [pk]
   avtShort String [not null]
@@ -583,6 +614,34 @@ Table erp_device_master {
   }
 }
 
+Table hsn_master {
+  hsnId Int [pk, increment]
+  hsnCode String [not null]
+  hsnName String [not null]
+  hsnDescription String
+  hsnIsService Boolean [not null, default: false]
+  hsnUqc String
+  hsnIsActive Boolean [not null, default: true]
+  hsnRateOfTax Decimal [not null, default: 0]
+}
+
+Table menu_master {
+  menuId Int [pk, increment]
+  menuParentId Int
+  parent menu_master
+  children menu_master [not null]
+  menuName String [not null]
+  menuAlias String
+  menuVisibility Boolean [not null, default: true]
+  menuPosition Decimal
+  menuIconLocationDesktop String
+  menuIconLocationWeb String
+  menuIconLocationMobile String
+  menuCreatedOn DateTime [default: `now()`, not null]
+  menuModifiedOn DateTime
+  menuSyncDate DateTime
+}
+
 Table state_codes {
   stateCode String [pk]
   stateName String [not null]
@@ -649,8 +708,8 @@ Table grid_details {
   gridId BigInt [pk, increment]
   gridName String [not null]
   gridDescription String
-  gridSortColumn Int
-  gridSortOrder Int
+  gridSortColumn String
+  gridSortOrder String
   gridSql String
   gridStatus Boolean [not null, default: true]
   gridIsDeleted Boolean [not null, default: false]
@@ -670,10 +729,6 @@ Table category_master {
   categorySort Int
   categoryLevel Int
   categoryPathIdsCache String[] [not null]
-  categoryTaxClaim Boolean
-  categoryDefaultTaxId String
-  categoryDefaultHsn String
-  categoryDefaultUomId String
   categoryPhoto Bytes
   categoryPhotoUrl String
   categoryIsActive Boolean [not null, default: true]
@@ -1401,7 +1456,11 @@ Ref: tender_master.tndLedgerId > acc_ledger_master.ledId
 
 Ref: audit_log.logScreenId > audit_screen.screenId [delete: Restrict]
 
+Ref: dropdown_columns.dropColumnsDropdownId > dropdown_details.dropdownId [delete: Cascade]
+
 Ref: erp_device_master.devCompanyId > companys.compId [delete: Restrict]
+
+Ref: menu_master.menuParentId - menu_master.menuId [delete: Set Null]
 
 Ref: user_login_sessions.ulsCompanyId > companys.compId [delete: Restrict]
 
