@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -46,7 +45,7 @@ import {
 @Controller('company-masters')
 @UseFilters(CompanyMasterExceptionFilter)
 export class CompanyMasterController {
-  constructor(private readonly companyMasterService: CompanyMasterService) { }
+  constructor(private readonly companyMasterService: CompanyMasterService) {}
 
   @Post('create')
   @Version('1')
@@ -87,15 +86,15 @@ export class CompanyMasterController {
     };
   }
 
-  @Get('get/:compId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get company by id' })
-  @ApiParam({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  @ApiQuery({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: CompanyMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
   async getById(
-    @Param('compId', ParseUUIDPipe) compId: string,
+    @Query('compId', ParseUUIDPipe) compId: string,
   ): Promise<CompanyMasterSuccessResponse<CompanyMasterPayload>> {
     const data = await this.companyMasterService.getById(compId);
 
@@ -106,15 +105,15 @@ export class CompanyMasterController {
     };
   }
 
-  @Delete('delete/:compId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete company by id' })
-  @ApiParam({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  @ApiQuery({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: CompanyMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: CompanyMasterErrorResponseDto })
   async remove(
-    @Param('compId', ParseUUIDPipe) compId: string,
+    @Query('compId', ParseUUIDPipe) compId: string,
   ): Promise<CompanyMasterSuccessResponse<{ compId: string; deleted: true }>> {
     const data = await this.companyMasterService.softDelete(compId);
 

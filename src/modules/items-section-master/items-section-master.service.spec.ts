@@ -36,7 +36,7 @@ const makeRecord = (overrides: Partial<ItemSectionMaster> = {}): ItemSectionMast
     secDescription: 'Dairy section',
     secParentId: null,
     secSort: 1,
-    secLevel: 0,
+    secLevel: 1,
     secPathIds: [],
     secPosition: 1,
     secColorCode: '#FFFFFF',
@@ -106,6 +106,7 @@ describe('ItemsSectionMasterService', () => {
 
     const input: SaveItemSectionDto = {
       sec_name: 'Dairy',
+      sec_level: 999,
     };
 
     const result = await service.save(input);
@@ -113,6 +114,7 @@ describe('ItemsSectionMasterService', () => {
     expect(prisma.itemSectionMaster.create).toHaveBeenCalledTimes(1);
     const createArgs = prisma.itemSectionMaster.create.mock.calls[0][0];
     expect(createArgs.data.secName).toBe('Dairy');
+    expect(createArgs.data.secLevel).toBe(1);
     expect(result.sec_id).toBe(ITEM_SECTION_ID);
     expect(result.sec_path_ids).toEqual([ITEM_SECTION_ID]);
   });
@@ -222,6 +224,8 @@ describe('ItemsSectionMasterService', () => {
       sec_parent_id: PARENT_SECTION_ID,
     });
 
+    const createArgs = prisma.itemSectionMaster.create.mock.calls[0][0];
+    expect(createArgs.data.secLevel).toBe(2);
     expect(result.sec_id).toBe(CHILD_SECTION_ID);
 
     const parentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[1][0];
@@ -345,6 +349,8 @@ describe('ItemsSectionMasterService', () => {
       sec_parent_id: NEW_PARENT_SECTION_ID,
     });
 
+    const updateArgs = prisma.itemSectionMaster.update.mock.calls[0][0];
+    expect(updateArgs.data.secLevel).toBe(2);
     expect(result.sec_parent_id).toBe(NEW_PARENT_SECTION_ID);
 
     const oldParentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[2][0];
@@ -400,6 +406,8 @@ describe('ItemsSectionMasterService', () => {
       sec_parent_id: null,
     });
 
+    const updateArgs = prisma.itemSectionMaster.update.mock.calls[0][0];
+    expect(updateArgs.data.secLevel).toBe(1);
     expect(result.sec_parent_id).toBeNull();
     const oldParentUpdateArgs = prisma.itemSectionMaster.update.mock.calls[1][0];
     expect(oldParentUpdateArgs.where.secId).toBe(PARENT_SECTION_ID);

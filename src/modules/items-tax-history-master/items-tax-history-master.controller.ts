@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class ItemsTaxHistoryMasterController {
     };
   }
 
-  @Get('get/:ith_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item tax history by id' })
-  @ApiParam({ name: 'ith_id', format: 'uuid' })
+  @ApiQuery({ name: 'ith_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxHistorySuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemTaxHistoryErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemTaxHistoryErrorResponseDto })
   async getById(
-    @Param('ith_id', new ParseUUIDPipe({ version: '7' })) ithId: string,
+    @Query('ith_id', new ParseUUIDPipe({ version: '7' })) ithId: string,
   ): Promise<ItemTaxHistorySuccessResponse<ItemTaxHistoryPayload>> {
     const data = await this.itemsTaxHistoryMasterService.getById(ithId);
 
@@ -106,15 +105,15 @@ export class ItemsTaxHistoryMasterController {
     };
   }
 
-  @Delete('delete/:ith_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Delete item tax history by id' })
-  @ApiParam({ name: 'ith_id', format: 'uuid' })
+  @ApiQuery({ name: 'ith_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxHistorySuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemTaxHistoryErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemTaxHistoryErrorResponseDto })
   async remove(
-    @Param('ith_id', new ParseUUIDPipe({ version: '7' })) ithId: string,
+    @Query('ith_id', new ParseUUIDPipe({ version: '7' })) ithId: string,
   ): Promise<ItemTaxHistorySuccessResponse<{ ith_id: string; deleted: true }>> {
     const data = await this.itemsTaxHistoryMasterService.delete(ithId);
 

@@ -77,6 +77,23 @@ export class GodownsMasterController {
     };
   }
 
+  @Post('create')
+  @Version('1')
+  @ApiOperation({
+    summary: 'Create or update godown location (by gdl_id presence in request body)',
+  })
+  @ApiCreatedResponse({ type: GodownSuccessSingleDto })
+  @ApiOkResponse({ type: GodownSuccessSingleDto })
+  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
+  @ApiConflictResponse({ type: GodownErrorResponseDto })
+  @ApiNotFoundResponse({ type: GodownErrorResponseDto })
+  async create(
+    @Body() saveGodownDto: SaveGodownDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<GodownSuccessResponse<GodownPayload>> {
+    return this.save(saveGodownDto, response);
+  }
+
   @Get()
   @Version('1')
   @ApiOperation({
@@ -107,6 +124,42 @@ export class GodownsMasterController {
     };
   }
 
+  @Get('get')
+  @Version('1')
+  @ApiOperation({ summary: 'Get godown location by gdl_id query parameter' })
+  @ApiOkResponse({ type: GodownSuccessSingleDto })
+  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
+  @ApiNotFoundResponse({ type: GodownErrorResponseDto })
+  async getByIdByQuery(
+    @Query() queryDto: DeleteGodownQueryDto,
+  ): Promise<GodownSuccessResponse<GodownPayload>> {
+    const data = await this.godownsMasterService.getById(queryDto.gdl_id);
+
+    return {
+      success: true,
+      message: 'Godown location fetched successfully',
+      data,
+    };
+  }
+
+  @Get('list')
+  @Version('1')
+  @ApiOperation({ summary: 'List godown locations' })
+  @ApiOkResponse({ type: GodownSuccessListDto })
+  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
+  async getList(
+    @Query() queryDto: ListOrGetGodownQueryDto,
+  ): Promise<GodownSuccessResponse<GodownListItem[], GodownListMeta>> {
+    const result = await this.godownsMasterService.getList(queryDto);
+
+    return {
+      success: true,
+      message: 'Godown locations fetched successfully',
+      data: result.items,
+      meta: result.meta,
+    };
+  }
+
   @Delete()
   @Version('1')
   @ApiOperation({ summary: 'Soft delete godown location by gdl_id query parameter' })
@@ -123,5 +176,17 @@ export class GodownsMasterController {
       message: 'Godown location deleted successfully',
       data,
     };
+  }
+
+  @Delete('delete')
+  @Version('1')
+  @ApiOperation({ summary: 'Soft delete godown location by gdl_id query parameter' })
+  @ApiOkResponse({ type: GodownSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
+  @ApiNotFoundResponse({ type: GodownErrorResponseDto })
+  async removeByQuery(
+    @Query() queryDto: DeleteGodownQueryDto,
+  ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: true }>> {
+    return this.remove(queryDto);
   }
 }

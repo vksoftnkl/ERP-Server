@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class TenderMasterController {
     };
   }
 
-  @Get('get/:tndId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get tender by id' })
-  @ApiParam({ name: 'tndId', format: 'uuid' })
+  @ApiQuery({ name: 'tndId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: TenderMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: TenderMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: TenderMasterErrorResponseDto })
   async getById(
-    @Param('tndId', new ParseUUIDPipe({ version: '7' })) tndId: string,
+    @Query('tndId', new ParseUUIDPipe({ version: '7' })) tndId: string,
   ): Promise<TenderMasterSuccessResponse<TenderMasterPayload>> {
     const data = await this.tenderMasterService.getById(tndId);
 
@@ -106,15 +105,15 @@ export class TenderMasterController {
     };
   }
 
-  @Delete('delete/:tndId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete tender by id' })
-  @ApiParam({ name: 'tndId', format: 'uuid' })
+  @ApiQuery({ name: 'tndId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: TenderMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: TenderMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: TenderMasterErrorResponseDto })
   async remove(
-    @Param('tndId', new ParseUUIDPipe({ version: '7' })) tndId: string,
+    @Query('tndId', new ParseUUIDPipe({ version: '7' })) tndId: string,
   ): Promise<TenderMasterSuccessResponse<{ tndId: string; deleted: true }>> {
     const data = await this.tenderMasterService.softDelete(tndId);
 

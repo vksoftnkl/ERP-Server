@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -85,15 +84,15 @@ export class BankListController {
     };
   }
 
-  @Get('get/:bnkId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get bank by id' })
-  @ApiParam({ name: 'bnkId', format: 'uuid' })
+  @ApiQuery({ name: 'bnkId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: BankListSuccessSingleDto })
   @ApiBadRequestResponse({ type: BankListErrorResponseDto })
   @ApiNotFoundResponse({ type: BankListErrorResponseDto })
   async getById(
-    @Param('bnkId', new ParseUUIDPipe({ version: '7' })) bnkId: string,
+    @Query('bnkId', new ParseUUIDPipe({ version: '7' })) bnkId: string,
   ): Promise<BankListSuccessResponse<BankListPayload>> {
     const data = await this.bankListService.getById(bnkId);
 
@@ -104,15 +103,15 @@ export class BankListController {
     };
   }
 
-  @Delete('delete/:bnkId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete bank by id' })
-  @ApiParam({ name: 'bnkId', format: 'uuid' })
+  @ApiQuery({ name: 'bnkId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: BankListSuccessDeleteDto })
   @ApiBadRequestResponse({ type: BankListErrorResponseDto })
   @ApiNotFoundResponse({ type: BankListErrorResponseDto })
   async remove(
-    @Param('bnkId', new ParseUUIDPipe({ version: '7' })) bnkId: string,
+    @Query('bnkId', new ParseUUIDPipe({ version: '7' })) bnkId: string,
   ): Promise<BankListSuccessResponse<{ bnkId: string; deleted: true }>> {
     const data = await this.bankListService.softDelete(bnkId);
 

@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class ItemsPriceMasterController {
     };
   }
 
-  @Get('get/:ipm_unit_rate_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item price by id' })
-  @ApiParam({ name: 'ipm_unit_rate_id', format: 'uuid' })
+  @ApiQuery({ name: 'ipm_unit_rate_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemPriceSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemPriceErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemPriceErrorResponseDto })
   async getById(
-    @Param('ipm_unit_rate_id', new ParseUUIDPipe({ version: '7' })) ipmUnitRateId: string,
+    @Query('ipm_unit_rate_id', new ParseUUIDPipe({ version: '7' })) ipmUnitRateId: string,
   ): Promise<ItemPriceSuccessResponse<ItemPricePayload>> {
     const data = await this.itemsPriceMasterService.getById(ipmUnitRateId);
 
@@ -106,15 +105,15 @@ export class ItemsPriceMasterController {
     };
   }
 
-  @Delete('delete/:ipm_unit_rate_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Delete item price by id' })
-  @ApiParam({ name: 'ipm_unit_rate_id', format: 'uuid' })
+  @ApiQuery({ name: 'ipm_unit_rate_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemPriceSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemPriceErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemPriceErrorResponseDto })
   async remove(
-    @Param('ipm_unit_rate_id', new ParseUUIDPipe({ version: '7' })) ipmUnitRateId: string,
+    @Query('ipm_unit_rate_id', new ParseUUIDPipe({ version: '7' })) ipmUnitRateId: string,
   ): Promise<ItemPriceSuccessResponse<{ ipm_unit_rate_id: string; deleted: true }>> {
     const data = await this.itemsPriceMasterService.delete(ipmUnitRateId);
 

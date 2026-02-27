@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Version,
 } from '@nestjs/common';
 import { User } from '@prisma/client';
@@ -20,6 +21,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiQuery,
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
@@ -57,14 +59,14 @@ export class UsersController {
     return users.map((user) => this.toResponse(user));
   }
 
-  @Get(':id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get user by id' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
   @ApiNotFoundResponse({ type: HttpErrorResponseDto })
-  async findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<UserResponseDto> {
+  async findOne(@Query('id', new ParseUUIDPipe()) id: string): Promise<UserResponseDto> {
     const user = await this.usersService.findOne(id);
     return this.toResponse(user);
   }
@@ -85,15 +87,15 @@ export class UsersController {
     return this.toResponse(user);
   }
 
-  @Delete(':id')
+  @Delete('delete')
   @Version('1')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete user by id' })
-  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
   @ApiNoContentResponse({ description: 'User deleted' })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
   @ApiNotFoundResponse({ type: HttpErrorResponseDto })
-  async remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<void> {
+  async remove(@Query('id', new ParseUUIDPipe()) id: string): Promise<void> {
     await this.usersService.remove(id);
   }
 

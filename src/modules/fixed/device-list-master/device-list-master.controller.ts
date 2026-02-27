@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -89,15 +88,15 @@ export class DeviceListMasterController {
     };
   }
 
-  @Get('get/:devId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get device by id' })
-  @ApiParam({ name: 'devId', format: 'uuid' })
+  @ApiQuery({ name: 'devId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: DeviceListMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: DeviceListMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: DeviceListMasterErrorResponseDto })
   async getById(
-    @Param('devId', new ParseUUIDPipe({ version: '7' })) devId: string,
+    @Query('devId', new ParseUUIDPipe({ version: '7' })) devId: string,
   ): Promise<DeviceListMasterSuccessResponse<DeviceListMasterPayload>> {
     const data = await this.deviceListMasterService.getById(devId);
 
@@ -108,15 +107,15 @@ export class DeviceListMasterController {
     };
   }
 
-  @Delete('delete/:devId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete device by id' })
-  @ApiParam({ name: 'devId', format: 'uuid' })
+  @ApiQuery({ name: 'devId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: DeviceListMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: DeviceListMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: DeviceListMasterErrorResponseDto })
   async remove(
-    @Param('devId', new ParseUUIDPipe({ version: '7' })) devId: string,
+    @Query('devId', new ParseUUIDPipe({ version: '7' })) devId: string,
   ): Promise<DeviceListMasterSuccessResponse<{ devId: string; deleted: true }>> {
     const data = await this.deviceListMasterService.softDelete(devId);
 

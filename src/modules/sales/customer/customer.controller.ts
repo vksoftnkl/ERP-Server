@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class CustomerController {
     };
   }
 
-  @Get('get/:cusId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get customer by id' })
-  @ApiParam({ name: 'cusId', format: 'uuid' })
+  @ApiQuery({ name: 'cusId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerSuccessSingleDto })
   @ApiBadRequestResponse({ type: CustomerErrorResponseDto })
   @ApiNotFoundResponse({ type: CustomerErrorResponseDto })
   async getById(
-    @Param('cusId', new ParseUUIDPipe({ version: '7' })) cusId: string,
+    @Query('cusId', new ParseUUIDPipe({ version: '7' })) cusId: string,
   ): Promise<CustomerSuccessResponse<CustomerPayload>> {
     const data = await this.customerService.getById(cusId);
 
@@ -106,15 +105,15 @@ export class CustomerController {
     };
   }
 
-  @Delete('delete/:cusId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete customer by id' })
-  @ApiParam({ name: 'cusId', format: 'uuid' })
+  @ApiQuery({ name: 'cusId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerSuccessDeleteDto })
   @ApiBadRequestResponse({ type: CustomerErrorResponseDto })
   @ApiNotFoundResponse({ type: CustomerErrorResponseDto })
   async remove(
-    @Param('cusId', new ParseUUIDPipe({ version: '7' })) cusId: string,
+    @Query('cusId', new ParseUUIDPipe({ version: '7' })) cusId: string,
   ): Promise<CustomerSuccessResponse<{ cusId: string; deleted: true }>> {
     const data = await this.customerService.softDelete(cusId);
 

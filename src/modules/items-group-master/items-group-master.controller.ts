@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -23,7 +22,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -101,15 +100,15 @@ export class ItemsGroupMasterController {
     };
   }
 
-  @Get('get/:itg_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item group by id' })
-  @ApiParam({ name: 'itg_id', format: 'uuid' })
+  @ApiQuery({ name: 'itg_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemGroupErrorResponseDto })
   async getById(
-    @Param('itg_id', new ParseUUIDPipe({ version: '7' })) itgId: string,
+    @Query('itg_id', new ParseUUIDPipe({ version: '7' })) itgId: string,
   ): Promise<ItemGroupSuccessResponse<ItemGroupPayload>> {
     const data = await this.itemsGroupMasterService.getById(itgId);
 
@@ -120,15 +119,15 @@ export class ItemsGroupMasterController {
     };
   }
 
-  @Delete('delete/:itg_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item group by id' })
-  @ApiParam({ name: 'itg_id', format: 'uuid' })
+  @ApiQuery({ name: 'itg_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemGroupSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemGroupErrorResponseDto })
   async remove(
-    @Param('itg_id', new ParseUUIDPipe({ version: '7' })) itgId: string,
+    @Query('itg_id', new ParseUUIDPipe({ version: '7' })) itgId: string,
   ): Promise<ItemGroupSuccessResponse<{ itg_id: string; deleted: true }>> {
     const data = await this.itemsGroupMasterService.softDelete(itgId);
 

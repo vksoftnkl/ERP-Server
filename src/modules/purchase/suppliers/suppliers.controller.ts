@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class SuppliersController {
     };
   }
 
-  @Get('get/:supId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get supplier by id' })
-  @ApiParam({ name: 'supId', format: 'uuid' })
+  @ApiQuery({ name: 'supId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierSuccessSingleDto })
   @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
   @ApiNotFoundResponse({ type: SupplierErrorResponseDto })
   async getById(
-    @Param('supId', new ParseUUIDPipe({ version: '7' })) supId: string,
+    @Query('supId', new ParseUUIDPipe({ version: '7' })) supId: string,
   ): Promise<SupplierSuccessResponse<SupplierPayload>> {
     const data = await this.suppliersService.getById(supId);
 
@@ -106,15 +105,15 @@ export class SuppliersController {
     };
   }
 
-  @Delete('delete/:supId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete supplier by id' })
-  @ApiParam({ name: 'supId', format: 'uuid' })
+  @ApiQuery({ name: 'supId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierSuccessDeleteDto })
   @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
   @ApiNotFoundResponse({ type: SupplierErrorResponseDto })
   async remove(
-    @Param('supId', new ParseUUIDPipe({ version: '7' })) supId: string,
+    @Query('supId', new ParseUUIDPipe({ version: '7' })) supId: string,
   ): Promise<SupplierSuccessResponse<{ supId: string; deleted: true }>> {
     const data = await this.suppliersService.softDelete(supId);
 

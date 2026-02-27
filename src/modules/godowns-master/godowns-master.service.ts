@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { GodownLocation, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -37,11 +38,19 @@ export class GodownsMasterService {
   ) {}
 
   async save(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
-    if (saveGodownDto.gdl_id) {
-      return this.updateGodownLocation(saveGodownDto);
+    const normalizedSaveGodownDto = this.normalizeLegacySaveGodownDto(saveGodownDto);
+
+    if (normalizedSaveGodownDto.gdl_id) {
+      return this.updateGodownLocation(normalizedSaveGodownDto);
     }
 
-    return this.createGodownLocation(saveGodownDto);
+    return this.createGodownLocation(normalizedSaveGodownDto);
+  }
+
+  async getList(
+    queryDto: ListOrGetGodownQueryDto,
+  ): Promise<{ items: GodownListItem[]; meta: GodownListMeta }> {
+    return this.list(queryDto);
   }
 
   async list(
@@ -652,6 +661,14 @@ export class GodownsMasterService {
 
   private async updateGodownLocation(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
     const gdlId = saveGodownDto.gdl_id!;
+    if (!saveGodownDto.gdl_godown_id) {
+      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'gdl_godown_id',
+          message: 'gdl_godown_id is required for update',
+        },
+      ]);
+    }
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -776,6 +793,56 @@ export class GodownsMasterService {
     return where;
   }
 
+  private normalizeLegacySaveGodownDto(saveGodownDto: SaveGodownDto): SaveGodownDto {
+    const normalized: SaveGodownDto = { ...saveGodownDto };
+
+    if (normalized.gdl_id === undefined && normalized.gdl_location_id !== undefined) {
+      normalized.gdl_id = normalized.gdl_location_id;
+    }
+
+    if (normalized.gdl_godown_id === undefined && normalized.godown_id !== undefined) {
+      normalized.gdl_godown_id = normalized.godown_id;
+    }
+
+    if (normalized.gdl_branch_id === undefined && normalized.branch_id !== undefined) {
+      normalized.gdl_branch_id = normalized.branch_id;
+    }
+
+    if (normalized.gdl_name === undefined && normalized.godown_name !== undefined) {
+      normalized.gdl_name = normalized.godown_name;
+    }
+
+    if (normalized.gdl_code === undefined && normalized.godown_code !== undefined) {
+      normalized.gdl_code = normalized.godown_code;
+    }
+
+    if (normalized.gdl_short === undefined) {
+      if (normalized.godown_short !== undefined) {
+        normalized.gdl_short = normalized.godown_short;
+      } else if (normalized.godown_alias !== undefined) {
+        normalized.gdl_short = normalized.godown_alias;
+      }
+    }
+
+    if (normalized.gdl_remarks === undefined && normalized.godown_description !== undefined) {
+      normalized.gdl_remarks = normalized.godown_description;
+    }
+
+    if (normalized.gdl_sort === undefined && normalized.godown_sort !== undefined) {
+      normalized.gdl_sort = normalized.godown_sort;
+    }
+
+    if (normalized.gdl_parent_id === undefined && normalized.parent_id !== undefined) {
+      normalized.gdl_parent_id = normalized.parent_id;
+    }
+
+    if (normalized.gdl_is_active === undefined && normalized.is_active !== undefined) {
+      normalized.gdl_is_active = normalized.is_active;
+    }
+
+    return normalized;
+  }
+
   private validateCreatePayload(saveGodownDto: SaveGodownDto): {
     gdlName: string;
     gdlGodownId: string;
@@ -791,15 +858,6 @@ export class GodownsMasterService {
       ]);
     }
 
-    if (!saveGodownDto.gdl_godown_id) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'gdl_godown_id',
-          message: 'gdl_godown_id is required',
-        },
-      ]);
-    }
-
     if (!saveGodownDto.gdl_branch_id) {
       this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
         {
@@ -811,7 +869,7 @@ export class GodownsMasterService {
 
     return {
       gdlName,
-      gdlGodownId: saveGodownDto.gdl_godown_id,
+      gdlGodownId: saveGodownDto.gdl_godown_id ?? randomUUID(),
       gdlBranchId: saveGodownDto.gdl_branch_id,
     };
   }

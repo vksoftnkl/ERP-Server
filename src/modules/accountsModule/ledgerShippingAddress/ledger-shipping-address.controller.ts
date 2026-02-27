@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -92,15 +91,15 @@ export class LedgerShippingAddressController {
     };
   }
 
-  @Get('get/:saaId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get ledger shipping address by id' })
-  @ApiParam({ name: 'saaId', format: 'uuid' })
+  @ApiQuery({ name: 'saaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerShippingAddressSuccessSingleDto })
   @ApiBadRequestResponse({ type: LedgerShippingAddressErrorResponseDto })
   @ApiNotFoundResponse({ type: LedgerShippingAddressErrorResponseDto })
   async getById(
-    @Param('saaId', new ParseUUIDPipe({ version: '7' })) saaId: string,
+    @Query('saaId', new ParseUUIDPipe({ version: '7' })) saaId: string,
   ): Promise<LedgerShippingAddressSuccessResponse<LedgerShippingAddressPayload>> {
     const data = await this.ledgerShippingAddressService.getById(saaId);
 
@@ -111,15 +110,15 @@ export class LedgerShippingAddressController {
     };
   }
 
-  @Delete('delete/:saaId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete ledger shipping address by id' })
-  @ApiParam({ name: 'saaId', format: 'uuid' })
+  @ApiQuery({ name: 'saaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerShippingAddressSuccessDeleteDto })
   @ApiBadRequestResponse({ type: LedgerShippingAddressErrorResponseDto })
   @ApiNotFoundResponse({ type: LedgerShippingAddressErrorResponseDto })
   async remove(
-    @Param('saaId', new ParseUUIDPipe({ version: '7' })) saaId: string,
+    @Query('saaId', new ParseUUIDPipe({ version: '7' })) saaId: string,
   ): Promise<LedgerShippingAddressSuccessResponse<{ saaId: string; deleted: true }>> {
     const data = await this.ledgerShippingAddressService.softDelete(saaId);
 

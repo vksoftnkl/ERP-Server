@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -83,15 +82,15 @@ export class CityController {
     };
   }
 
-  @Get('get/:ctmId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get city by id' })
-  @ApiParam({ name: 'ctmId', format: 'uuid' })
+  @ApiQuery({ name: 'ctmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CitySuccessSingleDto })
   @ApiBadRequestResponse({ type: CityErrorResponseDto })
   @ApiNotFoundResponse({ type: CityErrorResponseDto })
   async getById(
-    @Param('ctmId', new ParseUUIDPipe({ version: '7' })) ctmId: string,
+    @Query('ctmId', new ParseUUIDPipe({ version: '7' })) ctmId: string,
   ): Promise<CitySuccessResponse<CityPayload>> {
     const data = await this.cityService.getById(ctmId);
 
@@ -102,15 +101,15 @@ export class CityController {
     };
   }
 
-  @Delete('delete/:ctmId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete city by id' })
-  @ApiParam({ name: 'ctmId', format: 'uuid' })
+  @ApiQuery({ name: 'ctmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CitySuccessDeleteDto })
   @ApiBadRequestResponse({ type: CityErrorResponseDto })
   @ApiNotFoundResponse({ type: CityErrorResponseDto })
   async remove(
-    @Param('ctmId', new ParseUUIDPipe({ version: '7' })) ctmId: string,
+    @Query('ctmId', new ParseUUIDPipe({ version: '7' })) ctmId: string,
   ): Promise<CitySuccessResponse<{ ctmId: string; deleted: true }>> {
     const data = await this.cityService.softDelete(ctmId);
 

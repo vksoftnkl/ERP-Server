@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class ItemsTaxMasterController {
     };
   }
 
-  @Get('get/:tax_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item tax by id' })
-  @ApiParam({ name: 'tax_id', format: 'uuid' })
+  @ApiQuery({ name: 'tax_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemTaxErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemTaxErrorResponseDto })
   async getById(
-    @Param('tax_id', new ParseUUIDPipe({ version: '7' })) taxId: string,
+    @Query('tax_id', new ParseUUIDPipe({ version: '7' })) taxId: string,
   ): Promise<ItemTaxSuccessResponse<ItemTaxPayload>> {
     const data = await this.itemsTaxMasterService.getById(taxId);
 
@@ -106,15 +105,15 @@ export class ItemsTaxMasterController {
     };
   }
 
-  @Delete('delete/:tax_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item tax by id' })
-  @ApiParam({ name: 'tax_id', format: 'uuid' })
+  @ApiQuery({ name: 'tax_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemTaxErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemTaxErrorResponseDto })
   async remove(
-    @Param('tax_id', new ParseUUIDPipe({ version: '7' })) taxId: string,
+    @Query('tax_id', new ParseUUIDPipe({ version: '7' })) taxId: string,
   ): Promise<ItemTaxSuccessResponse<{ tax_id: string; deleted: true }>> {
     const data = await this.itemsTaxMasterService.softDelete(taxId);
 

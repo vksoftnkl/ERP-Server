@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -89,15 +88,15 @@ export class TenderTypeMasterController {
     };
   }
 
-  @Get('get/:ttmTypeId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get tender type by id' })
-  @ApiParam({ name: 'ttmTypeId', format: 'uuid' })
+  @ApiQuery({ name: 'ttmTypeId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: TenderTypeMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: TenderTypeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: TenderTypeMasterErrorResponseDto })
   async getById(
-    @Param('ttmTypeId', new ParseUUIDPipe({ version: '7' })) ttmTypeId: string,
+    @Query('ttmTypeId', new ParseUUIDPipe({ version: '7' })) ttmTypeId: string,
   ): Promise<TenderTypeMasterSuccessResponse<TenderTypeMasterPayload>> {
     const data = await this.tenderTypeMasterService.getById(ttmTypeId);
 
@@ -108,15 +107,15 @@ export class TenderTypeMasterController {
     };
   }
 
-  @Delete('delete/:ttmTypeId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete tender type by id' })
-  @ApiParam({ name: 'ttmTypeId', format: 'uuid' })
+  @ApiQuery({ name: 'ttmTypeId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: TenderTypeMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: TenderTypeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: TenderTypeMasterErrorResponseDto })
   async remove(
-    @Param('ttmTypeId', new ParseUUIDPipe({ version: '7' })) ttmTypeId: string,
+    @Query('ttmTypeId', new ParseUUIDPipe({ version: '7' })) ttmTypeId: string,
   ): Promise<TenderTypeMasterSuccessResponse<{ ttmTypeId: string; deleted: true }>> {
     const data = await this.tenderTypeMasterService.softDelete(ttmTypeId);
 

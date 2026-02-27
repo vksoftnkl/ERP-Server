@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -89,15 +88,15 @@ export class GspProviderMasterController {
     };
   }
 
-  @Get('get/:gspProviderId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get GSP provider by id' })
-  @ApiParam({ name: 'gspProviderId', format: 'uuid' })
+  @ApiQuery({ name: 'gspProviderId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspProviderMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: GspProviderMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: GspProviderMasterErrorResponseDto })
   async getById(
-    @Param('gspProviderId', new ParseUUIDPipe({ version: '7' })) gspProviderId: string,
+    @Query('gspProviderId', new ParseUUIDPipe({ version: '7' })) gspProviderId: string,
   ): Promise<GspProviderMasterSuccessResponse<GspProviderMasterPayload>> {
     const data = await this.gspProviderMasterService.getById(gspProviderId);
 
@@ -108,15 +107,15 @@ export class GspProviderMasterController {
     };
   }
 
-  @Delete('delete/:gspProviderId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete GSP provider by id' })
-  @ApiParam({ name: 'gspProviderId', format: 'uuid' })
+  @ApiQuery({ name: 'gspProviderId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspProviderMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GspProviderMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: GspProviderMasterErrorResponseDto })
   async remove(
-    @Param('gspProviderId', new ParseUUIDPipe({ version: '7' })) gspProviderId: string,
+    @Query('gspProviderId', new ParseUUIDPipe({ version: '7' })) gspProviderId: string,
   ): Promise<GspProviderMasterSuccessResponse<{ gspProviderId: string; deleted: true }>> {
     const data = await this.gspProviderMasterService.softDelete(gspProviderId);
 

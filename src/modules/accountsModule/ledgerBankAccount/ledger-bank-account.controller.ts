@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -89,15 +88,15 @@ export class LedgerBankAccountController {
     };
   }
 
-  @Get('get/:lbaId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get ledger bank account by id' })
-  @ApiParam({ name: 'lbaId', format: 'uuid' })
+  @ApiQuery({ name: 'lbaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerBankAccountSuccessSingleDto })
   @ApiBadRequestResponse({ type: LedgerBankAccountErrorResponseDto })
   @ApiNotFoundResponse({ type: LedgerBankAccountErrorResponseDto })
   async getById(
-    @Param('lbaId', new ParseUUIDPipe({ version: '7' })) lbaId: string,
+    @Query('lbaId', new ParseUUIDPipe({ version: '7' })) lbaId: string,
   ): Promise<LedgerBankAccountSuccessResponse<LedgerBankAccountPayload>> {
     const data = await this.ledgerBankAccountService.getById(lbaId);
 
@@ -108,15 +107,15 @@ export class LedgerBankAccountController {
     };
   }
 
-  @Delete('delete/:lbaId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete ledger bank account by id' })
-  @ApiParam({ name: 'lbaId', format: 'uuid' })
+  @ApiQuery({ name: 'lbaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerBankAccountSuccessDeleteDto })
   @ApiBadRequestResponse({ type: LedgerBankAccountErrorResponseDto })
   @ApiNotFoundResponse({ type: LedgerBankAccountErrorResponseDto })
   async remove(
-    @Param('lbaId', new ParseUUIDPipe({ version: '7' })) lbaId: string,
+    @Query('lbaId', new ParseUUIDPipe({ version: '7' })) lbaId: string,
   ): Promise<LedgerBankAccountSuccessResponse<{ lbaId: string; deleted: true }>> {
     const data = await this.ledgerBankAccountService.softDelete(lbaId);
 

@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -91,15 +90,15 @@ export class GspCompanyServiceController {
     };
   }
 
-  @Get('get/:csgCompanyServiceId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get GSP company service by id' })
-  @ApiParam({ name: 'csgCompanyServiceId', format: 'uuid' })
+  @ApiQuery({ name: 'csgCompanyServiceId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspCompanyServiceSuccessSingleDto })
   @ApiBadRequestResponse({ type: GspCompanyServiceErrorResponseDto })
   @ApiNotFoundResponse({ type: GspCompanyServiceErrorResponseDto })
   async getById(
-    @Param('csgCompanyServiceId', new ParseUUIDPipe({ version: '7' })) csgCompanyServiceId: string,
+    @Query('csgCompanyServiceId', new ParseUUIDPipe({ version: '7' })) csgCompanyServiceId: string,
   ): Promise<GspCompanyServiceSuccessResponse<GspCompanyServicePayload>> {
     const data = await this.gspCompanyServiceService.getById(csgCompanyServiceId);
 
@@ -110,15 +109,15 @@ export class GspCompanyServiceController {
     };
   }
 
-  @Delete('delete/:csgCompanyServiceId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete GSP company service by id' })
-  @ApiParam({ name: 'csgCompanyServiceId', format: 'uuid' })
+  @ApiQuery({ name: 'csgCompanyServiceId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspCompanyServiceSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GspCompanyServiceErrorResponseDto })
   @ApiNotFoundResponse({ type: GspCompanyServiceErrorResponseDto })
   async remove(
-    @Param('csgCompanyServiceId', new ParseUUIDPipe({ version: '7' })) csgCompanyServiceId: string,
+    @Query('csgCompanyServiceId', new ParseUUIDPipe({ version: '7' })) csgCompanyServiceId: string,
   ): Promise<GspCompanyServiceSuccessResponse<{ csgCompanyServiceId: string; deleted: true }>> {
     const data = await this.gspCompanyServiceService.softDelete(csgCompanyServiceId);
 

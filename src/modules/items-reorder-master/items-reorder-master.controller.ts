@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class ItemsReorderMasterController {
     };
   }
 
-  @Get('get/:ir_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item reorder by id' })
-  @ApiParam({ name: 'ir_id', format: 'uuid' })
+  @ApiQuery({ name: 'ir_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemReorderSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemReorderErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemReorderErrorResponseDto })
   async getById(
-    @Param('ir_id', new ParseUUIDPipe({ version: '7' })) irId: string,
+    @Query('ir_id', new ParseUUIDPipe({ version: '7' })) irId: string,
   ): Promise<ItemReorderSuccessResponse<ItemReorderPayload>> {
     const data = await this.itemsReorderMasterService.getById(irId);
 
@@ -106,15 +105,15 @@ export class ItemsReorderMasterController {
     };
   }
 
-  @Delete('delete/:ir_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item reorder by id' })
-  @ApiParam({ name: 'ir_id', format: 'uuid' })
+  @ApiQuery({ name: 'ir_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemReorderSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemReorderErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemReorderErrorResponseDto })
   async remove(
-    @Param('ir_id', new ParseUUIDPipe({ version: '7' })) irId: string,
+    @Query('ir_id', new ParseUUIDPipe({ version: '7' })) irId: string,
   ): Promise<ItemReorderSuccessResponse<{ ir_id: string; deleted: true }>> {
     const data = await this.itemsReorderMasterService.softDelete(irId);
 

@@ -1,14 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseFilters,
-  Version,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
@@ -17,7 +7,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -85,15 +75,15 @@ export class GridColumnsController {
     };
   }
 
-  @Get('get/:grid_serialid')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get grid column by id' })
-  @ApiParam({ name: 'grid_serialid', description: 'Numeric grid column id' })
+  @ApiQuery({ name: 'grid_serialid', description: 'Numeric grid column id' })
   @ApiOkResponse({ type: GridColumnSuccessSingleDto })
   @ApiBadRequestResponse({ type: GridColumnErrorResponseDto })
   @ApiNotFoundResponse({ type: GridColumnErrorResponseDto })
   async getById(
-    @Param('grid_serialid') gridSerialId: string,
+    @Query('grid_serialid') gridSerialId: string,
   ): Promise<GridColumnSuccessResponse<GridColumnPayload>> {
     const data = await this.gridColumnsService.getById(gridSerialId);
 
@@ -104,15 +94,15 @@ export class GridColumnsController {
     };
   }
 
-  @Delete('delete/:grid_serialid')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete grid column by id' })
-  @ApiParam({ name: 'grid_serialid', description: 'Numeric grid column id' })
+  @ApiQuery({ name: 'grid_serialid', description: 'Numeric grid column id' })
   @ApiOkResponse({ type: GridColumnSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GridColumnErrorResponseDto })
   @ApiNotFoundResponse({ type: GridColumnErrorResponseDto })
   async remove(
-    @Param('grid_serialid') gridSerialId: string,
+    @Query('grid_serialid') gridSerialId: string,
   ): Promise<GridColumnSuccessResponse<{ grid_serialid: string; deleted: true }>> {
     const data = await this.gridColumnsService.softDelete(gridSerialId);
 

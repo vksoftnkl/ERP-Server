@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -83,15 +82,15 @@ export class AreaController {
     };
   }
 
-  @Get('get/:armId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get area by id' })
-  @ApiParam({ name: 'armId', format: 'uuid' })
+  @ApiQuery({ name: 'armId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AreaSuccessSingleDto })
   @ApiBadRequestResponse({ type: AreaErrorResponseDto })
   @ApiNotFoundResponse({ type: AreaErrorResponseDto })
   async getById(
-    @Param('armId', new ParseUUIDPipe({ version: '7' })) armId: string,
+    @Query('armId', new ParseUUIDPipe({ version: '7' })) armId: string,
   ): Promise<AreaSuccessResponse<AreaPayload>> {
     const data = await this.areaService.getById(armId);
 
@@ -102,15 +101,15 @@ export class AreaController {
     };
   }
 
-  @Delete('delete/:armId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete area by id' })
-  @ApiParam({ name: 'armId', format: 'uuid' })
+  @ApiQuery({ name: 'armId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AreaSuccessDeleteDto })
   @ApiBadRequestResponse({ type: AreaErrorResponseDto })
   @ApiNotFoundResponse({ type: AreaErrorResponseDto })
   async remove(
-    @Param('armId', new ParseUUIDPipe({ version: '7' })) armId: string,
+    @Query('armId', new ParseUUIDPipe({ version: '7' })) armId: string,
   ): Promise<AreaSuccessResponse<{ armId: string; deleted: true }>> {
     const data = await this.areaService.softDelete(armId);
 

@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class AccountsGroupController {
     };
   }
 
-  @Get('get/:accGroupId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get account group by id' })
-  @ApiParam({ name: 'accGroupId', format: 'uuid' })
+  @ApiQuery({ name: 'accGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: AccountGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: AccountGroupErrorResponseDto })
   async getById(
-    @Param('accGroupId', new ParseUUIDPipe({ version: '7' })) accGroupId: string,
+    @Query('accGroupId', new ParseUUIDPipe({ version: '7' })) accGroupId: string,
   ): Promise<AccountGroupSuccessResponse<AccountGroupPayload>> {
     const data = await this.accountsGroupService.getById(accGroupId);
 
@@ -106,15 +105,15 @@ export class AccountsGroupController {
     };
   }
 
-  @Delete('delete/:accGroupId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete account group by id' })
-  @ApiParam({ name: 'accGroupId', format: 'uuid' })
+  @ApiQuery({ name: 'accGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountGroupSuccessDeleteDto })
   @ApiBadRequestResponse({ type: AccountGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: AccountGroupErrorResponseDto })
   async remove(
-    @Param('accGroupId', new ParseUUIDPipe({ version: '7' })) accGroupId: string,
+    @Query('accGroupId', new ParseUUIDPipe({ version: '7' })) accGroupId: string,
   ): Promise<AccountGroupSuccessResponse<{ accGroupId: string; deleted: true }>> {
     const data = await this.accountsGroupService.softDelete(accGroupId);
 

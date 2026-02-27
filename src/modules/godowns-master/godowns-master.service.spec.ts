@@ -135,6 +135,45 @@ describe('GodownsMasterService', () => {
     expect(result.gdl_name).toBe('Rack A1');
   });
 
+  it('creates a godown location from legacy godown_* payload keys', async () => {
+    const created = makeRecord({
+      gdlName: 'Rack Legacy',
+      gdlShort: 'LG',
+      gdlCode: 'RACK-LG',
+      gdlSort: 3,
+      gdlIsActive: false,
+      gdlRemarks: 'Legacy payload',
+    });
+    prisma.godownLocation.create.mockResolvedValue(created);
+
+    const result = await service.save({
+      godown_id: GODOWN_ID,
+      branch_id: BRANCH_ID,
+      godown_name: 'Rack Legacy',
+      godown_short: 'LG',
+      godown_code: 'RACK-LG',
+      godown_sort: 3,
+      is_active: false,
+      godown_description: 'Legacy payload',
+    });
+
+    expect(prisma.godownLocation.create).toHaveBeenCalledTimes(1);
+    const createArgs = prisma.godownLocation.create.mock.calls[0][0];
+    expect(createArgs.data).toEqual(
+      expect.objectContaining({
+        gdlGodownId: GODOWN_ID,
+        gdlBranchId: BRANCH_ID,
+        gdlName: 'Rack Legacy',
+        gdlShort: 'LG',
+        gdlCode: 'RACK-LG',
+        gdlSort: 3,
+        gdlIsActive: false,
+        gdlRemarks: 'Legacy payload',
+      }),
+    );
+    expect(result.gdl_name).toBe('Rack Legacy');
+  });
+
   it('fails create when gdl_name is missing', async () => {
     await expect(
       service.save({
@@ -144,13 +183,20 @@ describe('GodownsMasterService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('fails create when gdl_godown_id is missing', async () => {
-    await expect(
-      service.save({
-        gdl_branch_id: BRANCH_ID,
-        gdl_name: 'Rack A1',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+  it('creates location when gdl_godown_id is missing', async () => {
+    prisma.godownLocation.create.mockResolvedValue(makeRecord());
+
+    await service.save({
+      gdl_branch_id: BRANCH_ID,
+      gdl_name: 'Rack A1',
+    });
+
+    const createArgs = prisma.godownLocation.create.mock.calls[0][0];
+    expect(createArgs.data.gdlGodownId).toEqual(
+      expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      ),
+    );
   });
 
   it('fails create when parent location is not found', async () => {
@@ -198,6 +244,7 @@ describe('GodownsMasterService', () => {
 
     const result = await service.save({
       gdl_id: GDL_ID,
+      gdl_godown_id: GODOWN_ID,
       gdl_name: 'Rack A2',
       gdl_short: 'A2',
       gdl_volume: 15,
@@ -215,9 +262,19 @@ describe('GodownsMasterService', () => {
     await expect(
       service.save({
         gdl_id: GDL_ID,
+        gdl_godown_id: GODOWN_ID,
         gdl_name: 'Rack A2',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('fails update when gdl_godown_id is missing', async () => {
+    await expect(
+      service.save({
+        gdl_id: GDL_ID,
+        gdl_name: 'Rack A2',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('fails update when gdl_parent_id equals gdl_id', async () => {
@@ -226,6 +283,7 @@ describe('GodownsMasterService', () => {
     await expect(
       service.save({
         gdl_id: GDL_ID,
+        gdl_godown_id: GODOWN_ID,
         gdl_parent_id: GDL_ID,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);

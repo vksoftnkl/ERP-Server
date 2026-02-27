@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class ItemsQtywiseRatesMasterController {
     };
   }
 
-  @Get('get/:iqr_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item qty-wise rate by id' })
-  @ApiParam({ name: 'iqr_id', format: 'uuid' })
+  @ApiQuery({ name: 'iqr_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemQtywiseRateSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemQtywiseRateErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemQtywiseRateErrorResponseDto })
   async getById(
-    @Param('iqr_id', new ParseUUIDPipe({ version: '7' })) iqrId: string,
+    @Query('iqr_id', new ParseUUIDPipe({ version: '7' })) iqrId: string,
   ): Promise<ItemQtywiseRateSuccessResponse<ItemQtywiseRatePayload>> {
     const data = await this.itemsQtywiseRatesMasterService.getById(iqrId);
 
@@ -106,15 +105,15 @@ export class ItemsQtywiseRatesMasterController {
     };
   }
 
-  @Delete('delete/:iqr_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item qty-wise rate by id' })
-  @ApiParam({ name: 'iqr_id', format: 'uuid' })
+  @ApiQuery({ name: 'iqr_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemQtywiseRateSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemQtywiseRateErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemQtywiseRateErrorResponseDto })
   async remove(
-    @Param('iqr_id', new ParseUUIDPipe({ version: '7' })) iqrId: string,
+    @Query('iqr_id', new ParseUUIDPipe({ version: '7' })) iqrId: string,
   ): Promise<ItemQtywiseRateSuccessResponse<{ iqr_id: string; deleted: true }>> {
     const data = await this.itemsQtywiseRatesMasterService.softDelete(iqrId);
 

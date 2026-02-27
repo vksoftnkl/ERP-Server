@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -89,15 +88,15 @@ export class AccountVoucherTypeController {
     };
   }
 
-  @Get('get/:avtId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get account voucher type by id' })
-  @ApiParam({ name: 'avtId', format: 'uuid' })
+  @ApiQuery({ name: 'avtId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountVoucherTypeSuccessSingleDto })
   @ApiBadRequestResponse({ type: AccountVoucherTypeErrorResponseDto })
   @ApiNotFoundResponse({ type: AccountVoucherTypeErrorResponseDto })
   async getById(
-    @Param('avtId', new ParseUUIDPipe({ version: '7' })) avtId: string,
+    @Query('avtId', new ParseUUIDPipe({ version: '7' })) avtId: string,
   ): Promise<AccountVoucherTypeSuccessResponse<AccountVoucherTypePayload>> {
     const data = await this.accountVoucherTypeService.getById(avtId);
 
@@ -108,15 +107,15 @@ export class AccountVoucherTypeController {
     };
   }
 
-  @Delete('delete/:avtId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete account voucher type by id' })
-  @ApiParam({ name: 'avtId', format: 'uuid' })
+  @ApiQuery({ name: 'avtId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountVoucherTypeSuccessDeleteDto })
   @ApiBadRequestResponse({ type: AccountVoucherTypeErrorResponseDto })
   @ApiNotFoundResponse({ type: AccountVoucherTypeErrorResponseDto })
   async remove(
-    @Param('avtId', new ParseUUIDPipe({ version: '7' })) avtId: string,
+    @Query('avtId', new ParseUUIDPipe({ version: '7' })) avtId: string,
   ): Promise<AccountVoucherTypeSuccessResponse<{ avtId: string; deleted: true }>> {
     const data = await this.accountVoucherTypeService.softDelete(avtId);
 

@@ -1,14 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseFilters,
-  Version,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -17,7 +7,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -84,15 +74,15 @@ export class StateCodeMasterController {
     };
   }
 
-  @Get('get/:stateCode')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get state code by code' })
-  @ApiParam({ name: 'stateCode', description: '2-character state code', example: 'MH' })
+  @ApiQuery({ name: 'stateCode', description: '2-character state code', example: 'MH' })
   @ApiOkResponse({ type: StateCodeMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: StateCodeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: StateCodeMasterErrorResponseDto })
   async getById(
-    @Param('stateCode') stateCode: string,
+    @Query('stateCode') stateCode: string,
   ): Promise<StateCodeMasterSuccessResponse<StateCodeMasterPayload>> {
     const data = await this.stateCodeMasterService.getById(stateCode);
 
@@ -103,15 +93,15 @@ export class StateCodeMasterController {
     };
   }
 
-  @Delete('delete/:stateCode')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete state code by code' })
-  @ApiParam({ name: 'stateCode', description: '2-character state code', example: 'MH' })
+  @ApiQuery({ name: 'stateCode', description: '2-character state code', example: 'MH' })
   @ApiOkResponse({ type: StateCodeMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: StateCodeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: StateCodeMasterErrorResponseDto })
   async remove(
-    @Param('stateCode') stateCode: string,
+    @Query('stateCode') stateCode: string,
   ): Promise<StateCodeMasterSuccessResponse<{ stateCode: string; deleted: true }>> {
     const data = await this.stateCodeMasterService.softDelete(stateCode);
 

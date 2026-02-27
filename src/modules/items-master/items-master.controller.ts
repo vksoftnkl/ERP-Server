@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -83,15 +82,15 @@ export class ItemsMasterController {
     };
   }
 
-  @Get('get/:item_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item by id' })
-  @ApiParam({ name: 'item_id', format: 'uuid' })
+  @ApiQuery({ name: 'item_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemErrorResponseDto })
   async getById(
-    @Param('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
+    @Query('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
   ): Promise<ItemSuccessResponse<ItemPayload>> {
     const data = await this.itemsMasterService.getById(itemId);
 
@@ -102,15 +101,15 @@ export class ItemsMasterController {
     };
   }
 
-  @Delete('delete/:item_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item by id' })
-  @ApiParam({ name: 'item_id', format: 'uuid' })
+  @ApiQuery({ name: 'item_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemErrorResponseDto })
   async remove(
-    @Param('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
+    @Query('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
   ): Promise<ItemSuccessResponse<{ item_id: string; deleted: true }>> {
     const data = await this.itemsMasterService.softDelete(itemId);
 

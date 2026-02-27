@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class EmployeeMasterController {
     };
   }
 
-  @Get('get/:empId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get employee by id' })
-  @ApiParam({ name: 'empId', format: 'uuid' })
+  @ApiQuery({ name: 'empId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: EmployeeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: EmployeeMasterErrorResponseDto })
   async getById(
-    @Param('empId', new ParseUUIDPipe({ version: '7' })) empId: string,
+    @Query('empId', new ParseUUIDPipe({ version: '7' })) empId: string,
   ): Promise<EmployeeMasterSuccessResponse<EmployeeMasterPayload>> {
     const data = await this.employeeMasterService.getById(empId);
 
@@ -106,15 +105,15 @@ export class EmployeeMasterController {
     };
   }
 
-  @Delete('delete/:empId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete employee by id' })
-  @ApiParam({ name: 'empId', format: 'uuid' })
+  @ApiQuery({ name: 'empId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: EmployeeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: EmployeeMasterErrorResponseDto })
   async remove(
-    @Param('empId', new ParseUUIDPipe({ version: '7' })) empId: string,
+    @Query('empId', new ParseUUIDPipe({ version: '7' })) empId: string,
   ): Promise<EmployeeMasterSuccessResponse<{ empId: string; deleted: true }>> {
     const data = await this.employeeMasterService.softDelete(empId);
 

@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -94,15 +93,15 @@ export class EmployeeDesignationMasterController {
     };
   }
 
-  @Get('get/:edId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get employee designation by id' })
-  @ApiParam({ name: 'edId', format: 'uuid' })
+  @ApiQuery({ name: 'edId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeDesignationMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: EmployeeDesignationMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: EmployeeDesignationMasterErrorResponseDto })
   async getById(
-    @Param('edId', new ParseUUIDPipe({ version: '7' })) edId: string,
+    @Query('edId', new ParseUUIDPipe({ version: '7' })) edId: string,
   ): Promise<EmployeeDesignationMasterSuccessResponse<EmployeeDesignationMasterPayload>> {
     const data = await this.employeeDesignationMasterService.getById(edId);
 
@@ -113,15 +112,15 @@ export class EmployeeDesignationMasterController {
     };
   }
 
-  @Delete('delete/:edId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete employee designation by id' })
-  @ApiParam({ name: 'edId', format: 'uuid' })
+  @ApiQuery({ name: 'edId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeDesignationMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: EmployeeDesignationMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: EmployeeDesignationMasterErrorResponseDto })
   async remove(
-    @Param('edId', new ParseUUIDPipe({ version: '7' })) edId: string,
+    @Query('edId', new ParseUUIDPipe({ version: '7' })) edId: string,
   ): Promise<EmployeeDesignationMasterSuccessResponse<{ edId: string; deleted: true }>> {
     const data = await this.employeeDesignationMasterService.softDelete(edId);
 

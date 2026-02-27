@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class CustomerGroupController {
     };
   }
 
-  @Get('get/:cgrId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get customer group by id' })
-  @ApiParam({ name: 'cgrId', format: 'uuid' })
+  @ApiQuery({ name: 'cgrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: CustomerGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: CustomerGroupErrorResponseDto })
   async getById(
-    @Param('cgrId', new ParseUUIDPipe({ version: '7' })) cgrId: string,
+    @Query('cgrId', new ParseUUIDPipe({ version: '7' })) cgrId: string,
   ): Promise<CustomerGroupSuccessResponse<CustomerGroupPayload>> {
     const data = await this.customerGroupService.getById(cgrId);
 
@@ -106,15 +105,15 @@ export class CustomerGroupController {
     };
   }
 
-  @Delete('delete/:cgrId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete customer group by id' })
-  @ApiParam({ name: 'cgrId', format: 'uuid' })
+  @ApiQuery({ name: 'cgrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerGroupSuccessDeleteDto })
   @ApiBadRequestResponse({ type: CustomerGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: CustomerGroupErrorResponseDto })
   async remove(
-    @Param('cgrId', new ParseUUIDPipe({ version: '7' })) cgrId: string,
+    @Query('cgrId', new ParseUUIDPipe({ version: '7' })) cgrId: string,
   ): Promise<CustomerGroupSuccessResponse<{ cgrId: string; deleted: true }>> {
     const data = await this.customerGroupService.softDelete(cgrId);
 

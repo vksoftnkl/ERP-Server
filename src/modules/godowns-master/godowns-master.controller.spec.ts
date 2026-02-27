@@ -41,6 +41,7 @@ describe('GodownsMasterController', () => {
   const serviceMock = {
     save: jest.fn(),
     list: jest.fn(),
+    getList: jest.fn(),
     getById: jest.fn(),
     softDelete: jest.fn(),
   };
@@ -105,6 +106,24 @@ describe('GodownsMasterController', () => {
     expect(statusMock).toHaveBeenCalledWith(200);
   });
 
+  it('wraps create response on /create route and sets 201 status', async () => {
+    serviceMock.save.mockResolvedValue(godownPayload);
+    const { response, statusMock } = createResponse();
+
+    const payload: SaveGodownDto = {
+      gdl_godown_id: GODOWN_ID,
+      gdl_branch_id: BRANCH_ID,
+      gdl_name: 'Rack A1',
+    };
+
+    await expect(controller.create(payload, response)).resolves.toEqual({
+      success: true,
+      message: 'Godown location created successfully',
+      data: godownPayload,
+    });
+    expect(statusMock).toHaveBeenCalledWith(201);
+  });
+
   it('returns list wrapper when gdl_id query is absent', async () => {
     serviceMock.list.mockResolvedValue({
       items: [godownPayload],
@@ -148,6 +167,50 @@ describe('GodownsMasterController', () => {
     expect(serviceMock.list).not.toHaveBeenCalled();
   });
 
+  it('returns wrapped single response from /get endpoint with gdl_id query', async () => {
+    serviceMock.getById.mockResolvedValue(godownPayload);
+
+    await expect(controller.getByIdByQuery({ gdl_id: GDL_ID })).resolves.toEqual({
+      success: true,
+      message: 'Godown location fetched successfully',
+      data: godownPayload,
+    });
+
+    expect(serviceMock.getById).toHaveBeenCalledWith(GDL_ID);
+  });
+
+  it('returns list wrapper from /list endpoint', async () => {
+    serviceMock.getList.mockResolvedValue({
+      items: [godownPayload],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+    });
+
+    const query: ListOrGetGodownQueryDto = {
+      page: 1,
+      limit: 20,
+    };
+
+    await expect(controller.getList(query)).resolves.toEqual({
+      success: true,
+      message: 'Godown locations fetched successfully',
+      data: [godownPayload],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+    });
+
+    expect(serviceMock.getList).toHaveBeenCalledWith(query);
+    expect(serviceMock.getById).not.toHaveBeenCalled();
+  });
+
   it('returns wrapped soft delete response', async () => {
     serviceMock.softDelete.mockResolvedValue({
       gdl_id: GDL_ID,
@@ -159,6 +222,26 @@ describe('GodownsMasterController', () => {
     };
 
     await expect(controller.remove(query)).resolves.toEqual({
+      success: true,
+      message: 'Godown location deleted successfully',
+      data: {
+        gdl_id: GDL_ID,
+        deleted: true,
+      },
+    });
+  });
+
+  it('returns wrapped soft delete response from /delete endpoint with gdl_id query', async () => {
+    serviceMock.softDelete.mockResolvedValue({
+      gdl_id: GDL_ID,
+      deleted: true,
+    });
+
+    const query: DeleteGodownQueryDto = {
+      gdl_id: GDL_ID,
+    };
+
+    await expect(controller.removeByQuery(query)).resolves.toEqual({
       success: true,
       message: 'Godown location deleted successfully',
       data: {

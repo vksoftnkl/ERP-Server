@@ -8,7 +8,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 const toOptionalUuid = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
@@ -118,45 +118,67 @@ const toOptionalBoolean = (value: unknown): boolean | undefined => {
   return value as boolean;
 };
 
+const resolveAliasValue = (value: unknown, obj: unknown, aliases: string[]): unknown => {
+  if (value !== undefined) {
+    return value;
+  }
+
+  if (typeof obj !== 'object' || obj === null) {
+    return undefined;
+  }
+
+  const source = obj as Record<string, unknown>;
+  for (const alias of aliases) {
+    const aliasValue = source[alias];
+    if (aliasValue !== undefined) {
+      return aliasValue;
+    }
+  }
+
+  return undefined;
+};
+
 export class SaveGodownDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the godown location',
   })
   @IsOptional()
-  @Transform(({ value }) => toOptionalUuid(value))
+  @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['gdl_location_id'])))
   @IsUUID('all')
   gdl_id?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Required for create, optional for update' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Required for updateional for update' })
   @IsOptional()
-  @Transform(({ value }) => toOptionalUuid(value))
+  @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['godown_id'])))
   @IsUUID('all')
   gdl_godown_id?: string;
 
   @ApiPropertyOptional({ format: 'uuid', description: 'Required for create, optional for update' })
   @IsOptional()
-  @Transform(({ value }) => toOptionalUuid(value))
+  @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['branch_id'])))
   @IsUUID('all')
   gdl_branch_id?: string;
 
   @ApiPropertyOptional({ description: 'Required for create, optional for update' })
   @IsOptional()
-  @Transform(({ value }) => toTrimmedString(value))
+  @Transform(({ value, obj }) => toTrimmedString(resolveAliasValue(value, obj, ['godown_name'])))
   @IsString()
   @MaxLength(200)
   gdl_name?: string;
 
   @ApiPropertyOptional({ nullable: true, maxLength: 50 })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
+  @Transform(({ value, obj }) =>
+    toNullableString(resolveAliasValue(value, obj, ['godown_short', 'godown_alias'])),
+  )
   @IsString()
   @MaxLength(50)
   gdl_short?: string | null;
 
   @ApiPropertyOptional({ nullable: true, maxLength: 30 })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
+  @Transform(({ value, obj }) => toNullableString(resolveAliasValue(value, obj, ['godown_code'])))
   @IsString()
   @MaxLength(30)
   gdl_code?: string | null;
@@ -170,13 +192,13 @@ export class SaveGodownDto {
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
+  @Transform(({ value, obj }) => toNullableUuid(resolveAliasValue(value, obj, ['parent_id'])))
   @IsUUID('all')
   gdl_parent_id?: string | null;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
-  @Transform(({ value }) => toOptionalInteger(value))
+  @Transform(({ value, obj }) => toOptionalInteger(resolveAliasValue(value, obj, ['godown_sort'])))
   @IsInt()
   gdl_sort?: number;
 
@@ -200,7 +222,7 @@ export class SaveGodownDto {
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
-  @Transform(({ value }) => toOptionalBoolean(value))
+  @Transform(({ value, obj }) => toOptionalBoolean(resolveAliasValue(value, obj, ['is_active'])))
   @IsBoolean()
   gdl_is_active?: boolean;
 
@@ -218,8 +240,81 @@ export class SaveGodownDto {
 
   @ApiPropertyOptional({ nullable: true, maxLength: 250 })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
+  @Transform(({ value, obj }) =>
+    toNullableString(resolveAliasValue(value, obj, ['godown_description'])),
+  )
   @IsString()
   @MaxLength(250)
   gdl_remarks?: string | null;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toOptionalUuid(value))
+  @IsUUID('all')
+  godown_id?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toTrimmedString(value))
+  @IsString()
+  @MaxLength(200)
+  godown_name?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @IsString()
+  @MaxLength(30)
+  godown_code?: string | null;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @IsString()
+  @MaxLength(50)
+  godown_alias?: string | null;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @IsString()
+  @MaxLength(50)
+  godown_short?: string | null;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @IsString()
+  @MaxLength(250)
+  godown_description?: string | null;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toOptionalInteger(value))
+  @IsInt()
+  godown_sort?: number;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toOptionalUuid(value))
+  @IsUUID('all')
+  branch_id?: string;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @IsUUID('all')
+  parent_id?: string | null;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  is_active?: boolean;
+
+  @ApiHideProperty()
+  @IsOptional()
+  @Transform(({ value }) => toOptionalUuid(value))
+  @IsUUID('all')
+  gdl_location_id?: string;
 }

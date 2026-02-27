@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -89,15 +88,15 @@ export class AccountLedgerMastersController {
     };
   }
 
-  @Get('get/:ledId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get account ledger by id' })
-  @ApiParam({ name: 'ledId', format: 'uuid' })
+  @ApiQuery({ name: 'ledId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountLedgerMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: AccountLedgerMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: AccountLedgerMasterErrorResponseDto })
   async getById(
-    @Param('ledId', new ParseUUIDPipe({ version: '7' })) ledId: string,
+    @Query('ledId', new ParseUUIDPipe({ version: '7' })) ledId: string,
   ): Promise<AccountLedgerMasterSuccessResponse<AccountLedgerMasterPayload>> {
     const data = await this.accountLedgerMastersService.getById(ledId);
 
@@ -108,15 +107,15 @@ export class AccountLedgerMastersController {
     };
   }
 
-  @Delete('delete/:ledId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete account ledger by id' })
-  @ApiParam({ name: 'ledId', format: 'uuid' })
+  @ApiQuery({ name: 'ledId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountLedgerMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: AccountLedgerMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: AccountLedgerMasterErrorResponseDto })
   async remove(
-    @Param('ledId', new ParseUUIDPipe({ version: '7' })) ledId: string,
+    @Query('ledId', new ParseUUIDPipe({ version: '7' })) ledId: string,
   ): Promise<AccountLedgerMasterSuccessResponse<{ ledId: string; deleted: true }>> {
     const data = await this.accountLedgerMastersService.softDelete(ledId);
 

@@ -19,6 +19,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
+const ROOT_SECTION_LEVEL = 1;
 const ITEM_SECTION_TABLE_NAME = 'item_section_master';
 const ITEM_SECTION_AUDIT_SCREEN_NAME = 'Item Section Master';
 type ItemSectionWriteClient = Prisma.TransactionClient | PrismaService;
@@ -171,8 +172,10 @@ export class ItemsSectionMasterService {
   ): Promise<ItemSectionPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
+        let parentLevel: number | null | undefined;
         if (saveItemSectionDto.sec_parent_id) {
-          await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
+          const parent = await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
+          parentLevel = parent.secLevel;
         }
 
         const now = new Date();
@@ -181,6 +184,7 @@ export class ItemsSectionMasterService {
 
         const data: Prisma.ItemSectionMasterUncheckedCreateInput = {
           secName: saveItemSectionDto.sec_name.trim(),
+          secLevel: this.resolveSectionLevel(saveItemSectionDto.sec_parent_id, parentLevel),
           secCreatedOn: now,
           secCreatedBy: createdBy,
           secModifiedOn: now,
@@ -257,8 +261,10 @@ export class ItemsSectionMasterService {
           ]);
         }
 
+        let requestedParentLevel: number | null | undefined;
         if (saveItemSectionDto.sec_parent_id) {
-          await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
+          const parent = await this.ensureParentExists(saveItemSectionDto.sec_parent_id, tx);
+          requestedParentLevel = parent.secLevel;
         }
 
         const hasParentField = this.hasOwnProperty(saveItemSectionDto, 'sec_parent_id');
@@ -276,6 +282,9 @@ export class ItemsSectionMasterService {
           secModifiedOn: new Date(),
           secModifiedBy: DEFAULT_ACTOR,
         };
+        if (isParentChanged) {
+          data.secLevel = this.resolveSectionLevel(nextParentId, requestedParentLevel);
+        }
 
         this.applyOptionalFields(data, saveItemSectionDto);
         const updated = await tx.itemSectionMaster.update({
@@ -322,7 +331,10 @@ export class ItemsSectionMasterService {
     }
   }
 
-  private async ensureParentExists(parentId: string, tx: ItemSectionWriteClient): Promise<void> {
+  private async ensureParentExists(
+    parentId: string,
+    tx: ItemSectionWriteClient,
+  ): Promise<{ secId: string; secLevel: number | null }> {
     const parent = await tx.itemSectionMaster.findFirst({
       where: {
         secId: parentId,
@@ -330,6 +342,7 @@ export class ItemsSectionMasterService {
       },
       select: {
         secId: true,
+        secLevel: true,
       },
     });
 
@@ -341,6 +354,8 @@ export class ItemsSectionMasterService {
         },
       ]);
     }
+
+    return parent;
   }
 
   private applyOptionalFields(
@@ -367,10 +382,6 @@ export class ItemsSectionMasterService {
 
     if (this.hasOwnProperty(saveItemSectionDto, 'sec_sort')) {
       data.secSort = saveItemSectionDto.sec_sort;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_level')) {
-      data.secLevel = saveItemSectionDto.sec_level;
     }
 
     if (this.hasOwnProperty(saveItemSectionDto, 'sec_position')) {
@@ -728,5 +739,16 @@ export class ItemsSectionMasterService {
 
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
+  }
+
+  private resolveSectionLevel(
+    parentId: string | null | undefined,
+    parentLevel: number | null | undefined,
+  ): number {
+    if (!parentId) {
+      return ROOT_SECTION_LEVEL;
+    }
+
+    return (parentLevel ?? ROOT_SECTION_LEVEL) + 1;
   }
 }

@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -46,7 +45,7 @@ import {
 @Controller('branch-masters')
 @UseFilters(BranchMasterExceptionFilter)
 export class BranchMasterController {
-  constructor(private readonly branchMasterService: BranchMasterService) { }
+  constructor(private readonly branchMasterService: BranchMasterService) {}
 
   @Post('create')
   @Version('1')
@@ -87,15 +86,15 @@ export class BranchMasterController {
     };
   }
 
-  @Get('get/:brId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get branch by id' })
-  @ApiParam({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  @ApiQuery({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: BranchMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: BranchMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: BranchMasterErrorResponseDto })
   async getById(
-    @Param('brId', ParseUUIDPipe) brId: string,
+    @Query('brId', ParseUUIDPipe) brId: string,
   ): Promise<BranchMasterSuccessResponse<BranchMasterPayload>> {
     const data = await this.branchMasterService.getById(brId);
 
@@ -106,15 +105,15 @@ export class BranchMasterController {
     };
   }
 
-  @Delete('delete/:brId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete branch by id' })
-  @ApiParam({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  @ApiQuery({ name: 'brId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: BranchMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: BranchMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: BranchMasterErrorResponseDto })
   async remove(
-    @Param('brId', ParseUUIDPipe) brId: string,
+    @Query('brId', ParseUUIDPipe) brId: string,
   ): Promise<BranchMasterSuccessResponse<{ brId: string; deleted: true }>> {
     const data = await this.branchMasterService.softDelete(brId);
 

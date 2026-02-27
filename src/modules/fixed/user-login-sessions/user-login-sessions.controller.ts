@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -89,15 +88,15 @@ export class UserLoginSessionsController {
     };
   }
 
-  @Get('get/:ulsId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get user login session by id' })
-  @ApiParam({ name: 'ulsId', format: 'uuid' })
+  @ApiQuery({ name: 'ulsId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserLoginSessionsSuccessSingleDto })
   @ApiBadRequestResponse({ type: UserLoginSessionsErrorResponseDto })
   @ApiNotFoundResponse({ type: UserLoginSessionsErrorResponseDto })
   async getById(
-    @Param('ulsId', new ParseUUIDPipe({ version: '7' })) ulsId: string,
+    @Query('ulsId', new ParseUUIDPipe({ version: '7' })) ulsId: string,
   ): Promise<UserLoginSessionsSuccessResponse<UserLoginSessionsPayload>> {
     const data = await this.userLoginSessionsService.getById(ulsId);
 
@@ -108,15 +107,15 @@ export class UserLoginSessionsController {
     };
   }
 
-  @Delete('delete/:ulsId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete user login session by id' })
-  @ApiParam({ name: 'ulsId', format: 'uuid' })
+  @ApiQuery({ name: 'ulsId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserLoginSessionsSuccessDeleteDto })
   @ApiBadRequestResponse({ type: UserLoginSessionsErrorResponseDto })
   @ApiNotFoundResponse({ type: UserLoginSessionsErrorResponseDto })
   async remove(
-    @Param('ulsId', new ParseUUIDPipe({ version: '7' })) ulsId: string,
+    @Query('ulsId', new ParseUUIDPipe({ version: '7' })) ulsId: string,
   ): Promise<UserLoginSessionsSuccessResponse<{ ulsId: string; deleted: true }>> {
     const data = await this.userLoginSessionsService.softDelete(ulsId);
 

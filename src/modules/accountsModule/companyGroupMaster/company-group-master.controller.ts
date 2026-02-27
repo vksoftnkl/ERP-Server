@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -89,15 +88,15 @@ export class CompanyGroupMasterController {
     };
   }
 
-  @Get('get/:cogGroupId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get company group by id' })
-  @ApiParam({ name: 'cogGroupId', format: 'uuid' })
+  @ApiQuery({ name: 'cogGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CompanyGroupMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: CompanyGroupMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: CompanyGroupMasterErrorResponseDto })
   async getById(
-    @Param('cogGroupId', new ParseUUIDPipe({ version: '7' })) cogGroupId: string,
+    @Query('cogGroupId', new ParseUUIDPipe({ version: '7' })) cogGroupId: string,
   ): Promise<CompanyGroupMasterSuccessResponse<CompanyGroupMasterPayload>> {
     const data = await this.companyGroupMasterService.getById(cogGroupId);
 
@@ -108,15 +107,15 @@ export class CompanyGroupMasterController {
     };
   }
 
-  @Delete('delete/:cogGroupId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete company group by id' })
-  @ApiParam({ name: 'cogGroupId', format: 'uuid' })
+  @ApiQuery({ name: 'cogGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CompanyGroupMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: CompanyGroupMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: CompanyGroupMasterErrorResponseDto })
   async remove(
-    @Param('cogGroupId', new ParseUUIDPipe({ version: '7' })) cogGroupId: string,
+    @Query('cogGroupId', new ParseUUIDPipe({ version: '7' })) cogGroupId: string,
   ): Promise<CompanyGroupMasterSuccessResponse<{ cogGroupId: string; deleted: true }>> {
     const data = await this.companyGroupMasterService.softDelete(cogGroupId);
 

@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class ItemsEanCodeMasterController {
     };
   }
 
-  @Get('get/:ean_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item EAN code by id' })
-  @ApiParam({ name: 'ean_id', format: 'uuid' })
+  @ApiQuery({ name: 'ean_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemEanCodeSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemEanCodeErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemEanCodeErrorResponseDto })
   async getById(
-    @Param('ean_id', new ParseUUIDPipe({ version: '7' })) eanId: string,
+    @Query('ean_id', new ParseUUIDPipe({ version: '7' })) eanId: string,
   ): Promise<ItemEanCodeSuccessResponse<ItemEanCodePayload>> {
     const data = await this.itemsEanCodeMasterService.getById(eanId);
 
@@ -106,15 +105,15 @@ export class ItemsEanCodeMasterController {
     };
   }
 
-  @Delete('delete/:ean_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item EAN code by id' })
-  @ApiParam({ name: 'ean_id', format: 'uuid' })
+  @ApiQuery({ name: 'ean_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemEanCodeSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemEanCodeErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemEanCodeErrorResponseDto })
   async remove(
-    @Param('ean_id', new ParseUUIDPipe({ version: '7' })) eanId: string,
+    @Query('ean_id', new ParseUUIDPipe({ version: '7' })) eanId: string,
   ): Promise<ItemEanCodeSuccessResponse<{ ean_id: string; deleted: true }>> {
     const data = await this.itemsEanCodeMasterService.softDelete(eanId);
 

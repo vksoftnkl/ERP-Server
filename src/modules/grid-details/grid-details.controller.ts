@@ -1,14 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseFilters,
-  Version,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
@@ -16,7 +6,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -83,15 +73,15 @@ export class GridDetailsController {
     };
   }
 
-  @Get('get/:grid_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get grid details by id' })
-  @ApiParam({ name: 'grid_id', description: 'Numeric grid id' })
+  @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
   @ApiOkResponse({ type: GridDetailSuccessSingleDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
   async getById(
-    @Param('grid_id') gridId: string,
+    @Query('grid_id') gridId: string,
   ): Promise<GridDetailSuccessResponse<GridDetailPayload>> {
     const data = await this.gridDetailsService.getById(gridId);
 
@@ -102,15 +92,15 @@ export class GridDetailsController {
     };
   }
 
-  @Delete('delete/:grid_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete grid details by id' })
-  @ApiParam({ name: 'grid_id', description: 'Numeric grid id' })
+  @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
   @ApiOkResponse({ type: GridDetailSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
   async remove(
-    @Param('grid_id') gridId: string,
+    @Query('grid_id') gridId: string,
   ): Promise<GridDetailSuccessResponse<{ grid_id: string; deleted: true }>> {
     const data = await this.gridDetailsService.softDelete(gridId);
 

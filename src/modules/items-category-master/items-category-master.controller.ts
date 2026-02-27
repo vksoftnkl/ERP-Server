@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -23,7 +22,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -101,15 +100,15 @@ export class ItemsCategoryMasterController {
     };
   }
 
-  @Get('get/:category_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item category by id' })
-  @ApiParam({ name: 'category_id', format: 'uuid' })
+  @ApiQuery({ name: 'category_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemCategorySuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemCategoryErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemCategoryErrorResponseDto })
   async getById(
-    @Param('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
+    @Query('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
   ): Promise<ItemCategorySuccessResponse<ItemCategoryPayload>> {
     const data = await this.itemsCategoryMasterService.getById(categoryId);
 
@@ -120,15 +119,15 @@ export class ItemsCategoryMasterController {
     };
   }
 
-  @Delete('delete/:category_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item category by id' })
-  @ApiParam({ name: 'category_id', format: 'uuid' })
+  @ApiQuery({ name: 'category_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemCategorySuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemCategoryErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemCategoryErrorResponseDto })
   async remove(
-    @Param('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
+    @Query('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
   ): Promise<ItemCategorySuccessResponse<{ category_id: string; deleted: true }>> {
     const data = await this.itemsCategoryMasterService.softDelete(categoryId);
 

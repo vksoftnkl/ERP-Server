@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -18,7 +17,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -87,15 +86,15 @@ export class SupplierGroupController {
     };
   }
 
-  @Get('get/:spgId')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get supplier group by id' })
-  @ApiParam({ name: 'spgId', format: 'uuid' })
+  @ApiQuery({ name: 'spgId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: SupplierGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: SupplierGroupErrorResponseDto })
   async getById(
-    @Param('spgId', new ParseUUIDPipe({ version: '7' })) spgId: string,
+    @Query('spgId', new ParseUUIDPipe({ version: '7' })) spgId: string,
   ): Promise<SupplierGroupSuccessResponse<SupplierGroupPayload>> {
     const data = await this.supplierGroupService.getById(spgId);
 
@@ -106,15 +105,15 @@ export class SupplierGroupController {
     };
   }
 
-  @Delete('delete/:spgId')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete supplier group by id' })
-  @ApiParam({ name: 'spgId', format: 'uuid' })
+  @ApiQuery({ name: 'spgId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierGroupSuccessDeleteDto })
   @ApiBadRequestResponse({ type: SupplierGroupErrorResponseDto })
   @ApiNotFoundResponse({ type: SupplierGroupErrorResponseDto })
   async remove(
-    @Param('spgId', new ParseUUIDPipe({ version: '7' })) spgId: string,
+    @Query('spgId', new ParseUUIDPipe({ version: '7' })) spgId: string,
   ): Promise<SupplierGroupSuccessResponse<{ spgId: string; deleted: true }>> {
     const data = await this.supplierGroupService.softDelete(spgId);
 
