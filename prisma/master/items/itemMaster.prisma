@@ -98,7 +98,7 @@ model ItemMaster {
   company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_master")
-  @@schema("public")
+  @@schema("inventory")
 
   // UNIQUE item_name_en globally (since company removed)
   @@unique([itemNameEn], map: "uq_item_name_en_global")

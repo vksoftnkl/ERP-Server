@@ -1267,7 +1267,7 @@ model categoryMaster {
   categoryModifiedBy     String?   @db.VarChar(100)   @map("category_modified_by")
 
   @@map("category_master")
-  @@schema("public")
+  @@schema("inventory")
   @@unique([categoryName], map: "uq_category_name")
   @@index([categoryParentId], map: "idx_category_parent_id")
   @@index([categoryIsActive], map: "idx_category_active")
@@ -1305,7 +1305,7 @@ model GodownLocation {
   parent            GodownLocation?  @relation("GodownLocationToParent", fields: [gdlParentId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
   children          GodownLocation[] @relation("GodownLocationToParent")
   @@map("godown_locations")
-  @@schema("public")
+   @@schema("inventory")
   // Indexes
  // @@index([gdlCompanyId, gdlGodownId], map: "idx_gdl_godown")
   @@index([gdlParentId], map: "idx_gdl_parent")
@@ -1348,7 +1348,7 @@ model ItemBrandMaster {
   children ItemBrandMaster[] @relation("BrandHierarchy")
 
   @@map("item_brand_master")
-  @@schema("public")
+   @@schema("inventory")
 
   @@index([brand_parent_id], map: "idx_brand_parent_id")
   @@index([brand_is_active], map: "idx_brand_active")
@@ -1482,7 +1482,7 @@ model ItemGroupMaster {
   itgModifiedBy     String?   @db.VarChar(100)   @map("itg_modified_by")
 
   @@map("item_group_master")
-  @@schema("public")
+   @@schema("inventory")
   @@unique([itgName], map: "uq_itg_name")
   @@index([itgParentId], map: "idx_itg_parent_id")
   @@index([itgIsActive], map: "idx_itg_active")
@@ -1589,7 +1589,7 @@ model ItemMaster {
   company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_master")
-  @@schema("public")
+  @@schema("inventory")
 
   // UNIQUE item_name_en globally (since company removed)
   @@unique([itemNameEn], map: "uq_item_name_en_global")
@@ -1762,7 +1762,7 @@ model ItemReorder {
   unit                Unit       @relation(fields: [irUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_reorders")
-  @@schema("public")
+   @@schema("inventory")
 
   // Prevent duplicates per scope (no company)
   @@unique([irItemId, irUnitId, irGodownId], map: "uq_ir_item_unit_godown")
@@ -1812,7 +1812,7 @@ model ItemSectionMaster {
   secModifiedBy  String?   @db.VarChar(100)   @map("sec_modified_by")
 
   @@map("item_section_master")
-  @@schema("public")
+   @@schema("inventory")
 
 
   // Indexes (match your SQL intent)
@@ -1908,7 +1908,7 @@ model ItemTaxMaster {
   taxHistory              ItemTaxHistory[]
 
   @@map("item_tax_master")
-  @@schema("public")
+   @@schema("inventory")
 
   // unique slab name globally (since company removed)
   @@unique([taxName], map: "uq_tax_name_global")
@@ -1964,7 +1964,7 @@ model Unit {
   itemReorders ItemReorder[]
 
   @@map("units")
-  @@schema("public")
+   @@schema("inventory")
 
   @@index([unit_is_active], map: "idx_unit_active")
   @@index([unit_base_unit_id], map: "idx_unit_base")

@@ -40,7 +40,7 @@ model Unit {
   itemReorders ItemReorder[]
 
   @@map("units")
-  @@schema("public")
+   @@schema("inventory")
 
   @@index([unit_is_active], map: "idx_unit_active")
   @@index([unit_base_unit_id], map: "idx_unit_base")

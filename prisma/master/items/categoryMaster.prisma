@@ -31,7 +31,7 @@ model categoryMaster {
   categoryModifiedBy     String?   @db.VarChar(100)   @map("category_modified_by")
 
   @@map("category_master")
-  @@schema("public")
+  @@schema("inventory")
   @@unique([categoryName], map: "uq_category_name")
   @@index([categoryParentId], map: "idx_category_parent_id")
   @@index([categoryIsActive], map: "idx_category_active")

@@ -37,7 +37,7 @@ model ItemGroupMaster {
   itgModifiedBy     String?   @db.VarChar(100)   @map("itg_modified_by")
 
   @@map("item_group_master")
-  @@schema("public")
+   @@schema("inventory")
   @@unique([itgName], map: "uq_itg_name")
   @@index([itgParentId], map: "idx_itg_parent_id")
   @@index([itgIsActive], map: "idx_itg_active")

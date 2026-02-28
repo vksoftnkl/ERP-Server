@@ -37,7 +37,7 @@ model ItemSectionMaster {
   secModifiedBy  String?   @db.VarChar(100)   @map("sec_modified_by")
 
   @@map("item_section_master")
-  @@schema("public")
+   @@schema("inventory")
 
 
   // Indexes (match your SQL intent)

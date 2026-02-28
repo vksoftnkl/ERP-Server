@@ -30,7 +30,7 @@ model GodownLocation {
   parent            GodownLocation?  @relation("GodownLocationToParent", fields: [gdlParentId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
   children          GodownLocation[] @relation("GodownLocationToParent")
   @@map("godown_locations")
-  @@schema("public")
+   @@schema("inventory")
   // Indexes
  // @@index([gdlCompanyId, gdlGodownId], map: "idx_gdl_godown")
   @@index([gdlParentId], map: "idx_gdl_parent")

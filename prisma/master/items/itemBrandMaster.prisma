@@ -28,7 +28,7 @@ model ItemBrandMaster {
   children ItemBrandMaster[] @relation("BrandHierarchy")
 
   @@map("item_brand_master")
-  @@schema("public")
+   @@schema("inventory")
 
   @@index([brand_parent_id], map: "idx_brand_parent_id")
   @@index([brand_is_active], map: "idx_brand_active")

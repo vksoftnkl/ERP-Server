@@ -38,7 +38,7 @@ model ItemReorder {
   unit                Unit       @relation(fields: [irUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_reorders")
-  @@schema("public")
+   @@schema("inventory")
 
   // Prevent duplicates per scope (no company)
   @@unique([irItemId, irUnitId, irGodownId], map: "uq_ir_item_unit_godown")

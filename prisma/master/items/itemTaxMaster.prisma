@@ -58,7 +58,7 @@ model ItemTaxMaster {
   taxHistory              ItemTaxHistory[]
 
   @@map("item_tax_master")
-  @@schema("public")
+   @@schema("inventory")
 
   // unique slab name globally (since company removed)
   @@unique([taxName], map: "uq_tax_name_global")
