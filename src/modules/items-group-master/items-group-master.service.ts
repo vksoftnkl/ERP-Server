@@ -20,7 +20,6 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const ITEM_GROUP_GRID_ID = BigInt(1);
 const ITEM_GROUP_TABLE_NAME = 'item_group_master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
@@ -97,8 +96,6 @@ export class ItemsGroupMasterService {
   ): Promise<{ items: ItemGroupListItem[]; meta: ItemGroupListMeta } | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ITEM_GROUP_TABLE_NAME,
-      fixedGridId: ITEM_GROUP_GRID_ID,
-      applyTableNameFilter: false,
     });
     const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
       configuredGrids,

@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { EmpMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -32,6 +33,7 @@ export class EmployeeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveEmployeeMasterDto: SaveEmployeeMasterDto): Promise<EmployeeMasterPayload> {
@@ -48,6 +50,21 @@ export class EmployeeMasterService {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
+
+    const hasStructuredFilters =
+      queryDto.empCompanyId !== undefined ||
+      queryDto.empDesignationId !== undefined ||
+      queryDto.empIsActive !== undefined ||
+      queryDto.empStatus !== undefined ||
+      queryDto.empEmploymentType !== undefined ||
+      Boolean(queryDto.search?.trim());
+
+    if (!hasStructuredFilters) {
+      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      if (configuredList) {
+        return configuredList;
+      }
+    }
 
     const where: Prisma.EmpMasterWhereInput = {
       empIsDeleted: false,
@@ -114,6 +131,61 @@ export class EmployeeMasterService {
         total_pages: Math.ceil(total / limit),
       },
     };
+  }
+
+  private async listFromConfiguredGridSql(
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<{ items: EmployeeMasterListItem[]; meta: EmployeeMasterListMeta } | null> {
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: EMPLOYEE_MASTER_TABLE_NAME,
+    });
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      EMPLOYEE_MASTER_TABLE_NAME,
+    );
+    if (primaryConfiguredGrids.length === 0) {
+      return null;
+    }
+
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: EMPLOYEE_MASTER_TABLE_NAME,
+      });
+      if (!validation.isValid) {
+        continue;
+      }
+
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<EmployeeMasterListItem>({
+          baseSql: validation.normalizedSql,
+          alias: 'employee_master_grid',
+          limit,
+          skip,
+        });
+
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
   }
 
   async getById(empId: string): Promise<EmployeeMasterPayload> {

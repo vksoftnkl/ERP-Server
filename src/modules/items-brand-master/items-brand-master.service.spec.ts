@@ -606,13 +606,52 @@ describe('ItemsBrandMasterService', () => {
     });
   });
 
-  it('rejects invalid configured grid_sql in list', async () => {
+  it('falls back to prisma list when configured grid_sql is invalid', async () => {
     prisma.gridDetails.findFirst.mockResolvedValue({
       gridSql: 'DELETE FROM item_brand_master',
     });
+    prisma.itemBrandMaster.count.mockResolvedValue(0);
+    prisma.itemBrandMaster.findMany.mockResolvedValue([]);
 
-    await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
+    const result = await service.list({});
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(prisma.itemBrandMaster.findMany).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      items: [],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 0,
+        total_pages: 0,
+      },
+    });
+  });
+
+  it('falls back to prisma list when configured grid_sql cannot execute', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql: 'SELECT brand_id, brand_name FROM item_brand_master WHERE brand_is_deleted = false',
+    });
+    prisma.$queryRawUnsafe.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError(
+        'Raw query failed. Code: `42P01`. Message: `relation "item_brand_master" does not exist`',
+        {
+          code: 'P2010',
+          clientVersion: '6.0.0',
+        },
+      ),
+    );
+    prisma.itemBrandMaster.count.mockResolvedValue(1);
+    prisma.itemBrandMaster.findMany.mockResolvedValue([makeRecord()]);
+
+    const result = await service.list({});
+
+    expect(prisma.itemBrandMaster.findMany).toHaveBeenCalledTimes(1);
+    expect(result.meta).toEqual({
+      page: 1,
+      limit: 20,
+      total: 1,
+      total_pages: 1,
+    });
   });
 
   it('soft delete removes subtree ids from ancestor caches', async () => {

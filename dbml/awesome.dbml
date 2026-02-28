@@ -637,6 +637,8 @@ Table menu_master {
   menuIconLocationDesktop String
   menuIconLocationWeb String
   menuIconLocationMobile String
+  menuSeparator Boolean [not null, default: false]
+  menuIsActive Boolean [not null, default: true]
   menuCreatedOn DateTime [default: `now()`, not null]
   menuModifiedOn DateTime
   menuSyncDate DateTime

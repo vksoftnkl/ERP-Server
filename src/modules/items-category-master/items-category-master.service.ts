@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { categoryMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -29,6 +30,7 @@ export class ItemsCategoryMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveItemCategoryDto: SaveItemCategoryDto): Promise<ItemCategoryPayload> {
@@ -45,6 +47,18 @@ export class ItemsCategoryMasterService {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
+
+    const hasStructuredFilters =
+      queryDto.category_parent_id !== undefined ||
+      queryDto.category_is_active !== undefined ||
+      Boolean(queryDto.search?.trim());
+
+    if (!hasStructuredFilters) {
+      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      if (configuredList) {
+        return configuredList;
+      }
+    }
 
     const where: Prisma.categoryMasterWhereInput = {
       categoryIsDeleted: false,
@@ -86,6 +100,61 @@ export class ItemsCategoryMasterService {
         total_pages: Math.ceil(total / limit),
       },
     };
+  }
+
+  private async listFromConfiguredGridSql(
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<{ items: ItemCategoryListItem[]; meta: ItemCategoryListMeta } | null> {
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: ITEM_CATEGORY_TABLE_NAME,
+    });
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      ITEM_CATEGORY_TABLE_NAME,
+    );
+    if (primaryConfiguredGrids.length === 0) {
+      return null;
+    }
+
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: ITEM_CATEGORY_TABLE_NAME,
+      });
+      if (!validation.isValid) {
+        continue;
+      }
+
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<ItemCategoryListItem>({
+          baseSql: validation.normalizedSql,
+          alias: 'item_category_grid',
+          limit,
+          skip,
+        });
+
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
   }
 
   async getById(categoryId: string): Promise<ItemCategoryPayload> {

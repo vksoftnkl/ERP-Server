@@ -100,52 +100,47 @@ export class ItemsBrandMasterService {
       configuredGrids,
       ITEM_BRAND_TABLE_NAME,
     );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
+    if (primaryConfiguredGrids.length === 0) {
       return null;
-    }
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
-      return null;
-    }
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: ITEM_BRAND_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for item brand list', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
     }
 
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<ItemBrandListItem>({
-        baseSql: validation.normalizedSql,
-        alias: 'item_brand_grid',
-        limit,
-        skip,
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: ITEM_BRAND_TABLE_NAME,
       });
+      if (!validation.isValid) {
+        continue;
+      }
 
-      return {
-        items: result.items,
-        meta: {
-          page,
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<ItemBrandListItem>({
+          baseSql: validation.normalizedSql,
+          alias: 'item_brand_grid',
           limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
-      };
-    } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for item brand list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for item_brand_master',
-        },
-      ]);
+          skip,
+        });
+
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
     }
+
+    return null;
   }
   async getById(brandId: string): Promise<ItemBrandPayload> {
     const record = await this.prisma.itemBrandMaster.findFirst({

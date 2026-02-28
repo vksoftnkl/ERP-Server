@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, TenderTypeMaster } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -30,6 +31,7 @@ export class TenderTypeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveTenderTypeMasterDto: SaveTenderTypeMasterDto): Promise<TenderTypeMasterPayload> {
@@ -46,6 +48,17 @@ export class TenderTypeMasterService {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
+
+    const hasStructuredFilters =
+      queryDto.ttmIsActive !== undefined ||
+      Boolean(queryDto.search?.trim());
+
+    if (!hasStructuredFilters) {
+      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      if (configuredList) {
+        return configuredList;
+      }
+    }
 
     const where: Prisma.TenderTypeMasterWhereInput = {
       ttmIsDeleted: false,
@@ -79,6 +92,61 @@ export class TenderTypeMasterService {
         total_pages: Math.ceil(total / limit),
       },
     };
+  }
+
+  private async listFromConfiguredGridSql(
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<{ items: TenderTypeMasterListItem[]; meta: TenderTypeMasterListMeta } | null> {
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: TENDER_TYPE_MASTER_TABLE_NAME,
+    });
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      TENDER_TYPE_MASTER_TABLE_NAME,
+    );
+    if (primaryConfiguredGrids.length === 0) {
+      return null;
+    }
+
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: TENDER_TYPE_MASTER_TABLE_NAME,
+      });
+      if (!validation.isValid) {
+        continue;
+      }
+
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<TenderTypeMasterListItem>({
+          baseSql: validation.normalizedSql,
+          alias: 'tender_type_master_grid',
+          limit,
+          skip,
+        });
+
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
   }
 
   async getById(ttmTypeId: string): Promise<TenderTypeMasterPayload> {
