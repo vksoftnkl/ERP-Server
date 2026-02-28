@@ -48,7 +48,7 @@ LAN hosting example (`.env`):
 ```bash
 HOST=0.0.0.0
 PORT=3010
-CORS_ORIGINS=https://localhost:3000,https://127.0.0.1:3000,https://192.168.10.25:3000
+CORS_ORIGINS=https://localhost:3000,http://localhost:3000,https://127.0.0.1:3000,http://127.0.0.1:3000,https://192.168.10.25:3000,http://192.168.10.25:3000
 CORS_CREDENTIALS=false
 ```
 
@@ -57,6 +57,14 @@ Then access from LAN:
 
 If `HTTPS_ENABLED=true` with a cert generated for `localhost`, browsers will warn on LAN IP access.
 Generate a certificate whose SAN includes your LAN host/IP to avoid warnings.
+
+Troubleshooting:
+- `CORS_ORIGINS` must include the exact frontend origin (`scheme + host + port`), for example `https://localhost:3000` and `http://localhost:3000` are different origins.
+- Verify your cert SAN values with:
+
+```bash
+openssl x509 -in certs/server.crt -noout -subject -issuer -dates -ext subjectAltName
+```
 
 Logs:
 - Application and request logs are automatically appended to `logs/app.log` on every run.
@@ -74,7 +82,8 @@ openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout certs/server.key \
   -out certs/server.crt \
   -days 365 \
-  -subj "/CN=localhost"
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 ```
 
 2. Configure `.env`:

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemTaxMaster, Prisma } from '@prisma/client';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
@@ -25,6 +26,13 @@ type PrismaMock = {
   };
   $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
+};
+
+type ConfiguredGridSqlServiceMock = {
+  loadCandidates: jest.Mock;
+  filterPrimaryFromTable: jest.Mock;
+  validateBaseSql: jest.Mock;
+  runPagedQuery: jest.Mock;
 };
 
 const makeRecord = (overrides: Partial<ItemTaxMaster> = {}): ItemTaxMaster =>
@@ -72,6 +80,7 @@ describe('ItemsTaxMasterService', () => {
   let service: ItemsTaxMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
+  let configuredGridSqlService: ConfiguredGridSqlServiceMock;
 
   beforeEach(() => {
     prisma = {
@@ -107,10 +116,105 @@ describe('ItemsTaxMasterService', () => {
     auditLogService = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
     };
+    configuredGridSqlService = {
+      loadCandidates: jest.fn().mockImplementation(async (options: { tableName: string }) => {
+        const configuredGrid = await prisma.gridDetails.findFirst({
+          where: {
+            gridIsDeleted: false,
+            gridStatus: true,
+            gridSql: {
+              not: null,
+              contains: options.tableName,
+              mode: 'insensitive',
+            },
+          },
+          orderBy: [{ gridSortOrder: 'asc' }, { gridId: 'desc' }],
+          select: {
+            gridSql: true,
+          },
+        });
+        if (!configuredGrid?.gridSql) {
+          return [];
+        }
+
+        return [
+          {
+            gridId: BigInt(1),
+            gridSql: configuredGrid.gridSql,
+          },
+        ];
+      }),
+      filterPrimaryFromTable: jest.fn().mockImplementation((candidates: Array<unknown>) => candidates),
+      validateBaseSql: jest
+        .fn()
+        .mockImplementation((options: { sql: string; tableName: string }) => {
+          const normalizedSql = options.sql.trim().replace(/;+\s*$/g, '');
+          if (!/^select\b/i.test(normalizedSql)) {
+            return {
+              isValid: false,
+              message: 'Only SELECT query is allowed',
+            };
+          }
+          if (normalizedSql.includes(';')) {
+            return {
+              isValid: false,
+              message: 'Multiple statements are not allowed',
+            };
+          }
+          if (/--|\/\*/.test(normalizedSql)) {
+            return {
+              isValid: false,
+              message: 'Comments are not allowed in configured query',
+            };
+          }
+          if (!new RegExp(`\\b${options.tableName}\\b`, 'i').test(normalizedSql)) {
+            return {
+              isValid: false,
+              message: `Configured query must reference ${options.tableName} table`,
+            };
+          }
+          return {
+            isValid: true,
+            normalizedSql,
+          };
+        }),
+      runPagedQuery: jest.fn().mockImplementation(
+        async (options: {
+          baseSql: string;
+          alias: string;
+          params?: unknown[];
+          limit: number;
+          skip: number;
+        }) => {
+          const params = options.params ?? [];
+          const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
+          const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
+            params.length + 1
+          } OFFSET $${params.length + 2}`;
+          const [countResult, rows] = await Promise.all([
+            prisma.$queryRawUnsafe(countSql, ...params),
+            prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
+          ]);
+          const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
+          if (typeof totalRaw === 'bigint') {
+            return { items: rows as unknown[], total: Number(totalRaw) };
+          }
+          if (typeof totalRaw === 'number') {
+            return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
+          }
+          if (typeof totalRaw === 'string') {
+            const parsed = Number(totalRaw);
+            return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
+          }
+          return { items: rows as unknown[], total: 0 };
+        },
+      ),
+    };
 
     service = new ItemsTaxMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
 
@@ -260,17 +364,13 @@ describe('ItemsTaxMasterService', () => {
     });
   });
 
-  it('falls back to normal list when configured grid_sql is invalid', async () => {
+  it('rejects invalid configured grid_sql in list', async () => {
     prisma.gridDetails.findFirst.mockResolvedValue({
       gridSql: 'DELETE FROM item_tax_master',
     });
-    prisma.itemTaxMaster.count.mockResolvedValue(1);
-    prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
 
-    const result = await service.list({});
-
-    expect(prisma.itemTaxMaster.findMany).toHaveBeenCalledTimes(1);
-    expect(result.meta.total).toBe(1);
+    await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('getById returns an item tax when it exists and is not deleted', async () => {

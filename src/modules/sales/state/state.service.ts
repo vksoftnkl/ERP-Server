@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { StateMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -22,9 +23,6 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const STATE_TABLE_NAME = 'state_master';
 const STATE_AUDIT_SCREEN_NAME = 'State Master';
-const GRID_SQL_FORBIDDEN_TOKENS =
-  /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
-const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 
 type StateWriteClient = Prisma.TransactionClient | PrismaService;
 
@@ -33,6 +31,7 @@ export class StateService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveStateDto: SaveStateDto): Promise<StatePayload> {
@@ -102,54 +101,45 @@ export class StateService {
     limit: number,
     skip: number,
   ): Promise<{ items: StateListItem[]; meta: StateListMeta } | null> {
-    const configuredGrids = await this.prisma.gridDetails.findMany({
-      where: {
-        gridIsDeleted: false,
-        gridStatus: true,
-        gridSql: {
-          not: null,
-          contains: STATE_TABLE_NAME,
-          mode: 'insensitive',
-        },
-      },
-      orderBy: [{ gridSortOrder: 'asc' }, { gridId: 'desc' }],
-      select: {
-        gridSql: true,
-      },
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: STATE_TABLE_NAME,
     });
-    if (configuredGrids.length === 0) {
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      STATE_TABLE_NAME,
+    );
+    if (primaryConfiguredGrids.length === 0) {
       return null;
     }
 
-    const preferredConfiguredGrids = configuredGrids.filter((configuredGrid) =>
-      this.referencesStateAsPrimaryFromTable(configuredGrid.gridSql),
-    );
-    const candidateConfiguredGrids =
-      preferredConfiguredGrids.length > 0 ? preferredConfiguredGrids : configuredGrids;
-
-    for (const configuredGrid of candidateConfiguredGrids) {
+    for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
 
-      try {
-        const baseSql = this.validateConfiguredGridSql(rawGridSql);
-        const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS state_grid`;
-        const rowsSql = `SELECT * FROM (${baseSql}) AS state_grid LIMIT $1 OFFSET $2`;
-        const [countResult, rows] = await Promise.all([
-          this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql),
-          this.prisma.$queryRawUnsafe<StateListItem[]>(rowsSql, limit, skip),
-        ]);
-        const total = this.parseCountValue(countResult[0]?.total);
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: STATE_TABLE_NAME,
+      });
+      if (!validation.isValid) {
+        continue;
+      }
 
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<StateListItem>({
+          baseSql: validation.normalizedSql,
+          alias: 'state_grid',
+          limit,
+          skip,
+        });
         return {
-          items: rows,
+          items: result.items,
           meta: {
             page,
             limit,
-            total,
-            total_pages: Math.ceil(total / limit),
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
           },
         };
       } catch {
@@ -158,176 +148,6 @@ export class StateService {
     }
 
     return null;
-  }
-
-  private referencesStateAsPrimaryFromTable(sql: string | null): boolean {
-    if (!sql) {
-      return false;
-    }
-
-    return this.extractTopLevelFromTableName(sql) === STATE_TABLE_NAME;
-  }
-
-  private extractTopLevelFromTableName(sql: string): string | null {
-    const trimmed = sql.trim();
-    const selectMatch = trimmed.match(/^select\b/i);
-    if (!selectMatch) {
-      return null;
-    }
-
-    const selectStartIndex = selectMatch[0].length;
-    let depth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-
-    for (let index = selectStartIndex; index < trimmed.length; index += 1) {
-      const current = trimmed[index];
-      const next = trimmed[index + 1];
-
-      if (insideSingleQuote) {
-        if (current === "'" && next === "'") {
-          index += 1;
-          continue;
-        }
-        if (current === "'") {
-          insideSingleQuote = false;
-        }
-        continue;
-      }
-
-      if (insideDoubleQuote) {
-        if (current === '"' && next === '"') {
-          index += 1;
-          continue;
-        }
-        if (current === '"') {
-          insideDoubleQuote = false;
-        }
-        continue;
-      }
-
-      if (current === "'") {
-        insideSingleQuote = true;
-        continue;
-      }
-      if (current === '"') {
-        insideDoubleQuote = true;
-        continue;
-      }
-      if (current === '(') {
-        depth += 1;
-        continue;
-      }
-      if (current === ')') {
-        depth = Math.max(0, depth - 1);
-        continue;
-      }
-
-      if (
-        depth === 0 &&
-        /^from$/i.test(trimmed.slice(index, index + 4)) &&
-        (index === 0 || /\s/.test(trimmed[index - 1])) &&
-        (index + 4 >= trimmed.length || /\s/.test(trimmed[index + 4]))
-      ) {
-        const fromClause = trimmed.slice(index + 4).trimStart();
-        const identifierPattern = '(?:"(?:""|[^"])+"|[a-z_][a-z0-9_$]*)';
-        const relationPattern = new RegExp(
-          `^(?:${identifierPattern}\\s*\\.\\s*)?(${identifierPattern})`,
-          'i',
-        );
-        const relationMatch = fromClause.match(relationPattern);
-        if (!relationMatch) {
-          return null;
-        }
-        return this.parseSqlIdentifierToken(relationMatch[1]);
-      }
-    }
-
-    return null;
-  }
-
-  private parseSqlIdentifierToken(token: string): string | null {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    if (/^"([^"]|"")+"$/.test(trimmed)) {
-      return trimmed.slice(1, -1).replace(/""/g, '"');
-    }
-
-    if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
-      return trimmed.toLowerCase();
-    }
-
-    return null;
-  }
-
-  private validateConfiguredGridSql(sql: string): string {
-    const normalized = sql.trim().replace(/;+\s*$/g, '');
-    if (!/^select\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for state list', [
-        {
-          field: 'grid_sql',
-          message: 'Only SELECT query is allowed',
-        },
-      ]);
-    }
-
-    if (normalized.includes(';')) {
-      this.throwBadRequest('Invalid grid_sql configuration for state list', [
-        {
-          field: 'grid_sql',
-          message: 'Multiple statements are not allowed',
-        },
-      ]);
-    }
-
-    if (GRID_SQL_COMMENT_PATTERN.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for state list', [
-        {
-          field: 'grid_sql',
-          message: 'Comments are not allowed in configured query',
-        },
-      ]);
-    }
-
-    if (GRID_SQL_FORBIDDEN_TOKENS.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for state list', [
-        {
-          field: 'grid_sql',
-          message: 'Write/DDL statements are not allowed',
-        },
-      ]);
-    }
-
-    if (!/\bstate_master\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for state list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query must reference state_master table',
-        },
-      ]);
-    }
-
-    return normalized;
-  }
-
-  private parseCountValue(value: bigint | number | string | undefined): number {
-    if (typeof value === 'bigint') {
-      return Number(value);
-    }
-
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-
-    return 0;
   }
 
   async getById(stmId: string): Promise<StatePayload> {

@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, StateCode } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -22,9 +23,6 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const STATE_CODE_MASTER_TABLE_NAME = 'state_codes';
 const STATE_CODE_MASTER_AUDIT_SCREEN_NAME = 'State Code Master';
-const GRID_SQL_FORBIDDEN_TOKENS =
-  /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
-const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 
 type StateCodeMasterWriteClient = Prisma.TransactionClient | PrismaService;
 
@@ -33,6 +31,7 @@ export class StateCodeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveStateCodeMasterDto: SaveStateCodeMasterDto): Promise<StateCodeMasterPayload> {
@@ -118,116 +117,60 @@ export class StateCodeMasterService {
     limit: number,
     skip: number,
   ): Promise<{ items: StateCodeMasterListItem[]; meta: StateCodeMasterListMeta } | null> {
-    const configuredGrid = await this.prisma.gridDetails.findFirst({
-      where: {
-        gridIsDeleted: false,
-        gridStatus: true,
-        gridSql: {
-          not: null,
-          contains: STATE_CODE_MASTER_TABLE_NAME,
-          mode: 'insensitive',
-        },
-      },
-      orderBy: [{ gridSortOrder: 'asc' }, { gridId: 'desc' }],
-      select: {
-        gridSql: true,
-      },
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: STATE_CODE_MASTER_TABLE_NAME,
     });
-
-    const rawGridSql = configuredGrid?.gridSql?.trim();
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      STATE_CODE_MASTER_TABLE_NAME,
+    );
+    const configuredGrid = primaryConfiguredGrids[0];
+    if (!configuredGrid) {
+      return null;
+    }
+    const rawGridSql = configuredGrid.gridSql?.trim();
     if (!rawGridSql) {
       return null;
     }
 
-    try {
-      const baseSql = this.validateConfiguredGridSql(rawGridSql);
-      const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS state_code_master_grid`;
-      const rowsSql = `SELECT * FROM (${baseSql}) AS state_code_master_grid LIMIT $1 OFFSET $2`;
-      const [countResult, rows] = await Promise.all([
-        this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql),
-        this.prisma.$queryRawUnsafe<StateCodeMasterListItem[]>(rowsSql, limit, skip),
+    const validation = this.configuredGridSqlService.validateBaseSql({
+      sql: rawGridSql,
+      tableName: STATE_CODE_MASTER_TABLE_NAME,
+    });
+    if (!validation.isValid) {
+      this.throwBadRequest('Invalid grid_sql configuration for state code master', [
+        {
+          field: 'grid_sql',
+          message: validation.message,
+        },
       ]);
-      const total = this.parseCountValue(countResult[0]?.total);
+    }
+
+    try {
+      const result = await this.configuredGridSqlService.runPagedQuery<StateCodeMasterListItem>({
+        baseSql: validation.normalizedSql,
+        alias: 'state_code_master_grid',
+        limit,
+        skip,
+      });
 
       return {
-        items: rows,
+        items: result.items,
         meta: {
           page,
           limit,
-          total,
-          total_pages: Math.ceil(total / limit),
+          total: result.total,
+          total_pages: Math.ceil(result.total / limit),
         },
       };
     } catch {
-      return null;
-    }
-  }
-
-  private validateConfiguredGridSql(sql: string): string {
-    const normalized = sql.trim().replace(/;+\s*$/g, '');
-    if (!/^select\b/i.test(normalized)) {
       this.throwBadRequest('Invalid grid_sql configuration for state code master', [
         {
           field: 'grid_sql',
-          message: 'Only SELECT query is allowed',
+          message: 'Configured query could not be executed for state_codes',
         },
       ]);
     }
-
-    if (normalized.includes(';')) {
-      this.throwBadRequest('Invalid grid_sql configuration for state code master', [
-        {
-          field: 'grid_sql',
-          message: 'Multiple statements are not allowed',
-        },
-      ]);
-    }
-
-    if (GRID_SQL_COMMENT_PATTERN.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for state code master', [
-        {
-          field: 'grid_sql',
-          message: 'Comments are not allowed in configured query',
-        },
-      ]);
-    }
-
-    if (GRID_SQL_FORBIDDEN_TOKENS.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for state code master', [
-        {
-          field: 'grid_sql',
-          message: 'Write/DDL statements are not allowed',
-        },
-      ]);
-    }
-
-    if (!/\bstate_codes\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for state code master', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query must reference state_codes table',
-        },
-      ]);
-    }
-
-    return normalized;
-  }
-
-  private parseCountValue(value: bigint | number | string | undefined): number {
-    if (typeof value === 'bigint') {
-      return Number(value);
-    }
-
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-
-    return 0;
   }
 
   async getById(stateCodeValue: string): Promise<StateCodeMasterPayload> {

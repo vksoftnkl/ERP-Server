@@ -10,6 +10,8 @@ import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tende
 import { AuthModule } from '../modules/auth/auth.module';
 import { GridColumnsModule } from '../modules/grid-columns/grid-columns.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
+import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
+import { DropdownColumnsModule } from '../modules/dropdown-columns/dropdown-columns.module';
 import { GodownsMasterModule } from '../modules/godowns-master/godowns-master.module';
 import { HealthModule } from '../modules/health/health.module';
 import { ItemsBrandMasterModule } from '../modules/items-brand-master/items-brand-master.module';
@@ -148,6 +150,18 @@ export const swaggerModuleDocuments = [
     title: 'Grid Columns API',
     description: 'Grid columns module endpoints',
     include: [GridColumnsModule],
+  },
+  {
+    path: 'dropdown-details',
+    title: 'Dropdown Details API',
+    description: 'Dropdown details module endpoints',
+    include: [DropdownDetailsModule],
+  },
+  {
+    path: 'dropdown-columns',
+    title: 'Dropdown Columns API',
+    description: 'Dropdown columns module endpoints',
+    include: [DropdownColumnsModule],
   },
   {
     path: 'master-lookups',

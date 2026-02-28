@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -21,15 +22,13 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ITEM_BRAND_TABLE_NAME = 'item_brand_master';
 const ITEM_BRAND_AUDIT_SCREEN_NAME = 'Item Brand Master';
-const GRID_SQL_FORBIDDEN_TOKENS =
-  /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
-const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 type ItemBrandWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()
 export class ItemsBrandMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveItemBrandDto: SaveItemBrandDto): Promise<ItemBrandPayload> {
     if (saveItemBrandDto.brand_id) {
@@ -94,41 +93,49 @@ export class ItemsBrandMasterService {
     limit: number,
     skip: number,
   ): Promise<{ items: ItemBrandListItem[]; meta: ItemBrandListMeta } | null> {
-    const configuredGrid = await this.prisma.gridDetails.findFirst({
-      where: {
-        gridIsDeleted: false,
-        gridStatus: true,
-        gridSql: {
-          not: null,
-          contains: ITEM_BRAND_TABLE_NAME,
-          mode: 'insensitive',
-        },
-      },
-      orderBy: [{ gridSortOrder: 'asc' }, { gridId: 'desc' }],
-      select: {
-        gridSql: true,
-      },
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: ITEM_BRAND_TABLE_NAME,
     });
-    const rawGridSql = configuredGrid?.gridSql?.trim();
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      ITEM_BRAND_TABLE_NAME,
+    );
+    const configuredGrid = primaryConfiguredGrids[0];
+    if (!configuredGrid) {
+      return null;
+    }
+    const rawGridSql = configuredGrid.gridSql?.trim();
     if (!rawGridSql) {
       return null;
     }
-    const baseSql = this.validateConfiguredGridSql(rawGridSql);
-    const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS item_brand_grid`;
-    const rowsSql = `SELECT * FROM (${baseSql}) AS item_brand_grid LIMIT $1 OFFSET $2`;
-    try {
-      const [countResult, rows] = await Promise.all([
-        this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql),
-        this.prisma.$queryRawUnsafe<ItemBrandListItem[]>(rowsSql, limit, skip),
+    const validation = this.configuredGridSqlService.validateBaseSql({
+      sql: rawGridSql,
+      tableName: ITEM_BRAND_TABLE_NAME,
+    });
+    if (!validation.isValid) {
+      this.throwBadRequest('Invalid grid_sql configuration for item brand list', [
+        {
+          field: 'grid_sql',
+          message: validation.message,
+        },
       ]);
-      const total = this.parseCountValue(countResult[0]?.total);
+    }
+
+    try {
+      const result = await this.configuredGridSqlService.runPagedQuery<ItemBrandListItem>({
+        baseSql: validation.normalizedSql,
+        alias: 'item_brand_grid',
+        limit,
+        skip,
+      });
+
       return {
-        items: rows,
+        items: result.items,
         meta: {
           page,
           limit,
-          total,
-          total_pages: Math.ceil(total / limit),
+          total: result.total,
+          total_pages: Math.ceil(result.total / limit),
         },
       };
     } catch {
@@ -139,63 +146,6 @@ export class ItemsBrandMasterService {
         },
       ]);
     }
-  }
-  private validateConfiguredGridSql(sql: string): string {
-    const normalized = sql.trim().replace(/;+\s*$/g, '');
-    if (!/^select\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for item brand list', [
-        {
-          field: 'grid_sql',
-          message: 'Only SELECT query is allowed',
-        },
-      ]);
-    }
-    if (normalized.includes(';')) {
-      this.throwBadRequest('Invalid grid_sql configuration for item brand list', [
-        {
-          field: 'grid_sql',
-          message: 'Multiple statements are not allowed',
-        },
-      ]);
-    }
-    if (GRID_SQL_COMMENT_PATTERN.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for item brand list', [
-        {
-          field: 'grid_sql',
-          message: 'Comments are not allowed in configured query',
-        },
-      ]);
-    }
-    if (GRID_SQL_FORBIDDEN_TOKENS.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for item brand list', [
-        {
-          field: 'grid_sql',
-          message: 'Write/DDL statements are not allowed',
-        },
-      ]);
-    }
-    if (!/\bitem_brand_master\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for item brand list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query must reference item_brand_master table',
-        },
-      ]);
-    }
-    return normalized;
-  }
-  private parseCountValue(value: bigint | number | string | undefined): number {
-    if (typeof value === 'bigint') {
-      return Number(value);
-    }
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-    return 0;
   }
   async getById(brandId: string): Promise<ItemBrandPayload> {
     const record = await this.prisma.itemBrandMaster.findFirst({
@@ -450,18 +400,15 @@ export class ItemsBrandMasterService {
     if (this.hasOwnProperty(saveItemBrandDto, 'brand_parent_id')) {
       data.brand_parent_id = saveItemBrandDto.brand_parent_id;
     }
-
     if (this.hasOwnProperty(saveItemBrandDto, 'brand_sort')) {
       data.brand_sort = saveItemBrandDto.brand_sort;
     }
-
     if (this.hasOwnProperty(saveItemBrandDto, 'brand_level')) {
       data.brand_level = saveItemBrandDto.brand_level;
     }
     if (this.hasOwnProperty(saveItemBrandDto, 'brand_photo')) {
       data.brand_photo = this.decodePhotoInput(saveItemBrandDto.brand_photo);
     }
-
     if (this.hasOwnProperty(saveItemBrandDto, 'brand_photo_url')) {
       data.brand_photo_url = saveItemBrandDto.brand_photo_url;
     }
@@ -473,13 +420,11 @@ export class ItemsBrandMasterService {
     const ancestorIds: string[] = [];
     const visited = new Set<string>();
     let currentParentId = startParentId;
-
     while (currentParentId) {
       if (visited.has(currentParentId)) {
         break;
       }
       visited.add(currentParentId);
-
       const parent = await tx.itemBrandMaster.findFirst({
         where: {
           brand_id: currentParentId,
@@ -493,11 +438,9 @@ export class ItemsBrandMasterService {
       if (!parent) {
         break;
       }
-
       ancestorIds.push(parent.brand_id);
       currentParentId = parent.brand_parent_id;
     }
-
     return ancestorIds;
   }
   private async getActiveSubtreeIds(tx: ItemBrandWriteClient, rootId: string): Promise<string[]> {
@@ -511,7 +454,6 @@ export class ItemsBrandMasterService {
         continue;
       }
       visited.add(currentId);
-
       const node = await tx.itemBrandMaster.findFirst({
         where: {
           brand_id: currentId,
@@ -525,7 +467,6 @@ export class ItemsBrandMasterService {
         continue;
       }
       subtreeIds.push(node.brand_id);
-
       const children = await tx.itemBrandMaster.findMany({
         where: {
           brand_parent_id: node.brand_id,
@@ -541,7 +482,6 @@ export class ItemsBrandMasterService {
         }
       }
     }
-
     return subtreeIds;
   }
   private async appendPathIds(
@@ -554,7 +494,6 @@ export class ItemsBrandMasterService {
     if (normalizedTargetIds.length === 0 || normalizedIdsToAdd.length === 0) {
       return;
     }
-
     const records = await tx.itemBrandMaster.findMany({
       where: {
         brand_id: {
@@ -567,7 +506,6 @@ export class ItemsBrandMasterService {
         brand_path_ids: true,
       },
     });
-
     for (const record of records) {
       const nextPathIds = this.mergePathIds(record.brand_path_ids, normalizedIdsToAdd);
       if (this.areSameIds(record.brand_path_ids, nextPathIds)) {
@@ -593,7 +531,6 @@ export class ItemsBrandMasterService {
     if (normalizedTargetIds.length === 0 || normalizedIdsToRemove.length === 0) {
       return;
     }
-
     const records = await tx.itemBrandMaster.findMany({
       where: {
         brand_id: {
@@ -606,7 +543,6 @@ export class ItemsBrandMasterService {
         brand_path_ids: true,
       },
     });
-
     for (const record of records) {
       const nextPathIds = this.excludePathIds(record.brand_path_ids, normalizedIdsToRemove);
       if (this.areSameIds(record.brand_path_ids, nextPathIds)) {
@@ -654,18 +590,15 @@ export class ItemsBrandMasterService {
     }
     return true;
   }
-
   private decodePhotoInput(
     photo: string | null | undefined,
   ): Uint8Array<ArrayBuffer> | null | undefined {
     if (photo === undefined) {
       return undefined;
     }
-
     if (photo === null) {
       return null;
     }
-
     const trimmed = photo.trim();
     if (!trimmed) {
       this.throwBadRequest('Invalid base64 image provided', [
@@ -675,10 +608,8 @@ export class ItemsBrandMasterService {
         },
       ]);
     }
-
     const candidate = trimmed.includes(',') ? (trimmed.split(',').pop() ?? '') : trimmed;
     const normalized = candidate.replace(/\s+/g, '');
-
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
       this.throwBadRequest('Invalid base64 image provided', [
         {
@@ -687,10 +618,8 @@ export class ItemsBrandMasterService {
         },
       ]);
     }
-
     return new Uint8Array(Buffer.from(normalized, 'base64'));
   }
-
   private toPayload(record: ItemBrandMaster): ItemBrandPayload {
     return {
       brand_id: record.brand_id,
@@ -713,7 +642,6 @@ export class ItemsBrandMasterService {
       brand_modified_by: record.brand_modified_by,
     };
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -726,15 +654,12 @@ export class ItemsBrandMasterService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(brandId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Item brand not found', [
@@ -745,11 +670,9 @@ export class ItemsBrandMasterService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: ItemBrandErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: ItemBrandErrorDetail[] = [],
@@ -760,7 +683,6 @@ export class ItemsBrandMasterService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

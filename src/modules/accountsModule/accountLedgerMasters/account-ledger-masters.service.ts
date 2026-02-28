@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccLedgerMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -23,9 +24,6 @@ const DEFAULT_LIMIT = 20;
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
-const GRID_SQL_FORBIDDEN_TOKENS =
-  /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
-const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 
 type AccountLedgerWriteClient = Prisma.TransactionClient | PrismaService;
 
@@ -40,6 +38,7 @@ export class AccountLedgerMastersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(
@@ -129,28 +128,36 @@ export class AccountLedgerMastersService {
     limit: number,
     skip: number,
   ): Promise<{ items: AccountLedgerMasterListItem[]; meta: AccountLedgerMasterListMeta } | null> {
-    const configuredGrid = await this.prisma.gridDetails.findFirst({
-      where: {
-        gridIsDeleted: false,
-        gridStatus: true,
-        gridSql: {
-          not: null,
-          contains: ACCOUNT_LEDGER_MASTER_TABLE_NAME,
-          mode: 'insensitive',
-        },
-      },
-      orderBy: [{ gridSortOrder: 'asc' }, { gridId: 'desc' }],
-      select: {
-        gridId: true,
-        gridSql: true,
-      },
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: ACCOUNT_LEDGER_MASTER_TABLE_NAME,
     });
-    const rawGridSql = configuredGrid?.gridSql?.trim();
-    if (!configuredGrid || !rawGridSql) {
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      ACCOUNT_LEDGER_MASTER_TABLE_NAME,
+    );
+    const configuredGrid = primaryConfiguredGrids[0];
+    if (!configuredGrid) {
+      return null;
+    }
+    const rawGridSql = configuredGrid.gridSql?.trim();
+    if (!rawGridSql) {
       return null;
     }
 
-    const baseSql = this.validateConfiguredGridSql(rawGridSql);
+    const validation = this.configuredGridSqlService.validateBaseSql({
+      sql: rawGridSql,
+      tableName: ACCOUNT_LEDGER_MASTER_TABLE_NAME,
+    });
+    if (!validation.isValid) {
+      this.throwBadRequest('Invalid grid_sql configuration for account ledger list', [
+        {
+          field: 'grid_sql',
+          message: validation.message,
+        },
+      ]);
+    }
+
+    const baseSql = validation.normalizedSql;
     const searchableFieldNames = queryDto.search?.trim()
       ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
       : [];
@@ -159,33 +166,24 @@ export class AccountLedgerMastersService {
       queryDto,
       searchableFieldNames,
     );
-    const countSql = `SELECT COUNT(*)::bigint AS total FROM (${filteredSql}) AS account_ledger_master_grid_count`;
-    const rowsSql = `SELECT * FROM (${filteredSql}) AS account_ledger_master_grid_rows LIMIT $${
-      params.length + 1
-    } OFFSET $${params.length + 2}`;
-
     try {
-      const [countResult, rows] = await Promise.all([
-        this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(
-          countSql,
-          ...params,
-        ),
-        this.prisma.$queryRawUnsafe<AccountLedgerMasterListItem[]>(
-          rowsSql,
-          ...params,
+      const result = await this.configuredGridSqlService.runPagedQuery<AccountLedgerMasterListItem>(
+        {
+          baseSql: filteredSql,
+          alias: 'account_ledger_master_grid',
+          params,
           limit,
           skip,
-        ),
-      ]);
-      const total = this.parseCountValue(countResult[0]?.total);
+        },
+      );
 
       return {
-        items: rows,
+        items: result.items,
         meta: {
           page,
           limit,
-          total,
-          total_pages: Math.ceil(total / limit),
+          total: result.total,
+          total_pages: Math.ceil(result.total / limit),
         },
       };
     } catch {
@@ -618,65 +616,6 @@ export class AccountLedgerMastersService {
     }
 
     return null;
-  }
-
-  private validateConfiguredGridSql(sql: string): string {
-    const normalized = sql.trim().replace(/;+\s*$/g, '');
-    if (!/^select\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for account ledger list', [
-        {
-          field: 'grid_sql',
-          message: 'Only SELECT query is allowed',
-        },
-      ]);
-    }
-    if (normalized.includes(';')) {
-      this.throwBadRequest('Invalid grid_sql configuration for account ledger list', [
-        {
-          field: 'grid_sql',
-          message: 'Multiple statements are not allowed',
-        },
-      ]);
-    }
-    if (GRID_SQL_COMMENT_PATTERN.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for account ledger list', [
-        {
-          field: 'grid_sql',
-          message: 'Comments are not allowed in configured query',
-        },
-      ]);
-    }
-    if (GRID_SQL_FORBIDDEN_TOKENS.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for account ledger list', [
-        {
-          field: 'grid_sql',
-          message: 'Write/DDL statements are not allowed',
-        },
-      ]);
-    }
-    if (!/\bacc_ledger_master\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for account ledger list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query must reference acc_ledger_master table',
-        },
-      ]);
-    }
-    return normalized;
-  }
-
-  private parseCountValue(value: bigint | number | string | undefined): number {
-    if (typeof value === 'bigint') {
-      return Number(value);
-    }
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-    return 0;
   }
 
   async getById(ledId: string): Promise<AccountLedgerMasterPayload> {
@@ -1132,7 +1071,7 @@ export class AccountLedgerMastersService {
     }
 
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledChequeName')) {
-      data.ledChequeName = saveAccountLedgerMasterDto.ledChequeName;
+      data.ledHolderName = saveAccountLedgerMasterDto.ledChequeName;
     }
 
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankName')) {
@@ -1260,7 +1199,7 @@ export class AccountLedgerMastersService {
       ledAadharNo: record.ledAadharNo,
       ledEcommerceGstin: record.ledEcommerceGstin,
       ledIsSez: record.ledIsSez,
-      ledChequeName: record.ledChequeName,
+      ledChequeName: record.ledHolderName,
       ledBankName: record.ledBankName,
       ledBankBranch: record.ledBankBranch,
       ledBankAcNo: record.ledBankAcNo,

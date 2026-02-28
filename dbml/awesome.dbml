@@ -90,7 +90,7 @@ Table acc_ledger_master {
   ledAadharNo String
   ledEcommerceGstin String
   ledIsSez Boolean [not null, default: false]
-  ledChequeName String
+  ledHolderName String
   ledBankName String
   ledBankBranch String
   ledBankAcNo String

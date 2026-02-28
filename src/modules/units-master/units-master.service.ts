@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, Unit } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -21,14 +22,14 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const UNIT_TABLE_NAME = 'units';
 const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
-const GRID_SQL_FORBIDDEN_TOKENS =
-  /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
-const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
+const LEGACY_UNIT_UUID_NUMERIC_COMPARISON_PATTERN =
+  /\b(?:[a-z_][a-z0-9_$]*\s*\.\s*)?(unit_id|unit_base_unit_id)\s*=\s*[-+]?\d+\b/i;
 @Injectable()
 export class UnitsMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
     if (saveUnitDto.unit_id) {
@@ -94,104 +95,60 @@ export class UnitsMasterService {
     limit: number,
     skip: number,
   ): Promise<{ items: UnitListItem[]; meta: UnitListMeta } | null> {
-    const configuredGrid = await this.prisma.gridDetails.findFirst({
-      where: {
-        gridIsDeleted: false,
-        gridStatus: true,
-        gridSql: {
-          not: null,
-          contains: UNIT_TABLE_NAME,
-          mode: 'insensitive',
-        },
-      },
-      orderBy: [{ gridSortOrder: 'asc' }, { gridId: 'desc' }],
-      select: {
-        gridSql: true,
-      },
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: UNIT_TABLE_NAME,
     });
-    const rawGridSql = configuredGrid?.gridSql?.trim();
-    if (!rawGridSql) {
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      UNIT_TABLE_NAME,
+    );
+    if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-    try {
-      const baseSql = this.validateConfiguredGridSql(rawGridSql);
-      const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS unit_grid`;
-      const rowsSql = `SELECT * FROM (${baseSql}) AS unit_grid LIMIT $1 OFFSET $2`;
-      const [countResult, rows] = await Promise.all([
-        this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql),
-        this.prisma.$queryRawUnsafe<UnitListItem[]>(rowsSql, limit, skip),
-      ]);
-      const total = this.parseCountValue(countResult[0]?.total);
-      return {
-        items: rows,
-        meta: {
-          page,
+
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: UNIT_TABLE_NAME,
+        extraForbiddenPatterns: [
+          {
+            pattern: LEGACY_UNIT_UUID_NUMERIC_COMPARISON_PATTERN,
+            message: 'Configured query compares unit UUID fields with numeric values',
+          },
+        ],
+      });
+      if (!validation.isValid) {
+        continue;
+      }
+
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<UnitListItem>({
+          baseSql: validation.normalizedSql,
+          alias: 'unit_grid',
           limit,
-          total,
-          total_pages: Math.ceil(total / limit),
-        },
-      };
-    } catch {
-      // If configured grid_sql is invalid, fall back to standard list query.
-      return null;
+          skip,
+        });
+
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
     }
-  }
-  private validateConfiguredGridSql(sql: string): string {
-    const normalized = sql.trim().replace(/;+\s*$/g, '');
-    if (!/^select\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for unit list', [
-        {
-          field: 'grid_sql',
-          message: 'Only SELECT query is allowed',
-        },
-      ]);
-    }
-    if (normalized.includes(';')) {
-      this.throwBadRequest('Invalid grid_sql configuration for unit list', [
-        {
-          field: 'grid_sql',
-          message: 'Multiple statements are not allowed',
-        },
-      ]);
-    }
-    if (GRID_SQL_COMMENT_PATTERN.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for unit list', [
-        {
-          field: 'grid_sql',
-          message: 'Comments are not allowed in configured query',
-        },
-      ]);
-    }
-    if (GRID_SQL_FORBIDDEN_TOKENS.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for unit list', [
-        {
-          field: 'grid_sql',
-          message: 'Write/DDL statements are not allowed',
-        },
-      ]);
-    }
-    if (!/\bunits\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for unit list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query must reference units table',
-        },
-      ]);
-    }
-    return normalized;
-  }
-  private parseCountValue(value: bigint | number | string | undefined): number {
-    if (typeof value === 'bigint') {
-      return Number(value);
-    }
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-    return 0;
+
+    return null;
   }
   async getById(unitId: string): Promise<UnitPayload> {
     const record = await this.prisma.unit.findFirst({

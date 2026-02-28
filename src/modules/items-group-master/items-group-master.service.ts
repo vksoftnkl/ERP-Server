@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -23,9 +24,6 @@ const ITEM_GROUP_GRID_ID = BigInt(1);
 const ITEM_GROUP_TABLE_NAME = 'item_group_master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
-const GRID_SQL_FORBIDDEN_TOKENS =
-  /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
-const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 type ItemGroupWriteClient = Prisma.TransactionClient | PrismaService;
 type SearchColumnDescriptor = {
   normalized: string;
@@ -37,6 +35,7 @@ export class ItemsGroupMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload> {
     if (saveItemGroupDto.itg_id) {
@@ -96,52 +95,62 @@ export class ItemsGroupMasterService {
     limit: number,
     skip: number,
   ): Promise<{ items: ItemGroupListItem[]; meta: ItemGroupListMeta } | null> {
-    const configuredGrid = await this.prisma.gridDetails.findFirst({
-      where: {
-        gridId: ITEM_GROUP_GRID_ID,
-        gridIsDeleted: false,
-        gridStatus: true,
-        gridSql: {
-          not: null,
-        },
-      },
-      select: {
-        gridSql: true,
-      },
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: ITEM_GROUP_TABLE_NAME,
+      fixedGridId: ITEM_GROUP_GRID_ID,
+      applyTableNameFilter: false,
     });
-    const rawGridSql = configuredGrid?.gridSql?.trim();
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      ITEM_GROUP_TABLE_NAME,
+    );
+    const configuredGrid = primaryConfiguredGrids[0];
+    if (!configuredGrid) {
+      return null;
+    }
+    const rawGridSql = configuredGrid.gridSql?.trim();
     if (!rawGridSql) {
       return null;
     }
-    const baseSql = this.validateConfiguredGridSql(rawGridSql);
+
+    const validation = this.configuredGridSqlService.validateBaseSql({
+      sql: rawGridSql,
+      tableName: ITEM_GROUP_TABLE_NAME,
+    });
+    if (!validation.isValid) {
+      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
+        {
+          field: 'grid_sql',
+          message: validation.message,
+        },
+      ]);
+    }
+
+    const baseSql = validation.normalizedSql;
     const searchableFieldNames = queryDto.search?.trim()
-      ? await this.getConfiguredSearchableFieldNames(ITEM_GROUP_GRID_ID, baseSql)
+      ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
       : [];
     const { sql: filteredSql, params } = this.buildConfiguredGridListSql(
       baseSql,
       queryDto,
       searchableFieldNames,
     );
-    const countSql = `SELECT COUNT(*)::bigint AS total FROM (${filteredSql}) AS item_group_grid_count`;
-    const rowsSql = `SELECT * FROM (${filteredSql}) AS item_group_grid_rows LIMIT $${
-      params.length + 1
-    } OFFSET $${params.length + 2}`;
+
     try {
-      const [countResult, rows] = await Promise.all([
-        this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(
-          countSql,
-          ...params,
-        ),
-        this.prisma.$queryRawUnsafe<ItemGroupListItem[]>(rowsSql, ...params, limit, skip),
-      ]);
-      const total = this.parseCountValue(countResult[0]?.total);
+      const result = await this.configuredGridSqlService.runPagedQuery<ItemGroupListItem>({
+        baseSql: filteredSql,
+        alias: 'item_group_grid',
+        params,
+        limit,
+        skip,
+      });
       return {
-        items: rows,
+        items: result.items,
         meta: {
           page,
           limit,
-          total,
-          total_pages: Math.ceil(total / limit),
+          total: result.total,
+          total_pages: Math.ceil(result.total / limit),
         },
       };
     } catch {
@@ -551,63 +560,6 @@ export class ItemsGroupMasterService {
     }
 
     return null;
-  }
-  private validateConfiguredGridSql(sql: string): string {
-    const normalized = sql.trim().replace(/;+\s*$/g, '');
-    if (!/^select\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
-        {
-          field: 'grid_sql',
-          message: 'Only SELECT query is allowed',
-        },
-      ]);
-    }
-    if (normalized.includes(';')) {
-      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
-        {
-          field: 'grid_sql',
-          message: 'Multiple statements are not allowed',
-        },
-      ]);
-    }
-    if (GRID_SQL_COMMENT_PATTERN.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
-        {
-          field: 'grid_sql',
-          message: 'Comments are not allowed in configured query',
-        },
-      ]);
-    }
-    if (GRID_SQL_FORBIDDEN_TOKENS.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
-        {
-          field: 'grid_sql',
-          message: 'Write/DDL statements are not allowed',
-        },
-      ]);
-    }
-    if (!/\bitem_group_master\b/i.test(normalized)) {
-      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query must reference item_group_master table',
-        },
-      ]);
-    }
-    return normalized;
-  }
-  private parseCountValue(value: bigint | number | string | undefined): number {
-    if (typeof value === 'bigint') {
-      return Number(value);
-    }
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-    return 0;
   }
   async getById(itgId: string): Promise<ItemGroupPayload> {
     const record = await this.prisma.itemGroupMaster.findFirst({

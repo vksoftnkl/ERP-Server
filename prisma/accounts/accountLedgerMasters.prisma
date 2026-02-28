@@ -72,7 +72,7 @@ model AccLedgerMaster {
   ledIsSez                 Boolean   @default(false)                                   @map("led_is_sez")
 
   // 7) Bank / Payment
-  ledChequeName            String?   @db.VarChar(80)                                  @map("led_cheque_name")
+  ledHolderName            String?   @db.VarChar(80)                                  @map("led_holder_name")
   ledBankName              String?   @db.VarChar(120)                                 @map("led_bank_name")
   ledBankBranch            String?   @db.VarChar(120)                                 @map("led_bank_branch")
   ledBankAcNo              String?   @db.VarChar(40)                                  @map("led_bank_ac_no")

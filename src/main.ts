@@ -32,6 +32,13 @@ const parseCsv = (value: string | undefined): string[] => {
     .filter(Boolean);
 };
 
+const getDefaultDevCorsOrigins = (): string[] => [
+  'http://localhost:3000',
+  'https://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://127.0.0.1:3000',
+];
+
 const resolveFilePath = (filePath: string): string => {
   const isPkgRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
 
@@ -126,7 +133,11 @@ async function bootstrap(): Promise<void> {
   app.use(urlencoded({ extended: true, limit: requestBodyLimit }));
   app.use(helmet());
   app.use(compression());
-  const corsOrigins = parseCsv(process.env.CORS_ORIGINS);
+  const configuredCorsOrigins = parseCsv(process.env.CORS_ORIGINS);
+  const corsOrigins =
+    process.env.NODE_ENV === 'production'
+      ? configuredCorsOrigins
+      : Array.from(new Set([...configuredCorsOrigins, ...getDefaultDevCorsOrigins()]));
   const allowAnyCorsOrigin = corsOrigins.includes('*');
   const corsCredentialsDefault = allowAnyCorsOrigin ? false : true;
   const corsCredentials = parseBoolean(process.env.CORS_CREDENTIALS, corsCredentialsDefault);

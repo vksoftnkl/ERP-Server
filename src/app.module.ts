@@ -7,6 +7,7 @@ import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { RequestContextModule } from './common/request-context/request-context.module';
+import { ConfiguredGridSqlModule } from './common/configured-grid-sql/configured-grid-sql.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma/prisma.module';
@@ -20,6 +21,8 @@ import { ItemsSectionMasterModule } from './modules/items-section-master/items-s
 import { ItemsCategoryMasterModule } from './modules/items-category-master/items-category-master.module';
 import { GridDetailsModule } from './modules/grid-details/grid-details.module';
 import { GridColumnsModule } from './modules/grid-columns/grid-columns.module';
+import { DropdownDetailsModule } from './modules/dropdown-details/dropdown-details.module';
+import { DropdownColumnsModule } from './modules/dropdown-columns/dropdown-columns.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
 import { GodownsMasterModule } from './modules/godowns-master/godowns-master.module';
@@ -77,6 +80,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
       validationSchema: envValidationSchema,
     }),
     RequestContextModule,
+    ConfiguredGridSqlModule,
     ThrottlerModule.forRoot([
       {
         ttl: parseNumber(process.env.THROTTLE_TTL, 60) * 1000,
@@ -129,6 +133,8 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,
+    DropdownDetailsModule,
+    DropdownColumnsModule,
     AuthModule,
   ],
   providers: [
