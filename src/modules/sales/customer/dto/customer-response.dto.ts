@@ -216,6 +216,9 @@ export class CustomerPayloadDto {
   cusNotes!: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  cusCompanyId!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
   cusBranchId!: string | null;
 
   @ApiProperty({ format: 'uuid' })

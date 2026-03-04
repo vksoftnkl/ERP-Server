@@ -30,7 +30,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const { token, expiresIn } = this.tokenService.signAccessToken({
+    const token = this.tokenService.signAccessToken({
       sub: user.user_id,
       user_name: user.user_name,
     });
@@ -38,7 +38,6 @@ export class AuthService {
     return {
       access_token: token,
       token_type: 'Bearer',
-      expires_in: expiresIn,
     };
   }
 

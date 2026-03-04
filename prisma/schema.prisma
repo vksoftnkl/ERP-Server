@@ -26,8 +26,12 @@ generator docs {
 model User {
   user_id        String    @id @default(uuid()) @db.Uuid
 
-  user_name  String    @unique @db.VarChar(50)   // <-- Added field
+  user_code      String    @unique @default(dbgenerated("'us' || nextval('user_code_seq')")) @db.VarChar(20)
+  user_phone     String    @unique @db.VarChar(20)
+  user_name      String    @unique @db.VarChar(50)
   user_password  String    @db.Text
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
 
   @@map("users")
   @@schema("public")
@@ -391,6 +395,7 @@ model Company {
   itemMaster            ItemMaster[]
   ErpDeviceMaster       ErpDeviceMaster[]
   UserLoginSession      UserLoginSession[]
+  customers              Customer[]
   @@map("companys")
   @@schema("accounts")
 }
@@ -1073,6 +1078,29 @@ model Menu {
   @@index([menuParentId])
   @@index([menuPosition])
   @@map("menu_master")
+  @@schema("fixed")
+}
+
+// ----- prisma/fixed/priceLevel.prisma -----
+model PriceLevel {
+  priceLvlId        Int      @id @default(autoincrement()) @map("price_lvl_id")
+
+  priceLvlName      String   @db.VarChar(200)              @map("price_lvl_name")
+  priceLvlShort     String?  @db.VarChar(50)               @map("price_lvl_short")
+
+  priceLvlIsActive  Boolean  @default(true)                @map("price_lvl_is_active")
+  priceLvlIsAdmin   Boolean  @default(false)               @map("price_lvl_is_admin")
+
+  priceLvlIsDeleted Boolean  @default(false)               @map("price_lvl_isDeleted")
+  priceLvlSyncDate  DateTime? @db.Timestamptz              @map("price_lvl_SyncDate")
+
+  priceLvlCreatedOn DateTime @default(now()) @db.Timestamptz @map("price_lvl_createdOn")
+  priceLvlCreatedBy String?  @db.VarChar(100)              @map("price_lvl_createdBy")
+
+  priceLvlModifiedOn DateTime @default(now()) @db.Timestamptz @map("price_lvl_modifiedOn")
+  priceLvlModifiedBy String?  @db.VarChar(100)             @map("price_lvl_modifiedBy")
+
+  @@map("price_levels")
   @@schema("fixed")
 }
 
@@ -2215,6 +2243,7 @@ model Customer {
   cusNotes             String?   @db.VarChar(250)                                 @map("cus_notes")
 
   // 9) Scope / Status / Sync / Audit
+  cusCompanyId         String?   @db.Uuid                                          @map("cus_company_id")
   cusBranchId          String?   @db.Uuid                                          @map("cus_branch_id")
   cusAreaId            String    @db.Uuid                                          @map("cus_area_id")
   cusGroupId           String    @db.Uuid                                          @map("cus_group_id")
@@ -2229,6 +2258,7 @@ model Customer {
   // Relations
   area                 AreaMaster @relation(fields: [cusAreaId],  references: [armId])
   custGroup            CustGroup  @relation(fields: [cusGroupId], references: [cgrId])
+  company              Company?   @relation(fields: [cusCompanyId], references: [compId])
 
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")

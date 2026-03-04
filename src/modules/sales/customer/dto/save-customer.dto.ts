@@ -647,6 +647,13 @@ export class SaveCustomerDto {
   @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
+  cusCompanyId?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
   cusBranchId?: string | null;
 
   @ApiProperty({ format: 'uuid' })

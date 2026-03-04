@@ -40,7 +40,6 @@ export const envValidationSchema = Joi.object({
     then: Joi.string().min(16).default('test-jwt-secret-change-me'),
     otherwise: Joi.string().min(16).required(),
   }),
-  JWT_EXPIRES_IN: Joi.number().integer().min(1).default(3600),
   THROTTLE_TTL: Joi.number().integer().min(1).default(60),
   THROTTLE_LIMIT: Joi.number().integer().min(1).default(100),
 });

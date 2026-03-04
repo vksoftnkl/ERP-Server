@@ -9,20 +9,18 @@ export type AccessTokenClaims = {
 
 export type AccessTokenPayload = AccessTokenClaims & {
   iat: number;
-  exp: number;
+  exp?: number;
 };
 
 @Injectable()
 export class TokenService {
   private readonly secret: string;
-  private readonly accessTokenLifetimeSeconds: number;
 
   constructor(private readonly configService: ConfigService) {
     this.secret = this.configService.get<string>('auth.jwtSecret', '');
-    this.accessTokenLifetimeSeconds = this.configService.get<number>('auth.jwtExpiresIn', 3600);
   }
 
-  signAccessToken(claims: AccessTokenClaims): { token: string; expiresIn: number } {
+  signAccessToken(claims: AccessTokenClaims): string {
     if (!this.secret) {
       throw new InternalServerErrorException('JWT secret is not configured');
     }
@@ -31,7 +29,6 @@ export class TokenService {
     const payload = {
       ...claims,
       iat: now,
-      exp: now + this.accessTokenLifetimeSeconds,
     };
 
     const headerSegment = this.encodeBase64Url({
@@ -42,10 +39,7 @@ export class TokenService {
     const unsignedToken = `${headerSegment}.${payloadSegment}`;
     const signature = createHmac('sha256', this.secret).update(unsignedToken).digest('base64url');
 
-    return {
-      token: `${unsignedToken}.${signature}`,
-      expiresIn: this.accessTokenLifetimeSeconds,
-    };
+    return `${unsignedToken}.${signature}`;
   }
 
   verifyAccessToken(token: string): AccessTokenPayload {
@@ -73,13 +67,7 @@ export class TokenService {
     }
 
     const payloadRecord = this.decodeSegment<Record<string, unknown>>(payloadSegment);
-    const payload = this.validatePayload(payloadRecord);
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp <= now) {
-      throw new UnauthorizedException('Access token has expired');
-    }
-
-    return payload;
+    return this.validatePayload(payloadRecord);
   }
 
   private encodeBase64Url(data: Record<string, unknown>): string {
@@ -122,19 +110,27 @@ export class TokenService {
     if (
       typeof issuedAt !== 'number' ||
       !Number.isInteger(issuedAt) ||
-      issuedAt < 0 ||
-      typeof expiresAt !== 'number' ||
-      !Number.isInteger(expiresAt) ||
-      expiresAt <= issuedAt
+      issuedAt < 0
     ) {
       throw new UnauthorizedException('Invalid access token');
     }
 
-    return {
+    if (
+      expiresAt !== undefined &&
+      (typeof expiresAt !== 'number' || !Number.isInteger(expiresAt) || expiresAt <= issuedAt)
+    ) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    const normalizedPayload: AccessTokenPayload = {
       sub,
       user_name: userName,
       iat: issuedAt,
-      exp: expiresAt,
     };
+    if (typeof expiresAt === 'number') {
+      normalizedPayload.exp = expiresAt;
+    }
+
+    return normalizedPayload;
   }
 }

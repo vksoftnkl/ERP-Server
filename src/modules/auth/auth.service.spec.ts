@@ -14,10 +14,7 @@ type UsersServiceMock = {
 };
 
 type TokenServiceMock = {
-  signAccessToken: jest.Mock<
-    { token: string; expiresIn: number },
-    [{ sub: string; user_name: string }]
-  >;
+  signAccessToken: jest.Mock<string, [{ sub: string; user_name: string }]>;
 };
 
 const hashPasswordForTest = async (plainPassword: string): Promise<string> => {
@@ -44,11 +41,8 @@ describe('AuthService', () => {
     };
     tokenService = {
       signAccessToken: jest
-        .fn<{ token: string; expiresIn: number }, [{ sub: string; user_name: string }]>()
-        .mockReturnValue({
-          token: 'signed-jwt-token',
-          expiresIn: 3600,
-        }),
+        .fn<string, [{ sub: string; user_name: string }]>()
+        .mockReturnValue('signed-jwt-token'),
     };
 
     service = new AuthService(
@@ -71,7 +65,6 @@ describe('AuthService', () => {
     ).resolves.toEqual({
       access_token: 'signed-jwt-token',
       token_type: 'Bearer',
-      expires_in: 3600,
     });
 
     expect(usersService.findByUsername).toHaveBeenCalledWith('john.doe');

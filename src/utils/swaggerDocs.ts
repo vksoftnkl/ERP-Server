@@ -23,6 +23,9 @@ import { ItemsTaxMasterModule } from '../modules/items-tax-master/items-tax-mast
 import { UnitsMasterModule } from '../modules/units-master/units-master.module';
 import { UsersModule } from '../modules/users/users.module';
 import { MasterLookupModule } from '../modules/master-lookup/master-lookup.module';
+import { MenuMasterModule } from '../modules/fixed/menu-master/menu-master.module';
+import { PriceLevelMasterModule } from '../modules/fixed/price-level-master/price-level-master.module';
+import { HsnCodeMasterModule } from '../modules/fixed/hsn-code-master/hsn-code-master.module';
 
 export const swaggerModuleDocuments = [
   {
@@ -168,6 +171,24 @@ export const swaggerModuleDocuments = [
     title: 'Master Lookup API',
     description: 'Centralized id-name lookup endpoints for accounts and master modules',
     include: [MasterLookupModule],
+  },
+  {
+    path: 'menu-master',
+    title: 'Menu Master API',
+    description: 'Menu hierarchy endpoints for fixed.menu_master',
+    include: [MenuMasterModule],
+  },
+  {
+    path: 'price-level-master',
+    title: 'Price Level Master API',
+    description: 'Price level endpoints for fixed.price_levels',
+    include: [PriceLevelMasterModule],
+  },
+  {
+    path: 'hsn-code-master',
+    title: 'HSN Code Master API',
+    description: 'HSN code endpoints for fixed.hsn_master',
+    include: [HsnCodeMasterModule],
   },
   {
     path: 'audit-log',

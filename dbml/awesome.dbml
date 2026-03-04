@@ -9,8 +9,12 @@ Project "Project Name" {
 
 Table users {
   user_id String [pk]
+  user_code String [unique, not null]
+  user_phone String [unique, not null]
   user_name String [unique, not null]
   user_password String [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
 }
 
 Table account_groups {
@@ -257,6 +261,7 @@ Table companys {
   itemMaster item_master [not null]
   ErpDeviceMaster erp_device_master [not null]
   UserLoginSession user_login_sessions [not null]
+  customers customers [not null]
 }
 
 Table company_group_master {
@@ -642,6 +647,20 @@ Table menu_master {
   menuCreatedOn DateTime [default: `now()`, not null]
   menuModifiedOn DateTime
   menuSyncDate DateTime
+}
+
+Table price_levels {
+  priceLvlId Int [pk, increment]
+  priceLvlName String [not null]
+  priceLvlShort String
+  priceLvlIsActive Boolean [not null, default: true]
+  priceLvlIsAdmin Boolean [not null, default: false]
+  priceLvlIsDeleted Boolean [not null, default: false]
+  priceLvlSyncDate DateTime
+  priceLvlCreatedOn DateTime [default: `now()`, not null]
+  priceLvlCreatedBy String
+  priceLvlModifiedOn DateTime [default: `now()`, not null]
+  priceLvlModifiedBy String
 }
 
 Table state_codes {
@@ -1322,6 +1341,7 @@ Table customers {
   cusBilledDate DateTime
   cusBilledCount Int [not null, default: 0]
   cusNotes String
+  cusCompanyId String
   cusBranchId String
   cusAreaId String [not null]
   cusGroupId String [not null]
@@ -1334,6 +1354,7 @@ Table customers {
   cusModifiedBy String
   area area_master [not null]
   custGroup cust_groups [not null]
+  company companys
 }
 
 Table cust_groups {
@@ -1515,5 +1536,7 @@ Ref: city_master.ctmStateId > state_master.stmId
 Ref: customers.cusAreaId > area_master.armId
 
 Ref: customers.cusGroupId > cust_groups.cgrId
+
+Ref: customers.cusCompanyId > companys.compId
 
 Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]

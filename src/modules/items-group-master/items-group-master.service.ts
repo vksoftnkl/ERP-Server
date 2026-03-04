@@ -210,7 +210,6 @@ export class ItemsGroupMasterService {
     if (sqlFieldNames.length === 0) {
       return [];
     }
-
     const configuredColumns = await this.prisma.gridColumn.findMany({
       where: {
         gridId,
@@ -226,24 +225,20 @@ export class ItemsGroupMasterService {
         gridColumnNumber: true,
       },
     });
-
     const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
       fieldName,
       descriptor: this.describeSearchColumnName(fieldName),
     }));
     const usedSqlFieldIndexes = new Set<number>();
     const matchedFieldNames: string[] = [];
-
     for (const column of configuredColumns) {
       const columnName = column.gridColumnName.trim();
       let matchedSqlFieldIndex = -1;
       const columnDescriptor = this.describeSearchColumnName(columnName);
-
       if (columnDescriptor.normalized) {
         let bestScore = -1;
         let nextBestScore = -1;
         let bestScoreIsAmbiguous = false;
-
         for (let index = 0; index < normalizedSqlFields.length; index += 1) {
           if (usedSqlFieldIndexes.has(index)) {
             continue;
@@ -259,17 +254,14 @@ export class ItemsGroupMasterService {
             bestScoreIsAmbiguous = false;
             continue;
           }
-
           if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
             bestScoreIsAmbiguous = true;
             continue;
           }
-
           if (score > nextBestScore) {
             nextBestScore = score;
           }
         }
-
         if (
           bestScore < MIN_CONFIDENT_COLUMN_MATCH_SCORE ||
           bestScore === nextBestScore ||
@@ -278,7 +270,6 @@ export class ItemsGroupMasterService {
           matchedSqlFieldIndex = -1;
         }
       }
-
       if (matchedSqlFieldIndex === -1) {
         const sqlFieldIndexFromColumnNumber = column.gridColumnNumber - 1;
         if (
@@ -289,7 +280,6 @@ export class ItemsGroupMasterService {
           matchedSqlFieldIndex = sqlFieldIndexFromColumnNumber;
         }
       }
-
       if (matchedSqlFieldIndex !== -1) {
         usedSqlFieldIndexes.add(matchedSqlFieldIndex);
         matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
@@ -320,18 +310,15 @@ export class ItemsGroupMasterService {
     if (!source.normalized || !target.normalized) {
       return -1;
     }
-
     if (source.normalized === target.normalized) {
       return 4;
     }
-
     if (
       source.normalized.includes(target.normalized) ||
       target.normalized.includes(source.normalized)
     ) {
       return 3;
     }
-
     const sourceWithoutBooleanPrefix = source.normalized.replace(/^is/, '');
     const targetWithoutBooleanPrefix = target.normalized.replace(/^is/, '');
     if (
@@ -343,11 +330,9 @@ export class ItemsGroupMasterService {
     ) {
       return 2;
     }
-
     if (source.lastToken && source.lastToken === target.lastToken) {
       return 2;
     }
-
     if (
       source.lastToken &&
       target.lastToken &&
@@ -356,12 +341,10 @@ export class ItemsGroupMasterService {
     ) {
       return 2;
     }
-
     const sharedTokens = source.tokens.filter((token) => target.tokens.includes(token));
     if (sharedTokens.length >= 2) {
       return 1;
     }
-
     return -1;
   }
   private extractSelectFieldNames(sql: string): string[] {
@@ -369,7 +352,6 @@ export class ItemsGroupMasterService {
     if (!selectClause) {
       return [];
     }
-
     const expressions = this.splitTopLevelCommaSeparated(selectClause);
     const fieldNames: string[] = [];
     for (const expression of expressions) {
@@ -389,16 +371,13 @@ export class ItemsGroupMasterService {
     if (!selectMatch) {
       return null;
     }
-
     const selectStartIndex = selectMatch[0].length;
     let depth = 0;
     let insideSingleQuote = false;
     let insideDoubleQuote = false;
-
     for (let i = selectStartIndex; i < trimmed.length; i += 1) {
       const current = trimmed[i];
       const next = trimmed[i + 1];
-
       if (insideSingleQuote) {
         if (current === "'" && next === "'") {
           i += 1;
@@ -409,7 +388,6 @@ export class ItemsGroupMasterService {
         }
         continue;
       }
-
       if (insideDoubleQuote) {
         if (current === '"' && next === '"') {
           i += 1;
@@ -420,7 +398,6 @@ export class ItemsGroupMasterService {
         }
         continue;
       }
-
       if (current === "'") {
         insideSingleQuote = true;
         continue;
@@ -437,7 +414,6 @@ export class ItemsGroupMasterService {
         depth = Math.max(0, depth - 1);
         continue;
       }
-
       if (
         depth === 0 &&
         /^from$/i.test(trimmed.slice(i, i + 4)) &&
@@ -447,7 +423,6 @@ export class ItemsGroupMasterService {
         return trimmed.slice(selectStartIndex, i).trim();
       }
     }
-
     return null;
   }
   private splitTopLevelCommaSeparated(value: string): string[] {
@@ -456,11 +431,9 @@ export class ItemsGroupMasterService {
     let depth = 0;
     let insideSingleQuote = false;
     let insideDoubleQuote = false;
-
     for (let i = 0; i < value.length; i += 1) {
       const current = value[i];
       const next = value[i + 1];
-
       if (insideSingleQuote) {
         if (current === "'" && next === "'") {
           i += 1;
@@ -471,7 +444,6 @@ export class ItemsGroupMasterService {
         }
         continue;
       }
-
       if (insideDoubleQuote) {
         if (current === '"' && next === '"') {
           i += 1;
@@ -482,7 +454,6 @@ export class ItemsGroupMasterService {
         }
         continue;
       }
-
       if (current === "'") {
         insideSingleQuote = true;
         continue;
@@ -504,7 +475,6 @@ export class ItemsGroupMasterService {
         startIndex = i + 1;
       }
     }
-
     const tail = value.slice(startIndex).trim();
     if (tail) {
       chunks.push(tail);
@@ -516,12 +486,10 @@ export class ItemsGroupMasterService {
     if (!trimmed || trimmed === '*' || /\.\*$/.test(trimmed)) {
       return null;
     }
-
     const explicitAliasMatch = trimmed.match(/\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
     if (explicitAliasMatch) {
       return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
     }
-
     const implicitAliasMatch = trimmed.match(/\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
     if (implicitAliasMatch) {
       const aliasToken = implicitAliasMatch[1];
@@ -530,7 +498,6 @@ export class ItemsGroupMasterService {
         return this.parseSqlIdentifierToken(aliasToken);
       }
     }
-
     const simpleColumnMatch = trimmed.match(
       /^((?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)\.)*(?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)$/i,
     );
@@ -538,7 +505,6 @@ export class ItemsGroupMasterService {
       const parts = trimmed.split('.');
       return this.parseSqlIdentifierToken(parts[parts.length - 1]);
     }
-
     return null;
   }
   private parseSqlIdentifierToken(token: string): string | null {
@@ -546,16 +512,13 @@ export class ItemsGroupMasterService {
     if (!trimmed) {
       return null;
     }
-
     if (/^"([^"]|"")+"$/.test(trimmed)) {
       return trimmed.slice(1, -1).replace(/""/g, '"');
     }
-
     if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
       // PostgreSQL folds unquoted identifiers to lowercase.
       return trimmed.toLowerCase();
     }
-
     return null;
   }
   async getById(itgId: string): Promise<ItemGroupPayload> {
@@ -581,7 +544,6 @@ export class ItemsGroupMasterService {
       if (!existing) {
         this.throwNotFound(itgId);
       }
-
       const subtreeIds = await this.getActiveSubtreeIds(tx, itgId);
       const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
       const modifiedOn = new Date();
@@ -599,9 +561,7 @@ export class ItemsGroupMasterService {
       if (result.count === 0) {
         this.throwNotFound(itgId);
       }
-
       await this.removePathIds(tx, ancestorIds, subtreeIds);
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -624,7 +584,6 @@ export class ItemsGroupMasterService {
         },
         tx,
       );
-
       return {
         itg_id: itgId,
         deleted: true,
@@ -655,7 +614,6 @@ export class ItemsGroupMasterService {
           const ancestorIds = await this.getAncestorIds(tx, saveItemGroupDto.itg_parent_id);
           await this.appendPathIds(tx, ancestorIds, [created.itgId]);
         }
-
         const refreshed = await tx.itemGroupMaster.findFirst({
           where: {
             itgId: created.itgId,
@@ -715,7 +673,6 @@ export class ItemsGroupMasterService {
         if (saveItemGroupDto.itg_parent_id) {
           await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
         }
-
         const hasParentField = this.hasOwnProperty(saveItemGroupDto, 'itg_parent_id');
         const nextParentId = hasParentField
           ? (saveItemGroupDto.itg_parent_id ?? null)
@@ -725,7 +682,6 @@ export class ItemsGroupMasterService {
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.itgParentId)
           : [];
-
         const data: Prisma.ItemGroupMasterUncheckedUpdateInput = {
           itgName: saveItemGroupDto.itg_name.trim(),
           itgModifiedOn: new Date(),
@@ -738,14 +694,12 @@ export class ItemsGroupMasterService {
           },
           data,
         });
-
         await this.ensureSelfInPath(tx, itgId);
         if (isParentChanged) {
           const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
           await this.appendPathIds(tx, newAncestorIds, subtreeIds);
         }
-
         const refreshed = await tx.itemGroupMaster.findFirst({
           where: {
             itgId,
@@ -862,25 +816,21 @@ export class ItemsGroupMasterService {
       if (!parent) {
         break;
       }
-
       ancestorIds.push(parent.itgId);
       currentParentId = parent.itgParentId;
     }
-
     return ancestorIds;
   }
   private async getActiveSubtreeIds(tx: ItemGroupWriteClient, rootId: string): Promise<string[]> {
     const subtreeIds: string[] = [];
     const visited = new Set<string>();
     const queue: string[] = [rootId];
-
     while (queue.length > 0) {
       const currentId = queue.shift()!;
       if (visited.has(currentId)) {
         continue;
       }
       visited.add(currentId);
-
       const node = await tx.itemGroupMaster.findFirst({
         where: {
           itgId: currentId,
@@ -910,7 +860,6 @@ export class ItemsGroupMasterService {
         }
       }
     }
-
     return subtreeIds;
   }
   private async appendPathIds(
@@ -923,7 +872,6 @@ export class ItemsGroupMasterService {
     if (normalizedTargetIds.length === 0 || normalizedIdsToAdd.length === 0) {
       return;
     }
-
     const records = await tx.itemGroupMaster.findMany({
       where: {
         itgId: {
@@ -936,7 +884,6 @@ export class ItemsGroupMasterService {
         itgPathIdsCache: true,
       },
     });
-
     for (const record of records) {
       const nextPathIds = this.mergePathIds(record.itgPathIdsCache, normalizedIdsToAdd);
       if (this.areSameIds(record.itgPathIdsCache, nextPathIds)) {
@@ -962,7 +909,6 @@ export class ItemsGroupMasterService {
     if (normalizedTargetIds.length === 0 || normalizedIdsToRemove.length === 0) {
       return;
     }
-
     const records = await tx.itemGroupMaster.findMany({
       where: {
         itgId: {
@@ -975,7 +921,6 @@ export class ItemsGroupMasterService {
         itgPathIdsCache: true,
       },
     });
-
     for (const record of records) {
       const nextPathIds = this.excludePathIds(record.itgPathIdsCache, normalizedIdsToRemove);
       if (this.areSameIds(record.itgPathIdsCache, nextPathIds)) {

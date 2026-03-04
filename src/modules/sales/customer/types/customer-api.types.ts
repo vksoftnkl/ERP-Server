@@ -82,6 +82,7 @@ export interface CustomerPayload {
   cusBilledDate: string | null;
   cusBilledCount: number;
   cusNotes: string | null;
+  cusCompanyId: string | null;
   cusBranchId: string | null;
   cusAreaId: string;
   cusGroupId: string;

@@ -102,7 +102,11 @@ export class UsersController {
   private toResponse(user: User): UserResponseDto {
     return {
       user_id: user.user_id,
+      user_code: user.user_code,
+      user_phone: user.user_phone,
       user_name: user.user_name,
+      created_at: user.created_at.toISOString(),
+      updated_at: user.updated_at.toISOString(),
     };
   }
 }

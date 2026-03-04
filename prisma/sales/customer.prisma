@@ -30,10 +30,10 @@ model Customer {
   // 3) Credit / Billing Control
   cusCreditAllowed     Boolean   @default(false)                                   @map("cus_credit_allowed")
   cusCreditBillLimit   Int       @default(0)                                       @map("cus_credit_bill_limit")
-  cusCreditAmtLimit    Decimal   @default(0) @db.Decimal(15, 4)                   @map("cus_credit_amt_limit")
+  cusCreditAmtLimit    Decimal   @default(0) @db.Decimal(15, 4)                    @map("cus_credit_amt_limit")
   cusCreditDays        Int       @default(0)                                       @map("cus_credit_days")
-  cusDebitBalance      Decimal   @default(0) @db.Decimal(15, 4)                   @map("cus_debit_balance")
-  cusDiscPerc          Decimal   @default(0) @db.Decimal(7, 3)                    @map("cus_disc_perc")
+  cusDebitBalance      Decimal   @default(0) @db.Decimal(15, 4)                    @map("cus_debit_balance")
+  cusDiscPerc          Decimal   @default(0) @db.Decimal(7, 3)                     @map("cus_disc_perc")
   cusDebitGraceDays    Int       @default(0)                                       @map("cus_debit_grace_days")
   cusEnableSms         Boolean   @default(false)                                   @map("cus_enable_sms")
   cusOverdueSms        Boolean   @default(false)                                   @map("cus_overdue_sms")
@@ -51,27 +51,27 @@ model Customer {
   cusRegionCity        String?   @db.VarChar(250)                                 @map("cus_region_city")
   cusRegionDistrict    String?   @db.VarChar(250)                                 @map("cus_region_district")
   cusRegionStateName   String?   @db.VarChar(100)                                 @map("cus_region_state_name")
-  cusRegionCountry     String?   @default("India") @db.VarChar(60)               @map("cus_region_country")
+  cusRegionCountry     String?   @default("India") @db.VarChar(60)                @map("cus_region_country")
 
   // 5) Dates / Logistics / Charges
   cusBirthDate         DateTime? @db.Date                                          @map("cus_birth_date")
   cusMarriageDate      DateTime? @db.Date                                          @map("cus_marriage_date")
-  cusTransportName     String?   @db.VarChar(200)                                 @map("cus_transport_name")
+  cusTransportName     String?   @db.VarChar(200)                                  @map("cus_transport_name")
   cusFreightCharge     Boolean   @default(false)                                   @map("cus_freight_charge")
   cusLoadingCharge     Boolean   @default(false)                                   @map("cus_loading_charge")
   cusUnloadingCharge   Boolean   @default(false)                                   @map("cus_unloading_charge")
 
   // 6) GST / Tax
-  cusGstNo             String?   @db.VarChar(15)                                  @map("cus_gst_no")
-  cusPanNo             String?   @db.VarChar(10)                                  @map("cus_pan_no")
-  cusGstType           String?   @db.VarChar(30)                                  @map("cus_gst_type")
-  cusEcommerceGstin    String?   @db.VarChar(15)                                  @map("cus_ecommerce_gstin")
+  cusGstNo             String?   @db.VarChar(15)                                   @map("cus_gst_no")
+  cusPanNo             String?   @db.VarChar(10)                                   @map("cus_pan_no")
+  cusGstType           String?   @db.VarChar(30)                                   @map("cus_gst_type")
+  cusEcommerceGstin    String?   @db.VarChar(15)                                   @map("cus_ecommerce_gstin")
   cusTcsApplicable     Boolean   @default(false)                                   @map("cus_tcs_applicable")
   cusItcollExempted    Boolean   @default(false)                                   @map("cus_itcoll_exempted")
-  cusItcollType        String?   @db.VarChar(30)                                  @map("cus_itcoll_type")
+  cusItcollType        String?   @db.VarChar(30)                                    @map("cus_itcoll_type")
 
   // 7) Geo / Salesman / Price Level
-  cusGeoLocation       String?   @db.VarChar(200)                                 @map("cus_geo_location")
+  cusGeoLocation       String?   @db.VarChar(200)                                  @map("cus_geo_location")
   cusCollectionDays    Int[]                                                       @map("sup_collection_days")
   cusDefaultSalesman   String?   @db.Uuid                                          @map("cus_default_salesman")
   cusPriceLevelId      Int                                                         @map("cus_price_level_id")
@@ -79,9 +79,10 @@ model Customer {
   // 8) Billing Stats / Notes
   cusBilledDate        DateTime? @db.Date                                          @map("cus_billed_date")
   cusBilledCount       Int       @default(0)                                       @map("cus_billed_count")
-  cusNotes             String?   @db.VarChar(250)                                 @map("cus_notes")
+  cusNotes             String?   @db.VarChar(250)                                  @map("cus_notes")
 
   // 9) Scope / Status / Sync / Audit
+  cusCompanyId         String?   @db.Uuid                                          @map("cus_company_id")
   cusBranchId          String?   @db.Uuid                                          @map("cus_branch_id")
   cusAreaId            String    @db.Uuid                                          @map("cus_area_id")
   cusGroupId           String    @db.Uuid                                          @map("cus_group_id")
@@ -96,6 +97,7 @@ model Customer {
   // Relations
   area                 AreaMaster @relation(fields: [cusAreaId],  references: [armId])
   custGroup            CustGroup  @relation(fields: [cusGroupId], references: [cgrId])
+  company              Company?   @relation(fields: [cusCompanyId], references: [compId])
 
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")

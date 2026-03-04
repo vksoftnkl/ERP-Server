@@ -49,6 +49,7 @@ export class CustomerService {
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
+      queryDto.cusCompanyId !== undefined ||
       queryDto.cusAreaId !== undefined ||
       queryDto.cusGroupId !== undefined ||
       queryDto.cusIsActive !== undefined ||
@@ -64,6 +65,10 @@ export class CustomerService {
     const where: Prisma.CustomerWhereInput = {
       cusIsDeleted: false,
     };
+
+    if (queryDto.cusCompanyId !== undefined) {
+      where.cusCompanyId = queryDto.cusCompanyId;
+    }
 
     if (queryDto.cusAreaId !== undefined) {
       where.cusAreaId = queryDto.cusAreaId;
@@ -257,6 +262,9 @@ export class CustomerService {
     const data: Prisma.CustomerUncheckedCreateInput = {
       cusStateName: normalizedStateName,
       cusStateCode: normalizedStateCode,
+      cusCompanyId: this.hasOwnProperty(saveCustomerDto, 'cusCompanyId')
+        ? (saveCustomerDto.cusCompanyId ?? null)
+        : null,
       cusAreaId: saveCustomerDto.cusAreaId,
       cusGroupId: saveCustomerDto.cusGroupId,
       cusPriceLevelId: saveCustomerDto.cusPriceLevelId,
@@ -272,6 +280,7 @@ export class CustomerService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        await this.ensureCompanyExists(tx, data.cusCompanyId ?? null);
         await this.ensureAreaExists(tx, data.cusAreaId);
         await this.ensureCustomerGroupExists(tx, data.cusGroupId);
 
@@ -329,16 +338,21 @@ export class CustomerService {
         const nextGroupId = this.hasOwnProperty(saveCustomerDto, 'cusGroupId')
           ? saveCustomerDto.cusGroupId
           : existing.cusGroupId;
+        const nextCompanyId = this.hasOwnProperty(saveCustomerDto, 'cusCompanyId')
+          ? (saveCustomerDto.cusCompanyId ?? null)
+          : existing.cusCompanyId;
         const nextPriceLevelId = this.hasOwnProperty(saveCustomerDto, 'cusPriceLevelId')
           ? saveCustomerDto.cusPriceLevelId
           : existing.cusPriceLevelId;
 
+        await this.ensureCompanyExists(tx, nextCompanyId);
         await this.ensureAreaExists(tx, nextAreaId);
         await this.ensureCustomerGroupExists(tx, nextGroupId);
 
         const data: Prisma.CustomerUncheckedUpdateInput = {
           cusStateName: normalizedStateName,
           cusStateCode: normalizedStateCode,
+          cusCompanyId: nextCompanyId,
           cusAreaId: nextAreaId,
           cusGroupId: nextGroupId,
           cusPriceLevelId: nextPriceLevelId,
@@ -395,6 +409,34 @@ export class CustomerService {
         {
           field: 'cusAreaId',
           message: `No active area found with id ${areaId}`,
+        },
+      ]);
+    }
+  }
+
+  private async ensureCompanyExists(
+    tx: CustomerWriteClient,
+    companyId: string | null,
+  ): Promise<void> {
+    if (companyId === null) {
+      return;
+    }
+
+    const company = await tx.company.findFirst({
+      where: {
+        compId: companyId,
+        compIsDeleted: false,
+      },
+      select: {
+        compId: true,
+      },
+    });
+
+    if (!company) {
+      this.throwBadRequest('Company does not exist', [
+        {
+          field: 'cusCompanyId',
+          message: `No active company found with id ${companyId}`,
         },
       ]);
     }
@@ -673,6 +715,10 @@ export class CustomerService {
       data.cusBranchId = saveCustomerDto.cusBranchId;
     }
 
+    if (this.hasOwnProperty(saveCustomerDto, 'cusCompanyId')) {
+      data.cusCompanyId = saveCustomerDto.cusCompanyId;
+    }
+
     if (this.hasOwnProperty(saveCustomerDto, 'cusIsActive')) {
       data.cusIsActive = saveCustomerDto.cusIsActive;
     }
@@ -795,6 +841,7 @@ export class CustomerService {
       cusBilledDate: record.cusBilledDate ? record.cusBilledDate.toISOString() : null,
       cusBilledCount: record.cusBilledCount,
       cusNotes: record.cusNotes,
+      cusCompanyId: record.cusCompanyId,
       cusBranchId: record.cusBranchId,
       cusAreaId: record.cusAreaId,
       cusGroupId: record.cusGroupId,

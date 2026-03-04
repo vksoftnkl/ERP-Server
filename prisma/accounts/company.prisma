@@ -95,6 +95,7 @@ model Company {
   itemMaster            ItemMaster[]
   ErpDeviceMaster       ErpDeviceMaster[]
   UserLoginSession      UserLoginSession[]
+  customers              Customer[]
   @@map("companys")
   @@schema("accounts")
 }

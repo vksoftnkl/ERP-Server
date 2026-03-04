@@ -13,7 +13,6 @@ const USER_ID = 'c31c31ce-b8d3-45f7-a9b6-b9232e56dc48';
 type LoginResponse = {
   access_token: string;
   token_type: string;
-  expires_in: number;
 };
 
 type PrismaMock = {
@@ -36,7 +35,6 @@ describe('Auth (e2e)', () => {
 
   beforeAll(async () => {
     process.env.JWT_SECRET = 'test-jwt-secret-change-me';
-    process.env.JWT_EXPIRES_IN = '900';
 
     userRecord = {
       user_id: USER_ID,
@@ -99,7 +97,6 @@ describe('Auth (e2e)', () => {
 
     expect(response.statusCode).toBe(200);
     expect(responseBody.token_type).toBe('Bearer');
-    expect(responseBody.expires_in).toBe(900);
     expect(responseBody.access_token).toEqual(expect.any(String));
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
       where: {

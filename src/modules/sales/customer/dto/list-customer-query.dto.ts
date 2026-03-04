@@ -47,6 +47,11 @@ export class ListCustomerQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID('all')
+  cusCompanyId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID('all')
   cusAreaId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })

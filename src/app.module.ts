@@ -57,6 +57,9 @@ import { CustomerGroupModule } from './modules/sales/customer-group/customer-gro
 import { AccountVoucherTypeModule } from './modules/fixed/account-voucher-type/account-voucher-type.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
 import { DeviceListMasterModule } from './modules/fixed/device-list-master/device-list-master.module';
+import { MenuMasterModule } from './modules/fixed/menu-master/menu-master.module';
+import { PriceLevelMasterModule } from './modules/fixed/price-level-master/price-level-master.module';
+import { HsnCodeMasterModule } from './modules/fixed/hsn-code-master/hsn-code-master.module';
 import { StateCodeMasterModule } from './modules/fixed/state-code-master/state-code-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
@@ -127,6 +130,9 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     AccountVoucherTypeModule,
     BankListModule,
     DeviceListMasterModule,
+    MenuMasterModule,
+    PriceLevelMasterModule,
+    HsnCodeMasterModule,
     StateCodeMasterModule,
     UserLoginSessionsModule,
     MasterLookupModule,
