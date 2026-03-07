@@ -274,6 +274,7 @@ export class SuppliersService {
       supStateName: normalizedStateName,
       supStateCode: normalizedStateCode,
       supGstType: normalizedGstType,
+      supBilledDate: now,
       supCreatedOn: now,
       supCreatedBy: createdBy,
       supModifiedOn: now,
@@ -354,6 +355,7 @@ export class SuppliersService {
           ? (saveSupplierDto.supCompanyId ?? null)
           : existing.supCompanyId;
         await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, supId);
+        const now = new Date();
 
         const data: Prisma.SupplierUncheckedUpdateInput = {
           supGroupId: saveSupplierDto.supGroupId,
@@ -362,7 +364,8 @@ export class SuppliersService {
           supStateName: normalizedStateName,
           supStateCode: normalizedStateCode,
           supGstType: normalizedGstType,
-          supModifiedOn: new Date(),
+          supBilledDate: now,
+          supModifiedOn: now,
           supModifiedBy: this.resolveActor(saveSupplierDto.supModifiedBy),
         };
         this.applyOptionalFields(data, saveSupplierDto);
@@ -594,10 +597,6 @@ export class SuppliersService {
       data.supRegionCountry = saveSupplierDto.supRegionCountry;
     }
 
-    if (this.hasOwnProperty(saveSupplierDto, 'supBilledDate')) {
-      data.supBilledDate = this.toDateOrNull(saveSupplierDto.supBilledDate);
-    }
-
     if (this.hasOwnProperty(saveSupplierDto, 'supSortOrder')) {
       data.supSortOrder = saveSupplierDto.supSortOrder;
     }
@@ -637,28 +636,6 @@ export class SuppliersService {
     }
 
     return normalized;
-  }
-
-  private toDateOrNull(value: string | null | undefined): Date | null | undefined {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (value === null) {
-      return null;
-    }
-
-    const dateValue = new Date(value);
-    if (Number.isNaN(dateValue.getTime())) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'supBilledDate',
-          message: 'supBilledDate must be a valid ISO date',
-        },
-      ]);
-    }
-
-    return dateValue;
   }
 
   private toPayload(record: Supplier): SupplierPayload {

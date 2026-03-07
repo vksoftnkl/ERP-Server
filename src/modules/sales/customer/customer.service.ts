@@ -271,6 +271,8 @@ export class CustomerService {
       cusCollectionDays: this.hasOwnProperty(saveCustomerDto, 'cusCollectionDays')
         ? (saveCustomerDto.cusCollectionDays ?? [])
         : [],
+      cusBilledDate: now,
+      cusBilledCount: 1,
       cusCreatedOn: now,
       cusCreatedBy: createdBy,
       cusModifiedOn: now,
@@ -348,6 +350,7 @@ export class CustomerService {
         await this.ensureCompanyExists(tx, nextCompanyId);
         await this.ensureAreaExists(tx, nextAreaId);
         await this.ensureCustomerGroupExists(tx, nextGroupId);
+        const now = new Date();
 
         const data: Prisma.CustomerUncheckedUpdateInput = {
           cusStateName: normalizedStateName,
@@ -356,7 +359,11 @@ export class CustomerService {
           cusAreaId: nextAreaId,
           cusGroupId: nextGroupId,
           cusPriceLevelId: nextPriceLevelId,
-          cusModifiedOn: new Date(),
+          cusBilledDate: now,
+          cusBilledCount: {
+            increment: 1,
+          },
+          cusModifiedOn: now,
           cusModifiedBy: this.resolveActor(saveCustomerDto.cusModifiedBy),
         };
         this.applyOptionalFields(data, saveCustomerDto);
@@ -697,14 +704,6 @@ export class CustomerService {
 
     if (this.hasOwnProperty(saveCustomerDto, 'cusDefaultSalesman')) {
       data.cusDefaultSalesman = saveCustomerDto.cusDefaultSalesman;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusBilledDate')) {
-      data.cusBilledDate = this.toDateOrNull(saveCustomerDto.cusBilledDate, 'cusBilledDate');
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusBilledCount')) {
-      data.cusBilledCount = saveCustomerDto.cusBilledCount;
     }
 
     if (this.hasOwnProperty(saveCustomerDto, 'cusNotes')) {

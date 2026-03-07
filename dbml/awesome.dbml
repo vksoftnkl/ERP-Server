@@ -196,6 +196,7 @@ Table companys {
   compGstRegType String
   compPanNo String
   compFssaiNo String
+  compDrugLicenseNo String
   compAddr1 String
   compAddr2 String
   compAddr3 String
