@@ -16,6 +16,11 @@ export interface ItemPriceSuccessResponse<T, TMeta = Record<string, unknown>> {
   meta?: TMeta;
 }
 
+export interface ItemPriceDeleteResult {
+  ipm_unit_rate_id: string;
+  deleted: true;
+}
+
 export interface ItemPricePayload {
   ipm_unit_rate_id: string;
   ipm_item_id: string;

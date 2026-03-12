@@ -11,6 +11,7 @@ export interface AccountsLookupPayload {
   accountLedgers: NameIdOption[];
   ledgerBankAccounts: NameIdOption[];
   ledgerShippingAddresses: NameIdOption[];
+  employeeDepartments: NameIdOption[];
   employeeDesignations: NameIdOption[];
   employees: NameIdOption[];
   tenderTypes: NameIdOption[];
@@ -45,6 +46,7 @@ export const ACCOUNT_LOOKUP_MODULE_KEYS = [
   'accountLedgers',
   'ledgerBankAccounts',
   'ledgerShippingAddresses',
+  'employeeDepartments',
   'employeeDesignations',
   'employees',
   'tenderTypes',

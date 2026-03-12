@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -12,27 +13,40 @@ import {
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
+  ApiBody,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
+import {
+  hasRequestPayload,
+  validateDto,
+  validateSingleOrArrayDto,
+} from '../../common/utils/request-payload-validation.util';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import {
+  ItemReorderDeleteResultDto,
   ItemReorderErrorResponseDto,
+  ItemReorderPayloadDto,
   ItemReorderSuccessDeleteDto,
   ItemReorderSuccessListDto,
+  ItemReorderSuccessSaveDto,
   ItemReorderSuccessSingleDto,
 } from './dto/item-reorder-response.dto';
+import { DeleteItemReorderDto } from './dto/delete-item-reorder.dto';
 import { ListItemReorderQueryDto } from './dto/list-item-reorder-query.dto';
 import { SaveItemReorderDto } from './dto/save-item-reorder.dto';
 import { ItemReorderExceptionFilter } from './item-reorder-exception.filter';
 import { ItemsReorderMasterService } from './items-reorder-master.service';
 import {
+  ItemReorderDeleteResult,
   ItemReorderListItem,
   ItemReorderListMeta,
   ItemReorderPayload,
@@ -42,6 +56,12 @@ import {
 @ApiTags('Item Reorders')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@ApiExtraModels(
+  SaveItemReorderDto,
+  DeleteItemReorderDto,
+  ItemReorderPayloadDto,
+  ItemReorderDeleteResultDto,
+)
 @Controller('item-reorders')
 @UseFilters(ItemReorderExceptionFilter)
 export class ItemsReorderMasterController {
@@ -50,20 +70,35 @@ export class ItemsReorderMasterController {
   @Post('create')
   @Version('1')
   @ApiOperation({ summary: 'Create or update item reorder (by ir_id presence)' })
-  @ApiCreatedResponse({ type: ItemReorderSuccessSingleDto })
+  @ApiBody({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(SaveItemReorderDto) },
+        {
+          type: 'array',
+          items: { $ref: getSchemaPath(SaveItemReorderDto) },
+        },
+      ],
+    },
+  })
+  @ApiCreatedResponse({ type: ItemReorderSuccessSaveDto })
   @ApiBadRequestResponse({ type: ItemReorderErrorResponseDto })
   @ApiConflictResponse({ type: ItemReorderErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemReorderErrorResponseDto })
   async save(
-    @Body() saveItemReorderDto: SaveItemReorderDto,
-  ): Promise<ItemReorderSuccessResponse<ItemReorderPayload>> {
+    @Body() body: unknown,
+  ): Promise<ItemReorderSuccessResponse<ItemReorderPayload | ItemReorderPayload[]>> {
+    const saveItemReorderDto = await validateSingleOrArrayDto(body, SaveItemReorderDto);
     const data = await this.itemsReorderMasterService.save(saveItemReorderDto);
+    const isArray = Array.isArray(saveItemReorderDto);
 
     return {
       success: true,
-      message: saveItemReorderDto.ir_id
-        ? 'Item reorder updated successfully'
-        : 'Item reorder created successfully',
+      message: isArray
+        ? 'Item reorders saved successfully'
+        : saveItemReorderDto.ir_id
+          ? 'Item reorder updated successfully'
+          : 'Item reorder created successfully',
       data,
     };
   }
@@ -108,19 +143,63 @@ export class ItemsReorderMasterController {
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item reorder by id' })
-  @ApiQuery({ name: 'ir_id', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'ir_id', required: false, schema: { type: 'string', format: 'uuid' } })
+  @ApiBody({
+    required: false,
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(DeleteItemReorderDto) },
+        {
+          type: 'array',
+          items: { $ref: getSchemaPath(DeleteItemReorderDto) },
+        },
+      ],
+    },
+  })
   @ApiOkResponse({ type: ItemReorderSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemReorderErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemReorderErrorResponseDto })
   async remove(
-    @Query('ir_id', new ParseUUIDPipe({ version: '7' })) irId: string,
-  ): Promise<ItemReorderSuccessResponse<{ ir_id: string; deleted: true }>> {
-    const data = await this.itemsReorderMasterService.softDelete(irId);
+    @Body() body: unknown,
+    @Query('ir_id') irId?: string,
+  ): Promise<ItemReorderSuccessResponse<ItemReorderDeleteResult | ItemReorderDeleteResult[]>> {
+    const deleteItemReorderDto = await this.resolveDeletePayload(body, irId);
+    const isArray = Array.isArray(deleteItemReorderDto);
+    const data = await this.itemsReorderMasterService.softDelete(
+      isArray ? deleteItemReorderDto.map((item) => item.ir_id) : deleteItemReorderDto.ir_id,
+    );
 
     return {
       success: true,
-      message: 'Item reorder deleted successfully',
+      message: isArray ? 'Item reorders deleted successfully' : 'Item reorder deleted successfully',
       data,
     };
+  }
+
+  private async resolveDeletePayload(
+    body: unknown,
+    irId?: string,
+  ): Promise<DeleteItemReorderDto | DeleteItemReorderDto[]> {
+    if (hasRequestPayload(body)) {
+      return (await validateSingleOrArrayDto(body, DeleteItemReorderDto)) as
+        | DeleteItemReorderDto
+        | DeleteItemReorderDto[];
+    }
+
+    if (!irId?.trim()) {
+      throw new BadRequestException({
+        message: ['ir_id is required'],
+      });
+    }
+
+    return (await validateDto(
+      {
+        ir_id: irId,
+      },
+      DeleteItemReorderDto,
+      {
+        type: 'query',
+      },
+    )) as DeleteItemReorderDto;
   }
 }

@@ -31,6 +31,9 @@ export class AccountsLookupPayloadDto {
   ledgerShippingAddresses!: NameIdOptionDto[];
 
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
+  employeeDepartments!: NameIdOptionDto[];
+
+  @ApiProperty({ type: NameIdOptionDto, isArray: true })
   employeeDesignations!: NameIdOptionDto[];
 
   @ApiProperty({ type: NameIdOptionDto, isArray: true })

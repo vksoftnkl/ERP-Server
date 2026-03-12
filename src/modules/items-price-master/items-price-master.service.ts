@@ -11,6 +11,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemPriceQueryDto } from './dto/list-item-price-query.dto';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import {
+  ItemPriceDeleteResult,
   ItemPriceErrorDetail,
   ItemPriceErrorResponse,
   ItemPriceListItem,
@@ -33,12 +34,32 @@ export class ItemsPriceMasterService {
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
-  async save(saveItemPriceDto: SaveItemPriceDto): Promise<ItemPricePayload> {
-    if (saveItemPriceDto.ipm_unit_rate_id) {
-      return this.updateItemPrice(saveItemPriceDto);
-    }
+  async save(saveItemPriceDto: SaveItemPriceDto): Promise<ItemPricePayload>;
+  async save(saveItemPriceDto: SaveItemPriceDto[]): Promise<ItemPricePayload[]>;
+  async save(
+    saveItemPriceDto: SaveItemPriceDto | SaveItemPriceDto[],
+  ): Promise<ItemPricePayload | ItemPricePayload[]>;
+  async save(
+    saveItemPriceDto: SaveItemPriceDto | SaveItemPriceDto[],
+  ): Promise<ItemPricePayload | ItemPricePayload[]> {
+    const saveItems = Array.isArray(saveItemPriceDto) ? saveItemPriceDto : [saveItemPriceDto];
 
-    return this.createItemPrice(saveItemPriceDto);
+    try {
+      const results = await this.prisma.$transaction(async (tx) => {
+        const savedItems: ItemPricePayload[] = [];
+
+        for (const saveItem of saveItems) {
+          savedItems.push(await this.saveItemPrice(tx, saveItem));
+        }
+
+        return savedItems;
+      });
+
+      return Array.isArray(saveItemPriceDto) ? results : results[0];
+    } catch (error: unknown) {
+      this.handleWriteError(error);
+      throw error;
+    }
   }
 
   async list(
@@ -154,52 +175,90 @@ export class ItemsPriceMasterService {
     return this.toPayload(record);
   }
 
-  async delete(ipmUnitRateId: string): Promise<{ ipm_unit_rate_id: string; deleted: true }> {
+  async delete(ipmUnitRateId: string): Promise<ItemPriceDeleteResult>;
+  async delete(ipmUnitRateId: string[]): Promise<ItemPriceDeleteResult[]>;
+  async delete(
+    ipmUnitRateId: string | string[],
+  ): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
+  async delete(
+    ipmUnitRateId: string | string[],
+  ): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]> {
+    const deleteIds = Array.isArray(ipmUnitRateId) ? ipmUnitRateId : [ipmUnitRateId];
+
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.itemPriceMaster.findUnique({
-          where: {
-            ipmUnitRateId,
-          },
-        });
-        if (!existing) {
-          this.throwNotFound(ipmUnitRateId);
+      const results = await this.prisma.$transaction(async (tx) => {
+        const deletedItems: ItemPriceDeleteResult[] = [];
+
+        for (const deleteId of deleteIds) {
+          deletedItems.push(await this.deleteItemPrice(tx, deleteId));
         }
 
-        await tx.itemPriceMaster.delete({
-          where: {
-            ipmUnitRateId,
-          },
-        });
-
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'cancel',
-            tableName: ITEM_PRICE_TABLE_NAME,
-            screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: ipmUnitRateId,
-            displayName: this.buildDisplayName(existing),
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: null,
-            userId: DEFAULT_ACTOR,
-            notes: 'Item price deleted',
-          },
-          tx,
-        );
-
-        return {
-          ipm_unit_rate_id: ipmUnitRateId,
-          deleted: true,
-        };
+        return deletedItems;
       });
+
+      return Array.isArray(ipmUnitRateId) ? results : results[0];
     } catch (error: unknown) {
       this.handleDeleteError(error);
       throw error;
     }
   }
 
-  private async createItemPrice(saveItemPriceDto: SaveItemPriceDto): Promise<ItemPricePayload> {
+  private async saveItemPrice(
+    tx: Prisma.TransactionClient,
+    saveItemPriceDto: SaveItemPriceDto,
+  ): Promise<ItemPricePayload> {
+    if (saveItemPriceDto.ipm_unit_rate_id) {
+      return this.updateItemPrice(tx, saveItemPriceDto);
+    }
+
+    return this.createItemPrice(tx, saveItemPriceDto);
+  }
+
+  private async deleteItemPrice(
+    tx: Prisma.TransactionClient,
+    ipmUnitRateId: string,
+  ): Promise<ItemPriceDeleteResult> {
+    const existing = await tx.itemPriceMaster.findUnique({
+      where: {
+        ipmUnitRateId,
+      },
+    });
+    if (!existing) {
+      this.throwNotFound(ipmUnitRateId);
+    }
+
+    await tx.itemPriceMaster.delete({
+      where: {
+        ipmUnitRateId,
+      },
+    });
+
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'cancel',
+        tableName: ITEM_PRICE_TABLE_NAME,
+        screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: ipmUnitRateId,
+        displayName: this.buildDisplayName(existing),
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: null,
+        userId: DEFAULT_ACTOR,
+        notes: 'Item price deleted',
+      },
+      tx,
+    );
+
+    return {
+      ipm_unit_rate_id: ipmUnitRateId,
+      deleted: true,
+    };
+  }
+
+  private async createItemPrice(
+    tx: Prisma.TransactionClient,
+    saveItemPriceDto: SaveItemPriceDto,
+  ): Promise<ItemPricePayload> {
     const profitType = saveItemPriceDto.ipm_profit_type?.trim();
     if (!profitType) {
       this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
@@ -224,36 +283,32 @@ export class ItemsPriceMasterService {
     };
     this.applyOptionalFields(data, saveItemPriceDto);
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const created = await tx.itemPriceMaster.create({ data });
-        const payload = this.toPayload(created);
+    const created = await tx.itemPriceMaster.create({ data });
+    const payload = this.toPayload(created);
 
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: ITEM_PRICE_TABLE_NAME,
-            screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: payload.ipm_unit_rate_id,
-            displayName: this.buildDisplayName(created),
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'Item price created',
-          },
-          tx,
-        );
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: ITEM_PRICE_TABLE_NAME,
+        screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: payload.ipm_unit_rate_id,
+        displayName: this.buildDisplayName(created),
+        originalRecord: null,
+        modifiedRecord: payload,
+        userId: createdBy,
+        notes: 'Item price created',
+      },
+      tx,
+    );
 
-        return payload;
-      });
-    } catch (error: unknown) {
-      this.handleWriteError(error);
-      throw error;
-    }
+    return payload;
   }
 
-  private async updateItemPrice(saveItemPriceDto: SaveItemPriceDto): Promise<ItemPricePayload> {
+  private async updateItemPrice(
+    tx: Prisma.TransactionClient,
+    saveItemPriceDto: SaveItemPriceDto,
+  ): Promise<ItemPricePayload> {
     const ipmUnitRateId = saveItemPriceDto.ipm_unit_rate_id!;
     const profitType = saveItemPriceDto.ipm_profit_type?.trim();
     if (!profitType) {
@@ -265,56 +320,49 @@ export class ItemsPriceMasterService {
       ]);
     }
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.itemPriceMaster.findUnique({
-          where: {
-            ipmUnitRateId,
-          },
-        });
-        if (!existing) {
-          this.throwNotFound(ipmUnitRateId);
-        }
-
-        const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
-          ipmItemId: saveItemPriceDto.ipm_item_id,
-          ipmUnitId: saveItemPriceDto.ipm_unit_id,
-          ipmProfitType: profitType,
-          ipmModifiedOn: new Date(),
-          ipmModifiedBy: this.resolveActor(saveItemPriceDto.ipm_modified_by),
-        };
-        this.applyOptionalFields(data, saveItemPriceDto);
-
-        const updated = await tx.itemPriceMaster.update({
-          where: {
-            ipmUnitRateId,
-          },
-          data,
-        });
-
-        const payload = this.toPayload(updated);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: ITEM_PRICE_TABLE_NAME,
-            screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: ipmUnitRateId,
-            displayName: this.buildDisplayName(updated),
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
-            userId: payload.ipm_modified_by ?? DEFAULT_ACTOR,
-            notes: 'Item price updated',
-          },
-          tx,
-        );
-
-        return payload;
-      });
-    } catch (error: unknown) {
-      this.handleWriteError(error);
-      throw error;
+    const existing = await tx.itemPriceMaster.findUnique({
+      where: {
+        ipmUnitRateId,
+      },
+    });
+    if (!existing) {
+      this.throwNotFound(ipmUnitRateId);
     }
+
+    const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
+      ipmItemId: saveItemPriceDto.ipm_item_id,
+      ipmUnitId: saveItemPriceDto.ipm_unit_id,
+      ipmProfitType: profitType,
+      ipmModifiedOn: new Date(),
+      ipmModifiedBy: this.resolveActor(saveItemPriceDto.ipm_modified_by),
+    };
+    this.applyOptionalFields(data, saveItemPriceDto);
+
+    const updated = await tx.itemPriceMaster.update({
+      where: {
+        ipmUnitRateId,
+      },
+      data,
+    });
+
+    const payload = this.toPayload(updated);
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: ITEM_PRICE_TABLE_NAME,
+        screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: ipmUnitRateId,
+        displayName: this.buildDisplayName(updated),
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: payload,
+        userId: payload.ipm_modified_by ?? DEFAULT_ACTOR,
+        notes: 'Item price updated',
+      },
+      tx,
+    );
+
+    return payload;
   }
 
   private buildListWhere(queryDto: ListItemPriceQueryDto): Prisma.ItemPriceMasterWhereInput {

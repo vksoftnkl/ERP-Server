@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 
 export class ItemEanCodeErrorFieldDto {
   @ApiProperty({ example: 'ean_code' })
@@ -93,6 +93,26 @@ export class ItemEanCodeSuccessSingleDto {
   data!: ItemEanCodePayloadDto;
 }
 
+@ApiExtraModels(ItemEanCodePayloadDto)
+export class ItemEanCodeSuccessSaveDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Item EAN code created successfully' })
+  message!: string;
+
+  @ApiProperty({
+    oneOf: [
+      { $ref: getSchemaPath(ItemEanCodePayloadDto) },
+      {
+        type: 'array',
+        items: { $ref: getSchemaPath(ItemEanCodePayloadDto) },
+      },
+    ],
+  })
+  data!: ItemEanCodePayloadDto | ItemEanCodePayloadDto[];
+}
+
 export class ItemEanCodeSuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -114,6 +134,14 @@ export class ItemEanCodeSuccessDeleteDto {
   @ApiProperty({ example: 'Item EAN code deleted successfully' })
   message!: string;
 
-  @ApiProperty({ type: ItemEanCodeDeleteResultDto })
-  data!: ItemEanCodeDeleteResultDto;
+  @ApiProperty({
+    oneOf: [
+      { $ref: getSchemaPath(ItemEanCodeDeleteResultDto) },
+      {
+        type: 'array',
+        items: { $ref: getSchemaPath(ItemEanCodeDeleteResultDto) },
+      },
+    ],
+  })
+  data!: ItemEanCodeDeleteResultDto | ItemEanCodeDeleteResultDto[];
 }

@@ -810,12 +810,47 @@ describe('ItemsGroupMasterService', () => {
       },
     });
   });
-  it('rejects invalid configured grid_sql in list', async () => {
+  it('falls back to prisma list when configured grid_sql is invalid', async () => {
     prisma.gridDetails.findFirst.mockResolvedValue({
       gridSql: 'DELETE FROM item_group_master',
     });
-    await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
+    prisma.itemGroupMaster.count.mockResolvedValue(1);
+    prisma.itemGroupMaster.findMany.mockResolvedValue([makeRecord()]);
+    await expect(service.list({})).resolves.toEqual({
+      items: [service['toPayload'](makeRecord())],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+    });
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(prisma.itemGroupMaster.count).toHaveBeenCalledTimes(1);
+    expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
+  });
+  it('falls back to prisma list when configured grid_sql execution fails', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql:
+        'SELECT itg_id AS "itemGroupId", itg_name AS "groupName" FROM item_group_master WHERE itg_is_deleted = false',
+    });
+    prisma.$queryRawUnsafe.mockRejectedValue(new Error('broken configured grid'));
+    prisma.itemGroupMaster.count.mockResolvedValue(1);
+    prisma.itemGroupMaster.findMany.mockResolvedValue([makeRecord()]);
+
+    await expect(service.list({})).resolves.toEqual({
+      items: [service['toPayload'](makeRecord())],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+    });
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalled();
+    expect(prisma.itemGroupMaster.count).toHaveBeenCalledTimes(1);
+    expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
   });
   it('soft delete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({

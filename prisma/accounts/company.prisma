@@ -62,7 +62,7 @@ model Company {
   compEinvoiceInclEway  Boolean?                                                    @map("comp_einvoice_incl_eway")
 
   // 9) System Settings
-  compStylesheetId      Int                                                         @map("comp_stylesheet_id")
+  compStylesheetId      String?   @db.VarChar                                                        @map("comp_stylesheet_id")
   compBankId            String?   @db.Uuid                                          @map("comp_bank_id")
   compPriceFixing       String?   @db.VarChar(50)                                  @map("comp_price_fixing")
   compPrefixCode        String?   @db.VarChar(20)                                  @map("comp_prefix_code")

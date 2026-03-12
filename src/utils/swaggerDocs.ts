@@ -5,6 +5,7 @@ import { LedgerBankAccountModule } from '../modules/accountsModule/ledgerBankAcc
 import { BranchMasterModule } from '../modules/accountsModule/branchMaster/branch-master.module';
 import { CompanyGroupMasterModule } from '../modules/accountsModule/companyGroupMaster/company-group-master.module';
 import { CompanyMasterModule } from '../modules/accountsModule/companyMaster/company-master.module';
+import { EmployeeDepartmentMasterModule } from '../modules/accountsModule/employeeDepartmentMaster/employee-department-master.module';
 import { EmployeeDesignationMasterModule } from '../modules/accountsModule/employeeDesignationMaster/employee-designation-master.module';
 import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tender-master.module';
 import { AuthModule } from '../modules/auth/auth.module';
@@ -26,7 +27,6 @@ import { MasterLookupModule } from '../modules/master-lookup/master-lookup.modul
 import { MenuMasterModule } from '../modules/fixed/menu-master/menu-master.module';
 import { PriceLevelMasterModule } from '../modules/fixed/price-level-master/price-level-master.module';
 import { HsnCodeMasterModule } from '../modules/fixed/hsn-code-master/hsn-code-master.module';
-
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -117,6 +117,12 @@ export const swaggerModuleDocuments = [
     title: 'Company Group Master API',
     description: 'Company group master module endpoints',
     include: [CompanyGroupMasterModule],
+  },
+  {
+    path: 'employee-department-master',
+    title: 'Employee Department Master API',
+    description: 'Employee department master module endpoints',
+    include: [EmployeeDepartmentMasterModule],
   },
   {
     path: 'employee-designation-master',

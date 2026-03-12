@@ -53,6 +53,7 @@ export class EmployeeMasterService {
 
     const hasStructuredFilters =
       queryDto.empCompanyId !== undefined ||
+      queryDto.empDepartmentId !== undefined ||
       queryDto.empDesignationId !== undefined ||
       queryDto.empIsActive !== undefined ||
       queryDto.empStatus !== undefined ||
@@ -72,6 +73,10 @@ export class EmployeeMasterService {
 
     if (queryDto.empCompanyId !== undefined) {
       where.empCompanyId = queryDto.empCompanyId as string;
+    }
+
+    if (queryDto.empDepartmentId !== undefined) {
+      where.empDepartmentId = queryDto.empDepartmentId;
     }
 
     if (queryDto.empDesignationId !== undefined) {
@@ -278,6 +283,7 @@ export class EmployeeMasterService {
         );
 
         await this.ensureCompanyExists(saveEmployeeMasterDto.empCompanyId, tx);
+        await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
 
         const now = new Date();
@@ -345,6 +351,7 @@ export class EmployeeMasterService {
         );
 
         await this.ensureCompanyExists(saveEmployeeMasterDto.empCompanyId, tx);
+        await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
 
         const data: Prisma.EmpMasterUncheckedUpdateInput = {
@@ -433,6 +440,34 @@ export class EmployeeMasterService {
         {
           field: 'empDesignationId',
           message: `No active employee designation found with id ${empDesignationId}`,
+        },
+      ]);
+    }
+  }
+
+  private async ensureDepartmentExists(
+    empDepartmentId: string | null | undefined,
+    tx: EmployeeMasterWriteClient,
+  ): Promise<void> {
+    if (empDepartmentId === undefined || empDepartmentId === null) {
+      return;
+    }
+
+    const department = await tx.employeeDepartment.findFirst({
+      where: {
+        edptId: empDepartmentId,
+        edptIsDeleted: false,
+      },
+      select: {
+        edptId: true,
+      },
+    });
+
+    if (!department) {
+      this.throwBadRequest('Employee department does not exist', [
+        {
+          field: 'empDepartmentId',
+          message: `No active employee department found with id ${empDepartmentId}`,
         },
       ]);
     }

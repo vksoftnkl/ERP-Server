@@ -149,7 +149,15 @@ export class SaveCompanyMasterDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
   @MaxLength(20)
+
   compFssaiNo?: string | null;
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(20)
+  compDrugLicenseNo?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
@@ -401,10 +409,10 @@ export class SaveCompanyMasterDto {
   @IsBoolean()
   compEinvoiceInclEway?: boolean | null;
 
-  @ApiProperty({ type: Number })
-  @Type(() => Number)
-  @IsInt()
-  compStylesheetId!: number;
+  @ApiProperty({ type: String, format: 'color', nullable: true })
+  @Type(() => String)
+  @IsString()
+  compStylesheetId!: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()

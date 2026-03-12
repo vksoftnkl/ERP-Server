@@ -17,7 +17,6 @@ import {
   ItemListMeta,
   ItemPayload,
 } from './types/item-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
@@ -25,7 +24,6 @@ const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const ITEM_TABLE_NAME = 'item_master';
 const ITEM_AUDIT_SCREEN_NAME = 'Item Master';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
-
 @Injectable()
 export class ItemsMasterService {
   constructor(
@@ -33,20 +31,16 @@ export class ItemsMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) { }
-
   async save(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     if (saveItemDto.item_id) {
       return this.updateItem(saveItemDto);
     }
-
     return this.createItem(saveItemDto);
   }
-
   async list(queryDto: ListItemQueryDto): Promise<{ items: ItemListItem[]; meta: ItemListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.item_branch_id !== undefined ||
       queryDto.item_group_id !== undefined ||
@@ -59,14 +53,12 @@ export class ItemsMasterService {
       queryDto.item_is_active !== undefined ||
       queryDto.item_is_service !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where = this.buildListWhere(queryDto);
     const [total, records] = await Promise.all([
       this.prisma.itemMaster.count({ where }),
@@ -77,7 +69,6 @@ export class ItemsMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -88,7 +79,6 @@ export class ItemsMasterService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -104,13 +94,11 @@ export class ItemsMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: ITEM_TABLE_NAME,
@@ -118,7 +106,6 @@ export class ItemsMasterService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemListItem>({
           baseSql: validation.normalizedSql,
@@ -126,7 +113,6 @@ export class ItemsMasterService {
           limit,
           skip,
         });
-
         return {
           items: result.items,
           meta: {
@@ -140,10 +126,8 @@ export class ItemsMasterService {
         continue;
       }
     }
-
     return null;
   }
-
   async getById(itemId: string): Promise<ItemPayload> {
     const record = await this.prisma.itemMaster.findFirst({
       where: {
@@ -151,14 +135,11 @@ export class ItemsMasterService {
         itemIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(itemId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(itemId: string): Promise<{ item_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.itemMaster.findFirst({
@@ -170,7 +151,6 @@ export class ItemsMasterService {
       if (!existing) {
         this.throwNotFound(itemId);
       }
-
       const modifiedOn = new Date();
       const modifiedBy = DEFAULT_ACTOR;
       const result = await tx.itemMaster.updateMany({
@@ -187,7 +167,6 @@ export class ItemsMasterService {
       if (result.count === 0) {
         this.throwNotFound(itemId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -210,14 +189,12 @@ export class ItemsMasterService {
         },
         tx,
       );
-
       return {
         item_id: itemId,
         deleted: true,
       };
     });
   }
-
   private async createItem(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     const itemNameEn = saveItemDto.item_name_en?.trim();
     if (!itemNameEn) {
@@ -228,7 +205,6 @@ export class ItemsMasterService {
         },
       ]);
     }
-
     const now = new Date();
     const createdBy = this.resolveActor(saveItemDto.item_created_by);
     const modifiedBy = this.resolveActor(saveItemDto.item_modified_by, createdBy);
@@ -244,12 +220,10 @@ export class ItemsMasterService {
       itemModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveItemDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const created = await tx.itemMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -265,7 +239,6 @@ export class ItemsMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -273,7 +246,6 @@ export class ItemsMasterService {
       throw error;
     }
   }
-
   private async updateItem(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     const itemId = saveItemDto.item_id!;
     const itemNameEn = saveItemDto.item_name_en?.trim();
@@ -285,7 +257,6 @@ export class ItemsMasterService {
         },
       ]);
     }
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.itemMaster.findFirst({
@@ -297,7 +268,6 @@ export class ItemsMasterService {
         if (!existing) {
           this.throwNotFound(itemId);
         }
-
         const data: Prisma.ItemMasterUncheckedUpdateInput = {
           itemNameEn,
           itemGroupId: saveItemDto.item_group_id,
@@ -306,14 +276,12 @@ export class ItemsMasterService {
           itemModifiedBy: this.resolveActor(saveItemDto.item_modified_by),
         };
         this.applyOptionalFields(data, saveItemDto);
-
         const updated = await tx.itemMaster.update({
           where: {
             itemId,
           },
           data,
         });
-
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
           {
@@ -338,7 +306,6 @@ export class ItemsMasterService {
       throw error;
     }
   }
-
   private buildListWhere(queryDto: ListItemQueryDto): Prisma.ItemMasterWhereInput {
     const where: Prisma.ItemMasterWhereInput = {
       itemIsDeleted: false,
@@ -458,6 +425,10 @@ export class ItemsMasterService {
 
     if (this.hasOwnProperty(saveItemDto, 'item_supplier_id')) {
       data.itemSupplierId = saveItemDto.item_supplier_id;
+    }
+
+    if (this.hasOwnProperty(saveItemDto, 'item_cust_group')) {
+      data.itemCustGroup = saveItemDto.item_cust_group;
     }
 
     if (this.hasOwnProperty(saveItemDto, 'item_is_service')) {
@@ -661,6 +632,7 @@ export class ItemsMasterService {
       item_company_category_id: record.itemCompanyCategoryId,
       item_mfgr_id: record.itemMfgrId,
       item_supplier_id: record.itemSupplierId,
+      item_cust_group: record.itemCustGroup,
       item_base_unit_id: record.itemBaseUnitId,
       item_is_service: record.itemIsService,
       item_is_batch_based: record.itemIsBatchBased,

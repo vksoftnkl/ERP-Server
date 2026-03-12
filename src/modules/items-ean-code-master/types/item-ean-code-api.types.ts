@@ -16,6 +16,11 @@ export interface ItemEanCodeSuccessResponse<T, TMeta = Record<string, unknown>> 
   meta?: TMeta;
 }
 
+export interface ItemEanCodeDeleteResult {
+  ean_id: string;
+  deleted: true;
+}
+
 export interface ItemEanCodePayload {
   ean_id: string;
   ean_item_id: string;

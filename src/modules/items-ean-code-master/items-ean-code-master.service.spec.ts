@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { ItemEanCode, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { ListItemEanCodeQueryDto } from './dto/list-item-ean-code-query.dto';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import { ItemsEanCodeMasterService } from './items-ean-code-master.service';
@@ -45,6 +46,10 @@ describe('ItemsEanCodeMasterService', () => {
   let service: ItemsEanCodeMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
+  let configuredGridSqlService: Pick<
+    ConfiguredGridSqlService,
+    'loadCandidates' | 'filterPrimaryFromTable'
+  >;
 
   beforeEach(() => {
     prisma = {
@@ -69,10 +74,15 @@ describe('ItemsEanCodeMasterService', () => {
     auditLogService = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
     };
+    configuredGridSqlService = {
+      loadCandidates: jest.fn().mockResolvedValue([]),
+      filterPrimaryFromTable: jest.fn().mockReturnValue([]),
+    };
 
     service = new ItemsEanCodeMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      configuredGridSqlService as ConfiguredGridSqlService,
     );
   });
 
@@ -117,6 +127,37 @@ describe('ItemsEanCodeMasterService', () => {
     expect(updateArgs.where.eanId).toBe(EAN_ID);
     expect(updateArgs.data.eanCode).toBe('8901111111111');
     expect(result.ean_code).toBe('8901111111111');
+  });
+
+  it('creates multiple item ean code rows from an array payload', async () => {
+    const firstRecord = makeRecord();
+    const secondRecord = makeRecord({
+      eanId: '019c6f6c-be87-7a11-8905-36092c46fd10',
+      eanCode: '8901111111111',
+    });
+
+    prisma.itemEanCode.create
+      .mockResolvedValueOnce(firstRecord)
+      .mockResolvedValueOnce(secondRecord);
+
+    const result = await service.save([
+      {
+        ean_item_id: ITEM_ID,
+        ean_unit_id: UNIT_ID,
+        ean_code: '8901234567890',
+      },
+      {
+        ean_item_id: ITEM_ID,
+        ean_unit_id: UNIT_ID,
+        ean_code: '8901111111111',
+      },
+    ]);
+
+    expect(prisma.itemEanCode.create).toHaveBeenCalledTimes(2);
+    expect(result).toEqual([
+      expect.objectContaining({ ean_id: EAN_ID }),
+      expect.objectContaining({ ean_id: '019c6f6c-be87-7a11-8905-36092c46fd10' }),
+    ]);
   });
 
   it('normalizes old defaults when a new default ean is created in same scope', async () => {
@@ -244,5 +285,30 @@ describe('ItemsEanCodeMasterService', () => {
     expect(updateManyArgs.where?.eanIsDeleted).toBe(false);
     expect(updateManyArgs.data.eanIsDeleted).toBe(true);
     expect(updateManyArgs.data.eanModifiedBy).toBe('system');
+  });
+
+  it('soft deletes multiple item ean codes from an array payload', async () => {
+    prisma.itemEanCode.findFirst.mockResolvedValueOnce(makeRecord()).mockResolvedValueOnce(
+      makeRecord({
+        eanId: '019c6f6c-be87-7a11-8905-36092c46fd10',
+        eanCode: '8901111111111',
+      }),
+    );
+    prisma.itemEanCode.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(
+      service.softDelete([EAN_ID, '019c6f6c-be87-7a11-8905-36092c46fd10']),
+    ).resolves.toEqual([
+      {
+        ean_id: EAN_ID,
+        deleted: true,
+      },
+      {
+        ean_id: '019c6f6c-be87-7a11-8905-36092c46fd10',
+        deleted: true,
+      },
+    ]);
+
+    expect(prisma.itemEanCode.updateMany).toHaveBeenCalledTimes(2);
   });
 });

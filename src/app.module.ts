@@ -40,6 +40,7 @@ import { LedgerBankAccountModule } from './modules/accountsModule/ledgerBankAcco
 import { BranchMasterModule } from './modules/accountsModule/branchMaster/branch-master.module';
 import { CompanyMasterModule } from './modules/accountsModule/companyMaster/company-master.module';
 import { CompanyGroupMasterModule } from './modules/accountsModule/companyGroupMaster/company-group-master.module';
+import { EmployeeDepartmentMasterModule } from './modules/accountsModule/employeeDepartmentMaster/employee-department-master.module';
 import { EmployeeDesignationMasterModule } from './modules/accountsModule/employeeDesignationMaster/employee-designation-master.module';
 import { EmployeeMasterModule } from './modules/accountsModule/employeeMaster/employee-master.module';
 import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
@@ -63,16 +64,13 @@ import { HsnCodeMasterModule } from './modules/fixed/hsn-code-master/hsn-code-ma
 import { StateCodeMasterModule } from './modules/fixed/state-code-master/state-code-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
-
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;
   }
-
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : fallback;
 };
-
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -114,6 +112,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     BranchMasterModule,
     CompanyMasterModule,
     CompanyGroupMasterModule,
+    EmployeeDepartmentMasterModule,
     EmployeeDesignationMasterModule,
     EmployeeMasterModule,
     TenderMasterModule,

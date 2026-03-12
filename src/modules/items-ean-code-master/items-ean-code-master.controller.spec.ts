@@ -82,6 +82,24 @@ describe('ItemsEanCodeMasterController', () => {
     });
   });
 
+  it('wraps array save response with success envelope', async () => {
+    serviceMock.save.mockResolvedValue([itemEanCodePayload]);
+
+    await expect(
+      controller.save([
+        {
+          ean_item_id: ITEM_ID,
+          ean_unit_id: UNIT_ID,
+          ean_code: '8901234567890',
+        },
+      ]),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Item EAN codes saved successfully',
+      data: [itemEanCodePayload],
+    });
+  });
+
   it('returns list wrapper with pagination meta', async () => {
     serviceMock.list.mockResolvedValue({
       items: [itemEanCodePayload],
@@ -127,13 +145,33 @@ describe('ItemsEanCodeMasterController', () => {
       deleted: true,
     });
 
-    await expect(controller.remove(EAN_ID)).resolves.toEqual({
+    await expect(controller.remove(undefined, EAN_ID)).resolves.toEqual({
       success: true,
       message: 'Item EAN code deleted successfully',
       data: {
         ean_id: EAN_ID,
         deleted: true,
       },
+    });
+  });
+
+  it('supports delete with body arrays', async () => {
+    serviceMock.softDelete.mockResolvedValue([
+      {
+        ean_id: EAN_ID,
+        deleted: true,
+      },
+    ]);
+
+    await expect(controller.remove([{ ean_id: EAN_ID }])).resolves.toEqual({
+      success: true,
+      message: 'Item EAN codes deleted successfully',
+      data: [
+        {
+          ean_id: EAN_ID,
+          deleted: true,
+        },
+      ],
     });
   });
 });

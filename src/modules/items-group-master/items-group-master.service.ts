@@ -101,63 +101,57 @@ export class ItemsGroupMasterService {
       configuredGrids,
       ITEM_GROUP_TABLE_NAME,
     );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
-      return null;
-    }
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
+    if (primaryConfiguredGrids.length === 0) {
       return null;
     }
 
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: ITEM_GROUP_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
-    }
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
 
-    const baseSql = validation.normalizedSql;
-    const searchableFieldNames = queryDto.search?.trim()
-      ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
-      : [];
-    const { sql: filteredSql, params } = this.buildConfiguredGridListSql(
-      baseSql,
-      queryDto,
-      searchableFieldNames,
-    );
-
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<ItemGroupListItem>({
-        baseSql: filteredSql,
-        alias: 'item_group_grid',
-        params,
-        limit,
-        skip,
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: ITEM_GROUP_TABLE_NAME,
       });
-      return {
-        items: result.items,
-        meta: {
-          page,
+      if (!validation.isValid) {
+        continue;
+      }
+
+      const baseSql = validation.normalizedSql;
+      const searchableFieldNames = queryDto.search?.trim()
+        ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
+        : [];
+      const { sql: filteredSql, params } = this.buildConfiguredGridListSql(
+        baseSql,
+        queryDto,
+        searchableFieldNames,
+      );
+
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<ItemGroupListItem>({
+          baseSql: filteredSql,
+          alias: 'item_group_grid',
+          params,
           limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
-      };
-    } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for item group list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for item_group_master',
-        },
-      ]);
+          skip,
+        });
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
     }
+
+    return null;
   }
   private buildConfiguredGridListSql(
     baseSql: string,

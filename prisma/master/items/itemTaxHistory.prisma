@@ -18,7 +18,7 @@ model ItemTaxHistory {
   tax              ItemTaxMaster  @relation(fields: [ithTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_tax_history")
-  @@schema("public")
+ @@schema("inventory")
 
   @@index([ithItemId, ithEffectiveFrom, ithEffectiveTo], map: "idx_ith_item_dates")
 }

@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
 export class CompanyMasterErrorFieldDto {
   @ApiProperty({ example: 'compName' })
   field!: string;
@@ -7,7 +6,6 @@ export class CompanyMasterErrorFieldDto {
   @ApiProperty({ example: 'Duplicate compName is not allowed' })
   message!: string;
 }
-
 export class CompanyMasterErrorResponseDto {
   @ApiProperty({ example: false })
   success!: false;
@@ -18,7 +16,6 @@ export class CompanyMasterErrorResponseDto {
   @ApiProperty({ type: CompanyMasterErrorFieldDto, isArray: true })
   errors!: CompanyMasterErrorFieldDto[];
 }
-
 export class CompanyMasterPayloadDto {
   @ApiProperty()
   compId!: number;
@@ -46,6 +43,9 @@ export class CompanyMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   compFssaiNo!: string | null;
+  
+  @ApiPropertyOptional({ nullable: true })
+  compDrugLicenseNo!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   compAddr1!: string | null;

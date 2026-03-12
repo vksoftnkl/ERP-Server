@@ -34,6 +34,7 @@ export interface ItemPayload {
   item_company_category_id: string | null;
   item_mfgr_id: string | null;
   item_supplier_id: string | null;
+  item_cust_group: string | null;
   item_base_unit_id: string;
   item_is_service: boolean;
   item_is_batch_based: boolean;

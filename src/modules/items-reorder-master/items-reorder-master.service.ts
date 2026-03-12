@@ -11,6 +11,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemReorderQueryDto } from './dto/list-item-reorder-query.dto';
 import { SaveItemReorderDto } from './dto/save-item-reorder.dto';
 import {
+  ItemReorderDeleteResult,
   ItemReorderErrorDetail,
   ItemReorderErrorResponse,
   ItemReorderListItem,
@@ -33,12 +34,32 @@ export class ItemsReorderMasterService {
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
-  async save(saveItemReorderDto: SaveItemReorderDto): Promise<ItemReorderPayload> {
-    if (saveItemReorderDto.ir_id) {
-      return this.updateItemReorder(saveItemReorderDto);
-    }
+  async save(saveItemReorderDto: SaveItemReorderDto): Promise<ItemReorderPayload>;
+  async save(saveItemReorderDto: SaveItemReorderDto[]): Promise<ItemReorderPayload[]>;
+  async save(
+    saveItemReorderDto: SaveItemReorderDto | SaveItemReorderDto[],
+  ): Promise<ItemReorderPayload | ItemReorderPayload[]>;
+  async save(
+    saveItemReorderDto: SaveItemReorderDto | SaveItemReorderDto[],
+  ): Promise<ItemReorderPayload | ItemReorderPayload[]> {
+    const saveItems = Array.isArray(saveItemReorderDto) ? saveItemReorderDto : [saveItemReorderDto];
 
-    return this.createItemReorder(saveItemReorderDto);
+    try {
+      const results = await this.prisma.$transaction(async (tx) => {
+        const savedItems: ItemReorderPayload[] = [];
+
+        for (const saveItem of saveItems) {
+          savedItems.push(await this.saveItemReorder(tx, saveItem));
+        }
+
+        return savedItems;
+      });
+
+      return Array.isArray(saveItemReorderDto) ? results : results[0];
+    } catch (error: unknown) {
+      this.handleWriteError(error);
+      throw error;
+    }
   }
 
   async list(
@@ -156,66 +177,102 @@ export class ItemsReorderMasterService {
     return this.toPayload(record);
   }
 
-  async softDelete(irId: string): Promise<{ ir_id: string; deleted: true }> {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.itemReorder.findFirst({
-        where: {
-          irId,
-          irIsDeleted: false,
-        },
-      });
-      if (!existing) {
-        this.throwNotFound(irId);
+  async softDelete(irId: string): Promise<ItemReorderDeleteResult>;
+  async softDelete(irId: string[]): Promise<ItemReorderDeleteResult[]>;
+  async softDelete(
+    irId: string | string[],
+  ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;
+  async softDelete(
+    irId: string | string[],
+  ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]> {
+    const deleteIds = Array.isArray(irId) ? irId : [irId];
+
+    const results = await this.prisma.$transaction(async (tx) => {
+      const deletedItems: ItemReorderDeleteResult[] = [];
+
+      for (const deleteId of deleteIds) {
+        deletedItems.push(await this.softDeleteItemReorder(tx, deleteId));
       }
 
-      const modifiedOn = new Date();
-      const modifiedBy = DEFAULT_ACTOR;
-      const result = await tx.itemReorder.updateMany({
-        where: {
-          irId,
-          irIsDeleted: false,
-        },
-        data: {
-          irIsDeleted: true,
-          irModifiedOn: modifiedOn,
-          irModifiedBy: modifiedBy,
-        },
-      });
-      if (result.count === 0) {
-        this.throwNotFound(irId);
-      }
+      return deletedItems;
+    });
 
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
+    return Array.isArray(irId) ? results : results[0];
+  }
+
+  private async saveItemReorder(
+    tx: Prisma.TransactionClient,
+    saveItemReorderDto: SaveItemReorderDto,
+  ): Promise<ItemReorderPayload> {
+    if (saveItemReorderDto.ir_id) {
+      return this.updateItemReorder(tx, saveItemReorderDto);
+    }
+
+    return this.createItemReorder(tx, saveItemReorderDto);
+  }
+
+  private async softDeleteItemReorder(
+    tx: Prisma.TransactionClient,
+    irId: string,
+  ): Promise<ItemReorderDeleteResult> {
+    const existing = await tx.itemReorder.findFirst({
+      where: {
+        irId,
+        irIsDeleted: false,
+      },
+    });
+    if (!existing) {
+      this.throwNotFound(irId);
+    }
+
+    const modifiedOn = new Date();
+    const modifiedBy = DEFAULT_ACTOR;
+    const result = await tx.itemReorder.updateMany({
+      where: {
+        irId,
+        irIsDeleted: false,
+      },
+      data: {
         irIsDeleted: true,
         irModifiedOn: modifiedOn,
         irModifiedBy: modifiedBy,
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: ITEM_REORDER_TABLE_NAME,
-          screenName: ITEM_REORDER_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: irId,
-          displayName: this.buildDisplayName(existing),
-          originalRecord,
-          modifiedRecord,
-          userId: modifiedBy,
-          notes: 'Item reorder soft deleted',
-        },
-        tx,
-      );
-
-      return {
-        ir_id: irId,
-        deleted: true,
-      };
+      },
     });
+    if (result.count === 0) {
+      this.throwNotFound(irId);
+    }
+
+    const originalRecord = this.toPayload(existing);
+    const modifiedRecord = this.toPayload({
+      ...existing,
+      irIsDeleted: true,
+      irModifiedOn: modifiedOn,
+      irModifiedBy: modifiedBy,
+    });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'cancel',
+        tableName: ITEM_REORDER_TABLE_NAME,
+        screenName: ITEM_REORDER_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: irId,
+        displayName: this.buildDisplayName(existing),
+        originalRecord,
+        modifiedRecord,
+        userId: modifiedBy,
+        notes: 'Item reorder soft deleted',
+      },
+      tx,
+    );
+
+    return {
+      ir_id: irId,
+      deleted: true,
+    };
   }
 
   private async createItemReorder(
+    tx: Prisma.TransactionClient,
     saveItemReorderDto: SaveItemReorderDto,
   ): Promise<ItemReorderPayload> {
     this.validateReorderRange(saveItemReorderDto);
@@ -233,91 +290,78 @@ export class ItemsReorderMasterService {
     };
     this.applyOptionalFields(data, saveItemReorderDto);
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const created = await tx.itemReorder.create({ data });
-        const payload = this.toPayload(created);
+    const created = await tx.itemReorder.create({ data });
+    const payload = this.toPayload(created);
 
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: ITEM_REORDER_TABLE_NAME,
-            screenName: ITEM_REORDER_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: payload.ir_id,
-            displayName: this.buildDisplayName(created),
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'Item reorder created',
-          },
-          tx,
-        );
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: ITEM_REORDER_TABLE_NAME,
+        screenName: ITEM_REORDER_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: payload.ir_id,
+        displayName: this.buildDisplayName(created),
+        originalRecord: null,
+        modifiedRecord: payload,
+        userId: createdBy,
+        notes: 'Item reorder created',
+      },
+      tx,
+    );
 
-        return payload;
-      });
-    } catch (error: unknown) {
-      this.handleWriteError(error);
-      throw error;
-    }
+    return payload;
   }
 
   private async updateItemReorder(
+    tx: Prisma.TransactionClient,
     saveItemReorderDto: SaveItemReorderDto,
   ): Promise<ItemReorderPayload> {
     const irId = saveItemReorderDto.ir_id!;
     this.validateReorderRange(saveItemReorderDto);
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.itemReorder.findFirst({
-          where: {
-            irId,
-            irIsDeleted: false,
-          },
-        });
-        if (!existing) {
-          this.throwNotFound(irId);
-        }
-
-        const data: Prisma.ItemReorderUncheckedUpdateInput = {
-          irItemId: saveItemReorderDto.ir_item_id,
-          irUnitId: saveItemReorderDto.ir_unit_id,
-          irModifiedOn: new Date(),
-          irModifiedBy: this.resolveActor(saveItemReorderDto.ir_modified_by),
-        };
-        this.applyOptionalFields(data, saveItemReorderDto);
-
-        const updated = await tx.itemReorder.update({
-          where: {
-            irId,
-          },
-          data,
-        });
-
-        const payload = this.toPayload(updated);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: ITEM_REORDER_TABLE_NAME,
-            screenName: ITEM_REORDER_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: irId,
-            displayName: this.buildDisplayName(updated),
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
-            userId: payload.ir_modified_by ?? DEFAULT_ACTOR,
-            notes: 'Item reorder updated',
-          },
-          tx,
-        );
-
-        return payload;
-      });
-    } catch (error: unknown) {
-      this.handleWriteError(error);
-      throw error;
+    const existing = await tx.itemReorder.findFirst({
+      where: {
+        irId,
+        irIsDeleted: false,
+      },
+    });
+    if (!existing) {
+      this.throwNotFound(irId);
     }
+
+    const data: Prisma.ItemReorderUncheckedUpdateInput = {
+      irItemId: saveItemReorderDto.ir_item_id,
+      irUnitId: saveItemReorderDto.ir_unit_id,
+      irModifiedOn: new Date(),
+      irModifiedBy: this.resolveActor(saveItemReorderDto.ir_modified_by),
+    };
+    this.applyOptionalFields(data, saveItemReorderDto);
+
+    const updated = await tx.itemReorder.update({
+      where: {
+        irId,
+      },
+      data,
+    });
+
+    const payload = this.toPayload(updated);
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: ITEM_REORDER_TABLE_NAME,
+        screenName: ITEM_REORDER_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: irId,
+        displayName: this.buildDisplayName(updated),
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: payload,
+        userId: payload.ir_modified_by ?? DEFAULT_ACTOR,
+        notes: 'Item reorder updated',
+      },
+      tx,
+    );
+
+    return payload;
   }
 
   private buildListWhere(queryDto: ListItemReorderQueryDto): Prisma.ItemReorderWhereInput {

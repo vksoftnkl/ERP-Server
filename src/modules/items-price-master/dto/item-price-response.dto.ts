@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 
 export class ItemPriceErrorFieldDto {
   @ApiProperty({ example: 'ipm_item_id' })
@@ -165,6 +165,26 @@ export class ItemPriceSuccessSingleDto {
   data!: ItemPricePayloadDto;
 }
 
+@ApiExtraModels(ItemPricePayloadDto)
+export class ItemPriceSuccessSaveDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Item price created successfully' })
+  message!: string;
+
+  @ApiProperty({
+    oneOf: [
+      { $ref: getSchemaPath(ItemPricePayloadDto) },
+      {
+        type: 'array',
+        items: { $ref: getSchemaPath(ItemPricePayloadDto) },
+      },
+    ],
+  })
+  data!: ItemPricePayloadDto | ItemPricePayloadDto[];
+}
+
 export class ItemPriceSuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -186,6 +206,14 @@ export class ItemPriceSuccessDeleteDto {
   @ApiProperty({ example: 'Item price deleted successfully' })
   message!: string;
 
-  @ApiProperty({ type: ItemPriceDeleteResultDto })
-  data!: ItemPriceDeleteResultDto;
+  @ApiProperty({
+    oneOf: [
+      { $ref: getSchemaPath(ItemPriceDeleteResultDto) },
+      {
+        type: 'array',
+        items: { $ref: getSchemaPath(ItemPriceDeleteResultDto) },
+      },
+    ],
+  })
+  data!: ItemPriceDeleteResultDto | ItemPriceDeleteResultDto[];
 }

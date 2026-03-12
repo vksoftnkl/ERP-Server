@@ -26,6 +26,7 @@ export interface CompanyMasterPayload {
   compGstRegType: string | null;
   compPanNo: string | null;
   compFssaiNo: string | null;
+  compDrugLicenseNo: string | null;
   compAddr1: string | null;
   compAddr2: string | null;
   compAddr3: string | null;
@@ -62,7 +63,7 @@ export interface CompanyMasterPayload {
   compEwayIntraLimit: number;
   compEinvoiceDate: string | null;
   compEinvoiceInclEway: boolean | null;
-  compStylesheetId: number;
+  compStylesheetId: string | null;
   compBankId: string | null;
   compPriceFixing: string | null;
   compPrefixCode: string | null;

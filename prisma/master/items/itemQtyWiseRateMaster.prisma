@@ -41,7 +41,7 @@ model ItemQtywiseRate {
   unitRate       ItemPriceMaster @relation(fields: [iqrUnitRateId], references: [ipmUnitRateId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_qtywise_rates")
-  @@schema("public")
+  @@schema("inventory")
 
   @@index([iqrUnitRateId], map: "idx_iqr_unit_rate")
   @@index([iqrBranchId], map: "idx_iqr_branch")

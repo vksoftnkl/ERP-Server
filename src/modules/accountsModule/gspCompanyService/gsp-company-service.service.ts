@@ -23,8 +23,31 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const GSP_COMPANY_SERVICE_TABLE_NAME = 'gsp_company_service';
 const GSP_COMPANY_SERVICE_AUDIT_SCREEN_NAME = 'GSP Company Service';
+const COMPANY_ID_KEYS = ['csgCompanyId', 'csg_company_id', 'companyId', 'company_id'] as const;
+const PROVIDER_ID_KEYS = [
+  'csgGspProviderId',
+  'csg_gsp_provider_id',
+  'providerId',
+  'provider_id',
+] as const;
+const COMPANY_NAME_KEYS = ['companyName', 'company_name', 'compName', 'comp_name'] as const;
+const PROVIDER_NAME_KEYS = [
+  'providerName',
+  'provider_name',
+  'gspProviderName',
+  'gsp_provider_name',
+] as const;
 
 type GspCompanyServiceWriteClient = Prisma.TransactionClient | PrismaService;
+type GspCompanyServiceRecordWithCompany = Prisma.GspCompanyServiceGetPayload<{
+  include: {
+    company: {
+      select: {
+        compName: true;
+      };
+    };
+  };
+}>;
 
 @Injectable()
 export class GspCompanyServiceService {
@@ -91,6 +114,7 @@ export class GspCompanyServiceService {
         { csgServiceType: { contains: search, mode: 'insensitive' } },
         { csgEuserName: { contains: search, mode: 'insensitive' } },
         { csgAuthToken: { contains: search, mode: 'insensitive' } },
+        { company: { compName: { contains: search, mode: 'insensitive' } } },
       ];
     }
 
@@ -98,6 +122,13 @@ export class GspCompanyServiceService {
       this.prisma.gspCompanyService.count({ where }),
       this.prisma.gspCompanyService.findMany({
         where,
+        include: {
+          company: {
+            select: {
+              compName: true,
+            },
+          },
+        },
         orderBy: [
           { csgCompanyId: 'asc' },
           { csgServiceType: 'asc' },
@@ -107,9 +138,10 @@ export class GspCompanyServiceService {
         take: limit,
       }),
     ]);
+    const providerNameById = await this.loadProviderNameMap(records.map((record) => record.csgGspProviderId));
 
     return {
-      items: records.map((record) => this.toPayload(record)),
+      items: records.map((record) => this.toPayload(record, providerNameById.get(record.csgGspProviderId) ?? null)),
       meta: {
         page,
         limit,
@@ -156,9 +188,10 @@ export class GspCompanyServiceService {
           limit,
           skip,
         });
+        const items = await this.attachReferenceLabels(result.items);
 
         return {
-          items: result.items,
+          items,
           meta: {
             page,
             limit,
@@ -180,13 +213,21 @@ export class GspCompanyServiceService {
         csgCompanyServiceId,
         csgIsDeleted: false,
       },
+      include: {
+        company: {
+          select: {
+            compName: true,
+          },
+        },
+      },
     });
 
     if (!record) {
       this.throwNotFound(csgCompanyServiceId);
     }
 
-    return this.toPayload(record);
+    const providerNameById = await this.loadProviderNameMap([record.csgGspProviderId]);
+    return this.toPayload(record, providerNameById.get(record.csgGspProviderId) ?? null);
   }
 
   async softDelete(
@@ -488,11 +529,136 @@ export class GspCompanyServiceService {
     return trimmed ? trimmed : null;
   }
 
-  private toPayload(record: GspCompanyService): GspCompanyServicePayload {
+  private async loadProviderNameMap(
+    providerIds: readonly string[],
+  ): Promise<Map<string, string>> {
+    const uniqueProviderIds = Array.from(
+      new Set(providerIds.map((providerId) => providerId.trim()).filter(Boolean)),
+    );
+
+    if (uniqueProviderIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    const providers = await this.prisma.gspProviderMaster.findMany({
+      where: {
+        gspProviderId: {
+          in: uniqueProviderIds,
+        },
+      },
+      select: {
+        gspProviderId: true,
+        gspProviderName: true,
+      },
+    });
+
+    return new Map(
+      providers.map((provider) => [provider.gspProviderId, provider.gspProviderName]),
+    );
+  }
+
+  private async attachReferenceLabels(
+    items: GspCompanyServiceListItem[],
+  ): Promise<GspCompanyServiceListItem[]> {
+    const rows = items.filter(
+      (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+    );
+
+    if (rows.length === 0) {
+      return items;
+    }
+
+    const companyIds = Array.from(
+      new Set(rows.map((row) => this.readStringValue(row, COMPANY_ID_KEYS)).filter(Boolean) as string[]),
+    );
+    const providerIds = Array.from(
+      new Set(rows.map((row) => this.readStringValue(row, PROVIDER_ID_KEYS)).filter(Boolean) as string[]),
+    );
+
+    const [companies, providerNameById] = await Promise.all([
+      companyIds.length > 0
+        ? this.prisma.company.findMany({
+            where: {
+              compId: {
+                in: companyIds,
+              },
+            },
+            select: {
+              compId: true,
+              compName: true,
+            },
+          })
+        : Promise.resolve([]),
+      this.loadProviderNameMap(providerIds),
+    ]);
+
+    const companyNameById = new Map(companies.map((company) => [company.compId, company.compName]));
+
+    return items.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return item;
+      }
+
+      const row = item as Record<string, unknown>;
+      const companyId = this.readStringValue(row, COMPANY_ID_KEYS);
+      const providerId = this.readStringValue(row, PROVIDER_ID_KEYS);
+      const companyName =
+        this.readStringValue(row, COMPANY_NAME_KEYS) ??
+        (companyId ? companyNameById.get(companyId) ?? null : null);
+      const providerName =
+        this.readStringValue(row, PROVIDER_NAME_KEYS) ??
+        (providerId ? providerNameById.get(providerId) ?? null : null);
+
+      return {
+        ...row,
+        companyName,
+        companyDisplay: this.buildReferenceDisplay(companyName, companyId),
+        providerName,
+        providerDisplay: this.buildReferenceDisplay(providerName, providerId),
+      };
+    });
+  }
+
+  private readStringValue(source: Record<string, unknown>, keys: readonly string[]): string | null {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed) {
+          return trimmed;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private buildReferenceDisplay(name: string | null, id: string | null): string | null {
+    if (name && id) {
+      return `${name} (${id})`;
+    }
+
+    if (name) {
+      return name;
+    }
+
+    return id;
+  }
+
+  private toPayload(
+    record: GspCompanyService | GspCompanyServiceRecordWithCompany,
+    providerName: string | null = null,
+  ): GspCompanyServicePayload {
+    const companyName = 'company' in record ? record.company?.compName ?? null : null;
+
     return {
       csgCompanyServiceId: record.csgCompanyServiceId,
       csgCompanyId: record.csgCompanyId,
+      companyName,
+      companyDisplay: this.buildReferenceDisplay(companyName, record.csgCompanyId),
       csgGspProviderId: record.csgGspProviderId,
+      providerName,
+      providerDisplay: this.buildReferenceDisplay(providerName, record.csgGspProviderId),
       csgServiceType: record.csgServiceType,
       csgEuserName: record.csgEuserName,
       csgEuserPassword: record.csgEuserPassword,

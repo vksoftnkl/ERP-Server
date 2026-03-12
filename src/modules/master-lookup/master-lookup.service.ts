@@ -48,6 +48,7 @@ export class MasterLookupService {
         accountLedgers: byModule.accountLedgers,
         ledgerBankAccounts: byModule.ledgerBankAccounts,
         ledgerShippingAddresses: byModule.ledgerShippingAddresses,
+        employeeDepartments: byModule.employeeDepartments,
         employeeDesignations: byModule.employeeDesignations,
         employees: byModule.employees,
         tenderTypes: byModule.tenderTypes,
@@ -261,6 +262,20 @@ export class MasterLookupService {
             row.saaTrdnm ?? row.saaContactName ?? row.ledger?.ledName ?? row.saaId,
           ),
         );
+      }
+
+      case 'employeeDepartments': {
+        const rows = await this.prisma.employeeDepartment.findMany({
+          where: {
+            edptIsDeleted: false,
+            edptIsActive: true,
+            ...(contains ? { edptName: contains } : {}),
+          },
+          select: { edptId: true, edptName: true },
+          orderBy: [{ edptName: 'asc' }, { edptId: 'asc' }],
+          ...(take ? { take } : {}),
+        });
+        return rows.map((row) => this.toOption(row.edptId, row.edptName));
       }
 
       case 'employeeDesignations': {

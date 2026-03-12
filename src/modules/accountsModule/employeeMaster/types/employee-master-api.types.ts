@@ -2,20 +2,17 @@ export interface EmployeeMasterErrorDetail {
   field: string;
   message: string;
 }
-
 export interface EmployeeMasterErrorResponse {
   success: false;
   message: string;
   errors: EmployeeMasterErrorDetail[];
 }
-
 export interface EmployeeMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
 }
-
 export interface EmployeeMasterPayload {
   empId: string;
   empCompanyId: string;
@@ -72,9 +69,7 @@ export interface EmployeeMasterPayload {
   empModifiedOn: string;
   empModifiedBy: string | null;
 }
-
 export type EmployeeMasterListItem = EmployeeMasterPayload | Record<string, unknown>;
-
 export interface EmployeeMasterListMeta {
   page: number;
   limit: number;

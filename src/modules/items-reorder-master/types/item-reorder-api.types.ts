@@ -16,6 +16,11 @@ export interface ItemReorderSuccessResponse<T, TMeta = Record<string, unknown>> 
   meta?: TMeta;
 }
 
+export interface ItemReorderDeleteResult {
+  ir_id: string;
+  deleted: true;
+}
+
 export interface ItemReorderPayload {
   ir_id: string;
   ir_branch_id: string | null;

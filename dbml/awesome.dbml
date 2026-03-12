@@ -233,7 +233,7 @@ Table companys {
   compEwayIntraLimit Decimal [not null, default: 0]
   compEinvoiceDate DateTime
   compEinvoiceInclEway Boolean
-  compStylesheetId Int [not null]
+  compStylesheetId String
   compBankId String
   compPriceFixing String
   compPrefixCode String
@@ -276,6 +276,22 @@ Table company_group_master {
   cogCreatedBy String
   cogModifiedOn DateTime [default: `now()`, not null]
   cogModifiedBy String
+}
+
+Table employee_departments {
+  edptId String [pk]
+  edptName String [not null]
+  edptCode String
+  edptAlias String
+  edptRemarks String
+  edptIsActive Boolean [not null, default: true]
+  edptIsDeleted Boolean [not null, default: false]
+  edptSyncDate DateTime
+  edptCreatedOn DateTime [default: `now()`, not null]
+  edptCreatedBy String
+  edptModifiedOn DateTime [default: `now()`, not null]
+  edptModifiedBy String
+  employees emp_master [not null]
 }
 
 Table employee_designations {
@@ -351,6 +367,7 @@ Table emp_master {
   empModifiedBy String
   company companys [not null]
   designation employee_designations
+  department employee_departments
 }
 
 Table gsp_company_service {
@@ -678,6 +695,38 @@ Table state_codes {
   modifiedBy String
 }
 
+Table ui_tables {
+  uiTblId BigInt [pk, increment]
+  uiTblName String
+  uiTblEditable Boolean [not null, default: false]
+  uiTblIsActive Boolean [not null, default: true]
+  uiTblIsDeleted Boolean [not null, default: false]
+  uiTblSyncDate DateTime
+  uiTblCreatedOn DateTime [default: `now()`, not null]
+  uiTblCreatedBy String
+  uiTblModifiedOn DateTime [default: `now()`, not null]
+  uiTblModifiedBy String
+}
+
+Table ui_table_columns {
+  uiTblClmId BigInt [pk, increment]
+  uiTblClmName String
+  uiTblClmColumnWidth Decimal [default: 100]
+  uiTblClmColumnVisibility Boolean [default: true]
+  uiTblClmColumnFocus Boolean [default: false]
+  uiTblClmColumnPosition Int [not null, default: 0]
+  uiTblClmColumnNecessity Boolean [not null, default: false]
+  uiTblClmNextColumn Int
+  uiTblClmPreviousColumn Int
+  uiTblClmIsActive Boolean [not null, default: true]
+  uiTblClmIsDeleted Boolean [not null, default: false]
+  uiTblClmSyncDate DateTime
+  uiTblClmCreatedOn DateTime [default: `now()`, not null]
+  uiTblClmCreatedBy String
+  uiTblClmModifiedOn DateTime [default: `now()`, not null]
+  uiTblClmModifiedBy String
+}
+
 Table user_login_sessions {
   ulsId String [pk]
   ulsCompanyId String [not null]
@@ -903,6 +952,7 @@ Table item_master {
   itemCompanyCategoryId String
   itemMfgrId String
   itemSupplierId String
+  itemCustGroup String
   itemBaseUnitId String [not null]
   itemIsService Boolean [not null, default: false]
   itemIsBatchBased Boolean [not null, default: false]
@@ -1463,6 +1513,8 @@ Ref: branch_master.compId > companys.compId
 Ref: emp_master.empCompanyId > companys.compId [delete: Restrict]
 
 Ref: emp_master.empDesignationId > employee_designations.edId
+
+Ref: emp_master.empDepartmentId > employee_departments.edptId
 
 Ref: gsp_company_service.csgCompanyId > companys.compId [delete: Restrict]
 

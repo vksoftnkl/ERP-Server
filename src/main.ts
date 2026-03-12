@@ -12,92 +12,74 @@ import { AppModule } from './app.module';
 import { FileLoggerService } from './common/logging/file-logger.service';
 import { PrismaService } from './database/prisma/prisma.service';
 import { swaggerModuleDocuments } from './utils/swaggerDocs';
-
 const parseBoolean = (value: string | undefined, defaultValue = false): boolean => {
   if (value === undefined) {
     return defaultValue;
   }
-
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 };
-
 const parseCsv = (value: string | undefined): string[] => {
   if (!value) {
     return [];
   }
-
   return value
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
 };
-
 const getDefaultDevCorsOrigins = (): string[] => [
   'http://localhost:3000',
   'https://localhost:3000',
   'http://127.0.0.1:3000',
   'https://127.0.0.1:3000',
 ];
-
 const resolveFilePath = (filePath: string): string => {
   const isPkgRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
-
   if (isAbsolute(filePath)) {
     return filePath;
   }
-
   const cwdPath = resolve(process.cwd(), filePath);
   if (existsSync(cwdPath)) {
     return cwdPath;
   }
-
   if (isPkgRuntime) {
     const execDirPath = resolve(dirname(process.execPath), filePath);
     if (existsSync(execDirPath)) {
       return execDirPath;
     }
-
     const snapshotPath = resolve(__dirname, '..', filePath);
     if (existsSync(snapshotPath)) {
       return snapshotPath;
     }
   }
-
   return cwdPath;
 };
-
 const normalizeUrlPath = (path: string): string => {
   const cleanedPath = path.replace(/^\/+|\/+$/g, '');
   return cleanedPath ? `/${cleanedPath}` : '';
 };
-
 const buildAbsoluteUrl = (baseUrl: string, path: string): string => {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/g, '');
   const normalizedPath = normalizeUrlPath(path);
   return `${normalizedBaseUrl}${normalizedPath}`;
 };
-
 const buildHttpsOptions = () => {
   if (!parseBoolean(process.env.HTTPS_ENABLED, false)) {
     return undefined;
   }
-
   const certPath = process.env.HTTPS_CERT_PATH;
   const keyPath = process.env.HTTPS_KEY_PATH;
   if (!certPath || !keyPath) {
     throw new Error('HTTPS_ENABLED=true requires HTTPS_CERT_PATH and HTTPS_KEY_PATH.');
   }
-
   const resolvedCertPath = resolveFilePath(certPath);
   const resolvedKeyPath = resolveFilePath(keyPath);
-
   return {
     cert: readFileSync(resolvedCertPath),
     key: readFileSync(resolvedKeyPath),
     passphrase: process.env.HTTPS_PASSPHRASE || undefined,
   };
 };
-
 const buildSwaggerConfig = (title: string, description: string) =>
   new DocumentBuilder()
     .setTitle(title)
@@ -116,7 +98,6 @@ const buildSwaggerConfig = (title: string, description: string) =>
     // API paths already include the global prefix (e.g. /api/v1/*), so root-relative is required.
     .addServer('/')
     .build();
-
 async function bootstrap(): Promise<void> {
   const httpsOptions = buildHttpsOptions();
   const logger = new FileLoggerService();
@@ -147,7 +128,6 @@ async function bootstrap(): Promise<void> {
       credentials: corsCredentials,
     });
   }
-
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -158,18 +138,15 @@ async function bootstrap(): Promise<void> {
       },
     }),
   );
-
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: '1',
   });
-
   const rawApiPrefix = configService.get<string>('app.apiPrefix', 'api');
   const apiPrefix = rawApiPrefix.replace(/^\/+|\/+$/g, '');
   if (apiPrefix) {
     app.setGlobalPrefix(apiPrefix);
   }
-
   const port = configService.get<number>('app.port', 3000);
   const host = configService.get<string>('app.host', '0.0.0.0');
   const allDocsPath = apiPrefix ? `${apiPrefix}/docs` : 'docs';
@@ -178,7 +155,6 @@ async function bootstrap(): Promise<void> {
     buildSwaggerConfig('ERP Server API', 'API documentation for ERP Server'),
   );
   SwaggerModule.setup(allDocsPath, app, allSwaggerDocument);
-
   for (const docs of swaggerModuleDocs) {
     const docsPath = apiPrefix ? `${apiPrefix}/docs/${docs.path}` : `docs/${docs.path}`;
     const moduleSwaggerDocument = SwaggerModule.createDocument(
@@ -190,12 +166,9 @@ async function bootstrap(): Promise<void> {
     );
     SwaggerModule.setup(docsPath, app, moduleSwaggerDocument);
   }
-
   await app.listen(port, host);
-
   const appUrl = await app.getUrl();
   const docsUrl = buildAbsoluteUrl(appUrl, allDocsPath);
-
   const prisma = app.get(PrismaService);
   let isDbConnected = false;
   try {
@@ -205,7 +178,6 @@ async function bootstrap(): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Database startup check failed: ${errorMessage}`, undefined, 'Bootstrap');
   }
-
   logger.log(`API docs URL: ${docsUrl}`, 'Bootstrap');
   for (const docs of swaggerModuleDocs) {
     const docsPath = apiPrefix ? `${apiPrefix}/docs/${docs.path}` : `docs/${docs.path}`;
@@ -213,5 +185,4 @@ async function bootstrap(): Promise<void> {
   }
   logger.log(`DB connected: ${isDbConnected}`, 'Bootstrap');
 }
-
 void bootstrap();

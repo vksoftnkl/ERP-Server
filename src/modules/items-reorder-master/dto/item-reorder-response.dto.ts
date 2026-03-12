@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 
 export class ItemReorderErrorFieldDto {
   @ApiProperty({ example: 'ir_item_id' })
@@ -117,6 +117,26 @@ export class ItemReorderSuccessSingleDto {
   data!: ItemReorderPayloadDto;
 }
 
+@ApiExtraModels(ItemReorderPayloadDto)
+export class ItemReorderSuccessSaveDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Item reorder created successfully' })
+  message!: string;
+
+  @ApiProperty({
+    oneOf: [
+      { $ref: getSchemaPath(ItemReorderPayloadDto) },
+      {
+        type: 'array',
+        items: { $ref: getSchemaPath(ItemReorderPayloadDto) },
+      },
+    ],
+  })
+  data!: ItemReorderPayloadDto | ItemReorderPayloadDto[];
+}
+
 export class ItemReorderSuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -138,6 +158,14 @@ export class ItemReorderSuccessDeleteDto {
   @ApiProperty({ example: 'Item reorder deleted successfully' })
   message!: string;
 
-  @ApiProperty({ type: ItemReorderDeleteResultDto })
-  data!: ItemReorderDeleteResultDto;
+  @ApiProperty({
+    oneOf: [
+      { $ref: getSchemaPath(ItemReorderDeleteResultDto) },
+      {
+        type: 'array',
+        items: { $ref: getSchemaPath(ItemReorderDeleteResultDto) },
+      },
+    ],
+  })
+  data!: ItemReorderDeleteResultDto | ItemReorderDeleteResultDto[];
 }

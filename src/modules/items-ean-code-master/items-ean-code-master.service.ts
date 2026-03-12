@@ -11,6 +11,7 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemEanCodeQueryDto } from './dto/list-item-ean-code-query.dto';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import {
+  ItemEanCodeDeleteResult,
   ItemEanCodeErrorDetail,
   ItemEanCodeErrorResponse,
   ItemEanCodeListItem,
@@ -32,12 +33,32 @@ export class ItemsEanCodeMasterService {
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
-  async save(saveItemEanCodeDto: SaveItemEanCodeDto): Promise<ItemEanCodePayload> {
-    if (saveItemEanCodeDto.ean_id) {
-      return this.updateItemEanCode(saveItemEanCodeDto);
-    }
+  async save(saveItemEanCodeDto: SaveItemEanCodeDto): Promise<ItemEanCodePayload>;
+  async save(saveItemEanCodeDto: SaveItemEanCodeDto[]): Promise<ItemEanCodePayload[]>;
+  async save(
+    saveItemEanCodeDto: SaveItemEanCodeDto | SaveItemEanCodeDto[],
+  ): Promise<ItemEanCodePayload | ItemEanCodePayload[]>;
+  async save(
+    saveItemEanCodeDto: SaveItemEanCodeDto | SaveItemEanCodeDto[],
+  ): Promise<ItemEanCodePayload | ItemEanCodePayload[]> {
+    const saveItems = Array.isArray(saveItemEanCodeDto) ? saveItemEanCodeDto : [saveItemEanCodeDto];
 
-    return this.createItemEanCode(saveItemEanCodeDto);
+    try {
+      const results = await this.prisma.$transaction(async (tx) => {
+        const savedItems: ItemEanCodePayload[] = [];
+
+        for (const saveItem of saveItems) {
+          savedItems.push(await this.saveItemEanCode(tx, saveItem));
+        }
+
+        return savedItems;
+      });
+
+      return Array.isArray(saveItemEanCodeDto) ? results : results[0];
+    } catch (error: unknown) {
+      this.handleWriteError(error);
+      throw error;
+    }
   }
 
   async list(
@@ -154,66 +175,102 @@ export class ItemsEanCodeMasterService {
     return this.toPayload(record);
   }
 
-  async softDelete(eanId: string): Promise<{ ean_id: string; deleted: true }> {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.itemEanCode.findFirst({
-        where: {
-          eanId,
-          eanIsDeleted: false,
-        },
-      });
-      if (!existing) {
-        this.throwNotFound(eanId);
+  async softDelete(eanId: string): Promise<ItemEanCodeDeleteResult>;
+  async softDelete(eanId: string[]): Promise<ItemEanCodeDeleteResult[]>;
+  async softDelete(
+    eanId: string | string[],
+  ): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>;
+  async softDelete(
+    eanId: string | string[],
+  ): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]> {
+    const deleteIds = Array.isArray(eanId) ? eanId : [eanId];
+
+    const results = await this.prisma.$transaction(async (tx) => {
+      const deletedItems: ItemEanCodeDeleteResult[] = [];
+
+      for (const deleteId of deleteIds) {
+        deletedItems.push(await this.softDeleteItemEanCode(tx, deleteId));
       }
 
-      const modifiedOn = new Date();
-      const modifiedBy = DEFAULT_ACTOR;
-      const result = await tx.itemEanCode.updateMany({
-        where: {
-          eanId,
-          eanIsDeleted: false,
-        },
-        data: {
-          eanIsDeleted: true,
-          eanModifiedOn: modifiedOn,
-          eanModifiedBy: modifiedBy,
-        },
-      });
-      if (result.count === 0) {
-        this.throwNotFound(eanId);
-      }
+      return deletedItems;
+    });
 
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
+    return Array.isArray(eanId) ? results : results[0];
+  }
+
+  private async saveItemEanCode(
+    tx: Prisma.TransactionClient,
+    saveItemEanCodeDto: SaveItemEanCodeDto,
+  ): Promise<ItemEanCodePayload> {
+    if (saveItemEanCodeDto.ean_id) {
+      return this.updateItemEanCode(tx, saveItemEanCodeDto);
+    }
+
+    return this.createItemEanCode(tx, saveItemEanCodeDto);
+  }
+
+  private async softDeleteItemEanCode(
+    tx: Prisma.TransactionClient,
+    eanId: string,
+  ): Promise<ItemEanCodeDeleteResult> {
+    const existing = await tx.itemEanCode.findFirst({
+      where: {
+        eanId,
+        eanIsDeleted: false,
+      },
+    });
+    if (!existing) {
+      this.throwNotFound(eanId);
+    }
+
+    const modifiedOn = new Date();
+    const modifiedBy = DEFAULT_ACTOR;
+    const result = await tx.itemEanCode.updateMany({
+      where: {
+        eanId,
+        eanIsDeleted: false,
+      },
+      data: {
         eanIsDeleted: true,
         eanModifiedOn: modifiedOn,
         eanModifiedBy: modifiedBy,
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: ITEM_EAN_CODE_TABLE_NAME,
-          screenName: ITEM_EAN_CODE_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: eanId,
-          displayName: existing.eanCode,
-          originalRecord,
-          modifiedRecord,
-          userId: modifiedBy,
-          notes: 'Item EAN code soft deleted',
-        },
-        tx,
-      );
-
-      return {
-        ean_id: eanId,
-        deleted: true,
-      };
+      },
     });
+    if (result.count === 0) {
+      this.throwNotFound(eanId);
+    }
+
+    const originalRecord = this.toPayload(existing);
+    const modifiedRecord = this.toPayload({
+      ...existing,
+      eanIsDeleted: true,
+      eanModifiedOn: modifiedOn,
+      eanModifiedBy: modifiedBy,
+    });
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'cancel',
+        tableName: ITEM_EAN_CODE_TABLE_NAME,
+        screenName: ITEM_EAN_CODE_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: eanId,
+        displayName: existing.eanCode,
+        originalRecord,
+        modifiedRecord,
+        userId: modifiedBy,
+        notes: 'Item EAN code soft deleted',
+      },
+      tx,
+    );
+
+    return {
+      ean_id: eanId,
+      deleted: true,
+    };
   }
 
   private async createItemEanCode(
+    tx: Prisma.TransactionClient,
     saveItemEanCodeDto: SaveItemEanCodeDto,
   ): Promise<ItemEanCodePayload> {
     const eanCode = saveItemEanCodeDto.ean_code?.trim();
@@ -240,104 +297,91 @@ export class ItemsEanCodeMasterService {
     };
     this.applyOptionalFields(data, saveItemEanCodeDto);
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const created = await tx.itemEanCode.create({ data });
-        await this.enforceSingleDefaultInScope(tx, created, created.eanModifiedBy ?? modifiedBy);
+    const created = await tx.itemEanCode.create({ data });
+    await this.enforceSingleDefaultInScope(tx, created, created.eanModifiedBy ?? modifiedBy);
 
-        const payload = this.toPayload(created);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: ITEM_EAN_CODE_TABLE_NAME,
-            screenName: ITEM_EAN_CODE_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: payload.ean_id,
-            displayName: payload.ean_code,
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'Item EAN code created',
-          },
-          tx,
-        );
+    const payload = this.toPayload(created);
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: ITEM_EAN_CODE_TABLE_NAME,
+        screenName: ITEM_EAN_CODE_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: payload.ean_id,
+        displayName: payload.ean_code,
+        originalRecord: null,
+        modifiedRecord: payload,
+        userId: createdBy,
+        notes: 'Item EAN code created',
+      },
+      tx,
+    );
 
-        return payload;
-      });
-    } catch (error: unknown) {
-      this.handleWriteError(error);
-      throw error;
-    }
+    return payload;
   }
 
   private async updateItemEanCode(
+    tx: Prisma.TransactionClient,
     saveItemEanCodeDto: SaveItemEanCodeDto,
   ): Promise<ItemEanCodePayload> {
     const eanId = saveItemEanCodeDto.ean_id!;
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.itemEanCode.findFirst({
-          where: {
-            eanId,
-            eanIsDeleted: false,
-          },
-        });
-        if (!existing) {
-          this.throwNotFound(eanId);
-        }
-
-        const eanCode = saveItemEanCodeDto.ean_code?.trim();
-        if (!eanCode) {
-          this.throwBadRequest('Validation failed', [
-            {
-              field: 'ean_code',
-              message: 'ean_code cannot be empty',
-            },
-          ]);
-        }
-
-        const data: Prisma.ItemEanCodeUncheckedUpdateInput = {
-          eanItemId: saveItemEanCodeDto.ean_item_id,
-          eanUnitId: saveItemEanCodeDto.ean_unit_id,
-          eanCode,
-          eanModifiedOn: new Date(),
-          eanModifiedBy: this.resolveActor(saveItemEanCodeDto.ean_modified_by),
-        };
-        this.applyOptionalFields(data, saveItemEanCodeDto);
-
-        const updated = await tx.itemEanCode.update({
-          where: {
-            eanId,
-          },
-          data,
-        });
-
-        await this.enforceSingleDefaultInScope(tx, updated, updated.eanModifiedBy ?? DEFAULT_ACTOR);
-
-        const payload = this.toPayload(updated);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: ITEM_EAN_CODE_TABLE_NAME,
-            screenName: ITEM_EAN_CODE_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: eanId,
-            displayName: payload.ean_code,
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
-            userId: payload.ean_modified_by ?? DEFAULT_ACTOR,
-            notes: 'Item EAN code updated',
-          },
-          tx,
-        );
-
-        return payload;
-      });
-    } catch (error: unknown) {
-      this.handleWriteError(error);
-      throw error;
+    const existing = await tx.itemEanCode.findFirst({
+      where: {
+        eanId,
+        eanIsDeleted: false,
+      },
+    });
+    if (!existing) {
+      this.throwNotFound(eanId);
     }
+
+    const eanCode = saveItemEanCodeDto.ean_code?.trim();
+    if (!eanCode) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field: 'ean_code',
+          message: 'ean_code cannot be empty',
+        },
+      ]);
+    }
+
+    const data: Prisma.ItemEanCodeUncheckedUpdateInput = {
+      eanItemId: saveItemEanCodeDto.ean_item_id,
+      eanUnitId: saveItemEanCodeDto.ean_unit_id,
+      eanCode,
+      eanModifiedOn: new Date(),
+      eanModifiedBy: this.resolveActor(saveItemEanCodeDto.ean_modified_by),
+    };
+    this.applyOptionalFields(data, saveItemEanCodeDto);
+
+    const updated = await tx.itemEanCode.update({
+      where: {
+        eanId,
+      },
+      data,
+    });
+
+    await this.enforceSingleDefaultInScope(tx, updated, updated.eanModifiedBy ?? DEFAULT_ACTOR);
+
+    const payload = this.toPayload(updated);
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: ITEM_EAN_CODE_TABLE_NAME,
+        screenName: ITEM_EAN_CODE_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: eanId,
+        displayName: payload.ean_code,
+        originalRecord: this.toPayload(existing),
+        modifiedRecord: payload,
+        userId: payload.ean_modified_by ?? DEFAULT_ACTOR,
+        notes: 'Item EAN code updated',
+      },
+      tx,
+    );
+
+    return payload;
   }
 
   private buildListWhere(queryDto: ListItemEanCodeQueryDto): Prisma.ItemEanCodeWhereInput {

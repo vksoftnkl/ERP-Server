@@ -23,11 +23,23 @@ export class GspCompanyServicePayloadDto {
   @ApiProperty({ format: 'uuid' })
   csgCompanyServiceId!: string;
 
-  @ApiProperty({ example: 1 })
-  csgCompanyId!: number;
+  @ApiProperty({ format: 'uuid' })
+  csgCompanyId!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  companyName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  companyDisplay!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   csgGspProviderId!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  providerName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  providerDisplay!: string | null;
 
   @ApiProperty()
   csgServiceType!: string;

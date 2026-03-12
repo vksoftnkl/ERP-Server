@@ -25,7 +25,7 @@ model ItemEanCode {
   unit         Unit       @relation(fields: [eanUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_ean_codes")
-  @@schema("public")
+  @@schema("inventory")
 
   // uq_ean_code UNIQUE (ean_code)
   @@unique([eanCode], map: "uq_ean_code")

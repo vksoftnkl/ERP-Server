@@ -62,7 +62,7 @@ model ItemPriceMaster {
   qtywiseRates          ItemQtywiseRate[]
 
   @@map("item_price_master")
-  @@schema("public")
+  @@schema("inventory")
 
   // one rate per combination (without company)
   @@unique([ipmItemId, ipmUnitId, ipmGodownId], map: "uq_ipm_item_unit_godown")

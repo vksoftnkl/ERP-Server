@@ -68,6 +68,9 @@ export class ItemPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   item_supplier_id!: string | null;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  item_cust_group!: string | null;
+
   @ApiProperty({ format: 'uuid' })
   item_base_unit_id!: string;
 

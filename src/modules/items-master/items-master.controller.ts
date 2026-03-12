@@ -38,7 +38,6 @@ import {
   ItemPayload,
   ItemSuccessResponse,
 } from './types/item-api.types';
-
 @ApiTags('Items')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -46,7 +45,6 @@ import {
 @UseFilters(ItemExceptionFilter)
 export class ItemsMasterController {
   constructor(private readonly itemsMasterService: ItemsMasterService) {}
-
   @Post('create')
   @Version('1')
   @ApiOperation({ summary: 'Create or update item (by item_id presence)' })
@@ -56,14 +54,12 @@ export class ItemsMasterController {
   @ApiNotFoundResponse({ type: ItemErrorResponseDto })
   async save(@Body() saveItemDto: SaveItemDto): Promise<ItemSuccessResponse<ItemPayload>> {
     const data = await this.itemsMasterService.save(saveItemDto);
-
     return {
       success: true,
       message: saveItemDto.item_id ? 'Item updated successfully' : 'Item created successfully',
       data,
     };
   }
-
   @Get('list')
   @Version('1')
   @ApiOperation({ summary: 'List items with filter/search/pagination' })
@@ -73,7 +69,6 @@ export class ItemsMasterController {
     @Query() queryDto: ListItemQueryDto,
   ): Promise<ItemSuccessResponse<ItemListItem[], ItemListMeta>> {
     const result = await this.itemsMasterService.list(queryDto);
-
     return {
       success: true,
       message: 'Items fetched successfully',
@@ -81,7 +76,6 @@ export class ItemsMasterController {
       meta: result.meta,
     };
   }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item by id' })
@@ -93,14 +87,12 @@ export class ItemsMasterController {
     @Query('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
   ): Promise<ItemSuccessResponse<ItemPayload>> {
     const data = await this.itemsMasterService.getById(itemId);
-
     return {
       success: true,
       message: 'Item fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item by id' })
@@ -112,7 +104,6 @@ export class ItemsMasterController {
     @Query('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
   ): Promise<ItemSuccessResponse<{ item_id: string; deleted: true }>> {
     const data = await this.itemsMasterService.softDelete(itemId);
-
     return {
       success: true,
       message: 'Item deleted successfully',

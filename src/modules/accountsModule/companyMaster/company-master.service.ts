@@ -726,6 +726,7 @@ export class CompanyMasterService {
       compGstRegType: record.compGstRegType,
       compPanNo: record.compPanNo,
       compFssaiNo: record.compFssaiNo,
+      compDrugLicenseNo: record.compDrugLicenseNo,
       compAddr1: record.compAddr1,
       compAddr2: record.compAddr2,
       compAddr3: record.compAddr3,
