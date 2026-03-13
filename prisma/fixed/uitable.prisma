@@ -1,15 +1,19 @@
-model Uitable{
-    uiTblId BigInt   @id @default(autoincrement()) @map("ui_tbl_id")
-    uiTblName String? @db.Text @map("ui_tbl_name")
-    uiTblEditable Boolean @default(false)  @map("ui_tbl_editable")
-    uiTblIsActive        Boolean @default(true)  @map("ui_tbl_is_active")
-  uiTblIsDeleted       Boolean @default(false) @map("ui_tbl_is_deleted")
-  uiTblSyncDate     DateTime? @db.Timestamptz(6) @map("ui_tbl_sync_date")
- uiTblCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("ui_tbl_created_on")
- uiTblCreatedBy    String?   @db.VarChar(100) @map("ui_tbl_created_by")
-  uiTblModifiedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("ui_tbl_modified_on")
-  uiTblModifiedBy   String?   @db.VarChar(100) @map("ui_tbl_modified_by")
 
-    @@schema("fixed")
-     @@map("ui_tables")
+model Uitable {
+  uiTblId           BigInt     @id @default(autoincrement()) @map("ui_tbl_id")
+  uiTblName         String?    @db.Text @map("ui_tbl_name")
+  uiTblEditable     Boolean    @default(false)  @map("ui_tbl_editable")
+  uiTblIsActive     Boolean    @default(true)   @map("ui_tbl_is_active")
+  uiTblIsDeleted    Boolean    @default(false)  @map("ui_tbl_is_deleted")
+  uiTblSyncDate     DateTime?  @db.Timestamptz(6) @map("ui_tbl_sync_date")
+  uiTblCreatedOn    DateTime   @default(now()) @db.Timestamptz(6) @map("ui_tbl_created_on")
+  uiTblCreatedBy    String?    @db.VarChar(100) @map("ui_tbl_created_by")
+  uiTblModifiedOn   DateTime   @default(now()) @db.Timestamptz(6) @map("ui_tbl_modified_on")
+  uiTblModifiedBy   String?    @db.VarChar(100) @map("ui_tbl_modified_by")
+
+  // ← Back-relation field
+  uiTableColumns    UitableColumns[]
+
+  @@schema("fixed")
+  @@map("ui_tables")
 }

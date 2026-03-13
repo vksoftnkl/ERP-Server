@@ -62,6 +62,8 @@ import { MenuMasterModule } from './modules/fixed/menu-master/menu-master.module
 import { PriceLevelMasterModule } from './modules/fixed/price-level-master/price-level-master.module';
 import { HsnCodeMasterModule } from './modules/fixed/hsn-code-master/hsn-code-master.module';
 import { StateCodeMasterModule } from './modules/fixed/state-code-master/state-code-master.module';
+import { UiTableColumnsModule } from './modules/fixed/ui-table-columns/ui-table-columns.module';
+import { UiTableMasterModule } from './modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
@@ -133,6 +135,8 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     PriceLevelMasterModule,
     HsnCodeMasterModule,
     StateCodeMasterModule,
+    UiTableColumnsModule,
+    UiTableMasterModule,
     UserLoginSessionsModule,
     MasterLookupModule,
     GodownsMasterModule,

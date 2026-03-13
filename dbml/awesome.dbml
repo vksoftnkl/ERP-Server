@@ -706,11 +706,13 @@ Table ui_tables {
   uiTblCreatedBy String
   uiTblModifiedOn DateTime [default: `now()`, not null]
   uiTblModifiedBy String
+  uiTableColumns ui_table_columns [not null]
 }
 
 Table ui_table_columns {
   uiTblClmId BigInt [pk, increment]
   uiTblClmName String
+  uiTblClmTableId BigInt
   uiTblClmColumnWidth Decimal [default: 100]
   uiTblClmColumnVisibility Boolean [default: true]
   uiTblClmColumnFocus Boolean [default: false]
@@ -725,6 +727,7 @@ Table ui_table_columns {
   uiTblClmCreatedBy String
   uiTblClmModifiedOn DateTime [default: `now()`, not null]
   uiTblClmModifiedBy String
+  uiTable ui_tables
 }
 
 Table user_login_sessions {
@@ -1537,6 +1540,8 @@ Ref: dropdown_columns.dropColumnsDropdownId > dropdown_details.dropdownId [delet
 Ref: erp_device_master.devCompanyId > companys.compId [delete: Restrict]
 
 Ref: menu_master.menuParentId - menu_master.menuId [delete: Set Null]
+
+Ref: ui_table_columns.uiTblClmTableId > ui_tables.uiTblId
 
 Ref: user_login_sessions.ulsCompanyId > companys.compId [delete: Restrict]
 

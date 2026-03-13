@@ -1133,26 +1133,30 @@ model StateCode {
 }
 
 // ----- prisma/fixed/uitable.prisma -----
-model Uitable{
-    uiTblId BigInt   @id @default(autoincrement()) @map("ui_tbl_id")
-    uiTblName String? @db.Text @map("ui_tbl_name")
-    uiTblEditable Boolean @default(false)  @map("ui_tbl_editable")
-    uiTblIsActive        Boolean @default(true)  @map("ui_tbl_is_active")
-  uiTblIsDeleted       Boolean @default(false) @map("ui_tbl_is_deleted")
-  uiTblSyncDate     DateTime? @db.Timestamptz(6) @map("ui_tbl_sync_date")
- uiTblCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("ui_tbl_created_on")
- uiTblCreatedBy    String?   @db.VarChar(100) @map("ui_tbl_created_by")
-  uiTblModifiedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("ui_tbl_modified_on")
-  uiTblModifiedBy   String?   @db.VarChar(100) @map("ui_tbl_modified_by")
+model Uitable {
+  uiTblId           BigInt     @id @default(autoincrement()) @map("ui_tbl_id")
+  uiTblName         String?    @db.Text @map("ui_tbl_name")
+  uiTblEditable     Boolean    @default(false)  @map("ui_tbl_editable")
+  uiTblIsActive     Boolean    @default(true)   @map("ui_tbl_is_active")
+  uiTblIsDeleted    Boolean    @default(false)  @map("ui_tbl_is_deleted")
+  uiTblSyncDate     DateTime?  @db.Timestamptz(6) @map("ui_tbl_sync_date")
+  uiTblCreatedOn    DateTime   @default(now()) @db.Timestamptz(6) @map("ui_tbl_created_on")
+  uiTblCreatedBy    String?    @db.VarChar(100) @map("ui_tbl_created_by")
+  uiTblModifiedOn   DateTime   @default(now()) @db.Timestamptz(6) @map("ui_tbl_modified_on")
+  uiTblModifiedBy   String?    @db.VarChar(100) @map("ui_tbl_modified_by")
 
-    @@schema("fixed")
-     @@map("ui_tables")
+  // ← Back-relation field
+  uiTableColumns    UitableColumns[]
+
+  @@schema("fixed")
+  @@map("ui_tables")
 }
 
 // ----- prisma/fixed/uiTableColumns.prisma -----
 model UitableColumns {
   uiTblClmId               BigInt    @id @default(autoincrement())  @map("ui_tbl_clm_id")
   uiTblClmName             String?   @db.Text                       @map("ui_tbl_clm_name")
+  uiTblClmTableId          BigInt?                                  @map("ui_tbl_clm_table_id")  // ← changed from String @db.Uuid to BigInt
   uiTblClmColumnWidth      Decimal?  @default(100)                  @map("ui_tbl_clm_column_width")
   uiTblClmColumnVisibility Boolean?  @default(true)                 @map("ui_tbl_clm_column_visibility")
   uiTblClmColumnFocus      Boolean?  @default(false)                @map("ui_tbl_clm_column_focus")
@@ -1160,7 +1164,6 @@ model UitableColumns {
   uiTblClmColumnNecessity  Boolean   @default(false)                @map("ui_tbl_clm_column_necessity")
   uiTblClmNextColumn       Int?      @default(dbgenerated("NULL"))  @map("ui_tbl_clm_next_column")
   uiTblClmPreviousColumn   Int?      @default(dbgenerated("NULL"))  @map("ui_tbl_clm_previous_column")
-
   uiTblClmIsActive         Boolean   @default(true)                 @map("ui_tbl_clm_is_active")
   uiTblClmIsDeleted        Boolean   @default(false)                @map("ui_tbl_clm_is_deleted")
   uiTblClmSyncDate         DateTime? @db.Timestamptz(6)             @map("ui_tbl_clm_sync_date")
@@ -1168,6 +1171,9 @@ model UitableColumns {
   uiTblClmCreatedBy        String?   @db.VarChar(100)               @map("ui_tbl_clm_created_by")
   uiTblClmModifiedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("ui_tbl_clm_modified_on")
   uiTblClmModifiedBy       String?   @db.VarChar(100)               @map("ui_tbl_clm_modified_by")
+
+  // ← Relation field
+  uiTable                  Uitable?  @relation(fields: [uiTblClmTableId], references: [uiTblId])
 
   @@schema("fixed")
   @@map("ui_table_columns")
