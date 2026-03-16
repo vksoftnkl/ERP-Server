@@ -15,41 +15,32 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
 const toOptionalTrimmedString = (value: unknown): unknown => {
   if (typeof value !== 'string') {
     return value;
   }
-
   return value.trim();
 };
-
 const toNullableString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
     return undefined;
   }
-
   if (value === null) {
     return null;
   }
-
   if (typeof value !== 'string') {
     return null;
   }
-
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 };
-
 const toNullableDate = (value: unknown): Date | null | undefined => {
   if (value === undefined) {
     return undefined;
   }
-
   if (value === null || value === '') {
     return null;
   }
-
   const parsed =
     value instanceof Date
       ? value
@@ -58,15 +49,12 @@ const toNullableDate = (value: unknown): Date | null | undefined => {
         : new Date(Number.NaN);
   return Number.isNaN(parsed.getTime()) ? (value as Date) : parsed;
 };
-
 const toUpper = (value: unknown): unknown => {
   if (typeof value !== 'string') {
     return value;
   }
-
   return value.trim().toUpperCase();
 };
-
 export class SaveAccountLedgerMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -75,27 +63,22 @@ export class SaveAccountLedgerMasterDto {
   @IsOptional()
   @IsUUID('all')
   ledId?: string;
-
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @Transform(({ value }) => toOptionalTrimmedString(value))
   @IsUUID('all')
   ledCompanyId?: string;
-
   @ApiProperty({ format: 'uuid' })
   @IsUUID('all')
   ledBranchId!: string;
-
   @ApiProperty({ format: 'uuid' })
   @IsUUID('all')
   ledGroupId!: string;
-
   @ApiProperty({ maxLength: 200 })
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
   ledName!: string;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -103,7 +86,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(100)
   ledAlias?: string | null;
-
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -111,7 +93,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(50)
   ledShort?: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -119,7 +100,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(200)
   ledTallyName?: string | null;
-
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -127,7 +107,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(150)
   ledTallyGroupName?: string | null;
-
   @ApiPropertyOptional({ maxLength: 64, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -135,34 +114,28 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(64)
   ledTallyGuid?: string | null;
-
   @ApiPropertyOptional({ maxLength: 30 })
   @IsOptional()
   @IsString()
   @MaxLength(30)
   ledCategory?: string;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   ledIsBillByBill?: boolean;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   ledIsCostCenterReq?: boolean;
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
   ledIsInterestApplicable?: boolean;
-
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   ledInterestRate?: number;
-
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -170,7 +143,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(150)
   ledContactPerson?: string | null;
-
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -178,7 +150,6 @@ export class SaveAccountLedgerMasterDto {
   @IsEmail()
   @MaxLength(150)
   ledEmail?: string | null;
-
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -186,7 +157,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(20)
   ledTel?: string | null;
-
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -194,7 +164,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(20)
   ledPhone1?: string | null;
-
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -202,7 +171,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(20)
   ledPhone2?: string | null;
-
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -210,7 +178,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(20)
   ledWhatsappNo?: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -218,7 +185,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(200)
   ledAddr1?: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -226,7 +192,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(200)
   ledAddr2?: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -234,7 +199,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(200)
   ledAddr3?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -242,7 +206,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(100)
   ledCity?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -250,7 +213,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(100)
   ledDistrict?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -258,7 +220,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(100)
   ledStateName?: string | null;
-
   @ApiPropertyOptional({ maxLength: 2, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(toUpper(value)))
@@ -266,7 +227,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(2)
   ledStateCode?: string | null;
-
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -274,7 +234,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(10)
   ledPin?: string | null;
-
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -282,14 +241,12 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(60)
   ledCountry?: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
   ledRegionName?: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -297,7 +254,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(200)
   ledRegionAddr1?: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -305,7 +261,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(200)
   ledRegionAddr2?: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -313,7 +268,6 @@ export class SaveAccountLedgerMasterDto {
   @IsString()
   @MaxLength(200)
   ledRegionAddr3?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
