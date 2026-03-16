@@ -1,7 +1,8 @@
 model UitableColumns {
   uiTblClmId               BigInt    @id @default(autoincrement())  @map("ui_tbl_clm_id")
-  uiTblClmName             String?   @db.Text                       @map("ui_tbl_clm_name")
+  uiTblClmNo               BigInt    @default(dbgenerated("NULL"))  @map("ui_tbl_clm_no")
   uiTblClmTableId          BigInt?                                  @map("ui_tbl_clm_table_id")  // ← changed from String @db.Uuid to BigInt
+  uiTblClmName             String?   @db.Text                       @map("ui_tbl_clm_name")  
   uiTblClmColumnWidth      Decimal?  @default(100)                  @map("ui_tbl_clm_column_width")
   uiTblClmColumnVisibility Boolean?  @default(true)                 @map("ui_tbl_clm_column_visibility")
   uiTblClmColumnFocus      Boolean?  @default(false)                @map("ui_tbl_clm_column_focus")
@@ -16,10 +17,8 @@ model UitableColumns {
   uiTblClmCreatedBy        String?   @db.VarChar(100)               @map("ui_tbl_clm_created_by")
   uiTblClmModifiedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("ui_tbl_clm_modified_on")
   uiTblClmModifiedBy       String?   @db.VarChar(100)               @map("ui_tbl_clm_modified_by")
-
   // ← Relation field
   uiTable                  Uitable?  @relation(fields: [uiTblClmTableId], references: [uiTblId])
-
   @@schema("fixed")
   @@map("ui_table_columns")
 }

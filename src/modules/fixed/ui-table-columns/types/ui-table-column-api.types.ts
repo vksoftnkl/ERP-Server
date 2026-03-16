@@ -18,6 +18,7 @@ export interface UiTableColumnSuccessResponse<T, TMeta = Record<string, unknown>
 
 export interface UiTableColumnPayload {
   uiTblClmId: string;
+  uiTblClmNo: string;
   uiTblClmName: string | null;
   uiTblClmTableId: string | null;
   uiTblClmColumnWidth: number | null;

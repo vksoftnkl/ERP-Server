@@ -511,6 +511,10 @@ export class ItemsPriceMasterService {
       data.ipmFreightCharge = saveItemPriceDto.ipm_freight_charge;
     }
 
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_points')) {
+      data.ipmPoints = saveItemPriceDto.ipm_points;
+    }
+
     if (this.hasOwnProperty(saveItemPriceDto, 'ipm_remarks')) {
       data.ipmRemarks = saveItemPriceDto.ipm_remarks;
     }
@@ -553,6 +557,7 @@ export class ItemsPriceMasterService {
       ipm_uom_weight: this.toNumber(record.ipmUomWeight),
       ipm_loading_charge: this.toNumber(record.ipmLoadingCharge),
       ipm_freight_charge: this.toNumber(record.ipmFreightCharge),
+      ipm_points: record.ipmPoints,
       ipm_remarks: record.ipmRemarks,
       ipm_is_active: record.ipmIsActive,
       ipm_created_on: record.ipmCreatedOn.toISOString(),

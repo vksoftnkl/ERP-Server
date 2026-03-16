@@ -46,7 +46,7 @@ model ItemPriceMaster {
   ipmUomWeight           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_uom_weight")
   ipmLoadingCharge       Decimal @default(0) @db.Decimal(15, 4) @map("ipm_loading_charge")
   ipmFreightCharge       Decimal @default(0) @db.Decimal(15, 4) @map("ipm_freight_charge")
-
+  ipmPoints              Int     @default(0) @map("ipm_points")
   ipmRemarks             String? @db.VarChar(250) @map("ipm_remarks")
 
   ipmIsActive            Boolean @default(true) @map("ipm_is_active")

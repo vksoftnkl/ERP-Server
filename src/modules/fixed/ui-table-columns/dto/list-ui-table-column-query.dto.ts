@@ -67,6 +67,12 @@ export class ListUiTableColumnQueryDto {
   @IsNumberString({ no_symbols: true })
   uiTblClmId?: string;
 
+  @ApiPropertyOptional({ description: 'Numeric UI table column number' })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalIdString(value))
+  @IsNumberString({ no_symbols: true })
+  uiTblClmNo?: string;
+
   @ApiPropertyOptional({ description: 'Numeric related UI table id' })
   @IsOptional()
   @Transform(({ value }) => toOptionalIdString(value))

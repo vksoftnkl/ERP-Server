@@ -293,6 +293,12 @@ export class SaveItemPriceDto {
   @IsNumber()
   ipm_freight_charge?: number;
 
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalNumber(value))
+  @IsInt()
+  ipm_points?: number;
+
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))

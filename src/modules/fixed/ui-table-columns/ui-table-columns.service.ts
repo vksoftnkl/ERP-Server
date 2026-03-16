@@ -50,6 +50,7 @@ export class UiTableColumnsService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.uiTblClmId !== undefined ||
+      queryDto.uiTblClmNo !== undefined ||
       queryDto.uiTblClmTableId !== undefined ||
       queryDto.uiTblClmIsActive !== undefined ||
       queryDto.uiTblClmColumnVisibility !== undefined ||
@@ -70,6 +71,10 @@ export class UiTableColumnsService {
 
     if (queryDto.uiTblClmId !== undefined) {
       where.uiTblClmId = this.parseBigIntId('uiTblClmId', queryDto.uiTblClmId);
+    }
+
+    if (queryDto.uiTblClmNo !== undefined) {
+      where.uiTblClmNo = this.parseBigIntId('uiTblClmNo', queryDto.uiTblClmNo);
     }
 
     if (queryDto.uiTblClmTableId !== undefined) {
@@ -266,6 +271,7 @@ export class UiTableColumnsService {
     saveUiTableColumnDto: SaveUiTableColumnDto,
   ): Promise<UiTableColumnPayload> {
     const normalizedName = this.normalizeRequiredName(saveUiTableColumnDto.uiTblClmName);
+    const parsedUiTblClmNo = this.parseNullableBigIntId('uiTblClmNo', saveUiTableColumnDto.uiTblClmNo);
     const parsedUiTblClmTableId = this.parseNullableBigIntId(
       'uiTblClmTableId',
       saveUiTableColumnDto.uiTblClmTableId,
@@ -289,6 +295,7 @@ export class UiTableColumnsService {
           saveUiTableColumnDto.uiTblClmTableId,
           tx,
         );
+        this.assignUiTableColumnNo(data, parsedUiTblClmNo);
         this.assignUiTableColumnTableId(data, parsedUiTblClmTableId);
 
         const created = await tx.uitableColumns.create({ data });
@@ -323,6 +330,7 @@ export class UiTableColumnsService {
   ): Promise<UiTableColumnPayload> {
     const uiTblClmId = saveUiTableColumnDto.uiTblClmId!;
     const parsedUiTblClmId = this.parseBigIntId('uiTblClmId', uiTblClmId);
+    const parsedUiTblClmNo = this.parseNullableBigIntId('uiTblClmNo', saveUiTableColumnDto.uiTblClmNo);
     const parsedUiTblClmTableId = this.parseNullableBigIntId(
       'uiTblClmTableId',
       saveUiTableColumnDto.uiTblClmTableId,
@@ -353,6 +361,7 @@ export class UiTableColumnsService {
           tx,
         );
         this.applyOptionalFields(data, saveUiTableColumnDto);
+        this.assignUiTableColumnNo(data, parsedUiTblClmNo);
         this.assignUiTableColumnTableId(data, parsedUiTblClmTableId);
 
         const updated = await tx.uitableColumns.update({
@@ -437,6 +446,17 @@ export class UiTableColumnsService {
     }
   }
 
+  private assignUiTableColumnNo(
+    data:
+      | Prisma.UitableColumnsUncheckedCreateInput
+      | Prisma.UitableColumnsUncheckedUpdateInput,
+    uiTblClmNo: bigint | null | undefined,
+  ): void {
+    if (uiTblClmNo !== undefined && uiTblClmNo !== null) {
+      data.uiTblClmNo = uiTblClmNo;
+    }
+  }
+
   private async ensureUiTableExists(
     uiTblClmTableId: bigint | null | undefined,
     rawUiTblClmTableId: string | null | undefined,
@@ -483,6 +503,7 @@ export class UiTableColumnsService {
   private toPayload(record: UitableColumns): UiTableColumnPayload {
     return {
       uiTblClmId: record.uiTblClmId.toString(),
+      uiTblClmNo: record.uiTblClmNo.toString(),
       uiTblClmName: record.uiTblClmName,
       uiTblClmTableId: record.uiTblClmTableId?.toString() ?? null,
       uiTblClmColumnWidth: this.toNullableNumber(record.uiTblClmColumnWidth),

@@ -23,6 +23,9 @@ export class UiTableColumnPayloadDto {
   @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
   uiTblClmId!: string;
 
+  @ApiProperty({ example: '10', description: 'BigInt column number serialized as string' })
+  uiTblClmNo!: string;
+
   @ApiPropertyOptional({ example: 'Item Name', nullable: true })
   uiTblClmName!: string | null;
 

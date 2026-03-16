@@ -29,6 +29,7 @@
     "prisma:migrate:dev": "npm run prisma:schema:build && prisma migrate dev --schema prisma/schema.prisma",
     "prisma:migrate:deploy": "npm run prisma:schema:build && prisma migrate deploy --schema prisma/schema.prisma",
     "prisma:migrate:reset": "npm run prisma:schema:build && prisma migrate reset --schema prisma/schema.prisma",
+    "prisma:repair:ui-table-drift": "node scripts/repair-ui-table-drift.js",
     "prisma:migrate:sync-checksums": "node scripts/sync-prisma-migration-checksums.js",
     "prisma:studio": "npm run prisma:schema:build && prisma studio --schema prisma/schema.prisma",
     "migration:run": "npm run prisma:migrate:deploy"

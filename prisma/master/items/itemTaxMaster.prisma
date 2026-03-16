@@ -1,68 +1,53 @@
 model ItemTaxMaster {
   taxId                   String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("tax_id")
-
   taxName                 String  @db.VarChar(100) @map("tax_name")
   taxCode                 String? @db.VarChar(30)  @map("tax_code")
-
   taxTaxabilityType       String  @default("TAXABLE") @db.VarChar(30) @map("tax_taxability_type")
   taxIsReverseCharge      Boolean @default(false) @map("tax_is_reverse_charge")
-
   // Component rates (Sales)
   taxCgstPerc             Decimal @default(0) @db.Decimal(7, 3) @map("tax_cgst_perc")
   taxSgstPerc             Decimal @default(0) @db.Decimal(7, 3) @map("tax_sgst_perc")
   taxIgstPerc             Decimal @default(0) @db.Decimal(7, 3) @map("tax_igst_perc")
-
   // Component rates (Purchase)
   taxCgstPurPerc          Decimal @default(0) @db.Decimal(7, 3) @map("tax_cgst_pur_perc")
   taxSgstPurPerc          Decimal @default(0) @db.Decimal(7, 3) @map("tax_sgst_pur_perc")
   taxIgstPurPerc          Decimal @default(0) @db.Decimal(7, 3) @map("tax_igst_pur_perc")
-
   // Cess
   taxCessType             String  @default("NONE") @db.VarChar(20) @map("tax_cess_type")
   taxCessPerc             Decimal @default(0) @db.Decimal(7, 3) @map("tax_cess_perc")
   taxCessUnit             Decimal @default(0) @db.Decimal(15, 4) @map("tax_cess_unit")
   taxCessPurPerc          Decimal @default(0) @db.Decimal(7, 3) @map("tax_cess_pur_perc")
   taxCessPurUnit          Decimal @default(0) @db.Decimal(15, 4) @map("tax_cess_pur_unit")
-
   // Convenience total
   taxGstRateTotal         Decimal @default(0) @db.Decimal(7, 3) @map("tax_gst_rate_total")
-
   // Taxable value posting ledgers (ONE per slab)
   taxSalesLedgerId        String? @db.Uuid @map("tax_sales_ledger_id")
   taxSalesReturnLedgerId  String? @db.Uuid @map("tax_sales_return_ledger_id")
   taxPurchaseLedgerId     String? @db.Uuid @map("tax_purchase_ledger_id")
   taxPurchaseReturnLedgerId String? @db.Uuid @map("tax_purchase_return_ledger_id")
-
   // Output (Sales tax ledgers)
   taxCgstOutputLedgerId   String? @db.Uuid @map("tax_cgst_output_ledger_id")
   taxSgstOutputLedgerId   String? @db.Uuid @map("tax_sgst_output_ledger_id")
   taxIgstOutputLedgerId   String? @db.Uuid @map("tax_igst_output_ledger_id")
   taxCessOutputLedgerId   String? @db.Uuid @map("tax_cess_output_ledger_id")
-
   // Input (Purchase tax ledgers)
   taxCgstInputLedgerId    String? @db.Uuid @map("tax_cgst_input_ledger_id")
   taxSgstInputLedgerId    String? @db.Uuid @map("tax_sgst_input_ledger_id")
   taxIgstInputLedgerId    String? @db.Uuid @map("tax_igst_input_ledger_id")
   taxCessInputLedgerId    String? @db.Uuid @map("tax_cess_input_ledger_id")
-
   taxIsActive             Boolean  @default(true)  @map("tax_is_active")
   taxIsDeleted            Boolean  @default(false) @map("tax_is_deleted")
-
   taxSyncDate             DateTime? @db.Timestamptz(6) @map("tax_sync_date")
   taxCreatedOn            DateTime  @default(now()) @db.Timestamptz(6) @map("tax_created_on")
   taxCreatedBy            String?   @db.VarChar(100) @map("tax_created_by")
   taxModifiedOn           DateTime  @default(now()) @db.Timestamptz(6) @map("tax_modified_on")
   taxModifiedBy           String?   @db.VarChar(100) @map("tax_modified_by")
-
   defaultItems            ItemMaster[]
   taxHistory              ItemTaxHistory[]
-
   @@map("item_tax_master")
    @@schema("inventory")
-
   // unique slab name globally (since company removed)
   @@unique([taxName], map: "uq_tax_name_global")
-
   @@index([taxIsActive], map: "idx_tax_active")
   @@index([taxGstRateTotal], map: "idx_tax_rate_total")
   @@index([taxSalesLedgerId], map: "idx_tax_sales_ledger")

@@ -53,6 +53,7 @@ export interface ItemPricePayload {
   ipm_uom_weight: number;
   ipm_loading_charge: number;
   ipm_freight_charge: number;
+  ipm_points: number;
   ipm_remarks: string | null;
   ipm_is_active: boolean;
   ipm_created_on: string;

@@ -113,6 +113,9 @@ export class ItemPricePayloadDto {
   @ApiProperty({ example: 0 })
   ipm_freight_charge!: number;
 
+  @ApiProperty({ example: 0 })
+  ipm_points!: number;
+
   @ApiPropertyOptional({ nullable: true })
   ipm_remarks!: string | null;
 

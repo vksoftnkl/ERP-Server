@@ -39,6 +39,7 @@ const itemPricePayload = {
   ipm_uom_weight: 0,
   ipm_loading_charge: 0,
   ipm_freight_charge: 0,
+  ipm_points: 0,
   ipm_remarks: null,
   ipm_is_active: true,
   ipm_created_on: '2026-02-20T10:00:00.000Z',

@@ -711,8 +711,9 @@ Table ui_tables {
 
 Table ui_table_columns {
   uiTblClmId BigInt [pk, increment]
-  uiTblClmName String
+  uiTblClmNo BigInt [not null]
   uiTblClmTableId BigInt
+  uiTblClmName String
   uiTblClmColumnWidth Decimal [default: 100]
   uiTblClmColumnVisibility Boolean [default: true]
   uiTblClmColumnFocus Boolean [default: false]
@@ -1042,6 +1043,7 @@ Table item_price_master {
   ipmUomWeight Decimal [not null, default: 0]
   ipmLoadingCharge Decimal [not null, default: 0]
   ipmFreightCharge Decimal [not null, default: 0]
+  ipmPoints Int [not null, default: 0]
   ipmRemarks String
   ipmIsActive Boolean [not null, default: true]
   ipmCreatedOn DateTime [default: `now()`, not null]

@@ -137,6 +137,15 @@ export class SaveUiTableColumnDto {
   @IsNumberString({ no_symbols: true })
   uiTblClmId?: string;
 
+  @ApiPropertyOptional({
+    description: 'UI table column sequence number',
+    example: '10',
+  })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalIdString(value))
+  @IsNumberString({ no_symbols: true })
+  uiTblClmNo?: string;
+
   @ApiProperty({ description: 'UI table column name', example: 'Item Name' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsString()
