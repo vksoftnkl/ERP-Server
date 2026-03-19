@@ -17,14 +17,12 @@ import {
   ItemTaxHistoryListMeta,
   ItemTaxHistoryPayload,
 } from './types/item-tax-history-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const ITEM_TAX_HISTORY_TABLE_NAME = 'item_tax_history';
 const ITEM_TAX_HISTORY_AUDIT_SCREEN_NAME = 'Item Tax History';
-
 @Injectable()
 export class ItemsTaxHistoryMasterService {
   constructor(
@@ -32,36 +30,30 @@ export class ItemsTaxHistoryMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveItemTaxHistoryDto: SaveItemTaxHistoryDto): Promise<ItemTaxHistoryPayload> {
     if (saveItemTaxHistoryDto.ith_id) {
       return this.updateItemTaxHistory(saveItemTaxHistoryDto);
     }
-
     return this.createItemTaxHistory(saveItemTaxHistoryDto);
   }
-
   async list(
     queryDto: ListItemTaxHistoryQueryDto,
   ): Promise<{ items: ItemTaxHistoryListItem[]; meta: ItemTaxHistoryListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.ith_item_id !== undefined ||
       queryDto.ith_tax_id !== undefined ||
       queryDto.ith_effective_from !== undefined ||
       queryDto.ith_effective_to !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where = this.buildListWhere(queryDto);
     const [total, records] = await Promise.all([
       this.prisma.itemTaxHistory.count({ where }),
@@ -72,7 +64,6 @@ export class ItemsTaxHistoryMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -83,7 +74,6 @@ export class ItemsTaxHistoryMasterService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -99,13 +89,11 @@ export class ItemsTaxHistoryMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: ITEM_TAX_HISTORY_TABLE_NAME,
@@ -113,7 +101,6 @@ export class ItemsTaxHistoryMasterService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemTaxHistoryListItem>({
           baseSql: validation.normalizedSql,
@@ -121,7 +108,6 @@ export class ItemsTaxHistoryMasterService {
           limit,
           skip,
         });
-
         return {
           items: result.items,
           meta: {
@@ -135,24 +121,19 @@ export class ItemsTaxHistoryMasterService {
         continue;
       }
     }
-
     return null;
   }
-
   async getById(ithId: string): Promise<ItemTaxHistoryPayload> {
     const record = await this.prisma.itemTaxHistory.findUnique({
       where: {
         ithId,
       },
     });
-
     if (!record) {
       this.throwNotFound(ithId);
     }
-
     return this.toPayload(record);
   }
-
   async delete(ithId: string): Promise<{ ith_id: string; deleted: true }> {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -164,13 +145,11 @@ export class ItemsTaxHistoryMasterService {
         if (!existing) {
           this.throwNotFound(ithId);
         }
-
         await tx.itemTaxHistory.delete({
           where: {
             ithId,
           },
         });
-
         await this.auditLogService.logEntityChange(
           {
             action: 'cancel',
@@ -186,7 +165,6 @@ export class ItemsTaxHistoryMasterService {
           },
           tx,
         );
-
         return {
           ith_id: ithId,
           deleted: true,
@@ -197,7 +175,6 @@ export class ItemsTaxHistoryMasterService {
       throw error;
     }
   }
-
   private async createItemTaxHistory(
     saveItemTaxHistoryDto: SaveItemTaxHistoryDto,
   ): Promise<ItemTaxHistoryPayload> {
@@ -210,7 +187,6 @@ export class ItemsTaxHistoryMasterService {
       'ith_effective_to',
     );
     this.validateDateRange(effectiveFrom, effectiveTo);
-
     const createdBy = this.resolveActor(saveItemTaxHistoryDto.ith_created_by);
     const data: Prisma.ItemTaxHistoryUncheckedCreateInput = {
       ithItemId: saveItemTaxHistoryDto.ith_item_id,
@@ -220,12 +196,10 @@ export class ItemsTaxHistoryMasterService {
       ithCreatedBy: createdBy,
     };
     this.applyOptionalFields(data, saveItemTaxHistoryDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const created = await tx.itemTaxHistory.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -241,7 +215,6 @@ export class ItemsTaxHistoryMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -249,7 +222,6 @@ export class ItemsTaxHistoryMasterService {
       throw error;
     }
   }
-
   private async updateItemTaxHistory(
     saveItemTaxHistoryDto: SaveItemTaxHistoryDto,
   ): Promise<ItemTaxHistoryPayload> {
@@ -263,7 +235,6 @@ export class ItemsTaxHistoryMasterService {
       'ith_effective_to',
     );
     this.validateDateRange(effectiveFrom, effectiveTo);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.itemTaxHistory.findUnique({
@@ -274,21 +245,18 @@ export class ItemsTaxHistoryMasterService {
         if (!existing) {
           this.throwNotFound(ithId);
         }
-
         const data: Prisma.ItemTaxHistoryUncheckedUpdateInput = {
           ithItemId: saveItemTaxHistoryDto.ith_item_id,
           ithTaxId: saveItemTaxHistoryDto.ith_tax_id,
           ithEffectiveFrom: effectiveFrom,
         };
         this.applyOptionalFields(data, saveItemTaxHistoryDto);
-
         const updated = await tx.itemTaxHistory.update({
           where: {
             ithId,
           },
           data,
         });
-
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
           {
@@ -305,7 +273,6 @@ export class ItemsTaxHistoryMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -313,37 +280,29 @@ export class ItemsTaxHistoryMasterService {
       throw error;
     }
   }
-
   private buildListWhere(queryDto: ListItemTaxHistoryQueryDto): Prisma.ItemTaxHistoryWhereInput {
     const where: Prisma.ItemTaxHistoryWhereInput = {};
-
     if (queryDto.ith_item_id !== undefined) {
       where.ithItemId = queryDto.ith_item_id;
     }
-
     if (queryDto.ith_tax_id !== undefined) {
       where.ithTaxId = queryDto.ith_tax_id;
     }
-
     if (queryDto.ith_effective_from !== undefined) {
       where.ithEffectiveFrom = this.parseRequiredDate(
         queryDto.ith_effective_from,
         'ith_effective_from',
       );
     }
-
     if (queryDto.ith_effective_to !== undefined) {
       where.ithEffectiveTo = this.parseRequiredDate(queryDto.ith_effective_to, 'ith_effective_to');
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [{ ithReason: { contains: search, mode: 'insensitive' } }];
     }
-
     return where;
   }
-
   private applyOptionalFields(
     data: Prisma.ItemTaxHistoryUncheckedCreateInput | Prisma.ItemTaxHistoryUncheckedUpdateInput,
     saveItemTaxHistoryDto: SaveItemTaxHistoryDto,
@@ -354,12 +313,10 @@ export class ItemsTaxHistoryMasterService {
         'ith_effective_to',
       );
     }
-
     if (this.hasOwnProperty(saveItemTaxHistoryDto, 'ith_reason')) {
       data.ithReason = saveItemTaxHistoryDto.ith_reason;
     }
   }
-
   private parseRequiredDate(value: string, fieldName: string): Date {
     const parsedDate = new Date(value);
     if (Number.isNaN(parsedDate.getTime())) {
@@ -370,10 +327,8 @@ export class ItemsTaxHistoryMasterService {
         },
       ]);
     }
-
     return parsedDate;
   }
-
   private parseOptionalDate(
     value: string | null | undefined,
     fieldName: string,
@@ -381,19 +336,15 @@ export class ItemsTaxHistoryMasterService {
     if (value === undefined) {
       return undefined;
     }
-
     if (value === null) {
       return null;
     }
-
     return this.parseRequiredDate(value, fieldName);
   }
-
   private validateDateRange(effectiveFrom: Date, effectiveTo: Date | null | undefined): void {
     if (!effectiveTo) {
       return;
     }
-
     if (effectiveFrom.getTime() > effectiveTo.getTime()) {
       this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
         {
@@ -403,7 +354,6 @@ export class ItemsTaxHistoryMasterService {
       ]);
     }
   }
-
   private toPayload(record: ItemTaxHistory): ItemTaxHistoryPayload {
     return {
       ith_id: record.ithId,
@@ -416,16 +366,13 @@ export class ItemsTaxHistoryMasterService {
       ith_created_by: record.ithCreatedBy,
     };
   }
-
   private buildDisplayName(record: ItemTaxHistory): string {
     return `${record.ithItemId}:${record.ithTaxId}:${record.ithEffectiveFrom.toISOString().slice(0, 10)}`;
   }
-
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
     const trimmed = value?.trim();
     return trimmed || fallback;
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -437,7 +384,6 @@ export class ItemsTaxHistoryMasterService {
         ]),
       );
     }
-
     if (this.isForeignKeyConstraintError(error)) {
       throw new BadRequestException(
         this.buildErrorResponse('Invalid relation reference', [
@@ -449,7 +395,6 @@ export class ItemsTaxHistoryMasterService {
       );
     }
   }
-
   private handleDeleteError(error: unknown): void {
     if (this.isForeignKeyConstraintError(error)) {
       throw new BadRequestException(
@@ -462,23 +407,18 @@ export class ItemsTaxHistoryMasterService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private isForeignKeyConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2003';
   }
-
   private throwNotFound(ithId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Item tax history not found', [
@@ -489,11 +429,9 @@ export class ItemsTaxHistoryMasterService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: ItemTaxHistoryErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: ItemTaxHistoryErrorDetail[] = [],
@@ -504,7 +442,6 @@ export class ItemsTaxHistoryMasterService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

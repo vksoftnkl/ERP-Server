@@ -2,11 +2,9 @@ import { Injectable, NestMiddleware } from '@nestjs/common';
 import { isIP } from 'node:net';
 import { NextFunction, Request, Response } from 'express';
 import { RequestContextService } from '../request-context/request-context.service';
-
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
   constructor(private readonly requestContextService: RequestContextService) {}
-
   use(request: Request, _response: Response, next: NextFunction): void {
     this.requestContextService.run(
       {
@@ -16,7 +14,6 @@ export class RequestContextMiddleware implements NestMiddleware {
       next,
     );
   }
-
   private extractClientIp(request: Request): string | null {
     const headerValue = request.headers['x-forwarded-for'];
     if (typeof headerValue === 'string') {
@@ -29,7 +26,6 @@ export class RequestContextMiddleware implements NestMiddleware {
         return normalizedForwardedIp;
       }
     }
-
     const realIpHeader = request.headers['x-real-ip'];
     if (typeof realIpHeader === 'string') {
       const normalizedRealIp = this.normalizeIpAddress(realIpHeader.trim());
@@ -37,32 +33,26 @@ export class RequestContextMiddleware implements NestMiddleware {
         return normalizedRealIp;
       }
     }
-
     const directIp =
       this.normalizeIpAddress(request.ip) ?? this.normalizeIpAddress(request.socket.remoteAddress);
     return directIp ?? null;
   }
-
   private extractUserIdHeader(request: Request): string | null {
     const headerValue = request.headers['x-user-id'];
     if (typeof headerValue !== 'string') {
       return null;
     }
-
     const trimmed = headerValue.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
-
   private normalizeIpAddress(ipAddress: string | undefined): string | null {
     if (!ipAddress) {
       return null;
     }
-
     const normalizedIp = ipAddress.trim().replace(/^\[|\]$/g, '');
     if (!normalizedIp) {
       return null;
     }
-
     return isIP(normalizedIp) === 0 ? null : normalizedIp;
   }
 }

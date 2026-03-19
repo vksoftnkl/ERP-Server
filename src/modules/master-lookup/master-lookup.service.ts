@@ -9,14 +9,11 @@ import {
   NameIdOption,
   SingleModuleLookupPayload,
 } from './types/master-lookup-api.types';
-
 const DEFAULT_SEARCH_LIMIT = 20;
 const MAX_LOOKUP_LIMIT = 20;
-
 @Injectable()
 export class MasterLookupService {
   constructor(private readonly prisma: PrismaService) {}
-
   async getAllAccountsAndMasterNameIds(
     module?: LookupModuleKey,
     search?: string,
@@ -24,21 +21,17 @@ export class MasterLookupService {
   ): Promise<MasterLookupDataPayload> {
     const normalizedSearch = this.normalizeSearch(search);
     const take = this.resolveTake(normalizedSearch, limit);
-
     if (module) {
       const items = await this.fetchModuleItems(module, normalizedSearch, take);
       return this.toSingleModulePayload(module, items);
     }
-
     const modules = await Promise.all(
       LOOKUP_MODULE_KEYS.map(async (moduleKey) => [
         moduleKey,
         await this.fetchModuleItems(moduleKey, normalizedSearch, take),
       ]),
     );
-
     const byModule = Object.fromEntries(modules) as Record<LookupModuleKey, NameIdOption[]>;
-
     return {
       accounts: {
         companies: byModule.companies,
@@ -75,7 +68,6 @@ export class MasterLookupService {
       },
     };
   }
-
   private toOption(id: string, name: string | null | undefined): NameIdOption {
     const normalizedName = typeof name === 'string' ? name.trim() : '';
     return {
@@ -83,7 +75,6 @@ export class MasterLookupService {
       name: normalizedName || id,
     };
   }
-
   private toSingleModulePayload(
     module: LookupModuleKey,
     items: NameIdOption[],
@@ -95,21 +86,18 @@ export class MasterLookupService {
         items,
       };
     }
-
     return {
       scope: 'masters',
       module,
       items,
     };
   }
-
   private async fetchModuleItems(
     module: LookupModuleKey,
     search?: string,
     take?: number,
   ): Promise<NameIdOption[]> {
     const contains = search ? this.buildContainsFilter(search) : undefined;
-
     switch (module) {
       case 'companies': {
         const rows = await this.prisma.company.findMany({
@@ -124,7 +112,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.compId, row.compName));
       }
-
       case 'companyGroups': {
         const rows = await this.prisma.companyGroupMaster.findMany({
           where: {
@@ -138,7 +125,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.cogGroupId, row.cogGroupName));
       }
-
       case 'branches': {
         const rows = await this.prisma.branchMaster.findMany({
           where: {
@@ -152,7 +138,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.brId, row.brName));
       }
-
       case 'accountGroups': {
         const rows = await this.prisma.accountGroup.findMany({
           where: {
@@ -166,7 +151,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.accGroupId, row.accGroupName));
       }
-
       case 'accountLedgers': {
         const rows = await this.prisma.accLedgerMaster.findMany({
           where: {
@@ -188,7 +172,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.ledId, row.ledName));
       }
-
       case 'ledgerBankAccounts': {
         const rows = await this.prisma.accLedgerBankAccount.findMany({
           where: {
@@ -225,7 +208,6 @@ export class MasterLookupService {
           return this.toOption(row.lbaId, `${label}${ledgerLabel}`);
         });
       }
-
       case 'ledgerShippingAddresses': {
         const rows = await this.prisma.accShipAddr.findMany({
           where: {
@@ -263,7 +245,6 @@ export class MasterLookupService {
           ),
         );
       }
-
       case 'employeeDepartments': {
         const rows = await this.prisma.employeeDepartment.findMany({
           where: {
@@ -277,7 +258,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.edptId, row.edptName));
       }
-
       case 'employeeDesignations': {
         const rows = await this.prisma.employeeDesignation.findMany({
           where: {
@@ -291,7 +271,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.edId, row.edName));
       }
-
       case 'employees': {
         const rows = await this.prisma.empMaster.findMany({
           where: {
@@ -305,7 +284,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.empId, row.empName));
       }
-
       case 'tenderTypes': {
         const rows = await this.prisma.tenderTypeMaster.findMany({
           where: {
@@ -319,7 +297,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.ttmTypeId, row.ttmTypeName));
       }
-
       case 'tenders': {
         const rows = await this.prisma.tenderMaster.findMany({
           where: {
@@ -333,7 +310,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.tndId, row.tndName));
       }
-
       case 'gspProviders': {
         const rows = await this.prisma.gspProviderMaster.findMany({
           where: {
@@ -347,7 +323,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.gspProviderId, row.gspProviderName));
       }
-
       case 'gspCompanyServices': {
         const rows = await this.prisma.gspCompanyService.findMany({
           where: {
@@ -380,7 +355,6 @@ export class MasterLookupService {
           this.toOption(row.csgCompanyServiceId, `${row.csgServiceType} - ${row.company.compName}`),
         );
       }
-
       case 'itemGroups': {
         const rows = await this.prisma.itemGroupMaster.findMany({
           where: {
@@ -394,7 +368,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.itgId, row.itgName));
       }
-
       case 'itemCategories': {
         const rows = await this.prisma.categoryMaster.findMany({
           where: {
@@ -408,7 +381,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.categoryId, row.categoryName));
       }
-
       case 'itemSections': {
         const rows = await this.prisma.itemSectionMaster.findMany({
           where: {
@@ -422,7 +394,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.secId, row.secName));
       }
-
       case 'itemBrands': {
         const rows = await this.prisma.itemBrandMaster.findMany({
           where: {
@@ -436,7 +407,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.brand_id, row.brand_name));
       }
-
       case 'units': {
         const rows = await this.prisma.unit.findMany({
           where: {
@@ -450,7 +420,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.unit_id, row.unit_name));
       }
-
       case 'itemTaxes': {
         const rows = await this.prisma.itemTaxMaster.findMany({
           where: {
@@ -464,7 +433,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.taxId, row.taxName));
       }
-
       case 'items': {
         const rows = await this.prisma.itemMaster.findMany({
           where: {
@@ -482,7 +450,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.itemId, row.itemNameEn));
       }
-
       case 'godownLocations': {
         const rows = await this.prisma.godownLocation.findMany({
           where: {
@@ -496,7 +463,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.gdlId, row.gdlName));
       }
-
       case 'states': {
         const rows = await this.prisma.stateMaster.findMany({
           where: {
@@ -510,7 +476,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.stmId, row.stmName));
       }
-
       case 'cities': {
         const rows = await this.prisma.cityMaster.findMany({
           where: {
@@ -524,7 +489,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.ctmId, row.ctmName));
       }
-
       case 'areas': {
         const rows = await this.prisma.areaMaster.findMany({
           where: {
@@ -538,7 +502,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.armId, row.armName));
       }
-
       case 'customerGroups': {
         const rows = await this.prisma.custGroup.findMany({
           where: {
@@ -552,7 +515,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.cgrId, row.cgrName));
       }
-
       case 'customers': {
         const rows = await this.prisma.customer.findMany({
           where: {
@@ -570,7 +532,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.cusId, row.cusName ?? row.cusId));
       }
-
       case 'supplierGroups': {
         const rows = await this.prisma.supplierGroup.findMany({
           where: {
@@ -584,7 +545,6 @@ export class MasterLookupService {
         });
         return rows.map((row) => this.toOption(row.spgId, row.spgName));
       }
-
       case 'suppliers': {
         const rows = await this.prisma.supplier.findMany({
           where: {
@@ -600,33 +560,26 @@ export class MasterLookupService {
       }
     }
   }
-
   private normalizeSearch(search?: string): string | undefined {
     if (!search) {
       return undefined;
     }
-
     const trimmed = search.trim();
     return trimmed || undefined;
   }
-
   private resolveTake(search: string | undefined, limit?: number): number | undefined {
     if (limit !== undefined) {
       const normalized = Math.trunc(limit);
       if (normalized <= 0) {
         return 1;
       }
-
       return Math.min(normalized, MAX_LOOKUP_LIMIT);
     }
-
     if (search) {
       return DEFAULT_SEARCH_LIMIT;
     }
-
     return undefined;
   }
-
   private buildContainsFilter(search: string): { contains: string; mode: 'insensitive' } {
     return {
       contains: search,

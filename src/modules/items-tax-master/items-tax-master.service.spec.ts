@@ -6,7 +6,6 @@ import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
 import { ItemsTaxMasterService } from './items-tax-master.service';
-
 const TAX_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
 
 type PrismaMock = {
@@ -210,29 +209,23 @@ describe('ItemsTaxMasterService', () => {
         },
       ),
     };
-
     service = new ItemsTaxMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
       configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
-
   it('creates an item tax with minimal payload', async () => {
     const created = makeRecord();
     prisma.itemTaxMaster.create.mockResolvedValue(created);
-
     const input: SaveItemTaxDto = {
       tax_name: 'GST 18%',
     };
-
     const result = await service.save(input);
-
     expect(prisma.itemTaxMaster.create).toHaveBeenCalledTimes(1);
     expect(result.tax_id).toBe(TAX_ID);
     expect(result.tax_name).toBe('GST 18%');
   });
-
   it('fails create when tax_name is missing', async () => {
     await expect(
       service.save({
@@ -240,7 +233,6 @@ describe('ItemsTaxMasterService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
-
   it('updates an item tax when tax_id exists', async () => {
     const existing = makeRecord();
     const updated = makeRecord({
@@ -250,22 +242,18 @@ describe('ItemsTaxMasterService', () => {
     });
     prisma.itemTaxMaster.findFirst.mockResolvedValueOnce(existing);
     prisma.itemTaxMaster.update.mockResolvedValueOnce(updated);
-
     const result = await service.save({
       tax_id: TAX_ID,
       tax_name: 'GST 12%',
       tax_code: 'GST12',
       tax_gst_rate_total: 12,
     });
-
     expect(prisma.itemTaxMaster.update).toHaveBeenCalledTimes(1);
     expect(result.tax_name).toBe('GST 12%');
     expect(result.tax_gst_rate_total).toBe(12);
   });
-
   it('fails update when tax_id is unknown', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(null);
-
     await expect(
       service.save({
         tax_id: TAX_ID,
@@ -273,7 +261,6 @@ describe('ItemsTaxMasterService', () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
-
   it('maps unique constraint errors to conflict', async () => {
     prisma.itemTaxMaster.create.mockRejectedValue({ code: 'P2002' });
 
@@ -283,45 +270,36 @@ describe('ItemsTaxMasterService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
-
   it('list enforces soft-delete exclusion', async () => {
     prisma.itemTaxMaster.count.mockResolvedValue(1);
     prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
-
     await service.list({} as ListItemTaxQueryDto);
-
     const countArgs = prisma.itemTaxMaster.count.mock.calls[0][0];
     const findArgs = prisma.itemTaxMaster.findMany.mock.calls[0][0];
     expect(countArgs.where?.taxIsDeleted).toBe(false);
     expect(findArgs.where?.taxIsDeleted).toBe(false);
   });
-
   it('list applies search and active filters', async () => {
     prisma.itemTaxMaster.count.mockResolvedValue(0);
     prisma.itemTaxMaster.findMany.mockResolvedValue([]);
-
     await service.list({
       search: 'gst',
       tax_is_active: true,
       tax_is_reverse_charge: false,
       tax_taxability_type: 'TAXABLE',
     });
-
     const findArgs = prisma.itemTaxMaster.findMany.mock.calls[0][0];
     expect(findArgs.where?.taxIsActive).toBe(true);
     expect(findArgs.where?.taxIsReverseCharge).toBe(false);
     expect(Array.isArray(findArgs.where?.OR)).toBe(true);
   });
-
   it('list returns pagination metadata', async () => {
     prisma.itemTaxMaster.count.mockResolvedValue(25);
     prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
-
     const result = await service.list({
       page: 2,
       limit: 10,
     });
-
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,
@@ -329,7 +307,6 @@ describe('ItemsTaxMasterService', () => {
       total_pages: 3,
     });
   });
-
   it('uses configured grid_sql for plain get-all list', async () => {
     prisma.gridDetails.findFirst.mockResolvedValue({
       gridSql:
@@ -338,9 +315,7 @@ describe('ItemsTaxMasterService', () => {
     prisma.$queryRawUnsafe
       .mockResolvedValueOnce([{ total: BigInt(1) }])
       .mockResolvedValueOnce([{ taxId: TAX_ID, taxName: 'GST 18%' }]);
-
     const result = await service.list({});
-
     expect(prisma.itemTaxMaster.findMany).not.toHaveBeenCalled();
     expect(prisma.itemTaxMaster.count).not.toHaveBeenCalled();
     expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
@@ -363,37 +338,27 @@ describe('ItemsTaxMasterService', () => {
       },
     });
   });
-
   it('rejects invalid configured grid_sql in list', async () => {
     prisma.gridDetails.findFirst.mockResolvedValue({
       gridSql: 'DELETE FROM item_tax_master',
     });
-
     await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
-
   it('getById returns an item tax when it exists and is not deleted', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(makeRecord());
-
     const result = await service.getById(TAX_ID);
-
     expect(result.tax_id).toBe(TAX_ID);
     expect(result.tax_is_deleted).toBe(false);
   });
-
   it('getById throws not found for missing/deleted tax', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(null);
-
     await expect(service.getById(TAX_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
-
   it('softDelete marks tax as deleted', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(makeRecord());
     prisma.itemTaxMaster.updateMany.mockResolvedValue({ count: 1 });
-
     const result = await service.softDelete(TAX_ID);
-
     expect(prisma.itemTaxMaster.updateMany).toHaveBeenCalledTimes(1);
     const updateManyArgs = prisma.itemTaxMaster.updateMany.mock.calls[0][0];
     expect(updateManyArgs.where).toEqual({
@@ -411,10 +376,8 @@ describe('ItemsTaxMasterService', () => {
       deleted: true,
     });
   });
-
   it('softDelete throws not found when tax does not exist', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(null);
-
     await expect(service.softDelete(TAX_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

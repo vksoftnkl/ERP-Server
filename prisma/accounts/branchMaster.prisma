@@ -1,7 +1,6 @@
 model BranchMaster {
   brId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("br_id")
   compId                String    @db.Uuid                                         @map("comp_id")
-
   // 1) Identity / Reference
   brCode                String?   @unique @db.VarChar(20)                          @map("br_code")
   brName                String    @db.VarChar(150)                                 @map("br_name")
@@ -11,7 +10,6 @@ model BranchMaster {
   brType                String?   @db.VarChar(30)                                  @map("br_type")
   brIsDefault           Boolean   @default(false)                                   @map("br_is_default")
   brIsActive            Boolean   @default(true)                                    @map("br_is_active")
-
   // 2) Address
   brAddr1               String?                                                     @map("br_addr1")
   brAddr2               String?                                                     @map("br_addr2")
@@ -23,7 +21,6 @@ model BranchMaster {
   brPin                 String?   @db.VarChar(10)                                  @map("br_pin")
   brCountry             String    @default("India") @db.VarChar(60)               @map("br_country")
   brLandmark            String?   @db.VarChar(150)                                 @map("br_landmark")
-
   // 4) Region Address
   brRegionAddr1         String?                                                     @map("br_region_addr1")
   brRegionAddr2         String?                                                     @map("br_region_addr2")
@@ -32,13 +29,11 @@ model BranchMaster {
   brRegionDistrict      String?   @db.VarChar(100)                                 @map("br_region_district")
   brRegionState         String?                                                     @map("br_region_state")
   brRegionCountry       String?   @db.VarChar(60)                                  @map("br_region_country")
-
   // 3) Contact
   brContactPerson       String?   @db.VarChar(150)                                 @map("br_contact_person")
   brTel                 String?   @db.VarChar(20)                                  @map("br_tel")
   brPhone               String?   @db.VarChar(20)                                  @map("br_phone")
   brMail                String?   @db.VarChar(150)                                 @map("br_mail")
-
   // 4) Billing / Invoice Setup
   brBillPrefix          String?   @db.VarChar(20)                                  @map("br_bill_prefix")
   brInvoiceSeriesPrefix String?   @db.VarChar(20)                                  @map("br_invoice_series_prefix")
@@ -46,19 +41,16 @@ model BranchMaster {
   brTerms               String?                                                     @map("br_terms")
   brRoundingMode        String?   @db.VarChar(20)                                  @map("br_rounding_mode")
   brRoundingValue       Decimal?  @db.Decimal                                       @map("br_rounding_value")
-
   // 5) Inventory / Operations
   brDefaultGodownId     String?   @db.Uuid                                          @map("br_default_godown_id")
   brPosType             String?   @db.VarChar(20)                                  @map("br_pos_type")
   brAllowNegativeStock  Boolean   @default(true)                                    @map("br_allow_negative_stock")
   brSmsApplicable       Boolean   @default(false)                                   @map("br_sms_applicable")
   brBankId              String?   @db.Uuid                                          @map("br_bank_id")
-
   // 6) Compliance / Licenses
   brFssaiNo             String?   @db.VarChar(20)                                  @map("br_fssai_no")
   brFssaiLicenseType    String?   @db.VarChar(20)                                  @map("br_fssai_license_type")
   brFssaiValidUpto      DateTime? @db.Date                                          @map("br_fssai_valid_upto")
-
   // 8) Audit / Sync
   brIsDeleted           Boolean   @default(false)                                   @map("br_is_deleted")
   brSyncDate            DateTime? @db.Timestamptz                                  @map("br_sync_date")
@@ -66,7 +58,6 @@ model BranchMaster {
   brCreatedBy           String?   @db.VarChar(100)                                 @map("br_created_by")
   brModifiedOn          DateTime  @default(now()) @db.Timestamp                    @map("br_modified_on")
   brModifiedBy          String?   @db.VarChar(100)                                 @map("br_modified_by")
-
   // Relations
   company               Company   @relation(fields: [compId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]

@@ -31,13 +31,11 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UsersService } from './users.service';
-
 @Public()
 @ApiTags('Users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
-
   @Post()
   @Version('1')
   @ApiOperation({ summary: 'Create user' })
@@ -48,7 +46,6 @@ export class UsersController {
     const user = await this.usersService.create(createUserDto);
     return this.toResponse(user);
   }
-
   @Get()
   @Version('1')
   @ApiOperation({ summary: 'List users' })
@@ -58,7 +55,6 @@ export class UsersController {
     const users = await this.usersService.findAll();
     return users.map((user) => this.toResponse(user));
   }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get user by id' })
@@ -70,7 +66,6 @@ export class UsersController {
     const user = await this.usersService.findOne(id);
     return this.toResponse(user);
   }
-
   @Patch(':id')
   @Version('1')
   @ApiOperation({ summary: 'Update user by id' })
@@ -86,7 +81,6 @@ export class UsersController {
     const user = await this.usersService.update(id, updateUserDto);
     return this.toResponse(user);
   }
-
   @Delete('delete')
   @Version('1')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -98,7 +92,6 @@ export class UsersController {
   async remove(@Query('id', new ParseUUIDPipe()) id: string): Promise<void> {
     await this.usersService.remove(id);
   }
-
   private toResponse(user: User): UserResponseDto {
     return {
       user_id: user.user_id,

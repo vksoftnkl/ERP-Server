@@ -1,11 +1,9 @@
 model Company {
   compId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("comp_id")
-
   // 1) Identity / Codes
   compCode              String?   @unique @db.VarChar(20)                          @map("comp_code")
   compName              String    @unique                                           @map("comp_name")
   compShort             String?                                                     @map("comp_short")
-
   // 2) Statutory / Registration
   compLegalName         String?                                                     @map("comp_legal_name")
   compGstinNo           String?   @unique @db.VarChar(15)                          @map("comp_gstin_no")
@@ -23,7 +21,6 @@ model Company {
   compStateCode         String    @db.Char(2)                                      @map("comp_state_code")
   compPin               Int?                                                        @map("comp_pin")
   compCountry           String    @default("India") @db.VarChar(60)               @map("comp_country")
-
   // 4) Region Address
   compRegionAddr1       String?                                                     @map("comp_region_addr1")
   compRegionAddr2       String?                                                     @map("comp_region_addr2")
@@ -32,7 +29,6 @@ model Company {
   compRegionDistrict    String?   @db.VarChar(100)                                 @map("comp_region_district")
   compRegionState       String?                                                     @map("comp_region_state")
   compRegionCountry     String?   @db.VarChar(60)                                  @map("comp_region_country")
-
   // 5) Contact
   compTel               String?   @db.VarChar(20)                                  @map("comp_tel")
   compPhone             String?   @db.VarChar(20)                                  @map("comp_phone")
@@ -40,19 +36,16 @@ model Company {
   compSupportEmail      String?   @db.VarChar(150)                                 @map("comp_support_email")
   compSupportPhone      String?   @db.VarChar(20)                                  @map("comp_support_phone")
   compWebsiteName       String?   @db.VarChar(200)                                 @map("comp_website_name")
-
   // 6) Fiscal Year / Books
   compFinYearFrom       DateTime? @db.Date                                          @map("comp_fin_year_from")
   compFinYearTo         DateTime? @db.Date                                          @map("comp_fin_year_to")
   compBooksBeginFrom    DateTime? @db.Date                                          @map("comp_books_begin_from")
-
   // 7) Features / Applicability flags
   compGstApplicable     Boolean   @default(true)                                    @map("comp_gst_applicable")
   compTcsApplicable     Boolean   @default(false)                                   @map("comp_tcs_applicable")
   compSmsApplicable     Boolean   @default(false)                                   @map("comp_sms_applicable")
   compEinvoiceApplicable Boolean  @default(false)                                   @map("comp_einvoice_applicable")
   compEwayApplicable    Boolean   @default(false)                                   @map("comp_eway_applicable")
-
   // 8) E-Way / E-Invoice Settings
   compEwayDate          DateTime? @db.Date                                          @map("comp_eway_date")
   compEwayInterLimit    Decimal?  @db.Decimal                                       @map("comp_eway_inter_limit")
@@ -60,7 +53,6 @@ model Company {
   compEwayIntraLimit    Decimal   @default(0) @db.Decimal                          @map("comp_eway_intra_limit")
   compEinvoiceDate      DateTime? @db.Date                                          @map("comp_einvoice_date")
   compEinvoiceInclEway  Boolean?                                                    @map("comp_einvoice_incl_eway")
-
   // 9) System Settings
   compStylesheetId      String?   @db.VarChar                                                        @map("comp_stylesheet_id")
   compBankId            String?   @db.Uuid                                          @map("comp_bank_id")
@@ -74,7 +66,6 @@ model Company {
   compCurrencySymbol    String?   @db.VarChar(10)                                  @map("comp_currency_symbol")
   compLocaleCode        String    @default("en-IN") @db.VarChar(10)               @map("comp_locale_code")
   compRemarks           String?   @default("")                                      @map("comp_remarks")
-
   // 10) Audit / Sync
   compIsDeleted         Boolean   @default(false)                                   @map("comp_is_deleted")
   compSyncDate          DateTime? @db.Timestamptz                                  @map("comp_sync_date")
@@ -82,7 +73,6 @@ model Company {
   compCreatedBy         String?   @db.VarChar(100)                                 @map("comp_created_by")
   compModifiedOn        DateTime  @default(now()) @db.Timestamp                    @map("comp_modified_on")
   compModifiedBy        String?   @db.VarChar(100)                                 @map("comp_modified_by")
-
   // Relations
   branches              BranchMaster[]
   accountGroups         AccountGroup[]

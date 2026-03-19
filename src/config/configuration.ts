@@ -2,38 +2,30 @@ const parseBoolean = (value: string | undefined, defaultValue = false): boolean 
   if (value === undefined) {
     return defaultValue;
   }
-
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 };
-
 const parseNumber = (value: string | undefined, defaultValue: number): number => {
   if (!value) {
     return defaultValue;
   }
-
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : defaultValue;
 };
-
 const buildDatabaseUrl = (): string => {
   if (process.env.DATABASE_URL) {
     return process.env.DATABASE_URL;
   }
-
   const username = encodeURIComponent(process.env.DB_USER ?? 'erp_app');
   const password = encodeURIComponent(process.env.DB_PASSWORD ?? 'erp_password');
   const host = process.env.DB_HOST ?? 'localhost';
   const port = parseNumber(process.env.DB_PORT, 5432);
   const databaseName = process.env.DB_NAME ?? 'erp_db';
   const searchParams = new URLSearchParams({ schema: 'public' });
-
   if (parseBoolean(process.env.DB_SSL)) {
     searchParams.set('sslmode', 'require');
   }
-
   return `postgresql://${username}:${password}@${host}:${port}/${databaseName}?${searchParams.toString()}`;
 };
-
 export default () => ({
   app: {
     nodeEnv: process.env.NODE_ENV ?? 'development',
