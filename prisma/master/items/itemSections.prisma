@@ -15,7 +15,7 @@ model ItemSectionMaster {
 
   secSort        Int?     @map("sec_sort")
   secLevel       Int?     @map("sec_level")
-  secPathIds     String[] @db.Uuid @default(dbgenerated("'{}'::uuid[]")) @map("sec_path_ids")
+  secPathIds     String[] @default([]) @db.Uuid @map("sec_path_ids")
 
   // Display / POS UI
   secPosition    Int?     @map("sec_position")

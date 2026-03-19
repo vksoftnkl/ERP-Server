@@ -40,8 +40,9 @@ CREATE TABLE "fixed"."ui_tables" (
 -- CreateTable
 CREATE TABLE "fixed"."ui_table_columns" (
     "ui_tbl_clm_id" BIGSERIAL NOT NULL,
+    "ui_tbl_clm_no" BIGINT,
     "ui_tbl_clm_name" TEXT,
-    "ui_tbl_clm_column_width" DECIMAL(65,30) DEFAULT 100,
+    "ui_tbl_clm_column_width" DECIMAL DEFAULT 100,
     "ui_tbl_clm_column_visibility" BOOLEAN DEFAULT true,
     "ui_tbl_clm_column_focus" BOOLEAN DEFAULT false,
     "ui_tbl_clm_column_position" INTEGER NOT NULL DEFAULT 0,

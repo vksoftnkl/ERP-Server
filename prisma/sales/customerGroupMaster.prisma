@@ -10,15 +10,15 @@ model CustGroup {
   cgrShort           String?   @db.VarChar(50) @map("cgr_short")
   cgrNarration       String?   @db.VarChar(250) @map("cgr_narration")
 
-  cgrOrder           Decimal   @default(dbgenerated("0")) @db.Decimal @map("cgr_order")
-  cgrDiscPerc        Decimal   @default(dbgenerated("0")) @db.Decimal(7, 3) @map("cgr_disc_perc")
+  cgrOrder           Decimal   @default(0) @db.Decimal @map("cgr_order")
+  cgrDiscPerc        Decimal   @default(0) @db.Decimal(7, 3) @map("cgr_disc_perc")
 
   // arrays
   cgrCollectionDays  Int[]     @map("cgr_collection_days")
 
   cgrDebitAllowed    Boolean   @default(false) @map("cgr_debit_allowed")
   cgrDebitDays       Int       @default(0) @map("cgr_debit_days")
-  cgrDebitLimit      Decimal   @default(dbgenerated("0")) @db.Decimal(15, 4) @map("cgr_debit_limit")
+  cgrDebitLimit      Decimal   @default(0) @db.Decimal(15, 4) @map("cgr_debit_limit")
   cgrBillsLimit      Int       @default(0) @map("cgr_bills_limit")
   cgrOverdueBilling  Boolean   @default(false) @map("cgr_overdue_billing")
 

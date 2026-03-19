@@ -11,10 +11,8 @@ model SupplierGroup {
   spgCreatedBy  String?    @db.VarChar(100)
   spgModifiedOn DateTime   @default(now()) @db.Timestamptz
   spgModifiedBy String?    @db.VarChar(100)
-
   // Relations
   suppliers     Supplier[]
-
   @@index([spgIsActive], name: "idx_spg_active")
   @@map("supplier_groups")
   @@schema("purchase")

@@ -26,7 +26,7 @@ model GridColumn {
   gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
 
   @@map("grid_columns")
-  @@schema("grid")
+  @@schema("fixed")
 
   @@index([gridId], map: "idx_grid_columns_grid_id")
   @@index([gridId, gridColumnFilter], map: "idx_grid_columns_filter")

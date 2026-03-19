@@ -12,7 +12,7 @@ model GodownLocation {
   gdlParentId       String?  @db.Uuid @map("gdl_parent_id")
   gdlSort           Int      @default(0) @map("gdl_sort")
   gdlLevel          Int      @default(0) @map("gdl_level")
-  gdlPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("gdl_path_ids_cache")
+  gdlPathIdsCache   String[] @default([]) @db.Uuid @map("gdl_path_ids_cache")
   // Attributes
   gdlDelSheet       Boolean  @default(false) @map("gdl_del_sheet")
   gdlSplitStock     Boolean  @default(false) @map("gdl_split_stock")

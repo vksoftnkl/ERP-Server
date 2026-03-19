@@ -14,7 +14,7 @@ model ItemGroupMaster {
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")
-  itgPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("itg_path_ids_cache")
+  itgPathIdsCache   String[] @default([]) @db.Uuid @map("itg_path_ids_cache")
   itgTaxClaim       Boolean? @map("itg_tax_claim")
 
   // Defaults / pricing rules

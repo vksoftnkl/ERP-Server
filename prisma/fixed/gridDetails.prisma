@@ -13,7 +13,7 @@ model GridDetails {
   columns         GridColumn[]
 
   @@map("grid_details")
-  @@schema("grid")
+  @@schema("fixed")
   @@index([gridStatus], map: "idx_grid_details_status")
   @@index([gridIsDeleted], map: "idx_grid_details_deleted")
 }

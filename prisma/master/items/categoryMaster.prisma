@@ -14,7 +14,7 @@ model categoryMaster {
 
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
-  categoryPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("category_path_ids_cache")
+  categoryPathIdsCache   String[] @default([]) @db.Uuid @map("category_path_ids_cache")
   
   // Media
   categoryPhoto          Bytes?   @map("category_photo")

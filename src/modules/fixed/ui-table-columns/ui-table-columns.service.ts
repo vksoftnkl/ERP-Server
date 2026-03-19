@@ -503,7 +503,7 @@ export class UiTableColumnsService {
   private toPayload(record: UitableColumns): UiTableColumnPayload {
     return {
       uiTblClmId: record.uiTblClmId.toString(),
-      uiTblClmNo: record.uiTblClmNo.toString(),
+      uiTblClmNo: record.uiTblClmNo?.toString() ?? '',
       uiTblClmName: record.uiTblClmName,
       uiTblClmTableId: record.uiTblClmTableId?.toString() ?? null,
       uiTblClmColumnWidth: this.toNullableNumber(record.uiTblClmColumnWidth),

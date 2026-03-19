@@ -26,7 +26,7 @@ generator docs {
 model User {
   user_id        String    @id @default(uuid()) @db.Uuid
 
-  user_code      String    @unique @default(dbgenerated("'us' || nextval('user_code_seq')")) @db.VarChar(20)
+  user_code      String    @unique @default(dbgenerated("('us'::text || nextval('user_code_seq'::regclass))")) @db.VarChar(20)
   user_phone     String    @unique @db.VarChar(20)
   user_name      String    @unique @db.VarChar(50)
   user_password  String    @db.Text
@@ -1043,6 +1043,62 @@ model ErpDeviceMaster {
   @@schema("fixed")
 }
 
+// ----- prisma/fixed/gridColumns.prisma -----
+model GridColumn {
+  gridSerialId              BigInt   @id @default(autoincrement()) @map("grid_serialid")
+
+  gridId                    BigInt   @map("grid_id")
+  grid                      GridDetails @relation(fields: [gridId], references: [gridId], onDelete: Cascade, onUpdate: Cascade)
+
+  gridColumnNumber          Int      @map("grid_column_number")
+  gridColumnName            String   @db.Text @map("grid_column_name")
+
+  gridColumnWidth           Decimal? @db.Decimal(12, 2) @map("grid_column_width")
+  gridColumnAlignment       String?  @db.Text @map("grid_column_alignment")
+  gridColumnVisibility      Boolean  @default(true)  @map("grid_column_visibility")
+  gridColumnFilter          Boolean  @default(false) @map("grid_column_filter")
+
+  gridColumnCondition       String?  @db.Text @map("grid_column_condition")
+  gridColumnConditionColor  String?  @db.Text @map("grid_column_condition_color")
+
+  gridColumnGroup           Boolean  @default(false) @map("grid_column_group")
+  gridColumnTotal           Boolean  @default(false) @map("grid_column_total")
+
+  gridColumnDataType        String?  @db.Text @map("grid_column_data_type")
+  gridColumnColor           String?  @db.Text @map("grid_column_color")
+  gridColumnNotes           String?  @db.Text @map("grid_column_notes")
+
+  gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
+
+  @@map("grid_columns")
+  @@schema("fixed")
+
+  @@index([gridId], map: "idx_grid_columns_grid_id")
+  @@index([gridId, gridColumnFilter], map: "idx_grid_columns_filter")
+  @@index([gridId, gridColumnIsDeleted], map: "idx_grid_columns_deleted")
+}
+
+// ----- prisma/fixed/gridDetails.prisma -----
+model GridDetails {
+  gridId          BigInt   @id @default(autoincrement()) @map("grid_id")
+  gridName        String   @db.Text @map("grid_name")
+  gridDescription String?  @db.Text @map("grid_description")
+
+  gridSortColumn  String?     @map("grid_sort_column")
+  gridSortOrder   String?     @map("grid_sort_order")
+
+  gridSql         String?  @db.Text @map("grid_sql")
+  gridStatus      Boolean  @default(true)  @map("grid_status")
+  gridIsDeleted   Boolean  @default(false) @map("grid_is_deleted")
+
+  columns         GridColumn[]
+
+  @@map("grid_details")
+  @@schema("fixed")
+  @@index([gridStatus], map: "idx_grid_details_status")
+  @@index([gridIsDeleted], map: "idx_grid_details_deleted")
+}
+
 // ----- prisma/fixed/hscnCode.prisma -----
 model HsnMaster {
   hsnId Int @id @default(autoincrement()) @map("hsn_id")
@@ -1144,10 +1200,8 @@ model Uitable {
   uiTblCreatedBy    String?    @db.VarChar(100) @map("ui_tbl_created_by")
   uiTblModifiedOn   DateTime   @default(now()) @db.Timestamptz(6) @map("ui_tbl_modified_on")
   uiTblModifiedBy   String?    @db.VarChar(100) @map("ui_tbl_modified_by")
-
   // ← Back-relation field
   uiTableColumns    UitableColumns[]
-
   @@schema("fixed")
   @@map("ui_tables")
 }
@@ -1155,16 +1209,16 @@ model Uitable {
 // ----- prisma/fixed/uiTableColumns.prisma -----
 model UitableColumns {
   uiTblClmId               BigInt    @id @default(autoincrement())  @map("ui_tbl_clm_id")
-  uiTblClmNo               BigInt    @default(dbgenerated("NULL"))  @map("ui_tbl_clm_no")
-  uiTblClmTableId          BigInt?                                  @map("ui_tbl_clm_table_id")  // ← changed from String @db.Uuid to BigInt
-  uiTblClmName             String?   @db.Text                       @map("ui_tbl_clm_name")  
-  uiTblClmColumnWidth      Decimal?  @default(100)                  @map("ui_tbl_clm_column_width")
+  uiTblClmNo               BigInt?                                  @map("ui_tbl_clm_no")
+  uiTblClmTableId          BigInt?                                  @map("ui_tbl_clm_table_id")
+  uiTblClmName             String?   @db.Text                       @map("ui_tbl_clm_name")
+  uiTblClmColumnWidth      Decimal?  @default(100) @db.Decimal      @map("ui_tbl_clm_column_width")
   uiTblClmColumnVisibility Boolean?  @default(true)                 @map("ui_tbl_clm_column_visibility")
   uiTblClmColumnFocus      Boolean?  @default(false)                @map("ui_tbl_clm_column_focus")
   uiTblClmColumnPosition   Int       @default(0)                    @map("ui_tbl_clm_column_position")
   uiTblClmColumnNecessity  Boolean   @default(false)                @map("ui_tbl_clm_column_necessity")
-  uiTblClmNextColumn       Int?      @default(dbgenerated("NULL"))  @map("ui_tbl_clm_next_column")
-  uiTblClmPreviousColumn   Int?      @default(dbgenerated("NULL"))  @map("ui_tbl_clm_previous_column")
+  uiTblClmNextColumn       Int?                                     @map("ui_tbl_clm_next_column")
+  uiTblClmPreviousColumn   Int?                                     @map("ui_tbl_clm_previous_column")
   uiTblClmIsActive         Boolean   @default(true)                 @map("ui_tbl_clm_is_active")
   uiTblClmIsDeleted        Boolean   @default(false)                @map("ui_tbl_clm_is_deleted")
   uiTblClmSyncDate         DateTime? @db.Timestamptz(6)             @map("ui_tbl_clm_sync_date")
@@ -1172,8 +1226,7 @@ model UitableColumns {
   uiTblClmCreatedBy        String?   @db.VarChar(100)               @map("ui_tbl_clm_created_by")
   uiTblClmModifiedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("ui_tbl_clm_modified_on")
   uiTblClmModifiedBy       String?   @db.VarChar(100)               @map("ui_tbl_clm_modified_by")
-  // ← Relation field
-  uiTable                  Uitable?  @relation(fields: [uiTblClmTableId], references: [uiTblId])
+  uiTable                  Uitable?  @relation(fields: [uiTblClmTableId], references: [uiTblId], map: "fk_ui_tables")
   @@schema("fixed")
   @@map("ui_table_columns")
 }
@@ -1253,62 +1306,6 @@ model UserLoginSession {
   @@map("user_login_sessions")
 }
 
-// ----- prisma/grid/gridColumns.prisma -----
-model GridColumn {
-  gridSerialId              BigInt   @id @default(autoincrement()) @map("grid_serialid")
-
-  gridId                    BigInt   @map("grid_id")
-  grid                      GridDetails @relation(fields: [gridId], references: [gridId], onDelete: Cascade, onUpdate: Cascade)
-
-  gridColumnNumber          Int      @map("grid_column_number")
-  gridColumnName            String   @db.Text @map("grid_column_name")
-
-  gridColumnWidth           Decimal? @db.Decimal(12, 2) @map("grid_column_width")
-  gridColumnAlignment       String?  @db.Text @map("grid_column_alignment")
-  gridColumnVisibility      Boolean  @default(true)  @map("grid_column_visibility")
-  gridColumnFilter          Boolean  @default(false) @map("grid_column_filter")
-
-  gridColumnCondition       String?  @db.Text @map("grid_column_condition")
-  gridColumnConditionColor  String?  @db.Text @map("grid_column_condition_color")
-
-  gridColumnGroup           Boolean  @default(false) @map("grid_column_group")
-  gridColumnTotal           Boolean  @default(false) @map("grid_column_total")
-
-  gridColumnDataType        String?  @db.Text @map("grid_column_data_type")
-  gridColumnColor           String?  @db.Text @map("grid_column_color")
-  gridColumnNotes           String?  @db.Text @map("grid_column_notes")
-
-  gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
-
-  @@map("grid_columns")
-  @@schema("grid")
-
-  @@index([gridId], map: "idx_grid_columns_grid_id")
-  @@index([gridId, gridColumnFilter], map: "idx_grid_columns_filter")
-  @@index([gridId, gridColumnIsDeleted], map: "idx_grid_columns_deleted")
-}
-
-// ----- prisma/grid/gridDetails.prisma -----
-model GridDetails {
-  gridId          BigInt   @id @default(autoincrement()) @map("grid_id")
-  gridName        String   @db.Text @map("grid_name")
-  gridDescription String?  @db.Text @map("grid_description")
-
-  gridSortColumn  String?     @map("grid_sort_column")
-  gridSortOrder   String?     @map("grid_sort_order")
-
-  gridSql         String?  @db.Text @map("grid_sql")
-  gridStatus      Boolean  @default(true)  @map("grid_status")
-  gridIsDeleted   Boolean  @default(false) @map("grid_is_deleted")
-
-  columns         GridColumn[]
-
-  @@map("grid_details")
-  @@schema("grid")
-  @@index([gridStatus], map: "idx_grid_details_status")
-  @@index([gridIsDeleted], map: "idx_grid_details_deleted")
-}
-
 // ----- prisma/master/items/categoryMaster.prisma -----
 model categoryMaster {
   categoryId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("category_id")
@@ -1326,7 +1323,7 @@ model categoryMaster {
 
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
-  categoryPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("category_path_ids_cache")
+  categoryPathIdsCache   String[] @default([]) @db.Uuid @map("category_path_ids_cache")
   
   // Media
   categoryPhoto          Bytes?   @map("category_photo")
@@ -1363,7 +1360,7 @@ model GodownLocation {
   gdlParentId       String?  @db.Uuid @map("gdl_parent_id")
   gdlSort           Int      @default(0) @map("gdl_sort")
   gdlLevel          Int      @default(0) @map("gdl_level")
-  gdlPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("gdl_path_ids_cache")
+  gdlPathIdsCache   String[] @default([]) @db.Uuid @map("gdl_path_ids_cache")
   // Attributes
   gdlDelSheet       Boolean  @default(false) @map("gdl_del_sheet")
   gdlSplitStock     Boolean  @default(false) @map("gdl_split_stock")
@@ -1535,7 +1532,7 @@ model ItemGroupMaster {
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")
-  itgPathIdsCache   String[] @default(dbgenerated("'{}'::uuid[]")) @db.Uuid @map("itg_path_ids_cache")
+  itgPathIdsCache   String[] @default([]) @db.Uuid @map("itg_path_ids_cache")
   itgTaxClaim       Boolean? @map("itg_tax_claim")
 
   // Defaults / pricing rules
@@ -1845,7 +1842,7 @@ model ItemSectionMaster {
 
   secSort        Int?     @map("sec_sort")
   secLevel       Int?     @map("sec_level")
-  secPathIds     String[] @db.Uuid @default(dbgenerated("'{}'::uuid[]")) @map("sec_path_ids")
+  secPathIds     String[] @default([]) @db.Uuid @map("sec_path_ids")
 
   // Display / POS UI
   secPosition    Int?     @map("sec_position")
@@ -2013,17 +2010,14 @@ model Unit {
 // ----- prisma/purchase/suppliers.prisma -----
 model Supplier {
   supId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sup_id")
-
   // 1) Scope / Link
   supCompanyId         String?  @db.Uuid @map("sup_company_id")
   supBranchId          String?  @db.Uuid @map("sup_branch_id")
   supGroupId           String   @db.Uuid @map("sup_group_id")
   supPurchaseType      String   @db.VarChar(20) @map("sup_purchase_type")
-
   // 2) Names / Contact
   supName              String   @db.VarChar(200) @map("sup_name")
   supShort             String?  @db.VarChar(50) @map("sup_short")
-
   supAddr1             String?  @db.VarChar(250) @map("sup_addr1")
   supAddr2             String?  @db.VarChar(250) @map("sup_addr2")
   supAddr3             String?  @db.VarChar(250) @map("sup_addr3")
@@ -2031,7 +2025,6 @@ model Supplier {
   supDistrict          String?  @db.VarChar(250) @map("sup_district")
   supStateName         String   @db.VarChar(100) @map("sup_state_name")
   supCountry           String?  @default("India") @db.VarChar(60) @map("sup_country")
-
   supPincode           String?  @db.VarChar(10) @map("sup_pincode")
   supTel               String?  @db.VarChar(20) @map("sup_tel")
   supPhone             String?  @db.VarChar(20) @map("sup_phone")
@@ -2040,14 +2033,11 @@ model Supplier {
   supWebsiteAddress    String?  @db.VarChar(200) @map("sup_website_address")
   supChequePreName     String?  @db.VarChar(200) @map("sup_cheque_pre_name")
   supNotes             String?  @db.VarChar(250) @map("sup_notes")
-
   // 3) Credit / Discount
   supCreditDays        Int      @default(0) @map("sup_credit_days")
-  supCashDiscPerc      Decimal  @default(dbgenerated("0")) @db.Decimal(7, 3) @map("sup_cash_disc_perc")
-
+  supCashDiscPerc      Decimal  @default(0) @db.Decimal(7, 3) @map("sup_cash_disc_perc")
   // 5) Collection / Schedules
   supCollectionDays    Int[]    @default([]) @map("sup_collection_days")
-
   // 6) Tax / Compliance
   supGstNo             String?  @db.VarChar(15) @map("sup_gst_no")
   supStateCode         String   @db.Char(2) @map("sup_state_code")
@@ -2055,7 +2045,6 @@ model Supplier {
   supGstType           String   @db.VarChar(30) @map("sup_gst_type")
   supSupCst            String?  @db.VarChar(25) @map("sup_sup_cst")
   supDrugLiscenceNo    String?  @db.VarChar(100) @map("sup_drug_liscence_no")
-
   // 7) Regional (Tally style)
   supRegionName        String?  @db.VarChar(200) @map("sup_region_name")
   supRegionAddr1       String?  @db.VarChar(250) @map("sup_region_addr1")
@@ -2065,35 +2054,26 @@ model Supplier {
   supRegionDistrict    String?  @db.VarChar(250) @map("sup_region_district")
   supRegionStateName   String?  @db.VarChar(100) @map("sup_region_state_name")
   supRegionCountry     String?  @default("India") @db.VarChar(60) @map("sup_region_country")
-
   // 8) Stats
   supBilledDate        DateTime? @db.Date @map("sup_billed_date")
   supSortOrder         Int?      @default(0) @map("sup_sort_order")
-
   // 9) Status / Audit / Sync
   supIsActive          Boolean   @default(true) @map("sup_is_active")
   supIsDeleted         Boolean   @default(false) @map("sup_is_deleted")
-
   supSyncDate          DateTime? @db.Timestamptz(6) @map("sup_sync_date")
-
   supCreatedOn         DateTime  @default(now()) @db.Timestamptz(6) @map("sup_created_on")
   supCreatedBy         String?   @db.VarChar(100) @map("sup_created_by")
   supModifiedOn        DateTime  @updatedAt @db.Timestamptz(6) @map("sup_modified_on")
   supModifiedBy        String?   @db.VarChar(100) @map("sup_modified_by")
-
   // 11) FK fields + relations
   // NOTE: sup_state_id column was missing in your DDL snippet, but FK references it.
   supStateId           String?   @db.Uuid @map("sup_state_id")
-
   group                SupplierGroup   @relation(fields: [supGroupId], references: [spgId], onUpdate: Cascade, onDelete: Restrict)
-  
   @@map("suppliers")
   @@schema("purchase")
-
   @@index([supCompanyId], map: "idx_sup_company")
   @@index([supGroupId], map: "idx_sup_group")
   @@index([supGstNo], map: "idx_sup_gst")
-
   // NOTE: Partial indexes can't be expressed in Prisma schema:
   // idx_sup_active (WHERE sup_is_deleted = false)
   // uq_sup_company_name (WHERE sup_is_deleted = false)
@@ -2113,10 +2093,8 @@ model SupplierGroup {
   spgCreatedBy  String?    @db.VarChar(100)
   spgModifiedOn DateTime   @default(now()) @db.Timestamptz
   spgModifiedBy String?    @db.VarChar(100)
-
   // Relations
   suppliers     Supplier[]
-
   @@index([spgIsActive], name: "idx_spg_active")
   @@map("supplier_groups")
   @@schema("purchase")
@@ -2299,15 +2277,15 @@ model CustGroup {
   cgrShort           String?   @db.VarChar(50) @map("cgr_short")
   cgrNarration       String?   @db.VarChar(250) @map("cgr_narration")
 
-  cgrOrder           Decimal   @default(dbgenerated("0")) @db.Decimal @map("cgr_order")
-  cgrDiscPerc        Decimal   @default(dbgenerated("0")) @db.Decimal(7, 3) @map("cgr_disc_perc")
+  cgrOrder           Decimal   @default(0) @db.Decimal @map("cgr_order")
+  cgrDiscPerc        Decimal   @default(0) @db.Decimal(7, 3) @map("cgr_disc_perc")
 
   // arrays
   cgrCollectionDays  Int[]     @map("cgr_collection_days")
 
   cgrDebitAllowed    Boolean   @default(false) @map("cgr_debit_allowed")
   cgrDebitDays       Int       @default(0) @map("cgr_debit_days")
-  cgrDebitLimit      Decimal   @default(dbgenerated("0")) @db.Decimal(15, 4) @map("cgr_debit_limit")
+  cgrDebitLimit      Decimal   @default(0) @db.Decimal(15, 4) @map("cgr_debit_limit")
   cgrBillsLimit      Int       @default(0) @map("cgr_bills_limit")
   cgrOverdueBilling  Boolean   @default(false) @map("cgr_overdue_billing")
 

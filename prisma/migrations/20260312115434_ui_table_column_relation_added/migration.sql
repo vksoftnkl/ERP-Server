@@ -27,4 +27,4 @@ ALTER COLUMN "cgr_disc_perc" SET DEFAULT 0,
 ALTER COLUMN "cgr_debit_limit" SET DEFAULT 0;
 
 -- AddForeignKey
-ALTER TABLE "fixed"."ui_table_columns" ADD CONSTRAINT "ui_table_columns_ui_tbl_clm_table_id_fkey" FOREIGN KEY ("ui_tbl_clm_table_id") REFERENCES "fixed"."ui_tables"("ui_tbl_id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "fixed"."ui_table_columns" ADD CONSTRAINT "fk_ui_tables" FOREIGN KEY ("ui_tbl_clm_table_id") REFERENCES "fixed"."ui_tables"("ui_tbl_id") ON DELETE SET NULL ON UPDATE CASCADE;
