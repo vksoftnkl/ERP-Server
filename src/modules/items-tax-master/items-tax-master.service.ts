@@ -17,14 +17,12 @@ import {
   ItemTaxListMeta,
   ItemTaxPayload,
 } from './types/item-tax-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const ITEM_TAX_TABLE_NAME = 'item_tax_master';
 const ITEM_TAX_AUDIT_SCREEN_NAME = 'Item Tax Master';
-
 @Injectable()
 export class ItemsTaxMasterService {
   constructor(
@@ -32,7 +30,6 @@ export class ItemsTaxMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveItemTaxDto: SaveItemTaxDto): Promise<ItemTaxPayload> {
     if (saveItemTaxDto.tax_id) {
       return this.updateItemTax(saveItemTaxDto);
@@ -40,7 +37,6 @@ export class ItemsTaxMasterService {
 
     return this.createItemTax(saveItemTaxDto);
   }
-
   async list(
     queryDto: ListItemTaxQueryDto,
   ): Promise<{ items: ItemTaxListItem[]; meta: ItemTaxListMeta }> {
@@ -52,14 +48,12 @@ export class ItemsTaxMasterService {
       queryDto.tax_taxability_type !== undefined ||
       queryDto.tax_is_reverse_charge !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where = this.buildListWhere(queryDto);
     const [total, records] = await Promise.all([
       this.prisma.itemTaxMaster.count({ where }),
@@ -70,7 +64,6 @@ export class ItemsTaxMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -81,7 +74,6 @@ export class ItemsTaxMasterService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -102,7 +94,6 @@ export class ItemsTaxMasterService {
     if (!rawGridSql) {
       return null;
     }
-
     const validation = this.configuredGridSqlService.validateBaseSql({
       sql: rawGridSql,
       tableName: ITEM_TAX_TABLE_NAME,
@@ -115,7 +106,6 @@ export class ItemsTaxMasterService {
         },
       ]);
     }
-
     try {
       const result = await this.configuredGridSqlService.runPagedQuery<ItemTaxListItem>({
         baseSql: validation.normalizedSql,
@@ -123,7 +113,6 @@ export class ItemsTaxMasterService {
         limit,
         skip,
       });
-
       return {
         items: result.items,
         meta: {
@@ -142,7 +131,6 @@ export class ItemsTaxMasterService {
       ]);
     }
   }
-
   async getById(taxId: string): Promise<ItemTaxPayload> {
     const record = await this.prisma.itemTaxMaster.findFirst({
       where: {
@@ -150,14 +138,11 @@ export class ItemsTaxMasterService {
         taxIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(taxId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(taxId: string): Promise<{ tax_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.itemTaxMaster.findFirst({
@@ -169,7 +154,6 @@ export class ItemsTaxMasterService {
       if (!existing) {
         this.throwNotFound(taxId);
       }
-
       const modifiedOn = new Date();
       const result = await tx.itemTaxMaster.updateMany({
         where: {
@@ -185,7 +169,6 @@ export class ItemsTaxMasterService {
       if (result.count === 0) {
         this.throwNotFound(taxId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -208,14 +191,12 @@ export class ItemsTaxMasterService {
         },
         tx,
       );
-
       return {
         tax_id: taxId,
         deleted: true,
       };
     });
   }
-
   private async createItemTax(saveItemTaxDto: SaveItemTaxDto): Promise<ItemTaxPayload> {
     const taxName = saveItemTaxDto.tax_name?.trim();
     if (!taxName) {
@@ -226,7 +207,6 @@ export class ItemsTaxMasterService {
         },
       ]);
     }
-
     const now = new Date();
     const createdBy = this.resolveActor(saveItemTaxDto.tax_created_by);
     const modifiedBy = this.resolveActor(saveItemTaxDto.tax_modified_by, createdBy);
@@ -238,12 +218,10 @@ export class ItemsTaxMasterService {
       taxModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveItemTaxDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const created = await tx.itemTaxMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -259,7 +237,6 @@ export class ItemsTaxMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -267,10 +244,8 @@ export class ItemsTaxMasterService {
       throw error;
     }
   }
-
   private async updateItemTax(saveItemTaxDto: SaveItemTaxDto): Promise<ItemTaxPayload> {
     const taxId = saveItemTaxDto.tax_id!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.itemTaxMaster.findFirst({
@@ -282,7 +257,6 @@ export class ItemsTaxMasterService {
         if (!existing) {
           this.throwNotFound(taxId);
         }
-
         const taxName = saveItemTaxDto.tax_name?.trim();
         if (!taxName) {
           this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
@@ -292,14 +266,12 @@ export class ItemsTaxMasterService {
             },
           ]);
         }
-
         const data: Prisma.ItemTaxMasterUncheckedUpdateInput = {
           taxName,
           taxModifiedOn: new Date(),
           taxModifiedBy: this.resolveActor(saveItemTaxDto.tax_modified_by),
         };
         this.applyOptionalFields(data, saveItemTaxDto);
-
         const updated = await tx.itemTaxMaster.update({
           where: {
             taxId,
@@ -307,7 +279,6 @@ export class ItemsTaxMasterService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -323,7 +294,6 @@ export class ItemsTaxMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -331,27 +301,22 @@ export class ItemsTaxMasterService {
       throw error;
     }
   }
-
   private buildListWhere(queryDto: ListItemTaxQueryDto): Prisma.ItemTaxMasterWhereInput {
     const where: Prisma.ItemTaxMasterWhereInput = {
       taxIsDeleted: false,
     };
-
     if (queryDto.tax_is_active !== undefined) {
       where.taxIsActive = queryDto.tax_is_active;
     }
-
     if (queryDto.tax_taxability_type?.trim()) {
       where.taxTaxabilityType = {
         equals: queryDto.tax_taxability_type.trim(),
         mode: 'insensitive',
       };
     }
-
     if (queryDto.tax_is_reverse_charge !== undefined) {
       where.taxIsReverseCharge = queryDto.tax_is_reverse_charge;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -361,10 +326,8 @@ export class ItemsTaxMasterService {
         { taxCessType: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     return where;
   }
-
   private applyOptionalFields(
     data: Prisma.ItemTaxMasterUncheckedCreateInput | Prisma.ItemTaxMasterUncheckedUpdateInput,
     saveItemTaxDto: SaveItemTaxDto,
@@ -454,7 +417,6 @@ export class ItemsTaxMasterService {
       data.taxIsActive = saveItemTaxDto.tax_is_active;
     }
   }
-
   private toPayload(record: ItemTaxMaster): ItemTaxPayload {
     return {
       tax_id: record.taxId,
@@ -495,24 +457,19 @@ export class ItemsTaxMasterService {
       tax_modified_by: record.taxModifiedBy,
     };
   }
-
   private toNumber(value: Prisma.Decimal | number): number {
     if (typeof value === 'number') {
       return value;
     }
-
     return Number(value.toString());
   }
-
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
     if (!value) {
       return fallback;
     }
-
     const trimmed = value.trim();
     return trimmed || fallback;
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -525,15 +482,12 @@ export class ItemsTaxMasterService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(taxId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Item tax not found', [
@@ -544,11 +498,9 @@ export class ItemsTaxMasterService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: ItemTaxErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: ItemTaxErrorDetail[] = [],
@@ -559,7 +511,6 @@ export class ItemsTaxMasterService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

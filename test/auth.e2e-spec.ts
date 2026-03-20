@@ -10,6 +10,7 @@ import { AppModule } from '../src/app.module';
 
 const scryptAsync = promisify(nodeScrypt);
 const USER_ID = 'c31c31ce-b8d3-45f7-a9b6-b9232e56dc48';
+const TEST_TIMESTAMP = new Date('2026-03-20T00:00:00.000Z');
 type LoginResponse = {
   access_token: string;
   token_type: string;
@@ -38,8 +39,12 @@ describe('Auth (e2e)', () => {
 
     userRecord = {
       user_id: USER_ID,
+      user_code: 'us1001',
+      user_phone: '9999999998',
       user_name: 'john.doe',
       user_password: await hashPasswordForTest('StrongPassword123!'),
+      created_at: TEST_TIMESTAMP,
+      updated_at: TEST_TIMESTAMP,
     };
 
     prismaMock = {
@@ -88,7 +93,7 @@ describe('Auth (e2e)', () => {
   });
 
   it('/api/v1/auth/login (POST) returns access token for valid credentials', async () => {
-    const httpServer = app.getHttpAdapter().getInstance() as Parameters<typeof request>[0];
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(httpServer).post('/api/v1/auth/login').send({
       user_name: 'john.doe',
       user_password: 'StrongPassword123!',
@@ -106,7 +111,7 @@ describe('Auth (e2e)', () => {
   });
 
   it('/api/v1/auth/login (POST) returns 401 for invalid password', async () => {
-    const httpServer = app.getHttpAdapter().getInstance() as Parameters<typeof request>[0];
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(httpServer).post('/api/v1/auth/login').send({
       user_name: 'john.doe',
       user_password: 'WrongPassword123!',

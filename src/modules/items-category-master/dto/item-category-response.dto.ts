@@ -87,6 +87,14 @@ export class ItemCategoryPayloadDto {
   category_modified_by!: string | null;
 }
 
+export class ItemCategoryListItemDto {
+  @ApiProperty({ format: 'uuid' })
+  category_id!: string;
+
+  @ApiProperty({ maxLength: 150 })
+  category_name!: string;
+}
+
 export class ItemCategoryListMetaDto {
   @ApiProperty({ example: 1 })
   page!: number;
@@ -127,8 +135,8 @@ export class ItemCategorySuccessListDto {
   @ApiProperty({ example: 'Item categories fetched successfully' })
   message!: string;
 
-  @ApiProperty({ type: ItemCategoryPayloadDto, isArray: true })
-  data!: ItemCategoryPayloadDto[];
+  @ApiProperty({ type: ItemCategoryListItemDto, isArray: true })
+  data!: ItemCategoryListItemDto[];
 
   @ApiProperty({ type: ItemCategoryListMetaDto })
   meta!: ItemCategoryListMetaDto;

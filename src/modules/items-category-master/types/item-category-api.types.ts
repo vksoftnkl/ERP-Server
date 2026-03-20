@@ -41,7 +41,12 @@ export interface ItemCategoryPayload {
   category_modified_by: string | null;
 }
 
-export type ItemCategoryListItem = ItemCategoryPayload | Record<string, unknown>;
+export interface ItemCategoryDefaultListItem {
+  category_id: string;
+  category_name: string;
+}
+
+export type ItemCategoryListItem = ItemCategoryDefaultListItem | Record<string, unknown>;
 
 export interface ItemCategoryListMeta {
   page: number;

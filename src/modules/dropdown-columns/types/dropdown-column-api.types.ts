@@ -2,20 +2,17 @@ export interface DropdownColumnErrorDetail {
   field: string;
   message: string;
 }
-
 export interface DropdownColumnErrorResponse {
   success: false;
   message: string;
   errors: DropdownColumnErrorDetail[];
 }
-
 export interface DropdownColumnSuccessResponse<T, TMeta = Record<string, unknown>> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
 }
-
 export interface DropdownColumnPayload {
   drop_columns_serial_id: string;
   dropdown_id: string;
@@ -30,7 +27,6 @@ export interface DropdownColumnPayload {
   drop_columns_created_on: string;
   drop_columns_modified_on: string | null;
 }
-
 export interface DropdownColumnListMeta {
   page: number;
   limit: number;

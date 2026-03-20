@@ -16,14 +16,12 @@ import {
 import { MasterLookupSuccessDto } from './dto/master-lookup-response.dto';
 import { MasterLookupService } from './master-lookup.service';
 import { MasterLookupQueryDto } from './dto/master-lookup-query.dto';
-
 @ApiTags('Master Lookup')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @Controller('master-lookups')
 export class MasterLookupController {
   constructor(private readonly masterLookupService: MasterLookupService) {}
-
   @Get('name-id/all-accounts-and-masters')
   @Version('1')
   @ApiOperation({
@@ -55,7 +53,6 @@ export class MasterLookupController {
     const message = queryDto.module
       ? `Name-id data fetched successfully for module ${queryDto.module}`
       : 'Name-id data fetched successfully';
-
     return {
       success: true,
       message,

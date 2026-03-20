@@ -2,20 +2,17 @@ export interface DropdownDetailErrorDetail {
   field: string;
   message: string;
 }
-
 export interface DropdownDetailErrorResponse {
   success: false;
   message: string;
   errors: DropdownDetailErrorDetail[];
 }
-
 export interface DropdownDetailSuccessResponse<T, TMeta = Record<string, unknown>> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
 }
-
 export interface DropdownDetailPayload {
   dropdown_id: string;
   dropdown_name: string;
@@ -29,7 +26,6 @@ export interface DropdownDetailPayload {
   dropdown_show_header: boolean;
   dropdown_width: number | null;
 }
-
 export interface DropdownDetailListMeta {
   page: number;
   limit: number;

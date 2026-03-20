@@ -13,6 +13,7 @@ import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import {
   ItemSectionErrorDetail,
   ItemSectionErrorResponse,
+  ItemSectionListItem,
   ItemSectionListMeta,
   ItemSectionPayload,
 } from './types/item-section-api.types';
@@ -43,7 +44,7 @@ export class ItemsSectionMasterService {
 
   async list(
     queryDto: ListItemSectionQueryDto,
-  ): Promise<{ items: ItemSectionPayload[]; meta: ItemSectionListMeta }> {
+  ): Promise<{ items: ItemSectionListItem[]; meta: ItemSectionListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
@@ -92,7 +93,7 @@ export class ItemsSectionMasterService {
     ]);
 
     return {
-      items: records.map((record) => this.toPayload(record)),
+      items: records.map((record) => this.toListItem(record)),
       meta: {
         page,
         limit,
@@ -106,7 +107,7 @@ export class ItemsSectionMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: ItemSectionPayload[]; meta: ItemSectionListMeta } | null> {
+  ): Promise<{ items: ItemSectionListItem[]; meta: ItemSectionListMeta } | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ITEM_SECTION_TABLE_NAME,
     });
@@ -133,7 +134,7 @@ export class ItemsSectionMasterService {
       }
 
       try {
-        const result = await this.configuredGridSqlService.runPagedQuery<ItemSectionPayload>({
+        const result = await this.configuredGridSqlService.runPagedQuery<ItemSectionListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_section_grid',
           limit,
@@ -155,6 +156,13 @@ export class ItemsSectionMasterService {
     }
 
     return null;
+  }
+
+  private toListItem(record: ItemSectionMaster): ItemSectionListItem {
+    return {
+      sec_id: record.secId,
+      sec_name: record.secName,
+    };
   }
 
   async getById(secId: string): Promise<ItemSectionPayload> {

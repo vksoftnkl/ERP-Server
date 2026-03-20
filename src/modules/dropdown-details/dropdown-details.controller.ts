@@ -26,7 +26,6 @@ import {
   DropdownDetailPayload,
   DropdownDetailSuccessResponse,
 } from './types/dropdown-detail-api.types';
-
 @ApiTags('Dropdown Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -34,7 +33,6 @@ import {
 @UseFilters(DropdownDetailExceptionFilter)
 export class DropdownDetailsController {
   constructor(private readonly dropdownDetailsService: DropdownDetailsService) {}
-
   @Post('create')
   @Version('1')
   @ApiOperation({ summary: 'Create or update dropdown details (by dropdown_id presence)' })
@@ -45,7 +43,6 @@ export class DropdownDetailsController {
     @Body() saveDropdownDetailDto: SaveDropdownDetailDto,
   ): Promise<DropdownDetailSuccessResponse<DropdownDetailPayload>> {
     const data = await this.dropdownDetailsService.save(saveDropdownDetailDto);
-
     return {
       success: true,
       message: saveDropdownDetailDto.dropdown_id
@@ -54,7 +51,6 @@ export class DropdownDetailsController {
       data,
     };
   }
-
   @Get('list')
   @Version('1')
   @ApiOperation({ summary: 'List dropdown details with filter/search/pagination' })
@@ -64,7 +60,6 @@ export class DropdownDetailsController {
     @Query() queryDto: ListDropdownDetailQueryDto,
   ): Promise<DropdownDetailSuccessResponse<DropdownDetailPayload[], DropdownDetailListMeta>> {
     const result = await this.dropdownDetailsService.list(queryDto);
-
     return {
       success: true,
       message: 'Dropdown details fetched successfully',
@@ -72,7 +67,6 @@ export class DropdownDetailsController {
       meta: result.meta,
     };
   }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get dropdown details by id' })
@@ -84,14 +78,12 @@ export class DropdownDetailsController {
     @Query('dropdown_id') dropdownId: string,
   ): Promise<DropdownDetailSuccessResponse<DropdownDetailPayload>> {
     const data = await this.dropdownDetailsService.getById(dropdownId);
-
     return {
       success: true,
       message: 'Dropdown details fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Delete dropdown details by id' })
@@ -103,7 +95,6 @@ export class DropdownDetailsController {
     @Query('dropdown_id') dropdownId: string,
   ): Promise<DropdownDetailSuccessResponse<{ dropdown_id: string; deleted: true }>> {
     const data = await this.dropdownDetailsService.delete(dropdownId);
-
     return {
       success: true,
       message: 'Dropdown details deleted successfully',

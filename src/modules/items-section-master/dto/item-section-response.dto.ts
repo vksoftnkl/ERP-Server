@@ -84,6 +84,14 @@ export class ItemSectionPayloadDto {
   sec_modified_by!: string | null;
 }
 
+export class ItemSectionListItemDto {
+  @ApiProperty({ format: 'uuid' })
+  sec_id!: string;
+
+  @ApiProperty({ maxLength: 150 })
+  sec_name!: string;
+}
+
 export class ItemSectionListMetaDto {
   @ApiProperty({ example: 1 })
   page!: number;
@@ -124,8 +132,8 @@ export class ItemSectionSuccessListDto {
   @ApiProperty({ example: 'Item sections fetched successfully' })
   message!: string;
 
-  @ApiProperty({ type: ItemSectionPayloadDto, isArray: true })
-  data!: ItemSectionPayloadDto[];
+  @ApiProperty({ type: ItemSectionListItemDto, isArray: true })
+  data!: ItemSectionListItemDto[];
 
   @ApiProperty({ type: ItemSectionListMetaDto })
   meta!: ItemSectionListMetaDto;

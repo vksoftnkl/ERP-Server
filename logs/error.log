@@ -241,3 +241,59 @@ Potential solutions:
 2026-02-27T07:21:58.283Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
 2026-02-27T07:22:50.084Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
 2026-03-16T05:01:29.382Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-03-19T11:59:57.070Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/name-id/all-accounts-and-masters?module=customerGroups
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.tryFetchConfiguredModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:285:18)
+    at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
+    at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
+    at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)
+2026-03-19T11:59:57.126Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/name-id/all-accounts-and-masters?module=customerGroups
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.tryFetchConfiguredModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:285:18)
+    at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
+    at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
+    at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)
+2026-03-19T12:01:28.854Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/name-id/all-accounts-and-masters?module=customerGroups
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.tryFetchConfiguredModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:285:18)
+    at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
+    at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
+    at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)
+2026-03-19T12:01:28.937Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/name-id/all-accounts-and-masters?module=customerGroups
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.tryFetchConfiguredModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:285:18)
+    at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
+    at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
+    at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)

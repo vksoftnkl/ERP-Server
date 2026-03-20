@@ -8,6 +8,7 @@ import { TokenService } from './token.service';
 
 const scryptAsync = promisify(nodeScrypt);
 const TEST_USER_ID = '7a9a4d16-9940-4b65-a7bc-57e83887a112';
+const TEST_TIMESTAMP = new Date('2026-03-20T00:00:00.000Z');
 
 type UsersServiceMock = {
   findByUsername: jest.Mock<Promise<User | null>, [string]>;
@@ -25,8 +26,12 @@ const hashPasswordForTest = async (plainPassword: string): Promise<string> => {
 
 const makeUser = (overrides: Partial<User> = {}): User => ({
   user_id: TEST_USER_ID,
+  user_code: 'us1000',
+  user_phone: '9999999999',
   user_name: 'john.doe',
   user_password: 'scrypt$unit-test-salt$invalid',
+  created_at: TEST_TIMESTAMP,
+  updated_at: TEST_TIMESTAMP,
   ...overrides,
 });
 

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
@@ -25,6 +26,13 @@ type PrismaMock = {
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.ItemSectionMasterUpdateManyArgs]>;
   };
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
+};
+
+type ConfiguredGridSqlServiceMock = {
+  loadCandidates: jest.Mock;
+  filterPrimaryFromTable: jest.Mock;
+  validateBaseSql: jest.Mock;
+  runPagedQuery: jest.Mock;
 };
 
 const makeRecord = (overrides: Partial<ItemSectionMaster> = {}): ItemSectionMaster =>
@@ -57,6 +65,7 @@ describe('ItemsSectionMasterService', () => {
   let service: ItemsSectionMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
+  let configuredGridSqlService: ConfiguredGridSqlServiceMock;
 
   beforeEach(() => {
     prisma = {
@@ -88,10 +97,17 @@ describe('ItemsSectionMasterService', () => {
     auditLogService = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
     };
+    configuredGridSqlService = {
+      loadCandidates: jest.fn().mockResolvedValue([]),
+      filterPrimaryFromTable: jest.fn().mockImplementation((candidates: unknown[]) => candidates),
+      validateBaseSql: jest.fn(),
+      runPagedQuery: jest.fn(),
+    };
 
     service = new ItemsSectionMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
 
@@ -431,11 +447,17 @@ describe('ItemsSectionMasterService', () => {
 
     const query: ListItemSectionQueryDto = {};
 
-    await service.list(query);
+    const result = await service.list(query);
 
     expect(prisma.itemSectionMaster.count).toHaveBeenCalledTimes(1);
     const countArgs = prisma.itemSectionMaster.count.mock.calls[0][0];
     expect(countArgs.where?.secIsDeleted).toBe(false);
+    expect(result.items).toEqual([
+      {
+        sec_id: ITEM_SECTION_ID,
+        sec_name: 'Dairy',
+      },
+    ]);
   });
 
   it('applies pagination and search filters correctly', async () => {
@@ -469,6 +491,12 @@ describe('ItemsSectionMasterService', () => {
       total: 35,
       total_pages: 4,
     });
+    expect(result.items).toEqual([
+      {
+        sec_id: ITEM_SECTION_ID,
+        sec_name: 'Dairy',
+      },
+    ]);
   });
 
   it('soft delete removes subtree ids from ancestor caches', async () => {

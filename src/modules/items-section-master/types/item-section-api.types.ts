@@ -40,6 +40,13 @@ export interface ItemSectionPayload {
   sec_modified_by: string | null;
 }
 
+export interface ItemSectionDefaultListItem {
+  sec_id: string;
+  sec_name: string;
+}
+
+export type ItemSectionListItem = ItemSectionDefaultListItem | Record<string, unknown>;
+
 export interface ItemSectionListMeta {
   page: number;
   limit: number;

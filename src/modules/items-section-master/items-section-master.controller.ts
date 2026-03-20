@@ -38,6 +38,7 @@ import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import { ItemSectionExceptionFilter } from './item-section-exception.filter';
 import { ItemsSectionMasterService } from './items-section-master.service';
 import {
+  ItemSectionListItem,
   ItemSectionListMeta,
   ItemSectionPayload,
   ItemSectionSuccessResponse,
@@ -88,7 +89,7 @@ export class ItemsSectionMasterController {
   @ApiBadRequestResponse({ type: ItemSectionErrorResponseDto })
   async list(
     @Query() queryDto: ListItemSectionQueryDto,
-  ): Promise<ItemSectionSuccessResponse<ItemSectionPayload[], ItemSectionListMeta>> {
+  ): Promise<ItemSectionSuccessResponse<ItemSectionListItem[], ItemSectionListMeta>> {
     const result = await this.itemsSectionMasterService.list(queryDto);
 
     return {

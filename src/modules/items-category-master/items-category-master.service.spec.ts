@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { categoryMaster, Prisma } from '@prisma/client';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemCategoryQueryDto } from './dto/list-item-category-query.dto';
@@ -22,6 +23,13 @@ type PrismaMock = {
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.categoryMasterUpdateManyArgs]>;
   };
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
+};
+
+type ConfiguredGridSqlServiceMock = {
+  loadCandidates: jest.Mock;
+  filterPrimaryFromTable: jest.Mock;
+  validateBaseSql: jest.Mock;
+  runPagedQuery: jest.Mock;
 };
 
 const makeRecord = (overrides: Partial<categoryMaster> = {}): categoryMaster =>
@@ -55,6 +63,7 @@ describe('ItemsCategoryMasterService', () => {
   let service: ItemsCategoryMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
+  let configuredGridSqlService: ConfiguredGridSqlServiceMock;
 
   beforeEach(() => {
     prisma = {
@@ -80,10 +89,17 @@ describe('ItemsCategoryMasterService', () => {
     auditLogService = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
     };
+    configuredGridSqlService = {
+      loadCandidates: jest.fn().mockResolvedValue([]),
+      filterPrimaryFromTable: jest.fn().mockImplementation((candidates: unknown[]) => candidates),
+      validateBaseSql: jest.fn(),
+      runPagedQuery: jest.fn(),
+    };
 
     service = new ItemsCategoryMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
 
@@ -418,11 +434,17 @@ describe('ItemsCategoryMasterService', () => {
 
     const query: ListItemCategoryQueryDto = {};
 
-    await service.list(query);
+    const result = await service.list(query);
 
     expect(prisma.categoryMaster.count).toHaveBeenCalledTimes(1);
     const countArgs = prisma.categoryMaster.count.mock.calls[0][0];
     expect(countArgs.where?.categoryIsDeleted).toBe(false);
+    expect(result.items).toEqual([
+      {
+        category_id: ITEM_CATEGORY_ID,
+        category_name: 'Dairy',
+      },
+    ]);
   });
 
   it('applies pagination and search filters correctly', async () => {
@@ -456,6 +478,12 @@ describe('ItemsCategoryMasterService', () => {
       total: 35,
       total_pages: 4,
     });
+    expect(result.items).toEqual([
+      {
+        category_id: ITEM_CATEGORY_ID,
+        category_name: 'Dairy',
+      },
+    ]);
   });
 
   it('soft delete removes subtree ids from ancestor caches', async () => {

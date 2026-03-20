@@ -9,44 +9,34 @@ import {
   DropdownColumnListMeta,
   DropdownColumnPayload,
 } from './types/dropdown-column-api.types';
-
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 type DropdownColumnWriteClient = Prisma.TransactionClient | PrismaService;
-
 @Injectable()
 export class DropdownColumnsService {
   constructor(private readonly prisma: PrismaService) {}
-
   async save(saveDropdownColumnDto: SaveDropdownColumnDto): Promise<DropdownColumnPayload> {
     if (saveDropdownColumnDto.drop_columns_serial_id) {
       return this.updateDropdownColumn(saveDropdownColumnDto);
     }
-
     return this.createDropdownColumn(saveDropdownColumnDto);
   }
-
   async list(
     queryDto: ListDropdownColumnQueryDto,
   ): Promise<{ items: DropdownColumnPayload[]; meta: DropdownColumnListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const where: Prisma.DropdownColumnsWhereInput = {};
-
     if (queryDto.dropdown_id !== undefined) {
       where.dropColumnsDropdownId = this.parseIntId('dropdown_id', queryDto.dropdown_id);
     }
-
     if (queryDto.drop_columns_column_visiblity !== undefined) {
       where.dropColumnsColumnVisiblity = queryDto.drop_columns_column_visiblity;
     }
-
     if (queryDto.drop_columns_column_filter !== undefined) {
       where.dropColumnsColumnFilter = queryDto.drop_columns_column_filter;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -55,7 +45,6 @@ export class DropdownColumnsService {
         { dropColumnsDataType: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.dropdownColumns.count({ where }),
       this.prisma.dropdownColumns.findMany({
@@ -65,7 +54,6 @@ export class DropdownColumnsService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -76,26 +64,21 @@ export class DropdownColumnsService {
       },
     };
   }
-
   async getById(dropColumnsSerialId: string): Promise<DropdownColumnPayload> {
     const parsedDropColumnsSerialId = this.parseBigIntId(
       'drop_columns_serial_id',
       dropColumnsSerialId,
     );
-
     const record = await this.prisma.dropdownColumns.findUnique({
       where: {
         dropColumnsSerialId: parsedDropColumnsSerialId,
       },
     });
-
     if (!record) {
       this.throwNotFound(dropColumnsSerialId);
     }
-
     return this.toPayload(record);
   }
-
   async delete(
     dropColumnsSerialId: string,
   ): Promise<{ drop_columns_serial_id: string; deleted: true }> {
@@ -103,7 +86,6 @@ export class DropdownColumnsService {
       'drop_columns_serial_id',
       dropColumnsSerialId,
     );
-
     const deleted = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.dropdownColumns.findUnique({
         where: {

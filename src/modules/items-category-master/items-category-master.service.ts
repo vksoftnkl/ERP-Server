@@ -92,7 +92,7 @@ export class ItemsCategoryMasterService {
     ]);
 
     return {
-      items: records.map((record) => this.toPayload(record)),
+      items: records.map((record) => this.toListItem(record)),
       meta: {
         page,
         limit,
@@ -155,6 +155,13 @@ export class ItemsCategoryMasterService {
     }
 
     return null;
+  }
+
+  private toListItem(record: categoryMaster): ItemCategoryListItem {
+    return {
+      category_id: record.categoryId,
+      category_name: record.categoryName,
+    };
   }
 
   async getById(categoryId: string): Promise<ItemCategoryPayload> {

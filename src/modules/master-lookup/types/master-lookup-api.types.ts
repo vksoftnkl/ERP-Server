@@ -1,8 +1,8 @@
 export interface NameIdOption {
   id: string;
   name: string;
+  [key: string]: string | number | boolean | null | undefined;
 }
-
 export interface AccountsLookupPayload {
   companies: NameIdOption[];
   companyGroups: NameIdOption[];
@@ -19,7 +19,6 @@ export interface AccountsLookupPayload {
   gspProviders: NameIdOption[];
   gspCompanyServices: NameIdOption[];
 }
-
 export interface MastersLookupPayload {
   itemGroups: NameIdOption[];
   itemCategories: NameIdOption[];
@@ -27,8 +26,11 @@ export interface MastersLookupPayload {
   itemBrands: NameIdOption[];
   units: NameIdOption[];
   itemTaxes: NameIdOption[];
+  priceLevels: NameIdOption[];
+  hsnCodes: NameIdOption[];
   items: NameIdOption[];
   godownLocations: NameIdOption[];
+  stateCodes: NameIdOption[];
   states: NameIdOption[];
   cities: NameIdOption[];
   areas: NameIdOption[];
@@ -37,7 +39,6 @@ export interface MastersLookupPayload {
   supplierGroups: NameIdOption[];
   suppliers: NameIdOption[];
 }
-
 export const ACCOUNT_LOOKUP_MODULE_KEYS = [
   'companies',
   'companyGroups',
@@ -54,7 +55,6 @@ export const ACCOUNT_LOOKUP_MODULE_KEYS = [
   'gspProviders',
   'gspCompanyServices',
 ] as const;
-
 export const MASTER_LOOKUP_MODULE_KEYS = [
   'itemGroups',
   'itemCategories',
@@ -62,8 +62,11 @@ export const MASTER_LOOKUP_MODULE_KEYS = [
   'itemBrands',
   'units',
   'itemTaxes',
+  'priceLevels',
+  'hsnCodes',
   'items',
   'godownLocations',
+  'stateCodes',
   'states',
   'cities',
   'areas',
@@ -72,29 +75,23 @@ export const MASTER_LOOKUP_MODULE_KEYS = [
   'supplierGroups',
   'suppliers',
 ] as const;
-
 export const LOOKUP_MODULE_KEYS = [
   ...ACCOUNT_LOOKUP_MODULE_KEYS,
   ...MASTER_LOOKUP_MODULE_KEYS,
 ] as const;
-
 export type AccountsLookupModuleKey = (typeof ACCOUNT_LOOKUP_MODULE_KEYS)[number];
 export type MastersLookupModuleKey = (typeof MASTER_LOOKUP_MODULE_KEYS)[number];
 export type LookupModuleKey = (typeof LOOKUP_MODULE_KEYS)[number];
-
 export interface MasterLookupPayload {
   accounts: AccountsLookupPayload;
   masters: MastersLookupPayload;
 }
-
 export interface SingleModuleLookupPayload {
   scope: 'accounts' | 'masters';
   module: LookupModuleKey;
   items: NameIdOption[];
 }
-
 export type MasterLookupDataPayload = MasterLookupPayload | SingleModuleLookupPayload;
-
 export interface MasterLookupSuccessResponse<TData> {
   success: true;
   message: string;

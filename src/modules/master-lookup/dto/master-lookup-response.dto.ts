@@ -11,47 +11,33 @@ export class NameIdOptionDto {
 export class AccountsLookupPayloadDto {
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   companies!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   companyGroups!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   branches!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   accountGroups!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   accountLedgers!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   ledgerBankAccounts!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   ledgerShippingAddresses!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   employeeDepartments!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   employeeDesignations!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   employees!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   tenderTypes!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   tenders!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   gspProviders!: NameIdOptionDto[];
-
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   gspCompanyServices!: NameIdOptionDto[];
 }
-
 export class MastersLookupPayloadDto {
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   itemGroups!: NameIdOptionDto[];
@@ -72,10 +58,19 @@ export class MastersLookupPayloadDto {
   itemTaxes!: NameIdOptionDto[];
 
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
+  priceLevels!: NameIdOptionDto[];
+
+  @ApiProperty({ type: NameIdOptionDto, isArray: true })
+  hsnCodes!: NameIdOptionDto[];
+
+  @ApiProperty({ type: NameIdOptionDto, isArray: true })
   items!: NameIdOptionDto[];
 
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   godownLocations!: NameIdOptionDto[];
+
+  @ApiProperty({ type: NameIdOptionDto, isArray: true })
+  stateCodes!: NameIdOptionDto[];
 
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   states!: NameIdOptionDto[];
