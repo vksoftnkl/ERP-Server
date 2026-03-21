@@ -3,9 +3,7 @@ import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
 import { ItemsTaxMasterController } from './items-tax-master.controller';
 import { ItemsTaxMasterService } from './items-tax-master.service';
-
 const TAX_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
-
 const itemTaxPayload = {
   tax_id: TAX_ID,
   tax_name: 'GST 18%',
@@ -44,10 +42,8 @@ const itemTaxPayload = {
   tax_modified_on: '2026-02-20T10:00:00.000Z',
   tax_modified_by: 'tester',
 };
-
 describe('ItemsTaxMasterController', () => {
   let controller: ItemsTaxMasterController;
-
   const serviceMock = {
     save: jest.fn(),
     list: jest.fn(),

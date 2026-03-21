@@ -38,7 +38,6 @@ import {
   SupplierGroupPayload,
   SupplierGroupSuccessResponse,
 } from './types/supplier-group-api.types';
-
 @ApiTags('Supplier Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -46,7 +45,6 @@ import {
 @UseFilters(SupplierGroupExceptionFilter)
 export class SupplierGroupController {
   constructor(private readonly supplierGroupService: SupplierGroupService) {}
-
   @Post('create')
   @Version('1')
   @ApiOperation({ summary: 'Create or update supplier group (by spgId presence)' })
@@ -58,7 +56,6 @@ export class SupplierGroupController {
     @Body() saveSupplierGroupDto: SaveSupplierGroupDto,
   ): Promise<SupplierGroupSuccessResponse<SupplierGroupPayload>> {
     const data = await this.supplierGroupService.save(saveSupplierGroupDto);
-
     return {
       success: true,
       message: saveSupplierGroupDto.spgId
@@ -67,7 +64,6 @@ export class SupplierGroupController {
       data,
     };
   }
-
   @Get('list')
   @Version('1')
   @ApiOperation({ summary: 'List supplier groups with filter/search/pagination' })
@@ -77,7 +73,6 @@ export class SupplierGroupController {
     @Query() queryDto: ListSupplierGroupQueryDto,
   ): Promise<SupplierGroupSuccessResponse<SupplierGroupListItem[], SupplierGroupListMeta>> {
     const result = await this.supplierGroupService.list(queryDto);
-
     return {
       success: true,
       message: 'Supplier groups fetched successfully',
@@ -85,7 +80,6 @@ export class SupplierGroupController {
       meta: result.meta,
     };
   }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get supplier group by id' })
@@ -97,14 +91,12 @@ export class SupplierGroupController {
     @Query('spgId', new ParseUUIDPipe({ version: '7' })) spgId: string,
   ): Promise<SupplierGroupSuccessResponse<SupplierGroupPayload>> {
     const data = await this.supplierGroupService.getById(spgId);
-
     return {
       success: true,
       message: 'Supplier group fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete supplier group by id' })
@@ -116,7 +108,6 @@ export class SupplierGroupController {
     @Query('spgId', new ParseUUIDPipe({ version: '7' })) spgId: string,
   ): Promise<SupplierGroupSuccessResponse<{ spgId: string; deleted: true }>> {
     const data = await this.supplierGroupService.softDelete(spgId);
-
     return {
       success: true,
       message: 'Supplier group deleted successfully',

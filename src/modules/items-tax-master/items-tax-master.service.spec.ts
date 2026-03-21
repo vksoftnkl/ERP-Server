@@ -338,12 +338,38 @@ describe('ItemsTaxMasterService', () => {
       },
     });
   });
-  it('rejects invalid configured grid_sql in list', async () => {
+  it('falls back to prisma list when configured grid_sql is invalid', async () => {
     prisma.gridDetails.findFirst.mockResolvedValue({
       gridSql: 'DELETE FROM item_tax_master',
     });
-    await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
+
+    prisma.itemTaxMaster.count.mockResolvedValue(1);
+    prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
+
+    const result = await service.list({});
+
     expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(prisma.itemTaxMaster.count).toHaveBeenCalledTimes(1);
+    expect(prisma.itemTaxMaster.findMany).toHaveBeenCalledTimes(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.tax_id).toBe(TAX_ID);
+  });
+  it('falls back to prisma list when configured grid_sql execution fails', async () => {
+    prisma.gridDetails.findFirst.mockResolvedValue({
+      gridSql:
+        'SELECT tax_id AS "taxId", tax_name AS "taxName" FROM item_tax_master WHERE tax_is_deleted = false',
+    });
+    prisma.$queryRawUnsafe.mockRejectedValue(new Error('broken configured SQL'));
+    prisma.itemTaxMaster.count.mockResolvedValue(1);
+    prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
+
+    const result = await service.list({});
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalled();
+    expect(prisma.itemTaxMaster.count).toHaveBeenCalledTimes(1);
+    expect(prisma.itemTaxMaster.findMany).toHaveBeenCalledTimes(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.tax_id).toBe(TAX_ID);
   });
   it('getById returns an item tax when it exists and is not deleted', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(makeRecord());

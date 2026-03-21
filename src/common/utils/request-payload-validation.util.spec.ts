@@ -5,7 +5,6 @@ import {
   validateDto,
   validateSingleOrArrayDto,
 } from './request-payload-validation.util';
-
 describe('request payload validation util', () => {
   it('detects when a request body is effectively empty', () => {
     expect(hasRequestPayload(undefined)).toBe(false);
@@ -13,7 +12,6 @@ describe('request payload validation util', () => {
     expect(hasRequestPayload({})).toBe(false);
     expect(hasRequestPayload([])).toBe(true);
   });
-
   it('validates a single dto payload', async () => {
     const result = await validateDto(
       {
@@ -23,10 +21,8 @@ describe('request payload validation util', () => {
       },
       SaveItemEanCodeDto,
     );
-
     expect(result).toBeInstanceOf(SaveItemEanCodeDto);
   });
-
   it('validates array payloads and reports indexed failures', async () => {
     await expect(
       validateSingleOrArrayDto(
@@ -46,7 +42,6 @@ describe('request payload validation util', () => {
       ),
     ).rejects.toThrow(BadRequestException);
   });
-
   it('rejects empty arrays', async () => {
     await expect(validateSingleOrArrayDto([], SaveItemEanCodeDto)).rejects.toThrow(
       BadRequestException,

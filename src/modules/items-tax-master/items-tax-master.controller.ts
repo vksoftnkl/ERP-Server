@@ -38,7 +38,6 @@ import {
   ItemTaxPayload,
   ItemTaxSuccessResponse,
 } from './types/item-tax-api.types';
-
 @ApiTags('Item Taxes')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -46,7 +45,6 @@ import {
 @UseFilters(ItemTaxExceptionFilter)
 export class ItemsTaxMasterController {
   constructor(private readonly itemsTaxMasterService: ItemsTaxMasterService) {}
-
   @Post('create')
   @Version('1')
   @ApiOperation({ summary: 'Create or update item tax slab (by tax_id presence)' })
@@ -58,7 +56,6 @@ export class ItemsTaxMasterController {
     @Body() saveItemTaxDto: SaveItemTaxDto,
   ): Promise<ItemTaxSuccessResponse<ItemTaxPayload>> {
     const data = await this.itemsTaxMasterService.save(saveItemTaxDto);
-
     return {
       success: true,
       message: saveItemTaxDto.tax_id
@@ -67,7 +64,6 @@ export class ItemsTaxMasterController {
       data,
     };
   }
-
   @Get('list')
   @Version('1')
   @ApiOperation({ summary: 'List item taxes with filter/search/pagination' })
@@ -85,7 +81,6 @@ export class ItemsTaxMasterController {
       meta: result.meta,
     };
   }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item tax by id' })
@@ -97,14 +92,12 @@ export class ItemsTaxMasterController {
     @Query('tax_id', new ParseUUIDPipe({ version: '7' })) taxId: string,
   ): Promise<ItemTaxSuccessResponse<ItemTaxPayload>> {
     const data = await this.itemsTaxMasterService.getById(taxId);
-
     return {
       success: true,
       message: 'Item tax fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item tax by id' })
@@ -116,7 +109,6 @@ export class ItemsTaxMasterController {
     @Query('tax_id', new ParseUUIDPipe({ version: '7' })) taxId: string,
   ): Promise<ItemTaxSuccessResponse<{ tax_id: string; deleted: true }>> {
     const data = await this.itemsTaxMasterService.softDelete(taxId);
-
     return {
       success: true,
       message: 'Item tax deleted successfully',

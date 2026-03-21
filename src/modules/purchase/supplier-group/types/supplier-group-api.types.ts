@@ -2,20 +2,17 @@ export interface SupplierGroupErrorDetail {
   field: string;
   message: string;
 }
-
 export interface SupplierGroupErrorResponse {
   success: false;
   message: string;
   errors: SupplierGroupErrorDetail[];
 }
-
 export interface SupplierGroupSuccessResponse<T, TMeta = Record<string, unknown>> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
 }
-
 export interface SupplierGroupPayload {
   spgId: string;
   spgName: string;
@@ -30,9 +27,7 @@ export interface SupplierGroupPayload {
   spgModifiedOn: string;
   spgModifiedBy: string | null;
 }
-
 export type SupplierGroupListItem = SupplierGroupPayload | Record<string, unknown>;
-
 export interface SupplierGroupListMeta {
   page: number;
   limit: number;

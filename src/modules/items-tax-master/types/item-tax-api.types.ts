@@ -2,20 +2,17 @@ export interface ItemTaxErrorDetail {
   field: string;
   message: string;
 }
-
 export interface ItemTaxErrorResponse {
   success: false;
   message: string;
   errors: ItemTaxErrorDetail[];
 }
-
 export interface ItemTaxSuccessResponse<T, TMeta = Record<string, unknown>> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
 }
-
 export interface ItemTaxPayload {
   tax_id: string;
   tax_name: string;
@@ -54,9 +51,7 @@ export interface ItemTaxPayload {
   tax_modified_on: string;
   tax_modified_by: string | null;
 }
-
 export type ItemTaxListItem = ItemTaxPayload | Record<string, unknown>;
-
 export interface ItemTaxListMeta {
   page: number;
   limit: number;

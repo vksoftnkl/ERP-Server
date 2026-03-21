@@ -38,7 +38,7 @@ export class ItemsBrandMasterService {
   }
   async list(
     queryDto: ListItemBrandQueryDto,
-  ): Promise<{ items: ItemBrandListItem[]; meta: ItemBrandListMeta }> {
+   ): Promise<{ items: ItemBrandListItem[]; meta: ItemBrandListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
@@ -92,7 +92,7 @@ export class ItemsBrandMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: ItemBrandListItem[]; meta: ItemBrandListMeta } | null> {
+   ): Promise<{ items: ItemBrandListItem[]; meta: ItemBrandListMeta } | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ITEM_BRAND_TABLE_NAME,
     });
@@ -103,13 +103,11 @@ export class ItemsBrandMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: ITEM_BRAND_TABLE_NAME,
@@ -117,7 +115,6 @@ export class ItemsBrandMasterService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemBrandListItem>({
           baseSql: validation.normalizedSql,
@@ -139,7 +136,6 @@ export class ItemsBrandMasterService {
         continue;
       }
     }
-
     return null;
   }
   async getById(brandId: string): Promise<ItemBrandPayload> {
@@ -165,7 +161,6 @@ export class ItemsBrandMasterService {
       if (!existing) {
         this.throwNotFound(brandId);
       }
-
       const subtreeIds = await this.getActiveSubtreeIds(tx, brandId);
       const ancestorIds = await this.getAncestorIds(tx, existing.brand_parent_id);
       const modifiedOn = new Date();
@@ -183,9 +178,7 @@ export class ItemsBrandMasterService {
       if (result.count === 0) {
         this.throwNotFound(brandId);
       }
-
       await this.removePathIds(tx, ancestorIds, subtreeIds);
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -208,7 +201,6 @@ export class ItemsBrandMasterService {
         },
         tx,
       );
-
       return {
         brand_id: brandId,
         deleted: true,
@@ -221,7 +213,6 @@ export class ItemsBrandMasterService {
         if (saveItemBrandDto.brand_parent_id) {
           await this.ensureParentExists(saveItemBrandDto.brand_parent_id, tx);
         }
-
         const now = new Date();
         const createdBy = DEFAULT_ACTOR;
         const modifiedBy = createdBy;
@@ -235,12 +226,10 @@ export class ItemsBrandMasterService {
         this.applyOptionalFields(data, saveItemBrandDto);
         const created = await tx.itemBrandMaster.create({ data });
         await this.ensureSelfInPath(tx, created.brand_id);
-
         if (saveItemBrandDto.brand_parent_id) {
           const ancestorIds = await this.getAncestorIds(tx, saveItemBrandDto.brand_parent_id);
           await this.appendPathIds(tx, ancestorIds, [created.brand_id]);
         }
-
         const refreshed = await tx.itemBrandMaster.findFirst({
           where: {
             brand_id: created.brand_id,
@@ -299,7 +288,6 @@ export class ItemsBrandMasterService {
         if (saveItemBrandDto.brand_parent_id) {
           await this.ensureParentExists(saveItemBrandDto.brand_parent_id, tx);
         }
-
         const hasParentField = this.hasOwnProperty(saveItemBrandDto, 'brand_parent_id');
         const nextParentId = hasParentField
           ? (saveItemBrandDto.brand_parent_id ?? null)
@@ -309,7 +297,6 @@ export class ItemsBrandMasterService {
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.brand_parent_id)
           : [];
-
         const data: Prisma.ItemBrandMasterUncheckedUpdateInput = {
           brand_name: saveItemBrandDto.brand_name.trim(),
           brand_modified_on: new Date(),
@@ -322,14 +309,12 @@ export class ItemsBrandMasterService {
           },
           data,
         });
-
         await this.ensureSelfInPath(tx, brandId);
         if (isParentChanged) {
           const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
           await this.appendPathIds(tx, newAncestorIds, subtreeIds);
         }
-
         const refreshed = await tx.itemBrandMaster.findFirst({
           where: {
             brand_id: brandId,
@@ -391,7 +376,6 @@ export class ItemsBrandMasterService {
     if (this.hasOwnProperty(saveItemBrandDto, 'brand_description')) {
       data.brand_description = saveItemBrandDto.brand_description;
     }
-
     if (this.hasOwnProperty(saveItemBrandDto, 'brand_parent_id')) {
       data.brand_parent_id = saveItemBrandDto.brand_parent_id;
     }
@@ -442,7 +426,6 @@ export class ItemsBrandMasterService {
     const subtreeIds: string[] = [];
     const visited = new Set<string>();
     const queue: string[] = [rootId];
-
     while (queue.length > 0) {
       const currentId = queue.shift()!;
       if (visited.has(currentId)) {

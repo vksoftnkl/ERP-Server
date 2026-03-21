@@ -10,13 +10,7 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
-import {
-  ItemTaxErrorDetail,
-  ItemTaxErrorResponse,
-  ItemTaxListItem,
-  ItemTaxListMeta,
-  ItemTaxPayload,
-} from './types/item-tax-api.types';
+import {  ItemTaxErrorDetail,  ItemTaxErrorResponse,  ItemTaxListItem,  ItemTaxListMeta,  ItemTaxPayload,} from './types/item-tax-api.types';
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
@@ -34,7 +28,6 @@ export class ItemsTaxMasterService {
     if (saveItemTaxDto.tax_id) {
       return this.updateItemTax(saveItemTaxDto);
     }
-
     return this.createItemTax(saveItemTaxDto);
   }
   async list(
@@ -86,50 +79,42 @@ export class ItemsTaxMasterService {
       configuredGrids,
       ITEM_TAX_TABLE_NAME,
     );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
+    if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
-      return null;
-    }
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: ITEM_TAX_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for item tax list', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
-    }
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<ItemTaxListItem>({
-        baseSql: validation.normalizedSql,
-        alias: 'item_tax_grid',
-        limit,
-        skip,
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: ITEM_TAX_TABLE_NAME,
       });
-      return {
-        items: result.items,
-        meta: {
-          page,
+      if (!validation.isValid) {
+        continue;
+      }
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<ItemTaxListItem>({
+          baseSql: validation.normalizedSql,
+          alias: 'item_tax_grid',
           limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
-      };
-    } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for item tax list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for item_tax_master',
-        },
-      ]);
+          skip,
+        });
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+        };
+      } catch {
+        continue;
+      }
     }
+    return null;
   }
   async getById(taxId: string): Promise<ItemTaxPayload> {
     const record = await this.prisma.itemTaxMaster.findFirst({

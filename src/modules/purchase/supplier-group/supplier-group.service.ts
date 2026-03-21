@@ -17,15 +17,12 @@ import {
   SupplierGroupListMeta,
   SupplierGroupPayload,
 } from './types/supplier-group-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const SUPPLIER_GROUP_TABLE_NAME = 'supplier_groups';
 const SUPPLIER_GROUP_AUDIT_SCREEN_NAME = 'Supplier Group Master';
-
 type SupplierGroupWriteClient = Prisma.TransactionClient | PrismaService;
-
 @Injectable()
 export class SupplierGroupService {
   constructor(
@@ -33,15 +30,12 @@ export class SupplierGroupService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveSupplierGroupDto: SaveSupplierGroupDto): Promise<SupplierGroupPayload> {
     if (saveSupplierGroupDto.spgId) {
       return this.updateSupplierGroup(saveSupplierGroupDto);
     }
-
     return this.createSupplierGroup(saveSupplierGroupDto);
   }
-
   async list(
     queryDto: ListSupplierGroupQueryDto,
   ): Promise<{ items: SupplierGroupListItem[]; meta: SupplierGroupListMeta }> {
@@ -50,22 +44,18 @@ export class SupplierGroupService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.spgIsActive !== undefined || Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.SupplierGroupWhereInput = {
       spgIsDeleted: false,
     };
-
     if (queryDto.spgIsActive !== undefined) {
       where.spgIsActive = queryDto.spgIsActive;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -75,7 +65,6 @@ export class SupplierGroupService {
         { spgDesc: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.supplierGroup.count({ where }),
       this.prisma.supplierGroup.findMany({
@@ -85,7 +74,6 @@ export class SupplierGroupService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -96,7 +84,6 @@ export class SupplierGroupService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -117,7 +104,6 @@ export class SupplierGroupService {
     if (!rawGridSql) {
       return null;
     }
-
     const validation = this.configuredGridSqlService.validateBaseSql({
       sql: rawGridSql,
       tableName: SUPPLIER_GROUP_TABLE_NAME,
@@ -130,7 +116,6 @@ export class SupplierGroupService {
         },
       ]);
     }
-
     try {
       const result = await this.configuredGridSqlService.runPagedQuery<SupplierGroupListItem>({
         baseSql: validation.normalizedSql,
@@ -138,7 +123,6 @@ export class SupplierGroupService {
         limit,
         skip,
       });
-
       return {
         items: result.items,
         meta: {
@@ -157,7 +141,6 @@ export class SupplierGroupService {
       ]);
     }
   }
-
   async getById(spgId: string): Promise<SupplierGroupPayload> {
     const record = await this.prisma.supplierGroup.findFirst({
       where: {
@@ -165,14 +148,11 @@ export class SupplierGroupService {
         spgIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(spgId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(spgId: string): Promise<{ spgId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.supplierGroup.findFirst({
@@ -181,11 +161,9 @@ export class SupplierGroupService {
           spgIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(spgId);
       }
-
       const supplierCount = await tx.supplier.count({
         where: {
           supGroupId: spgId,
@@ -200,7 +178,6 @@ export class SupplierGroupService {
           },
         ]);
       }
-
       const modifiedOn = new Date();
       const result = await tx.supplierGroup.updateMany({
         where: {
@@ -214,11 +191,9 @@ export class SupplierGroupService {
           spgModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(spgId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -227,7 +202,6 @@ export class SupplierGroupService {
         spgModifiedOn: modifiedOn,
         spgModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -243,14 +217,12 @@ export class SupplierGroupService {
         },
         tx,
       );
-
       return {
         spgId,
         deleted: true,
       };
     });
-  }
-
+    }
   private async createSupplierGroup(
     saveSupplierGroupDto: SaveSupplierGroupDto,
   ): Promise<SupplierGroupPayload> {
@@ -266,14 +238,11 @@ export class SupplierGroupService {
       spgModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveSupplierGroupDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureNameIsUnique(tx, normalizedName);
-
         const created = await tx.supplierGroup.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -289,7 +258,6 @@ export class SupplierGroupService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -297,12 +265,10 @@ export class SupplierGroupService {
       throw error;
     }
   }
-
   private async updateSupplierGroup(
     saveSupplierGroupDto: SaveSupplierGroupDto,
   ): Promise<SupplierGroupPayload> {
     const spgId = saveSupplierGroupDto.spgId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.supplierGroup.findFirst({
@@ -311,21 +277,17 @@ export class SupplierGroupService {
             spgIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(spgId);
         }
-
         const normalizedName = this.normalizeRequiredName(saveSupplierGroupDto.spgName);
         await this.ensureNameIsUnique(tx, normalizedName, spgId);
-
         const data: Prisma.SupplierGroupUncheckedUpdateInput = {
           spgName: normalizedName,
           spgModifiedOn: new Date(),
           spgModifiedBy: this.resolveActor(saveSupplierGroupDto.spgModifiedBy),
         };
         this.applyOptionalFields(data, saveSupplierGroupDto);
-
         const updated = await tx.supplierGroup.update({
           where: {
             spgId,
@@ -333,7 +295,6 @@ export class SupplierGroupService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -349,7 +310,6 @@ export class SupplierGroupService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -357,7 +317,6 @@ export class SupplierGroupService {
       throw error;
     }
   }
-
   private async ensureNameIsUnique(
     tx: SupplierGroupWriteClient,
     groupName: string,
@@ -382,7 +341,6 @@ export class SupplierGroupService {
         spgId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Supplier group name already exists', [
@@ -394,7 +352,6 @@ export class SupplierGroupService {
       );
     }
   }
-
   private applyOptionalFields(
     data: Prisma.SupplierGroupUncheckedCreateInput | Prisma.SupplierGroupUncheckedUpdateInput,
     saveSupplierGroupDto: SaveSupplierGroupDto,
@@ -402,20 +359,16 @@ export class SupplierGroupService {
     if (this.hasOwnProperty(saveSupplierGroupDto, 'spgAlias')) {
       data.spgAlias = saveSupplierGroupDto.spgAlias;
     }
-
     if (this.hasOwnProperty(saveSupplierGroupDto, 'spgShort')) {
       data.spgShort = saveSupplierGroupDto.spgShort;
     }
-
     if (this.hasOwnProperty(saveSupplierGroupDto, 'spgDesc')) {
       data.spgDesc = saveSupplierGroupDto.spgDesc;
     }
-
     if (this.hasOwnProperty(saveSupplierGroupDto, 'spgIsActive')) {
       data.spgIsActive = saveSupplierGroupDto.spgIsActive;
     }
   }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -426,10 +379,8 @@ export class SupplierGroupService {
         },
       ]);
     }
-
     return trimmed;
   }
-
   private toPayload(record: SupplierGroup): SupplierGroupPayload {
     return {
       spgId: record.spgId,
@@ -446,16 +397,13 @@ export class SupplierGroupService {
       spgModifiedBy: record.spgModifiedBy,
     };
   }
-
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
     if (!value) {
       return fallback;
     }
-
     const trimmed = value.trim();
     return trimmed || fallback;
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -468,15 +416,12 @@ export class SupplierGroupService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(spgId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Supplier group not found', [
@@ -487,11 +432,9 @@ export class SupplierGroupService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: SupplierGroupErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: SupplierGroupErrorDetail[] = [],
@@ -502,7 +445,6 @@ export class SupplierGroupService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }
