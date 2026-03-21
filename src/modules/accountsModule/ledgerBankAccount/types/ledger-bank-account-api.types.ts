@@ -9,11 +9,12 @@ export interface LedgerBankAccountErrorResponse {
   errors: LedgerBankAccountErrorDetail[];
 }
 
-export interface LedgerBankAccountSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface LedgerBankAccountSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface LedgerBankAccountPayload {

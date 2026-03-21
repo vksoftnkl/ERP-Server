@@ -16,5 +16,5 @@ model GspProviderMaster {
 
   @@index([gspIsActive], name: "idx_gsp_provider_active")
   @@map("gsp_provider_master")
-  @@schema("accounts")
+  @@schema("fixed")
 }

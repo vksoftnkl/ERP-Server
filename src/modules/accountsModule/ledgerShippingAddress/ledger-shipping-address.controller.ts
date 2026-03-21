@@ -88,6 +88,7 @@ export class LedgerShippingAddressController {
       message: 'Ledger shipping addresses fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

@@ -44,7 +44,7 @@ export class CustomerService {
 
   async list(
     queryDto: ListCustomerQueryDto,
-  ): Promise<{ items: CustomerListItem[]; meta: CustomerListMeta }> {
+  ): Promise<ConfiguredGridListResult<CustomerListItem, CustomerListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

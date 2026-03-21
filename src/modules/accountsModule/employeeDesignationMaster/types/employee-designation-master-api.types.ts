@@ -9,11 +9,12 @@ export interface EmployeeDesignationMasterErrorResponse {
   errors: EmployeeDesignationMasterErrorDetail[];
 }
 
-export interface EmployeeDesignationMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface EmployeeDesignationMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface EmployeeDesignationMasterPayload {

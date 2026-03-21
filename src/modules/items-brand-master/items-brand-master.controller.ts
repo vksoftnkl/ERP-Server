@@ -91,6 +91,7 @@ export class ItemsBrandMasterController {
       message: 'Item brands fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
   @Get('get')

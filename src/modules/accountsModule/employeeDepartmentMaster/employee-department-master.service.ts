@@ -38,10 +38,7 @@ export class EmployeeDepartmentMasterService {
     }
     return this.createDepartment(saveEmployeeDepartmentMasterDto);
   }
-  async list(queryDto: ListEmployeeDepartmentMasterQueryDto): Promise<{
-    items: EmployeeDepartmentMasterListItem[];
-    meta: EmployeeDepartmentMasterListMeta;
-  }> {
+  async list(queryDto: ListEmployeeDepartmentMasterQueryDto): Promise<ConfiguredGridListResult<EmployeeDepartmentMasterListItem, EmployeeDepartmentMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

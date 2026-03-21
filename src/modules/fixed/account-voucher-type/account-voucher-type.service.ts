@@ -17,15 +17,12 @@ import {
   AccountVoucherTypeListMeta,
   AccountVoucherTypePayload,
 } from './types/account-voucher-type-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ACCOUNT_VOUCHER_TYPE_TABLE_NAME = 'avt_voucher_type_master';
 const ACCOUNT_VOUCHER_TYPE_AUDIT_SCREEN_NAME = 'Account Voucher Type Master';
-
 type AccountVoucherTypeWriteClient = Prisma.TransactionClient | PrismaService;
-
 @Injectable()
 export class AccountVoucherTypeService {
   constructor(
@@ -33,41 +30,34 @@ export class AccountVoucherTypeService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(
     saveAccountVoucherTypeDto: SaveAccountVoucherTypeDto,
   ): Promise<AccountVoucherTypePayload> {
     if (saveAccountVoucherTypeDto.avtId) {
       return this.updateAccountVoucherType(saveAccountVoucherTypeDto);
     }
-
     return this.createAccountVoucherType(saveAccountVoucherTypeDto);
   }
-
   async list(
     queryDto: ListAccountVoucherTypeQueryDto,
-  ): Promise<{ items: AccountVoucherTypeListItem[]; meta: AccountVoucherTypeListMeta }> {
+  ): Promise<ConfiguredGridListResult<AccountVoucherTypeListItem, AccountVoucherTypeListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.avtIsActive !== undefined || Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.AvtVoucherTypeMasterWhereInput = {
       avtIsDeleted: false,
     };
-
     if (queryDto.avtIsActive !== undefined) {
       where.avtIsActive = queryDto.avtIsActive;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -76,7 +66,6 @@ export class AccountVoucherTypeService {
         { avtTallyName: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.avtVoucherTypeMaster.count({ where }),
       this.prisma.avtVoucherTypeMaster.findMany({
@@ -86,7 +75,6 @@ export class AccountVoucherTypeService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -97,7 +85,6 @@ export class AccountVoucherTypeService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -118,7 +105,6 @@ export class AccountVoucherTypeService {
     if (!rawGridSql) {
       return null;
     }
-
     const validation = this.configuredGridSqlService.validateBaseSql({
       sql: rawGridSql,
       tableName: ACCOUNT_VOUCHER_TYPE_TABLE_NAME,
@@ -131,7 +117,6 @@ export class AccountVoucherTypeService {
         },
       ]);
     }
-
     try {
       const result = await this.configuredGridSqlService.runPagedQuery<AccountVoucherTypeListItem>({
         baseSql: validation.normalizedSql,
@@ -140,7 +125,6 @@ export class AccountVoucherTypeService {
         skip,
           gridId: configuredGrid.gridId,
       });
-
       return {
         items: result.items,
         meta: {
@@ -160,7 +144,6 @@ export class AccountVoucherTypeService {
       ]);
     }
   }
-
   async getById(avtId: string): Promise<AccountVoucherTypePayload> {
     const record = await this.prisma.avtVoucherTypeMaster.findFirst({
       where: {
@@ -168,14 +151,11 @@ export class AccountVoucherTypeService {
         avtIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(avtId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(avtId: string): Promise<{ avtId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.avtVoucherTypeMaster.findFirst({
@@ -184,11 +164,9 @@ export class AccountVoucherTypeService {
           avtIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(avtId);
       }
-
       const modifiedOn = new Date();
       const result = await tx.avtVoucherTypeMaster.updateMany({
         where: {
@@ -202,11 +180,9 @@ export class AccountVoucherTypeService {
           avtModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(avtId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -215,7 +191,6 @@ export class AccountVoucherTypeService {
         avtModifiedOn: modifiedOn,
         avtModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -231,14 +206,12 @@ export class AccountVoucherTypeService {
         },
         tx,
       );
-
       return {
         avtId,
         deleted: true,
       };
     });
   }
-
   private async createAccountVoucherType(
     saveAccountVoucherTypeDto: SaveAccountVoucherTypeDto,
   ): Promise<AccountVoucherTypePayload> {
@@ -264,14 +237,11 @@ export class AccountVoucherTypeService {
       avtModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveAccountVoucherTypeDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureShortIsUnique(tx, normalizedShort);
-
         const created = await tx.avtVoucherTypeMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -287,7 +257,6 @@ export class AccountVoucherTypeService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -295,12 +264,10 @@ export class AccountVoucherTypeService {
       throw error;
     }
   }
-
   private async updateAccountVoucherType(
     saveAccountVoucherTypeDto: SaveAccountVoucherTypeDto,
   ): Promise<AccountVoucherTypePayload> {
     const avtId = saveAccountVoucherTypeDto.avtId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.avtVoucherTypeMaster.findFirst({
@@ -309,11 +276,9 @@ export class AccountVoucherTypeService {
             avtIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(avtId);
         }
-
         const normalizedShort = this.normalizeRequiredText(
           saveAccountVoucherTypeDto.avtShort,
           'avtShort',
@@ -326,9 +291,7 @@ export class AccountVoucherTypeService {
           saveAccountVoucherTypeDto.avtTallyName,
           'avtTallyName',
         );
-
         await this.ensureShortIsUnique(tx, normalizedShort, avtId);
-
         const data: Prisma.AvtVoucherTypeMasterUncheckedUpdateInput = {
           avtShort: normalizedShort,
           avtDesc: normalizedDesc,
@@ -337,7 +300,6 @@ export class AccountVoucherTypeService {
           avtModifiedBy: this.resolveActor(saveAccountVoucherTypeDto.avtModifiedBy),
         };
         this.applyOptionalFields(data, saveAccountVoucherTypeDto);
-
         const updated = await tx.avtVoucherTypeMaster.update({
           where: {
             avtId,
@@ -345,7 +307,6 @@ export class AccountVoucherTypeService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -361,7 +322,6 @@ export class AccountVoucherTypeService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -369,7 +329,6 @@ export class AccountVoucherTypeService {
       throw error;
     }
   }
-
   private async ensureShortIsUnique(
     tx: AccountVoucherTypeWriteClient,
     voucherShort: string,
@@ -394,7 +353,6 @@ export class AccountVoucherTypeService {
         avtId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Voucher short name already exists', [
@@ -406,7 +364,6 @@ export class AccountVoucherTypeService {
       );
     }
   }
-
   private applyOptionalFields(
     data:
       | Prisma.AvtVoucherTypeMasterUncheckedCreateInput
@@ -416,28 +373,22 @@ export class AccountVoucherTypeService {
     if (this.hasOwnProperty(saveAccountVoucherTypeDto, 'avtDrcr')) {
       data.avtDrcr = saveAccountVoucherTypeDto.avtDrcr;
     }
-
     if (this.hasOwnProperty(saveAccountVoucherTypeDto, 'avtPrintEnabled')) {
       data.avtPrintEnabled = saveAccountVoucherTypeDto.avtPrintEnabled;
     }
-
     if (this.hasOwnProperty(saveAccountVoucherTypeDto, 'avtPrintStyle')) {
       data.avtPrintStyle = saveAccountVoucherTypeDto.avtPrintStyle;
     }
-
     if (this.hasOwnProperty(saveAccountVoucherTypeDto, 'avtSortOrder')) {
       data.avtSortOrder = saveAccountVoucherTypeDto.avtSortOrder;
     }
-
     if (this.hasOwnProperty(saveAccountVoucherTypeDto, 'avtTallyReservedType')) {
       data.avtTallyReservedType = saveAccountVoucherTypeDto.avtTallyReservedType;
     }
-
     if (this.hasOwnProperty(saveAccountVoucherTypeDto, 'avtIsActive')) {
       data.avtIsActive = saveAccountVoucherTypeDto.avtIsActive;
     }
   }
-
   private normalizeRequiredText(value: string, fieldName: string): string {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -448,10 +399,8 @@ export class AccountVoucherTypeService {
         },
       ]);
     }
-
     return trimmed;
   }
-
   private toPayload(record: AvtVoucherTypeMaster): AccountVoucherTypePayload {
     return {
       avtId: record.avtId,
@@ -472,16 +421,13 @@ export class AccountVoucherTypeService {
       avtModifiedBy: record.avtModifiedBy,
     };
   }
-
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
     if (!value) {
       return fallback;
     }
-
     const trimmed = value.trim();
     return trimmed || fallback;
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -494,15 +440,12 @@ export class AccountVoucherTypeService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(avtId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Account voucher type not found', [
@@ -513,11 +456,9 @@ export class AccountVoucherTypeService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: AccountVoucherTypeErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: AccountVoucherTypeErrorDetail[] = [],
@@ -528,7 +469,6 @@ export class AccountVoucherTypeService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

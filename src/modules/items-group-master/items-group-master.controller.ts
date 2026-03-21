@@ -97,6 +97,7 @@ export class ItemsGroupMasterController {
       message: 'Item groups fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

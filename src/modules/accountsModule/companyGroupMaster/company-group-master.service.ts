@@ -46,7 +46,7 @@ export class CompanyGroupMasterService {
 
   async list(
     queryDto: ListCompanyGroupMasterQueryDto,
-  ): Promise<{ items: CompanyGroupMasterListItem[]; meta: CompanyGroupMasterListMeta }> {
+  ): Promise<ConfiguredGridListResult<CompanyGroupMasterListItem, CompanyGroupMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

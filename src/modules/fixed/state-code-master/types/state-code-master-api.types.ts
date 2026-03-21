@@ -9,11 +9,12 @@ export interface StateCodeMasterErrorResponse {
   errors: StateCodeMasterErrorDetail[];
 }
 
-export interface StateCodeMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface StateCodeMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface StateCodeMasterPayload {

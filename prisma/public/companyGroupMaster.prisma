@@ -12,5 +12,5 @@ model CompanyGroupMaster {
 
   @@index([cogIsActive], name: "idx_cog_group_active")
   @@map("company_group_master")
-  @@schema("accounts")
+  @@schema("public")
 }

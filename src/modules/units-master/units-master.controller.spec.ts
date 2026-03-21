@@ -112,6 +112,64 @@ describe('UnitsMasterController', () => {
     });
   });
 
+  it('returns styles when the list service provides grid column metadata', async () => {
+    serviceMock.list.mockResolvedValue({
+      items: [unitPayload],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+      styles: [
+        {
+          grid_column_number: 1,
+          grid_column_name: 'unit_name',
+          grid_column_width: 180,
+          grid_column_alignment: 'left',
+          grid_column_visibility: true,
+          grid_column_filter: true,
+          grid_column_condition: null,
+          grid_column_condition_color: null,
+          grid_column_group: false,
+          grid_column_total: false,
+          grid_column_data_type: 'text',
+          grid_column_color: null,
+          grid_column_notes: null,
+        },
+      ],
+    });
+
+    await expect(controller.list({ page: 1, limit: 20 })).resolves.toEqual({
+      success: true,
+      message: 'Units fetched successfully',
+      data: [unitPayload],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+      styles: [
+        {
+          grid_column_number: 1,
+          grid_column_name: 'unit_name',
+          grid_column_width: 180,
+          grid_column_alignment: 'left',
+          grid_column_visibility: true,
+          grid_column_filter: true,
+          grid_column_condition: null,
+          grid_column_condition_color: null,
+          grid_column_group: false,
+          grid_column_total: false,
+          grid_column_data_type: 'text',
+          grid_column_color: null,
+          grid_column_notes: null,
+        },
+      ],
+    });
+  });
+
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(unitPayload);
 

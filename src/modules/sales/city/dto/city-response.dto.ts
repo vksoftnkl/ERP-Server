@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class CityErrorFieldDto {
   @ApiProperty({ example: 'ctmName' })
@@ -105,6 +106,9 @@ export class CitySuccessListDto {
 
   @ApiProperty({ type: CityListMetaDto })
   meta!: CityListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class CitySuccessDeleteDto {

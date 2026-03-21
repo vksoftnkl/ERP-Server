@@ -93,7 +93,7 @@ model AccLedgerMaster {
   branches                 BranchMaster           @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
   bankAccounts             AccLedgerBankAccount[]
   shipAddrs                AccShipAddr[]
-  tenders                  TenderMaster[]
+  tenders                  AccountTenderMaster[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")

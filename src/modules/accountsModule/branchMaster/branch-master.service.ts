@@ -43,7 +43,7 @@ export class BranchMasterService {
   }
   async list(
     queryDto: ListBranchMasterQueryDto,
-  ): Promise<{ items: BranchMasterListItem[]; meta: BranchMasterListMeta }> {
+  ): Promise<ConfiguredGridListResult<BranchMasterListItem, BranchMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

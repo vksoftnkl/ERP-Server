@@ -44,7 +44,7 @@ export class StateService {
 
   async list(
     queryDto: ListStateQueryDto,
-  ): Promise<{ items: StateListItem[]; meta: StateListMeta }> {
+  ): Promise<ConfiguredGridListResult<StateListItem, StateListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

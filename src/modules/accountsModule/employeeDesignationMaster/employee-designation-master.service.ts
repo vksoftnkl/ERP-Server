@@ -44,10 +44,7 @@ export class EmployeeDesignationMasterService {
     return this.createDesignation(saveEmployeeDesignationMasterDto);
   }
 
-  async list(queryDto: ListEmployeeDesignationMasterQueryDto): Promise<{
-    items: EmployeeDesignationMasterListItem[];
-    meta: EmployeeDesignationMasterListMeta;
-  }> {
+  async list(queryDto: ListEmployeeDesignationMasterQueryDto): Promise<ConfiguredGridListResult<EmployeeDesignationMasterListItem, EmployeeDesignationMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

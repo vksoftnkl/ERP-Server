@@ -85,6 +85,7 @@ export class LedgerBankAccountController {
       message: 'Ledger bank accounts fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

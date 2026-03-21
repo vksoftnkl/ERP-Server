@@ -136,6 +136,10 @@ export class ConfiguredGridSqlService {
       ...(styles !== undefined && { styles }),
     };
   }
+  async assertBaseSqlExecutable(baseSql: string, alias: string): Promise<void> {
+    const validationSql = `SELECT * FROM (${baseSql}) AS ${alias} LIMIT 0`;
+    await this.prisma.$queryRawUnsafe(validationSql);
+  }
   async loadGridColumns(gridId: bigint): Promise<GridColumnItem[]> {
     const columns = await this.prisma.gridColumn.findMany({
       where: {

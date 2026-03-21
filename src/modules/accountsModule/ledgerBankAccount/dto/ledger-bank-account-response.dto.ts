@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class LedgerBankAccountErrorFieldDto {
   @ApiProperty({ example: 'lbaAccountNo' })
@@ -129,6 +130,9 @@ export class LedgerBankAccountSuccessListDto {
 
   @ApiProperty({ type: LedgerBankAccountListMetaDto })
   meta!: LedgerBankAccountListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class LedgerBankAccountSuccessDeleteDto {

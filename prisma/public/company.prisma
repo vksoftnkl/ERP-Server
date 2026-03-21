@@ -87,5 +87,5 @@ model Company {
   UserLoginSession      UserLoginSession[]
   customers              Customer[]
   @@map("companys")
-  @@schema("accounts")
+  @@schema("public")
 }

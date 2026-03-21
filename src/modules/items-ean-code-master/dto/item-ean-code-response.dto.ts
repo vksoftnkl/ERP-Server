@@ -1,4 +1,5 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class ItemEanCodeErrorFieldDto {
   @ApiProperty({ example: 'ean_code' })
@@ -125,6 +126,9 @@ export class ItemEanCodeSuccessListDto {
 
   @ApiProperty({ type: ItemEanCodeListMetaDto })
   meta!: ItemEanCodeListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class ItemEanCodeSuccessDeleteDto {

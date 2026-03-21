@@ -7,11 +7,12 @@ export interface EmployeeMasterErrorResponse {
   message: string;
   errors: EmployeeMasterErrorDetail[];
 }
-export interface EmployeeMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface EmployeeMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 export interface EmployeeMasterPayload {
   empId: string;

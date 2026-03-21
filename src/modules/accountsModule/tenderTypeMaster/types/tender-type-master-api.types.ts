@@ -9,11 +9,12 @@ export interface TenderTypeMasterErrorResponse {
   errors: TenderTypeMasterErrorDetail[];
 }
 
-export interface TenderTypeMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface TenderTypeMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface TenderTypeMasterPayload {

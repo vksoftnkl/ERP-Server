@@ -9,11 +9,12 @@ export interface ItemTaxHistoryErrorResponse {
   errors: ItemTaxHistoryErrorDetail[];
 }
 
-export interface ItemTaxHistorySuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface ItemTaxHistorySuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface ItemTaxHistoryPayload {

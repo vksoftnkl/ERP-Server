@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class ItemQtywiseRateErrorFieldDto {
   @ApiProperty({ example: 'iqr_unit_rate_id' })
@@ -132,6 +133,9 @@ export class ItemQtywiseRateSuccessListDto {
 
   @ApiProperty({ type: ItemQtywiseRateListMetaDto })
   meta!: ItemQtywiseRateListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class ItemQtywiseRateSuccessDeleteDto {

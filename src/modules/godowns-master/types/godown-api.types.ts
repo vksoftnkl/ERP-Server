@@ -9,11 +9,12 @@ export interface GodownErrorResponse {
   errors: GodownErrorDetail[];
 }
 
-export interface GodownSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface GodownSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface GodownPayload {

@@ -9,11 +9,12 @@ export interface UserLoginSessionsErrorResponse {
   errors: UserLoginSessionsErrorDetail[];
 }
 
-export interface UserLoginSessionsSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface UserLoginSessionsSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface UserLoginSessionsPayload {

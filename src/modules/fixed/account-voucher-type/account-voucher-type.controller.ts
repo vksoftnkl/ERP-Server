@@ -85,6 +85,7 @@ export class AccountVoucherTypeController {
       message: 'Account voucher types fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

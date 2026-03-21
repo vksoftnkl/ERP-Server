@@ -73,6 +73,7 @@ export class UiTableMasterController {
       message: 'UI tables fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

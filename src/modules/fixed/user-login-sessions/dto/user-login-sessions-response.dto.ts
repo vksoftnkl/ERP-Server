@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class UserLoginSessionsErrorFieldDto {
   @ApiProperty({ example: 'ulsId' })
@@ -138,6 +139,9 @@ export class UserLoginSessionsSuccessListDto {
 
   @ApiProperty({ type: UserLoginSessionsListMetaDto })
   meta!: UserLoginSessionsListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class UserLoginSessionsSuccessDeleteDto {

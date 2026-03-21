@@ -68,6 +68,6 @@ model UserLoginSession {
   // WHERE uls_is_deleted = false;
   @@index([ulsDeviceId, ulsLoginOn(sort: Desc)], map: "idx_uls_device_date")
 
-  @@schema("fixed")
+  @@schema("audit")
   @@map("user_login_sessions")
 }

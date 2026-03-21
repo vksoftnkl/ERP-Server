@@ -13,6 +13,7 @@ import { SaveUnitDto } from './dto/save-unit.dto';
 import {
   UnitErrorDetail,
   UnitErrorResponse,
+  UnitListResult,
   UnitListItem,
   UnitListMeta,
   UnitPayload,
@@ -37,7 +38,7 @@ export class UnitsMasterService {
     }
     return this.createUnit(saveUnitDto);
   }
-  async list(queryDto: ListUnitQueryDto): Promise<{ items: UnitListItem[]; meta: UnitListMeta }> {
+  async list(queryDto: ListUnitQueryDto): Promise<UnitListResult> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

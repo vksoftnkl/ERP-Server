@@ -7,11 +7,12 @@ export interface ItemTaxErrorResponse {
   message: string;
   errors: ItemTaxErrorDetail[];
 }
-export interface ItemTaxSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface ItemTaxSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 export interface ItemTaxPayload {
   tax_id: string;

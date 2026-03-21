@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class UiTableColumnErrorFieldDto {
   @ApiProperty({ example: 'uiTblClmName' })
@@ -129,6 +130,9 @@ export class UiTableColumnSuccessListDto {
 
   @ApiProperty({ type: UiTableColumnListMetaDto })
   meta!: UiTableColumnListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class UiTableColumnSuccessDeleteDto {

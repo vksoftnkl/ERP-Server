@@ -1,3 +1,5 @@
+import { GridColumnItem } from '../../../common/configured-grid-sql/types/configured-grid-sql.types';
+
 export interface UnitErrorDetail {
   field: string;
   message: string;
@@ -9,11 +11,12 @@ export interface UnitErrorResponse {
   errors: UnitErrorDetail[];
 }
 
-export interface UnitSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface UnitSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface UnitPayload {
@@ -46,4 +49,12 @@ export interface UnitListMeta {
   limit: number;
   total: number;
   total_pages: number;
+}
+
+export type UnitGridStyle = GridColumnItem;
+
+export interface UnitListResult {
+  items: UnitListItem[];
+  meta: UnitListMeta;
+  styles?: UnitGridStyle[];
 }

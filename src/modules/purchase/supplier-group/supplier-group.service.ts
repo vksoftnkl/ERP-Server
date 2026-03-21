@@ -38,7 +38,7 @@ export class SupplierGroupService {
   }
   async list(
     queryDto: ListSupplierGroupQueryDto,
-  ): Promise<{ items: SupplierGroupListItem[]; meta: SupplierGroupListMeta }> {
+  ): Promise<ConfiguredGridListResult<SupplierGroupListItem, SupplierGroupListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

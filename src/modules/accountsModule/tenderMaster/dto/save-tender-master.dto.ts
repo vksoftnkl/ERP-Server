@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsInt,
   IsNotEmpty,
+  Matches,
   IsNumber,
   IsOptional,
   IsString,
@@ -51,6 +52,14 @@ const toOptionalNumber = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) ? parsed : (value as number);
 };
 
+const toNumericString = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  return String(value).trim();
+};
+
 export class SaveTenderMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -60,8 +69,9 @@ export class SaveTenderMasterDto {
   @IsUUID('all')
   tndId?: string;
 
-  @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @ApiProperty({ example: '1' })
+  @Transform(({ value }) => toNumericString(value))
+  @Matches(/^\d+$/)
   tndTypeId!: string;
 
   @ApiProperty()

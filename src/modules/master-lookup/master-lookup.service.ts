@@ -302,23 +302,31 @@ export class MasterLookupService {
       ),
       tenderTypes: this.simpleFetcher(
         (c, take) =>
-          this.prisma.tenderTypeMaster.findMany({
-            where: { ttmIsDeleted: false, ttmIsActive: true, ...c({ ttmTypeName: true }) },
-            select: { ttmTypeId: true, ttmTypeName: true },
-            orderBy: [{ ttmTypeName: 'asc' }, { ttmTypeId: 'asc' }],
+          this.prisma.accountTenderTypes.findMany({
+            where: {
+              accttTypeIsDeleted: false,
+              accttTypeIsActive: true,
+              ...c({ accttTypeName: true }),
+            },
+            select: { accttTypeId: true, accttTypeName: true },
+            orderBy: [{ accttTypeName: 'asc' }, { accttTypeId: 'asc' }],
             ...take,
           }),
-        (row) => this.toOption(row.ttmTypeId, row.ttmTypeName),
+        (row) => this.toOption(String(row.accttTypeId), row.accttTypeName),
       ),
       tenders: this.simpleFetcher(
         (c, take) =>
-          this.prisma.tenderMaster.findMany({
-            where: { tndIsDeleted: false, tndIsActive: true, ...c({ tndName: true }) },
-            select: { tndId: true, tndName: true },
-            orderBy: [{ tndName: 'asc' }, { tndId: 'asc' }],
+          this.prisma.accountTenderMaster.findMany({
+            where: {
+              acctndIsDeleted: false,
+              acctndIsActive: true,
+              ...c({ acctndName: true }),
+            },
+            select: { acctndId: true, acctndName: true },
+            orderBy: [{ acctndName: 'asc' }, { acctndId: 'asc' }],
             ...take,
           }),
-        (row) => this.toOption(row.tndId, row.tndName),
+        (row) => this.toOption(row.acctndId, row.acctndName),
       ),
       gspProviders: this.simpleFetcher(
         (c, take) =>

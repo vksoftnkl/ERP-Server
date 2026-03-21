@@ -1,4 +1,5 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class ItemPriceErrorFieldDto {
   @ApiProperty({ example: 'ipm_item_id' })
@@ -200,6 +201,9 @@ export class ItemPriceSuccessListDto {
 
   @ApiProperty({ type: ItemPriceListMetaDto })
   meta!: ItemPriceListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class ItemPriceSuccessDeleteDto {

@@ -85,6 +85,7 @@ export class GspProviderMasterController {
       message: 'GSP providers fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

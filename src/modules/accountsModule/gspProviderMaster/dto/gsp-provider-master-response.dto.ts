@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class GspProviderMasterErrorFieldDto {
   @ApiProperty({ example: 'gspProviderName' })
@@ -108,6 +109,9 @@ export class GspProviderMasterSuccessListDto {
 
   @ApiProperty({ type: GspProviderMasterListMetaDto })
   meta!: GspProviderMasterListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class GspProviderMasterSuccessDeleteDto {

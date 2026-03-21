@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  ParseUUIDPipe,
   Post,
   Query,
   UseFilters,
@@ -85,18 +84,19 @@ export class TenderTypeMasterController {
       message: 'Tender types fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get tender type by id' })
-  @ApiQuery({ name: 'ttmTypeId', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'ttmTypeId', schema: { type: 'string', example: '1' } })
   @ApiOkResponse({ type: TenderTypeMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: TenderTypeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: TenderTypeMasterErrorResponseDto })
   async getById(
-    @Query('ttmTypeId', new ParseUUIDPipe({ version: '7' })) ttmTypeId: string,
+    @Query('ttmTypeId') ttmTypeId: string,
   ): Promise<TenderTypeMasterSuccessResponse<TenderTypeMasterPayload>> {
     const data = await this.tenderTypeMasterService.getById(ttmTypeId);
 
@@ -110,12 +110,12 @@ export class TenderTypeMasterController {
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete tender type by id' })
-  @ApiQuery({ name: 'ttmTypeId', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'ttmTypeId', schema: { type: 'string', example: '1' } })
   @ApiOkResponse({ type: TenderTypeMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: TenderTypeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: TenderTypeMasterErrorResponseDto })
   async remove(
-    @Query('ttmTypeId', new ParseUUIDPipe({ version: '7' })) ttmTypeId: string,
+    @Query('ttmTypeId') ttmTypeId: string,
   ): Promise<TenderTypeMasterSuccessResponse<{ ttmTypeId: string; deleted: true }>> {
     const data = await this.tenderTypeMasterService.softDelete(ttmTypeId);
 

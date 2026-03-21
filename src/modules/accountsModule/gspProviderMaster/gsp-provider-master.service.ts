@@ -47,7 +47,7 @@ export class GspProviderMasterService {
 
   async list(
     queryDto: ListGspProviderMasterQueryDto,
-  ): Promise<{ items: GspProviderMasterListItem[]; meta: GspProviderMasterListMeta }> {
+  ): Promise<ConfiguredGridListResult<GspProviderMasterListItem, GspProviderMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

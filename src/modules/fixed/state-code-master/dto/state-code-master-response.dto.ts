@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class StateCodeMasterErrorFieldDto {
   @ApiProperty({ example: 'stateName' })
@@ -99,6 +100,9 @@ export class StateCodeMasterSuccessListDto {
 
   @ApiProperty({ type: StateCodeMasterListMetaDto })
   meta!: StateCodeMasterListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class StateCodeMasterSuccessDeleteDto {

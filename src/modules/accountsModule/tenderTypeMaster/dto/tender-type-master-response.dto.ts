@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class TenderTypeMasterErrorFieldDto {
   @ApiProperty({ example: 'ttmTypeName' })
@@ -20,7 +21,7 @@ export class TenderTypeMasterErrorResponseDto {
 }
 
 export class TenderTypeMasterPayloadDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ example: '1' })
   ttmTypeId!: string;
 
   @ApiProperty()
@@ -63,7 +64,7 @@ export class TenderTypeMasterListMetaDto {
 }
 
 export class TenderTypeMasterDeleteResultDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({ example: '1' })
   ttmTypeId!: string;
 
   @ApiProperty({ example: true })
@@ -93,6 +94,9 @@ export class TenderTypeMasterSuccessListDto {
 
   @ApiProperty({ type: TenderTypeMasterListMetaDto })
   meta!: TenderTypeMasterListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class TenderTypeMasterSuccessDeleteDto {

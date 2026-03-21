@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   IsUUID,
   Max,
   MaxLength,
@@ -43,10 +44,19 @@ const toOptionalBoolean = (value: unknown): boolean | undefined => {
   return value as boolean;
 };
 
+const toOptionalNumericString = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  return String(value).trim();
+};
+
 export class ListTenderMasterQueryDto {
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ example: '1' })
   @IsOptional()
-  @IsUUID('all')
+  @Transform(({ value }) => toOptionalNumericString(value))
+  @Matches(/^\d+$/)
   tndTypeId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })

@@ -64,7 +64,7 @@ export class ItemsPriceMasterService {
 
   async list(
     queryDto: ListItemPriceQueryDto,
-  ): Promise<{ items: ItemPriceListItem[]; meta: ItemPriceListMeta }> {
+  ): Promise<ConfiguredGridListResult<ItemPriceListItem, ItemPriceListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

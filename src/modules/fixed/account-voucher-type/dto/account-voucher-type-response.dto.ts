@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 import { AvtDrcrType, AvtTallyReservedVch } from '@prisma/client';
 
 export class AccountVoucherTypeErrorFieldDto {
@@ -119,6 +120,9 @@ export class AccountVoucherTypeSuccessListDto {
 
   @ApiProperty({ type: AccountVoucherTypeListMetaDto })
   meta!: AccountVoucherTypeListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class AccountVoucherTypeSuccessDeleteDto {

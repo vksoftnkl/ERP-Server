@@ -9,11 +9,12 @@ export interface ItemPriceErrorResponse {
   errors: ItemPriceErrorDetail[];
 }
 
-export interface ItemPriceSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface ItemPriceSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface ItemPriceDeleteResult {

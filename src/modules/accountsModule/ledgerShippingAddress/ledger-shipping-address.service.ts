@@ -47,7 +47,7 @@ export class LedgerShippingAddressService {
 
   async list(
     queryDto: ListLedgerShippingAddressQueryDto,
-  ): Promise<{ items: LedgerShippingAddressListItem[]; meta: LedgerShippingAddressListMeta }> {
+  ): Promise<ConfiguredGridListResult<LedgerShippingAddressListItem, LedgerShippingAddressListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

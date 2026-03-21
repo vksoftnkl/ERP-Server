@@ -9,11 +9,12 @@ export interface AccountGroupErrorResponse {
   errors: AccountGroupErrorDetail[];
 }
 
-export interface AccountGroupSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface AccountGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface AccountGroupPayload {

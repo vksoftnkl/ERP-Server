@@ -46,7 +46,7 @@ export class EmployeeMasterService {
 
   async list(
     queryDto: ListEmployeeMasterQueryDto,
-  ): Promise<{ items: EmployeeMasterListItem[]; meta: EmployeeMasterListMeta }> {
+  ): Promise<ConfiguredGridListResult<EmployeeMasterListItem, EmployeeMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

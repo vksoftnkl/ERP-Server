@@ -9,7 +9,7 @@ model Unit {
   unit_description String? @db.VarChar(100)
 
   // Decimal / measurement
-  unit_decimal_count Int     @default(0)
+  unit_decimal_count Int      @default(0)
   unit_weight        Decimal? @db.Decimal
   unit_loading       Decimal? @db.Decimal
   unit_unloading     Decimal? @db.Decimal
@@ -32,16 +32,15 @@ model Unit {
   unit_modified_by String?   @db.VarChar(100)
 
   // Self relation (base unit -> pack units)
-  baseUnit Unit?   @relation("UnitBase", fields: [unit_base_unit_id], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-  packUnits Unit[] @relation("UnitBase")
-  eanCodes ItemEanCode[]
-  itemMasters ItemMaster[]
-  itemPrices  ItemPriceMaster[]
+  baseUnit     Unit?             @relation("UnitBase", fields: [unit_base_unit_id], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  packUnits    Unit[]            @relation("UnitBase")
+  eanCodes     ItemEanCode[]
+  itemMasters  ItemMaster[]
+  itemPrices   ItemPriceMaster[]
   itemReorders ItemReorder[]
 
   @@map("units")
-   @@schema("inventory")
-
+  @@schema("inventory")
   @@index([unit_is_active], map: "idx_unit_active")
   @@index([unit_base_unit_id], map: "idx_unit_base")
 }

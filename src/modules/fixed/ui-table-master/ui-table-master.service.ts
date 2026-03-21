@@ -44,7 +44,7 @@ export class UiTableMasterService {
 
   async list(
     queryDto: ListUiTableMasterQueryDto,
-  ): Promise<{ items: UiTableMasterListItem[]; meta: UiTableMasterListMeta }> {
+  ): Promise<ConfiguredGridListResult<UiTableMasterListItem, UiTableMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

@@ -42,7 +42,7 @@ export class CityService {
     return this.createCity(saveCityDto);
   }
 
-  async list(queryDto: ListCityQueryDto): Promise<{ items: CityListItem[]; meta: CityListMeta }> {
+  async list(queryDto: ListCityQueryDto): Promise<ConfiguredGridListResult<CityListItem, CityListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

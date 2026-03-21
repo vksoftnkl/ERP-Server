@@ -188,4 +188,16 @@ describe('ConfiguredGridSqlService', () => {
     });
     expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
   });
+
+  it('checks whether a configured query is executable', async () => {
+    prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+    await expect(service.assertBaseSqlExecutable('SELECT * FROM units', 'unit_grid')).resolves.toBe(
+      undefined,
+    );
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      'SELECT * FROM (SELECT * FROM units) AS unit_grid LIMIT 0',
+    );
+  });
 });

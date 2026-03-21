@@ -7,11 +7,12 @@ export interface ItemBrandErrorResponse {
   message: string;
   errors: ItemBrandErrorDetail[];
 }
-export interface ItemBrandSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface ItemBrandSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 export interface ItemBrandPayload {
   brand_id: string;

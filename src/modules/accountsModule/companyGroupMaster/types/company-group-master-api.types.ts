@@ -9,11 +9,12 @@ export interface CompanyGroupMasterErrorResponse {
   errors: CompanyGroupMasterErrorDetail[];
 }
 
-export interface CompanyGroupMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface CompanyGroupMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface CompanyGroupMasterPayload {

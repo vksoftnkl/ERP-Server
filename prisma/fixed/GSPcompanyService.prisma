@@ -22,5 +22,5 @@ model GspCompanyService {
   @@index([csgServiceType], name: "idx_gsp_company_service_service")
   @@index([csgIsActive],    name: "idx_gsp_company_service_active")
   @@map("gsp_company_service")
-  @@schema("accounts")
+  @@schema("fixed")
 }

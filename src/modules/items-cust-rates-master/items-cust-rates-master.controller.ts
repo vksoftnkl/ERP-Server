@@ -83,6 +83,7 @@ export class ItemsCustRatesMasterController {
       message: 'Item customer rates fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

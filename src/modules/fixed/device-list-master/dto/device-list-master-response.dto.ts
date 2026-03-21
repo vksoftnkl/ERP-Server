@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class DeviceListMasterErrorFieldDto {
   @ApiProperty({ example: 'devDeviceUid' })
@@ -150,6 +151,9 @@ export class DeviceListMasterSuccessListDto {
 
   @ApiProperty({ type: DeviceListMasterListMetaDto })
   meta!: DeviceListMasterListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class DeviceListMasterSuccessDeleteDto {

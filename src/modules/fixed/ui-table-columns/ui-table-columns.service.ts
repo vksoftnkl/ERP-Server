@@ -44,7 +44,7 @@ export class UiTableColumnsService {
 
   async list(
     queryDto: ListUiTableColumnQueryDto,
-  ): Promise<{ items: UiTableColumnListItem[]; meta: UiTableColumnListMeta }> {
+  ): Promise<ConfiguredGridListResult<UiTableColumnListItem, UiTableColumnListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

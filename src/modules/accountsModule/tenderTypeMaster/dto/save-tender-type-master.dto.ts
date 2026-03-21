@@ -1,13 +1,23 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+const toOptionalNumericString = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  return String(value).trim();
+};
 
 export class SaveTenderTypeMasterDto {
   @ApiPropertyOptional({
-    format: 'uuid',
+    example: '1',
     description: 'When provided, request updates the existing tender type',
   })
   @IsOptional()
-  @IsUUID('all')
+  @Transform(({ value }) => toOptionalNumericString(value))
+  @Matches(/^\d+$/)
   ttmTypeId?: string;
 
   @ApiProperty({ maxLength: 150 })

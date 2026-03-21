@@ -113,7 +113,6 @@ const main = async () => {
           FROM "public"."_prisma_migrations"
           WHERE migration_name = $1
           ORDER BY started_at DESC
-          LIMIT 1
         `,
         [migrationName],
       );
@@ -123,26 +122,32 @@ const main = async () => {
         continue;
       }
 
-      const { id, checksum: currentChecksum } = result.rows[0];
-      if (currentChecksum === expectedChecksum) {
+      const mismatchedRows = result.rows.filter(
+        ({ checksum: currentChecksum }) => currentChecksum !== expectedChecksum,
+      );
+
+      if (mismatchedRows.length === 0) {
         unchanged.push(migrationName);
         continue;
       }
 
       if (!dryRun) {
-        await client.query(
-          `
-            UPDATE "public"."_prisma_migrations"
-            SET checksum = $1
-            WHERE id = $2
-          `,
-          [expectedChecksum, id],
-        );
+        for (const { id } of mismatchedRows) {
+          await client.query(
+            `
+              UPDATE "public"."_prisma_migrations"
+              SET checksum = $1
+              WHERE id = $2
+            `,
+            [expectedChecksum, id],
+          );
+        }
       }
 
       updated.push({
         migrationName,
-        from: currentChecksum,
+        rowCount: mismatchedRows.length,
+        from: [...new Set(mismatchedRows.map(({ checksum: currentChecksum }) => currentChecksum))],
         to: expectedChecksum,
       });
     }
@@ -168,7 +173,8 @@ const main = async () => {
     console.log('\nUpdated migration checksums:');
     for (const item of updated) {
       console.log(`- ${item.migrationName}`);
-      console.log(`  from: ${item.from}`);
+      console.log(`  rows: ${item.rowCount}`);
+      console.log(`  from: ${item.from.join(', ')}`);
       console.log(`  to:   ${item.to}`);
     }
   }

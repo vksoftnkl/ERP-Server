@@ -11,11 +11,12 @@ export interface AccountVoucherTypeErrorResponse {
   errors: AccountVoucherTypeErrorDetail[];
 }
 
-export interface AccountVoucherTypeSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface AccountVoucherTypeSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface AccountVoucherTypePayload {

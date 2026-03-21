@@ -47,7 +47,6 @@ export class ItemsMasterService {
     if (configuredList) {
       return configuredList;
     }
-
     return {
       items: [],
       meta: {
@@ -344,10 +343,8 @@ export class ItemsMasterService {
         { itemNotes: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     return where;
   }
-
   private applyOptionalFields(
     data: Prisma.ItemMasterUncheckedCreateInput | Prisma.ItemMasterUncheckedUpdateInput,
     saveItemDto: SaveItemDto,
@@ -355,87 +352,66 @@ export class ItemsMasterService {
     if (this.hasOwnProperty(saveItemDto, 'item_company_id')) {
       data.itemCompanyId = saveItemDto.item_company_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_branch_id')) {
       data.itemBranchId = saveItemDto.item_branch_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_code')) {
       data.itemCode = saveItemDto.item_code;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_sku')) {
       data.itemSku = saveItemDto.item_sku;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_name_ta')) {
       data.itemNameTa = saveItemDto.item_name_ta;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_alias')) {
       data.itemAlias = saveItemDto.item_alias;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_stock_type')) {
       data.itemStockType = saveItemDto.item_stock_type;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_default_barcode')) {
       data.itemDefaultBarcode = saveItemDto.item_default_barcode;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_category_id')) {
       data.itemCategoryId = saveItemDto.item_category_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_brand_id')) {
       data.itemBrandId = saveItemDto.item_brand_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_section_id')) {
       data.itemSectionId = saveItemDto.item_section_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_company_category_id')) {
       data.itemCompanyCategoryId = saveItemDto.item_company_category_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_mfgr_id')) {
       data.itemMfgrId = saveItemDto.item_mfgr_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_supplier_id')) {
       data.itemSupplierId = saveItemDto.item_supplier_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_cust_group')) {
       data.itemCustGroup = saveItemDto.item_cust_group;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_is_service')) {
       data.itemIsService = saveItemDto.item_is_service;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_is_batch_based')) {
       data.itemIsBatchBased = saveItemDto.item_is_batch_based;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_is_expiry_item')) {
       data.itemIsExpiryItem = saveItemDto.item_is_expiry_item;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_expiry_days')) {
       data.itemExpiryDays = saveItemDto.item_expiry_days;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_intimate_before_days')) {
       data.itemIntimateBeforeDays = saveItemDto.item_intimate_before_days;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_allow_sales')) {
       data.itemAllowSales = saveItemDto.item_allow_sales;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_allow_sales_return')) {
       data.itemAllowSalesReturn = saveItemDto.item_allow_sales_return;
     }

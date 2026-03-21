@@ -85,6 +85,7 @@ export class AccountLedgerMastersController {
       message: 'Account ledgers fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

@@ -9,11 +9,12 @@ export interface ItemGroupErrorResponse {
   errors: ItemGroupErrorDetail[];
 }
 
-export interface ItemGroupSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface ItemGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface ItemGroupPayload {

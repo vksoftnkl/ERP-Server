@@ -7,11 +7,12 @@ export interface SupplierGroupErrorResponse {
   message: string;
   errors: SupplierGroupErrorDetail[];
 }
-export interface SupplierGroupSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface SupplierGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 export interface SupplierGroupPayload {
   spgId: string;

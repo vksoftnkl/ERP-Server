@@ -4,8 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
-import { Prisma, TenderMaster } from '@prisma/client';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { AccountTenderMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ListTenderMasterQueryDto } from './dto/list-tender-master-query.dto';
@@ -21,7 +24,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const TENDER_MASTER_TABLE_NAME = 'tender_master';
+const TENDER_MASTER_TABLE_NAME = 'account_tender_master';
 const TENDER_MASTER_AUDIT_SCREEN_NAME = 'Tender Master';
 
 type TenderMasterWriteClient = Prisma.TransactionClient | PrismaService;
@@ -44,7 +47,7 @@ export class TenderMasterService {
 
   async list(
     queryDto: ListTenderMasterQueryDto,
-  ): Promise<{ items: TenderMasterListItem[]; meta: TenderMasterListMeta }> {
+  ): Promise<ConfiguredGridListResult<TenderMasterListItem, TenderMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
@@ -62,35 +65,35 @@ export class TenderMasterService {
       }
     }
 
-    const where: Prisma.TenderMasterWhereInput = {
-      tndIsDeleted: false,
+    const where: Prisma.AccountTenderMasterWhereInput = {
+      acctndIsDeleted: false,
     };
 
     if (queryDto.tndTypeId !== undefined) {
-      where.tndTypeId = queryDto.tndTypeId;
+      where.acctndTypeId = this.parseTenderTypeId(queryDto.tndTypeId, 'tndTypeId');
     }
 
     if (queryDto.tndLedgerId !== undefined) {
-      where.tndLedgerId = queryDto.tndLedgerId;
+      where.acctndLedgerId = queryDto.tndLedgerId;
     }
 
     if (queryDto.tndIsActive !== undefined) {
-      where.tndIsActive = queryDto.tndIsActive;
+      where.acctndIsActive = queryDto.tndIsActive;
     }
 
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
-        { tndName: { contains: search, mode: 'insensitive' } },
-        { tndRemarks: { contains: search, mode: 'insensitive' } },
+        { acctndName: { contains: search, mode: 'insensitive' } },
+        { acctndRemarks: { contains: search, mode: 'insensitive' } },
       ];
     }
 
     const [total, records] = await Promise.all([
-      this.prisma.tenderMaster.count({ where }),
-      this.prisma.tenderMaster.findMany({
+      this.prisma.accountTenderMaster.count({ where }),
+      this.prisma.accountTenderMaster.findMany({
         where,
-        orderBy: [{ tndDisplayPosition: 'asc' }, { tndName: 'asc' }, { tndId: 'asc' }],
+        orderBy: [{ acctndDisplayPosition: 'asc' }, { acctndName: 'asc' }, { acctndId: 'asc' }],
         skip,
         take: limit,
       }),
@@ -165,10 +168,10 @@ export class TenderMasterService {
   }
 
   async getById(tndId: string): Promise<TenderMasterPayload> {
-    const record = await this.prisma.tenderMaster.findFirst({
+    const record = await this.prisma.accountTenderMaster.findFirst({
       where: {
-        tndId,
-        tndIsDeleted: false,
+        acctndId: tndId,
+        acctndIsDeleted: false,
       },
     });
 
@@ -181,10 +184,10 @@ export class TenderMasterService {
 
   async softDelete(tndId: string): Promise<{ tndId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.tenderMaster.findFirst({
+      const existing = await tx.accountTenderMaster.findFirst({
         where: {
-          tndId,
-          tndIsDeleted: false,
+          acctndId: tndId,
+          acctndIsDeleted: false,
         },
       });
 
@@ -193,16 +196,16 @@ export class TenderMasterService {
       }
 
       const modifiedOn = new Date();
-      const result = await tx.tenderMaster.updateMany({
+      const result = await tx.accountTenderMaster.updateMany({
         where: {
-          tndId,
-          tndIsDeleted: false,
+          acctndId: tndId,
+          acctndIsDeleted: false,
         },
         data: {
-          tndIsDeleted: true,
-          tndIsActive: false,
-          tndModifiedOn: modifiedOn,
-          tndModifiedBy: DEFAULT_ACTOR,
+          acctndIsDeleted: true,
+          acctndIsActive: false,
+          acctndModifiedOn: modifiedOn,
+          acctndModifiedBy: DEFAULT_ACTOR,
         },
       });
 
@@ -213,10 +216,10 @@ export class TenderMasterService {
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        tndIsDeleted: true,
-        tndIsActive: false,
-        tndModifiedOn: modifiedOn,
-        tndModifiedBy: DEFAULT_ACTOR,
+        acctndIsDeleted: true,
+        acctndIsActive: false,
+        acctndModifiedOn: modifiedOn,
+        acctndModifiedBy: DEFAULT_ACTOR,
       });
 
       await this.auditLogService.logEntityChange(
@@ -226,7 +229,7 @@ export class TenderMasterService {
           screenName: TENDER_MASTER_AUDIT_SCREEN_NAME,
           screenType: 'master',
           pk: tndId,
-          displayName: existing.tndName,
+          displayName: existing.acctndName,
           originalRecord,
           modifiedRecord,
           userId: DEFAULT_ACTOR,
@@ -248,6 +251,7 @@ export class TenderMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const tndName = this.normalizeRequiredName(saveTenderMasterDto.tndName);
+        const tndTypeId = this.parseTenderTypeId(saveTenderMasterDto.tndTypeId, 'tndTypeId');
         const tndRemarks = this.normalizeNullableString(saveTenderMasterDto.tndRemarks);
         const tndMinAmount = this.toInputNumber(saveTenderMasterDto.tndMinAmount, 'tndMinAmount');
         const tndMaxAmount = this.toInputNullableNumber(
@@ -260,57 +264,59 @@ export class TenderMasterService {
         );
         this.validateAmountRange(tndMinAmount, tndMaxAmount);
 
-        await this.ensureTenderTypeExists(saveTenderMasterDto.tndTypeId, tx);
+        await this.ensureTenderTypeExists(tndTypeId, tx);
         await this.ensureLedgerExists(saveTenderMasterDto.tndLedgerId, tx);
-        await this.ensureNameIsUnique(tx, tndName, saveTenderMasterDto.tndTypeId);
+        await this.ensureNameIsUnique(tx, tndName, tndTypeId);
 
         const now = new Date();
-        const data: Prisma.TenderMasterUncheckedCreateInput = {
-          tndTypeId: saveTenderMasterDto.tndTypeId,
-          tndName,
-          tndLedgerId: saveTenderMasterDto.tndLedgerId,
-          tndMinAmount,
-          tndCreatedOn: now,
-          tndCreatedBy: DEFAULT_ACTOR,
-          tndModifiedOn: now,
-          tndModifiedBy: DEFAULT_ACTOR,
+        const data: Prisma.AccountTenderMasterUncheckedCreateInput = {
+          acctndTypeId: tndTypeId,
+          acctndName: tndName,
+          acctndShortName: this.buildShortName(tndName),
+          acctndLedgerId: saveTenderMasterDto.tndLedgerId,
+          acctndMinAmount: tndMinAmount,
+          acctndCreatedOn: now,
+          acctndCreatedBy: DEFAULT_ACTOR,
+          acctndModifiedOn: now,
+          acctndModifiedBy: DEFAULT_ACTOR,
         };
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndMaxAmount')) {
-          data.tndMaxAmount = tndMaxAmount;
+          data.acctndMaxAmount = tndMaxAmount;
         }
 
         if (
           this.hasOwnProperty(saveTenderMasterDto, 'tndDisplayPosition') &&
           saveTenderMasterDto.tndDisplayPosition !== undefined
         ) {
-          data.tndDisplayPosition = saveTenderMasterDto.tndDisplayPosition;
+          data.acctndDisplayPosition = saveTenderMasterDto.tndDisplayPosition;
         }
 
         if (
           this.hasOwnProperty(saveTenderMasterDto, 'tndSurchargePerc') &&
-          tndSurchargePerc !== undefined
+          tndSurchargePerc !== undefined &&
+          tndSurchargePerc !== null
         ) {
-          data.tndSurchargePerc = tndSurchargePerc!;
+          data.acctndSurchargePerc = tndSurchargePerc;
         }
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndIsActive')) {
-          data.tndIsActive = saveTenderMasterDto.tndIsActive;
+          data.acctndIsActive = saveTenderMasterDto.tndIsActive;
         }
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndRemarks')) {
-          data.tndRemarks = tndRemarks;
+          data.acctndRemarks = tndRemarks;
         }
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndEditSurcharge')) {
-          data.tndEditSurcharge = saveTenderMasterDto.tndEditSurcharge;
+          data.acctndEditSurcharge = saveTenderMasterDto.tndEditSurcharge;
         }
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndEditLedger')) {
-          data.tndEditLedger = saveTenderMasterDto.tndEditLedger;
+          data.acctndEditLedger = saveTenderMasterDto.tndEditLedger;
         }
 
-        const created = await tx.tenderMaster.create({ data });
+        const created = await tx.accountTenderMaster.create({ data });
         const payload = this.toPayload(created);
 
         await this.auditLogService.logEntityChange(
@@ -344,10 +350,10 @@ export class TenderMasterService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.tenderMaster.findFirst({
+        const existing = await tx.accountTenderMaster.findFirst({
           where: {
-            tndId,
-            tndIsDeleted: false,
+            acctndId: tndId,
+            acctndIsDeleted: false,
           },
         });
 
@@ -356,6 +362,7 @@ export class TenderMasterService {
         }
 
         const tndName = this.normalizeRequiredName(saveTenderMasterDto.tndName);
+        const tndTypeId = this.parseTenderTypeId(saveTenderMasterDto.tndTypeId, 'tndTypeId');
         const tndRemarks = this.normalizeNullableString(saveTenderMasterDto.tndRemarks);
         const tndMinAmount = this.toInputNumber(saveTenderMasterDto.tndMinAmount, 'tndMinAmount');
         const tndMaxAmount = this.toInputNullableNumber(
@@ -368,56 +375,58 @@ export class TenderMasterService {
         );
         this.validateAmountRange(tndMinAmount, tndMaxAmount);
 
-        await this.ensureTenderTypeExists(saveTenderMasterDto.tndTypeId, tx);
+        await this.ensureTenderTypeExists(tndTypeId, tx);
         await this.ensureLedgerExists(saveTenderMasterDto.tndLedgerId, tx);
-        await this.ensureNameIsUnique(tx, tndName, saveTenderMasterDto.tndTypeId, tndId);
+        await this.ensureNameIsUnique(tx, tndName, tndTypeId, tndId);
 
-        const data: Prisma.TenderMasterUncheckedUpdateInput = {
-          tndTypeId: saveTenderMasterDto.tndTypeId,
-          tndName,
-          tndLedgerId: saveTenderMasterDto.tndLedgerId,
-          tndMinAmount,
-          tndModifiedOn: new Date(),
-          tndModifiedBy: DEFAULT_ACTOR,
+        const data: Prisma.AccountTenderMasterUncheckedUpdateInput = {
+          acctndTypeId: tndTypeId,
+          acctndName: tndName,
+          acctndShortName: this.buildShortName(tndName),
+          acctndLedgerId: saveTenderMasterDto.tndLedgerId,
+          acctndMinAmount: tndMinAmount,
+          acctndModifiedOn: new Date(),
+          acctndModifiedBy: DEFAULT_ACTOR,
         };
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndMaxAmount')) {
-          data.tndMaxAmount = tndMaxAmount;
+          data.acctndMaxAmount = tndMaxAmount;
         }
 
         if (
           this.hasOwnProperty(saveTenderMasterDto, 'tndDisplayPosition') &&
           saveTenderMasterDto.tndDisplayPosition !== undefined
         ) {
-          data.tndDisplayPosition = saveTenderMasterDto.tndDisplayPosition;
+          data.acctndDisplayPosition = saveTenderMasterDto.tndDisplayPosition;
         }
 
         if (
           this.hasOwnProperty(saveTenderMasterDto, 'tndSurchargePerc') &&
-          tndSurchargePerc !== undefined
+          tndSurchargePerc !== undefined &&
+          tndSurchargePerc !== null
         ) {
-          data.tndSurchargePerc = tndSurchargePerc!;
+          data.acctndSurchargePerc = tndSurchargePerc;
         }
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndIsActive')) {
-          data.tndIsActive = saveTenderMasterDto.tndIsActive;
+          data.acctndIsActive = saveTenderMasterDto.tndIsActive;
         }
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndRemarks')) {
-          data.tndRemarks = tndRemarks;
+          data.acctndRemarks = tndRemarks;
         }
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndEditSurcharge')) {
-          data.tndEditSurcharge = saveTenderMasterDto.tndEditSurcharge;
+          data.acctndEditSurcharge = saveTenderMasterDto.tndEditSurcharge;
         }
 
         if (this.hasOwnProperty(saveTenderMasterDto, 'tndEditLedger')) {
-          data.tndEditLedger = saveTenderMasterDto.tndEditLedger;
+          data.acctndEditLedger = saveTenderMasterDto.tndEditLedger;
         }
 
-        const updated = await tx.tenderMaster.update({
+        const updated = await tx.accountTenderMaster.update({
           where: {
-            tndId,
+            acctndId: tndId,
           },
           data,
         });
@@ -447,14 +456,14 @@ export class TenderMasterService {
     }
   }
 
-  private async ensureTenderTypeExists(typeId: string, tx: TenderMasterWriteClient): Promise<void> {
-    const tenderType = await tx.tenderTypeMaster.findFirst({
+  private async ensureTenderTypeExists(typeId: bigint, tx: TenderMasterWriteClient): Promise<void> {
+    const tenderType = await tx.accountTenderTypes.findFirst({
       where: {
-        ttmTypeId: typeId,
-        ttmIsDeleted: false,
+        accttTypeId: typeId,
+        accttTypeIsDeleted: false,
       },
       select: {
-        ttmTypeId: true,
+        accttTypeId: true,
       },
     });
 
@@ -462,7 +471,7 @@ export class TenderMasterService {
       this.throwBadRequest('Tender type does not exist', [
         {
           field: 'tndTypeId',
-          message: `No active tender type found with id ${typeId}`,
+          message: `No active tender type found with id ${typeId.toString()}`,
         },
       ]);
     }
@@ -492,27 +501,27 @@ export class TenderMasterService {
   private async ensureNameIsUnique(
     tx: TenderMasterWriteClient,
     tndName: string,
-    tndTypeId: string,
+    tndTypeId: bigint,
     excludeTndId?: string,
   ): Promise<void> {
-    const existing = await tx.tenderMaster.findFirst({
+    const existing = await tx.accountTenderMaster.findFirst({
       where: {
-        tndIsDeleted: false,
-        tndTypeId,
-        tndName: {
+        acctndIsDeleted: false,
+        acctndTypeId: tndTypeId,
+        acctndName: {
           equals: tndName,
           mode: 'insensitive',
         },
         ...(excludeTndId
           ? {
-              tndId: {
+              acctndId: {
                 not: excludeTndId,
               },
             }
           : {}),
       },
       select: {
-        tndId: true,
+        acctndId: true,
       },
     });
 
@@ -570,6 +579,24 @@ export class TenderMasterService {
     return trimmed ? trimmed : null;
   }
 
+  private buildShortName(value: string): string {
+    return value;
+  }
+
+  private parseTenderTypeId(value: string, field: string): bigint {
+    const normalized = value.trim();
+    if (!/^\d+$/.test(normalized)) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field,
+          message: `${field} must be a valid numeric identifier`,
+        },
+      ]);
+    }
+
+    return BigInt(normalized);
+  }
+
   private toInputNumber(value: number, field: string): number {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) {
@@ -599,26 +626,26 @@ export class TenderMasterService {
     return this.toInputNumber(value, field);
   }
 
-  private toPayload(record: TenderMaster): TenderMasterPayload {
+  private toPayload(record: AccountTenderMaster): TenderMasterPayload {
     return {
-      tndId: record.tndId,
-      tndTypeId: record.tndTypeId,
-      tndName: record.tndName,
-      tndLedgerId: record.tndLedgerId,
-      tndMinAmount: this.toNumber(record.tndMinAmount),
-      tndMaxAmount: this.toNullableNumber(record.tndMaxAmount),
-      tndDisplayPosition: record.tndDisplayPosition,
-      tndSurchargePerc: this.toNumber(record.tndSurchargePerc),
-      tndIsActive: record.tndIsActive,
-      tndIsDeleted: record.tndIsDeleted,
-      tndRemarks: record.tndRemarks,
-      tndEditSurcharge: record.tndEditSurcharge,
-      tndEditLedger: record.tndEditLedger,
-      tndSyncDate: record.tndSyncDate ? record.tndSyncDate.toISOString() : null,
-      tndCreatedOn: record.tndCreatedOn.toISOString(),
-      tndCreatedBy: record.tndCreatedBy,
-      tndModifiedOn: record.tndModifiedOn.toISOString(),
-      tndModifiedBy: record.tndModifiedBy,
+      tndId: record.acctndId,
+      tndTypeId: record.acctndTypeId.toString(),
+      tndName: record.acctndName,
+      tndLedgerId: record.acctndLedgerId,
+      tndMinAmount: this.toNumber(record.acctndMinAmount),
+      tndMaxAmount: this.toNullableNumber(record.acctndMaxAmount),
+      tndDisplayPosition: record.acctndDisplayPosition,
+      tndSurchargePerc: this.toNumber(record.acctndSurchargePerc),
+      tndIsActive: record.acctndIsActive,
+      tndIsDeleted: record.acctndIsDeleted,
+      tndRemarks: record.acctndRemarks,
+      tndEditSurcharge: record.acctndEditSurcharge,
+      tndEditLedger: record.acctndEditLedger,
+      tndSyncDate: record.acctndSyncDate ? record.acctndSyncDate.toISOString() : null,
+      tndCreatedOn: record.acctndCreatedOn.toISOString(),
+      tndCreatedBy: record.acctndCreatedBy,
+      tndModifiedOn: record.acctndModifiedOn.toISOString(),
+      tndModifiedBy: record.acctndModifiedBy,
     };
   }
 

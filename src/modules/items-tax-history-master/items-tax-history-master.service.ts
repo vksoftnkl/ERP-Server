@@ -38,7 +38,7 @@ export class ItemsTaxHistoryMasterService {
   }
   async list(
     queryDto: ListItemTaxHistoryQueryDto,
-  ): Promise<{ items: ItemTaxHistoryListItem[]; meta: ItemTaxHistoryListMeta }> {
+  ): Promise<ConfiguredGridListResult<ItemTaxHistoryListItem, ItemTaxHistoryListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

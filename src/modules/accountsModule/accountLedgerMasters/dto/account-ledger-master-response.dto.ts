@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 import { LedGstPartyRegType, LedObType } from '@prisma/client';
 
 export class AccountLedgerMasterErrorFieldDto {
@@ -275,6 +276,9 @@ export class AccountLedgerMasterSuccessListDto {
 
   @ApiProperty({ type: AccountLedgerMasterListMetaDto })
   meta!: AccountLedgerMasterListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class AccountLedgerMasterSuccessDeleteDto {

@@ -44,7 +44,7 @@ export class DeviceListMasterService {
 
   async list(
     queryDto: ListDeviceListMasterQueryDto,
-  ): Promise<{ items: DeviceListMasterListItem[]; meta: DeviceListMasterListMeta }> {
+  ): Promise<ConfiguredGridListResult<DeviceListMasterListItem, DeviceListMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

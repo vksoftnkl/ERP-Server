@@ -1,35 +1,28 @@
 model categoryMaster {
   categoryId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("category_id")
-  
   categoryName           String   @db.VarChar(150) @map("category_name")
   categoryAlias          String?  @db.VarChar(100) @map("category_alias")
   categoryShort          String?  @db.VarChar(50)  @map("category_short")
   categoryDescription    String?  @db.VarChar(250) @map("category_description")
-
   // Hierarchy
   categoryParentId       String?  @db.Uuid @map("category_parent_id")
   parent                 categoryMaster? @relation("CategoryParent", fields: [categoryParentId], references: [categoryId], onUpdate: Cascade, onDelete: Restrict)
   children               categoryMaster[] @relation("CategoryParent")
-  items             ItemMaster[]
-
+  items                  ItemMaster[]
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
   categoryPathIdsCache   String[] @default([]) @db.Uuid @map("category_path_ids_cache")
-  
   // Media
   categoryPhoto          Bytes?   @map("category_photo")
   categoryPhotoUrl       String?  @db.Text @map("category_photo_url")
-
   // Status / audit
   categoryIsActive       Boolean   @default(true)  @map("category_is_active")
   categoryIsDeleted      Boolean   @default(false) @map("category_is_deleted")
-
   categorySyncDate       DateTime? @db.Timestamptz(6) @map("category_sync_date")
   categoryCreatedOn      DateTime  @default(now())    @db.Timestamptz(6) @map("category_created_on")
   categoryCreatedBy      String?   @db.VarChar(100)   @map("category_created_by")
   categoryModifiedOn     DateTime  @default(now())    @db.Timestamptz(6) @map("category_modified_on")
   categoryModifiedBy     String?   @db.VarChar(100)   @map("category_modified_by")
-
   @@map("category_master")
   @@schema("inventory")
   @@unique([categoryName], map: "uq_category_name")

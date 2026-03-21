@@ -1,4 +1,5 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class ItemReorderErrorFieldDto {
   @ApiProperty({ example: 'ir_item_id' })
@@ -149,6 +150,9 @@ export class ItemReorderSuccessListDto {
 
   @ApiProperty({ type: ItemReorderListMetaDto })
   meta!: ItemReorderListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class ItemReorderSuccessDeleteDto {

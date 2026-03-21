@@ -42,7 +42,7 @@ export class AreaService {
     return this.createArea(saveAreaDto);
   }
 
-  async list(queryDto: ListAreaQueryDto): Promise<{ items: AreaListItem[]; meta: AreaListMeta }> {
+  async list(queryDto: ListAreaQueryDto): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;

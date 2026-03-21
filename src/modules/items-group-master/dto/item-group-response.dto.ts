@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class ItemGroupErrorFieldDto {
   @ApiProperty({ example: 'itg_name' })
@@ -132,6 +133,9 @@ export class ItemGroupSuccessListDto {
 
   @ApiProperty({ type: ItemGroupListMetaDto })
   meta!: ItemGroupListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class ItemGroupSuccessDeleteDto {

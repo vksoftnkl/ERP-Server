@@ -32,6 +32,7 @@ import {
 } from './dto/unit-response.dto';
 import { UnitExceptionFilter } from './unit-exception.filter';
 import {
+  UnitGridStyle,
   UnitListItem,
   UnitListMeta,
   UnitPayload,
@@ -71,7 +72,7 @@ export class UnitsMasterController {
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   async list(
     @Query() queryDto: ListUnitQueryDto,
-  ): Promise<UnitSuccessResponse<UnitListItem[], UnitListMeta>> {
+  ): Promise<UnitSuccessResponse<UnitListItem[], UnitListMeta, UnitGridStyle[]>> {
     const result = await this.unitsMasterService.list(queryDto);
 
     return {
@@ -79,6 +80,7 @@ export class UnitsMasterController {
       message: 'Units fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

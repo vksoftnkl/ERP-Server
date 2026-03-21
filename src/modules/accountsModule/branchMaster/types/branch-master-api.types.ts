@@ -9,11 +9,12 @@ export interface BranchMasterErrorResponse {
   errors: BranchMasterErrorDetail[];
 }
 
-export interface BranchMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface BranchMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface BranchMasterPayload {
