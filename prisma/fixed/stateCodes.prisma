@@ -1,0 +1,18 @@
+model StateCode {
+  stateCode     String    @id @db.Char(2)                                     @map("state_code")
+  stateName     String    @db.VarChar(100)                                    @map("state_name")
+  stateUt       Boolean   @default(false)                                     @map("state_ut")
+  tinCode       String?   @db.VarChar(2)                                      @map("tin_code")
+  isActive      Boolean   @default(true)                                      @map("is_active")
+  isDeleted     Boolean   @default(false)                                     @map("is_deleted")
+  stateSyncDate DateTime? @db.Timestamptz                                     @map("state_sync_date")
+  createdOn     DateTime  @default(now()) @db.Timestamptz                     @map("created_on")
+  createdBy     String?   @db.VarChar(100)                                    @map("created_by")
+  modifiedOn    DateTime  @default(now()) @db.Timestamptz                     @map("modified_on")
+  modifiedBy    String?   @db.VarChar(100)                                    @map("modified_by")
+
+  @@index([isActive],  name: "idx_state_codes_active")
+  @@index([stateName], name: "idx_state_codes_name")
+  @@map("state_codes")
+  @@schema("fixed")
+}

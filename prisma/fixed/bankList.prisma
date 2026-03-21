@@ -1,0 +1,19 @@
+model BankMaster {
+  bnkId             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("bnk_id")
+  bnkName           String    @db.VarChar(200)                                 @map("bnk_name")
+  bnkShortName      String?   @db.VarChar(80)                                  @map("bnk_short_name")
+  bnkAlias          String?   @db.VarChar(120)                                 @map("bnk_alias")
+  bnkRbiCode        String?   @db.VarChar(30)                                  @map("bnk_rbi_code")
+  bnkIbanSupported  Boolean   @default(false)                                   @map("bnk_iban_supported")
+  bnkIsActive       Boolean   @default(true)                                    @map("bnk_is_active")
+  bnkIsDeleted      Boolean   @default(false)                                   @map("bnk_is_deleted")
+  bnkSyncDate       DateTime? @db.Timestamptz                                  @map("bnk_sync_date")
+  bnkCreatedOn      DateTime  @default(now()) @db.Timestamptz                  @map("bnk_created_on")
+  bnkCreatedBy      String?   @db.VarChar(100)                                 @map("bnk_created_by")
+  bnkModifiedOn     DateTime  @default(now()) @db.Timestamptz                  @map("bnk_modified_on")
+  bnkModifiedBy     String?   @db.VarChar(100)                                 @map("bnk_modified_by")
+
+  @@index([bnkIsActive], name: "idx_bnk_active")
+  @@map("bank_master")
+  @@schema("fixed")
+}

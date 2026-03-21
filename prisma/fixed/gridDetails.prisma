@@ -1,0 +1,19 @@
+model GridDetails {
+  gridId          BigInt   @id @default(autoincrement()) @map("grid_id")
+  gridName        String   @db.Text @map("grid_name")
+  gridDescription String?  @db.Text @map("grid_description")
+
+  gridSortColumn  String?     @map("grid_sort_column")
+  gridSortOrder   String?     @map("grid_sort_order")
+
+  gridSql         String?  @db.Text @map("grid_sql")
+  gridStatus      Boolean  @default(true)  @map("grid_status")
+  gridIsDeleted   Boolean  @default(false) @map("grid_is_deleted")
+
+  columns         GridColumn[]
+
+  @@map("grid_details")
+  @@schema("fixed")
+  @@index([gridStatus], map: "idx_grid_details_status")
+  @@index([gridIsDeleted], map: "idx_grid_details_deleted")
+}

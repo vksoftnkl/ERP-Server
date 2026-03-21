@@ -1,0 +1,127 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UseFilters,
+  Version,
+} from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
+import { ListSupplierQueryDto } from './dto/list-supplier-query.dto';
+import { SaveSupplierDto } from './dto/save-supplier.dto';
+import {
+  SupplierErrorResponseDto,
+  SupplierSuccessDeleteDto,
+  SupplierSuccessListDto,
+  SupplierSuccessSingleDto,
+} from './dto/supplier-response.dto';
+import { SupplierExceptionFilter } from './supplier-exception.filter';
+import { SuppliersService } from './suppliers.service';
+import {
+  SupplierListItem,
+  SupplierListMeta,
+  SupplierPayload,
+  SupplierSuccessResponse,
+} from './types/supplier-api.types';
+
+@ApiTags('Suppliers')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@Controller('suppliers')
+@UseFilters(SupplierExceptionFilter)
+export class SuppliersController {
+  constructor(private readonly suppliersService: SuppliersService) {}
+
+  @Post('create')
+  @Version('1')
+  @ApiOperation({ summary: 'Create or update supplier (by supId presence)' })
+  @ApiCreatedResponse({ type: SupplierSuccessSingleDto })
+  @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
+  @ApiConflictResponse({ type: SupplierErrorResponseDto })
+  @ApiNotFoundResponse({ type: SupplierErrorResponseDto })
+  async save(
+    @Body() saveSupplierDto: SaveSupplierDto,
+  ): Promise<SupplierSuccessResponse<SupplierPayload>> {
+    const data = await this.suppliersService.save(saveSupplierDto);
+
+    return {
+      success: true,
+      message: saveSupplierDto.supId
+        ? 'Supplier updated successfully'
+        : 'Supplier created successfully',
+      data,
+    };
+  }
+
+  @Get('list')
+  @Version('1')
+  @ApiOperation({ summary: 'List suppliers with filter/search/pagination' })
+  @ApiOkResponse({ type: SupplierSuccessListDto })
+  @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
+  async list(
+    @Query() queryDto: ListSupplierQueryDto,
+  ): Promise<SupplierSuccessResponse<SupplierListItem[], SupplierListMeta>> {
+    const result = await this.suppliersService.list(queryDto);
+
+    return {
+      success: true,
+      message: 'Suppliers fetched successfully',
+      data: result.items,
+      meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
+    };
+  }
+
+  @Get('get')
+  @Version('1')
+  @ApiOperation({ summary: 'Get supplier by id' })
+  @ApiQuery({ name: 'supId', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: SupplierSuccessSingleDto })
+  @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
+  @ApiNotFoundResponse({ type: SupplierErrorResponseDto })
+  async getById(
+    @Query('supId', new ParseUUIDPipe({ version: '7' })) supId: string,
+  ): Promise<SupplierSuccessResponse<SupplierPayload>> {
+    const data = await this.suppliersService.getById(supId);
+
+    return {
+      success: true,
+      message: 'Supplier fetched successfully',
+      data,
+    };
+  }
+
+  @Delete('delete')
+  @Version('1')
+  @ApiOperation({ summary: 'Soft delete supplier by id' })
+  @ApiQuery({ name: 'supId', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: SupplierSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
+  @ApiNotFoundResponse({ type: SupplierErrorResponseDto })
+  async remove(
+    @Query('supId', new ParseUUIDPipe({ version: '7' })) supId: string,
+  ): Promise<SupplierSuccessResponse<{ supId: string; deleted: true }>> {
+    const data = await this.suppliersService.softDelete(supId);
+
+    return {
+      success: true,
+      message: 'Supplier deleted successfully',
+      data,
+    };
+  }
+}

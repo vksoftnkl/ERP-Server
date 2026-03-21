@@ -1,0 +1,80 @@
+model EmpMaster {
+  empId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("emp_id")
+  // Identity / Scope
+  empCompanyId         String    @db.Uuid                                         @map("emp_company_id")
+  empBranchId          String?   @db.Uuid                                          @map("emp_branch_id")
+  // Codes / Names
+  empCode              String?   @db.VarChar(60)                                  @map("emp_code")
+  empName              String    @db.VarChar(200)                                 @map("emp_name")
+  empAlias             String?   @db.VarChar(200)                                 @map("emp_alias")
+  // Contact
+  empMobile1           String?   @db.VarChar(20)                                  @map("emp_mobile1")
+  empMobile2           String?   @db.VarChar(20)                                  @map("emp_mobile2")
+  empEmail             String?   @db.VarChar(150)                                 @map("emp_email")
+  empAddr1             String?   @db.VarChar(250)                                 @map("emp_addr1")
+  empAddr2             String?   @db.VarChar(250)                                 @map("emp_addr2")
+  empAddr3             String?   @db.VarChar(250)                                 @map("emp_addr3")
+  empCity              String?   @db.VarChar(120)                                 @map("emp_city")
+  empDistrict          String?   @db.VarChar(120)                                 @map("emp_district")
+  empState             String?   @db.VarChar(120)                                 @map("emp_state")
+  empPincode           String?   @db.VarChar(10)                                  @map("emp_pincode")
+  // Personal
+  empGender            String?   @db.VarChar(10)                                  @map("emp_gender")
+  empMaritalStatus     String?   @db.VarChar(20)                                  @map("emp_marital_status")
+  empBloodGroup        String?   @db.VarChar(10)                                  @map("emp_blood_group")
+  empDob               DateTime? @db.Date                                          @map("emp_dob")
+  // HR Master Links
+  empDepartmentId      String?   @db.Uuid                                          @map("emp_department_id")
+  empDesignationId     String?   @db.Uuid                                          @map("emp_designation_id")
+  // Employment Lifecycle
+  empEmploymentType    String?   @db.VarChar(20)                                  @map("emp_employment_type")
+  empStatus            String?   @db.VarChar(20)                                  @map("emp_status")
+  empJoinedOn          DateTime? @db.Date                                          @map("emp_joined_on")
+  empProbationEndOn    DateTime? @db.Date                                          @map("emp_probation_end_on")
+  empConfirmationOn    DateTime? @db.Date                                          @map("emp_confirmation_on")
+  empLeftOn            DateTime? @db.Date                                          @map("emp_left_on")
+  // Attendance Setup
+  empShiftId           String?   @db.Uuid                                          @map("emp_shift_id")
+  empAttConstraintId   String?   @db.Uuid                                          @map("emp_att_constraint_id")
+  empHolidayGroupId    String?   @db.Uuid                                          @map("emp_holiday_group_id")
+  empOvertimeAllowed   Boolean   @default(false)                                   @map("emp_overtime_allowed")
+  // Sales Commission
+  empHasCommission     Boolean   @default(false)                                   @map("emp_has_commission")
+  empCommissionType    String?   @db.VarChar(20)                                  @map("emp_commission_type")
+  empCommissionValue   Decimal?  @db.Decimal(12, 3)                               @map("emp_commission_value")
+  // Payroll
+  empSalaryType        String    @db.VarChar(10)                                  @map("emp_salary_type")
+  empSalaryAmount      Decimal   @default(0) @db.Decimal(14, 2)                  @map("emp_salary_amount")
+  empBataAmount        Decimal   @default(0) @db.Decimal(14, 2)                  @map("emp_bata_amount")
+  empKmBataAmount      Decimal   @default(0) @db.Decimal(14, 2)                  @map("emp_km_bata_amount")
+  empPanNo             String?   @db.VarChar(20)                                  @map("emp_pan_no")
+  empAadharNo          String?   @db.VarChar(20)                                  @map("emp_aadhar_no")
+  empPfNo              String?   @db.VarChar(30)                                  @map("emp_pf_no")
+  empEsiNo             String?   @db.VarChar(30)                                  @map("emp_esi_no")
+  // Accounting Link
+  empLoanLedgerId      String?   @db.Uuid                                          @map("emp_loan_ledger_id")
+  // Photos
+  empPhotoUrl          String?                                                     @map("emp_photo_url")
+  empPhoto             Bytes?                                                      @map("emp_photo")
+  // Notes
+  empRemarks           String?   @db.VarChar(500)                                 @map("emp_remarks")
+  // Status / Soft Delete
+  empIsActive          Boolean   @default(true)                                    @map("emp_is_active")
+  empIsDeleted         Boolean   @default(false)                                   @map("emp_is_deleted")
+  // Audit / Sync
+  empSyncDate          DateTime? @db.Timestamptz                                  @map("emp_sync_date")
+  empCreatedOn         DateTime  @default(now()) @db.Timestamptz                  @map("emp_created_on")
+  empCreatedBy         String?   @db.VarChar(100)                                 @map("emp_created_by")
+  empModifiedOn        DateTime  @default(now()) @db.Timestamptz                  @map("emp_modified_on")
+  empModifiedBy        String?   @db.VarChar(100)                                 @map("emp_modified_by")
+  // Relations
+  company              Company               @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
+  department           EmployeeDepartment? @relation(fields: [empDepartmentId], references: [edptId])
+  @@index([empCompanyId],    name: "idx_emp_company")
+  @@index([empIsActive],     name: "idx_emp_active")
+  @@index([empDepartmentId], name: "idx_emp_department")
+  @@index([empDesignationId],name: "idx_emp_designation")
+  @@map("emp_master")
+  @@schema("sales")
+}

@@ -1,0 +1,33 @@
+model AccountTenderMaster {
+  acctndId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid          @map("acc_tnd_id")
+  acctndTypeId          BigInt                                                             @map("acc_tnd_type_id")
+  acctndName            String                                                             @map("acc_tnd_tnd_name")
+  acctndShortName       String                                                             @map("acc_tnd_tnd_short_name")
+  acctndLedgerId        String    @db.Uuid                                                 @map("acc_tnd_tnd_ledger_id")
+  acctndMinAmount       Decimal   @default(0) @db.Decimal(14, 2)                          @map("acc_tnd_tnd_min_amount")
+  acctndMaxAmount       Decimal?  @db.Decimal(14, 2)                                      @map("acc_tnd_tnd_max_amount")
+  acctndDisplayPosition Int       @default(0)                                             @map("acc_tnd_tnd_display_position")
+  acctndSurchargePerc   Decimal   @default(0) @db.Decimal(6, 3)                          @map("acc_tnd_tnd_surcharge_perc")
+  acctndIsActive        Boolean   @default(true)                                          @map("acc_tnd_tnd_is_active")
+  acctndIsDeleted       Boolean   @default(false)                                         @map("acc_tnd_tnd_is_deleted")
+  acctndRemarks         String?                                                            @map("acc_tnd_tnd_remarks")
+  acctndEditSurcharge   Boolean   @default(false)                                         @map("acc_tnd_tnd_edit_surcharge")
+  acctndEditLedger      Boolean   @default(false)                                         @map("acc_tnd_tnd_edit_ledger")
+
+  // Audit
+  acctndSyncDate        DateTime? @db.Timestamptz                                         @map("acc_tnd_tnd_sync_date")
+  acctndCreatedOn       DateTime  @default(now()) @db.Timestamptz                         @map("acc_tnd_tnd_created_on")
+  acctndCreatedBy       String?   @db.VarChar(100)                                        @map("acc_tnd_tnd_created_by")
+  acctndModifiedOn      DateTime  @default(now()) @db.Timestamptz                         @map("acc_tnd_tnd_modified_on")
+  acctndModifiedBy      String?   @db.VarChar(100)                                        @map("acc_tnd_tnd_modified_by")
+
+  // Relations
+  tenderType  AccountTenderTypes @relation(fields: [acctndTypeId], references: [accttTypeId])
+  ledger      AccLedgerMaster    @relation(fields: [acctndLedgerId], references: [ledId])
+
+  @@index([acctndTypeId],          name: "idx_tnd_master_type")
+  @@index([acctndLedgerId],        name: "idx_tnd_master_ledger")
+  @@index([acctndDisplayPosition], name: "idx_tnd_master_position")
+  @@map("account_tender_master")
+  @@schema("accounts")
+}

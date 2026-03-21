@@ -1,0 +1,50 @@
+{
+  "scenario": "stress",
+  "baseUrl": "https://localhost:3010/",
+  "startedAt": "2026-02-17T11:07:23.899Z",
+  "finishedAt": "2026-02-17T11:10:23.916Z",
+  "durationSeconds": 180.017415943,
+  "concurrency": 80,
+  "timeoutMs": 5000,
+  "thinkTimeMs": 0,
+  "maxFailureRate": 5,
+  "requests": {
+    "total": 780434,
+    "success": 780434,
+    "failed": 0,
+    "successRate": 100,
+    "failureRate": 0,
+    "throughputPerSecond": 4335.324979040436
+  },
+  "traffic": {
+    "totalBytes": 84316674,
+    "bytesPerSecond": 468380.6483851412
+  },
+  "latencyMs": {
+    "min": 2.5523820000000796,
+    "avg": 18.446719165717266,
+    "max": 296.9561829999948,
+    "p50": 17.914729000010993,
+    "p90": 22.212369000000763,
+    "p95": 24.58700200000021,
+    "p99": 31.403283999999985
+  },
+  "statusCounts": {
+    "200": 2400,
+    "429": 778034
+  },
+  "errorCounts": {},
+  "routeCounts": {
+    "gridColumns.list": 45941,
+    "gridDetails.list": 45868,
+    "health": 183816,
+    "itemBrands.list": 91508,
+    "itemGroups.list": 92155,
+    "itemSections.list": 91686,
+    "units.list": 91960,
+    "users.list": 137500
+  },
+  "acceptedStatuses": [
+    429
+  ]
+}

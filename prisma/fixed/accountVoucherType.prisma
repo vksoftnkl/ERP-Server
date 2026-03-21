@@ -1,0 +1,52 @@
+enum AvtDrcrType {
+  DR
+  CR
+  BOTH
+
+  @@schema("fixed")
+}
+
+enum AvtTallyReservedVch {
+  CONTRA
+  PAYMENT
+  RECEIPT
+  JOURNAL
+  SALES
+  PURCHASE
+  CREDIT_NOTE
+  DEBIT_NOTE
+  REVERSING_JOURNAL
+  MEMORANDUM
+  DELIVERY_NOTE
+  RECEIPT_NOTE
+  SALES_ORDER
+  PURCHASE_ORDER
+  STOCK_JOURNAL
+  PHYSICAL_STOCK
+
+  @@schema("fixed")
+}
+
+model AvtVoucherTypeMaster {
+  avtId                String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("avt_id")
+  avtShort             String               @db.VarChar(30)                                 @map("avt_short")
+  avtDesc              String               @db.VarChar(150)                                @map("avt_desc")
+  avtDrcr              AvtDrcrType          @default(BOTH)                                  @map("avt_drcr")
+  avtPrintEnabled      Boolean              @default(true)                                  @map("avt_print_enabled")
+  avtPrintStyle        String?              @db.Uuid                                        @map("avt_print_style")
+  avtSortOrder         Int                  @default(0)                                     @map("avt_sort_order")
+  avtTallyName         String               @db.VarChar(150)                                @map("avt_tally_name")
+  avtTallyReservedType AvtTallyReservedVch?                                                 @map("avt_tally_reserved_type")
+  avtIsActive          Boolean              @default(true)                                  @map("avt_is_active")
+  avtIsDeleted         Boolean              @default(false)                                 @map("avt_is_deleted")
+  avtSyncDate          DateTime?            @db.Timestamptz                                 @map("avt_sync_date")
+  avtCreatedOn         DateTime             @default(now()) @db.Timestamptz                 @map("avt_created_on")
+  avtCreatedBy         String?              @db.VarChar(100)                                @map("avt_created_by")
+  avtModifiedOn        DateTime             @default(now()) @db.Timestamptz                 @map("avt_modified_on")
+  avtModifiedBy        String?              @db.VarChar(100)                                @map("avt_modified_by")
+
+  @@index([avtIsActive], name: "idx_avt_active")
+  @@index([avtSortOrder], name: "idx_avt_sort")
+  @@map("avt_voucher_type_master")
+  @@schema("fixed")
+}

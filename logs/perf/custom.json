@@ -1,0 +1,47 @@
+{
+  "scenario": "custom-api-mix",
+  "baseUrl": "https://localhost:3010/",
+  "startedAt": "2026-02-17T11:10:32.725Z",
+  "finishedAt": "2026-02-17T11:12:02.734Z",
+  "durationSeconds": 90.00889309899999,
+  "concurrency": 30,
+  "timeoutMs": 5000,
+  "thinkTimeMs": 0,
+  "maxFailureRate": 5,
+  "requests": {
+    "total": 381323,
+    "success": 381323,
+    "failed": 0,
+    "successRate": 100,
+    "failureRate": 0,
+    "throughputPerSecond": 4236.503603933737
+  },
+  "traffic": {
+    "totalBytes": 44042939,
+    "bytesPerSecond": 489317.6383311098
+  },
+  "latencyMs": {
+    "min": 0.4626270000007935,
+    "avg": 7.077278375783669,
+    "max": 173.9584440000035,
+    "p50": 6.408602999999857,
+    "p90": 9.682118999990053,
+    "p95": 11.06156999999996,
+    "p99": 14.727522999999564
+  },
+  "statusCounts": {
+    "200": 1000,
+    "429": 380323
+  },
+  "errorCounts": {},
+  "routeCounts": {
+    "health": 117437,
+    "itemBrands.list": 58673,
+    "itemGroups.list": 58698,
+    "units.list": 58597,
+    "users.list": 87918
+  },
+  "acceptedStatuses": [
+    429
+  ]
+}

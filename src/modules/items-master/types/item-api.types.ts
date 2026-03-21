@@ -1,0 +1,92 @@
+export interface ItemErrorDetail {
+  field: string;
+  message: string;
+}
+
+export interface ItemErrorResponse {
+  success: false;
+  message: string;
+  errors: ItemErrorDetail[];
+}
+
+export interface ItemSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
+  success: true;
+  message: string;
+  data: T;
+  meta?: TMeta;
+  styles?: TStyles;
+}
+
+export interface ItemPayload {
+  item_id: string;
+  item_company_id: string;
+  item_branch_id: string | null;
+  item_code: string | null;
+  item_sku: string | null;
+  item_name_en: string;
+  item_name_ta: string | null;
+  item_alias: string | null;
+  item_stock_type: string;
+  item_default_barcode: string | null;
+  item_group_id: string;
+  item_category_id: string | null;
+  item_brand_id: string | null;
+  item_section_id: string | null;
+  item_company_category_id: string | null;
+  item_mfgr_id: string | null;
+  item_supplier_id: string | null;
+  item_cust_group: string | null;
+  item_base_unit_id: string;
+  item_is_service: boolean;
+  item_is_batch_based: boolean;
+  item_is_expiry_item: boolean;
+  item_expiry_days: number | null;
+  item_intimate_before_days: number | null;
+  item_allow_sales: boolean;
+  item_allow_sales_return: boolean;
+  item_allow_purchase: boolean;
+  item_allow_po: boolean;
+  item_allow_so: boolean;
+  item_allow_neg_stock: boolean;
+  item_allow_negative_so: boolean;
+  item_price_list: boolean;
+  item_weigh_scale: boolean;
+  item_retail_item: boolean;
+  item_is_kit: boolean;
+  item_auto_break: boolean;
+  item_auto_make: boolean;
+  item_allow_loyalty: boolean;
+  item_allow_promo: boolean;
+  item_has_offer: boolean;
+  item_damagable_product: boolean;
+  item_is_demand: boolean;
+  item_allow_loading: boolean;
+  item_allow_freight: boolean;
+  item_random_stock: boolean;
+  item_barcode_sticker: boolean;
+  item_barcode_sticker_id: string | null;
+  item_default_tax_id: string | null;
+  item_hsn_code: string | null;
+  item_batch_config: number;
+  item_sort_order: number | null;
+  item_photo: string | null;
+  item_image_url: string | null;
+  item_notes: string | null;
+  item_storage_location: string | null;
+  item_packing_item_ids: string[];
+  item_is_active: boolean;
+  item_is_deleted: boolean;
+  item_created_on: string;
+  item_created_by: string | null;
+  item_modified_on: string;
+  item_modified_by: string | null;
+}
+
+export type ItemListItem = ItemPayload | Record<string, unknown>;
+
+export interface ItemListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+}

@@ -1,0 +1,45 @@
+model AccountGroup {
+  accGroupId                  String         @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("acc_group_id")
+  accGroupCompanyId           String?        @db.Uuid                                         @map("acc_group_company_id")
+  // Master fields
+  accGroupName                String         @db.VarChar(150)                                 @map("acc_group_name")
+  accGroupAlias               String?        @db.VarChar(100)                                 @map("acc_group_alias")
+  accGroupShort               String?        @db.VarChar(50)                                  @map("acc_group_short")
+  accGroupDescription         String?        @db.VarChar(250)                                 @map("acc_group_description")
+  // Tally export mapping
+  accGroupTallyName           String?        @db.VarChar(150)                                 @map("acc_group_tally_name")
+  accGroupPrimaryName         String?        @db.VarChar(150)                                 @map("acc_group_primary_name")
+  accGroupNature              String?        @db.VarChar(20)                                  @map("acc_group_nature")
+  // Hierarchy
+  accGroupParentId            String?        @db.Uuid                                          @map("acc_group_parent_id")
+  accGroupSort                Int?                                                             @map("acc_group_sort")
+  accGroupChildIds            String[]       @db.Uuid                                          @map("acc_group_child_ids")
+  // Classification
+  accGroupTypeCode            String         @db.Char(2)                                      @map("acc_group_type_code")
+  accGroupIsDefault           Boolean        @default(false)                                   @map("acc_group_is_default")
+  // Tally-like behaviour flags
+  accGroupBehaveAsSubledger   Boolean        @default(false)                                   @map("acc_group_behave_as_subledger")
+  accGroupNetDebitCredit      Boolean        @default(false)                                   @map("acc_group_net_debit_credit")
+  accGroupUsedForCalculation  Boolean        @default(false)                                   @map("acc_group_used_for_calculation")
+  accGroupAffectsGrossProfit  Boolean        @default(false)                                   @map("acc_group_affects_gross_profit")
+  // Status
+  accGroupIsActive            Boolean        @default(true)                                    @map("acc_group_is_active")
+  accGroupIsDeleted           Boolean        @default(false)                                   @map("acc_group_is_deleted")
+  // Audit / Sync
+  accGroupSyncDate            DateTime?      @db.Timestamptz                                  @map("acc_group_sync_date")
+  accGroupCreatedOn           DateTime       @default(now()) @db.Timestamptz                  @map("acc_group_created_on")
+  accGroupCreatedBy           String?        @db.VarChar(100)                                 @map("acc_group_created_by")
+  accGroupModifiedOn          DateTime       @default(now()) @db.Timestamptz                  @map("acc_group_modified_on")
+  accGroupModifiedBy          String?        @db.VarChar(100)                                 @map("acc_group_modified_by")
+  // Self-relation (hierarchy)
+  parent                      AccountGroup?  @relation("AccountGroupHierarchy", fields: [accGroupParentId], references: [accGroupId])
+  children                    AccountGroup[] @relation("AccountGroupHierarchy")
+  company                     Company?       @relation(fields: [accGroupCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  // Back-relations
+  ledgers                     AccLedgerMaster[]
+  @@index([accGroupCompanyId], name: "idx_acc_group_company_id")
+  @@index([accGroupParentId],  name: "idx_acc_group_parent_id")
+  @@index([accGroupTypeCode],  name: "idx_acc_group_type_code")
+  @@map("account_groups")
+  @@schema("accounts")
+}

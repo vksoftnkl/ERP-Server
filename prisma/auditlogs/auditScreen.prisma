@@ -1,0 +1,38 @@
+
+
+/* =========================================================
+   Enums
+   ========================================================= */
+
+enum AuditScreenType {
+  master
+  transaction
+  settings
+  other
+
+  @@map("audit_screen_type")
+  @@schema("audit")
+}
+
+
+model AuditScreen {
+  screenId          Int             @id @default(autoincrement()) @map("screen_id")
+
+  screenName        String          @db.Text @map("screen_name")
+  screenType        AuditScreenType @default(other) @map("screen_type")
+  screenStatus      Boolean         @default(true) @map("screen_status")
+  screenModule      String?         @db.Text @map("screen_module")
+
+  screenCreatedOn   DateTime        @default(now()) @db.Timestamptz(6) @map("screen_created_on")
+  screenCreatedBy   String?         @db.Uuid @map("screen_created_by")
+
+  screenModifiedOn  DateTime?       @db.Timestamptz(6) @map("screen_modified_on")
+  screenModifiedBy  String?         @db.Uuid @map("screen_modified_by")
+
+  // Relations
+  auditLogs         AuditLog[]
+
+  @@index([screenStatus], map: "idx_audit_screen_status")
+  @@map("audit_screen")
+  @@schema("audit")
+}

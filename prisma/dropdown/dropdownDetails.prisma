@@ -1,0 +1,19 @@
+model DropdownDetails {
+  dropdownId Int @id @default(autoincrement()) @map("dropdown_id")
+
+  dropdownName        String  @db.VarChar(200) @map("dropdown_name")
+  dropdownDescription String? @db.Text         @map("dropdown_description")
+  dropdownSql         String  @db.Text         @map("dropdown_sql")
+
+  dropdownSortOrder  String? @db.VarChar(20)  @map("dropdown_sort_order")   // ASC / DESC
+  dropdownSortColumn String? @db.VarChar(100) @map("dropdown_sort_column")  // kept your spelling
+  dropdownCompletion  String? @db.Text         @map("dropdown_completion")
+  dropdownSqlRegional String? @db.Text        @map("dropdown_sql_regional")
+  dropdownMaxVisibleItems Int     @default(10)   @map("dropdown_max_visible_items")
+  dropdownShowHeader      Boolean @default(true) @map("dropdown_show_header")
+  dropdownWidth            Int?    @map("dropdown_width")
+  dropdownColumns         DropdownColumns[]
+
+  @@map("dropdown_details")
+  @@schema("fixed")
+}

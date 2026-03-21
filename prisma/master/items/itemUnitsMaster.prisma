@@ -1,0 +1,46 @@
+model Unit {
+  // Identity
+  unit_id  String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("unit_id")
+
+  // Master fields
+  unit_name        String  @unique @db.VarChar(50)
+  unit_alias       String? @db.VarChar(50)
+  unit_code        String? @db.VarChar(30)
+  unit_description String? @db.VarChar(100)
+
+  // Decimal / measurement
+  unit_decimal_count Int      @default(0)
+  unit_weight        Decimal? @db.Decimal
+  unit_loading       Decimal? @db.Decimal
+  unit_unloading     Decimal? @db.Decimal
+  unit_attach_charge Decimal? @db.Decimal
+
+  // Packing / conversion
+  unit_is_pack_unit Boolean  @default(false)
+  unit_base_unit_id String?  @db.Uuid
+  unit_conversion   Decimal? @db.Decimal
+
+  // Notes / status
+  unit_is_active  Boolean @default(true)
+  unit_is_deleted Boolean @default(false)
+
+  // Audit / Sync
+  unit_sync_date   DateTime? @db.Timestamptz(6)
+  unit_created_on  DateTime  @default(now()) @db.Timestamptz(6)
+  unit_created_by  String?   @db.VarChar(100)
+  unit_modified_on DateTime  @default(now()) @db.Timestamptz(6)
+  unit_modified_by String?   @db.VarChar(100)
+
+  // Self relation (base unit -> pack units)
+  baseUnit     Unit?             @relation("UnitBase", fields: [unit_base_unit_id], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  packUnits    Unit[]            @relation("UnitBase")
+  eanCodes     ItemEanCode[]
+  itemMasters  ItemMaster[]
+  itemPrices   ItemPriceMaster[]
+  itemReorders ItemReorder[]
+
+  @@map("units")
+  @@schema("inventory")
+  @@index([unit_is_active], map: "idx_unit_active")
+  @@index([unit_base_unit_id], map: "idx_unit_base")
+}

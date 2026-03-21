@@ -1,0 +1,299 @@
+2026-02-12T06:27:19.741Z ERROR [SmokeTest] separate error file smoke test
+2026-02-12T06:27:19.741Z FATAL [SmokeTest] separate fatal smoke test
+2026-02-12T06:27:48.794Z ERROR [AllExceptionsFilter] GET /api/v1/users
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.user.findMany()` invocation in
+/home/vk/Dev/ERP server/src/modules/users/users.service.ts:28:29
+
+  25 }
+  26 
+  27 async findAll(): Promise<User[]> {
+→ 28   return this.prisma.user.findMany(
+The column `users.firstName` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+2026-02-12T06:29:55.730Z ERROR [AllExceptionsFilter] GET /api/v1/users
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.user.findMany()` invocation in
+/home/vk/Dev/ERP server/src/modules/users/users.service.ts:28:29
+
+  25 }
+  26 
+  27 async findAll(): Promise<User[]> {
+→ 28   return this.prisma.user.findMany(
+The column `users.firstName` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+2026-02-13T06:02:03.773Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-13T06:51:08.585Z ERROR [ExceptionHandler] Config validation error: "JWT_SECRET" is required
+Error: Config validation error: "JWT_SECRET" is required
+    at ConfigModule.forRoot (/home/vk/Dev/ERP server/node_modules/@nestjs/config/dist/config.module.js:86:23)
+    at Object.<anonymous> (/home/vk/Dev/ERP server/src/app.module.ts:27:18)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Object..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16)
+2026-02-13T06:52:41.818Z ERROR [ExceptionHandler] Config validation error: "JWT_SECRET" is required
+Error: Config validation error: "JWT_SECRET" is required
+    at ConfigModule.forRoot (/home/vk/Dev/ERP server/node_modules/@nestjs/config/dist/config.module.js:86:23)
+    at Object.<anonymous> (/home/vk/Dev/ERP server/src/app.module.ts:27:18)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Object..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16)
+2026-02-13T06:53:24.179Z ERROR [ExceptionHandler] Config validation error: "JWT_SECRET" length must be at least 16 characters long
+Error: Config validation error: "JWT_SECRET" length must be at least 16 characters long
+    at ConfigModule.forRoot (/home/vk/Dev/ERP server/node_modules/@nestjs/config/dist/config.module.js:86:23)
+    at Object.<anonymous> (/home/vk/Dev/ERP server/src/app.module.ts:27:18)
+    at Module._compile (node:internal/modules/cjs/loader:1706:14)
+    at Object..js (node:internal/modules/cjs/loader:1839:10)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Module.require (node:internal/modules/cjs/loader:1463:12)
+    at require (node:internal/modules/helpers:147:16)
+2026-02-13T12:29:26.978Z ERROR [AllExceptionsFilter] POST /api/v1/item-groups/create
+PayloadTooLargeError: request entity too large
+    at readStream (/home/vk/Dev/ERP server/node_modules/raw-body/index.js:163:17)
+    at getRawBody (/home/vk/Dev/ERP server/node_modules/raw-body/index.js:116:12)
+    at read (/home/vk/Dev/ERP server/node_modules/body-parser/lib/read.js:79:3)
+    at jsonParser (/home/vk/Dev/ERP server/node_modules/body-parser/lib/types/json.js:138:5)
+    at Layer.handle [as handle_request] (/home/vk/Dev/ERP server/node_modules/express/lib/router/layer.js:95:5)
+    at trim_prefix (/home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:328:13)
+    at /home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:286:9
+    at Function.process_params (/home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:346:12)
+    at next (/home/vk/Dev/ERP server/node_modules/express/lib/router/index.js:280:10)
+    at cors (/home/vk/Dev/ERP server/node_modules/cors/lib/index.js:188:7)
+2026-02-14T08:18:58.740Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-17T11:03:30.222Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3000
+2026-02-17T11:03:38.982Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3000
+2026-02-18T10:08:30.297Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T10:28:37.811Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T10:28:39.567Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T10:28:57.770Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T10:28:59.680Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T11:09:10.883Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T11:09:12.370Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T11:09:14.922Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T11:09:16.877Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T11:25:12.143Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T11:25:37.806Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:10:33.475Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:14:34.213Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:21:58.067Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:27:53.320Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:33:39.946Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:13.083Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:15.096Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:16.525Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:17.938Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:19.456Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:20.492Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:22.531Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:28.278Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:31.196Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:32.903Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:34.080Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:35.255Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:38.820Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:40.023Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:42.996Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:45.111Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:47.685Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:48.971Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:50.417Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:52.378Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:54.773Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:56.221Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:37:58.470Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:00.275Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:01.469Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:04.021Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:07.426Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:09.585Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:12.856Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:15.506Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:16.890Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:19.757Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:21.360Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:22.439Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:25.715Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:26.967Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:29.059Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:31.055Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:33.294Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:35.061Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:36.528Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:39.302Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:41.656Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:43.626Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:45.813Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:47.618Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:48.792Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:50.439Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:51.631Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:52.906Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:54.173Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:56.796Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:38:59.285Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:00.662Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:02.974Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:05.264Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:06.980Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:08.507Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:11.709Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:14.321Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:18.113Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:20.260Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:21.797Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:24.609Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:27.157Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:29.303Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:39:30.855Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:40:32.398Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:40:34.756Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:40:36.580Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:40:39.124Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T12:42:30.293Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T13:30:33.757Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T13:34:30.663Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-18T13:36:20.970Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-20T07:10:53.705Z ERROR [ExceptionHandler] Nest can't resolve dependencies of the GridColumnsService (PrismaService, ?). Please make sure that the argument AuditLogService at index [1] is available in the GridColumnsModule context.
+
+Potential solutions:
+- Is GridColumnsModule a valid NestJS module?
+- If AuditLogService is a provider, is it part of the current GridColumnsModule?
+- If AuditLogService is exported from a separate @Module, is that module imported within GridColumnsModule?
+  @Module({
+    imports: [ /* the Module containing AuditLogService */ ]
+  })
+
+Error: Nest can't resolve dependencies of the GridColumnsService (PrismaService, ?). Please make sure that the argument AuditLogService at index [1] is available in the GridColumnsModule context.
+
+Potential solutions:
+- Is GridColumnsModule a valid NestJS module?
+- If AuditLogService is a provider, is it part of the current GridColumnsModule?
+- If AuditLogService is exported from a separate @Module, is that module imported within GridColumnsModule?
+  @Module({
+    imports: [ /* the Module containing AuditLogService */ ]
+  })
+
+    at Injector.lookupComponentInParentModules (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:262:19)
+    at async Injector.resolveComponentInstance (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:215:33)
+    at async resolveParam (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:129:38)
+    at async Promise.all (index 1)
+    at async Injector.resolveConstructorParams (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:144:27)
+    at async Injector.loadInstance (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:70:13)
+    at async Injector.loadProvider (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:98:9)
+    at async /home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/instance-loader.js:56:13
+    at async Promise.all (index 3)
+    at async InstanceLoader.createInstancesOfProviders (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/instance-loader.js:55:9)
+2026-02-20T07:10:56.434Z ERROR [ExceptionHandler] Nest can't resolve dependencies of the GridColumnsService (PrismaService, ?). Please make sure that the argument AuditLogService at index [1] is available in the GridColumnsModule context.
+
+Potential solutions:
+- Is GridColumnsModule a valid NestJS module?
+- If AuditLogService is a provider, is it part of the current GridColumnsModule?
+- If AuditLogService is exported from a separate @Module, is that module imported within GridColumnsModule?
+  @Module({
+    imports: [ /* the Module containing AuditLogService */ ]
+  })
+
+Error: Nest can't resolve dependencies of the GridColumnsService (PrismaService, ?). Please make sure that the argument AuditLogService at index [1] is available in the GridColumnsModule context.
+
+Potential solutions:
+- Is GridColumnsModule a valid NestJS module?
+- If AuditLogService is a provider, is it part of the current GridColumnsModule?
+- If AuditLogService is exported from a separate @Module, is that module imported within GridColumnsModule?
+  @Module({
+    imports: [ /* the Module containing AuditLogService */ ]
+  })
+
+    at Injector.lookupComponentInParentModules (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:262:19)
+    at async Injector.resolveComponentInstance (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:215:33)
+    at async resolveParam (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:129:38)
+    at async Promise.all (index 1)
+    at async Injector.resolveConstructorParams (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:144:27)
+    at async Injector.loadInstance (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:70:13)
+    at async Injector.loadProvider (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/injector.js:98:9)
+    at async /home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/instance-loader.js:56:13
+    at async Promise.all (index 3)
+    at async InstanceLoader.createInstancesOfProviders (/home/vk/Dev/ERP server/node_modules/@nestjs/core/injector/instance-loader.js:55:9)
+2026-02-20T09:52:13.011Z ERROR [NestApplication] Error: listen EADDRNOTAVAIL: address not available 192.168.10.25:3010
+2026-02-20T09:52:16.101Z ERROR [NestApplication] Error: listen EADDRNOTAVAIL: address not available 192.168.10.106:3010
+2026-02-23T09:49:41.010Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-02-23T11:37:38.829Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-02-24T09:59:43.589Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-02-25T12:27:33.754Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-25T12:51:32.868Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-27T07:21:58.283Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-02-27T07:22:50.084Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-03-16T05:01:29.382Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-03-19T11:59:57.070Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/name-id/all-accounts-and-masters?module=customerGroups
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.tryFetchConfiguredModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:285:18)
+    at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
+    at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
+    at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)
+2026-03-19T11:59:57.126Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/name-id/all-accounts-and-masters?module=customerGroups
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.tryFetchConfiguredModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:285:18)
+    at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
+    at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
+    at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)
+2026-03-19T12:01:28.854Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/name-id/all-accounts-and-masters?module=customerGroups
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.tryFetchConfiguredModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:285:18)
+    at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
+    at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
+    at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)
+2026-03-19T12:01:28.937Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/name-id/all-accounts-and-masters?module=customerGroups
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.tryFetchConfiguredModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:285:18)
+    at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
+    at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
+    at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)

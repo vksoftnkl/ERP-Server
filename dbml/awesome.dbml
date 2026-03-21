@@ -1,0 +1,1604 @@
+//// ------------------------------------------------------
+//// THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+//// ------------------------------------------------------
+
+Project "Project Name" {
+  database_type: 'PostgreSQL'
+  Note: 'Test project description'
+}
+
+Table users {
+  user_id String [pk]
+  user_code String [unique, not null]
+  user_phone String [unique, not null]
+  user_name String [unique, not null]
+  user_password String [not null]
+  created_at DateTime [default: `now()`, not null]
+  updated_at DateTime [not null]
+}
+
+Table account_groups {
+  accGroupId String [pk]
+  accGroupCompanyId String
+  accGroupName String [not null]
+  accGroupAlias String
+  accGroupShort String
+  accGroupDescription String
+  accGroupTallyName String
+  accGroupPrimaryName String
+  accGroupNature String
+  accGroupParentId String
+  accGroupSort Int
+  accGroupChildIds String[] [not null]
+  accGroupTypeCode String [not null]
+  accGroupIsDefault Boolean [not null, default: false]
+  accGroupBehaveAsSubledger Boolean [not null, default: false]
+  accGroupNetDebitCredit Boolean [not null, default: false]
+  accGroupUsedForCalculation Boolean [not null, default: false]
+  accGroupAffectsGrossProfit Boolean [not null, default: false]
+  accGroupIsActive Boolean [not null, default: true]
+  accGroupIsDeleted Boolean [not null, default: false]
+  accGroupSyncDate DateTime
+  accGroupCreatedOn DateTime [default: `now()`, not null]
+  accGroupCreatedBy String
+  accGroupModifiedOn DateTime [default: `now()`, not null]
+  accGroupModifiedBy String
+  parent account_groups
+  children account_groups [not null]
+  company companys
+  ledgers acc_ledger_master [not null]
+}
+
+Table acc_ledger_master {
+  ledId String [pk]
+  ledCompanyId String [not null]
+  ledBranchId String [not null]
+  ledGroupId String [not null]
+  ledName String [not null]
+  ledAlias String
+  ledShort String
+  ledTallyName String
+  ledTallyGroupName String
+  ledTallyGuid String
+  ledCategory String [not null, default: 'GENERAL']
+  ledIsBillByBill Boolean [not null, default: false]
+  ledIsCostCenterReq Boolean [not null, default: false]
+  ledIsInterestApplicable Boolean [not null, default: false]
+  ledInterestRate Decimal
+  ledContactPerson String
+  ledEmail String
+  ledTel String
+  ledPhone1 String
+  ledPhone2 String
+  ledWhatsappNo String
+  ledAddr1 String
+  ledAddr2 String
+  ledAddr3 String
+  ledCity String
+  ledDistrict String
+  ledStateName String
+  ledStateCode String
+  ledPin String
+  ledCountry String [default: 'India']
+  ledRegionName String
+  ledRegionAddr1 String
+  ledRegionAddr2 String
+  ledRegionAddr3 String
+  ledRegionCity String
+  ledRegionDistrict String
+  ledRegionStateName String
+  ledRegionCountry String [default: 'India']
+  ledGstPartyRegType LedGstPartyRegType
+  ledGstinNo String
+  ledPanNo String
+  ledAadharNo String
+  ledEcommerceGstin String
+  ledIsSez Boolean [not null, default: false]
+  ledHolderName String
+  ledBankName String
+  ledBankBranch String
+  ledBankAcNo String
+  ledBankIfsc String
+  ledUpiId String
+  ledObAmount Decimal [not null, default: 0]
+  ledObType LedObType [not null, default: 'DR']
+  ledObAsOn DateTime
+  ledTotalDr Decimal [not null, default: 0]
+  ledTotalCr Decimal [not null, default: 0]
+  ledTotalBalance Decimal [not null, default: 0]
+  ledIsActive Boolean [not null, default: true]
+  ledIsDeleted Boolean [not null, default: false]
+  ledAllowEdit Boolean [not null, default: false]
+  ledIsEntry Boolean [not null, default: false]
+  ledAllowSms Boolean [not null, default: false]
+  ledRemarks String
+  ledSyncDate DateTime
+  ledCreatedOn DateTime [default: `now()`, not null]
+  ledCreatedBy String
+  ledModifiedOn DateTime [default: `now()`, not null]
+  ledModifiedBy String
+  company companys [not null]
+  accountGroup account_groups [not null]
+  branches branch_master [not null]
+  bankAccounts acc_ledger_bank_accounts [not null]
+  shipAddrs acc_ship_addrs [not null]
+  tenders account_tender_master [not null]
+
+  indexes {
+    (ledCompanyId, ledName) [unique]
+    (ledCompanyId, ledTallyName) [unique]
+  }
+}
+
+Table account_tender_master {
+  acctndId String [pk]
+  acctndTypeId BigInt [not null]
+  acctndName String [not null]
+  acctndShortName String [not null]
+  acctndLedgerId String [not null]
+  acctndMinAmount Decimal [not null, default: 0]
+  acctndMaxAmount Decimal
+  acctndDisplayPosition Int [not null, default: 0]
+  acctndSurchargePerc Decimal [not null, default: 0]
+  acctndIsActive Boolean [not null, default: true]
+  acctndIsDeleted Boolean [not null, default: false]
+  acctndRemarks String
+  acctndEditSurcharge Boolean [not null, default: false]
+  acctndEditLedger Boolean [not null, default: false]
+  acctndSyncDate DateTime
+  acctndCreatedOn DateTime [default: `now()`, not null]
+  acctndCreatedBy String
+  acctndModifiedOn DateTime [default: `now()`, not null]
+  acctndModifiedBy String
+  tenderType tender_type [not null]
+  ledger acc_ledger_master [not null]
+}
+
+Table tender_type {
+  accttTypeId BigInt [pk, increment]
+  accttTypeName String [not null]
+  accttTypeShortName String [not null]
+  accttTypeIsActive Boolean [not null, default: true]
+  accttTypeIsDeleted Boolean [not null, default: false]
+  accttTypeSyncDate DateTime
+  accttTypeCreatedOn DateTime [default: `now()`, not null]
+  accttTypeCreatedBy String
+  accttTypeModifiedOn DateTime [default: `now()`, not null]
+  accttTypeModifiedBy String
+  accttTenders account_tender_master [not null]
+}
+
+Table employee_departments {
+  edptId String [pk]
+  edptName String [not null]
+  edptCode String
+  edptAlias String
+  edptRemarks String
+  edptIsActive Boolean [not null, default: true]
+  edptIsDeleted Boolean [not null, default: false]
+  edptSyncDate DateTime
+  edptCreatedOn DateTime [default: `now()`, not null]
+  edptCreatedBy String
+  edptModifiedOn DateTime [default: `now()`, not null]
+  edptModifiedBy String
+  employees emp_master [not null]
+}
+
+Table employee_designations {
+  edId String [pk]
+  edName String [not null]
+  edCode String
+  edIsDefault Boolean [not null, default: false]
+  edRemarks String
+  edIsActive Boolean [not null, default: true]
+  edIsDeleted Boolean [not null, default: false]
+  edSyncDate DateTime
+  edCreatedOn DateTime [default: `now()`, not null]
+  edCreatedBy String
+  edModifiedOn DateTime [default: `now()`, not null]
+  edModifiedBy String
+  employees emp_master [not null]
+}
+
+Table emp_master {
+  empId String [pk]
+  empCompanyId String [not null]
+  empBranchId String
+  empCode String
+  empName String [not null]
+  empAlias String
+  empMobile1 String
+  empMobile2 String
+  empEmail String
+  empAddr1 String
+  empAddr2 String
+  empAddr3 String
+  empCity String
+  empDistrict String
+  empState String
+  empPincode String
+  empGender String
+  empMaritalStatus String
+  empBloodGroup String
+  empDob DateTime
+  empDepartmentId String
+  empDesignationId String
+  empEmploymentType String
+  empStatus String
+  empJoinedOn DateTime
+  empProbationEndOn DateTime
+  empConfirmationOn DateTime
+  empLeftOn DateTime
+  empShiftId String
+  empAttConstraintId String
+  empHolidayGroupId String
+  empOvertimeAllowed Boolean [not null, default: false]
+  empHasCommission Boolean [not null, default: false]
+  empCommissionType String
+  empCommissionValue Decimal
+  empSalaryType String [not null]
+  empSalaryAmount Decimal [not null, default: 0]
+  empBataAmount Decimal [not null, default: 0]
+  empKmBataAmount Decimal [not null, default: 0]
+  empPanNo String
+  empAadharNo String
+  empPfNo String
+  empEsiNo String
+  empLoanLedgerId String
+  empPhotoUrl String
+  empPhoto Bytes
+  empRemarks String
+  empIsActive Boolean [not null, default: true]
+  empIsDeleted Boolean [not null, default: false]
+  empSyncDate DateTime
+  empCreatedOn DateTime [default: `now()`, not null]
+  empCreatedBy String
+  empModifiedOn DateTime [default: `now()`, not null]
+  empModifiedBy String
+  company companys [not null]
+  designation employee_designations
+  department employee_departments
+}
+
+Table acc_ship_addrs {
+  saaId String [pk]
+  saaCompanyId String
+  saaLedgerId String [not null]
+  saaAddrType String [not null, default: 'SHIP_TO']
+  saaIsDefault Boolean [not null, default: false]
+  saaSort Int [not null, default: 0]
+  saaTrdnm String
+  saaContactName String
+  saaAddr1 String
+  saaAddr2 String
+  saaAddr3 String
+  saaLoc String
+  saaPin String
+  saaStateCode String
+  saaStateName String
+  saaDistanceKm Int
+  saaPhone String
+  saaEmail String
+  saaGstin String
+  saaPan String
+  saaSyncDate DateTime
+  saaIsActive Boolean [not null, default: true]
+  saaIsDeleted Boolean [not null, default: false]
+  saaCreatedOn DateTime [default: `now()`, not null]
+  saaCreatedBy String
+  saaModifiedOn DateTime [default: `now()`, not null]
+  saaModifiedBy String
+  saaRemarks String
+  company companys [note: 'Relations']
+  ledger acc_ledger_master [not null]
+}
+
+Table acc_ledger_bank_accounts {
+  lbaId String [pk]
+  lbaCompanyId String
+  lbaLedgerId String [not null]
+  lbaAccountHolder String [not null]
+  lbaBankName String [not null]
+  lbaBranchName String
+  lbaAccountNo String [not null]
+  lbaIfscCode String
+  lbaMicrCode String
+  lbaAccountType String
+  lbaUpiId String
+  lbaChequeName String
+  lbaIsDefault Boolean [not null, default: false]
+  lbaIsActive Boolean [not null, default: true]
+  lbaIsDeleted Boolean [not null, default: false]
+  lbaSyncDate DateTime
+  lbaCreatedOn DateTime [default: `now()`, not null]
+  lbaCreatedBy String
+  lbaModifiedOn DateTime [default: `now()`, not null]
+  lbaModifiedBy String
+  lbaRemarks String
+  company companys
+  ledger acc_ledger_master [not null]
+}
+
+Table audit_log {
+  logId String [pk]
+  logDate DateTime [default: `now()`, not null]
+  logAction AuditLogAction [not null]
+  logScreenId Int [not null]
+  auditScreen audit_screen [not null]
+  logTableName String [not null]
+  logPk String
+  logEntityId String
+  logDisplayName String
+  logOriginalRecord Json
+  logModifiedRecord Json
+  logChangedFields Json
+  logUserId String
+  logBranchId String
+  logDeviceName String
+  logIp String
+  logAppName String
+  logNotes String
+}
+
+Table audit_screen {
+  screenId Int [pk, increment]
+  screenName String [not null]
+  screenType AuditScreenType [not null, default: 'other']
+  screenStatus Boolean [not null, default: true]
+  screenModule String
+  screenCreatedOn DateTime [default: `now()`, not null]
+  screenCreatedBy String
+  screenModifiedOn DateTime
+  screenModifiedBy String
+  auditLogs audit_log [not null]
+}
+
+Table user_login_sessions {
+  ulsId String [pk]
+  ulsCompanyId String [not null]
+  ulsBranchId String [not null]
+  ulsUserId String [not null]
+  ulsDeviceId String
+  ulsSessionId String
+  ulsSessionToken String
+  ulsRefreshTokenId String
+  ulsLoginOn DateTime [default: `now()`, not null]
+  ulsLogoutOn DateTime
+  ulsLogoutType String
+  ulsLoginStatus String [not null, default: 'SUCCESS']
+  ulsFailReason String
+  ulsIpAddress String
+  ulsUserAgent String
+  ulsAppVersion String
+  ulsIsActiveSession Boolean [not null, default: true]
+  ulsIsActive Boolean [not null, default: true]
+  ulsIsDeleted Boolean [not null, default: false]
+  ulsSyncDate DateTime
+  ulsCreatedOn DateTime [default: `now()`, not null]
+  ulsCreatedBy String
+  ulsModifiedOn DateTime [default: `now()`, not null]
+  ulsModifiedBy String
+  company companys [not null]
+}
+
+Table dropdown_columns {
+  dropColumnsSerialId BigInt [pk, increment]
+  dropColumnsDropdownId Int [not null]
+  dropdown dropdown_details [not null]
+  dropColumnsColumnNo Int [not null]
+  dropColumnsDataType String [not null]
+  dropColumnsColumnName String [not null]
+  dropColumnsColumnAlias String
+  dropColumnsColumnWidth Decimal
+  dropColumnsColumnVisiblity Boolean [not null, default: true]
+  dropColumnsColumnAllignment String
+  dropColumnsColumnFilter Boolean [not null, default: false]
+  dropColumnsCreatedOn DateTime [default: `now()`, not null]
+  dropColumnsModifiedOn DateTime
+}
+
+Table dropdown_details {
+  dropdownId Int [pk, increment]
+  dropdownName String [not null]
+  dropdownDescription String
+  dropdownSql String [not null]
+  dropdownSortOrder String
+  dropdownSortColumn String
+  dropdownCompletion String
+  dropdownSqlRegional String
+  dropdownMaxVisibleItems Int [not null, default: 10]
+  dropdownShowHeader Boolean [not null, default: true]
+  dropdownWidth Int
+  dropdownColumns dropdown_columns [not null]
+}
+
+Table avt_voucher_type_master {
+  avtId String [pk]
+  avtShort String [not null]
+  avtDesc String [not null]
+  avtDrcr AvtDrcrType [not null, default: 'BOTH']
+  avtPrintEnabled Boolean [not null, default: true]
+  avtPrintStyle String
+  avtSortOrder Int [not null, default: 0]
+  avtTallyName String [not null]
+  avtTallyReservedType AvtTallyReservedVch
+  avtIsActive Boolean [not null, default: true]
+  avtIsDeleted Boolean [not null, default: false]
+  avtSyncDate DateTime
+  avtCreatedOn DateTime [default: `now()`, not null]
+  avtCreatedBy String
+  avtModifiedOn DateTime [default: `now()`, not null]
+  avtModifiedBy String
+}
+
+Table bank_master {
+  bnkId String [pk]
+  bnkName String [not null]
+  bnkShortName String
+  bnkAlias String
+  bnkRbiCode String
+  bnkIbanSupported Boolean [not null, default: false]
+  bnkIsActive Boolean [not null, default: true]
+  bnkIsDeleted Boolean [not null, default: false]
+  bnkSyncDate DateTime
+  bnkCreatedOn DateTime [default: `now()`, not null]
+  bnkCreatedBy String
+  bnkModifiedOn DateTime [default: `now()`, not null]
+  bnkModifiedBy String
+}
+
+Table erp_device_master {
+  devId String [pk]
+  devCompanyId String
+  devBranchId String
+  devUserId String
+  devDeviceUid String [not null]
+  devDeviceName String
+  devDeviceType String [not null]
+  devPlatform String
+  devOsVersion String
+  devAppVersion String
+  devSerialNo String
+  devImei String
+  devMacAddress String
+  devProductKey String
+  devIsAllowed Boolean [not null, default: false]
+  devIsBlocked Boolean [not null, default: false]
+  devAllowReason String
+  devBlockReason String
+  devLastSeenOn DateTime
+  devLastIp String
+  devLastLoginOn DateTime
+  devIsActive Boolean [not null, default: true]
+  devIsDeleted Boolean [not null, default: false]
+  devSyncDate DateTime
+  devCreatedOn DateTime [default: `now()`, not null]
+  devCreatedBy String
+  devModifiedOn DateTime [default: `now()`, not null]
+  devModifiedBy String
+  company companys
+
+  indexes {
+    (devCompanyId, devDeviceUid) [unique]
+  }
+}
+
+Table grid_columns {
+  gridSerialId BigInt [pk, increment]
+  gridId BigInt [not null]
+  grid grid_details [not null]
+  gridColumnNumber Int [not null]
+  gridColumnName String [not null]
+  gridColumnWidth Decimal
+  gridColumnAlignment String
+  gridColumnVisibility Boolean [not null, default: true]
+  gridColumnFilter Boolean [not null, default: false]
+  gridColumnCondition String
+  gridColumnConditionColor String
+  gridColumnGroup Boolean [not null, default: false]
+  gridColumnTotal Boolean [not null, default: false]
+  gridColumnDataType String
+  gridColumnColor String
+  gridColumnNotes String
+  gridColumnIsDeleted Boolean [not null, default: false]
+}
+
+Table grid_details {
+  gridId BigInt [pk, increment]
+  gridName String [not null]
+  gridDescription String
+  gridSortColumn String
+  gridSortOrder String
+  gridSql String
+  gridStatus Boolean [not null, default: true]
+  gridIsDeleted Boolean [not null, default: false]
+  columns grid_columns [not null]
+}
+
+Table gsp_company_service {
+  csgCompanyServiceId String [pk]
+  csgCompanyId String [not null]
+  csgGspProviderId String [not null]
+  csgServiceType String [not null]
+  csgEuserName String [not null]
+  csgEuserPassword String [not null]
+  csgAuthToken String
+  csgAuthTokenValidTill DateTime
+  csgIsActive Boolean [not null, default: true]
+  csgIsDeleted Boolean [not null, default: false]
+  csgSyncDate DateTime
+  csgCreatedOn DateTime [default: `now()`, not null]
+  csgCreatedBy String
+  csgModifiedOn DateTime [default: `now()`, not null]
+  csgModifiedBy String
+  company companys [not null]
+}
+
+Table gsp_provider_master {
+  gspProviderId String [pk]
+  gspProviderCode String [not null]
+  gspProviderName String [not null]
+  gspBaseUrl String [not null]
+  gspRoute String [not null]
+  gspIpAddress String [not null]
+  gspUserName String [not null]
+  gspUserPassword String [not null]
+  gspIsActive Boolean [not null, default: true]
+  gspIsDeleted Boolean [not null, default: false]
+  gspCreatedOn DateTime [default: `now()`, not null]
+  gspCreatedBy String
+  gspModifiedOn DateTime [default: `now()`, not null]
+  gspModifiedBy String
+}
+
+Table hsn_master {
+  hsnId Int [pk, increment]
+  hsnCode String [not null]
+  hsnName String [not null]
+  hsnDescription String
+  hsnIsService Boolean [not null, default: false]
+  hsnUqc String
+  hsnIsActive Boolean [not null, default: true]
+  hsnRateOfTax Decimal [not null, default: 0]
+}
+
+Table menu_master {
+  menuId Int [pk, increment]
+  menuParentId Int
+  parent menu_master
+  children menu_master [not null]
+  menuName String [not null]
+  menuAlias String
+  menuVisibility Boolean [not null, default: true]
+  menuPosition Decimal
+  menuIconLocationDesktop String
+  menuIconLocationWeb String
+  menuIconLocationMobile String
+  menuSeparator Boolean [not null, default: false]
+  menuIsActive Boolean [not null, default: true]
+  menuCreatedOn DateTime [default: `now()`, not null]
+  menuModifiedOn DateTime
+  menuSyncDate DateTime
+}
+
+Table price_levels {
+  priceLvlId Int [pk, increment]
+  priceLvlName String [not null]
+  priceLvlShort String
+  priceLvlIsActive Boolean [not null, default: true]
+  priceLvlIsAdmin Boolean [not null, default: false]
+  priceLvlIsDeleted Boolean [not null, default: false]
+  priceLvlSyncDate DateTime
+  priceLvlCreatedOn DateTime [default: `now()`, not null]
+  priceLvlCreatedBy String
+  priceLvlModifiedOn DateTime [default: `now()`, not null]
+  priceLvlModifiedBy String
+}
+
+Table state_codes {
+  stateCode String [pk]
+  stateName String [not null]
+  stateUt Boolean [not null, default: false]
+  tinCode String
+  isActive Boolean [not null, default: true]
+  isDeleted Boolean [not null, default: false]
+  stateSyncDate DateTime
+  createdOn DateTime [default: `now()`, not null]
+  createdBy String
+  modifiedOn DateTime [default: `now()`, not null]
+  modifiedBy String
+}
+
+Table ui_tables {
+  uiTblId BigInt [pk, increment]
+  uiTblName String
+  uiTblEditable Boolean [not null, default: false]
+  uiTblIsActive Boolean [not null, default: true]
+  uiTblIsDeleted Boolean [not null, default: false]
+  uiTblSyncDate DateTime
+  uiTblCreatedOn DateTime [default: `now()`, not null]
+  uiTblCreatedBy String
+  uiTblModifiedOn DateTime [default: `now()`, not null]
+  uiTblModifiedBy String
+  uiTableColumns ui_table_columns [not null]
+}
+
+Table ui_table_columns {
+  uiTblClmId BigInt [pk, increment]
+  uiTblClmNo BigInt
+  uiTblClmTableId BigInt
+  uiTblClmName String
+  uiTblClmColumnWidth Decimal [default: 100]
+  uiTblClmColumnVisibility Boolean [default: true]
+  uiTblClmColumnFocus Boolean [default: false]
+  uiTblClmColumnPosition Int [not null, default: 0]
+  uiTblClmColumnNecessity Boolean [not null, default: false]
+  uiTblClmNextColumn Int
+  uiTblClmPreviousColumn Int
+  uiTblClmIsActive Boolean [not null, default: true]
+  uiTblClmIsDeleted Boolean [not null, default: false]
+  uiTblClmSyncDate DateTime
+  uiTblClmCreatedOn DateTime [default: `now()`, not null]
+  uiTblClmCreatedBy String
+  uiTblClmModifiedOn DateTime [default: `now()`, not null]
+  uiTblClmModifiedBy String
+  uiTable ui_tables
+}
+
+Table category_master {
+  categoryId String [pk]
+  categoryName String [unique, not null]
+  categoryAlias String
+  categoryShort String
+  categoryDescription String
+  categoryParentId String
+  parent category_master
+  children category_master [not null]
+  items item_master [not null]
+  categorySort Int
+  categoryLevel Int
+  categoryPathIdsCache String[] [not null]
+  categoryPhoto Bytes
+  categoryPhotoUrl String
+  categoryIsActive Boolean [not null, default: true]
+  categoryIsDeleted Boolean [not null, default: false]
+  categorySyncDate DateTime
+  categoryCreatedOn DateTime [default: `now()`, not null]
+  categoryCreatedBy String
+  categoryModifiedOn DateTime [default: `now()`, not null]
+  categoryModifiedBy String
+}
+
+Table godown_locations {
+  gdlId String [pk]
+  gdlGodownId String [not null]
+  gdlBranchId String [not null]
+  gdlName String [not null]
+  gdlShort String
+  gdlCode String
+  gdlType String [not null, default: 'BIN']
+  gdlParentId String
+  gdlSort Int [not null, default: 0]
+  gdlLevel Int [not null, default: 0]
+  gdlPathIdsCache String[] [not null]
+  gdlDelSheet Boolean [not null, default: false]
+  gdlSplitStock Boolean [not null, default: false]
+  gdlNegativeStock Boolean [not null, default: false]
+  gdlVolume Decimal [not null, default: 0]
+  gdlIsActive Boolean [not null, default: true]
+  gdlIsDeleted Boolean [not null, default: false]
+  gdlCreatedOn DateTime [default: `now()`, not null]
+  gdlCreatedBy String
+  gdlModifiedOn DateTime [default: `now()`, not null]
+  gdlModifiedBy String
+  gdlRemarks String
+  parent godown_locations
+  children godown_locations [not null]
+
+  indexes {
+    (gdlGodownId, gdlParentId, gdlName) [unique]
+  }
+}
+
+Table item_brand_master {
+  brand_id String [pk]
+  brand_name String [unique, not null]
+  brand_alias String
+  brand_short String
+  brand_description String
+  brand_photo Bytes
+  brand_photo_url String
+  brand_parent_id String
+  brand_sort Int
+  brand_level Int
+  brand_path_ids String[] [not null]
+  brand_is_active Boolean [not null, default: true]
+  brand_is_deleted Boolean [not null, default: false]
+  brand_sync_date DateTime
+  brand_created_on DateTime [default: `now()`, not null]
+  brand_created_by String
+  brand_modified_on DateTime [default: `now()`, not null]
+  brand_modified_by String
+  parent item_brand_master
+  children item_brand_master [not null]
+}
+
+Table cust_item_rates {
+  csrId String [pk]
+  csrBranchId String
+  csrCustomerId String [not null]
+  csrUnitRateId String [not null]
+  csrRateType String [not null, default: 'FIXED']
+  csrItemRate Decimal [not null, default: 0]
+  csrDiscPerc Decimal [not null, default: 0]
+  csrDiscQty Decimal [not null, default: 0]
+  csrPriceLevel String
+  csrValidFrom DateTime
+  csrValidTo DateTime
+  csrPriority Int [not null, default: 0]
+  csrIsActive Boolean [not null, default: true]
+  csrIsDeleted Boolean [not null, default: false]
+  csrCreatedOn DateTime [default: `now()`, not null]
+  csrCreatedBy String
+  csrModifiedOn DateTime [default: `now()`, not null]
+  csrModifiedBy String
+  csrUploadedAt DateTime
+  csrUploadedBy String
+  csrRemarks String
+}
+
+Table item_ean_codes {
+  eanId String [pk]
+  eanItemId String [not null]
+  eanUnitId String [not null]
+  eanCode String [unique, not null]
+  eanGodownId String
+  eanIsDefault Boolean [not null, default: false]
+  eanIsActive Boolean [not null, default: true]
+  eanIsDeleted Boolean [not null, default: false]
+  eanCreatedOn DateTime [default: `now()`, not null]
+  eanCreatedBy String
+  eanModifiedOn DateTime [default: `now()`, not null]
+  eanModifiedBy String
+  eanRemarks String
+  unit units [not null]
+}
+
+Table item_group_master {
+  itgId String [pk]
+  itgName String [unique, not null]
+  itgAlias String
+  itgShort String
+  itgDescription String
+  itgParentId String
+  parent item_group_master
+  children item_group_master [not null]
+  items item_master [not null]
+  itgSort Int
+  itgLevel Int
+  itgPathIdsCache String[] [not null]
+  itgTaxClaim Boolean
+  itgDefaultTaxId String
+  itgDefaultHsn String
+  itgDefaultUomId String
+  itgPhoto Bytes
+  itgPhotoUrl String
+  itgIsActive Boolean [not null, default: true]
+  itgIsDeleted Boolean [not null, default: false]
+  itgSyncDate DateTime
+  itgCreatedOn DateTime [default: `now()`, not null]
+  itgCreatedBy String
+  itgModifiedOn DateTime [default: `now()`, not null]
+  itgModifiedBy String
+}
+
+Table item_master {
+  itemId String [pk]
+  itemCompanyId String [not null]
+  itemBranchId String
+  itemCode String
+  itemSku String
+  itemNameEn String [unique, not null]
+  itemNameTa String
+  itemAlias String
+  itemStockType String [not null, default: 'FG']
+  itemDefaultBarcode String
+  itemGroupId String [not null]
+  itemCategoryId String
+  itemBrandId String
+  itemSectionId String
+  itemCompanyCategoryId String
+  itemMfgrId String
+  itemSupplierId String
+  itemCustGroup String
+  itemBaseUnitId String [not null]
+  itemIsService Boolean [not null, default: false]
+  itemIsBatchBased Boolean [not null, default: false]
+  itemIsExpiryItem Boolean [not null, default: false]
+  itemExpiryDays Int
+  itemIntimateBeforeDays Int
+  itemAllowSales Boolean [not null, default: true]
+  itemAllowSalesReturn Boolean [not null, default: true]
+  itemAllowPurchase Boolean [not null, default: true]
+  itemAllowPo Boolean [not null, default: true]
+  itemAllowSo Boolean [not null, default: true]
+  itemAllowNegStock Boolean [not null, default: true]
+  itemAllowNegativeSo Boolean [not null, default: true]
+  itemPriceList Boolean [not null, default: false]
+  itemWeighScale Boolean [not null, default: false]
+  itemRetailItem Boolean [not null, default: true]
+  itemIsKit Boolean [not null, default: false]
+  itemAutoBreak Boolean [not null, default: false]
+  itemAutoMake Boolean [not null, default: false]
+  itemAllowLoyalty Boolean [not null, default: false]
+  itemAllowPromo Boolean [not null, default: false]
+  itemHasOffer Boolean [not null, default: false]
+  itemDamagableProduct Boolean [not null, default: false]
+  itemIsDemand Boolean [not null, default: false]
+  itemAllowLoading Boolean [not null, default: false]
+  itemAllowFreight Boolean [not null, default: false]
+  itemRandomStock Boolean [not null, default: false]
+  itemBarcodeSticker Boolean [not null, default: false]
+  itemBarcodeStickerId String
+  itemDefaultTaxId String
+  itemHsnCode String
+  itemBatchConfig Int [not null, default: 0]
+  itemSortOrder Int
+  itemPhoto Bytes
+  itemImageUrl String
+  itemNotes String
+  itemStorageLocation String
+  itemPackingItemIds String[] [not null]
+  itemIsActive Boolean [not null, default: true]
+  itemIsDeleted Boolean [not null, default: false]
+  itemCreatedOn DateTime [default: `now()`, not null]
+  itemCreatedBy String
+  itemModifiedOn DateTime [default: `now()`, not null]
+  itemModifiedBy String
+  group item_group_master [not null]
+  category category_master
+  baseUnit units [not null]
+  defaultTax item_tax_master
+  prices item_price_master [not null]
+  reorders item_reorders [not null]
+  taxHistory item_tax_history [not null]
+  company companys [not null]
+}
+
+Table item_price_master {
+  ipmUnitRateId String [pk]
+  ipmItemId String [not null]
+  ipmUnitId String [not null]
+  ipmGodownId String
+  ipmUnitSlno Int [not null, default: 0]
+  ipmConversionFactor Decimal [not null, default: 1]
+  ipmCostPrice Decimal [not null, default: 0]
+  ipmCostWot Decimal [not null, default: 0]
+  ipmSalesPriceA Decimal [not null, default: 0]
+  ipmSalesPriceB Decimal [not null, default: 0]
+  ipmSalesPriceC Decimal [not null, default: 0]
+  ipmSalesPriceD Decimal [not null, default: 0]
+  ipmPriceAWot Decimal [not null, default: 0]
+  ipmPriceBWot Decimal [not null, default: 0]
+  ipmPriceCWot Decimal [not null, default: 0]
+  ipmPriceDWot Decimal [not null, default: 0]
+  ipmPriceAMargin Decimal [not null, default: 0]
+  ipmPriceBMargin Decimal [not null, default: 0]
+  ipmPriceCMargin Decimal [not null, default: 0]
+  ipmPriceDMargin Decimal [not null, default: 0]
+  ipmMaxPrice Decimal [not null, default: 0]
+  ipmMinPrice Decimal [not null, default: 0]
+  ipmDiscPerc Decimal [not null, default: 0]
+  ipmDiscQty Decimal [not null, default: 0]
+  ipmAddlCess Decimal [not null, default: 0]
+  ipmProfitType String [not null]
+  ipmRoundOff Decimal [not null, default: 0]
+  ipmBigUnit Boolean [not null, default: false]
+  ipmUomWeight Decimal [not null, default: 0]
+  ipmLoadingCharge Decimal [not null, default: 0]
+  ipmFreightCharge Decimal [not null, default: 0]
+  ipmPoints Int [not null, default: 0]
+  ipmRemarks String
+  ipmIsActive Boolean [not null, default: true]
+  ipmCreatedOn DateTime [default: `now()`, not null]
+  ipmCreatedBy String
+  ipmModifiedOn DateTime [default: `now()`, not null]
+  ipmModifiedBy String
+  item item_master [not null]
+  unit units [not null]
+  qtywiseRates item_qtywise_rates [not null]
+
+  indexes {
+    (ipmItemId, ipmUnitId, ipmGodownId) [unique]
+  }
+}
+
+Table item_qtywise_rates {
+  iqrId String [pk]
+  iqrBranchId String
+  iqrUnitRateId String [not null]
+  iqrPriceLevel Int [not null]
+  iqrStartQty Decimal [not null]
+  iqrEndQty Decimal
+  iqrEachQty Decimal [not null]
+  iqrSalesPrice Decimal [not null, default: 0]
+  iqrPriceWot Decimal [not null, default: 0]
+  iqrPriceMargin Decimal [not null, default: 0]
+  iqrDiscPerc Decimal [not null, default: 0]
+  iqrDiscQty Decimal [not null, default: 0]
+  iqrValidFrom DateTime
+  iqrValidTo DateTime
+  iqrPriority Int [not null, default: 0]
+  iqrIsActive Boolean [not null, default: true]
+  iqrIsDeleted Boolean [not null, default: false]
+  iqrCreatedOn DateTime [default: `now()`, not null]
+  iqrCreatedBy String
+  iqrModifiedOn DateTime [default: `now()`, not null]
+  iqrModifiedBy String
+  iqrRemarks String
+  unitRate item_price_master [not null]
+}
+
+Table item_reorders {
+  irId String [pk]
+  irBranchId String
+  irItemId String [not null]
+  irUnitId String [not null]
+  irGodownId String
+  irMinLevel Decimal [not null, default: 0]
+  irMaxLevel Decimal [not null, default: 0]
+  irReorderLevel Decimal [not null, default: 0]
+  irReorderQty Decimal [not null, default: 0]
+  irLeadTimeDays Int [not null, default: 0]
+  irReviewCycleDays Int [not null, default: 0]
+  irReorderDays Int [not null, default: 0]
+  irExpiryBufferDays Int [not null, default: 0]
+  irReorderType String [not null, default: 'MIN_MAX']
+  irIsActive Boolean [not null, default: true]
+  irIsDeleted Boolean [not null, default: false]
+  irRemarks String
+  irCreatedOn DateTime [default: `now()`, not null]
+  irCreatedBy String
+  irModifiedOn DateTime [default: `now()`, not null]
+  irModifiedBy String
+  item item_master [not null]
+  unit units [not null]
+
+  indexes {
+    (irItemId, irUnitId, irGodownId) [unique]
+  }
+}
+
+Table item_section_master {
+  secId String [pk]
+  secName String [not null]
+  secAlias String
+  secShort String
+  secDescription String
+  secParentId String
+  parent item_section_master
+  children item_section_master [not null]
+  secSort Int
+  secLevel Int
+  secPathIds String[] [not null]
+  secPosition Int
+  secColorCode String
+  secIcon String
+  secPhoto Bytes
+  secPhotoUrl String
+  secIsActive Boolean [not null, default: true]
+  secIsDeleted Boolean [not null, default: false]
+  secSyncDate DateTime
+  secCreatedOn DateTime [default: `now()`, not null]
+  secCreatedBy String
+  secModifiedOn DateTime [default: `now()`, not null]
+  secModifiedBy String
+}
+
+Table item_tax_history {
+  ithId String [pk]
+  ithItemId String [not null]
+  ithTaxId String [not null]
+  ithEffectiveFrom DateTime [not null]
+  ithEffectiveTo DateTime
+  ithReason String
+  ithCreatedOn DateTime [default: `now()`, not null]
+  ithCreatedBy String
+  item item_master [not null]
+  tax item_tax_master [not null]
+}
+
+Table item_tax_master {
+  taxId String [pk]
+  taxName String [unique, not null]
+  taxCode String
+  taxTaxabilityType String [not null, default: 'TAXABLE']
+  taxIsReverseCharge Boolean [not null, default: false]
+  taxCgstPerc Decimal [not null, default: 0]
+  taxSgstPerc Decimal [not null, default: 0]
+  taxIgstPerc Decimal [not null, default: 0]
+  taxCgstPurPerc Decimal [not null, default: 0]
+  taxSgstPurPerc Decimal [not null, default: 0]
+  taxIgstPurPerc Decimal [not null, default: 0]
+  taxCessType String [not null, default: 'NONE']
+  taxCessPerc Decimal [not null, default: 0]
+  taxCessUnit Decimal [not null, default: 0]
+  taxCessPurPerc Decimal [not null, default: 0]
+  taxCessPurUnit Decimal [not null, default: 0]
+  taxGstRateTotal Decimal [not null, default: 0]
+  taxSalesLedgerId String
+  taxSalesReturnLedgerId String
+  taxPurchaseLedgerId String
+  taxPurchaseReturnLedgerId String
+  taxCgstOutputLedgerId String
+  taxSgstOutputLedgerId String
+  taxIgstOutputLedgerId String
+  taxCessOutputLedgerId String
+  taxCgstInputLedgerId String
+  taxSgstInputLedgerId String
+  taxIgstInputLedgerId String
+  taxCessInputLedgerId String
+  taxIsActive Boolean [not null, default: true]
+  taxIsDeleted Boolean [not null, default: false]
+  taxSyncDate DateTime
+  taxCreatedOn DateTime [default: `now()`, not null]
+  taxCreatedBy String
+  taxModifiedOn DateTime [default: `now()`, not null]
+  taxModifiedBy String
+  defaultItems item_master [not null]
+  taxHistory item_tax_history [not null]
+}
+
+Table units {
+  unit_id String [pk]
+  unit_name String [unique, not null]
+  unit_alias String
+  unit_code String
+  unit_description String
+  unit_decimal_count Int [not null, default: 0]
+  unit_weight Decimal
+  unit_loading Decimal
+  unit_unloading Decimal
+  unit_attach_charge Decimal
+  unit_is_pack_unit Boolean [not null, default: false]
+  unit_base_unit_id String
+  unit_conversion Decimal
+  unit_is_active Boolean [not null, default: true]
+  unit_is_deleted Boolean [not null, default: false]
+  unit_sync_date DateTime
+  unit_created_on DateTime [default: `now()`, not null]
+  unit_created_by String
+  unit_modified_on DateTime [default: `now()`, not null]
+  unit_modified_by String
+  baseUnit units
+  packUnits units [not null]
+  eanCodes item_ean_codes [not null]
+  itemMasters item_master [not null]
+  itemPrices item_price_master [not null]
+  itemReorders item_reorders [not null]
+}
+
+Table branch_master {
+  brId String [pk]
+  compId String [not null]
+  brCode String [unique]
+  brName String [not null]
+  brMailingName String
+  brAlias String
+  brShort String
+  brType String
+  brIsDefault Boolean [not null, default: false]
+  brIsActive Boolean [not null, default: true]
+  brAddr1 String
+  brAddr2 String
+  brAddr3 String
+  brCity String
+  brDistrict String
+  brState String
+  brStateCode String [not null]
+  brPin String
+  brCountry String [not null, default: 'India']
+  brLandmark String
+  brRegionAddr1 String
+  brRegionAddr2 String
+  brRegionAddr3 String
+  brRegionCity String
+  brRegionDistrict String
+  brRegionState String
+  brRegionCountry String
+  brContactPerson String
+  brTel String
+  brPhone String
+  brMail String
+  brBillPrefix String
+  brInvoiceSeriesPrefix String
+  brBillGreeting String
+  brTerms String
+  brRoundingMode String
+  brRoundingValue Decimal
+  brDefaultGodownId String
+  brPosType String
+  brAllowNegativeStock Boolean [not null, default: true]
+  brSmsApplicable Boolean [not null, default: false]
+  brBankId String
+  brFssaiNo String
+  brFssaiLicenseType String
+  brFssaiValidUpto DateTime
+  brIsDeleted Boolean [not null, default: false]
+  brSyncDate DateTime
+  brCreatedOn DateTime [default: `now()`, not null]
+  brCreatedBy String
+  brModifiedOn DateTime [default: `now()`, not null]
+  brModifiedBy String
+  company companys [not null]
+  accountLedgerMaster acc_ledger_master [not null]
+}
+
+Table companys {
+  compId String [pk]
+  compCode String [unique]
+  compName String [unique, not null]
+  compShort String
+  compLegalName String
+  compGstinNo String [unique]
+  compGstRegType String
+  compPanNo String
+  compFssaiNo String
+  compDrugLicenseNo String
+  compAddr1 String
+  compAddr2 String
+  compAddr3 String
+  compCity String
+  compDistrict String
+  compState String
+  compStateCode String [not null]
+  compPin Int
+  compCountry String [not null, default: 'India']
+  compRegionAddr1 String
+  compRegionAddr2 String
+  compRegionAddr3 String
+  compRegionCity String
+  compRegionDistrict String
+  compRegionState String
+  compRegionCountry String
+  compTel String
+  compPhone String
+  compMail String
+  compSupportEmail String
+  compSupportPhone String
+  compWebsiteName String
+  compFinYearFrom DateTime
+  compFinYearTo DateTime
+  compBooksBeginFrom DateTime
+  compGstApplicable Boolean [not null, default: true]
+  compTcsApplicable Boolean [not null, default: false]
+  compSmsApplicable Boolean [not null, default: false]
+  compEinvoiceApplicable Boolean [not null, default: false]
+  compEwayApplicable Boolean [not null, default: false]
+  compEwayDate DateTime
+  compEwayInterLimit Decimal
+  compEwayIntraApl Boolean [not null, default: false]
+  compEwayIntraLimit Decimal [not null, default: 0]
+  compEinvoiceDate DateTime
+  compEinvoiceInclEway Boolean
+  compStylesheetId String
+  compBankId String
+  compPriceFixing String
+  compPrefixCode String
+  compBillGreeting String
+  compNegStkApl Boolean [not null, default: true]
+  compDefault Boolean [not null, default: false]
+  compIsActive Boolean [not null, default: true]
+  compCurrencyCode String [not null, default: 'INR']
+  compCurrencySymbol String
+  compLocaleCode String [not null, default: 'en-IN']
+  compRemarks String [default: '']
+  compIsDeleted Boolean [not null, default: false]
+  compSyncDate DateTime
+  compCreatedOn DateTime [default: `now()`, not null]
+  compCreatedBy String
+  compModifiedOn DateTime [default: `now()`, not null]
+  compModifiedBy String
+  branches branch_master [not null]
+  accountGroups account_groups [not null]
+  ledgers acc_ledger_master [not null]
+  employees emp_master [not null]
+  ledgerBankAccounts acc_ledger_bank_accounts [not null]
+  gspCompanyServices gsp_company_service [not null]
+  shipAddrs acc_ship_addrs [not null]
+  custGroup cust_groups [not null]
+  itemMaster item_master [not null]
+  ErpDeviceMaster erp_device_master [not null]
+  UserLoginSession user_login_sessions [not null]
+  customers customers [not null]
+}
+
+Table company_group_master {
+  cogGroupId String [pk]
+  cogGroupName String [not null]
+  cogCompanyIds String[] [not null]
+  cogIsActive Boolean [not null, default: true]
+  cogIsDeleted Boolean [not null, default: false]
+  cogSyncDate DateTime
+  cogCreatedOn DateTime [default: `now()`, not null]
+  cogCreatedBy String
+  cogModifiedOn DateTime [default: `now()`, not null]
+  cogModifiedBy String
+}
+
+Table suppliers {
+  supId String [pk]
+  supCompanyId String
+  supBranchId String
+  supGroupId String [not null]
+  supPurchaseType String [not null]
+  supName String [not null]
+  supShort String
+  supAddr1 String
+  supAddr2 String
+  supAddr3 String
+  supCity String
+  supDistrict String
+  supStateName String [not null]
+  supCountry String [default: 'India']
+  supPincode String
+  supTel String
+  supPhone String
+  supMailId String
+  supWhatsappNo String
+  supWebsiteAddress String
+  supChequePreName String
+  supNotes String
+  supCreditDays Int [not null, default: 0]
+  supCashDiscPerc Decimal [not null, default: 0]
+  supCollectionDays Int[] [not null]
+  supGstNo String
+  supStateCode String [not null]
+  supPanNo String
+  supGstType String [not null]
+  supSupCst String
+  supDrugLiscenceNo String
+  supRegionName String
+  supRegionAddr1 String
+  supRegionAddr2 String
+  supRegionAddr3 String
+  supRegionCity String
+  supRegionDistrict String
+  supRegionStateName String
+  supRegionCountry String [default: 'India']
+  supBilledDate DateTime
+  supSortOrder Int [default: 0]
+  supIsActive Boolean [not null, default: true]
+  supIsDeleted Boolean [not null, default: false]
+  supSyncDate DateTime
+  supCreatedOn DateTime [default: `now()`, not null]
+  supCreatedBy String
+  supModifiedOn DateTime [not null]
+  supModifiedBy String
+  supStateId String
+  group supplier_groups [not null]
+}
+
+Table supplier_groups {
+  spgId String [pk]
+  spgName String [not null]
+  spgAlias String
+  spgShort String
+  spgDesc String
+  spgIsActive Boolean [not null, default: true]
+  spgIsDeleted Boolean [not null, default: false]
+  spgSyncDate DateTime
+  spgCreatedOn DateTime [default: `now()`, not null]
+  spgCreatedBy String
+  spgModifiedOn DateTime [default: `now()`, not null]
+  spgModifiedBy String
+  suppliers suppliers [not null]
+}
+
+Table area_master {
+  armId String [pk]
+  armName String [not null]
+  armAlias String
+  armShort String
+  armCityId String [not null]
+  armSort Decimal [not null, default: 0]
+  armDistanceKm Int [default: 0]
+  armCollectionDays Int[] [not null]
+  armIsActive Boolean [not null, default: true]
+  armIsDeleted Boolean [not null, default: false]
+  armSyncDate DateTime
+  armCreatedOn DateTime [default: `now()`, not null]
+  armCreatedBy String
+  armModifiedOn DateTime [default: `now()`, not null]
+  armModifiedBy String
+  city city_master [not null]
+  customers customers [not null]
+}
+
+Table city_master {
+  ctmId String [pk]
+  ctmName String [not null]
+  ctmAlias String
+  ctmShort String
+  ctmStateId String [not null]
+  ctmOrder Decimal [not null, default: 0]
+  ctmIsActive Boolean [not null, default: true]
+  ctmIsDeleted Boolean [not null, default: false]
+  ctmSyncDate DateTime
+  ctmCreatedOn DateTime [default: `now()`, not null]
+  ctmCreatedBy String
+  ctmModifiedOn DateTime [default: `now()`, not null]
+  ctmModifiedBy String
+  state state_master [not null]
+  areas area_master [not null]
+}
+
+Table customers {
+  cusId String [pk]
+  cusTitle String
+  cusShort String
+  cusCode String
+  cusName String
+  cusAddr1 String
+  cusAddr2 String
+  cusAddr3 String
+  cusCity String
+  cusDistrict String
+  cusStateName String [not null]
+  cusCountry String [default: 'India']
+  cusStateCode String [not null]
+  cusLandmark String
+  cusPin String
+  cusTel String
+  cusPhone1 String
+  cusPhone2 String
+  cusWhatsappNo String
+  cusEmail String
+  cusAadharNo String
+  cusContactPerson String
+  cusDistanceKm Int
+  cusCreditAllowed Boolean [not null, default: false]
+  cusCreditBillLimit Int [not null, default: 0]
+  cusCreditAmtLimit Decimal [not null, default: 0]
+  cusCreditDays Int [not null, default: 0]
+  cusDebitBalance Decimal [not null, default: 0]
+  cusDiscPerc Decimal [not null, default: 0]
+  cusDebitGraceDays Int [not null, default: 0]
+  cusEnableSms Boolean [not null, default: false]
+  cusOverdueSms Boolean [not null, default: false]
+  cusOverdueBilling Boolean [not null, default: false]
+  cusAllowPromotion Boolean [not null, default: false]
+  cusAllowLoyalty Boolean [not null, default: false]
+  cusAllowDiscount Boolean [not null, default: true]
+  cusSortOrder Int [not null, default: 0]
+  cusRegionName String
+  cusRegionAddr1 String
+  cusRegionAddr2 String
+  cusRegionAddr3 String
+  cusRegionCity String
+  cusRegionDistrict String
+  cusRegionStateName String
+  cusRegionCountry String [default: 'India']
+  cusBirthDate DateTime
+  cusMarriageDate DateTime
+  cusTransportName String
+  cusFreightCharge Boolean [not null, default: false]
+  cusLoadingCharge Boolean [not null, default: false]
+  cusUnloadingCharge Boolean [not null, default: false]
+  cusGstNo String
+  cusPanNo String
+  cusGstType String
+  cusEcommerceGstin String
+  cusTcsApplicable Boolean [not null, default: false]
+  cusItcollExempted Boolean [not null, default: false]
+  cusItcollType String
+  cusGeoLocation String
+  cusCollectionDays Int[] [not null]
+  cusDefaultSalesman String
+  cusPriceLevelId Int [not null]
+  cusBilledDate DateTime
+  cusBilledCount Int [not null, default: 0]
+  cusNotes String
+  cusCompanyId String
+  cusBranchId String
+  cusAreaId String [not null]
+  cusGroupId String [not null]
+  cusIsActive Boolean [not null, default: true]
+  cusIsDeleted Boolean [not null, default: false]
+  cusSyncDate DateTime
+  cusCreatedOn DateTime [default: `now()`, not null]
+  cusCreatedBy String
+  cusModifiedOn DateTime [default: `now()`, not null]
+  cusModifiedBy String
+  area area_master [not null]
+  custGroup cust_groups [not null]
+  company companys
+}
+
+Table cust_groups {
+  cgrId String [pk]
+  cgrCompanyId String
+  cgrBranchId String
+  cgrName String [not null]
+  cgrAlias String
+  cgrShort String
+  cgrNarration String
+  cgrOrder Decimal [not null, default: 0]
+  cgrDiscPerc Decimal [not null, default: 0]
+  cgrCollectionDays Int[] [not null]
+  cgrDebitAllowed Boolean [not null, default: false]
+  cgrDebitDays Int [not null, default: 0]
+  cgrDebitLimit Decimal [not null, default: 0]
+  cgrBillsLimit Int [not null, default: 0]
+  cgrOverdueBilling Boolean [not null, default: false]
+  cgrIsActive Boolean [not null, default: true]
+  cgrIsDeleted Boolean [not null, default: false]
+  cgrCreatedOn DateTime [default: `now()`, not null]
+  cgrModifiedOn DateTime [not null]
+  company companys
+  customers customers [not null]
+}
+
+Table state_master {
+  stmId String [pk]
+  stmName String [not null]
+  stmAlias String
+  stmShort String
+  stmOrder Decimal [not null, default: 0]
+  stmIsActive Boolean [not null, default: true]
+  stmIsDeleted Boolean [not null, default: false]
+  stmSyncDate DateTime
+  stmCreatedOn DateTime [default: `now()`, not null]
+  stmCreatedBy String
+  stmModifiedOn DateTime [default: `now()`, not null]
+  stmModifiedBy String
+  cities city_master [not null]
+}
+
+Enum LedGstPartyRegType {
+  REGULAR
+  COMPOSITION
+  UNREGISTERED
+}
+
+Enum LedObType {
+  DR
+  CR
+}
+
+Enum AuditLogAction {
+  insert
+  update
+  approve
+  cancel
+}
+
+Enum AuditScreenType {
+  master
+  transaction
+  settings
+  other
+}
+
+Enum AvtDrcrType {
+  DR
+  CR
+  BOTH
+}
+
+Enum AvtTallyReservedVch {
+  CONTRA
+  PAYMENT
+  RECEIPT
+  JOURNAL
+  SALES
+  PURCHASE
+  CREDIT_NOTE
+  DEBIT_NOTE
+  REVERSING_JOURNAL
+  MEMORANDUM
+  DELIVERY_NOTE
+  RECEIPT_NOTE
+  SALES_ORDER
+  PURCHASE_ORDER
+  STOCK_JOURNAL
+  PHYSICAL_STOCK
+}
+
+Ref: account_groups.accGroupParentId - account_groups.accGroupId
+
+Ref: account_groups.accGroupCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_ledger_master.ledCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_ledger_master.ledGroupId > account_groups.accGroupId [delete: Restrict]
+
+Ref: acc_ledger_master.ledBranchId > branch_master.brId [delete: Restrict]
+
+Ref: account_tender_master.acctndTypeId > tender_type.accttTypeId
+
+Ref: account_tender_master.acctndLedgerId > acc_ledger_master.ledId
+
+Ref: emp_master.empCompanyId > companys.compId [delete: Restrict]
+
+Ref: emp_master.empDesignationId > employee_designations.edId
+
+Ref: emp_master.empDepartmentId > employee_departments.edptId
+
+Ref: acc_ship_addrs.saaCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_ship_addrs.saaLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_ledger_bank_accounts.lbaCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_ledger_bank_accounts.lbaLedgerId > acc_ledger_master.ledId
+
+Ref: audit_log.logScreenId > audit_screen.screenId [delete: Restrict]
+
+Ref: user_login_sessions.ulsCompanyId > companys.compId [delete: Restrict]
+
+Ref: dropdown_columns.dropColumnsDropdownId > dropdown_details.dropdownId [delete: Cascade]
+
+Ref: erp_device_master.devCompanyId > companys.compId [delete: Restrict]
+
+Ref: grid_columns.gridId > grid_details.gridId [delete: Cascade]
+
+Ref: gsp_company_service.csgCompanyId > companys.compId [delete: Restrict]
+
+Ref: menu_master.menuParentId - menu_master.menuId [delete: Set Null]
+
+Ref: ui_table_columns.uiTblClmTableId > ui_tables.uiTblId
+
+Ref: category_master.categoryParentId - category_master.categoryId [delete: Restrict]
+
+Ref: godown_locations.gdlParentId - godown_locations.gdlId [delete: Restrict]
+
+Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
+
+Ref: item_ean_codes.eanUnitId > units.unit_id [delete: Restrict]
+
+Ref: item_group_master.itgParentId - item_group_master.itgId [delete: Restrict]
+
+Ref: item_master.itemGroupId > item_group_master.itgId [delete: Restrict]
+
+Ref: item_master.itemCategoryId > category_master.categoryId [delete: Set Null]
+
+Ref: item_master.itemBaseUnitId > units.unit_id [delete: Restrict]
+
+Ref: item_master.itemDefaultTaxId > item_tax_master.taxId [delete: Restrict]
+
+Ref: item_master.itemCompanyId > companys.compId [delete: Restrict]
+
+Ref: item_price_master.ipmItemId > item_master.itemId [delete: Restrict]
+
+Ref: item_price_master.ipmUnitId > units.unit_id [delete: Restrict]
+
+Ref: item_qtywise_rates.iqrUnitRateId > item_price_master.ipmUnitRateId [delete: Restrict]
+
+Ref: item_reorders.irItemId > item_master.itemId [delete: Restrict]
+
+Ref: item_reorders.irUnitId > units.unit_id [delete: Restrict]
+
+Ref: item_section_master.secParentId - item_section_master.secId [delete: Restrict]
+
+Ref: item_tax_history.ithItemId > item_master.itemId [delete: Restrict]
+
+Ref: item_tax_history.ithTaxId > item_tax_master.taxId [delete: Restrict]
+
+Ref: units.unit_base_unit_id - units.unit_id [delete: Restrict]
+
+Ref: branch_master.compId > companys.compId
+
+Ref: suppliers.supGroupId > supplier_groups.spgId [delete: Restrict]
+
+Ref: area_master.armCityId > city_master.ctmId
+
+Ref: city_master.ctmStateId > state_master.stmId
+
+Ref: customers.cusAreaId > area_master.armId
+
+Ref: customers.cusGroupId > cust_groups.cgrId
+
+Ref: customers.cusCompanyId > companys.compId
+
+Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]
