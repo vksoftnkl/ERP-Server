@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { Prisma, Uitable } from '@prisma/client';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -102,7 +102,7 @@ export class UiTableMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: UiTableMasterListItem[]; meta: UiTableMasterListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<UiTableMasterListItem, UiTableMasterListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: UI_TABLE_MASTER_TABLE_NAME,
     });
@@ -139,6 +139,7 @@ export class UiTableMasterService {
         alias: 'ui_table_master_grid',
         limit,
         skip,
+          gridId: configuredGrid.gridId,
       });
 
       return {
@@ -149,6 +150,7 @@ export class UiTableMasterService {
           total: result.total,
           total_pages: Math.ceil(result.total / limit),
         },
+        styles: result.styles,
       };
     } catch {
       this.throwBadRequest('Invalid grid_sql configuration for UI table master', [

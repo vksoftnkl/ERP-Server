@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { Prisma, UitableColumns } from '@prisma/client';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -127,7 +127,7 @@ export class UiTableColumnsService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: UiTableColumnListItem[]; meta: UiTableColumnListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<UiTableColumnListItem, UiTableColumnListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: UI_TABLE_COLUMNS_TABLE_NAME,
     });
@@ -164,6 +164,7 @@ export class UiTableColumnsService {
         alias: 'ui_table_columns_grid',
         limit,
         skip,
+          gridId: configuredGrid.gridId,
       });
 
       return {
@@ -174,6 +175,7 @@ export class UiTableColumnsService {
           total: result.total,
           total_pages: Math.ceil(result.total / limit),
         },
+        styles: result.styles,
       };
     } catch {
       this.throwBadRequest('Invalid grid_sql configuration for UI table columns', [

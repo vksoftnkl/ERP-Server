@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { ItemReorder, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -111,7 +111,7 @@ export class ItemsReorderMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: ItemReorderListItem[]; meta: ItemReorderListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<ItemReorderListItem, ItemReorderListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ITEM_REORDER_TABLE_NAME,
     });
@@ -143,6 +143,7 @@ export class ItemsReorderMasterService {
           alias: 'item_reorder_grid',
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         });
 
         return {
@@ -153,6 +154,7 @@ export class ItemsReorderMasterService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { ItemMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -37,45 +37,24 @@ export class ItemsMasterService {
     }
     return this.createItem(saveItemDto);
   }
-  async list(queryDto: ListItemQueryDto): Promise<{ items: ItemListItem[]; meta: ItemListMeta }> {
+  async list(
+    queryDto: ListItemQueryDto,
+  ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-    const hasStructuredFilters =
-      queryDto.item_branch_id !== undefined ||
-      queryDto.item_group_id !== undefined ||
-      queryDto.item_category_id !== undefined ||
-      queryDto.item_brand_id !== undefined ||
-      queryDto.item_section_id !== undefined ||
-      queryDto.item_base_unit_id !== undefined ||
-      queryDto.item_default_tax_id !== undefined ||
-      queryDto.item_stock_type !== undefined ||
-      queryDto.item_is_active !== undefined ||
-      queryDto.item_is_service !== undefined ||
-      Boolean(queryDto.search?.trim());
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
+    const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+    if (configuredList) {
+      return configuredList;
     }
-    const where = this.buildListWhere(queryDto);
-    const [total, records] = await Promise.all([
-      this.prisma.itemMaster.count({ where }),
-      this.prisma.itemMaster.findMany({
-        where,
-        orderBy: [{ itemNameEn: 'asc' }, { itemId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-    ]);
+
     return {
-      items: records.map((record) => this.toPayload(record)),
+      items: [],
       meta: {
         page,
         limit,
-        total,
-        total_pages: Math.ceil(total / limit),
+        total: 0,
+        total_pages: 0,
       },
     };
   }
@@ -83,7 +62,7 @@ export class ItemsMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: ItemListItem[]; meta: ItemListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ITEM_TABLE_NAME,
     });
@@ -112,6 +91,7 @@ export class ItemsMasterService {
           alias: 'item_grid',
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         });
         return {
           items: result.items,
@@ -121,6 +101,7 @@ export class ItemsMasterService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;

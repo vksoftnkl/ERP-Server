@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { ItemTaxMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -71,7 +71,7 @@ export class ItemsTaxMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: ItemTaxListItem[]; meta: ItemTaxListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<ItemTaxListItem, ItemTaxListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ITEM_TAX_TABLE_NAME,
     });
@@ -100,6 +100,7 @@ export class ItemsTaxMasterService {
           alias: 'item_tax_grid',
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         });
         return {
           items: result.items,
@@ -109,6 +110,7 @@ export class ItemsTaxMasterService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;

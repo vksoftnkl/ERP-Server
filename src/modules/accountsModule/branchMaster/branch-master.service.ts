@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { BranchMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -41,48 +41,39 @@ export class BranchMasterService {
 
     return this.createBranch(saveBranchMasterDto);
   }
-
   async list(
     queryDto: ListBranchMasterQueryDto,
   ): Promise<{ items: BranchMasterListItem[]; meta: BranchMasterListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.compId !== undefined ||
       queryDto.brStateCode !== undefined ||
       queryDto.brIsActive !== undefined ||
       queryDto.brIsDefault !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.BranchMasterWhereInput = {
       brIsDeleted: false,
     };
-
     if (queryDto.compId !== undefined) {
       where.compId = queryDto.compId as string;
     }
-
     if (queryDto.brStateCode !== undefined) {
       where.brStateCode = queryDto.brStateCode;
     }
-
     if (queryDto.brIsActive !== undefined) {
       where.brIsActive = queryDto.brIsActive;
     }
-
     if (queryDto.brIsDefault !== undefined) {
       where.brIsDefault = queryDto.brIsDefault;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -98,7 +89,6 @@ export class BranchMasterService {
         { brMail: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.branchMaster.count({ where }),
       this.prisma.branchMaster.findMany({
@@ -108,7 +98,6 @@ export class BranchMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -119,12 +108,11 @@ export class BranchMasterService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: BranchMasterListItem[]; meta: BranchMasterListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<BranchMasterListItem, BranchMasterListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: BRANCH_MASTER_TABLE_NAME,
     });
@@ -135,13 +123,11 @@ export class BranchMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: BRANCH_MASTER_TABLE_NAME,
@@ -149,15 +135,14 @@ export class BranchMasterService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result = await this.configuredGridSqlService.runPagedQuery<BranchMasterListItem>({
           baseSql: validation.normalizedSql,
           alias: 'branch_master_grid',
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         });
-
         return {
           items: result.items,
           meta: {
@@ -166,15 +151,14 @@ export class BranchMasterService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;
       }
     }
-
     return null;
   }
-
   async getById(brId: string): Promise<BranchMasterPayload> {
     const record = await this.prisma.branchMaster.findFirst({
       where: {
@@ -182,14 +166,11 @@ export class BranchMasterService {
         brIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(brId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(brId: string): Promise<{ brId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.branchMaster.findFirst({
@@ -198,11 +179,9 @@ export class BranchMasterService {
           brIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(brId);
       }
-
       const modifiedOn = new Date();
       const result = await tx.branchMaster.updateMany({
         where: {
@@ -216,11 +195,9 @@ export class BranchMasterService {
           brModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(brId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -229,7 +206,6 @@ export class BranchMasterService {
         brModifiedOn: modifiedOn,
         brModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -245,14 +221,12 @@ export class BranchMasterService {
         },
         tx,
       );
-
       return {
         brId,
         deleted: true,
       };
     });
   }
-
   private async createBranch(
     saveBranchMasterDto: SaveBranchMasterDto,
   ): Promise<BranchMasterPayload> {
@@ -260,15 +234,12 @@ export class BranchMasterService {
       return await this.prisma.$transaction(async (tx) => {
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
         const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
-
         await this.ensureCompanyExists(saveBranchMasterDto.compId, tx);
         await this.ensureNameIsUnique(tx, saveBranchMasterDto.compId, normalizedName);
         await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null);
-
         if (saveBranchMasterDto.brIsDefault === true) {
           await this.clearDefaultBranch(tx, saveBranchMasterDto.compId);
         }
-
         const now = new Date();
         const data: Prisma.BranchMasterUncheckedCreateInput = {
           compId: saveBranchMasterDto.compId,
@@ -280,10 +251,8 @@ export class BranchMasterService {
           brModifiedBy: DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveBranchMasterDto);
-
         const created = await tx.branchMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -299,7 +268,6 @@ export class BranchMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -307,7 +275,6 @@ export class BranchMasterService {
       throw error;
     }
   }
-
   private async updateBranch(
     saveBranchMasterDto: SaveBranchMasterDto,
   ): Promise<BranchMasterPayload> {
@@ -320,22 +287,17 @@ export class BranchMasterService {
             brIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(brId);
         }
-
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
         const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
-
         await this.ensureCompanyExists(saveBranchMasterDto.compId, tx);
         await this.ensureNameIsUnique(tx, saveBranchMasterDto.compId, normalizedName, brId);
         await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null, brId);
-
         if (saveBranchMasterDto.brIsDefault === true) {
           await this.clearDefaultBranch(tx, saveBranchMasterDto.compId, brId);
         }
-
         const data: Prisma.BranchMasterUncheckedUpdateInput = {
           compId: saveBranchMasterDto.compId,
           brName: normalizedName,
@@ -344,7 +306,6 @@ export class BranchMasterService {
           brModifiedBy: DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveBranchMasterDto);
-
         const updated = await tx.branchMaster.update({
           where: {
             brId,
@@ -352,7 +313,6 @@ export class BranchMasterService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -368,7 +328,6 @@ export class BranchMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -376,7 +335,6 @@ export class BranchMasterService {
       throw error;
     }
   }
-
   private async ensureCompanyExists(compId: string, tx: BranchMasterWriteClient): Promise<void> {
     const company = await tx.company.findFirst({
       where: {
@@ -387,7 +345,6 @@ export class BranchMasterService {
         compId: true,
       },
     });
-
     if (!company) {
       this.throwBadRequest('Company does not exist', [
         {
@@ -397,7 +354,6 @@ export class BranchMasterService {
       ]);
     }
   }
-
   private async ensureNameIsUnique(
     tx: BranchMasterWriteClient,
     compId: string,
@@ -424,7 +380,6 @@ export class BranchMasterService {
         brId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Branch name already exists for this company', [
@@ -436,7 +391,6 @@ export class BranchMasterService {
       );
     }
   }
-
   private async ensureCodeIsUnique(
     tx: BranchMasterWriteClient,
     brCode: string | null,
@@ -445,7 +399,6 @@ export class BranchMasterService {
     if (!brCode) {
       return;
     }
-
     const existing = await tx.branchMaster.findFirst({
       where: {
         brCode: {
@@ -464,7 +417,6 @@ export class BranchMasterService {
         brId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Branch code already exists', [
@@ -476,7 +428,6 @@ export class BranchMasterService {
       );
     }
   }
-
   private async clearDefaultBranch(
     tx: BranchMasterWriteClient,
     compId: string,
@@ -502,7 +453,6 @@ export class BranchMasterService {
       },
     });
   }
-
   private applyOptionalFields(
     data: Prisma.BranchMasterUncheckedCreateInput | Prisma.BranchMasterUncheckedUpdateInput,
     saveBranchMasterDto: SaveBranchMasterDto,
@@ -631,7 +581,6 @@ export class BranchMasterService {
       data.brFssaiValidUpto = saveBranchMasterDto.brFssaiValidUpto;
     }
   }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -642,10 +591,8 @@ export class BranchMasterService {
         },
       ]);
     }
-
     return trimmed;
   }
-
   private normalizeStateCode(stateCode: string): string {
     const normalized = stateCode.trim().toUpperCase();
     if (normalized.length !== 2) {
@@ -656,10 +603,8 @@ export class BranchMasterService {
         },
       ]);
     }
-
     return normalized;
   }
-
   private toPayload(record: BranchMaster): BranchMasterPayload {
     return {
       brId: record.brId,
@@ -715,19 +660,15 @@ export class BranchMasterService {
       brModifiedBy: record.brModifiedBy,
     };
   }
-
   private toNullableNumber(value: Prisma.Decimal | number | null): number | null {
     if (value === null) {
       return null;
     }
-
     if (typeof value === 'number') {
       return value;
     }
-
     return Number(value.toString());
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -740,15 +681,12 @@ export class BranchMasterService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(brId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Branch not found', [
@@ -759,11 +697,9 @@ export class BranchMasterService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: BranchMasterErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: BranchMasterErrorDetail[] = [],
@@ -774,7 +710,6 @@ export class BranchMasterService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

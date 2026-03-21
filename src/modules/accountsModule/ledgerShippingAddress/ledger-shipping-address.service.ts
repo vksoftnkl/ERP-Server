@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccShipAddr, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -142,7 +142,7 @@ export class LedgerShippingAddressService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: LedgerShippingAddressListItem[]; meta: LedgerShippingAddressListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<LedgerShippingAddressListItem, LedgerShippingAddressListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: LEDGER_SHIPPING_ADDRESS_TABLE_NAME,
     });
@@ -174,6 +174,7 @@ export class LedgerShippingAddressService {
           alias: 'ledger_shipping_address_grid',
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         });
 
         return {
@@ -184,6 +185,7 @@ export class LedgerShippingAddressService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;

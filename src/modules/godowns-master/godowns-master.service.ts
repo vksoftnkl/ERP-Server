@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { randomUUID } from 'node:crypto';
 import { GodownLocation, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
@@ -90,7 +90,7 @@ export class GodownsMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: GodownListItem[]; meta: GodownListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<GodownListItem, GodownListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: GODOWN_LOCATION_TABLE_NAME,
     });
@@ -136,6 +136,7 @@ export class GodownsMasterService {
         params,
         limit,
         skip,
+          gridId: configuredGrid.gridId,
       });
 
       return {
@@ -146,6 +147,7 @@ export class GodownsMasterService {
           total: result.total,
           total_pages: Math.ceil(result.total / limit),
         },
+        styles: result.styles,
       };
     } catch {
       this.throwBadRequest('Invalid grid_sql configuration for godown location list', [

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AvtVoucherTypeMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -102,7 +102,7 @@ export class AccountVoucherTypeService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: AccountVoucherTypeListItem[]; meta: AccountVoucherTypeListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<AccountVoucherTypeListItem, AccountVoucherTypeListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ACCOUNT_VOUCHER_TYPE_TABLE_NAME,
     });
@@ -138,6 +138,7 @@ export class AccountVoucherTypeService {
         alias: 'account_voucher_type_grid',
         limit,
         skip,
+          gridId: configuredGrid.gridId,
       });
 
       return {
@@ -148,6 +149,7 @@ export class AccountVoucherTypeService {
           total: result.total,
           total_pages: Math.ceil(result.total / limit),
         },
+        styles: result.styles,
       };
     } catch {
       this.throwBadRequest('Invalid grid_sql configuration for account voucher type list', [

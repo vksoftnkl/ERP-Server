@@ -187,6 +187,7 @@ export class GspCompanyServiceService {
           alias: 'gsp_company_service_grid',
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         });
         const items = await this.attachReferenceLabels(result.items);
 

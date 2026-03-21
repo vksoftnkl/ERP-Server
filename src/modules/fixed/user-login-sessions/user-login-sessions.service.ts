@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, UserLoginSession } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -136,7 +136,7 @@ export class UserLoginSessionsService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: UserLoginSessionsListItem[]; meta: UserLoginSessionsListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<UserLoginSessionsListItem, UserLoginSessionsListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: USER_LOGIN_SESSIONS_TABLE_NAME,
     });
@@ -172,6 +172,7 @@ export class UserLoginSessionsService {
         alias: 'user_login_sessions_grid',
         limit,
         skip,
+          gridId: configuredGrid.gridId,
       });
 
       return {
@@ -182,6 +183,7 @@ export class UserLoginSessionsService {
           total: result.total,
           total_pages: Math.ceil(result.total / limit),
         },
+        styles: result.styles,
       };
     } catch {
       this.throwBadRequest('Invalid grid_sql configuration for user login sessions', [

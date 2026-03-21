@@ -4,18 +4,21 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import {
   ConfiguredGridSqlCandidate,
   ConfiguredGridSqlValidationResult,
+  GridColumnItem,
   LoadConfiguredGridSqlCandidatesOptions,
   RunConfiguredGridSqlPageOptions,
   RunConfiguredGridSqlPageResult,
   ValidateConfiguredGridSqlOptions,
 } from './types/configured-grid-sql.types';
+
+export type { ConfiguredGridListResult } from './types/configured-grid-sql.types';
 const GRID_SQL_FORBIDDEN_TOKENS =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 const POSITIONAL_PARAMETER_PATTERN = /\$[1-9][0-9]*/;
 @Injectable()
 export class ConfiguredGridSqlService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
   async loadCandidates(
     options: LoadConfiguredGridSqlCandidatesOptions,
   ): Promise<ConfiguredGridSqlCandidate[]> {
@@ -116,17 +119,61 @@ export class ConfiguredGridSqlService {
   ): Promise<RunConfiguredGridSqlPageResult<TItem>> {
     const params = options.params ?? [];
     const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
-    const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
-      params.length + 1
-    } OFFSET $${params.length + 2}`;
-    const [countResult, rows] = await Promise.all([
+    const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${params.length + 1
+      } OFFSET $${params.length + 2}`;
+    const columnsPromise =
+      options.gridId !== undefined
+        ? this.loadGridColumns(options.gridId)
+        : Promise.resolve(undefined);
+    const [countResult, rows, styles] = await Promise.all([
       this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql, ...params),
       this.prisma.$queryRawUnsafe<TItem[]>(rowsSql, ...params, options.limit, options.skip),
+      columnsPromise,
     ]);
     return {
       items: rows,
       total: this.parseCountValue(countResult[0]?.total),
+      ...(styles !== undefined && { styles }),
     };
+  }
+  async loadGridColumns(gridId: bigint): Promise<GridColumnItem[]> {
+    const columns = await this.prisma.gridColumn.findMany({
+      where: {
+        gridId,
+        gridColumnIsDeleted: false,
+      },
+      orderBy: { gridColumnNumber: 'asc' },
+      select: {
+        gridColumnNumber: true,
+        gridColumnName: true,
+        gridColumnWidth: true,
+        gridColumnAlignment: true,
+        gridColumnVisibility: true,
+        gridColumnFilter: true,
+        gridColumnCondition: true,
+        gridColumnConditionColor: true,
+        gridColumnGroup: true,
+        gridColumnTotal: true,
+        gridColumnDataType: true,
+        gridColumnColor: true,
+        gridColumnNotes: true,
+      },
+    });
+    return columns.map((col) => ({
+      grid_column_number: col.gridColumnNumber,
+      grid_column_name: col.gridColumnName,
+      grid_column_width: col.gridColumnWidth !== null ? Number(col.gridColumnWidth) : null,
+      grid_column_alignment: col.gridColumnAlignment,
+      grid_column_visibility: col.gridColumnVisibility,
+      grid_column_filter: col.gridColumnFilter,
+      grid_column_condition: col.gridColumnCondition,
+      grid_column_condition_color: col.gridColumnConditionColor,
+      grid_column_group: col.gridColumnGroup,
+      grid_column_total: col.gridColumnTotal,
+      grid_column_data_type: col.gridColumnDataType,
+      grid_column_color: col.gridColumnColor,
+      grid_column_notes: col.gridColumnNotes,
+    }));
   }
   parseCountValue(value: bigint | number | string | undefined): number {
     if (typeof value === 'bigint') {

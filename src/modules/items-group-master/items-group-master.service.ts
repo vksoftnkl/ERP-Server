@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -93,7 +93,7 @@ export class ItemsGroupMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: ItemGroupListItem[]; meta: ItemGroupListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<ItemGroupListItem, ItemGroupListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ITEM_GROUP_TABLE_NAME,
     });
@@ -136,6 +136,7 @@ export class ItemsGroupMasterService {
           params,
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         });
         return {
           items: result.items,
@@ -145,6 +146,7 @@ export class ItemsGroupMasterService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EmployeeDepartment, Prisma } from '@prisma/client';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ListEmployeeDepartmentMasterQueryDto } from './dto/list-employee-department-master-query.dto';
@@ -92,7 +92,7 @@ export class EmployeeDepartmentMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: EmployeeDepartmentMasterListItem[]; meta: EmployeeDepartmentMasterListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<EmployeeDepartmentMasterListItem, EmployeeDepartmentMasterListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME,
     });
@@ -123,6 +123,7 @@ export class EmployeeDepartmentMasterService {
             alias: 'employee_department_master_grid',
             limit,
             skip,
+          gridId: configuredGrid.gridId,
           });
         return {
           items: result.items,
@@ -132,6 +133,7 @@ export class EmployeeDepartmentMasterService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;

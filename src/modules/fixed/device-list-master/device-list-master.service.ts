@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { ErpDeviceMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -123,7 +123,7 @@ export class DeviceListMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: DeviceListMasterListItem[]; meta: DeviceListMasterListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<DeviceListMasterListItem, DeviceListMasterListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: DEVICE_LIST_MASTER_TABLE_NAME,
     });
@@ -159,6 +159,7 @@ export class DeviceListMasterService {
         alias: 'device_list_master_grid',
         limit,
         skip,
+          gridId: configuredGrid.gridId,
       });
 
       return {
@@ -169,6 +170,7 @@ export class DeviceListMasterService {
           total: result.total,
           total_pages: Math.ceil(result.total / limit),
         },
+        styles: result.styles,
       };
     } catch {
       this.throwBadRequest('Invalid grid_sql configuration for device list master', [

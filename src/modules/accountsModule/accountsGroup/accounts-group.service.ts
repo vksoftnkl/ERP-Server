@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccountGroup, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,27 +17,22 @@ import {
   AccountGroupListMeta,
   AccountGroupPayload,
 } from './types/account-group-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ACCOUNT_GROUP_TABLE_NAME = 'account_groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
-
 type AccountGroupWriteClient = Prisma.TransactionClient | PrismaService;
-
 type SearchColumnDescriptor = {
   normalized: string;
   tokens: string[];
   lastToken: string;
 };
-
 type AccountGroupParentRecord = {
   accGroupId: string;
   accGroupCompanyId: string | null;
 };
-
 @Injectable()
 export class AccountsGroupService {
   constructor(
@@ -45,43 +40,34 @@ export class AccountsGroupService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveAccountGroupDto: SaveAccountGroupDto): Promise<AccountGroupPayload> {
     if (saveAccountGroupDto.accGroupId) {
       return this.updateAccountGroup(saveAccountGroupDto);
     }
-
     return this.createAccountGroup(saveAccountGroupDto);
   }
-
   async list(
     queryDto: ListAccountGroupQueryDto,
   ): Promise<{ items: AccountGroupListItem[]; meta: AccountGroupListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
     if (configuredList) {
       return configuredList;
     }
-
     const where: Prisma.AccountGroupWhereInput = {
       accGroupIsDeleted: false,
     };
-
     if (queryDto.accGroupCompanyId !== undefined) {
       where.accGroupCompanyId = queryDto.accGroupCompanyId;
     }
-
     if (queryDto.accGroupParentId !== undefined) {
       where.accGroupParentId = queryDto.accGroupParentId;
     }
-
     if (queryDto.accGroupIsActive !== undefined) {
       where.accGroupIsActive = queryDto.accGroupIsActive;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -94,7 +80,6 @@ export class AccountsGroupService {
         { accGroupNature: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.accountGroup.count({ where }),
       this.prisma.accountGroup.findMany({
@@ -104,7 +89,6 @@ export class AccountsGroupService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -115,13 +99,12 @@ export class AccountsGroupService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     queryDto: ListAccountGroupQueryDto,
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: AccountGroupListItem[]; meta: AccountGroupListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<AccountGroupListItem, AccountGroupListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ACCOUNT_GROUP_TABLE_NAME,
     });
@@ -132,13 +115,11 @@ export class AccountsGroupService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: ACCOUNT_GROUP_TABLE_NAME,
@@ -146,7 +127,6 @@ export class AccountsGroupService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const baseSql = validation.normalizedSql;
         const searchableFieldNames = queryDto.search?.trim()
@@ -163,8 +143,8 @@ export class AccountsGroupService {
           params,
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         });
-
         return {
           items: result.items,
           meta: {
@@ -173,15 +153,14 @@ export class AccountsGroupService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;
       }
     }
-
     return null;
   }
-
   private buildConfiguredGridListSql(
     baseSql: string,
     queryDto: ListAccountGroupQueryDto,
@@ -189,22 +168,18 @@ export class AccountsGroupService {
   ): { sql: string; params: unknown[] } {
     const conditions: string[] = [];
     const params: unknown[] = [];
-
     if (queryDto.accGroupCompanyId !== undefined) {
       params.push(queryDto.accGroupCompanyId);
       conditions.push(`account_group_grid.acc_group_company_id = $${params.length}`);
     }
-
     if (queryDto.accGroupParentId !== undefined) {
       params.push(queryDto.accGroupParentId);
       conditions.push(`account_group_grid.acc_group_parent_id = $${params.length}`);
     }
-
     if (queryDto.accGroupIsActive !== undefined) {
       params.push(queryDto.accGroupIsActive);
       conditions.push(`account_group_grid.acc_group_is_active = $${params.length}`);
     }
-
     if (queryDto.search?.trim()) {
       const searchText = `%${queryDto.search.trim()}%`;
       if (searchableFieldNames.length > 0) {
@@ -227,14 +202,12 @@ export class AccountsGroupService {
         conditions.push('1 = 0');
       }
     }
-
     const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     return {
       sql: `SELECT * FROM (${baseSql}) AS account_group_grid${whereClause}`,
       params,
     };
   }
-
   private async getConfiguredSearchableFieldNames(
     gridId: bigint,
     baseSql: string,
@@ -243,8 +216,7 @@ export class AccountsGroupService {
     if (sqlFieldNames.length === 0) {
       return [];
     }
-
-    const configuredColumns = await this.prisma.gridColumn.findMany({
+   const configuredColumns = await this.prisma.gridColumn.findMany({
       where: {
         gridId,
         gridColumnIsDeleted: false,
@@ -259,24 +231,20 @@ export class AccountsGroupService {
         gridColumnNumber: true,
       },
     });
-
     const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
       fieldName,
       descriptor: this.describeSearchColumnName(fieldName),
     }));
     const usedSqlFieldIndexes = new Set<number>();
     const matchedFieldNames: string[] = [];
-
     for (const column of configuredColumns) {
       const columnName = column.gridColumnName.trim();
       let matchedSqlFieldIndex = -1;
       const columnDescriptor = this.describeSearchColumnName(columnName);
-
       if (columnDescriptor.normalized) {
         let bestScore = -1;
         let nextBestScore = -1;
         let bestScoreIsAmbiguous = false;
-
         for (let index = 0; index < normalizedSqlFields.length; index += 1) {
           if (usedSqlFieldIndexes.has(index)) {
             continue;
@@ -292,17 +260,14 @@ export class AccountsGroupService {
             bestScoreIsAmbiguous = false;
             continue;
           }
-
           if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
             bestScoreIsAmbiguous = true;
             continue;
           }
-
           if (score > nextBestScore) {
             nextBestScore = score;
           }
         }
-
         if (
           bestScore < MIN_CONFIDENT_COLUMN_MATCH_SCORE ||
           bestScore === nextBestScore ||
@@ -311,7 +276,6 @@ export class AccountsGroupService {
           matchedSqlFieldIndex = -1;
         }
       }
-
       if (matchedSqlFieldIndex === -1) {
         const sqlFieldIndexFromColumnNumber = column.gridColumnNumber - 1;
         if (
@@ -322,7 +286,6 @@ export class AccountsGroupService {
           matchedSqlFieldIndex = sqlFieldIndexFromColumnNumber;
         }
       }
-
       if (matchedSqlFieldIndex !== -1) {
         usedSqlFieldIndexes.add(matchedSqlFieldIndex);
         matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
@@ -330,7 +293,6 @@ export class AccountsGroupService {
     }
     return matchedFieldNames;
   }
-
   private tokenizeSearchColumnName(value: string): string[] {
     const normalizedSpacing = value
       .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -339,7 +301,6 @@ export class AccountsGroupService {
       .toLowerCase();
     return normalizedSpacing ? normalizedSpacing.split(/\s+/) : [];
   }
-
   private describeSearchColumnName(value: string): SearchColumnDescriptor {
     const tokens = this.tokenizeSearchColumnName(value);
     return {
@@ -348,7 +309,6 @@ export class AccountsGroupService {
       lastToken: tokens[tokens.length - 1] ?? '',
     };
   }
-
   private getSearchColumnMatchScore(
     source: SearchColumnDescriptor,
     target: SearchColumnDescriptor,
@@ -356,18 +316,15 @@ export class AccountsGroupService {
     if (!source.normalized || !target.normalized) {
       return -1;
     }
-
     if (source.normalized === target.normalized) {
       return 4;
     }
-
     if (
       source.normalized.includes(target.normalized) ||
       target.normalized.includes(source.normalized)
     ) {
       return 3;
     }
-
     const sourceWithoutBooleanPrefix = source.normalized.replace(/^is/, '');
     const targetWithoutBooleanPrefix = target.normalized.replace(/^is/, '');
     if (
@@ -379,11 +336,9 @@ export class AccountsGroupService {
     ) {
       return 2;
     }
-
     if (source.lastToken && source.lastToken === target.lastToken) {
       return 2;
     }
-
     if (
       source.lastToken &&
       target.lastToken &&
@@ -392,21 +347,17 @@ export class AccountsGroupService {
     ) {
       return 2;
     }
-
     const sharedTokens = source.tokens.filter((token) => target.tokens.includes(token));
     if (sharedTokens.length >= 2) {
       return 1;
     }
-
     return -1;
   }
-
   private extractSelectFieldNames(sql: string): string[] {
     const selectClause = this.extractTopLevelSelectClause(sql);
     if (!selectClause) {
       return [];
     }
-
     const expressions = this.splitTopLevelCommaSeparated(selectClause);
     const fieldNames: string[] = [];
     for (const expression of expressions) {
@@ -420,23 +371,19 @@ export class AccountsGroupService {
     }
     return fieldNames;
   }
-
   private extractTopLevelSelectClause(sql: string): string | null {
     const trimmed = sql.trim();
     const selectMatch = trimmed.match(/^select\b/i);
     if (!selectMatch) {
       return null;
     }
-
     const selectStartIndex = selectMatch[0].length;
     let depth = 0;
     let insideSingleQuote = false;
     let insideDoubleQuote = false;
-
     for (let index = selectStartIndex; index < trimmed.length; index += 1) {
       const current = trimmed[index];
       const next = trimmed[index + 1];
-
       if (insideSingleQuote) {
         if (current === "'" && next === "'") {
           index += 1;
@@ -447,7 +394,6 @@ export class AccountsGroupService {
         }
         continue;
       }
-
       if (insideDoubleQuote) {
         if (current === '"' && next === '"') {
           index += 1;
@@ -458,7 +404,6 @@ export class AccountsGroupService {
         }
         continue;
       }
-
       if (current === "'") {
         insideSingleQuote = true;
         continue;
@@ -475,7 +420,6 @@ export class AccountsGroupService {
         depth = Math.max(0, depth - 1);
         continue;
       }
-
       if (
         depth === 0 &&
         /^from$/i.test(trimmed.slice(index, index + 4)) &&
@@ -485,21 +429,17 @@ export class AccountsGroupService {
         return trimmed.slice(selectStartIndex, index).trim();
       }
     }
-
     return null;
   }
-
   private splitTopLevelCommaSeparated(value: string): string[] {
     const chunks: string[] = [];
     let startIndex = 0;
     let depth = 0;
     let insideSingleQuote = false;
     let insideDoubleQuote = false;
-
     for (let index = 0; index < value.length; index += 1) {
       const current = value[index];
       const next = value[index + 1];
-
       if (insideSingleQuote) {
         if (current === "'" && next === "'") {
           index += 1;
@@ -510,7 +450,6 @@ export class AccountsGroupService {
         }
         continue;
       }
-
       if (insideDoubleQuote) {
         if (current === '"' && next === '"') {
           index += 1;
@@ -521,7 +460,6 @@ export class AccountsGroupService {
         }
         continue;
       }
-
       if (current === "'") {
         insideSingleQuote = true;
         continue;
@@ -543,25 +481,21 @@ export class AccountsGroupService {
         startIndex = index + 1;
       }
     }
-
     const tail = value.slice(startIndex).trim();
     if (tail) {
       chunks.push(tail);
     }
     return chunks;
   }
-
   private extractSqlOutputFieldName(expression: string): string | null {
     const trimmed = expression.trim();
     if (!trimmed || trimmed === '*' || /\.\*$/.test(trimmed)) {
       return null;
     }
-
     const explicitAliasMatch = trimmed.match(/\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
     if (explicitAliasMatch) {
       return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
     }
-
     const implicitAliasMatch = trimmed.match(/\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
     if (implicitAliasMatch) {
       const aliasToken = implicitAliasMatch[1];
@@ -570,7 +504,6 @@ export class AccountsGroupService {
         return this.parseSqlIdentifierToken(aliasToken);
       }
     }
-
     const simpleColumnMatch = trimmed.match(
       /^((?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)\.)*(?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)$/i,
     );
@@ -578,27 +511,21 @@ export class AccountsGroupService {
       const parts = trimmed.split('.');
       return this.parseSqlIdentifierToken(parts[parts.length - 1]);
     }
-
     return null;
   }
-
   private parseSqlIdentifierToken(token: string): string | null {
     const trimmed = token.trim();
     if (!trimmed) {
       return null;
     }
-
     if (/^"([^"]|"")+"$/.test(trimmed)) {
       return trimmed.slice(1, -1).replace(/""/g, '"');
     }
-
     if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
       return trimmed.toLowerCase();
     }
-
     return null;
   }
-
   async getById(accGroupId: string): Promise<AccountGroupPayload> {
     const record = await this.prisma.accountGroup.findFirst({
       where: {
@@ -606,14 +533,11 @@ export class AccountsGroupService {
         accGroupIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(accGroupId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(accGroupId: string): Promise<{ accGroupId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.accountGroup.findFirst({
@@ -622,11 +546,9 @@ export class AccountsGroupService {
           accGroupIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(accGroupId);
       }
-
       const hasChildren = await tx.accountGroup.count({
         where: {
           accGroupParentId: accGroupId,
@@ -641,7 +563,6 @@ export class AccountsGroupService {
           },
         ]);
       }
-
       const ledgerCount = await tx.accLedgerMaster.count({
         where: {
           ledGroupId: accGroupId,
@@ -656,10 +577,8 @@ export class AccountsGroupService {
           },
         ]);
       }
-
       const ancestorIds = await this.getAncestorIds(tx, existing.accGroupParentId);
       const modifiedOn = new Date();
-
       const result = await tx.accountGroup.updateMany({
         where: {
           accGroupId,
@@ -672,13 +591,10 @@ export class AccountsGroupService {
           accGroupModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(accGroupId);
       }
-
       await this.removeChildIds(tx, ancestorIds, [accGroupId]);
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -687,7 +603,6 @@ export class AccountsGroupService {
         accGroupModifiedOn: modifiedOn,
         accGroupModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -703,14 +618,12 @@ export class AccountsGroupService {
         },
         tx,
       );
-
       return {
         accGroupId,
         deleted: true,
       };
     });
   }
-
   private async createAccountGroup(
     saveAccountGroupDto: SaveAccountGroupDto,
   ): Promise<AccountGroupPayload> {
@@ -718,7 +631,6 @@ export class AccountsGroupService {
       return await this.prisma.$transaction(async (tx) => {
         const normalizedName = this.normalizeRequiredName(saveAccountGroupDto.accGroupName);
         const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
-
         const parent = saveAccountGroupDto.accGroupParentId
           ? await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx)
           : null;
@@ -731,9 +643,7 @@ export class AccountsGroupService {
           parent?.accGroupCompanyId ?? null,
           tx,
         );
-
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
-
         const now = new Date();
         const createdBy = DEFAULT_ACTOR;
         const data: Prisma.AccountGroupUncheckedCreateInput = {
@@ -746,24 +656,19 @@ export class AccountsGroupService {
           accGroupModifiedOn: now,
           accGroupModifiedBy: createdBy,
         };
-
         this.applyOptionalFields(data, saveAccountGroupDto);
-
         const created = await tx.accountGroup.create({ data });
         await this.ensureSelfInChildIds(tx, created.accGroupId);
-
         if (created.accGroupParentId) {
           const ancestorIds = await this.getAncestorIds(tx, created.accGroupParentId);
           await this.appendChildIds(tx, ancestorIds, [created.accGroupId]);
         }
-
         const refreshed = await tx.accountGroup.findFirst({
           where: {
             accGroupId: created.accGroupId,
             accGroupIsDeleted: false,
           },
         });
-
         const payload = !refreshed
           ? this.toPayload({
               ...created,
@@ -772,7 +677,6 @@ export class AccountsGroupService {
               ]),
             })
           : this.toPayload(refreshed);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -788,7 +692,6 @@ export class AccountsGroupService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -796,12 +699,10 @@ export class AccountsGroupService {
       throw error;
     }
   }
-
   private async updateAccountGroup(
     saveAccountGroupDto: SaveAccountGroupDto,
   ): Promise<AccountGroupPayload> {
     const accGroupId = saveAccountGroupDto.accGroupId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.accountGroup.findFirst({
@@ -810,14 +711,11 @@ export class AccountsGroupService {
             accGroupIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(accGroupId);
         }
-
         const normalizedName = this.normalizeRequiredName(saveAccountGroupDto.accGroupName);
         const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
-
         if (saveAccountGroupDto.accGroupParentId === accGroupId) {
           this.throwBadRequest('Account group cannot be its own parent', [
             {
@@ -826,13 +724,11 @@ export class AccountsGroupService {
             },
           ]);
         }
-
         const hasParentField = this.hasOwnProperty(saveAccountGroupDto, 'accGroupParentId');
         const nextParentId = hasParentField
           ? (saveAccountGroupDto.accGroupParentId ?? null)
           : existing.accGroupParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.accGroupParentId;
-
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, accGroupId) : [];
         if (isParentChanged && nextParentId && subtreeIds.includes(nextParentId)) {
           this.throwBadRequest('Circular hierarchy is not allowed', [
@@ -842,7 +738,6 @@ export class AccountsGroupService {
             },
           ]);
         }
-
         const parent = nextParentId ? await this.ensureParentExists(nextParentId, tx) : null;
         const requestedCompanyId = this.hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
           ? (saveAccountGroupDto.accGroupCompanyId ?? null)
@@ -853,13 +748,10 @@ export class AccountsGroupService {
           parent?.accGroupCompanyId ?? null,
           tx,
         );
-
         await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, accGroupId);
-
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.accGroupParentId)
           : [];
-
         const data: Prisma.AccountGroupUncheckedUpdateInput = {
           accGroupCompanyId: nextCompanyId,
           accGroupName: normalizedName,
@@ -867,32 +759,26 @@ export class AccountsGroupService {
           accGroupModifiedOn: new Date(),
           accGroupModifiedBy: DEFAULT_ACTOR,
         };
-
         this.applyOptionalFields(data, saveAccountGroupDto);
-
         const updated = await tx.accountGroup.update({
           where: {
             accGroupId,
           },
           data,
         });
-
         await this.ensureSelfInChildIds(tx, accGroupId);
         if (isParentChanged) {
           const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
           await this.removeChildIds(tx, oldAncestorIds, subtreeIds);
           await this.appendChildIds(tx, newAncestorIds, subtreeIds);
         }
-
         const refreshed = await tx.accountGroup.findFirst({
           where: {
             accGroupId,
             accGroupIsDeleted: false,
           },
         });
-
         const payload = this.toPayload(refreshed ?? updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -908,7 +794,6 @@ export class AccountsGroupService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -916,7 +801,6 @@ export class AccountsGroupService {
       throw error;
     }
   }
-
   private async ensureParentExists(
     parentId: string,
     tx: AccountGroupWriteClient,
@@ -931,7 +815,6 @@ export class AccountsGroupService {
         accGroupCompanyId: true,
       },
     });
-
     if (!parent) {
       this.throwBadRequest('Parent account group does not exist', [
         {
@@ -940,10 +823,8 @@ export class AccountsGroupService {
         },
       ]);
     }
-
     return parent;
   }
-
   private async ensureCompanyExists(compId: string, tx: AccountGroupWriteClient): Promise<void> {
     const company = await tx.company.findFirst({
       where: {
@@ -954,7 +835,6 @@ export class AccountsGroupService {
         compId: true,
       },
     });
-
     if (!company) {
       this.throwBadRequest('Company does not exist', [
         {
@@ -964,7 +844,6 @@ export class AccountsGroupService {
       ]);
     }
   }
-
   private async resolveCompanyId(
     requestedCompanyId: string | null | undefined,
     fallbackCompanyId: string | null,
@@ -972,7 +851,6 @@ export class AccountsGroupService {
     tx: AccountGroupWriteClient,
   ): Promise<string | null> {
     let companyId = requestedCompanyId === undefined ? fallbackCompanyId : requestedCompanyId;
-
     if (parentCompanyId !== null) {
       if (companyId === null) {
         companyId = parentCompanyId;
@@ -985,14 +863,11 @@ export class AccountsGroupService {
         ]);
       }
     }
-
     if (companyId !== null) {
       await this.ensureCompanyExists(companyId, tx);
     }
-
     return companyId;
   }
-
   private async ensureNameIsUnique(
     tx: AccountGroupWriteClient,
     groupName: string,
@@ -1019,7 +894,6 @@ export class AccountsGroupService {
         accGroupId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Account group name already exists for this company', [
@@ -1031,7 +905,6 @@ export class AccountsGroupService {
       );
     }
   }
-
   private applyOptionalFields(
     data: Prisma.AccountGroupUncheckedCreateInput | Prisma.AccountGroupUncheckedUpdateInput,
     saveAccountGroupDto: SaveAccountGroupDto,
@@ -1039,64 +912,49 @@ export class AccountsGroupService {
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupAlias')) {
       data.accGroupAlias = saveAccountGroupDto.accGroupAlias;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupShort')) {
       data.accGroupShort = saveAccountGroupDto.accGroupShort;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupDescription')) {
       data.accGroupDescription = saveAccountGroupDto.accGroupDescription;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupTallyName')) {
       data.accGroupTallyName = saveAccountGroupDto.accGroupTallyName;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupPrimaryName')) {
       data.accGroupPrimaryName = saveAccountGroupDto.accGroupPrimaryName;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupNature')) {
       data.accGroupNature = saveAccountGroupDto.accGroupNature;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupParentId')) {
       data.accGroupParentId = saveAccountGroupDto.accGroupParentId;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupSort')) {
       data.accGroupSort = saveAccountGroupDto.accGroupSort;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupIsDefault')) {
       data.accGroupIsDefault = saveAccountGroupDto.accGroupIsDefault;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupBehaveAsSubledger')) {
       data.accGroupBehaveAsSubledger = saveAccountGroupDto.accGroupBehaveAsSubledger;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupNetDebitCredit')) {
       data.accGroupNetDebitCredit = saveAccountGroupDto.accGroupNetDebitCredit;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupUsedForCalculation')) {
       data.accGroupUsedForCalculation = saveAccountGroupDto.accGroupUsedForCalculation;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupAffectsGrossProfit')) {
       data.accGroupAffectsGrossProfit = saveAccountGroupDto.accGroupAffectsGrossProfit;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupIsActive')) {
       data.accGroupIsActive = saveAccountGroupDto.accGroupIsActive;
     }
-
     if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupSyncDate')) {
       data.accGroupSyncDate = saveAccountGroupDto.accGroupSyncDate;
     }
   }
-
   private async getAncestorIds(
     tx: AccountGroupWriteClient,
     startParentId: string | null | undefined,
@@ -1104,13 +962,11 @@ export class AccountsGroupService {
     const ancestorIds: string[] = [];
     const visited = new Set<string>();
     let currentParentId = startParentId;
-
     while (currentParentId) {
       if (visited.has(currentParentId)) {
         break;
       }
       visited.add(currentParentId);
-
       const parent = await tx.accountGroup.findFirst({
         where: {
           accGroupId: currentParentId,
@@ -1121,18 +977,14 @@ export class AccountsGroupService {
           accGroupParentId: true,
         },
       });
-
       if (!parent) {
         break;
       }
-
       ancestorIds.push(parent.accGroupId);
       currentParentId = parent.accGroupParentId;
     }
-
     return ancestorIds;
   }
-
   private async getActiveSubtreeIds(
     tx: AccountGroupWriteClient,
     rootId: string,
@@ -1140,14 +992,12 @@ export class AccountsGroupService {
     const subtreeIds: string[] = [];
     const visited = new Set<string>();
     const queue: string[] = [rootId];
-
     while (queue.length > 0) {
       const currentId = queue.shift()!;
       if (visited.has(currentId)) {
         continue;
       }
       visited.add(currentId);
-
       const node = await tx.accountGroup.findFirst({
         where: {
           accGroupId: currentId,
@@ -1157,13 +1007,10 @@ export class AccountsGroupService {
           accGroupId: true,
         },
       });
-
       if (!node) {
         continue;
       }
-
       subtreeIds.push(node.accGroupId);
-
       const children = await tx.accountGroup.findMany({
         where: {
           accGroupParentId: node.accGroupId,
@@ -1173,17 +1020,14 @@ export class AccountsGroupService {
           accGroupId: true,
         },
       });
-
       for (const child of children) {
         if (!visited.has(child.accGroupId)) {
           queue.push(child.accGroupId);
         }
       }
     }
-
     return subtreeIds;
   }
-
   private async appendChildIds(
     tx: AccountGroupWriteClient,
     targetIds: string[],
@@ -1194,7 +1038,6 @@ export class AccountsGroupService {
     if (normalizedTargetIds.length === 0 || normalizedIdsToAdd.length === 0) {
       return;
     }
-
     const records = await tx.accountGroup.findMany({
       where: {
         accGroupId: {
@@ -1207,13 +1050,11 @@ export class AccountsGroupService {
         accGroupChildIds: true,
       },
     });
-
     for (const record of records) {
       const nextChildIds = this.mergeChildIds(record.accGroupChildIds, normalizedIdsToAdd);
       if (this.areSameIds(record.accGroupChildIds, nextChildIds)) {
         continue;
       }
-
       await tx.accountGroup.update({
         where: {
           accGroupId: record.accGroupId,
@@ -1224,7 +1065,6 @@ export class AccountsGroupService {
       });
     }
   }
-
   private async removeChildIds(
     tx: AccountGroupWriteClient,
     targetIds: string[],
@@ -1235,7 +1075,6 @@ export class AccountsGroupService {
     if (normalizedTargetIds.length === 0 || normalizedIdsToRemove.length === 0) {
       return;
     }
-
     const records = await tx.accountGroup.findMany({
       where: {
         accGroupId: {
@@ -1248,13 +1087,11 @@ export class AccountsGroupService {
         accGroupChildIds: true,
       },
     });
-
     for (const record of records) {
       const nextChildIds = this.excludeChildIds(record.accGroupChildIds, normalizedIdsToRemove);
       if (this.areSameIds(record.accGroupChildIds, nextChildIds)) {
         continue;
       }
-
       await tx.accountGroup.update({
         where: {
           accGroupId: record.accGroupId,
@@ -1265,18 +1102,15 @@ export class AccountsGroupService {
       });
     }
   }
-
   private async ensureSelfInChildIds(
     tx: AccountGroupWriteClient,
     accGroupId: string,
   ): Promise<void> {
     await this.appendChildIds(tx, [accGroupId], [accGroupId]);
   }
-
   private mergeChildIds(existingIds: readonly string[], idsToAdd: readonly string[]): string[] {
     return this.toUniqueIds([...existingIds, ...idsToAdd]);
   }
-
   private excludeChildIds(
     existingIds: readonly string[],
     idsToRemove: readonly string[],
@@ -1284,7 +1118,6 @@ export class AccountsGroupService {
     const removeSet = new Set(idsToRemove);
     return existingIds.filter((id) => !removeSet.has(id));
   }
-
   private toUniqueIds(ids: readonly string[]): string[] {
     const uniqueIds: string[] = [];
     const seen = new Set<string>();
@@ -1296,21 +1129,17 @@ export class AccountsGroupService {
     }
     return uniqueIds;
   }
-
   private areSameIds(left: readonly string[], right: readonly string[]): boolean {
     if (left.length !== right.length) {
       return false;
     }
-
     for (let index = 0; index < left.length; index += 1) {
       if (left[index] !== right[index]) {
         return false;
       }
     }
-
     return true;
   }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -1321,10 +1150,8 @@ export class AccountsGroupService {
         },
       ]);
     }
-
     return trimmed;
   }
-
   private normalizeTypeCode(typeCode: string): string {
     const normalized = typeCode.trim().toUpperCase();
     if (normalized.length !== 2) {
@@ -1335,10 +1162,8 @@ export class AccountsGroupService {
         },
       ]);
     }
-
     return normalized;
   }
-
   private toPayload(record: AccountGroup): AccountGroupPayload {
     return {
       accGroupId: record.accGroupId,
@@ -1368,7 +1193,6 @@ export class AccountsGroupService {
       accGroupModifiedBy: record.accGroupModifiedBy,
     };
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -1380,7 +1204,6 @@ export class AccountsGroupService {
         ]),
       );
     }
-
     if (this.isForeignKeyConstraintError(error)) {
       this.throwBadRequest('Invalid reference value provided', [
         {
