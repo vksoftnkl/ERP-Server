@@ -5,6 +5,11 @@ export class HealthDatabaseStatusDto {
   status!: 'up' | 'down';
 }
 
+export class HealthCacheStatusDto {
+  @ApiProperty({ enum: ['up', 'down', 'disabled'], example: 'up' })
+  status!: 'up' | 'down' | 'disabled';
+}
+
 export class HealthResponseDto {
   @ApiProperty({ enum: ['ok', 'degraded'], example: 'ok' })
   status!: 'ok' | 'degraded';
@@ -14,4 +19,7 @@ export class HealthResponseDto {
 
   @ApiProperty({ type: HealthDatabaseStatusDto })
   database!: HealthDatabaseStatusDto;
+
+  @ApiProperty({ type: HealthCacheStatusDto })
+  cache!: HealthCacheStatusDto;
 }

@@ -5,30 +5,42 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export type AccessTokenClaims = {
   sub: string;
   user_name: string;
+  sid: string;
 };
 
 export type AccessTokenPayload = AccessTokenClaims & {
   iat: number;
-  exp?: number;
+  exp: number;
+};
+
+export type SignedAccessToken = {
+  token: string;
+  payload: AccessTokenPayload;
 };
 
 @Injectable()
 export class TokenService {
   private readonly secret: string;
+  private readonly accessTokenTtlSeconds: number;
 
   constructor(private readonly configService: ConfigService) {
     this.secret = this.configService.get<string>('auth.jwtSecret', '');
+    this.accessTokenTtlSeconds = this.configService.get<number>(
+      'auth.accessTokenTtlSeconds',
+      3600,
+    );
   }
 
-  signAccessToken(claims: AccessTokenClaims): string {
+  signAccessToken(claims: AccessTokenClaims): SignedAccessToken {
     if (!this.secret) {
       throw new InternalServerErrorException('JWT secret is not configured');
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const payload = {
+    const payload: AccessTokenPayload = {
       ...claims,
       iat: now,
+      exp: now + this.accessTokenTtlSeconds,
     };
 
     const headerSegment = this.encodeBase64Url({
@@ -39,7 +51,10 @@ export class TokenService {
     const unsignedToken = `${headerSegment}.${payloadSegment}`;
     const signature = createHmac('sha256', this.secret).update(unsignedToken).digest('base64url');
 
-    return `${unsignedToken}.${signature}`;
+    return {
+      token: `${unsignedToken}.${signature}`,
+      payload,
+    };
   }
 
   verifyAccessToken(token: string): AccessTokenPayload {
@@ -96,6 +111,7 @@ export class TokenService {
   private validatePayload(payload: Record<string, unknown>): AccessTokenPayload {
     const sub = payload.sub;
     const userName = payload.user_name;
+    const sessionId = payload.sid;
     const issuedAt = payload.iat;
     const expiresAt = payload.exp;
 
@@ -107,6 +123,10 @@ export class TokenService {
       throw new UnauthorizedException('Invalid access token');
     }
 
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
     if (
       typeof issuedAt !== 'number' ||
       !Number.isInteger(issuedAt) ||
@@ -115,21 +135,22 @@ export class TokenService {
       throw new UnauthorizedException('Invalid access token');
     }
 
-    if (
-      expiresAt !== undefined &&
-      (typeof expiresAt !== 'number' || !Number.isInteger(expiresAt) || expiresAt <= issuedAt)
-    ) {
+    if (typeof expiresAt !== 'number' || !Number.isInteger(expiresAt) || expiresAt <= issuedAt) {
       throw new UnauthorizedException('Invalid access token');
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (expiresAt <= now) {
+      throw new UnauthorizedException('Access token expired');
     }
 
     const normalizedPayload: AccessTokenPayload = {
       sub,
       user_name: userName,
+      sid: sessionId,
       iat: issuedAt,
+      exp: expiresAt,
     };
-    if (typeof expiresAt === 'number') {
-      normalizedPayload.exp = expiresAt;
-    }
 
     return normalizedPayload;
   }

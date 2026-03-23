@@ -1,9 +1,11 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { UsersService } from '../users/users.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
+import { AuthSessionService } from './auth-session.service';
 import { TokenService } from './token.service';
 
 const scryptAsync = promisify(nodeScrypt);
@@ -13,6 +15,7 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly tokenService: TokenService,
+    private readonly authSessionService: AuthSessionService,
   ) {}
 
   async login(loginAuthDto: LoginAuthDto): Promise<LoginResponseDto> {
@@ -30,13 +33,18 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const token = this.tokenService.signAccessToken({
+    const issuedAccessToken = this.tokenService.signAccessToken({
       sub: user.user_id,
       user_name: user.user_name,
+      sid: randomUUID(),
     });
+    await this.authSessionService.storeAccessTokenSession(
+      issuedAccessToken.token,
+      issuedAccessToken.payload,
+    );
 
     return {
-      access_token: token,
+      access_token: issuedAccessToken.token,
       token_type: 'Bearer',
     };
   }

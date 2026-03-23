@@ -25,10 +25,11 @@ export class HealthController {
     status: 'ok' | 'degraded';
     timestamp: string;
     database: { status: 'up' | 'down' };
+    cache: { status: 'up' | 'down' | 'disabled' };
   }> {
     const status = await this.healthService.check();
 
-    if (status.database.status === 'down') {
+    if (status.database.status === 'down' || status.cache.status === 'down') {
       throw new ServiceUnavailableException(status);
     }
 

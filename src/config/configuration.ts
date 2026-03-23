@@ -59,5 +59,38 @@ export default () => ({
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET ?? '',
+    accessTokenTtlSeconds: parseNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 3600),
+  },
+  redis: (() => {
+    const redisUrl = process.env.REDIS_URL?.trim();
+    const redisEnabled = parseBoolean(process.env.REDIS_ENABLED, Boolean(redisUrl));
+
+    if (redisUrl) {
+      const parsedRedisUrl = new URL(redisUrl);
+      const databasePath = parsedRedisUrl.pathname.replace(/^\/+/, '');
+
+      return {
+        enabled: redisEnabled,
+        host: parsedRedisUrl.hostname || '127.0.0.1',
+        port: parseNumber(parsedRedisUrl.port, parsedRedisUrl.protocol === 'rediss:' ? 6380 : 6379),
+        username: decodeURIComponent(parsedRedisUrl.username || ''),
+        password: decodeURIComponent(parsedRedisUrl.password || ''),
+        db: parseNumber(databasePath || undefined, 0),
+        tls: parsedRedisUrl.protocol === 'rediss:',
+        connectTimeoutMs: parseNumber(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000),
+      };
+    }
+
+    return {
+      enabled: redisEnabled,
+      host: process.env.REDIS_HOST ?? '127.0.0.1',
+      port: parseNumber(process.env.REDIS_PORT, 6379),
+      username: process.env.REDIS_USERNAME ?? '',
+      password: process.env.REDIS_PASSWORD ?? '',
+      db: parseNumber(process.env.REDIS_DB, 0),
+      tls: parseBoolean(process.env.REDIS_TLS),
+      connectTimeoutMs: parseNumber(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000),
+    };
+  })(),
   },
 });

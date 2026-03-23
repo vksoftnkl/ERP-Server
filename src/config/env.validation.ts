@@ -39,6 +39,21 @@ export const envValidationSchema = Joi.object({
     then: Joi.string().min(16).default('test-jwt-secret-change-me'),
     otherwise: Joi.string().min(16).required(),
   }),
+  ACCESS_TOKEN_TTL_SECONDS: Joi.number().integer().min(60).default(3600),
   THROTTLE_TTL: Joi.number().integer().min(1).default(60),
   THROTTLE_LIMIT: Joi.number().integer().min(1).default(100),
+  REDIS_ENABLED: Joi.boolean().default(false),
+  REDIS_URL: Joi.string()
+    .uri({
+      scheme: ['redis', 'rediss'],
+    })
+    .allow('')
+    .optional(),
+  REDIS_HOST: Joi.string().default('127.0.0.1'),
+  REDIS_PORT: Joi.number().port().default(6379),
+  REDIS_USERNAME: Joi.string().allow('').default(''),
+  REDIS_PASSWORD: Joi.string().allow('').default(''),
+  REDIS_DB: Joi.number().integer().min(0).default(0),
+  REDIS_TLS: Joi.boolean().default(false),
+  REDIS_CONNECT_TIMEOUT_MS: Joi.number().integer().min(100).default(5000),
 });

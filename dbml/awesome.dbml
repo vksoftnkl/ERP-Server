@@ -412,25 +412,6 @@ Table dropdown_details {
   dropdownColumns dropdown_columns [not null]
 }
 
-Table avt_voucher_type_master {
-  avtId String [pk]
-  avtShort String [not null]
-  avtDesc String [not null]
-  avtDrcr AvtDrcrType [not null, default: 'BOTH']
-  avtPrintEnabled Boolean [not null, default: true]
-  avtPrintStyle String
-  avtSortOrder Int [not null, default: 0]
-  avtTallyName String [not null]
-  avtTallyReservedType AvtTallyReservedVch
-  avtIsActive Boolean [not null, default: true]
-  avtIsDeleted Boolean [not null, default: false]
-  avtSyncDate DateTime
-  avtCreatedOn DateTime [default: `now()`, not null]
-  avtCreatedBy String
-  avtModifiedOn DateTime [default: `now()`, not null]
-  avtModifiedBy String
-}
-
 Table bank_master {
   bnkId String [pk]
   bnkName String [not null]
@@ -1478,31 +1459,6 @@ Enum AuditScreenType {
   transaction
   settings
   other
-}
-
-Enum AvtDrcrType {
-  DR
-  CR
-  BOTH
-}
-
-Enum AvtTallyReservedVch {
-  CONTRA
-  PAYMENT
-  RECEIPT
-  JOURNAL
-  SALES
-  PURCHASE
-  CREDIT_NOTE
-  DEBIT_NOTE
-  REVERSING_JOURNAL
-  MEMORANDUM
-  DELIVERY_NOTE
-  RECEIPT_NOTE
-  SALES_ORDER
-  PURCHASE_ORDER
-  STOCK_JOURNAL
-  PHYSICAL_STOCK
 }
 
 Ref: account_groups.accGroupParentId - account_groups.accGroupId

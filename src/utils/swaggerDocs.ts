@@ -42,7 +42,6 @@ import { MasterLookupModule } from '../modules/master-lookup/master-lookup.modul
 import { SupplierGroupModule } from '../modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from '../modules/purchase/suppliers/suppliers.module';
 import { StateModule } from '../modules/sales/state/state.module';
-import { AccountVoucherTypeModule } from '../modules/fixed/account-voucher-type/account-voucher-type.module';
 import { BankListModule } from '../modules/fixed/bank-list/bank-list.module';
 import { DeviceListMasterModule } from '../modules/fixed/device-list-master/device-list-master.module';
 import { MenuMasterModule } from '../modules/fixed/menu-master/menu-master.module';
@@ -310,13 +309,7 @@ export const swaggerModuleDocuments = [
     title: 'Customer Groups API',
     description: 'Customer groups module endpoints',
     include: [CustomerGroupModule],
-  },
-  {
-    path: 'account-voucher-types',
-    title: 'Account Voucher Types API',
-    description: 'Account voucher types module endpoints',
-    include: [AccountVoucherTypeModule],
-  },
+  },  
   {
     path: 'bank-lists',
     title: 'Bank List API',

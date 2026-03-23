@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AuthSessionService } from '../auth-session.service';
 import { AccessTokenPayload, TokenService } from '../token.service';
 
 type RequestWithUser = Request & {
@@ -14,10 +15,11 @@ export class AccessTokenGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokenService: TokenService,
+    private readonly authSessionService: AuthSessionService,
     private readonly requestContextService: RequestContextService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -37,6 +39,7 @@ export class AccessTokenGuard implements CanActivate {
     }
 
     request.user = this.tokenService.verifyAccessToken(accessToken);
+    await this.authSessionService.assertAccessTokenIsActive(accessToken, request.user);
     this.requestContextService.setUserId(request.user.sub);
     return true;
   }

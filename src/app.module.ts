@@ -7,6 +7,7 @@ import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { RequestContextModule } from './common/request-context/request-context.module';
+import { RedisModule } from './common/redis/redis.module';
 import { ConfiguredGridSqlModule } from './common/configured-grid-sql/configured-grid-sql.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
@@ -55,7 +56,6 @@ import { CityModule } from './modules/sales/city/city.module';
 import { StateModule } from './modules/sales/state/state.module';
 import { CustomerModule } from './modules/sales/customer/customer.module';
 import { CustomerGroupModule } from './modules/sales/customer-group/customer-group.module';
-import { AccountVoucherTypeModule } from './modules/fixed/account-voucher-type/account-voucher-type.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
 import { DeviceListMasterModule } from './modules/fixed/device-list-master/device-list-master.module';
 import { MenuMasterModule } from './modules/fixed/menu-master/menu-master.module';
@@ -83,6 +83,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
       validationSchema: envValidationSchema,
     }),
     RequestContextModule,
+    RedisModule,
     ConfiguredGridSqlModule,
     ThrottlerModule.forRoot([
       {
@@ -128,7 +129,6 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     AreaModule,
     CustomerModule,
     CustomerGroupModule,
-    AccountVoucherTypeModule,
     BankListModule,
     DeviceListMasterModule,
     MenuMasterModule,
