@@ -1,5 +1,4 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { UsersService } from '../users/users.service';
@@ -36,7 +35,7 @@ export class AuthService {
     const issuedAccessToken = this.tokenService.signAccessToken({
       sub: user.user_id,
       user_name: user.user_name,
-      sid: randomUUID(),
+      sid: this.authSessionService.createSessionId(),
     });
     await this.authSessionService.storeAccessTokenSession(
       issuedAccessToken.token,

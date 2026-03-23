@@ -20,7 +20,7 @@ npm run prisma:generate
 cp .env.example .env
 ```
 
-## 2. Start PostgreSQL
+## 2. Start PostgreSQL and Redis
 
 ```bash
 docker compose up -d
@@ -42,6 +42,8 @@ Base URL:
 - `https://localhost:3010/api/v1`
 - Request payload limit is configurable with `REQUEST_BODY_LIMIT` (default `10mb`).
 - Bind host/IP is configurable with `HOST` (default `0.0.0.0`).
+- Access tokens can be stored and validated through Redis by enabling `REDIS_ENABLED=true`.
+- Access token lifetime is configurable with `ACCESS_TOKEN_TTL_SECONDS` (default `3600`).
 
 LAN hosting example (`.env`):
 
@@ -126,7 +128,7 @@ Full guide: `docs/performance-load-testing.md`
 
 ## Suggested next enterprise steps
 
-- Add authentication (JWT + refresh token rotation)
+- Add logout + refresh token rotation on top of the Redis-backed access-token session store
 - Add role-based access control + permissions matrix
 - Add structured logging (Pino/Winston + request ID)
 - Add OpenAPI docs + schema governance

@@ -3,6 +3,7 @@ import { User } from '@prisma/client';
 import { scrypt as nodeScrypt } from 'node:crypto';
 import { promisify } from 'node:util';
 import { UsersService } from '../users/users.service';
+import { AuthSessionService } from './auth-session.service';
 import { AuthService } from './auth.service';
 import { TokenService } from './token.service';
 
@@ -15,7 +16,18 @@ type UsersServiceMock = {
 };
 
 type TokenServiceMock = {
-  signAccessToken: jest.Mock<string, [{ sub: string; user_name: string }]>;
+  signAccessToken: jest.Mock<
+    { token: string; payload: { sub: string; user_name: string; sid: string; iat: number; exp: number } },
+    [{ sub: string; user_name: string; sid: string }]
+  >;
+};
+
+type AuthSessionServiceMock = {
+  createSessionId: jest.Mock<string, []>;
+  storeAccessTokenSession: jest.Mock<
+    Promise<void>,
+    [string, { sub: string; user_name: string; sid: string; iat: number; exp: number }]
+  >;
 };
 
 const hashPasswordForTest = async (plainPassword: string): Promise<string> => {
@@ -39,6 +51,7 @@ describe('AuthService', () => {
   let service: AuthService;
   let usersService: UsersServiceMock;
   let tokenService: TokenServiceMock;
+  let authSessionService: AuthSessionServiceMock;
 
   beforeEach(() => {
     usersService = {
@@ -46,13 +59,35 @@ describe('AuthService', () => {
     };
     tokenService = {
       signAccessToken: jest
-        .fn<string, [{ sub: string; user_name: string }]>()
-        .mockReturnValue('signed-jwt-token'),
+        .fn<
+          { token: string; payload: { sub: string; user_name: string; sid: string; iat: number; exp: number } },
+          [{ sub: string; user_name: string; sid: string }]
+        >()
+        .mockReturnValue({
+          token: 'signed-jwt-token',
+          payload: {
+            sub: TEST_USER_ID,
+            user_name: 'john.doe',
+            sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
+            iat: 1_710_979_200,
+            exp: 1_710_982_800,
+          },
+        }),
+    };
+    authSessionService = {
+      createSessionId: jest.fn<string, []>().mockReturnValue('4e457f70-cc9b-4e8f-b7e4-35cc3f588c22'),
+      storeAccessTokenSession: jest
+        .fn<
+          Promise<void>,
+          [string, { sub: string; user_name: string; sid: string; iat: number; exp: number }]
+        >()
+        .mockResolvedValue(undefined),
     };
 
     service = new AuthService(
       usersService as unknown as UsersService,
       tokenService as unknown as TokenService,
+      authSessionService as unknown as AuthSessionService,
     );
   });
 
@@ -76,7 +111,18 @@ describe('AuthService', () => {
     expect(tokenService.signAccessToken).toHaveBeenCalledWith({
       sub: TEST_USER_ID,
       user_name: 'john.doe',
+      sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
     });
+    expect(authSessionService.storeAccessTokenSession).toHaveBeenCalledWith(
+      'signed-jwt-token',
+      {
+        sub: TEST_USER_ID,
+        user_name: 'john.doe',
+        sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
+        iat: 1_710_979_200,
+        exp: 1_710_982_800,
+      },
+    );
   });
 
   it('throws unauthorized when username does not exist', async () => {
@@ -90,6 +136,7 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
 
     expect(tokenService.signAccessToken).not.toHaveBeenCalled();
+    expect(authSessionService.storeAccessTokenSession).not.toHaveBeenCalled();
   });
 
   it('throws unauthorized when password is invalid', async () => {
@@ -106,5 +153,6 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
 
     expect(tokenService.signAccessToken).not.toHaveBeenCalled();
+    expect(authSessionService.storeAccessTokenSession).not.toHaveBeenCalled();
   });
 });

@@ -92,5 +92,4 @@ export default () => ({
       connectTimeoutMs: parseNumber(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000),
     };
   })(),
-  },
 });
