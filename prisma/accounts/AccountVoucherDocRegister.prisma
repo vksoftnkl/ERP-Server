@@ -1,0 +1,220 @@
+enum GdrSourceModule {
+  SALES
+  PURCHASE
+  INVENTORY
+  ACCOUNTS
+  SERVICE
+  JOBWORK
+  POS
+  OTHER
+  @@schema("accounts")
+}
+
+enum GdrTranNature {
+  SALE
+  SALES_RETURN
+  PURCHASE
+  PURCHASE_RETURN
+  STOCK_TRANSFER
+  DELIVERY_CHALLAN
+  JOBWORK_SEND
+  JOBWORK_RECEIVE
+  DEBIT_NOTE
+  CREDIT_NOTE
+  EXPORT
+  IMPORT
+  ADVANCE
+  ADV_ADJUSTMENT
+  ADJUSTMENT
+  OTHER
+  @@schema("accounts")
+}
+
+enum GdrDocFlow {
+  OUTWARD
+  INWARD
+  INTERNAL
+  @@schema("accounts")
+}
+
+enum GdrDocType {
+  INVOICE
+  CREDIT_NOTE
+  DEBIT_NOTE
+  BILL_OF_SUPPLY
+  DELIVERY_CHALLAN
+  CHALLAN
+  ADVANCE
+  ADV_ADJUSTMENT
+  EXPORT_DOC
+  IMPORT_DOC
+  OTHER
+  @@schema("accounts")
+}
+
+enum GdrDocStatus {
+  DRAFT
+  POSTED
+  CANCELED
+  ARCHIVED
+  @@schema("accounts")
+}
+
+enum GdrSupplyClass {
+  GOODS
+  SERVICES
+  MIXED
+  @@schema("accounts")
+}
+
+enum GdrTaxability {
+  TAXABLE
+  EXEMPT
+  NIL_RATED
+  NON_GST
+  MIXED
+  @@schema("accounts")
+}
+
+enum GdrSupplyNature {
+  INTRA_STATE
+  INTER_STATE
+  IMPORT
+  EXPORT
+  SEZ
+  OTHER
+  @@schema("accounts")
+}
+
+enum GdrPartyType {
+  CUSTOMER
+  VENDOR
+  BRANCH
+  JOBWORKER
+  TRANSPORTER
+  OTHER
+  @@schema("accounts")
+}
+
+model AccVoucherDocRegister {
+  // Primary
+  gdrId                    String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdr_id")
+
+  // Source mapping
+  gdrSourceModule          GdrSourceModule   @map("gdr_source_module")
+  gdrTranNature            GdrTranNature     @map("gdr_tran_nature")
+  gdrDocFlow               GdrDocFlow        @map("gdr_doc_flow")
+  gdrDocSign               Int               @default(1) @db.SmallInt @map("gdr_doc_sign")
+  gdrSourceDocId           String            @db.Uuid @map("gdr_source_doc_id")
+
+  // Multi-branch / financial identity
+  gdrAccYear               String            @db.VarChar(9) @map("gdr_acc_year")
+  gdrCompanyId             String            @db.Uuid @map("gdr_company_id")
+  gdrBranchId              String            @db.Uuid @map("gdr_branch_id")
+
+  // Internal voucher identity
+  gdrVoucherTypeId         Int               @map("gdr_voucher_type_id")
+  gdrVoucherId             String            @db.Uuid @map("gdr_voucher_id")
+  gdrVoucherNo             BigInt            @map("gdr_voucher_no")
+  gdrVoucherDate           DateTime          @db.Date @map("gdr_voucher_date")
+  gdrVoucherRefno          String?           @db.VarChar(50) @map("gdr_voucher_refno")
+
+  // Business document identity
+  gdrDocType               GdrDocType        @map("gdr_doc_type")
+  gdrDocNo                 String            @db.VarChar(50) @map("gdr_doc_no")
+  gdrDocDate               DateTime          @db.Date @map("gdr_doc_date")
+  gdrDocRefNo              String?           @db.VarChar(50) @map("gdr_doc_ref_no")
+  gdrDocStatus             GdrDocStatus      @default(POSTED) @map("gdr_doc_status")
+  gdrDocCancelReason       String?           @db.VarChar(200) @map("gdr_doc_cancel_reason")
+  gdrDocCanceledOn         DateTime?         @db.Timestamptz(6) @map("gdr_doc_canceled_on")
+  gdrDocNoteNo             String?           @db.VarChar(50) @map("gdr_doc_note_no")
+  gdrDocNoteDate           DateTime?         @db.Date @map("gdr_doc_note_date")
+  gdrDocNoteReason         String?           @db.VarChar(150) @map("gdr_doc_note_reason")
+
+  // GST / supply classification
+  gdrSupplyClass           GdrSupplyClass?   @map("gdr_supply_class")
+  gdrTaxability            GdrTaxability     @default(TAXABLE) @map("gdr_taxability")
+  gdrSupplyNature          GdrSupplyNature?  @map("gdr_supply_nature")
+  gdrPlaceOfSupplyCode     String?           @db.Char(2) @map("gdr_place_of_supply_code")
+  gdrPlaceOfSupplyName     String?           @db.VarChar(100) @map("gdr_place_of_supply_name")
+
+  gdrIsReverseCharge       Boolean           @default(false) @map("gdr_is_reverse_charge")
+  gdrIsEinvoiceApplicable  Boolean           @default(false) @map("gdr_is_einvoice_applicable")
+  gdrIsEwaybillApplicable  Boolean           @default(false) @map("gdr_is_ewaybill_applicable")
+
+  // Party snapshot
+  gdrPartyType             GdrPartyType      @default(OTHER) @map("gdr_party_type")
+  gdrPartyId               String            @db.Uuid @map("gdr_party_id")
+  gdrPartyName             String?           @db.VarChar(200) @map("gdr_party_name")
+  gdrPartyAddr1            String?           @db.VarChar(200) @map("gdr_party_addr1")
+  gdrPartyAddr2            String?           @db.VarChar(200) @map("gdr_party_addr2")
+  gdrPartyAddr3            String?           @db.VarChar(200) @map("gdr_party_addr3")
+  gdrPartyLocation         String?           @db.VarChar(100) @map("gdr_party_location")
+  gdrPartyPin              String?           @db.VarChar(10) @map("gdr_party_pin")
+  gdrPartyStateCode        String?           @db.Char(2) @map("gdr_party_state_code")
+  gdrPartyStateName        String?           @db.VarChar(100) @map("gdr_party_state_name")
+  gdrPartyGstType          String?           @db.VarChar(30) @map("gdr_party_gst_type")
+  gdrPartyGstin            String?           @db.VarChar(15) @map("gdr_party_gstin")
+  gdrPartyEcomGstin        String?           @db.VarChar(15) @map("gdr_party_ecom_gstin")
+
+  // Ship-to snapshot
+  gdrShipName              String?           @db.VarChar(200) @map("gdr_ship_name")
+  gdrShipAddr1             String?           @db.VarChar(200) @map("gdr_ship_addr1")
+  gdrShipAddr2             String?           @db.VarChar(200) @map("gdr_ship_addr2")
+  gdrShipAddr3             String?           @db.VarChar(200) @map("gdr_ship_addr3")
+  gdrShipLocation          String?           @db.VarChar(100) @map("gdr_ship_location")
+  gdrShipPin               String?           @db.VarChar(10) @map("gdr_ship_pin")
+  gdrShipStateCode         String?           @db.Char(2) @map("gdr_ship_state_code")
+  gdrShipStateName         String?           @db.VarChar(100) @map("gdr_ship_state_name")
+  gdrShipGstin             String?           @db.VarChar(15) @map("gdr_ship_gstin")
+
+  // Dispatch-from snapshot
+  gdrDispatchName          String?           @db.VarChar(200) @map("gdr_dispatch_name")
+  gdrDispatchAddr1         String?           @db.VarChar(200) @map("gdr_dispatch_addr1")
+  gdrDispatchAddr2         String?           @db.VarChar(200) @map("gdr_dispatch_addr2")
+  gdrDispatchAddr3         String?           @db.VarChar(200) @map("gdr_dispatch_addr3")
+  gdrDispatchLocation      String?           @db.VarChar(100) @map("gdr_dispatch_location")
+  gdrDispatchPin           String?           @db.VarChar(10) @map("gdr_dispatch_pin")
+  gdrDispatchStateCode     String?           @db.Char(2) @map("gdr_dispatch_state_code")
+  gdrDispatchStateName     String?           @db.VarChar(100) @map("gdr_dispatch_state_name")
+  gdrDispatchGstin         String?           @db.VarChar(15) @map("gdr_dispatch_gstin")
+
+  // Amount summary
+  gdrGrossValue            Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_gross_value")
+  gdrDiscountValue         Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_discount_value")
+  gdrTaxableValue          Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_taxable_value")
+  gdrCgstValue             Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_cgst_value")
+  gdrSgstValue             Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_sgst_value")
+  gdrIgstValue             Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_igst_value")
+  gdrCessValue             Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_cess_value")
+  gdrStateCessValue        Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_state_cess_value")
+  gdrTcsValue              Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_tcs_value")
+  gdrOtherCharge           Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_other_charge")
+  gdrRoundOff              Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_round_off")
+  gdrBillValue             Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_bill_value")
+
+  gdrRemarks               String?           @db.VarChar(500) @map("gdr_remarks")
+
+  // Lifecycle / audit
+  gdrIsActive              Boolean           @default(true) @map("gdr_is_active")
+  gdrIsDeleted             Boolean           @default(false) @map("gdr_is_deleted")
+  gdrSyncDate              DateTime?         @db.Timestamptz(6) @map("gdr_sync_date")
+  gdrCreatedOn             DateTime          @default(now()) @db.Timestamptz(6) @map("gdr_created_on")
+  gdrCreatedBy             String?           @db.Uuid @map("gdr_created_by")
+  gdrUpdatedOn             DateTime?         @db.Timestamptz(6) @map("gdr_updated_on")
+  gdrUpdatedBy             String?           @db.Uuid @map("gdr_updated_by")
+
+  // Relations
+  company                  Company           @relation(fields: [gdrCompanyId], references: [compId], map: "fk_gdr_voucher_company")
+  branch                   BranchMaster      @relation(fields: [gdrBranchId], references: [brId], map: "fk_gdr_voucher_branch")
+  party                    AccLedgerMaster   @relation(fields: [gdrPartyId], references: [ledId], map: "fk_gdr_voucher_party")
+  voucherHeader            AccVoucherHeader  @relation(fields: [gdrVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_gdr_voucher_header")
+  voucherType              AccVoucherType    @relation(fields: [gdrVoucherTypeId], references: [vchrTypeId], map: "fk_gdr_voucher_type")
+  apiLogs                  AccVoucherDocApiLog[]
+  details                  AccVoucherDocDetail[]
+  einvoice                 AccVoucherDocEinvoice?
+  ewaybill                 AccVoucherDocEwaybill?
+
+  @@map("acc_voucher_doc_register")
+  @@schema("accounts")
+}

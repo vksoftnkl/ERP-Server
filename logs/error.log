@@ -297,3 +297,31 @@ Raw query failed. Code: `42601`. Message: `ERROR: syntax error at or near "FROM"
     at async MasterLookupService.fetchModuleItems (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:31)
     at async MasterLookupService.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:86:21)
     at async MasterLookupController.getAllAccountsAndMasterNameIds (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:50:18)
+2026-03-23T12:12:21.424Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+ServiceUnavailableException: connect ECONNREFUSED 127.0.0.1:6379
+    at RedisCacheService.runCommand (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:125:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async RedisCacheService.set (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:86:22)
+    at async AuthSessionService.storeAccessTokenSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth-session.service.ts:40:5)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:40:5)
+2026-03-23T12:12:24.096Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+ServiceUnavailableException: connect ECONNREFUSED 127.0.0.1:6379
+    at RedisCacheService.runCommand (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:125:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async RedisCacheService.set (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:86:22)
+    at async AuthSessionService.storeAccessTokenSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth-session.service.ts:40:5)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:40:5)
+2026-03-23T12:13:01.413Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+ServiceUnavailableException: connect ECONNREFUSED 127.0.0.1:6379
+    at RedisCacheService.runCommand (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:125:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async RedisCacheService.set (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:86:22)
+    at async AuthSessionService.storeAccessTokenSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth-session.service.ts:40:5)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:40:5)
+2026-03-23T12:15:29.610Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+ServiceUnavailableException: connect ECONNREFUSED 127.0.0.1:6379
+    at RedisCacheService.runCommand (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:125:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async RedisCacheService.set (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:86:22)
+    at async AuthSessionService.storeAccessTokenSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth-session.service.ts:40:5)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:40:5)

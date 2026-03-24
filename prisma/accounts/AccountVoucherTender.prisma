@@ -1,0 +1,94 @@
+enum TenderTraType {
+  R
+  P
+  @@schema("accounts")
+}
+
+model AccVoucherTender {
+  // Primary
+  vtdId                String           @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("vtd_id")
+
+  // Links
+  vtdVoucherId         String           @db.Uuid @map("vtd_voucher_id")
+  vtdVoucherLineId     String?          @db.Uuid @map("vtd_voucher_line_id")
+  vtdRowNo             Int              @map("vtd_row_no")
+
+  // Multi-branch snapshot
+  vtdAccYear           String           @db.VarChar(9) @map("vtd_acc_year")
+  vtdCompanyId         String           @db.Uuid @map("vtd_company_id")
+  vtdBranchId          String           @db.Uuid @map("vtd_branch_id")
+
+  // Voucher snapshot
+  vtdVoucherTypeId     Int              @map("vtd_voucher_type_id")
+  vtdVoucherNo         BigInt           @map("vtd_voucher_no")
+  vtdVoucherDate       DateTime         @db.Date @map("vtd_voucher_date")
+  vtdVoucherRefno      String           @db.VarChar(50) @map("vtd_voucher_refno")
+  vtdVoucherLedgerId   String           @db.Uuid @map("vtd_voucher_ledger_id")
+
+  // Session / ownership
+  vtdSessionId         String?          @db.Uuid @map("vtd_session_id")
+  vtdUserId            String           @db.Uuid @map("vtd_user_id")
+  vtdCounterId         String?          @db.VarChar(30) @map("vtd_counter_id")
+
+  // Tender classification
+  vtdTraType           TenderTraType    @map("vtd_tra_type")
+  vtdTenderTypeId      BigInt           @map("vtd_tender_type_id")
+  vtdTenderId          String           @db.Uuid @map("vtd_tender_id")
+  vtdTenderLedgerId    String           @db.Uuid @map("vtd_tender_ledger_id")
+
+  // Amounts
+  vtdTenderAmount      Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_tender_amount")
+  vtdSurchargePercent  Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_surcharge_percent")
+  vtdSurchargeAmount   Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_surcharge_amount")
+  vtdTotalAmount       Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_total_amount")
+  vtdRefundAmount      Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_refund_amount")
+  vtdIsChangeReturn    Boolean          @default(false) @map("vtd_is_change_return")
+
+  // Card / digital trace details
+  vtdCardBank          String?          @db.VarChar(150) @map("vtd_card_bank")
+  vtdCardNoMasked      String?          @db.VarChar(30) @map("vtd_card_no_masked")
+  vtdCardExpiry        DateTime?        @db.Date @map("vtd_card_expiry")
+  vtdCardRefNo         String?          @db.VarChar(100) @map("vtd_card_ref_no")
+  vtdAuthCode          String?          @db.VarChar(100) @map("vtd_auth_code")
+  vtdRrnNo             String?          @db.VarChar(100) @map("vtd_rrn_no")
+  vtdUpiId             String?          @db.VarChar(100) @map("vtd_upi_id")
+  vtdTerminalId        String?          @db.VarChar(50) @map("vtd_terminal_id")
+
+  // Cheque details
+  vtdChqBank           String?          @db.VarChar(150) @map("vtd_chq_bank")
+  vtdChqNo             String?          @db.VarChar(30) @map("vtd_chq_no")
+  vtdChqDate           DateTime?        @db.Date @map("vtd_chq_date")
+  vtdChqPayeeName      String?          @db.VarChar(150) @map("vtd_chq_payee_name")
+  vtdChqPrintStatus    String?          @db.VarChar(1) @map("vtd_chq_print_status")
+  vtdChqAccountPayee   Boolean          @default(false) @map("vtd_chq_account_payee")
+
+  // Approval / remarks
+  vtdIsApproved        Boolean          @default(false) @map("vtd_is_approved")
+  vtdApprovedOn        DateTime?        @db.Timestamptz(6) @map("vtd_approved_on")
+  vtdApprovedBy        String?          @db.Uuid @map("vtd_approved_by")
+  vtdNotes             String?          @map("vtd_notes")
+
+  // Status
+  vtdIsActive          Boolean          @default(true) @map("vtd_is_active")
+  vtdIsDeleted         Boolean          @default(false) @map("vtd_is_deleted")
+
+  // Audit
+  vtdSyncDate          DateTime?        @db.Timestamptz(6) @map("vtd_sync_date")
+  vtdCreatedOn         DateTime         @default(now()) @db.Timestamptz(6) @map("vtd_created_on")
+  vtdCreatedBy         String?          @db.Uuid @map("vtd_created_by")
+  vtdUpdatedOn         DateTime?        @db.Timestamptz(6) @map("vtd_updated_on")
+  vtdUpdatedBy         String?          @db.Uuid @map("vtd_updated_by")
+
+  // Relations
+  company              Company          @relation(fields: [vtdCompanyId], references: [compId], map: "fk_acc_voucher_tenders_company")
+  branch               BranchMaster     @relation(fields: [vtdBranchId], references: [brId], map: "fk_acc_voucher_tenders_branch")
+  tenderType           AccountTenderTypes @relation(fields: [vtdTenderTypeId], references: [accttTypeId], map: "fk_acc_voucher_tenders_type")
+  tender               AccountTenderMaster @relation(fields: [vtdTenderId], references: [acctndId], map: "fk_acc_voucher_tenders_tender")
+  tenderLedger         AccLedgerMaster  @relation("VoucherTenderTenderLedger", fields: [vtdTenderLedgerId], references: [ledId], map: "fk_acc_voucher_tenders_tender_ledger")
+  voucherLedger        AccLedgerMaster  @relation("VoucherTenderVoucherLedger", fields: [vtdVoucherLedgerId], references: [ledId], map: "fk_acc_voucher_tenders_voucher_ledger")
+  voucherHeader        AccVoucherHeader @relation(fields: [vtdVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_tenders_header")
+  voucherType          AccVoucherType   @relation(fields: [vtdVoucherTypeId], references: [vchrTypeId], map: "fk_acc_voucher_tenders_voucher_type")
+
+  @@map("acc_voucher_tenders")
+  @@schema("accounts")
+}

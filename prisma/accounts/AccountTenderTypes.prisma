@@ -13,6 +13,7 @@ model AccountTenderTypes {
 
   // Relations
   accttTenders AccountTenderMaster[]  // fixed: was TenderMaster[]
+  voucherTenders AccVoucherTender[]
 
   @@index([accttTypeIsActive], name: "idx_acc_ttm_type_is_active")
   @@map("tender_type")

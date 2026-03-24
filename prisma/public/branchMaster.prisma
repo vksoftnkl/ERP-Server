@@ -61,6 +61,15 @@ model BranchMaster {
   // Relations
   company               Company   @relation(fields: [compId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]
+  voucherBills          AccVoucherBill[]
+  voucherCheques        AccVoucherCheque[]
+  voucherDocDetails     AccVoucherDocDetail[]
+  voucherDocRegisters   AccVoucherDocRegister[]
+  voucherHeaders        AccVoucherHeader[]
+  vouchers              AccVoucher[]
+  voucherTenders        AccVoucherTender[]
+  openingStockHeaders   OpeningStockHeader[]
+  openingStockDetails   OpeningStockDetail[]
   @@index([compId],      name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")

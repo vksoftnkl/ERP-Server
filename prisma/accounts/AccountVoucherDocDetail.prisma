@@ -1,0 +1,92 @@
+enum VoucherDocDetailTaxability {
+  TAXABLE
+  EXEMPT
+  NIL_RATED
+  NON_GST
+  MIXED
+  @@schema("accounts")
+}
+
+enum VoucherDocDetailSupplyNature {
+  INTRA_STATE
+  INTER_STATE
+  @@schema("accounts")
+}
+
+model AccVoucherDocDetail {
+  // Primary
+  vtxId               String                         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("vtx_id")
+
+  // Links
+  vtxGdrId            String                         @db.Uuid @map("vtx_gdr_id")
+  vtxVoucherId        String                         @db.Uuid @map("vtx_voucher_id")
+  vtxRowNo            Int                            @map("vtx_row_no")
+
+  // Multi-branch snapshot
+  vtxAccYear          String                         @db.VarChar(9) @map("vtx_acc_year")
+  vtxCompanyId        String                         @db.Uuid @map("vtx_company_id")
+  vtxBranchId         String                         @db.Uuid @map("vtx_branch_id")
+
+  // Tax classification snapshot
+  vtxTaxability       VoucherDocDetailTaxability    @default(TAXABLE) @map("vtx_taxability")
+  vtxSupplyNature     VoucherDocDetailSupplyNature  @map("vtx_supply_nature")
+
+  // Item snapshot
+  vtxItemId           String?                        @db.Uuid @map("vtx_item_id")
+  vtxItemCode         String?                        @db.VarChar(50) @map("vtx_item_code")
+  vtxItemName         String?                        @db.VarChar(200) @map("vtx_item_name")
+  vtxItemDescription  String?                        @db.VarChar(250) @map("vtx_item_description")
+  vtxHsnCode          String?                        @db.VarChar(20) @map("vtx_hsn_code")
+  vtxTallyHsnSource   String?                        @db.VarChar(20) @map("vtx_tally_hsn_source")
+  vtxUnitId           String?                        @db.Uuid @map("vtx_unit_id")
+  vtxItemQty          Decimal                        @default(0) @db.Decimal(18, 3) @map("vtx_item_qty")
+  vtxItemRate         Decimal                        @default(0) @db.Decimal(18, 4) @map("vtx_item_rate")
+  vtxItemDiscount     Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_item_discount")
+  vtxIsService        Boolean                        @default(false) @map("vtx_is_service")
+
+  // Tax values
+  vtxTaxableValue     Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_taxable_value")
+  vtxTotalTaxRate     Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_total_tax_rate")
+  vtxTaxId            String?                        @db.Uuid @map("vtx_tax_id")
+
+  vtxCgstRate         Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_cgst_rate")
+  vtxSgstRate         Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_sgst_rate")
+  vtxIgstRate         Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_igst_rate")
+  vtxCessRate         Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_cess_rate")
+
+  vtxCgstAmount       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_cgst_amount")
+  vtxSgstAmount       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_sgst_amount")
+  vtxIgstAmount       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_igst_amount")
+  vtxCessAmount       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_cess_amount")
+
+  vtxTotalTaxAmount   Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_total_tax_amount")
+  vtxOtherAmount      Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_other_amount")
+  vtxTotalValue       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_total_value")
+  vtxBillValue        Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_bill_value")
+
+  // Tax ledger mapping
+  vtxTaxableLedgerId  String?                        @db.Uuid @map("vtx_taxable_ledger_id")
+  vtxCgstLedgerId     String?                        @db.Uuid @map("vtx_cgst_ledger_id")
+  vtxSgstLedgerId     String?                        @db.Uuid @map("vtx_sgst_ledger_id")
+  vtxIgstLedgerId     String?                        @db.Uuid @map("vtx_igst_ledger_id")
+  vtxCessLedgerId     String?                        @db.Uuid @map("vtx_cess_ledger_id")
+
+  // Status / audit
+  vtxIsActive         Boolean                        @default(true) @map("vtx_is_active")
+  vtxIsDeleted        Boolean                        @default(false) @map("vtx_is_deleted")
+
+  vtxSyncDate         DateTime?                      @db.Timestamptz(6) @map("vtx_sync_date")
+  vtxCreatedOn        DateTime                       @default(now()) @db.Timestamptz(6) @map("vtx_created_on")
+  vtxCreatedBy        String?                        @db.Uuid @map("vtx_created_by")
+  vtxUpdatedOn        DateTime?                      @db.Timestamptz(6) @map("vtx_updated_on")
+  vtxUpdatedBy        String?                        @db.Uuid @map("vtx_updated_by")
+
+  // Relations
+  company             Company                        @relation(fields: [vtxCompanyId], references: [compId], map: "fk_acc_voucher_doc_detail_company")
+  branch              BranchMaster                   @relation(fields: [vtxBranchId], references: [brId], map: "fk_acc_voucher_doc_detail_branch")
+  docRegister         AccVoucherDocRegister          @relation(fields: [vtxGdrId], references: [gdrId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_gdr")
+  voucherHeader       AccVoucherHeader               @relation(fields: [vtxVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_header")
+
+  @@map("acc_voucher_doc_detail")
+  @@schema("accounts")
+}

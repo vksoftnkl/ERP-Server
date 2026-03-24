@@ -15,6 +15,8 @@ Table users {
   user_password String [not null]
   created_at DateTime [default: `now()`, not null]
   updated_at DateTime [not null]
+  voucherHeaders acc_voucher_header [not null]
+  vouchers acc_vouchers [not null]
 }
 
 Table account_groups {
@@ -123,6 +125,13 @@ Table acc_ledger_master {
   bankAccounts acc_ledger_bank_accounts [not null]
   shipAddrs acc_ship_addrs [not null]
   tenders account_tender_master [not null]
+  voucherBillParties acc_voucher_bills [not null]
+  voucherDocRegisterParties acc_voucher_doc_register [not null]
+  voucherHeaderParties acc_voucher_header [not null]
+  accountingEntries acc_vouchers [not null]
+  oppositeAccountingEntries acc_vouchers [not null]
+  tenderLedgerEntries acc_voucher_tenders [not null]
+  voucherLedgerTenders acc_voucher_tenders [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -152,6 +161,7 @@ Table account_tender_master {
   acctndModifiedBy String
   tenderType tender_type [not null]
   ledger acc_ledger_master [not null]
+  voucherTenders acc_voucher_tenders [not null]
 }
 
 Table tender_type {
@@ -166,6 +176,547 @@ Table tender_type {
   accttTypeModifiedOn DateTime [default: `now()`, not null]
   accttTypeModifiedBy String
   accttTenders account_tender_master [not null]
+  voucherTenders acc_voucher_tenders [not null]
+}
+
+Table acc_voucher_bills {
+  avbdId String [pk]
+  avbdVoucherId String [not null]
+  avbdVoucherLineId String
+  avbdRowNo Int [not null]
+  avbdAccYear String [not null]
+  avbdCompanyId String [not null]
+  avbdBranchId String [not null]
+  avbdVoucherTypeId Int [not null]
+  avbdVoucherNo BigInt [not null]
+  avbdVoucherDate DateTime [not null]
+  avbdVoucherRefno String
+  avbdPartyId String [not null]
+  avbdSalesmanId String
+  avbdUserId String
+  avbdSessionId String
+  avbdRefType VoucherBillRefType [not null]
+  avbdDrCr VoucherBillDrCr [not null]
+  avbdTraType VoucherBillTraType [not null]
+  avbdOriginVoucherId String [not null]
+  avbdDocDate DateTime [not null]
+  avbdDocRefno String
+  avbdBillDate DateTime
+  avbdBillRefno String [not null]
+  avbdDueDate DateTime
+  avbdBillNarration String
+  avbdBillAmount Decimal [not null, default: 0]
+  avbdAllocAmount Decimal [not null, default: 0]
+  avbdDiscAmount Decimal [not null, default: 0]
+  avbdBalanceAmount Decimal [not null, default: 0]
+  avbdProfitAmount Decimal [not null, default: 0]
+  avbdAgainstBillRefno String
+  avbdAgainstBillDate DateTime
+  avbdAgainstVoucherId String
+  avbdAgainstVoucherLineId String
+  avbdSettlementMode String
+  avbdSettlementLedgerId String
+  avbdIsPostDated Boolean [not null, default: false]
+  avbdIsActive Boolean [not null, default: true]
+  avbdIsDeleted Boolean [not null, default: false]
+  avbdSyncDate DateTime
+  avbdCreatedOn DateTime [default: `now()`, not null]
+  avbdCreatedBy String
+  avbdUpdatedOn DateTime
+  avbdUpdatedBy String
+  voucherHeader acc_voucher_header [not null]
+  voucherType acc_voucher_types [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  party acc_ledger_master [not null]
+  againstVoucherHeader acc_voucher_header
+}
+
+Table acc_voucher_cheques {
+  chqId String [pk]
+  chqVoucherId String [not null]
+  chqVoucherLineId String
+  chqBillId String
+  chqAccYear String [not null]
+  chqCompanyId String [not null]
+  chqBranchId String [not null]
+  chqVoucherTypeId Int [not null]
+  chqVoucherNo BigInt [not null]
+  chqVoucherDate DateTime [not null]
+  chqVoucherRefno String
+  chqPartyId String [not null]
+  chqSalesmanId String
+  chqUserId String
+  chqSessionId String
+  chqTraType ChequeTraType [not null]
+  chqInstrumentType ChequeInstrumentType [not null, default: 'CHEQUE']
+  chqIsPostDated Boolean [not null, default: false]
+  chqIsAccountPayee Boolean [not null, default: false]
+  chqChequeNo String [not null]
+  chqChequeDate DateTime [not null]
+  chqChequeAmount Decimal [not null, default: 0]
+  chqBankLedgerId String
+  chqBankName String
+  chqBankBranch String
+  chqBankIfsc String
+  chqPayeeName String
+  chqDrawerName String
+  chqIsPrinted Boolean [not null, default: false]
+  chqPrintedOn DateTime
+  chqReceivedOn DateTime
+  chqIssuedOn DateTime
+  chqDepositDate DateTime
+  chqClearDate DateTime
+  chqBounceDate DateTime
+  chqReturnDate DateTime
+  chqCancelledOn DateTime
+  chqStatus ChequeStatus [not null]
+  chqNotes String
+  chqLogText String
+  chqIsActive Boolean [not null, default: true]
+  chqIsDeleted Boolean [not null, default: false]
+  chqSyncDate DateTime
+  chqCreatedOn DateTime [default: `now()`, not null]
+  chqCreatedBy String
+  chqUpdatedOn DateTime
+  chqUpdatedBy String
+  voucherHeader acc_voucher_header [not null]
+  voucherType acc_voucher_types [not null]
+  company companys [not null]
+  branch branch_master [not null]
+}
+
+Table acc_voucher_doc_api_log {
+  gdlId String [pk]
+  gdlGdrId String [not null]
+  gdlApiName GdlApiName [not null]
+  gdlActionName GdlActionName [not null]
+  gdlStatus GdlStatus [not null]
+  gdlAttemptNo Int [not null, default: 1]
+  gdlRequestRefNo String
+  gdlExternalRefNo String
+  gdlHttpStatus Int
+  gdlErrorCode String
+  gdlErrorMessage String
+  gdlResponseMessage String
+  gdlRequestPayload Json
+  gdlResponsePayload Json
+  gdlRequestedOn DateTime [default: `now()`, not null]
+  gdlRespondedOn DateTime
+  gdlCreatedOn DateTime [default: `now()`, not null]
+  gdlCreatedBy String
+  docRegister acc_voucher_doc_register [not null]
+}
+
+Table acc_voucher_doc_detail {
+  vtxId String [pk]
+  vtxGdrId String [not null]
+  vtxVoucherId String [not null]
+  vtxRowNo Int [not null]
+  vtxAccYear String [not null]
+  vtxCompanyId String [not null]
+  vtxBranchId String [not null]
+  vtxTaxability VoucherDocDetailTaxability [not null, default: 'TAXABLE']
+  vtxSupplyNature VoucherDocDetailSupplyNature [not null]
+  vtxItemId String
+  vtxItemCode String
+  vtxItemName String
+  vtxItemDescription String
+  vtxHsnCode String
+  vtxTallyHsnSource String
+  vtxUnitId String
+  vtxItemQty Decimal [not null, default: 0]
+  vtxItemRate Decimal [not null, default: 0]
+  vtxItemDiscount Decimal [not null, default: 0]
+  vtxIsService Boolean [not null, default: false]
+  vtxTaxableValue Decimal [not null, default: 0]
+  vtxTotalTaxRate Decimal [not null, default: 0]
+  vtxTaxId String
+  vtxCgstRate Decimal [not null, default: 0]
+  vtxSgstRate Decimal [not null, default: 0]
+  vtxIgstRate Decimal [not null, default: 0]
+  vtxCessRate Decimal [not null, default: 0]
+  vtxCgstAmount Decimal [not null, default: 0]
+  vtxSgstAmount Decimal [not null, default: 0]
+  vtxIgstAmount Decimal [not null, default: 0]
+  vtxCessAmount Decimal [not null, default: 0]
+  vtxTotalTaxAmount Decimal [not null, default: 0]
+  vtxOtherAmount Decimal [not null, default: 0]
+  vtxTotalValue Decimal [not null, default: 0]
+  vtxBillValue Decimal [not null, default: 0]
+  vtxTaxableLedgerId String
+  vtxCgstLedgerId String
+  vtxSgstLedgerId String
+  vtxIgstLedgerId String
+  vtxCessLedgerId String
+  vtxIsActive Boolean [not null, default: true]
+  vtxIsDeleted Boolean [not null, default: false]
+  vtxSyncDate DateTime
+  vtxCreatedOn DateTime [default: `now()`, not null]
+  vtxCreatedBy String
+  vtxUpdatedOn DateTime
+  vtxUpdatedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  docRegister acc_voucher_doc_register [not null]
+  voucherHeader acc_voucher_header [not null]
+}
+
+Table acc_voucher_doc_einvoice {
+  gdeId String [pk]
+  gdeGdrId String [unique, not null]
+  gdeVoucherId String [not null]
+  gdeAccYear String [not null]
+  gdeCompanyId String [not null]
+  gdeBranchId String [not null]
+  gdeStatus GdeStatus [not null, default: 'NA']
+  gdeIrn String
+  gdeAckNo String
+  gdeAckOn DateTime
+  gdeQrcode String
+  gdeSignedInvoice String
+  gdeSignedQrcode String
+  gdeCancelReason String
+  gdeCanceledOn DateTime
+  gdeLastErrorCode String
+  gdeLastMessage String
+  gdeIsActive Boolean [not null, default: true]
+  gdeIsDeleted Boolean [not null, default: false]
+  gdeSyncDate DateTime
+  gdeCreatedOn DateTime [default: `now()`, not null]
+  gdeCreatedBy String
+  gdeUpdatedOn DateTime
+  gdeUpdatedBy String
+  docRegister acc_voucher_doc_register [not null]
+}
+
+Table acc_voucher_doc_ewaybill {
+  gdwId String [pk]
+  gdwGdrId String [unique, not null]
+  gdwVoucherId String [not null]
+  gdwAccYear String [not null]
+  gdwCompanyId String [not null]
+  gdwBranchId String [not null]
+  gdwStatus GdwStatus [not null, default: 'NA']
+  gdwNo String
+  gdwGeneratedOn DateTime
+  gdwValidUpto DateTime
+  gdwCancelReason String
+  gdwCanceledOn DateTime
+  gdwVehicleNo String
+  gdwTransportMode GdwTransportMode
+  gdwTransporterId String
+  gdwTransporterName String
+  gdwDistanceKm Int
+  gdwDocNo String
+  gdwDocDate DateTime
+  gdwVehicleType GdwVehicleType
+  gdwTransactionType String
+  gdwSubSupplyType String
+  gdwLastErrorCode String
+  gdwLastMessage String
+  gdwIsActive Boolean [not null, default: true]
+  gdwIsDeleted Boolean [not null, default: false]
+  gdwSyncDate DateTime
+  gdwCreatedOn DateTime [default: `now()`, not null]
+  gdwCreatedBy String
+  gdwUpdatedOn DateTime
+  gdwUpdatedBy String
+  docRegister acc_voucher_doc_register [not null]
+}
+
+Table acc_voucher_doc_register {
+  gdrId String [pk]
+  gdrSourceModule GdrSourceModule [not null]
+  gdrTranNature GdrTranNature [not null]
+  gdrDocFlow GdrDocFlow [not null]
+  gdrDocSign Int [not null, default: 1]
+  gdrSourceDocId String [not null]
+  gdrAccYear String [not null]
+  gdrCompanyId String [not null]
+  gdrBranchId String [not null]
+  gdrVoucherTypeId Int [not null]
+  gdrVoucherId String [not null]
+  gdrVoucherNo BigInt [not null]
+  gdrVoucherDate DateTime [not null]
+  gdrVoucherRefno String
+  gdrDocType GdrDocType [not null]
+  gdrDocNo String [not null]
+  gdrDocDate DateTime [not null]
+  gdrDocRefNo String
+  gdrDocStatus GdrDocStatus [not null, default: 'POSTED']
+  gdrDocCancelReason String
+  gdrDocCanceledOn DateTime
+  gdrDocNoteNo String
+  gdrDocNoteDate DateTime
+  gdrDocNoteReason String
+  gdrSupplyClass GdrSupplyClass
+  gdrTaxability GdrTaxability [not null, default: 'TAXABLE']
+  gdrSupplyNature GdrSupplyNature
+  gdrPlaceOfSupplyCode String
+  gdrPlaceOfSupplyName String
+  gdrIsReverseCharge Boolean [not null, default: false]
+  gdrIsEinvoiceApplicable Boolean [not null, default: false]
+  gdrIsEwaybillApplicable Boolean [not null, default: false]
+  gdrPartyType GdrPartyType [not null, default: 'OTHER']
+  gdrPartyId String [not null]
+  gdrPartyName String
+  gdrPartyAddr1 String
+  gdrPartyAddr2 String
+  gdrPartyAddr3 String
+  gdrPartyLocation String
+  gdrPartyPin String
+  gdrPartyStateCode String
+  gdrPartyStateName String
+  gdrPartyGstType String
+  gdrPartyGstin String
+  gdrPartyEcomGstin String
+  gdrShipName String
+  gdrShipAddr1 String
+  gdrShipAddr2 String
+  gdrShipAddr3 String
+  gdrShipLocation String
+  gdrShipPin String
+  gdrShipStateCode String
+  gdrShipStateName String
+  gdrShipGstin String
+  gdrDispatchName String
+  gdrDispatchAddr1 String
+  gdrDispatchAddr2 String
+  gdrDispatchAddr3 String
+  gdrDispatchLocation String
+  gdrDispatchPin String
+  gdrDispatchStateCode String
+  gdrDispatchStateName String
+  gdrDispatchGstin String
+  gdrGrossValue Decimal [not null, default: 0]
+  gdrDiscountValue Decimal [not null, default: 0]
+  gdrTaxableValue Decimal [not null, default: 0]
+  gdrCgstValue Decimal [not null, default: 0]
+  gdrSgstValue Decimal [not null, default: 0]
+  gdrIgstValue Decimal [not null, default: 0]
+  gdrCessValue Decimal [not null, default: 0]
+  gdrStateCessValue Decimal [not null, default: 0]
+  gdrTcsValue Decimal [not null, default: 0]
+  gdrOtherCharge Decimal [not null, default: 0]
+  gdrRoundOff Decimal [not null, default: 0]
+  gdrBillValue Decimal [not null, default: 0]
+  gdrRemarks String
+  gdrIsActive Boolean [not null, default: true]
+  gdrIsDeleted Boolean [not null, default: false]
+  gdrSyncDate DateTime
+  gdrCreatedOn DateTime [default: `now()`, not null]
+  gdrCreatedBy String
+  gdrUpdatedOn DateTime
+  gdrUpdatedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  party acc_ledger_master [not null]
+  voucherHeader acc_voucher_header [not null]
+  voucherType acc_voucher_types [not null]
+  apiLogs acc_voucher_doc_api_log [not null]
+  details acc_voucher_doc_detail [not null]
+  einvoice acc_voucher_doc_einvoice
+  ewaybill acc_voucher_doc_ewaybill
+}
+
+Table acc_voucher_header {
+  avhVoucherId String [pk]
+  avhAccYear String [not null]
+  avhCompanyId String [not null]
+  avhBranchId String [not null]
+  avhVoucherTypeId Int [not null]
+  avhVoucherNo BigInt [not null]
+  avhVoucherSlno BigInt [not null]
+  avhUserRefno String
+  avhVoucherDate DateTime [not null]
+  avhVoucherRefno String [not null]
+  avhBillDate DateTime
+  avhBillRefno String [not null]
+  avhBillAmount Decimal [not null, default: 0]
+  avhAdjustAmount Decimal [not null, default: 0]
+  avhTotalDebit Decimal [not null, default: 0]
+  avhTotalCredit Decimal [not null, default: 0]
+  avhPartyId String [not null]
+  avhOppositeLedgerId String
+  avhEmployeeId String[] [not null]
+  avhPayNotes String
+  avhRemarks String
+  avhVoucherStatus VoucherStatus [not null, default: 'DRAFT']
+  avhStatusOn DateTime
+  avhStatusBy String
+  avhCancelReason String
+  avhUserId String [not null]
+  avhSessionId String
+  avhDeviceType DeviceType [not null]
+  avhDeviceId String
+  avhCounterId String [not null]
+  avhPrintCount Int [not null, default: 0]
+  avhWhatsappStatus MessageSendStatus [not null, default: 'NA']
+  avhSmsStatus MessageSendStatus [not null, default: 'NA']
+  avhTallyExportStatus TallyExportStatus [not null, default: 'PENDING']
+  avhTallyExportedOn DateTime
+  avhTallyGuid String
+  avhTallyErrorMsg String
+  avhIsActive Boolean [not null, default: true]
+  avhIsDeleted Boolean [not null, default: false]
+  avhSyncDate DateTime
+  avhCreatedOn DateTime [default: `now()`, not null]
+  avhCreatedBy String
+  avhUpdatedOn DateTime
+  avhUpdatedBy String
+  voucherType acc_voucher_types [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  party acc_ledger_master [not null]
+  user users [not null]
+  voucherBills acc_voucher_bills [not null]
+  againstVoucherBills acc_voucher_bills [not null]
+  voucherCheques acc_voucher_cheques [not null]
+  voucherDocDetails acc_voucher_doc_detail [not null]
+  voucherDocRegisters acc_voucher_doc_register [not null]
+  vouchers acc_vouchers [not null]
+  voucherTenders acc_voucher_tenders [not null]
+  openingStockHeaders opening_stock_header [not null]
+  openingStockDetails opening_stock_detail [not null]
+
+  indexes {
+    (avhCompanyId, avhBranchId, avhAccYear, avhVoucherId) [unique]
+    (avhCompanyId, avhBranchId, avhAccYear, avhVoucherTypeId, avhVoucherRefno) [unique]
+  }
+}
+
+Table acc_vouchers {
+  avId String [pk]
+  avVoucherId String [not null]
+  avAccYear String [not null]
+  avCompanyId String [not null]
+  avBranchId String [not null]
+  avVoucherTypeId Int [not null]
+  avVoucherNo BigInt [not null]
+  avRowNo Int [not null]
+  avVoucherDate DateTime [not null]
+  avVoucherRefno String
+  avBillDate DateTime
+  avBillRefno String
+  avDrCr DrCrType [not null]
+  avLedgerId String [not null]
+  avOppLedgerId String [not null]
+  avAmount Decimal [not null, default: 0]
+  avRemarks String
+  avSessionId String
+  avUserId String [not null]
+  avIsActive Boolean [not null, default: true]
+  avIsDeleted Boolean [not null, default: false]
+  avSyncDate DateTime
+  avCreatedOn DateTime [default: `now()`, not null]
+  avCreatedBy String
+  avUpdatedOn DateTime
+  avUpdatedBy String
+  voucherHeader acc_voucher_header [not null]
+  voucherType acc_voucher_types [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  ledger acc_ledger_master [not null]
+  oppositeLedger acc_ledger_master [not null]
+  user users [not null]
+}
+
+Table acc_voucher_tenders {
+  vtdId String [pk]
+  vtdVoucherId String [not null]
+  vtdVoucherLineId String
+  vtdRowNo Int [not null]
+  vtdAccYear String [not null]
+  vtdCompanyId String [not null]
+  vtdBranchId String [not null]
+  vtdVoucherTypeId Int [not null]
+  vtdVoucherNo BigInt [not null]
+  vtdVoucherDate DateTime [not null]
+  vtdVoucherRefno String [not null]
+  vtdVoucherLedgerId String [not null]
+  vtdSessionId String
+  vtdUserId String [not null]
+  vtdCounterId String
+  vtdTraType TenderTraType [not null]
+  vtdTenderTypeId BigInt [not null]
+  vtdTenderId String [not null]
+  vtdTenderLedgerId String [not null]
+  vtdTenderAmount Decimal [not null, default: 0]
+  vtdSurchargePercent Decimal [not null, default: 0]
+  vtdSurchargeAmount Decimal [not null, default: 0]
+  vtdTotalAmount Decimal [not null, default: 0]
+  vtdRefundAmount Decimal [not null, default: 0]
+  vtdIsChangeReturn Boolean [not null, default: false]
+  vtdCardBank String
+  vtdCardNoMasked String
+  vtdCardExpiry DateTime
+  vtdCardRefNo String
+  vtdAuthCode String
+  vtdRrnNo String
+  vtdUpiId String
+  vtdTerminalId String
+  vtdChqBank String
+  vtdChqNo String
+  vtdChqDate DateTime
+  vtdChqPayeeName String
+  vtdChqPrintStatus String
+  vtdChqAccountPayee Boolean [not null, default: false]
+  vtdIsApproved Boolean [not null, default: false]
+  vtdApprovedOn DateTime
+  vtdApprovedBy String
+  vtdNotes String
+  vtdIsActive Boolean [not null, default: true]
+  vtdIsDeleted Boolean [not null, default: false]
+  vtdSyncDate DateTime
+  vtdCreatedOn DateTime [default: `now()`, not null]
+  vtdCreatedBy String
+  vtdUpdatedOn DateTime
+  vtdUpdatedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  tenderType tender_type [not null]
+  tender account_tender_master [not null]
+  tenderLedger acc_ledger_master [not null]
+  voucherLedger acc_ledger_master [not null]
+  voucherHeader acc_voucher_header [not null]
+  voucherType acc_voucher_types [not null]
+}
+
+Table acc_voucher_types {
+  vchrTypeId Int [pk, increment]
+  vchrTypeCode String [unique, not null]
+  vchrTypeName String [unique, not null]
+  vchrTypeShort String
+  vchrCategory VoucherCategory [not null, default: 'ACCOUNTING']
+  vchrNature VoucherNature [not null]
+  vchrNumberingMode VoucherNumberingMode [not null, default: 'AUTO']
+  vchrNoPrefix String
+  vchrNoSuffix String
+  vchrNoWidth Int [not null, default: 5]
+  vchrResetFreq VoucherResetFreq [not null, default: 'YEARLY']
+  vchrAllowManualNo Boolean [not null, default: false]
+  vchrAffectsAccounts Boolean [not null, default: true]
+  vchrAffectsInventory Boolean [not null, default: false]
+  vchrIsCashVoucher Boolean [not null, default: false]
+  vchrIsBankVoucher Boolean [not null, default: false]
+  vchrPrintTitle String
+  vchrSortOrder Int [not null, default: 0]
+  vchrIsActive Boolean [not null, default: true]
+  vchrTallyExportEnabled Boolean [not null, default: true]
+  vchrTallyVoucherTypeName String
+  vchrTallyBaseVoucherType String
+  vchrSyncDate DateTime
+  vchrCreatedOn DateTime [default: `now()`, not null]
+  vchrCreatedBy String
+  vchrUpdatedOn DateTime
+  vchrUpdatedBy String
+  voucherBills acc_voucher_bills [not null]
+  voucherCheques acc_voucher_cheques [not null]
+  voucherDocRegisters acc_voucher_doc_register [not null]
+  voucherHeaders acc_voucher_header [not null]
+  vouchers acc_vouchers [not null]
+  voucherTenders acc_voucher_tenders [not null]
 }
 
 Table employee_departments {
@@ -624,6 +1175,260 @@ Table ui_table_columns {
   uiTblClmModifiedOn DateTime [default: `now()`, not null]
   uiTblClmModifiedBy String
   uiTable ui_tables
+}
+
+Table item_batch_master {
+  btmId String [pk]
+  btmCompanyId String [not null]
+  btmItemId String [not null]
+  btmBaseUnitId String [not null]
+  btmBatchNo String [not null]
+  btmMfgBatchNo String
+  btmBatchDate DateTime
+  btmMfgDate DateTime
+  btmExpiryDate DateTime
+  btmMrp Decimal [not null, default: 0]
+  btmLastPurchaseRateWot Decimal [not null, default: 0]
+  btmLastSaleRateWot Decimal [not null, default: 0]
+  btmBarcode String
+  btmStatus ItemBatchStatus [not null, default: 'ACTIVE']
+  btmClosedOn DateTime
+  btmClosedReason String
+  btmNotes String
+  btmRowVersion BigInt [not null, default: 1]
+  btmCreatedOn DateTime [default: `now()`, not null]
+  btmCreatedBy String
+  btmUpdatedOn DateTime
+  btmUpdatedBy String
+  batchStocks item_batch_stock [not null]
+}
+
+Table item_batch_stock {
+  ibsId String [pk]
+  ibsAccYear String [not null]
+  ibsCompanyId String [not null]
+  ibsBranchId String [not null]
+  ibsGodownId String [not null]
+  ibsItemId String [not null]
+  ibsUnitId String [not null]
+  ibsBatchId String [not null]
+  ibsBatchNo String
+  ibsSerialNo String
+  ibsMfgDate DateTime
+  ibsExpiryDate DateTime
+  ibsMrp Decimal [not null, default: 0]
+  ibsStockBucket ItemStockBucket [not null, default: 'SALEABLE']
+  ibsOpeningQty Decimal [not null, default: 0]
+  ibsInQty Decimal [not null, default: 0]
+  ibsOutQty Decimal [not null, default: 0]
+  ibsClosingQty Decimal [not null, default: 0]
+  ibsOpeningFreeQty Decimal [not null, default: 0]
+  ibsFreeInQty Decimal [not null, default: 0]
+  ibsFreeOutQty Decimal [not null, default: 0]
+  ibsFreeClosingQty Decimal [not null, default: 0]
+  ibsReservedQty Decimal [not null, default: 0]
+  ibsAvailableQty Decimal [not null, default: 0]
+  ibsOpeningAvgRate Decimal [not null, default: 0]
+  ibsAvgStockRate Decimal [not null, default: 0]
+  ibsOpeningValue Decimal [not null, default: 0]
+  ibsStockValue Decimal [not null, default: 0]
+  ibsLastInDate DateTime
+  ibsLastOutDate DateTime
+  ibsIsActive Boolean [not null, default: true]
+  ibsIsDeleted Boolean [not null, default: true]
+  ibsRowVersion BigInt [not null, default: 1]
+  ibsCreatedOn DateTime [default: `now()`, not null]
+  ibsCreatedBy String
+  ibsUpdatedOn DateTime
+  ibsUpdatedBy String
+  batch item_batch_master [not null]
+
+  indexes {
+    (ibsAccYear, ibsCompanyId, ibsBranchId, ibsGodownId, ibsItemId, ibsBatchId, ibsStockBucket) [unique]
+  }
+}
+
+Table item_stock_balance {
+  isbId String [pk]
+  isbAccYear String [not null]
+  isbCompanyId String [not null]
+  isbBranchId String [not null]
+  isbGodownId String [not null]
+  isbItemId String [not null]
+  isbUnitId String [not null]
+  isbTrackingType ItemStockBalanceTrackingType [not null, default: 'NONE']
+  isbStockBucket ItemStockBucket [not null, default: 'SALEABLE']
+  isbOpeningQty Decimal [not null, default: 0]
+  isbInQty Decimal [not null, default: 0]
+  isbOutQty Decimal [not null, default: 0]
+  isbClosingQty Decimal [not null, default: 0]
+  isbOpeningFreeQty Decimal [not null, default: 0]
+  isbFreeInQty Decimal [not null, default: 0]
+  isbFreeOutQty Decimal [not null, default: 0]
+  isbFreeClosingQty Decimal [not null, default: 0]
+  isbReservedQty Decimal [not null, default: 0]
+  isbTransitQty Decimal [not null, default: 0]
+  isbAvailableQty Decimal [not null, default: 0]
+  isbOpeningAvgRate Decimal [not null, default: 0]
+  isbAvgStockRate Decimal [not null, default: 0]
+  isbOpeningValue Decimal [not null, default: 0]
+  isbStockValue Decimal [not null, default: 0]
+  isbLastInDate DateTime
+  isbLastOutDate DateTime
+  isbSyncDate DateTime
+  isbCreatedOn DateTime [default: `now()`, not null]
+  isbCreatedBy String
+  isbUpdatedOn DateTime
+  isbUpdatedBy String
+
+  indexes {
+    (isbAccYear, isbCompanyId, isbBranchId, isbGodownId, isbItemId, isbUnitId, isbStockBucket) [unique]
+  }
+}
+
+Table item_stock_ledger {
+  stlId String [pk]
+  stlAccYear String [not null]
+  stlCompanyId String [not null]
+  stlBranchId String [not null]
+  stlGodownId String [not null]
+  stlVoucherId String [not null]
+  stlVoucherDate DateTime [not null]
+  stlLineNo Int [not null, default: 1]
+  stlSplitNo Int [not null, default: 1]
+  stlVoucherTypeId Int [not null]
+  stlTxnType StockTxnType [not null]
+  stlStockEffect Int [not null]
+  stlDocDate DateTime [not null]
+  stlPostedOn DateTime [default: `now()`, not null]
+  stlDocRefNo String
+  stlItemId String [not null]
+  stlTrackingType StockTrackingType [not null, default: 'NONE']
+  stlUomId String [not null]
+  stlBaseUomId String [not null]
+  stlConversionFactor Decimal [not null, default: 1]
+  stlBatchId String
+  stlBatchNo String
+  stlMfgDate DateTime
+  stlExpiryDate DateTime
+  stlQty Decimal [not null, default: 0]
+  stlBaseQty Decimal [not null, default: 0]
+  stlFreeQty Decimal [not null, default: 0]
+  stlFreeBaseQty Decimal [not null, default: 0]
+  stlStockRate Decimal [not null, default: 0]
+  stlStockValue Decimal [not null, default: 0]
+  stlLandedCostRate Decimal [not null, default: 0]
+  stlLandedCostValue Decimal [not null, default: 0]
+  stlDocRateWot Decimal [not null, default: 0]
+  stlDocAmountWot Decimal [not null, default: 0]
+  stlNarration String
+  stlIsActive Boolean [not null, default: true]
+  stlIsDeleted Boolean [not null, default: false]
+  stlSyncedOn DateTime
+  stlCreatedOn DateTime [default: `now()`, not null]
+  stlCreatedBy String
+}
+
+Table opening_stock_detail {
+  oslId String [pk]
+  oslVoucherId String [not null]
+  oslOpeningId String [not null]
+  oslLineNo Int [not null]
+  oslAccYear String [not null]
+  oslCompanyId String [not null]
+  oslBranchId String [not null]
+  oslItemId String [not null]
+  oslUnitId String [not null]
+  oslBaseUomId String
+  oslGodownId String [not null]
+  oslTrackingType OpeningStockDetailTrackingType [not null, default: 'NONE']
+  oslBatchId String
+  oslBarcode String
+  oslBatchNo String
+  oslMfgBatchNo String
+  oslBatchDate DateTime
+  oslMfgDate DateTime
+  oslExpiryDate DateTime
+  oslSerialNo String
+  oslQty Decimal [not null, default: 0]
+  oslBaseQty Decimal [not null, default: 0]
+  oslFreeQty Decimal [not null, default: 0]
+  oslConvFactor Decimal [not null, default: 1]
+  oslTaxId String
+  oslTaxPerc Decimal [not null, default: 0]
+  oslCessType OpeningStockDetailCessType [not null, default: 'NONE']
+  oslCessPerc Decimal [not null, default: 0]
+  oslCessPerUnit Decimal [not null, default: 0]
+  oslCostRate Decimal [not null, default: 0]
+  oslCostRateWot Decimal [not null, default: 0]
+  oslStockValue Decimal [not null, default: 0]
+  oslStockValueWot Decimal [not null, default: 0]
+  oslMrpRate Decimal [not null, default: 0]
+  oslMinRate Decimal [not null, default: 0]
+  oslSaleRateA Decimal [not null, default: 0]
+  oslSaleRateB Decimal [not null, default: 0]
+  oslSaleRateC Decimal [not null, default: 0]
+  oslSaleRateD Decimal [not null, default: 0]
+  oslSaleRateAWot Decimal [not null, default: 0]
+  oslSaleRateBWot Decimal [not null, default: 0]
+  oslSaleRateCWot Decimal [not null, default: 0]
+  oslSaleRateDWot Decimal [not null, default: 0]
+  oslMarkupPercA Decimal [not null, default: 0]
+  oslMarkupPercB Decimal [not null, default: 0]
+  oslMarkupPercC Decimal [not null, default: 0]
+  oslMarkupPercD Decimal [not null, default: 0]
+  oslRemarks String
+  oslIsActive Boolean [not null, default: true]
+  oslIsDeleted Boolean [not null, default: false]
+  oslSyncDate DateTime
+  oslCreatedOn DateTime [default: `now()`, not null]
+  oslCreatedBy String
+  oslUpdatedOn DateTime
+  oslUpdatedBy String
+  voucherHeader acc_voucher_header [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  openingHeader opening_stock_header [not null]
+
+  indexes {
+    (oslCompanyId, oslBranchId, oslAccYear, oslVoucherId, oslLineNo) [unique]
+  }
+}
+
+Table opening_stock_header {
+  oshId String [pk]
+  oshVoucherId String [not null]
+  oshAccYear String [not null]
+  oshCompanyId String [not null]
+  oshBranchId String [not null]
+  oshVoucherNo BigInt [not null]
+  oshVoucherDate DateTime [not null]
+  oshRefNo String
+  oshNarration String
+  oshTotalLines Int [not null, default: 0]
+  oshTotalQty Decimal [not null, default: 0]
+  oshTotalValue Decimal [not null, default: 0]
+  oshStatus OpeningStockStatus [not null, default: 'DRAFT']
+  oshUserId String [not null]
+  oshSessionId String
+  oshDeviceType OpeningStockDeviceType [not null]
+  oshDeviceId String
+  oshCounterId String
+  oshIsActive Boolean [not null, default: true]
+  oshIsDeleted Boolean [not null, default: false]
+  oshSyncDate DateTime
+  oshCreatedOn DateTime [default: `now()`, not null]
+  oshCreatedBy String
+  oshUpdatedOn DateTime
+  oshUpdatedBy String
+  voucherHeader acc_voucher_header [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  details opening_stock_detail [not null]
+
+  indexes {
+    (oshAccYear, oshCompanyId, oshBranchId, oshVoucherId) [unique]
+  }
 }
 
 Table category_master {
@@ -1113,6 +1918,15 @@ Table branch_master {
   brModifiedBy String
   company companys [not null]
   accountLedgerMaster acc_ledger_master [not null]
+  voucherBills acc_voucher_bills [not null]
+  voucherCheques acc_voucher_cheques [not null]
+  voucherDocDetails acc_voucher_doc_detail [not null]
+  voucherDocRegisters acc_voucher_doc_register [not null]
+  voucherHeaders acc_voucher_header [not null]
+  vouchers acc_vouchers [not null]
+  voucherTenders acc_voucher_tenders [not null]
+  openingStockHeaders opening_stock_header [not null]
+  openingStockDetails opening_stock_detail [not null]
 }
 
 Table companys {
@@ -1192,6 +2006,15 @@ Table companys {
   ErpDeviceMaster erp_device_master [not null]
   UserLoginSession user_login_sessions [not null]
   customers customers [not null]
+  voucherBills acc_voucher_bills [not null]
+  voucherCheques acc_voucher_cheques [not null]
+  voucherDocDetails acc_voucher_doc_detail [not null]
+  voucherDocRegisters acc_voucher_doc_register [not null]
+  voucherHeaders acc_voucher_header [not null]
+  vouchers acc_vouchers [not null]
+  voucherTenders acc_voucher_tenders [not null]
+  openingStockHeaders opening_stock_header [not null]
+  openingStockDetails opening_stock_detail [not null]
 }
 
 Table company_group_master {
@@ -1447,6 +2270,269 @@ Enum LedObType {
   CR
 }
 
+Enum VoucherBillRefType {
+  NEW_REF
+  AGAINST_REF
+  ON_ACCOUNT
+  ADVANCE
+  AGAINST_ADVANCE
+}
+
+Enum VoucherBillDrCr {
+  DR
+  CR
+}
+
+Enum VoucherBillTraType {
+  R
+  P
+}
+
+Enum ChequeTraType {
+  R
+  P
+}
+
+Enum ChequeInstrumentType {
+  CHEQUE
+  PDC
+}
+
+Enum ChequeStatus {
+  PENDING
+  IN_HAND
+  ISSUED
+  DEPOSITED
+  CLEARED
+  BOUNCED
+  RETURNED
+  CANCELLED
+}
+
+Enum GdlApiName {
+  EINVOICE
+  EWAYBILL
+  GST
+  OTHER
+}
+
+Enum GdlActionName {
+  GENERATE
+  CANCEL
+  GET_DETAILS
+  UPDATE_VEHICLE
+  EXTEND_VALIDITY
+  PRINT
+  SYNC
+  OTHER
+}
+
+Enum GdlStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
+
+Enum VoucherDocDetailTaxability {
+  TAXABLE
+  EXEMPT
+  NIL_RATED
+  NON_GST
+  MIXED
+}
+
+Enum VoucherDocDetailSupplyNature {
+  INTRA_STATE
+  INTER_STATE
+}
+
+Enum GdeStatus {
+  NA
+  PENDING
+  GENERATED
+  FAILED
+  CANCELED
+}
+
+Enum GdwStatus {
+  NA
+  PENDING
+  GENERATED
+  FAILED
+  CANCELED
+  EXPIRED
+}
+
+Enum GdwTransportMode {
+  ROAD
+  RAIL
+  AIR
+  SHIP
+  OTHER
+}
+
+Enum GdwVehicleType {
+  REGULAR
+  ODC
+  OTHER
+}
+
+Enum GdrSourceModule {
+  SALES
+  PURCHASE
+  INVENTORY
+  ACCOUNTS
+  SERVICE
+  JOBWORK
+  POS
+  OTHER
+}
+
+Enum GdrTranNature {
+  SALE
+  SALES_RETURN
+  PURCHASE
+  PURCHASE_RETURN
+  STOCK_TRANSFER
+  DELIVERY_CHALLAN
+  JOBWORK_SEND
+  JOBWORK_RECEIVE
+  DEBIT_NOTE
+  CREDIT_NOTE
+  EXPORT
+  IMPORT
+  ADVANCE
+  ADV_ADJUSTMENT
+  ADJUSTMENT
+  OTHER
+}
+
+Enum GdrDocFlow {
+  OUTWARD
+  INWARD
+  INTERNAL
+}
+
+Enum GdrDocType {
+  INVOICE
+  CREDIT_NOTE
+  DEBIT_NOTE
+  BILL_OF_SUPPLY
+  DELIVERY_CHALLAN
+  CHALLAN
+  ADVANCE
+  ADV_ADJUSTMENT
+  EXPORT_DOC
+  IMPORT_DOC
+  OTHER
+}
+
+Enum GdrDocStatus {
+  DRAFT
+  POSTED
+  CANCELED
+  ARCHIVED
+}
+
+Enum GdrSupplyClass {
+  GOODS
+  SERVICES
+  MIXED
+}
+
+Enum GdrTaxability {
+  TAXABLE
+  EXEMPT
+  NIL_RATED
+  NON_GST
+  MIXED
+}
+
+Enum GdrSupplyNature {
+  INTRA_STATE
+  INTER_STATE
+  IMPORT
+  EXPORT
+  SEZ
+  OTHER
+}
+
+Enum GdrPartyType {
+  CUSTOMER
+  VENDOR
+  BRANCH
+  JOBWORKER
+  TRANSPORTER
+  OTHER
+}
+
+Enum VoucherStatus {
+  DRAFT
+  APPROVED
+  POSTED
+  CANCELLED
+}
+
+Enum DeviceType {
+  PC
+  WEB
+  MOBILE
+}
+
+Enum TallyExportStatus {
+  PENDING
+  EXPORTED
+  FAILED
+}
+
+Enum MessageSendStatus {
+  NA
+  PENDING
+  SENT
+  FAILED
+}
+
+Enum DrCrType {
+  DR
+  CR
+}
+
+Enum TenderTraType {
+  R
+  P
+}
+
+Enum VoucherCategory {
+  ACCOUNTING
+  INVENTORY
+  BOTH
+}
+
+Enum VoucherNature {
+  SALES
+  PURCHASE
+  RECEIPT
+  PAYMENT
+  JOURNAL
+  CONTRA
+  DEBIT_NOTE
+  CREDIT_NOTE
+  STOCK_JOURNAL
+}
+
+Enum VoucherNumberingMode {
+  AUTO
+  MANUAL
+  AUTO_MANUAL
+}
+
+Enum VoucherResetFreq {
+  NEVER
+  DAILY
+  MONTHLY
+  YEARLY
+}
+
 Enum AuditLogAction {
   insert
   update
@@ -1459,6 +2545,73 @@ Enum AuditScreenType {
   transaction
   settings
   other
+}
+
+Enum ItemBatchStatus {
+  ACTIVE
+  CLOSED
+  BLOCKED
+}
+
+Enum ItemStockBalanceTrackingType {
+  NONE
+  BATCH
+  LOT
+}
+
+Enum ItemStockBucket {
+  SALEABLE
+  DAMAGED
+  EXPIRED
+  HOLD
+  RETURN
+}
+
+Enum StockTrackingType {
+  NONE
+  BATCH
+  LOT
+}
+
+Enum StockTxnType {
+  OPENING
+  PURCHASE
+  PURCHASE_RETURN
+  SALE
+  SALES_RETURN
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  PRODUCTION_IN
+  CONSUMPTION
+  DAMAGE
+  EXPIRED
+}
+
+Enum OpeningStockDetailTrackingType {
+  NONE
+  BATCH
+  LOT
+}
+
+Enum OpeningStockDetailCessType {
+  NONE
+  PERCENT
+  PER_UNIT
+}
+
+Enum OpeningStockStatus {
+  DRAFT
+  APPROVED
+  POSTED
+  CANCELLED
+}
+
+Enum OpeningStockDeviceType {
+  PC
+  MOBILE
+  WEB
 }
 
 Ref: account_groups.accGroupParentId - account_groups.accGroupId
@@ -1474,6 +2627,90 @@ Ref: acc_ledger_master.ledBranchId > branch_master.brId [delete: Restrict]
 Ref: account_tender_master.acctndTypeId > tender_type.accttTypeId
 
 Ref: account_tender_master.acctndLedgerId > acc_ledger_master.ledId
+
+Ref: acc_voucher_bills.avbdVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: acc_voucher_bills.avbdVoucherTypeId > acc_voucher_types.vchrTypeId
+
+Ref: acc_voucher_bills.avbdCompanyId > companys.compId
+
+Ref: acc_voucher_bills.avbdBranchId > branch_master.brId
+
+Ref: acc_voucher_bills.avbdPartyId > acc_ledger_master.ledId
+
+Ref: acc_voucher_bills.avbdAgainstVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: acc_voucher_cheques.chqVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: acc_voucher_cheques.chqVoucherTypeId > acc_voucher_types.vchrTypeId
+
+Ref: acc_voucher_cheques.chqCompanyId > companys.compId
+
+Ref: acc_voucher_cheques.chqBranchId > branch_master.brId
+
+Ref: acc_voucher_doc_api_log.gdlGdrId > acc_voucher_doc_register.gdrId [delete: Cascade]
+
+Ref: acc_voucher_doc_detail.vtxCompanyId > companys.compId
+
+Ref: acc_voucher_doc_detail.vtxBranchId > branch_master.brId
+
+Ref: acc_voucher_doc_detail.vtxGdrId > acc_voucher_doc_register.gdrId [delete: Cascade]
+
+Ref: acc_voucher_doc_detail.vtxVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: acc_voucher_doc_einvoice.gdeGdrId - acc_voucher_doc_register.gdrId [delete: Cascade]
+
+Ref: acc_voucher_doc_ewaybill.gdwGdrId - acc_voucher_doc_register.gdrId [delete: Cascade]
+
+Ref: acc_voucher_doc_register.gdrCompanyId > companys.compId
+
+Ref: acc_voucher_doc_register.gdrBranchId > branch_master.brId
+
+Ref: acc_voucher_doc_register.gdrPartyId > acc_ledger_master.ledId
+
+Ref: acc_voucher_doc_register.gdrVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: acc_voucher_doc_register.gdrVoucherTypeId > acc_voucher_types.vchrTypeId
+
+Ref: acc_voucher_header.avhVoucherTypeId > acc_voucher_types.vchrTypeId
+
+Ref: acc_voucher_header.avhCompanyId > companys.compId
+
+Ref: acc_voucher_header.avhBranchId > branch_master.brId
+
+Ref: acc_voucher_header.avhPartyId > acc_ledger_master.ledId
+
+Ref: acc_voucher_header.avhUserId > users.user_id
+
+Ref: acc_vouchers.avVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: acc_vouchers.avVoucherTypeId > acc_voucher_types.vchrTypeId
+
+Ref: acc_vouchers.avCompanyId > companys.compId
+
+Ref: acc_vouchers.avBranchId > branch_master.brId
+
+Ref: acc_vouchers.avLedgerId > acc_ledger_master.ledId
+
+Ref: acc_vouchers.avOppLedgerId > acc_ledger_master.ledId
+
+Ref: acc_vouchers.avUserId > users.user_id
+
+Ref: acc_voucher_tenders.vtdCompanyId > companys.compId
+
+Ref: acc_voucher_tenders.vtdBranchId > branch_master.brId
+
+Ref: acc_voucher_tenders.vtdTenderTypeId > tender_type.accttTypeId
+
+Ref: acc_voucher_tenders.vtdTenderId > account_tender_master.acctndId
+
+Ref: acc_voucher_tenders.vtdTenderLedgerId > acc_ledger_master.ledId
+
+Ref: acc_voucher_tenders.vtdVoucherLedgerId > acc_ledger_master.ledId
+
+Ref: acc_voucher_tenders.vtdVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: acc_voucher_tenders.vtdVoucherTypeId > acc_voucher_types.vchrTypeId
 
 Ref: emp_master.empCompanyId > companys.compId [delete: Restrict]
 
@@ -1504,6 +2741,22 @@ Ref: gsp_company_service.csgCompanyId > companys.compId [delete: Restrict]
 Ref: menu_master.menuParentId - menu_master.menuId [delete: Set Null]
 
 Ref: ui_table_columns.uiTblClmTableId > ui_tables.uiTblId
+
+Ref: item_batch_stock.ibsBatchId > item_batch_master.btmId
+
+Ref: opening_stock_detail.oslVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: opening_stock_detail.oslCompanyId > companys.compId
+
+Ref: opening_stock_detail.oslBranchId > branch_master.brId
+
+Ref: opening_stock_detail.oslOpeningId > opening_stock_header.oshId
+
+Ref: opening_stock_header.oshVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: opening_stock_header.oshCompanyId > companys.compId
+
+Ref: opening_stock_header.oshBranchId > branch_master.brId
 
 Ref: category_master.categoryParentId - category_master.categoryId [delete: Restrict]
 

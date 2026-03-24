@@ -85,7 +85,16 @@ model Company {
   itemMaster            ItemMaster[]
   ErpDeviceMaster       ErpDeviceMaster[]
   UserLoginSession      UserLoginSession[]
-  customers              Customer[]
+  customers             Customer[]
+  voucherBills          AccVoucherBill[]
+  voucherCheques        AccVoucherCheque[]
+  voucherDocDetails     AccVoucherDocDetail[]
+  voucherDocRegisters   AccVoucherDocRegister[]
+  voucherHeaders        AccVoucherHeader[]
+  vouchers              AccVoucher[]
+  voucherTenders        AccVoucherTender[]
+  openingStockHeaders   OpeningStockHeader[]
+  openingStockDetails   OpeningStockDetail[]
   @@map("companys")
   @@schema("public")
 }

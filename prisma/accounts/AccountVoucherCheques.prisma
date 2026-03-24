@@ -1,0 +1,109 @@
+enum ChequeTraType {
+  R
+  P
+  @@schema("accounts")
+}
+
+enum ChequeInstrumentType {
+  CHEQUE
+  PDC
+  @@schema("accounts")
+}
+
+enum ChequeStatus {
+  PENDING
+  IN_HAND
+  ISSUED
+  DEPOSITED
+  CLEARED
+  BOUNCED
+  RETURNED
+  CANCELLED
+  @@schema("accounts")
+}
+
+model AccVoucherCheque {
+  // Primary
+  chqId                String                @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("chq_id")
+
+  // Links
+  chqVoucherId         String                @db.Uuid @map("chq_voucher_id")
+  chqVoucherLineId     String?               @db.Uuid @map("chq_voucher_line_id")
+  chqBillId            String?               @db.Uuid @map("chq_bill_id")
+
+  // Multi-branch snapshot
+  chqAccYear           String                @db.VarChar(9) @map("chq_acc_year")
+  chqCompanyId         String                @db.Uuid @map("chq_company_id")
+  chqBranchId          String                @db.Uuid @map("chq_branch_id")
+
+  // Voucher snapshot
+  chqVoucherTypeId     Int                   @map("chq_voucher_type_id")
+  chqVoucherNo         BigInt                @map("chq_voucher_no")
+  chqVoucherDate       DateTime              @db.Date @map("chq_voucher_date")
+  chqVoucherRefno      String?               @db.VarChar(50) @map("chq_voucher_refno")
+
+  // Party / ownership
+  chqPartyId           String                @db.Uuid @map("chq_party_id")
+  chqSalesmanId        String?               @db.Uuid @map("chq_salesman_id")
+  chqUserId            String?               @db.Uuid @map("chq_user_id")
+  chqSessionId         String?               @db.Uuid @map("chq_session_id")
+
+  // Instrument classification
+  chqTraType           ChequeTraType         @map("chq_tra_type")
+  chqInstrumentType    ChequeInstrumentType  @default(CHEQUE) @map("chq_instrument_type")
+  chqIsPostDated       Boolean               @default(false) @map("chq_is_post_dated")
+  chqIsAccountPayee    Boolean               @default(false) @map("chq_is_account_payee")
+
+  // Cheque details
+  chqChequeNo          String                @db.VarChar(30) @map("chq_cheque_no")
+  chqChequeDate        DateTime              @db.Date @map("chq_cheque_date")
+  chqChequeAmount      Decimal               @default(0) @db.Decimal(15, 2) @map("chq_cheque_amount")
+
+  // Bank / payee snapshot
+  chqBankLedgerId      String?               @db.Uuid @map("chq_bank_ledger_id")
+  chqBankName          String?               @db.VarChar(500) @map("chq_bank_name")
+  chqBankBranch        String?               @db.VarChar(150) @map("chq_bank_branch")
+  chqBankIfsc          String?               @db.VarChar(20) @map("chq_bank_ifsc")
+  chqPayeeName         String?               @db.VarChar(500) @map("chq_payee_name")
+  chqDrawerName        String?               @db.VarChar(500) @map("chq_drawer_name")
+
+  // Printing
+  chqIsPrinted         Boolean               @default(false) @map("chq_is_printed")
+  chqPrintedOn         DateTime?             @db.Timestamptz(6) @map("chq_printed_on")
+
+  // Lifecycle dates
+  chqReceivedOn        DateTime?             @db.Date @map("chq_received_on")
+  chqIssuedOn          DateTime?             @db.Date @map("chq_issued_on")
+  chqDepositDate       DateTime?             @db.Date @map("chq_deposit_date")
+  chqClearDate         DateTime?             @db.Date @map("chq_clear_date")
+  chqBounceDate        DateTime?             @db.Date @map("chq_bounce_date")
+  chqReturnDate        DateTime?             @db.Date @map("chq_return_date")
+  chqCancelledOn       DateTime?             @db.Date @map("chq_cancelled_on")
+
+  // Status
+  chqStatus            ChequeStatus          @map("chq_status")
+
+  // Notes
+  chqNotes             String?               @map("chq_notes")
+  chqLogText           String?               @map("chq_log_text")
+
+  // Common status
+  chqIsActive          Boolean               @default(true) @map("chq_is_active")
+  chqIsDeleted         Boolean               @default(false) @map("chq_is_deleted")
+
+  // Audit
+  chqSyncDate          DateTime?             @db.Timestamptz(6) @map("chq_sync_date")
+  chqCreatedOn         DateTime              @default(now()) @db.Timestamptz(6) @map("chq_created_on")
+  chqCreatedBy         String?               @db.Uuid @map("chq_created_by")
+  chqUpdatedOn         DateTime?             @db.Timestamptz(6) @map("chq_updated_on")
+  chqUpdatedBy         String?               @db.Uuid @map("chq_updated_by")
+
+  // Relations
+  voucherHeader        AccVoucherHeader      @relation(fields: [chqVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_cheques_voucher_header")
+  voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
+  company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
+  branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
+
+  @@map("acc_voucher_cheques")
+  @@schema("accounts")
+}

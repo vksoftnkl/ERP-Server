@@ -1,0 +1,94 @@
+enum StockTrackingType {
+  NONE
+  BATCH
+  LOT
+  @@schema("inventory")
+}
+
+enum StockTxnType {
+  OPENING
+  PURCHASE
+  PURCHASE_RETURN
+  SALE
+  SALES_RETURN
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  PRODUCTION_IN
+  CONSUMPTION
+  DAMAGE
+  EXPIRED
+  @@schema("inventory")
+}
+
+model ItemStockLedger {
+  stlId                String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("stl_id")
+
+  // Multi-branch snapshot
+  stlAccYear           String            @db.VarChar(9) @map("stl_acc_year")
+  stlCompanyId         String            @db.Uuid @map("stl_company_id")
+  stlBranchId          String            @db.Uuid @map("stl_branch_id")
+  stlGodownId          String            @db.Uuid @map("stl_godown_id")
+
+  // Source voucher link
+  stlVoucherId         String            @db.Uuid @map("stl_voucher_id")
+  stlVoucherDate       DateTime          @db.Timestamptz(6) @map("stl_voucher_date")
+  stlLineNo            Int               @default(1) @map("stl_line_no")
+  stlSplitNo           Int               @default(1) @map("stl_split_no")
+  stlVoucherTypeId     Int               @map("stl_voucher_type_id")
+
+  // Posting / classification
+  stlTxnType           StockTxnType      @map("stl_txn_type")
+  stlStockEffect       Int               @db.SmallInt @map("stl_stock_effect")
+  stlDocDate           DateTime          @db.Date @map("stl_doc_date")
+  stlPostedOn          DateTime          @default(now()) @db.Timestamptz(6) @map("stl_posted_on")
+  stlDocRefNo          String?           @db.VarChar(50) @map("stl_doc_ref_no")
+
+  // Item snapshot
+  stlItemId            String            @db.Uuid @map("stl_item_id")
+  stlTrackingType      StockTrackingType @default(NONE) @map("stl_tracking_type")
+
+  // UOM snapshot
+  stlUomId             String            @db.Uuid @map("stl_uom_id")
+  stlBaseUomId         String            @db.Uuid @map("stl_base_uom_id")
+  stlConversionFactor  Decimal           @default(1) @db.Decimal(18, 6) @map("stl_conversion_factor")
+
+  // Batch snapshot
+  stlBatchId           String?           @db.Uuid @map("stl_batch_id")
+  stlBatchNo           String?           @db.VarChar(100) @map("stl_batch_no")
+  stlMfgDate           DateTime?         @db.Date @map("stl_mfg_date")
+  stlExpiryDate        DateTime?         @db.Date @map("stl_expiry_date")
+
+  // Entered quantity
+  stlQty               Decimal           @default(0) @db.Decimal(18, 6) @map("stl_qty")
+  stlBaseQty           Decimal           @default(0) @db.Decimal(18, 6) @map("stl_base_qty")
+  stlFreeQty           Decimal           @default(0) @db.Decimal(18, 6) @map("stl_free_qty")
+  stlFreeBaseQty       Decimal           @default(0) @db.Decimal(18, 6) @map("stl_free_base_qty")
+
+  // Inventory valuation
+  stlStockRate         Decimal           @default(0) @db.Decimal(18, 6) @map("stl_stock_rate")
+  stlStockValue        Decimal           @default(0) @db.Decimal(18, 2) @map("stl_stock_value")
+  stlLandedCostRate    Decimal           @default(0) @db.Decimal(18, 6) @map("stl_landed_cost_rate")
+  stlLandedCostValue   Decimal           @default(0) @db.Decimal(18, 2) @map("stl_landed_cost_value")
+
+  // Commercial snapshot
+  stlDocRateWot        Decimal           @default(0) @db.Decimal(18, 6) @map("stl_doc_rate_wot")
+  stlDocAmountWot      Decimal           @default(0) @db.Decimal(18, 2) @map("stl_doc_amount_wot")
+
+  // Remarks
+  stlNarration         String?           @map("stl_narration")
+
+  // Sync / audit
+  stlIsActive          Boolean           @default(true) @map("stl_is_active")
+  stlIsDeleted         Boolean           @default(false) @map("stl_is_deleted")
+  stlSyncedOn          DateTime?         @db.Timestamptz(6) @map("stl_synced_on")
+  stlCreatedOn         DateTime          @default(now()) @db.Timestamptz(6) @map("stl_created_on")
+  stlCreatedBy         String?           @db.Uuid @map("stl_created_by")
+
+  @@index([stlAccYear, stlCompanyId, stlBranchId, stlItemId], map: "idx_stl_item")
+  @@index([stlAccYear, stlCompanyId, stlBranchId, stlVoucherId], map: "idx_stl_voucher")
+
+  @@map("item_stock_ledger")
+  @@schema("inventory")
+}

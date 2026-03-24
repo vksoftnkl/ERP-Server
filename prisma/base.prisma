@@ -26,6 +26,8 @@ model User {
   user_password  String    @db.Text
   created_at     DateTime  @default(now())
   updated_at     DateTime  @updatedAt
+  voucherHeaders AccVoucherHeader[]
+  vouchers       AccVoucher[]
   @@map("users")
   @@schema("public")
 }

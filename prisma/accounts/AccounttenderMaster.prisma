@@ -24,6 +24,7 @@ model AccountTenderMaster {
   // Relations
   tenderType  AccountTenderTypes @relation(fields: [acctndTypeId], references: [accttTypeId])
   ledger      AccLedgerMaster    @relation(fields: [acctndLedgerId], references: [ledId])
+  voucherTenders AccVoucherTender[]
 
   @@index([acctndTypeId],          name: "idx_tnd_master_type")
   @@index([acctndLedgerId],        name: "idx_tnd_master_ledger")
