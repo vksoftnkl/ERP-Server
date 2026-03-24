@@ -98,4 +98,7 @@ model AccVoucherBill {
 
   @@map("acc_voucher_bills")
   @@schema("accounts")
+  // Partial indexes idx_acc_voucher_bills_voucher, idx_acc_voucher_bills_party,
+  // idx_acc_voucher_bills_salesman, and idx_acc_voucher_bills_origin
+  // WHERE avbd_is_deleted = false are not expressible in Prisma schema.
 }

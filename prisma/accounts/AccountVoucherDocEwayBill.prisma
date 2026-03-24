@@ -70,4 +70,6 @@ model AccVoucherDocEwaybill {
   @@unique([gdwGdrId], map: "uq_gdw_gdr")
   @@map("acc_voucher_doc_ewaybill")
   @@schema("accounts")
+  // Partial unique index uq_acc_voucher_doc_ewaybill_no and partial index
+  // idx_gdw_status are not expressible in Prisma schema.
 }

@@ -65,6 +65,8 @@ model ItemBatchStock {
 
   @@index([ibsAccYear, ibsCompanyId, ibsBranchId, ibsItemId], map: "idx_ibs_item")
   @@index([ibsAccYear, ibsCompanyId, ibsBranchId, ibsGodownId, ibsBatchId], map: "idx_ibs_batch")
+  // Partial indexes `idx_ibs_expiry` and `idx_ibs_nonzero_stock` are maintained
+  // in SQL because Prisma schema cannot express filtered indexes.
 
   @@map("item_batch_stock")
   @@schema("inventory")

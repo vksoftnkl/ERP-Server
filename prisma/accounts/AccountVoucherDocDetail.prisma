@@ -89,4 +89,6 @@ model AccVoucherDocDetail {
 
   @@map("acc_voucher_doc_detail")
   @@schema("accounts")
+  // Partial index idx_acc_voucher_doc_detail_voucher
+  // WHERE vtx_is_deleted = false is not expressible in Prisma schema.
 }

@@ -38,7 +38,7 @@ model ItemQtywiseRate {
   iqrRemarks     String?  @db.VarChar(250) @map("iqr_remarks")
 
   // Relation
-  unitRate       ItemPriceMaster @relation(fields: [iqrUnitRateId], references: [ipmUnitRateId], onUpdate: Cascade, onDelete: Restrict)
+  unitRate       ItemPriceMaster @relation(fields: [iqrUnitRateId], references: [ipmId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_qtywise_rates")
   @@schema("inventory")

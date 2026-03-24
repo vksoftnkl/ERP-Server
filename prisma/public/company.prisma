@@ -83,6 +83,7 @@ model Company {
   shipAddrs             AccShipAddr[]
   custGroup             CustGroup[]
   itemMaster            ItemMaster[]
+  itemPrices            ItemPriceMaster[] @relation("CompanyItemPrices")
   ErpDeviceMaster       ErpDeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]

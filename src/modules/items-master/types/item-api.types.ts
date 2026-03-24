@@ -2,13 +2,11 @@ export interface ItemErrorDetail {
   field: string;
   message: string;
 }
-
 export interface ItemErrorResponse {
   success: false;
   message: string;
   errors: ItemErrorDetail[];
 }
-
 export interface ItemSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
@@ -16,7 +14,6 @@ export interface ItemSuccessResponse<T, TMeta = Record<string, unknown>, TStyles
   meta?: TMeta;
   styles?: TStyles;
 }
-
 export interface ItemPayload {
   item_id: string;
   item_company_id: string;
@@ -81,9 +78,7 @@ export interface ItemPayload {
   item_modified_on: string;
   item_modified_by: string | null;
 }
-
 export type ItemListItem = ItemPayload | Record<string, unknown>;
-
 export interface ItemListMeta {
   page: number;
   limit: number;

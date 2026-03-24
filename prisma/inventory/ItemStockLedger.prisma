@@ -86,8 +86,10 @@ model ItemStockLedger {
   stlCreatedOn         DateTime          @default(now()) @db.Timestamptz(6) @map("stl_created_on")
   stlCreatedBy         String?           @db.Uuid @map("stl_created_by")
 
-  @@index([stlAccYear, stlCompanyId, stlBranchId, stlItemId], map: "idx_stl_item")
-  @@index([stlAccYear, stlCompanyId, stlBranchId, stlVoucherId], map: "idx_stl_voucher")
+  @@unique([stlVoucherId, stlLineNo, stlSplitNo, stlGodownId, stlBatchId], map: "uq_stl_source_line_split")
+
+  // Partial indexes `idx_stl_item` and `idx_stl_voucher` are maintained in SQL
+  // with `WHERE stl_is_deleted = false`, which Prisma schema cannot express.
 
   @@map("item_stock_ledger")
   @@schema("inventory")

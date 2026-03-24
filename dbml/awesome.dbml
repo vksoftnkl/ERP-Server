@@ -1327,6 +1327,10 @@ Table item_stock_ledger {
   stlSyncedOn DateTime
   stlCreatedOn DateTime [default: `now()`, not null]
   stlCreatedBy String
+
+  indexes {
+    (stlVoucherId, stlLineNo, stlSplitNo, stlGodownId, stlBatchId) [unique]
+  }
 }
 
 Table opening_stock_detail {
@@ -1431,15 +1435,15 @@ Table opening_stock_header {
   }
 }
 
-Table category_master {
+Table item_category_master {
   categoryId String [pk]
   categoryName String [unique, not null]
   categoryAlias String
   categoryShort String
   categoryDescription String
   categoryParentId String
-  parent category_master
-  children category_master [not null]
+  parent item_category_master
+  children item_category_master [not null]
   items item_master [not null]
   categorySort Int
   categoryLevel Int
@@ -1480,6 +1484,7 @@ Table godown_locations {
   gdlRemarks String
   parent godown_locations
   children godown_locations [not null]
+  itemPrices item_price_master [not null]
 
   indexes {
     (gdlGodownId, gdlParentId, gdlName) [unique]
@@ -1547,7 +1552,7 @@ Table item_ean_codes {
   eanModifiedOn DateTime [default: `now()`, not null]
   eanModifiedBy String
   eanRemarks String
-  unit units [not null]
+  unit item_unit_master [not null]
 }
 
 Table item_group_master {
@@ -1642,22 +1647,30 @@ Table item_master {
   itemModifiedOn DateTime [default: `now()`, not null]
   itemModifiedBy String
   group item_group_master [not null]
-  category category_master
-  baseUnit units [not null]
+  category item_category_master
+  baseUnit item_unit_master [not null]
   defaultTax item_tax_master
   prices item_price_master [not null]
+  unitConversions item_unit_conversion [not null]
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
   company companys [not null]
 }
 
 Table item_price_master {
-  ipmUnitRateId String [pk]
+  ipmId String [pk]
+  ipmCompanyId String
+  ipmBranchId String
   ipmItemId String [not null]
   ipmUnitId String [not null]
-  ipmGodownId String
+  ipmGodownId String [not null]
+  ipmBaseUnitId String
+  ipmToBaseFactor Decimal [not null, default: 1]
   ipmUnitSlno Int [not null, default: 0]
-  ipmConversionFactor Decimal [not null, default: 1]
+  ipmUnitFactor Decimal [not null, default: 1]
+  ipmIsDefaultUnit Boolean [not null, default: false]
+  ipmIsBigUnit Boolean [not null, default: false]
+  ipmIsBaseUnit Boolean [not null, default: false]
   ipmCostPrice Decimal [not null, default: 0]
   ipmCostWot Decimal [not null, default: 0]
   ipmSalesPriceA Decimal [not null, default: 0]
@@ -1668,35 +1681,36 @@ Table item_price_master {
   ipmPriceBWot Decimal [not null, default: 0]
   ipmPriceCWot Decimal [not null, default: 0]
   ipmPriceDWot Decimal [not null, default: 0]
-  ipmPriceAMargin Decimal [not null, default: 0]
-  ipmPriceBMargin Decimal [not null, default: 0]
-  ipmPriceCMargin Decimal [not null, default: 0]
-  ipmPriceDMargin Decimal [not null, default: 0]
+  ipmPriceAMarkupPerc Decimal [not null, default: 0]
+  ipmPriceBMarkupPerc Decimal [not null, default: 0]
+  ipmPriceCMarkupPerc Decimal [not null, default: 0]
+  ipmPriceDMarkupPerc Decimal [not null, default: 0]
   ipmMaxPrice Decimal [not null, default: 0]
   ipmMinPrice Decimal [not null, default: 0]
   ipmDiscPerc Decimal [not null, default: 0]
   ipmDiscQty Decimal [not null, default: 0]
   ipmAddlCess Decimal [not null, default: 0]
-  ipmProfitType String [not null]
+  ipmProfitType String [not null, default: 'MANUAL']
   ipmRoundOff Decimal [not null, default: 0]
-  ipmBigUnit Boolean [not null, default: false]
-  ipmUomWeight Decimal [not null, default: 0]
   ipmLoadingCharge Decimal [not null, default: 0]
   ipmFreightCharge Decimal [not null, default: 0]
-  ipmPoints Int [not null, default: 0]
-  ipmRemarks String
+  ipmLoyaltyPoints Decimal [not null, default: 0]
+  ipmUomRemarks String
+  ipmCostRemarks String
   ipmIsActive Boolean [not null, default: true]
+  ipmIsDeleted Boolean [not null, default: false]
+  ipmSyncDate DateTime
   ipmCreatedOn DateTime [default: `now()`, not null]
   ipmCreatedBy String
-  ipmModifiedOn DateTime [default: `now()`, not null]
-  ipmModifiedBy String
+  ipmUpdatedOn DateTime
+  ipmUpdatedBy String
   item item_master [not null]
-  unit units [not null]
+  company companys
+  branch branch_master
+  unit item_unit_master [not null]
+  baseUnit item_unit_master
+  godown godown_locations [not null]
   qtywiseRates item_qtywise_rates [not null]
-
-  indexes {
-    (ipmItemId, ipmUnitId, ipmGodownId) [unique]
-  }
 }
 
 Table item_qtywise_rates {
@@ -1748,7 +1762,7 @@ Table item_reorders {
   irModifiedOn DateTime [default: `now()`, not null]
   irModifiedBy String
   item item_master [not null]
-  unit units [not null]
+  unit item_unit_master [not null]
 
   indexes {
     (irItemId, irUnitId, irGodownId) [unique]
@@ -1835,7 +1849,33 @@ Table item_tax_master {
   taxHistory item_tax_history [not null]
 }
 
-Table units {
+Table item_unit_conversion {
+  iucId String [pk]
+  iucCompanyId String [not null]
+  iucItemId String [not null]
+  iucUnitId String [not null]
+  iucBaseUnitId String [not null]
+  iucToBaseFactor Decimal [not null, default: 1]
+  iucUnitSlno Int [not null, default: 0]
+  iulUnitFactor Decimal [not null, default: 1]
+  iucIsDefaultUnit Boolean [not null, default: false]
+  iucIsBaseUnit Boolean [not null, default: false]
+  iucIsBigUnit Boolean [not null, default: false]
+  iucUomWeight Decimal [not null, default: 0]
+  iucUomRemarks String
+  iucIsActive Boolean [not null, default: true]
+  iucIsDeleted Boolean [not null, default: false]
+  iucSyncDate DateTime
+  iucCreatedOn DateTime [default: `now()`, not null]
+  iucCreatedBy String
+  iucUpdatedOn DateTime
+  iucUpdatedBy String
+  item item_master [not null]
+  unit item_unit_master [not null]
+  baseUnit item_unit_master [not null]
+}
+
+Table item_unit_master {
   unit_id String [pk]
   unit_name String [unique, not null]
   unit_alias String
@@ -1856,11 +1896,14 @@ Table units {
   unit_created_by String
   unit_modified_on DateTime [default: `now()`, not null]
   unit_modified_by String
-  baseUnit units
-  packUnits units [not null]
+  baseUnit item_unit_master
+  packUnits item_unit_master [not null]
+  iucUnits item_unit_conversion [not null]
+  iucBaseUnits item_unit_conversion [not null]
+  ipmUnits item_price_master [not null]
+  ipmBaseUnits item_price_master [not null]
   eanCodes item_ean_codes [not null]
   itemMasters item_master [not null]
-  itemPrices item_price_master [not null]
   itemReorders item_reorders [not null]
 }
 
@@ -1927,6 +1970,7 @@ Table branch_master {
   voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
+  itemPrices item_price_master [not null]
 }
 
 Table companys {
@@ -2003,6 +2047,7 @@ Table companys {
   shipAddrs acc_ship_addrs [not null]
   custGroup cust_groups [not null]
   itemMaster item_master [not null]
+  itemPrices item_price_master [not null]
   ErpDeviceMaster erp_device_master [not null]
   UserLoginSession user_login_sessions [not null]
   customers customers [not null]
@@ -2758,21 +2803,21 @@ Ref: opening_stock_header.oshCompanyId > companys.compId
 
 Ref: opening_stock_header.oshBranchId > branch_master.brId
 
-Ref: category_master.categoryParentId - category_master.categoryId [delete: Restrict]
+Ref: item_category_master.categoryParentId - item_category_master.categoryId [delete: Restrict]
 
 Ref: godown_locations.gdlParentId - godown_locations.gdlId [delete: Restrict]
 
 Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
 
-Ref: item_ean_codes.eanUnitId > units.unit_id [delete: Restrict]
+Ref: item_ean_codes.eanUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: item_group_master.itgParentId - item_group_master.itgId [delete: Restrict]
 
 Ref: item_master.itemGroupId > item_group_master.itgId [delete: Restrict]
 
-Ref: item_master.itemCategoryId > category_master.categoryId [delete: Set Null]
+Ref: item_master.itemCategoryId > item_category_master.categoryId [delete: Set Null]
 
-Ref: item_master.itemBaseUnitId > units.unit_id [delete: Restrict]
+Ref: item_master.itemBaseUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: item_master.itemDefaultTaxId > item_tax_master.taxId [delete: Restrict]
 
@@ -2780,13 +2825,21 @@ Ref: item_master.itemCompanyId > companys.compId [delete: Restrict]
 
 Ref: item_price_master.ipmItemId > item_master.itemId [delete: Restrict]
 
-Ref: item_price_master.ipmUnitId > units.unit_id [delete: Restrict]
+Ref: item_price_master.ipmCompanyId > companys.compId [delete: Restrict]
 
-Ref: item_qtywise_rates.iqrUnitRateId > item_price_master.ipmUnitRateId [delete: Restrict]
+Ref: item_price_master.ipmBranchId > branch_master.brId [delete: Restrict]
+
+Ref: item_price_master.ipmUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: item_price_master.ipmBaseUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: item_price_master.ipmGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: item_qtywise_rates.iqrUnitRateId > item_price_master.ipmId [delete: Restrict]
 
 Ref: item_reorders.irItemId > item_master.itemId [delete: Restrict]
 
-Ref: item_reorders.irUnitId > units.unit_id [delete: Restrict]
+Ref: item_reorders.irUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: item_section_master.secParentId - item_section_master.secId [delete: Restrict]
 
@@ -2794,7 +2847,13 @@ Ref: item_tax_history.ithItemId > item_master.itemId [delete: Restrict]
 
 Ref: item_tax_history.ithTaxId > item_tax_master.taxId [delete: Restrict]
 
-Ref: units.unit_base_unit_id - units.unit_id [delete: Restrict]
+Ref: item_unit_conversion.iucItemId > item_master.itemId [delete: Restrict]
+
+Ref: item_unit_conversion.iucUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: item_unit_conversion.iucBaseUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Restrict]
 
 Ref: branch_master.compId > companys.compId
 

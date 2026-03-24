@@ -60,4 +60,6 @@ model AccVoucher {
   user               User             @relation(fields: [avUserId], references: [user_id], map: "fk_acc_vouchers_voucher_user")
   @@map("acc_vouchers")
   @@schema("accounts")
+  // Partial indexes idx_acc_vouchers_voucher_id and idx_acc_vouchers_ledger_id
+  // WHERE av_is_deleted = false are not expressible in Prisma schema.
 }

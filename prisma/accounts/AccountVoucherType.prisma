@@ -4,7 +4,6 @@ enum VoucherCategory {
   BOTH
   @@schema("accounts")
 }
-
 enum VoucherNature {
   SALES
   PURCHASE
@@ -17,14 +16,12 @@ enum VoucherNature {
   STOCK_JOURNAL
   @@schema("accounts")
 }
-
 enum VoucherNumberingMode {
   AUTO
   MANUAL
   AUTO_MANUAL
   @@schema("accounts")
 }
-
 enum VoucherResetFreq {
   NEVER
   DAILY
@@ -32,41 +29,34 @@ enum VoucherResetFreq {
   YEARLY
   @@schema("accounts")
 }
-
 model AccVoucherType {
   vchrTypeId                 Int                  @id @default(autoincrement()) @map("vchr_type_id")
   vchrTypeCode               String               @db.VarChar(20) @map("vchr_type_code")
   vchrTypeName               String               @db.VarChar(100) @map("vchr_type_name")
   vchrTypeShort              String?              @db.VarChar(30) @map("vchr_type_short")
-
   // Classification
   vchrCategory               VoucherCategory      @default(ACCOUNTING) @map("vchr_category")
   vchrNature                 VoucherNature        @map("vchr_nature")
   vchrNumberingMode          VoucherNumberingMode @default(AUTO) @map("vchr_numbering_mode")
-
   // Numbering
   vchrNoPrefix               String?              @db.VarChar(20) @map("vchr_no_prefix")
   vchrNoSuffix               String?              @db.VarChar(20) @map("vchr_no_suffix")
   vchrNoWidth                Int                  @default(5) @map("vchr_no_width")
   vchrResetFreq              VoucherResetFreq     @default(YEARLY) @map("vchr_reset_freq")
   vchrAllowManualNo          Boolean              @default(false) @map("vchr_allow_manual_no")
-
   // Functional behavior
   vchrAffectsAccounts        Boolean              @default(true) @map("vchr_affects_accounts")
   vchrAffectsInventory       Boolean              @default(false) @map("vchr_affects_inventory")
   vchrIsCashVoucher          Boolean              @default(false) @map("vchr_is_cash_voucher")
   vchrIsBankVoucher          Boolean              @default(false) @map("vchr_is_bank_voucher")
-
   // UI / print
   vchrPrintTitle             String?              @db.VarChar(100) @map("vchr_print_title")
   vchrSortOrder              Int                  @default(0) @map("vchr_sort_order")
   vchrIsActive               Boolean              @default(true) @map("vchr_is_active")
-
   // Tally mapping
   vchrTallyExportEnabled     Boolean              @default(true) @map("vchr_tally_export_enabled")
   vchrTallyVoucherTypeName   String?              @db.VarChar(100) @map("vchr_tally_voucher_type_name")
   vchrTallyBaseVoucherType   String?              @db.VarChar(50) @map("vchr_tally_base_voucher_type")
-
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")
@@ -79,13 +69,11 @@ model AccVoucherType {
   voucherHeaders             AccVoucherHeader[]
   vouchers                   AccVoucher[]
   voucherTenders             AccVoucherTender[]
-
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")
   @@index([vchrNature], map: "idx_acc_voucher_types_nature")
   @@index([vchrCategory], map: "idx_acc_voucher_types_category")
-
   @@map("acc_voucher_types")
   @@schema("accounts")
 }

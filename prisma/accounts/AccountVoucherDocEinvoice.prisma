@@ -46,4 +46,6 @@ model AccVoucherDocEinvoice {
   @@unique([gdeGdrId], map: "uq_gde_gdr")
   @@map("acc_voucher_doc_einvoice")
   @@schema("accounts")
+  // Partial unique index uq_acc_voucher_doc_einvoice_irn and partial index
+  // idx_gde_status are not expressible in Prisma schema.
 }

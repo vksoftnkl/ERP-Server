@@ -91,4 +91,7 @@ model AccVoucherTender {
 
   @@map("acc_voucher_tenders")
   @@schema("accounts")
+  // Partial indexes idx_acc_voucher_tenders_voucher, idx_acc_voucher_tenders_type,
+  // and idx_acc_voucher_tenders_tender WHERE vtd_is_deleted = false
+  // are not expressible in Prisma schema.
 }

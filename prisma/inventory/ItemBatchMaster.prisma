@@ -38,6 +38,9 @@ model ItemBatchMaster {
   btmUpdatedOn             DateTime?        @db.Timestamptz(6) @map("btm_updated_on")
   btmUpdatedBy             String?          @db.Uuid @map("btm_updated_by")
   batchStocks              ItemBatchStock[]
+
+  // Expression/partial indexes are maintained in SQL because Prisma schema
+  // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
   @@index([btmCompanyId, btmItemId], map: "idx_btm_item")
   @@map("item_batch_master")
   @@schema("inventory")

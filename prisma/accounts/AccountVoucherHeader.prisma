@@ -119,8 +119,8 @@ model AccVoucherHeader {
   @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherTypeId, avhVoucherSlno], map: "idx_acc_voucher_header_voucher_slno")
   @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherDate], map: "idx_acc_voucher_header_branch_date")
   @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherStatus], map: "idx_acc_voucher_header_status")
-  @@index([avhBranchId, avhAccYear, avhBillRefno], map: "idx_acc_voucher_header_bill_refno")
-
   @@map("acc_voucher_header")
   @@schema("accounts")
+  // Partial index idx_acc_voucher_header_bill_refno WHERE avh_is_deleted = false
+  // is not expressible in Prisma schema.
 }

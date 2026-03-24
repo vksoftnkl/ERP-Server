@@ -29,6 +29,7 @@ model GodownLocation {
   // Self relation for hierarchy
   parent            GodownLocation?  @relation("GodownLocationToParent", fields: [gdlParentId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
   children          GodownLocation[] @relation("GodownLocationToParent")
+  itemPrices        ItemPriceMaster[] @relation("GodownPrices")
   @@map("godown_locations")
    @@schema("inventory")
   // Indexes

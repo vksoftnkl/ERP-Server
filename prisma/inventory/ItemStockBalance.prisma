@@ -68,6 +68,8 @@ model ItemStockBalance {
 
   @@index([isbAccYear, isbCompanyId, isbBranchId, isbItemId], map: "idx_isb_item")
   @@index([isbAccYear, isbCompanyId, isbBranchId, isbGodownId], map: "idx_isb_godown")
+  // Partial index `idx_isb_nonzero_stock` is maintained in SQL because Prisma
+  // schema cannot express the nonzero-stock predicate.
 
   @@map("item_stock_balance")
   @@schema("inventory")

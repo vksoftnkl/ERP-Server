@@ -70,6 +70,7 @@ model BranchMaster {
   voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
+  itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   @@index([compId],      name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")

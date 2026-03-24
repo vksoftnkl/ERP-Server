@@ -217,4 +217,10 @@ model AccVoucherDocRegister {
 
   @@map("acc_voucher_doc_register")
   @@schema("accounts")
+  // Partial unique indexes uq_acc_voucher_doc_register_source,
+  // uq_acc_voucher_doc_register_voucher, and uq_acc_voucher_doc_register_doc
+  // are not expressible in Prisma schema.
+  // Partial indexes idx_gdr_branch_voucher_date, idx_gdr_branch_doc_date,
+  // idx_gdr_party, idx_gdr_doc_class, and idx_gdr_doc_status
+  // are not expressible in Prisma schema.
 }

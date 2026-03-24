@@ -23,7 +23,7 @@ model categoryMaster {
   categoryCreatedBy      String?   @db.VarChar(100)   @map("category_created_by")
   categoryModifiedOn     DateTime  @default(now())    @db.Timestamptz(6) @map("category_modified_on")
   categoryModifiedBy     String?   @db.VarChar(100)   @map("category_modified_by")
-  @@map("category_master")
+  @@map("item_category_master")
   @@schema("inventory")
   @@unique([categoryName], map: "uq_category_name")
   @@index([categoryParentId], map: "idx_category_parent_id")

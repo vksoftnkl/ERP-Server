@@ -104,6 +104,12 @@ model AccVoucherCheque {
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
 
+  @@index([chqCompanyId, chqBranchId, chqPartyId], map: "idx_acc_cheques_party")
+  @@index([chqCompanyId, chqBranchId, chqStatus], map: "idx_acc_cheques_status")
+  @@index([chqCompanyId, chqBranchId, chqChequeDate, chqDepositDate, chqClearDate], map: "idx_acc_cheques_dates")
+  @@index([chqVoucherId], map: "idx_acc_cheques_voucher")
   @@map("acc_voucher_cheques")
   @@schema("accounts")
+  // Partial unique index uq_acc_cheques_branch_cheque
+  // WHERE chq_is_deleted = false is not expressible in Prisma schema.
 }

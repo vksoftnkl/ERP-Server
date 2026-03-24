@@ -43,17 +43,54 @@ export class ItemsMasterService {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-    const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
-    if (configuredList) {
-      return configuredList;
+
+    const hasStructuredFilters =
+      queryDto.item_branch_id !== undefined ||
+      queryDto.item_group_id !== undefined ||
+      queryDto.item_category_id !== undefined ||
+      queryDto.item_brand_id !== undefined ||
+      queryDto.item_section_id !== undefined ||
+      queryDto.item_base_unit_id !== undefined ||
+      queryDto.item_default_tax_id !== undefined ||
+      queryDto.item_stock_type !== undefined ||
+      queryDto.item_is_active !== undefined ||
+      queryDto.item_is_service !== undefined ||
+      Boolean(queryDto.search?.trim());
+
+    if (!hasStructuredFilters) {
+      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      if (configuredList) {
+        return configuredList;
+      }
     }
+
+    return this.listFromPrisma(queryDto, page, limit, skip);
+  }
+
+  private async listFromPrisma(
+    queryDto: ListItemQueryDto,
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta>> {
+    const where = this.buildListWhere(queryDto);
+    const [total, records] = await Promise.all([
+      this.prisma.itemMaster.count({ where }),
+      this.prisma.itemMaster.findMany({
+        where,
+        orderBy: [{ itemSortOrder: 'asc' }, { itemNameEn: 'asc' }],
+        skip,
+        take: limit,
+      }),
+    ]);
+
     return {
-      items: [],
+      items: records.map((record) => this.toPayload(record)),
       meta: {
         page,
         limit,
-        total: 0,
-        total_pages: 0,
+        total,
+        total_pages: Math.ceil(total / limit),
       },
     };
   }

@@ -356,6 +356,9 @@ model AccVoucherBill {
 
   @@map("acc_voucher_bills")
   @@schema("accounts")
+  // Partial indexes idx_acc_voucher_bills_voucher, idx_acc_voucher_bills_party,
+  // idx_acc_voucher_bills_salesman, and idx_acc_voucher_bills_origin
+  // WHERE avbd_is_deleted = false are not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherCheques.prisma -----
@@ -465,8 +468,14 @@ model AccVoucherCheque {
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
 
+  @@index([chqCompanyId, chqBranchId, chqPartyId], map: "idx_acc_cheques_party")
+  @@index([chqCompanyId, chqBranchId, chqStatus], map: "idx_acc_cheques_status")
+  @@index([chqCompanyId, chqBranchId, chqChequeDate, chqDepositDate, chqClearDate], map: "idx_acc_cheques_dates")
+  @@index([chqVoucherId], map: "idx_acc_cheques_voucher")
   @@map("acc_voucher_cheques")
   @@schema("accounts")
+  // Partial unique index uq_acc_cheques_branch_cheque
+  // WHERE chq_is_deleted = false is not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherDocApiLog.prisma -----
@@ -623,6 +632,8 @@ model AccVoucherDocDetail {
 
   @@map("acc_voucher_doc_detail")
   @@schema("accounts")
+  // Partial index idx_acc_voucher_doc_detail_voucher
+  // WHERE vtx_is_deleted = false is not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherDocEinvoice.prisma -----
@@ -674,6 +685,8 @@ model AccVoucherDocEinvoice {
   @@unique([gdeGdrId], map: "uq_gde_gdr")
   @@map("acc_voucher_doc_einvoice")
   @@schema("accounts")
+  // Partial unique index uq_acc_voucher_doc_einvoice_irn and partial index
+  // idx_gde_status are not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherDocEwayBill.prisma -----
@@ -749,6 +762,8 @@ model AccVoucherDocEwaybill {
   @@unique([gdwGdrId], map: "uq_gdw_gdr")
   @@map("acc_voucher_doc_ewaybill")
   @@schema("accounts")
+  // Partial unique index uq_acc_voucher_doc_ewaybill_no and partial index
+  // idx_gdw_status are not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherDocRegister.prisma -----
@@ -971,6 +986,12 @@ model AccVoucherDocRegister {
 
   @@map("acc_voucher_doc_register")
   @@schema("accounts")
+  // Partial unique indexes uq_acc_voucher_doc_register_source,
+  // uq_acc_voucher_doc_register_voucher, and uq_acc_voucher_doc_register_doc
+  // are not expressible in Prisma schema.
+  // Partial indexes idx_gdr_branch_voucher_date, idx_gdr_branch_doc_date,
+  // idx_gdr_party, idx_gdr_doc_class, and idx_gdr_doc_status
+  // are not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherHeader.prisma -----
@@ -1095,10 +1116,10 @@ model AccVoucherHeader {
   @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherTypeId, avhVoucherSlno], map: "idx_acc_voucher_header_voucher_slno")
   @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherDate], map: "idx_acc_voucher_header_branch_date")
   @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherStatus], map: "idx_acc_voucher_header_status")
-  @@index([avhBranchId, avhAccYear, avhBillRefno], map: "idx_acc_voucher_header_bill_refno")
-
   @@map("acc_voucher_header")
   @@schema("accounts")
+  // Partial index idx_acc_voucher_header_bill_refno WHERE avh_is_deleted = false
+  // is not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVouchers.prisma -----
@@ -1164,6 +1185,8 @@ model AccVoucher {
   user               User             @relation(fields: [avUserId], references: [user_id], map: "fk_acc_vouchers_voucher_user")
   @@map("acc_vouchers")
   @@schema("accounts")
+  // Partial indexes idx_acc_vouchers_voucher_id and idx_acc_vouchers_ledger_id
+  // WHERE av_is_deleted = false are not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherTender.prisma -----
@@ -1260,6 +1283,9 @@ model AccVoucherTender {
 
   @@map("acc_voucher_tenders")
   @@schema("accounts")
+  // Partial indexes idx_acc_voucher_tenders_voucher, idx_acc_voucher_tenders_type,
+  // and idx_acc_voucher_tenders_tender WHERE vtd_is_deleted = false
+  // are not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherType.prisma -----
@@ -1269,7 +1295,6 @@ enum VoucherCategory {
   BOTH
   @@schema("accounts")
 }
-
 enum VoucherNature {
   SALES
   PURCHASE
@@ -1282,14 +1307,12 @@ enum VoucherNature {
   STOCK_JOURNAL
   @@schema("accounts")
 }
-
 enum VoucherNumberingMode {
   AUTO
   MANUAL
   AUTO_MANUAL
   @@schema("accounts")
 }
-
 enum VoucherResetFreq {
   NEVER
   DAILY
@@ -1297,41 +1320,34 @@ enum VoucherResetFreq {
   YEARLY
   @@schema("accounts")
 }
-
 model AccVoucherType {
   vchrTypeId                 Int                  @id @default(autoincrement()) @map("vchr_type_id")
   vchrTypeCode               String               @db.VarChar(20) @map("vchr_type_code")
   vchrTypeName               String               @db.VarChar(100) @map("vchr_type_name")
   vchrTypeShort              String?              @db.VarChar(30) @map("vchr_type_short")
-
   // Classification
   vchrCategory               VoucherCategory      @default(ACCOUNTING) @map("vchr_category")
   vchrNature                 VoucherNature        @map("vchr_nature")
   vchrNumberingMode          VoucherNumberingMode @default(AUTO) @map("vchr_numbering_mode")
-
   // Numbering
   vchrNoPrefix               String?              @db.VarChar(20) @map("vchr_no_prefix")
   vchrNoSuffix               String?              @db.VarChar(20) @map("vchr_no_suffix")
   vchrNoWidth                Int                  @default(5) @map("vchr_no_width")
   vchrResetFreq              VoucherResetFreq     @default(YEARLY) @map("vchr_reset_freq")
   vchrAllowManualNo          Boolean              @default(false) @map("vchr_allow_manual_no")
-
   // Functional behavior
   vchrAffectsAccounts        Boolean              @default(true) @map("vchr_affects_accounts")
   vchrAffectsInventory       Boolean              @default(false) @map("vchr_affects_inventory")
   vchrIsCashVoucher          Boolean              @default(false) @map("vchr_is_cash_voucher")
   vchrIsBankVoucher          Boolean              @default(false) @map("vchr_is_bank_voucher")
-
   // UI / print
   vchrPrintTitle             String?              @db.VarChar(100) @map("vchr_print_title")
   vchrSortOrder              Int                  @default(0) @map("vchr_sort_order")
   vchrIsActive               Boolean              @default(true) @map("vchr_is_active")
-
   // Tally mapping
   vchrTallyExportEnabled     Boolean              @default(true) @map("vchr_tally_export_enabled")
   vchrTallyVoucherTypeName   String?              @db.VarChar(100) @map("vchr_tally_voucher_type_name")
   vchrTallyBaseVoucherType   String?              @db.VarChar(50) @map("vchr_tally_base_voucher_type")
-
   // Audit
   vchrSyncDate               DateTime?            @db.Timestamptz(6) @map("vchr_sync_date")
   vchrCreatedOn              DateTime             @default(now()) @db.Timestamptz(6) @map("vchr_created_on")
@@ -1344,13 +1360,11 @@ model AccVoucherType {
   voucherHeaders             AccVoucherHeader[]
   vouchers                   AccVoucher[]
   voucherTenders             AccVoucherTender[]
-
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")
   @@index([vchrNature], map: "idx_acc_voucher_types_nature")
   @@index([vchrCategory], map: "idx_acc_voucher_types_category")
-
   @@map("acc_voucher_types")
   @@schema("accounts")
 }
@@ -2177,6 +2191,9 @@ model ItemBatchMaster {
   btmUpdatedOn             DateTime?        @db.Timestamptz(6) @map("btm_updated_on")
   btmUpdatedBy             String?          @db.Uuid @map("btm_updated_by")
   batchStocks              ItemBatchStock[]
+
+  // Expression/partial indexes are maintained in SQL because Prisma schema
+  // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
   @@index([btmCompanyId, btmItemId], map: "idx_btm_item")
   @@map("item_batch_master")
   @@schema("inventory")
@@ -2250,6 +2267,8 @@ model ItemBatchStock {
 
   @@index([ibsAccYear, ibsCompanyId, ibsBranchId, ibsItemId], map: "idx_ibs_item")
   @@index([ibsAccYear, ibsCompanyId, ibsBranchId, ibsGodownId, ibsBatchId], map: "idx_ibs_batch")
+  // Partial indexes `idx_ibs_expiry` and `idx_ibs_nonzero_stock` are maintained
+  // in SQL because Prisma schema cannot express filtered indexes.
 
   @@map("item_batch_stock")
   @@schema("inventory")
@@ -2326,6 +2345,8 @@ model ItemStockBalance {
 
   @@index([isbAccYear, isbCompanyId, isbBranchId, isbItemId], map: "idx_isb_item")
   @@index([isbAccYear, isbCompanyId, isbBranchId, isbGodownId], map: "idx_isb_godown")
+  // Partial index `idx_isb_nonzero_stock` is maintained in SQL because Prisma
+  // schema cannot express the nonzero-stock predicate.
 
   @@map("item_stock_balance")
   @@schema("inventory")
@@ -2420,8 +2441,10 @@ model ItemStockLedger {
   stlCreatedOn         DateTime          @default(now()) @db.Timestamptz(6) @map("stl_created_on")
   stlCreatedBy         String?           @db.Uuid @map("stl_created_by")
 
-  @@index([stlAccYear, stlCompanyId, stlBranchId, stlItemId], map: "idx_stl_item")
-  @@index([stlAccYear, stlCompanyId, stlBranchId, stlVoucherId], map: "idx_stl_voucher")
+  @@unique([stlVoucherId, stlLineNo, stlSplitNo, stlGodownId, stlBatchId], map: "uq_stl_source_line_split")
+
+  // Partial indexes `idx_stl_item` and `idx_stl_voucher` are maintained in SQL
+  // with `WHERE stl_is_deleted = false`, which Prisma schema cannot express.
 
   @@map("item_stock_ledger")
   @@schema("inventory")
@@ -2625,7 +2648,7 @@ model categoryMaster {
   categoryCreatedBy      String?   @db.VarChar(100)   @map("category_created_by")
   categoryModifiedOn     DateTime  @default(now())    @db.Timestamptz(6) @map("category_modified_on")
   categoryModifiedBy     String?   @db.VarChar(100)   @map("category_modified_by")
-  @@map("category_master")
+  @@map("item_category_master")
   @@schema("inventory")
   @@unique([categoryName], map: "uq_category_name")
   @@index([categoryParentId], map: "idx_category_parent_id")
@@ -2663,6 +2686,7 @@ model GodownLocation {
   // Self relation for hierarchy
   parent            GodownLocation?  @relation("GodownLocationToParent", fields: [gdlParentId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
   children          GodownLocation[] @relation("GodownLocationToParent")
+  itemPrices        ItemPriceMaster[] @relation("GodownPrices")
   @@map("godown_locations")
    @@schema("inventory")
   // Indexes
@@ -2924,7 +2948,8 @@ model ItemMaster {
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
   baseUnit             Unit            @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
-  prices               ItemPriceMaster[]
+  prices               ItemPriceMaster[] @relation("ItemPrices")
+  unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
   company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
@@ -2937,75 +2962,68 @@ model ItemMaster {
   @@index([itemDefaultBarcode], map: "idx_item_barcode")
 }
 
-// ----- prisma/master/items/itemPriceMaster.prisma -----
+// ----- prisma/master/items/itemPricemaster.prisma -----
 model ItemPriceMaster {
-  ipmUnitRateId          String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ipm_unit_rate_id")
+  ipmId               String        @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ipm_id")
+  ipmCompanyId        String?       @db.Uuid @map("ipm_company_id")
+  ipmBranchId         String?       @db.Uuid @map("ipm_branch_id")
+  ipmItemId           String        @db.Uuid @map("ipm_item_id")
+  ipmUnitId           String        @db.Uuid @map("ipm_unit_id")
+  ipmGodownId         String        @db.Uuid @map("ipm_godown_id")
+  ipmBaseUnitId       String?       @db.Uuid @map("ipm_base_unit_id")
+  ipmToBaseFactor     Decimal       @default(1) @db.Decimal(18, 6) @map("ipm_to_base_factor")
+  ipmUnitSlno         Int           @default(0) @map("ipm_unit_slno")
+  ipmUnitFactor       Decimal       @default(1) @db.Decimal(18, 6) @map("ipm_unit_factor")
+  ipmIsDefaultUnit    Boolean       @default(false) @map("ipm_is_default_unit")
+  ipmIsBigUnit        Boolean       @default(false) @map("ipm_is_big_unit")
+  ipmIsBaseUnit       Boolean       @default(false) @map("ipm_is_base_unit")
+  ipmCostPrice        Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_cost_price")
+  ipmCostWot          Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_cost_wot")
+  ipmSalesPriceA      Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_sales_price_a")
+  ipmSalesPriceB      Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_sales_price_b")
+  ipmSalesPriceC      Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_sales_price_c")
+  ipmSalesPriceD      Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_sales_price_d")
+  ipmPriceAWot        Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_price_a_wot")
+  ipmPriceBWot        Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_price_b_wot")
+  ipmPriceCWot        Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_price_c_wot")
+  ipmPriceDWot        Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_price_d_wot")
+  ipmPriceAMarkupPerc Decimal       @default(0) @db.Decimal(9, 3) @map("ipm_price_a_markup_perc")
+  ipmPriceBMarkupPerc Decimal       @default(0) @db.Decimal(9, 3) @map("ipm_price_b_markup_perc")
+  ipmPriceCMarkupPerc Decimal       @default(0) @db.Decimal(9, 3) @map("ipm_price_c_markup_perc")
+  ipmPriceDMarkupPerc Decimal       @default(0) @db.Decimal(9, 3) @map("ipm_price_d_markup_perc")
+  ipmMaxPrice         Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_max_price")
+  ipmMinPrice         Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_min_price")
+  ipmDiscPerc         Decimal       @default(0) @db.Decimal(9, 3) @map("ipm_disc_perc")
+  ipmDiscQty          Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_disc_qty")
+  ipmAddlCess         Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_addl_cess")
+  ipmProfitType       String        @default("MANUAL") @db.VarChar(20) @map("ipm_profit_type")
+  ipmRoundOff         Decimal       @default(0) @db.Decimal(10, 4) @map("ipm_round_off")
+  ipmLoadingCharge    Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_loading_charge")
+  ipmFreightCharge    Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_freight_charge")
+  ipmLoyaltyPoints    Decimal       @default(0) @db.Decimal(18, 3) @map("ipm_loyalty_points")
+  ipmUomRemarks       String?       @db.VarChar(250) @map("ipm_uom_remarks")
+  ipmCostRemarks      String?       @db.VarChar(250) @map("ipm_cost_remarks")
+  ipmIsActive         Boolean       @default(true) @map("ipm_is_active")
+  ipmIsDeleted        Boolean       @default(false) @map("ipm_is_deleted")
+  ipmSyncDate         DateTime?     @db.Timestamptz(6) @map("ipm_sync_date")
+  ipmCreatedOn        DateTime      @default(now()) @db.Timestamptz(6) @map("ipm_created_on")
+  ipmCreatedBy        String?       @db.Uuid @map("ipm_created_by")
+  ipmUpdatedOn        DateTime?     @db.Timestamptz(6) @map("ipm_updated_on")
+  ipmUpdatedBy        String?       @db.Uuid @map("ipm_updated_by")
 
-  ipmItemId              String  @db.Uuid @map("ipm_item_id")
-  ipmUnitId              String  @db.Uuid @map("ipm_unit_id")
-  ipmGodownId            String? @db.Uuid @map("ipm_godown_id") // NULL = global price
+  item                ItemMaster     @relation("ItemPrices", fields: [ipmItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_item")
+  company             Company?       @relation("CompanyItemPrices", fields: [ipmCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_company_id")
+  branch              BranchMaster?  @relation("BranchItemPrices", fields: [ipmBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_branch_id")
+  unit                Unit           @relation("IpmUnit", fields: [ipmUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_unit")
+  baseUnit            Unit?          @relation("IpmBaseUnit", fields: [ipmBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_base_unit")
+  godown              GodownLocation @relation("GodownPrices", fields: [ipmGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_godown_id")
+  qtywiseRates        ItemQtywiseRate[]
 
-  ipmUnitSlno            Int     @default(0) @map("ipm_unit_slno")
-
-  ipmConversionFactor    Decimal @default(1) @db.Decimal(18, 6) @map("ipm_conversion_factor")
-
-  // COST
-  ipmCostPrice           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_cost_price")
-  ipmCostWot             Decimal @default(0) @db.Decimal(15, 4) @map("ipm_cost_wot")
-
-  // SALES prices (A/B/C/D)
-  ipmSalesPriceA         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_a")
-  ipmSalesPriceB         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_b")
-  ipmSalesPriceC         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_c")
-  ipmSalesPriceD         Decimal @default(0) @db.Decimal(15, 4) @map("ipm_sales_price_d")
-
-  // Without tax
-  ipmPriceAWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_a_wot")
-  ipmPriceBWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_b_wot")
-  ipmPriceCWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_c_wot")
-  ipmPriceDWot           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_d_wot")
-
-  // Margin
-  ipmPriceAMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_a_margin")
-  ipmPriceBMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_b_margin")
-  ipmPriceCMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_c_margin")
-  ipmPriceDMargin        Decimal @default(0) @db.Decimal(15, 4) @map("ipm_price_d_margin")
-
-  // Controls
-  ipmMaxPrice            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_max_price")
-  ipmMinPrice            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_min_price")
-
-  ipmDiscPerc            Decimal @default(0) @db.Decimal(7, 3)  @map("ipm_disc_perc")
-  ipmDiscQty             Decimal @default(0) @db.Decimal(15, 4) @map("ipm_disc_qty")
-  ipmAddlCess            Decimal @default(0) @db.Decimal(15, 4) @map("ipm_addl_cess")
-
-  ipmProfitType          String  @db.VarChar(20) @map("ipm_profit_type") // BY % / BY RS / BY USER
-  ipmRoundOff            Decimal @default(0) @db.Decimal(10, 4) @map("ipm_round_off")
-
-  ipmBigUnit             Boolean @default(false) @map("ipm_big_unit")
-  ipmUomWeight           Decimal @default(0) @db.Decimal(15, 4) @map("ipm_uom_weight")
-  ipmLoadingCharge       Decimal @default(0) @db.Decimal(15, 4) @map("ipm_loading_charge")
-  ipmFreightCharge       Decimal @default(0) @db.Decimal(15, 4) @map("ipm_freight_charge")
-  ipmPoints              Int     @default(0) @map("ipm_points")
-  ipmRemarks             String? @db.VarChar(250) @map("ipm_remarks")
-
-  ipmIsActive            Boolean @default(true) @map("ipm_is_active")
-
-  ipmCreatedOn           DateTime @default(now()) @db.Timestamptz(6) @map("ipm_created_on")
-  ipmCreatedBy           String?  @db.VarChar(100) @map("ipm_created_by")
-  ipmModifiedOn          DateTime @default(now()) @db.Timestamptz(6) @map("ipm_modified_on")
-  ipmModifiedBy          String?  @db.VarChar(100) @map("ipm_modified_by")
-
-  // Relations
-  item                  ItemMaster @relation(fields: [ipmItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-  unit                  Unit       @relation(fields: [ipmUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-  qtywiseRates          ItemQtywiseRate[]
-
+  @@index([ipmItemId, ipmUnitId], map: "idx_item_price_master_item")
   @@map("item_price_master")
   @@schema("inventory")
-
-  // one rate per combination (without company)
-  @@unique([ipmItemId, ipmUnitId, ipmGodownId], map: "uq_ipm_item_unit_godown")
+  // Partial unique index uq_item_price_master_branch is not expressible in Prisma schema.
+  // CHECK constraints are not expressible in Prisma schema.
 }
 
 // ----- prisma/master/items/itemQtyWiseRateMaster.prisma -----
@@ -3049,7 +3067,7 @@ model ItemQtywiseRate {
   iqrRemarks     String?  @db.VarChar(250) @map("iqr_remarks")
 
   // Relation
-  unitRate       ItemPriceMaster @relation(fields: [iqrUnitRateId], references: [ipmUnitRateId], onUpdate: Cascade, onDelete: Restrict)
+  unitRate       ItemPriceMaster @relation(fields: [iqrUnitRateId], references: [ipmId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_qtywise_rates")
   @@schema("inventory")
@@ -3244,23 +3262,57 @@ model ItemTaxMaster {
   @@index([taxIgstOutputLedgerId], map: "idx_tax_igst_out")
 }
 
+// ----- prisma/master/items/itemUnitConversion.prisma -----
+model ItemUnitConversion {
+  iucId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iuc_id")
+  iucCompanyId       String    @db.Uuid @map("iuc_company_id")
+  iucItemId          String    @db.Uuid @map("iuc_item_id")
+  iucUnitId          String    @db.Uuid @map("iuc_unit_id")
+  iucBaseUnitId      String    @db.Uuid @map("iuc_base_unit_id")
+  iucToBaseFactor    Decimal   @default(1) @db.Decimal(18, 6) @map("iuc_to_base_factor")
+  iucUnitSlno        Int       @default(0) @map("iuc_unit_slno")
+  iulUnitFactor      Decimal   @default(1) @db.Decimal(18, 6) @map("iul_unit_factor")
+  iucIsDefaultUnit   Boolean   @default(false) @map("iuc_is_default_unit")
+  iucIsBaseUnit      Boolean   @default(false) @map("iuc_is_base_unit")
+  iucIsBigUnit       Boolean   @default(false) @map("iuc_is_big_unit")
+  iucUomWeight       Decimal   @default(0) @db.Decimal(18, 6) @map("iuc_uom_weight")
+  iucUomRemarks      String?   @db.VarChar(250) @map("iuc_uom_remarks")
+  iucIsActive        Boolean   @default(true) @map("iuc_is_active")
+  iucIsDeleted       Boolean   @default(false) @map("iuc_is_deleted")
+  iucSyncDate        DateTime? @db.Timestamptz(6) @map("iuc_sync_date")
+  iucCreatedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("iuc_created_on")
+  iucCreatedBy       String?   @db.Uuid @map("iuc_created_by")
+  iucUpdatedOn       DateTime? @db.Timestamptz(6) @map("iuc_updated_on")
+  iucUpdatedBy       String?   @db.Uuid @map("iuc_updated_by")
+
+  item               ItemMaster @relation("ItemUnitConversions", fields: [iucItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_item_id")
+  unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
+  baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
+  @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
+  @@map("item_unit_conversion")
+  @@schema("inventory")
+  // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,
+  // and uq_item_unit_conversion_base are not expressible in Prisma schema.
+  // CHECK constraints are not expressible in Prisma schema.
+}
+
 // ----- prisma/master/items/itemUnitsMaster.prisma -----
 model Unit {
   // Identity
-  unit_id  String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("unit_id")
+  unit_id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
 
   // Master fields
-  unit_name        String  @unique @db.VarChar(50)
-  unit_alias       String? @db.VarChar(50)
-  unit_code        String? @db.VarChar(30)
-  unit_description String? @db.VarChar(100)
+  unit_name        String   @unique @db.VarChar(50)
+  unit_alias       String?  @db.VarChar(50)
+  unit_code        String?  @db.VarChar(30)
+  unit_description String?  @db.VarChar(100)
 
   // Decimal / measurement
-  unit_decimal_count Int      @default(0)
-  unit_weight        Decimal? @db.Decimal
-  unit_loading       Decimal? @db.Decimal
-  unit_unloading     Decimal? @db.Decimal
-  unit_attach_charge Decimal? @db.Decimal
+  unit_decimal_count  Int      @default(0)
+  unit_weight         Decimal? @db.Decimal
+  unit_loading        Decimal? @db.Decimal
+  unit_unloading      Decimal? @db.Decimal
+  unit_attach_charge  Decimal? @db.Decimal
 
   // Packing / conversion
   unit_is_pack_unit Boolean  @default(false)
@@ -3278,15 +3330,24 @@ model Unit {
   unit_modified_on DateTime  @default(now()) @db.Timestamptz(6)
   unit_modified_by String?   @db.VarChar(100)
 
-  // Self relation (base unit -> pack units)
-  baseUnit     Unit?             @relation("UnitBase", fields: [unit_base_unit_id], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
-  packUnits    Unit[]            @relation("UnitBase")
+  // Self relation
+  baseUnit  Unit?  @relation("UnitBase", fields: [unit_base_unit_id], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  packUnits Unit[] @relation("UnitBase")
+
+  // Back-relations — ItemUnitConversion
+  iucUnits     ItemUnitConversion[] @relation("IucUnit")
+  iucBaseUnits ItemUnitConversion[] @relation("IucBaseUnit")
+
+  // Back-relations — ItemPriceMaster
+  ipmUnits     ItemPriceMaster[] @relation("IpmUnit")
+  ipmBaseUnits ItemPriceMaster[] @relation("IpmBaseUnit")
+
+  // Back-relations — others
   eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
-  itemPrices   ItemPriceMaster[]
   itemReorders ItemReorder[]
 
-  @@map("units")
+  @@map("item_unit_master")
   @@schema("inventory")
   @@index([unit_is_active], map: "idx_unit_active")
   @@index([unit_base_unit_id], map: "idx_unit_base")
@@ -3365,6 +3426,7 @@ model BranchMaster {
   voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
+  itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   @@index([compId],      name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
@@ -3457,6 +3519,7 @@ model Company {
   shipAddrs             AccShipAddr[]
   custGroup             CustGroup[]
   itemMaster            ItemMaster[]
+  itemPrices            ItemPriceMaster[] @relation("CompanyItemPrices")
   ErpDeviceMaster       ErpDeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]

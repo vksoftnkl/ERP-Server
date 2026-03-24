@@ -1,0 +1,33 @@
+
+model ItemUnitConversion {
+  iucId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iuc_id")
+  iucCompanyId       String    @db.Uuid @map("iuc_company_id")
+  iucItemId          String    @db.Uuid @map("iuc_item_id")
+  iucUnitId          String    @db.Uuid @map("iuc_unit_id")
+  iucBaseUnitId      String    @db.Uuid @map("iuc_base_unit_id")
+  iucToBaseFactor    Decimal   @default(1) @db.Decimal(18, 6) @map("iuc_to_base_factor")
+  iucUnitSlno        Int       @default(0) @map("iuc_unit_slno")
+  iulUnitFactor      Decimal   @default(1) @db.Decimal(18, 6) @map("iul_unit_factor")
+  iucIsDefaultUnit   Boolean   @default(false) @map("iuc_is_default_unit")
+  iucIsBaseUnit      Boolean   @default(false) @map("iuc_is_base_unit")
+  iucIsBigUnit       Boolean   @default(false) @map("iuc_is_big_unit")
+  iucUomWeight       Decimal   @default(0) @db.Decimal(18, 6) @map("iuc_uom_weight")
+  iucUomRemarks      String?   @db.VarChar(250) @map("iuc_uom_remarks")
+  iucIsActive        Boolean   @default(true) @map("iuc_is_active")
+  iucIsDeleted       Boolean   @default(false) @map("iuc_is_deleted")
+  iucSyncDate        DateTime? @db.Timestamptz(6) @map("iuc_sync_date")
+  iucCreatedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("iuc_created_on")
+  iucCreatedBy       String?   @db.Uuid @map("iuc_created_by")
+  iucUpdatedOn       DateTime? @db.Timestamptz(6) @map("iuc_updated_on")
+  iucUpdatedBy       String?   @db.Uuid @map("iuc_updated_by")
+
+  item               ItemMaster @relation("ItemUnitConversions", fields: [iucItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_item_id")
+  unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
+  baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
+  @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
+  @@map("item_unit_conversion")
+  @@schema("inventory")
+  // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,
+  // and uq_item_unit_conversion_base are not expressible in Prisma schema.
+  // CHECK constraints are not expressible in Prisma schema.
+}
