@@ -22,7 +22,13 @@ export class ItemPriceErrorResponseDto {
 
 export class ItemPricePayloadDto {
   @ApiProperty({ format: 'uuid' })
-  ipm_unit_rate_id!: string;
+  ipm_id!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ipm_company_id!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ipm_branch_id!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   ipm_item_id!: string;
@@ -30,14 +36,29 @@ export class ItemPricePayloadDto {
   @ApiProperty({ format: 'uuid' })
   ipm_unit_id!: string;
 
+  @ApiProperty({ format: 'uuid' })
+  ipm_godown_id!: string;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  ipm_godown_id!: string | null;
+  ipm_base_unit_id!: string | null;
+
+  @ApiProperty({ example: 1 })
+  ipm_to_base_factor!: number;
 
   @ApiProperty({ example: 0 })
   ipm_unit_slno!: number;
 
   @ApiProperty({ example: 1 })
-  ipm_conversion_factor!: number;
+  ipm_unit_factor!: number;
+
+  @ApiProperty({ example: false })
+  ipm_is_default_unit!: boolean;
+
+  @ApiProperty({ example: false })
+  ipm_is_big_unit!: boolean;
+
+  @ApiProperty({ example: false })
+  ipm_is_base_unit!: boolean;
 
   @ApiProperty({ example: 0 })
   ipm_cost_price!: number;
@@ -70,16 +91,16 @@ export class ItemPricePayloadDto {
   ipm_price_d_wot!: number;
 
   @ApiProperty({ example: 0 })
-  ipm_price_a_margin!: number;
+  ipm_price_a_markup_perc!: number;
 
   @ApiProperty({ example: 0 })
-  ipm_price_b_margin!: number;
+  ipm_price_b_markup_perc!: number;
 
   @ApiProperty({ example: 0 })
-  ipm_price_c_margin!: number;
+  ipm_price_c_markup_perc!: number;
 
   @ApiProperty({ example: 0 })
-  ipm_price_d_margin!: number;
+  ipm_price_d_markup_perc!: number;
 
   @ApiProperty({ example: 0 })
   ipm_max_price!: number;
@@ -96,17 +117,11 @@ export class ItemPricePayloadDto {
   @ApiProperty({ example: 0 })
   ipm_addl_cess!: number;
 
-  @ApiProperty({ maxLength: 20, example: 'BY %' })
+  @ApiProperty({ maxLength: 20, example: 'MANUAL' })
   ipm_profit_type!: string;
 
   @ApiProperty({ example: 0 })
   ipm_round_off!: number;
-
-  @ApiProperty({ example: false })
-  ipm_big_unit!: boolean;
-
-  @ApiProperty({ example: 0 })
-  ipm_uom_weight!: number;
 
   @ApiProperty({ example: 0 })
   ipm_loading_charge!: number;
@@ -115,13 +130,22 @@ export class ItemPricePayloadDto {
   ipm_freight_charge!: number;
 
   @ApiProperty({ example: 0 })
-  ipm_points!: number;
+  ipm_loyalty_points!: number;
 
   @ApiPropertyOptional({ nullable: true })
-  ipm_remarks!: string | null;
+  ipm_uom_remarks!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  ipm_cost_remarks!: string | null;
 
   @ApiProperty({ example: true })
   ipm_is_active!: boolean;
+
+  @ApiProperty({ example: false })
+  ipm_is_deleted!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  ipm_sync_date!: string | null;
 
   @ApiProperty()
   ipm_created_on!: string;
@@ -129,11 +153,11 @@ export class ItemPricePayloadDto {
   @ApiPropertyOptional({ nullable: true })
   ipm_created_by!: string | null;
 
-  @ApiProperty()
-  ipm_modified_on!: string;
+  @ApiPropertyOptional({ nullable: true })
+  ipm_updated_on!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  ipm_modified_by!: string | null;
+  ipm_updated_by!: string | null;
 }
 
 export class ItemPriceListMetaDto {
@@ -152,7 +176,7 @@ export class ItemPriceListMetaDto {
 
 export class ItemPriceDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
-  ipm_unit_rate_id!: string;
+  ipm_id!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;

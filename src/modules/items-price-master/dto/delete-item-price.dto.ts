@@ -16,5 +16,5 @@ export class DeleteItemPriceDto {
   @IsString()
   @IsNotEmpty()
   @IsUUID('all')
-  ipm_unit_rate_id!: string;
+  ipm_id!: string;
 }

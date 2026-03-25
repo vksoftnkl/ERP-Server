@@ -4,7 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { ItemPriceMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -19,7 +22,7 @@ import {
   ItemPricePayload,
 } from './types/item-price-api.types';
 
-const DEFAULT_ACTOR = 'system';
+const DEFAULT_AUDIT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
@@ -70,11 +73,15 @@ export class ItemsPriceMasterService {
     const skip = (page - 1) * limit;
 
     const hasStructuredFilters =
+      queryDto.ipm_company_id !== undefined ||
+      queryDto.ipm_branch_id !== undefined ||
       queryDto.ipm_item_id !== undefined ||
       queryDto.ipm_unit_id !== undefined ||
       queryDto.ipm_godown_id !== undefined ||
+      queryDto.ipm_base_unit_id !== undefined ||
       queryDto.ipm_profit_type !== undefined ||
       queryDto.ipm_is_active !== undefined ||
+      queryDto.ipm_is_deleted !== undefined ||
       Boolean(queryDto.search?.trim());
 
     if (!hasStructuredFilters) {
@@ -89,7 +96,7 @@ export class ItemsPriceMasterService {
       this.prisma.itemPriceMaster.count({ where }),
       this.prisma.itemPriceMaster.findMany({
         where,
-        orderBy: [{ ipmItemId: 'asc' }, { ipmUnitSlno: 'asc' }, { ipmUnitRateId: 'asc' }],
+        orderBy: [{ ipmItemId: 'asc' }, { ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
         skip,
         take: limit,
       }),
@@ -163,29 +170,26 @@ export class ItemsPriceMasterService {
     return null;
   }
 
-  async getById(ipmUnitRateId: string): Promise<ItemPricePayload> {
-    const record = await this.prisma.itemPriceMaster.findUnique({
+  async getById(ipmId: string): Promise<ItemPricePayload> {
+    const record = await this.prisma.itemPriceMaster.findFirst({
       where: {
-        ipmUnitRateId,
+        ipmId,
+        ipmIsDeleted: false,
       },
     });
 
     if (!record) {
-      this.throwNotFound(ipmUnitRateId);
+      this.throwNotFound(ipmId);
     }
 
     return this.toPayload(record);
   }
 
-  async delete(ipmUnitRateId: string): Promise<ItemPriceDeleteResult>;
-  async delete(ipmUnitRateId: string[]): Promise<ItemPriceDeleteResult[]>;
-  async delete(
-    ipmUnitRateId: string | string[],
-  ): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
-  async delete(
-    ipmUnitRateId: string | string[],
-  ): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]> {
-    const deleteIds = Array.isArray(ipmUnitRateId) ? ipmUnitRateId : [ipmUnitRateId];
+  async delete(ipmId: string): Promise<ItemPriceDeleteResult>;
+  async delete(ipmId: string[]): Promise<ItemPriceDeleteResult[]>;
+  async delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
+  async delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]> {
+    const deleteIds = Array.isArray(ipmId) ? ipmId : [ipmId];
 
     try {
       const results = await this.prisma.$transaction(async (tx) => {
@@ -198,7 +202,7 @@ export class ItemsPriceMasterService {
         return deletedItems;
       });
 
-      return Array.isArray(ipmUnitRateId) ? results : results[0];
+      return Array.isArray(ipmId) ? results : results[0];
     } catch (error: unknown) {
       this.handleDeleteError(error);
       throw error;
@@ -209,7 +213,7 @@ export class ItemsPriceMasterService {
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
   ): Promise<ItemPricePayload> {
-    if (saveItemPriceDto.ipm_unit_rate_id) {
+    if (saveItemPriceDto.ipm_id) {
       return this.updateItemPrice(tx, saveItemPriceDto);
     }
 
@@ -218,20 +222,26 @@ export class ItemsPriceMasterService {
 
   private async deleteItemPrice(
     tx: Prisma.TransactionClient,
-    ipmUnitRateId: string,
+    ipmId: string,
   ): Promise<ItemPriceDeleteResult> {
-    const existing = await tx.itemPriceMaster.findUnique({
+    const existing = await tx.itemPriceMaster.findFirst({
       where: {
-        ipmUnitRateId,
+        ipmId,
+        ipmIsDeleted: false,
       },
     });
     if (!existing) {
-      this.throwNotFound(ipmUnitRateId);
+      this.throwNotFound(ipmId);
     }
 
-    await tx.itemPriceMaster.delete({
+    const deletedOn = new Date();
+    const updated = await tx.itemPriceMaster.update({
       where: {
-        ipmUnitRateId,
+        ipmId,
+      },
+      data: {
+        ipmIsDeleted: true,
+        ipmUpdatedOn: deletedOn,
       },
     });
 
@@ -241,18 +251,18 @@ export class ItemsPriceMasterService {
         tableName: ITEM_PRICE_TABLE_NAME,
         screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
         screenType: 'master',
-        pk: ipmUnitRateId,
+        pk: ipmId,
         displayName: this.buildDisplayName(existing),
         originalRecord: this.toPayload(existing),
-        modifiedRecord: null,
-        userId: DEFAULT_ACTOR,
-        notes: 'Item price deleted',
+        modifiedRecord: this.toPayload(updated),
+        userId: this.resolveAuditActor(updated.ipmUpdatedBy),
+        notes: 'Item price soft deleted',
       },
       tx,
     );
 
     return {
-      ipm_unit_rate_id: ipmUnitRateId,
+      ipm_id: ipmId,
       deleted: true,
     };
   }
@@ -272,16 +282,17 @@ export class ItemsPriceMasterService {
     }
 
     const now = new Date();
-    const createdBy = this.resolveActor(saveItemPriceDto.ipm_created_by);
-    const modifiedBy = this.resolveActor(saveItemPriceDto.ipm_modified_by, createdBy);
+    const createdBy = this.resolveRecordActor(saveItemPriceDto.ipm_created_by);
+    const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
     const data: Prisma.ItemPriceMasterUncheckedCreateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
       ipmUnitId: saveItemPriceDto.ipm_unit_id,
+      ipmGodownId: saveItemPriceDto.ipm_godown_id,
       ipmProfitType: profitType,
       ipmCreatedOn: now,
       ipmCreatedBy: createdBy,
-      ipmModifiedOn: now,
-      ipmModifiedBy: modifiedBy,
+      ipmUpdatedOn: now,
+      ipmUpdatedBy: updatedBy,
     };
     this.applyOptionalFields(data, saveItemPriceDto);
 
@@ -294,11 +305,11 @@ export class ItemsPriceMasterService {
         tableName: ITEM_PRICE_TABLE_NAME,
         screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
         screenType: 'master',
-        pk: payload.ipm_unit_rate_id,
+        pk: payload.ipm_id,
         displayName: this.buildDisplayName(created),
         originalRecord: null,
         modifiedRecord: payload,
-        userId: createdBy,
+        userId: this.resolveAuditActor(createdBy),
         notes: 'Item price created',
       },
       tx,
@@ -311,7 +322,7 @@ export class ItemsPriceMasterService {
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
   ): Promise<ItemPricePayload> {
-    const ipmUnitRateId = saveItemPriceDto.ipm_unit_rate_id!;
+    const ipmId = saveItemPriceDto.ipm_id!;
     const profitType = saveItemPriceDto.ipm_profit_type?.trim();
     if (!profitType) {
       this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
@@ -322,27 +333,31 @@ export class ItemsPriceMasterService {
       ]);
     }
 
-    const existing = await tx.itemPriceMaster.findUnique({
+    const existing = await tx.itemPriceMaster.findFirst({
       where: {
-        ipmUnitRateId,
+        ipmId,
+        ipmIsDeleted: false,
       },
     });
     if (!existing) {
-      this.throwNotFound(ipmUnitRateId);
+      this.throwNotFound(ipmId);
     }
 
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
       ipmUnitId: saveItemPriceDto.ipm_unit_id,
+      ipmGodownId: saveItemPriceDto.ipm_godown_id,
       ipmProfitType: profitType,
-      ipmModifiedOn: new Date(),
-      ipmModifiedBy: this.resolveActor(saveItemPriceDto.ipm_modified_by),
+      ipmUpdatedOn: new Date(),
     };
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_updated_by')) {
+      data.ipmUpdatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by);
+    }
     this.applyOptionalFields(data, saveItemPriceDto);
 
     const updated = await tx.itemPriceMaster.update({
       where: {
-        ipmUnitRateId,
+        ipmId,
       },
       data,
     });
@@ -354,11 +369,11 @@ export class ItemsPriceMasterService {
         tableName: ITEM_PRICE_TABLE_NAME,
         screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
         screenType: 'master',
-        pk: ipmUnitRateId,
+        pk: ipmId,
         displayName: this.buildDisplayName(updated),
         originalRecord: this.toPayload(existing),
         modifiedRecord: payload,
-        userId: payload.ipm_modified_by ?? DEFAULT_ACTOR,
+        userId: this.resolveAuditActor(payload.ipm_updated_by),
         notes: 'Item price updated',
       },
       tx,
@@ -368,7 +383,17 @@ export class ItemsPriceMasterService {
   }
 
   private buildListWhere(queryDto: ListItemPriceQueryDto): Prisma.ItemPriceMasterWhereInput {
-    const where: Prisma.ItemPriceMasterWhereInput = {};
+    const where: Prisma.ItemPriceMasterWhereInput = {
+      ipmIsDeleted: queryDto.ipm_is_deleted ?? false,
+    };
+
+    if (queryDto.ipm_company_id !== undefined) {
+      where.ipmCompanyId = queryDto.ipm_company_id;
+    }
+
+    if (queryDto.ipm_branch_id !== undefined) {
+      where.ipmBranchId = queryDto.ipm_branch_id;
+    }
 
     if (queryDto.ipm_item_id !== undefined) {
       where.ipmItemId = queryDto.ipm_item_id;
@@ -380,6 +405,10 @@ export class ItemsPriceMasterService {
 
     if (queryDto.ipm_godown_id !== undefined) {
       where.ipmGodownId = queryDto.ipm_godown_id;
+    }
+
+    if (queryDto.ipm_base_unit_id !== undefined) {
+      where.ipmBaseUnitId = queryDto.ipm_base_unit_id;
     }
 
     if (queryDto.ipm_profit_type !== undefined) {
@@ -394,7 +423,8 @@ export class ItemsPriceMasterService {
       const search = queryDto.search.trim();
       where.OR = [
         { ipmProfitType: { contains: search, mode: 'insensitive' } },
-        { ipmRemarks: { contains: search, mode: 'insensitive' } },
+        { ipmUomRemarks: { contains: search, mode: 'insensitive' } },
+        { ipmCostRemarks: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -405,16 +435,40 @@ export class ItemsPriceMasterService {
     data: Prisma.ItemPriceMasterUncheckedCreateInput | Prisma.ItemPriceMasterUncheckedUpdateInput,
     saveItemPriceDto: SaveItemPriceDto,
   ): void {
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_godown_id')) {
-      data.ipmGodownId = saveItemPriceDto.ipm_godown_id;
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_company_id')) {
+      data.ipmCompanyId = saveItemPriceDto.ipm_company_id;
+    }
+
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_branch_id')) {
+      data.ipmBranchId = saveItemPriceDto.ipm_branch_id;
+    }
+
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_base_unit_id')) {
+      data.ipmBaseUnitId = saveItemPriceDto.ipm_base_unit_id;
+    }
+
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_to_base_factor')) {
+      data.ipmToBaseFactor = saveItemPriceDto.ipm_to_base_factor;
     }
 
     if (this.hasOwnProperty(saveItemPriceDto, 'ipm_unit_slno')) {
       data.ipmUnitSlno = saveItemPriceDto.ipm_unit_slno;
     }
 
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_conversion_factor')) {
-      data.ipmConversionFactor = saveItemPriceDto.ipm_conversion_factor;
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_unit_factor')) {
+      data.ipmUnitFactor = saveItemPriceDto.ipm_unit_factor;
+    }
+
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_is_default_unit')) {
+      data.ipmIsDefaultUnit = saveItemPriceDto.ipm_is_default_unit;
+    }
+
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_is_big_unit')) {
+      data.ipmIsBigUnit = saveItemPriceDto.ipm_is_big_unit;
+    }
+
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_is_base_unit')) {
+      data.ipmIsBaseUnit = saveItemPriceDto.ipm_is_base_unit;
     }
 
     if (this.hasOwnProperty(saveItemPriceDto, 'ipm_cost_price')) {
@@ -457,20 +511,20 @@ export class ItemsPriceMasterService {
       data.ipmPriceDWot = saveItemPriceDto.ipm_price_d_wot;
     }
 
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_a_margin')) {
-      data.ipmPriceAMargin = saveItemPriceDto.ipm_price_a_margin;
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_a_markup_perc')) {
+      data.ipmPriceAMarkupPerc = saveItemPriceDto.ipm_price_a_markup_perc;
     }
 
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_b_margin')) {
-      data.ipmPriceBMargin = saveItemPriceDto.ipm_price_b_margin;
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_b_markup_perc')) {
+      data.ipmPriceBMarkupPerc = saveItemPriceDto.ipm_price_b_markup_perc;
     }
 
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_c_margin')) {
-      data.ipmPriceCMargin = saveItemPriceDto.ipm_price_c_margin;
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_c_markup_perc')) {
+      data.ipmPriceCMarkupPerc = saveItemPriceDto.ipm_price_c_markup_perc;
     }
 
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_d_margin')) {
-      data.ipmPriceDMargin = saveItemPriceDto.ipm_price_d_margin;
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_d_markup_perc')) {
+      data.ipmPriceDMarkupPerc = saveItemPriceDto.ipm_price_d_markup_perc;
     }
 
     if (this.hasOwnProperty(saveItemPriceDto, 'ipm_max_price')) {
@@ -497,14 +551,6 @@ export class ItemsPriceMasterService {
       data.ipmRoundOff = saveItemPriceDto.ipm_round_off;
     }
 
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_big_unit')) {
-      data.ipmBigUnit = saveItemPriceDto.ipm_big_unit;
-    }
-
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_uom_weight')) {
-      data.ipmUomWeight = saveItemPriceDto.ipm_uom_weight;
-    }
-
     if (this.hasOwnProperty(saveItemPriceDto, 'ipm_loading_charge')) {
       data.ipmLoadingCharge = saveItemPriceDto.ipm_loading_charge;
     }
@@ -513,27 +559,67 @@ export class ItemsPriceMasterService {
       data.ipmFreightCharge = saveItemPriceDto.ipm_freight_charge;
     }
 
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_points')) {
-      data.ipmPoints = saveItemPriceDto.ipm_points;
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_loyalty_points')) {
+      data.ipmLoyaltyPoints = saveItemPriceDto.ipm_loyalty_points;
     }
 
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_remarks')) {
-      data.ipmRemarks = saveItemPriceDto.ipm_remarks;
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_uom_remarks')) {
+      data.ipmUomRemarks = saveItemPriceDto.ipm_uom_remarks;
+    }
+
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_cost_remarks')) {
+      data.ipmCostRemarks = saveItemPriceDto.ipm_cost_remarks;
     }
 
     if (this.hasOwnProperty(saveItemPriceDto, 'ipm_is_active')) {
       data.ipmIsActive = saveItemPriceDto.ipm_is_active;
     }
+
+    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_sync_date')) {
+      data.ipmSyncDate = this.parseOptionalDate(saveItemPriceDto.ipm_sync_date, 'ipm_sync_date');
+    }
+  }
+
+  private parseOptionalDate(
+    value: string | null | undefined,
+    fieldName: string,
+  ): Date | null | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (value === null) {
+      return null;
+    }
+
+    const parsedDate = new Date(value);
+    if (Number.isNaN(parsedDate.getTime())) {
+      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: fieldName,
+          message: `${fieldName} must be a valid date`,
+        },
+      ]);
+    }
+
+    return parsedDate;
   }
 
   private toPayload(record: ItemPriceMaster): ItemPricePayload {
     return {
-      ipm_unit_rate_id: record.ipmUnitRateId,
+      ipm_id: record.ipmId,
+      ipm_company_id: record.ipmCompanyId,
+      ipm_branch_id: record.ipmBranchId,
       ipm_item_id: record.ipmItemId,
       ipm_unit_id: record.ipmUnitId,
       ipm_godown_id: record.ipmGodownId,
+      ipm_base_unit_id: record.ipmBaseUnitId,
+      ipm_to_base_factor: this.toNumber(record.ipmToBaseFactor),
       ipm_unit_slno: record.ipmUnitSlno,
-      ipm_conversion_factor: this.toNumber(record.ipmConversionFactor),
+      ipm_unit_factor: this.toNumber(record.ipmUnitFactor),
+      ipm_is_default_unit: record.ipmIsDefaultUnit,
+      ipm_is_big_unit: record.ipmIsBigUnit,
+      ipm_is_base_unit: record.ipmIsBaseUnit,
       ipm_cost_price: this.toNumber(record.ipmCostPrice),
       ipm_cost_wot: this.toNumber(record.ipmCostWot),
       ipm_sales_price_a: this.toNumber(record.ipmSalesPriceA),
@@ -544,10 +630,10 @@ export class ItemsPriceMasterService {
       ipm_price_b_wot: this.toNumber(record.ipmPriceBWot),
       ipm_price_c_wot: this.toNumber(record.ipmPriceCWot),
       ipm_price_d_wot: this.toNumber(record.ipmPriceDWot),
-      ipm_price_a_margin: this.toNumber(record.ipmPriceAMargin),
-      ipm_price_b_margin: this.toNumber(record.ipmPriceBMargin),
-      ipm_price_c_margin: this.toNumber(record.ipmPriceCMargin),
-      ipm_price_d_margin: this.toNumber(record.ipmPriceDMargin),
+      ipm_price_a_markup_perc: this.toNumber(record.ipmPriceAMarkupPerc),
+      ipm_price_b_markup_perc: this.toNumber(record.ipmPriceBMarkupPerc),
+      ipm_price_c_markup_perc: this.toNumber(record.ipmPriceCMarkupPerc),
+      ipm_price_d_markup_perc: this.toNumber(record.ipmPriceDMarkupPerc),
       ipm_max_price: this.toNumber(record.ipmMaxPrice),
       ipm_min_price: this.toNumber(record.ipmMinPrice),
       ipm_disc_perc: this.toNumber(record.ipmDiscPerc),
@@ -555,17 +641,18 @@ export class ItemsPriceMasterService {
       ipm_addl_cess: this.toNumber(record.ipmAddlCess),
       ipm_profit_type: record.ipmProfitType,
       ipm_round_off: this.toNumber(record.ipmRoundOff),
-      ipm_big_unit: record.ipmBigUnit,
-      ipm_uom_weight: this.toNumber(record.ipmUomWeight),
       ipm_loading_charge: this.toNumber(record.ipmLoadingCharge),
       ipm_freight_charge: this.toNumber(record.ipmFreightCharge),
-      ipm_points: record.ipmPoints,
-      ipm_remarks: record.ipmRemarks,
+      ipm_loyalty_points: this.toNumber(record.ipmLoyaltyPoints),
+      ipm_uom_remarks: record.ipmUomRemarks,
+      ipm_cost_remarks: record.ipmCostRemarks,
       ipm_is_active: record.ipmIsActive,
+      ipm_is_deleted: record.ipmIsDeleted,
+      ipm_sync_date: record.ipmSyncDate ? record.ipmSyncDate.toISOString() : null,
       ipm_created_on: record.ipmCreatedOn.toISOString(),
       ipm_created_by: record.ipmCreatedBy,
-      ipm_modified_on: record.ipmModifiedOn.toISOString(),
-      ipm_modified_by: record.ipmModifiedBy,
+      ipm_updated_on: record.ipmUpdatedOn ? record.ipmUpdatedOn.toISOString() : null,
+      ipm_updated_by: record.ipmUpdatedBy,
     };
   }
 
@@ -575,11 +662,16 @@ export class ItemsPriceMasterService {
   }
 
   private buildDisplayName(record: ItemPriceMaster): string {
-    const godownSegment = record.ipmGodownId ?? 'GLOBAL';
-    return `${record.ipmItemId}:${record.ipmUnitId}:${godownSegment}`;
+    const branchSegment = record.ipmBranchId ?? 'NO_BRANCH';
+    return `${record.ipmItemId}:${record.ipmUnitId}:${branchSegment}:${record.ipmGodownId}`;
   }
 
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
+  private resolveRecordActor(value: string | null | undefined): string | null {
+    const trimmed = value?.trim();
+    return trimmed || null;
+  }
+
+  private resolveAuditActor(value: string | null | undefined, fallback = DEFAULT_AUDIT_ACTOR): string {
     const trimmed = value?.trim();
     return trimmed || fallback;
   }
@@ -590,7 +682,7 @@ export class ItemsPriceMasterService {
         this.buildErrorResponse('Item price already exists', [
           {
             field: 'ipm_item_id',
-            message: 'Duplicate item + unit + godown combination is not allowed',
+            message: 'Duplicate item price configuration is not allowed',
           },
         ]),
       );
@@ -600,8 +692,8 @@ export class ItemsPriceMasterService {
       throw new BadRequestException(
         this.buildErrorResponse('Invalid relation reference', [
           {
-            field: 'ipm_item_id',
-            message: 'Referenced item/unit does not exist',
+            field: 'request',
+            message: 'Referenced company, branch, item, unit, base unit, or godown does not exist',
           },
         ]),
       );
@@ -613,7 +705,7 @@ export class ItemsPriceMasterService {
       throw new BadRequestException(
         this.buildErrorResponse('Cannot delete item price', [
           {
-            field: 'ipm_unit_rate_id',
+            field: 'ipm_id',
             message: 'Item price is referenced by related records',
           },
         ]),
@@ -637,12 +729,12 @@ export class ItemsPriceMasterService {
     return (error as { code?: string }).code === 'P2003';
   }
 
-  private throwNotFound(ipmUnitRateId: string): never {
+  private throwNotFound(ipmId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Item price not found', [
         {
-          field: 'ipm_unit_rate_id',
-          message: `No item price found with id ${ipmUnitRateId}`,
+          field: 'ipm_id',
+          message: `No item price found with id ${ipmId}`,
         },
       ]),
     );

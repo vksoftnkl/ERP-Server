@@ -1,6 +1,8 @@
 import { Transform } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -11,6 +13,8 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+const ITEM_PRICE_PROFIT_TYPES = ['BY_PERCENT', 'BY_AMOUNT', 'MANUAL'] as const;
 
 const toOptionalUuid = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
@@ -107,7 +111,21 @@ export class SaveItemPriceDto {
   @IsOptional()
   @Transform(({ value }) => toOptionalUuid(value))
   @IsUUID('all')
-  ipm_unit_rate_id?: string;
+  ipm_id?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  ipm_company_id?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  ipm_branch_id?: string | null;
 
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
@@ -123,12 +141,25 @@ export class SaveItemPriceDto {
   @IsUUID('all')
   ipm_unit_id!: string;
 
+  @ApiProperty({ format: 'uuid' })
+  @Transform(({ value }) => toRequiredTrimmedString(value))
+  @IsString()
+  @IsNotEmpty()
+  @IsUUID('all')
+  ipm_godown_id!: string;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
-  ipm_godown_id?: string | null;
+  ipm_base_unit_id?: string | null;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalNumber(value))
+  @IsNumber()
+  ipm_to_base_factor?: number;
 
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
@@ -140,7 +171,25 @@ export class SaveItemPriceDto {
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
-  ipm_conversion_factor?: number;
+  ipm_unit_factor?: number;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  ipm_is_default_unit?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  ipm_is_big_unit?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  ipm_is_base_unit?: boolean;
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
@@ -206,25 +255,25 @@ export class SaveItemPriceDto {
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
-  ipm_price_a_margin?: number;
+  ipm_price_a_markup_perc?: number;
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
-  ipm_price_b_margin?: number;
+  ipm_price_b_markup_perc?: number;
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
-  ipm_price_c_margin?: number;
+  ipm_price_c_markup_perc?: number;
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
-  ipm_price_d_margin?: number;
+  ipm_price_d_markup_perc?: number;
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
@@ -256,11 +305,12 @@ export class SaveItemPriceDto {
   @IsNumber()
   ipm_addl_cess?: number;
 
-  @ApiProperty({ maxLength: 20 })
+  @ApiProperty({ maxLength: 20, enum: ITEM_PRICE_PROFIT_TYPES })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsString()
   @IsNotEmpty()
   @MaxLength(20)
+  @IsIn(ITEM_PRICE_PROFIT_TYPES)
   ipm_profit_type!: string;
 
   @ApiPropertyOptional({ example: 0 })
@@ -268,18 +318,6 @@ export class SaveItemPriceDto {
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
   ipm_round_off?: number;
-
-  @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalBoolean(value))
-  @IsBoolean()
-  ipm_big_unit?: boolean;
-
-  @ApiPropertyOptional({ example: 0 })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsNumber()
-  ipm_uom_weight?: number;
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
@@ -296,8 +334,8 @@ export class SaveItemPriceDto {
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  ipm_points?: number;
+  @IsNumber()
+  ipm_loyalty_points?: number;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @IsOptional()
@@ -305,7 +343,15 @@ export class SaveItemPriceDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
   @MaxLength(250)
-  ipm_remarks?: string | null;
+  ipm_uom_remarks?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(250)
+  ipm_cost_remarks?: string | null;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
@@ -313,19 +359,24 @@ export class SaveItemPriceDto {
   @IsBoolean()
   ipm_is_active?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
+  @IsDateString()
+  ipm_sync_date?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
   ipm_created_by?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
+  @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(100)
-  ipm_modified_by?: string | null;
+  @IsUUID('all')
+  ipm_updated_by?: string | null;
 }

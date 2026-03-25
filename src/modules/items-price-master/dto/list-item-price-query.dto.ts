@@ -60,6 +60,16 @@ export class ListItemPriceQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID('all')
+  ipm_company_id?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID('all')
+  ipm_branch_id?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID('all')
   ipm_item_id?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
@@ -67,10 +77,15 @@ export class ListItemPriceQueryDto {
   @IsUUID('all')
   ipm_unit_id?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID('all')
   ipm_godown_id?: string;
+
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID('all')
+  ipm_base_unit_id?: string;
 
   @ApiPropertyOptional({ maxLength: 20 })
   @IsOptional()
@@ -84,6 +99,12 @@ export class ListItemPriceQueryDto {
   @Transform(({ value }) => toOptionalBoolean(value))
   @IsBoolean()
   ipm_is_active?: boolean;
+
+  @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalBoolean(value))
+  @IsBoolean()
+  ipm_is_deleted?: boolean;
 
   @ApiPropertyOptional({ maxLength: 120 })
   @IsOptional()

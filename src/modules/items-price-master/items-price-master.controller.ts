@@ -64,7 +64,7 @@ export class ItemsPriceMasterController {
 
   @Post('create')
   @Version('1')
-  @ApiOperation({ summary: 'Create or update item price (by ipm_unit_rate_id presence)' })
+  @ApiOperation({ summary: 'Create or update item price (by ipm_id presence)' })
   @ApiBody({
     schema: {
       oneOf: [
@@ -91,7 +91,7 @@ export class ItemsPriceMasterController {
       success: true,
       message: isArray
         ? 'Item prices saved successfully'
-        : saveItemPriceDto.ipm_unit_rate_id
+        : saveItemPriceDto.ipm_id
           ? 'Item price updated successfully'
           : 'Item price created successfully',
       data,
@@ -120,14 +120,14 @@ export class ItemsPriceMasterController {
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item price by id' })
-  @ApiQuery({ name: 'ipm_unit_rate_id', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'ipm_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemPriceSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemPriceErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemPriceErrorResponseDto })
   async getById(
-    @Query('ipm_unit_rate_id', new ParseUUIDPipe({ version: '7' })) ipmUnitRateId: string,
+    @Query('ipm_id', new ParseUUIDPipe({ version: '7' })) ipmId: string,
   ): Promise<ItemPriceSuccessResponse<ItemPricePayload>> {
-    const data = await this.itemsPriceMasterService.getById(ipmUnitRateId);
+    const data = await this.itemsPriceMasterService.getById(ipmId);
 
     return {
       success: true,
@@ -140,7 +140,7 @@ export class ItemsPriceMasterController {
   @Version('1')
   @ApiOperation({ summary: 'Delete item price by id' })
   @ApiQuery({
-    name: 'ipm_unit_rate_id',
+    name: 'ipm_id',
     required: false,
     schema: { type: 'string', format: 'uuid' },
   })
@@ -161,14 +161,12 @@ export class ItemsPriceMasterController {
   @ApiNotFoundResponse({ type: ItemPriceErrorResponseDto })
   async remove(
     @Body() body: unknown,
-    @Query('ipm_unit_rate_id') ipmUnitRateId?: string,
+    @Query('ipm_id') ipmId?: string,
   ): Promise<ItemPriceSuccessResponse<ItemPriceDeleteResult | ItemPriceDeleteResult[]>> {
-    const deleteItemPriceDto = await this.resolveDeletePayload(body, ipmUnitRateId);
+    const deleteItemPriceDto = await this.resolveDeletePayload(body, ipmId);
     const isArray = Array.isArray(deleteItemPriceDto);
     const data = await this.itemsPriceMasterService.delete(
-      isArray
-        ? deleteItemPriceDto.map((item) => item.ipm_unit_rate_id)
-        : deleteItemPriceDto.ipm_unit_rate_id,
+      isArray ? deleteItemPriceDto.map((item) => item.ipm_id) : deleteItemPriceDto.ipm_id,
     );
 
     return {
@@ -180,7 +178,7 @@ export class ItemsPriceMasterController {
 
   private async resolveDeletePayload(
     body: unknown,
-    ipmUnitRateId?: string,
+    ipmId?: string,
   ): Promise<DeleteItemPriceDto | DeleteItemPriceDto[]> {
     if (hasRequestPayload(body)) {
       return (await validateSingleOrArrayDto(body, DeleteItemPriceDto)) as
@@ -188,15 +186,15 @@ export class ItemsPriceMasterController {
         | DeleteItemPriceDto[];
     }
 
-    if (!ipmUnitRateId?.trim()) {
+    if (!ipmId?.trim()) {
       throw new BadRequestException({
-        message: ['ipm_unit_rate_id is required'],
+        message: ['ipm_id is required'],
       });
     }
 
     return (await validateDto(
       {
-        ipm_unit_rate_id: ipmUnitRateId,
+        ipm_id: ipmId,
       },
       DeleteItemPriceDto,
       {

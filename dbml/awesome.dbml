@@ -1177,6 +1177,62 @@ Table ui_table_columns {
   uiTable ui_tables
 }
 
+Table item_category_master {
+  categoryId String [pk]
+  categoryName String [unique, not null]
+  categoryAlias String
+  categoryShort String
+  categoryDescription String
+  categoryParentId String
+  parent item_category_master
+  children item_category_master [not null]
+  items item_master [not null]
+  categorySort Int
+  categoryLevel Int
+  categoryPathIdsCache String[] [not null]
+  categoryPhoto Bytes
+  categoryPhotoUrl String
+  categoryIsActive Boolean [not null, default: true]
+  categoryIsDeleted Boolean [not null, default: false]
+  categorySyncDate DateTime
+  categoryCreatedOn DateTime [default: `now()`, not null]
+  categoryCreatedBy String
+  categoryModifiedOn DateTime [default: `now()`, not null]
+  categoryModifiedBy String
+}
+
+Table godown_locations {
+  gdlId String [pk]
+  gdlGodownId String [not null]
+  gdlBranchId String [not null]
+  gdlName String [not null]
+  gdlShort String
+  gdlCode String
+  gdlType String [not null, default: 'BIN']
+  gdlParentId String
+  gdlSort Int [not null, default: 0]
+  gdlLevel Int [not null, default: 0]
+  gdlPathIdsCache String[] [not null]
+  gdlDelSheet Boolean [not null, default: false]
+  gdlSplitStock Boolean [not null, default: false]
+  gdlNegativeStock Boolean [not null, default: false]
+  gdlVolume Decimal [not null, default: 0]
+  gdlIsActive Boolean [not null, default: true]
+  gdlIsDeleted Boolean [not null, default: false]
+  gdlCreatedOn DateTime [default: `now()`, not null]
+  gdlCreatedBy String
+  gdlModifiedOn DateTime [default: `now()`, not null]
+  gdlModifiedBy String
+  gdlRemarks String
+  parent godown_locations
+  children godown_locations [not null]
+  itemPrices item_price_master [not null]
+
+  indexes {
+    (gdlGodownId, gdlParentId, gdlName) [unique]
+  }
+}
+
 Table item_batch_master {
   btmId String [pk]
   btmCompanyId String [not null]
@@ -1248,249 +1304,6 @@ Table item_batch_stock {
   }
 }
 
-Table item_stock_balance {
-  isbId String [pk]
-  isbAccYear String [not null]
-  isbCompanyId String [not null]
-  isbBranchId String [not null]
-  isbGodownId String [not null]
-  isbItemId String [not null]
-  isbUnitId String [not null]
-  isbTrackingType ItemStockBalanceTrackingType [not null, default: 'NONE']
-  isbStockBucket ItemStockBucket [not null, default: 'SALEABLE']
-  isbOpeningQty Decimal [not null, default: 0]
-  isbInQty Decimal [not null, default: 0]
-  isbOutQty Decimal [not null, default: 0]
-  isbClosingQty Decimal [not null, default: 0]
-  isbOpeningFreeQty Decimal [not null, default: 0]
-  isbFreeInQty Decimal [not null, default: 0]
-  isbFreeOutQty Decimal [not null, default: 0]
-  isbFreeClosingQty Decimal [not null, default: 0]
-  isbReservedQty Decimal [not null, default: 0]
-  isbTransitQty Decimal [not null, default: 0]
-  isbAvailableQty Decimal [not null, default: 0]
-  isbOpeningAvgRate Decimal [not null, default: 0]
-  isbAvgStockRate Decimal [not null, default: 0]
-  isbOpeningValue Decimal [not null, default: 0]
-  isbStockValue Decimal [not null, default: 0]
-  isbLastInDate DateTime
-  isbLastOutDate DateTime
-  isbSyncDate DateTime
-  isbCreatedOn DateTime [default: `now()`, not null]
-  isbCreatedBy String
-  isbUpdatedOn DateTime
-  isbUpdatedBy String
-
-  indexes {
-    (isbAccYear, isbCompanyId, isbBranchId, isbGodownId, isbItemId, isbUnitId, isbStockBucket) [unique]
-  }
-}
-
-Table item_stock_ledger {
-  stlId String [pk]
-  stlAccYear String [not null]
-  stlCompanyId String [not null]
-  stlBranchId String [not null]
-  stlGodownId String [not null]
-  stlVoucherId String [not null]
-  stlVoucherDate DateTime [not null]
-  stlLineNo Int [not null, default: 1]
-  stlSplitNo Int [not null, default: 1]
-  stlVoucherTypeId Int [not null]
-  stlTxnType StockTxnType [not null]
-  stlStockEffect Int [not null]
-  stlDocDate DateTime [not null]
-  stlPostedOn DateTime [default: `now()`, not null]
-  stlDocRefNo String
-  stlItemId String [not null]
-  stlTrackingType StockTrackingType [not null, default: 'NONE']
-  stlUomId String [not null]
-  stlBaseUomId String [not null]
-  stlConversionFactor Decimal [not null, default: 1]
-  stlBatchId String
-  stlBatchNo String
-  stlMfgDate DateTime
-  stlExpiryDate DateTime
-  stlQty Decimal [not null, default: 0]
-  stlBaseQty Decimal [not null, default: 0]
-  stlFreeQty Decimal [not null, default: 0]
-  stlFreeBaseQty Decimal [not null, default: 0]
-  stlStockRate Decimal [not null, default: 0]
-  stlStockValue Decimal [not null, default: 0]
-  stlLandedCostRate Decimal [not null, default: 0]
-  stlLandedCostValue Decimal [not null, default: 0]
-  stlDocRateWot Decimal [not null, default: 0]
-  stlDocAmountWot Decimal [not null, default: 0]
-  stlNarration String
-  stlIsActive Boolean [not null, default: true]
-  stlIsDeleted Boolean [not null, default: false]
-  stlSyncedOn DateTime
-  stlCreatedOn DateTime [default: `now()`, not null]
-  stlCreatedBy String
-
-  indexes {
-    (stlVoucherId, stlLineNo, stlSplitNo, stlGodownId, stlBatchId) [unique]
-  }
-}
-
-Table opening_stock_detail {
-  oslId String [pk]
-  oslVoucherId String [not null]
-  oslOpeningId String [not null]
-  oslLineNo Int [not null]
-  oslAccYear String [not null]
-  oslCompanyId String [not null]
-  oslBranchId String [not null]
-  oslItemId String [not null]
-  oslUnitId String [not null]
-  oslBaseUomId String
-  oslGodownId String [not null]
-  oslTrackingType OpeningStockDetailTrackingType [not null, default: 'NONE']
-  oslBatchId String
-  oslBarcode String
-  oslBatchNo String
-  oslMfgBatchNo String
-  oslBatchDate DateTime
-  oslMfgDate DateTime
-  oslExpiryDate DateTime
-  oslSerialNo String
-  oslQty Decimal [not null, default: 0]
-  oslBaseQty Decimal [not null, default: 0]
-  oslFreeQty Decimal [not null, default: 0]
-  oslConvFactor Decimal [not null, default: 1]
-  oslTaxId String
-  oslTaxPerc Decimal [not null, default: 0]
-  oslCessType OpeningStockDetailCessType [not null, default: 'NONE']
-  oslCessPerc Decimal [not null, default: 0]
-  oslCessPerUnit Decimal [not null, default: 0]
-  oslCostRate Decimal [not null, default: 0]
-  oslCostRateWot Decimal [not null, default: 0]
-  oslStockValue Decimal [not null, default: 0]
-  oslStockValueWot Decimal [not null, default: 0]
-  oslMrpRate Decimal [not null, default: 0]
-  oslMinRate Decimal [not null, default: 0]
-  oslSaleRateA Decimal [not null, default: 0]
-  oslSaleRateB Decimal [not null, default: 0]
-  oslSaleRateC Decimal [not null, default: 0]
-  oslSaleRateD Decimal [not null, default: 0]
-  oslSaleRateAWot Decimal [not null, default: 0]
-  oslSaleRateBWot Decimal [not null, default: 0]
-  oslSaleRateCWot Decimal [not null, default: 0]
-  oslSaleRateDWot Decimal [not null, default: 0]
-  oslMarkupPercA Decimal [not null, default: 0]
-  oslMarkupPercB Decimal [not null, default: 0]
-  oslMarkupPercC Decimal [not null, default: 0]
-  oslMarkupPercD Decimal [not null, default: 0]
-  oslRemarks String
-  oslIsActive Boolean [not null, default: true]
-  oslIsDeleted Boolean [not null, default: false]
-  oslSyncDate DateTime
-  oslCreatedOn DateTime [default: `now()`, not null]
-  oslCreatedBy String
-  oslUpdatedOn DateTime
-  oslUpdatedBy String
-  voucherHeader acc_voucher_header [not null]
-  company companys [not null]
-  branch branch_master [not null]
-  openingHeader opening_stock_header [not null]
-
-  indexes {
-    (oslCompanyId, oslBranchId, oslAccYear, oslVoucherId, oslLineNo) [unique]
-  }
-}
-
-Table opening_stock_header {
-  oshId String [pk]
-  oshVoucherId String [not null]
-  oshAccYear String [not null]
-  oshCompanyId String [not null]
-  oshBranchId String [not null]
-  oshVoucherNo BigInt [not null]
-  oshVoucherDate DateTime [not null]
-  oshRefNo String
-  oshNarration String
-  oshTotalLines Int [not null, default: 0]
-  oshTotalQty Decimal [not null, default: 0]
-  oshTotalValue Decimal [not null, default: 0]
-  oshStatus OpeningStockStatus [not null, default: 'DRAFT']
-  oshUserId String [not null]
-  oshSessionId String
-  oshDeviceType OpeningStockDeviceType [not null]
-  oshDeviceId String
-  oshCounterId String
-  oshIsActive Boolean [not null, default: true]
-  oshIsDeleted Boolean [not null, default: false]
-  oshSyncDate DateTime
-  oshCreatedOn DateTime [default: `now()`, not null]
-  oshCreatedBy String
-  oshUpdatedOn DateTime
-  oshUpdatedBy String
-  voucherHeader acc_voucher_header [not null]
-  company companys [not null]
-  branch branch_master [not null]
-  details opening_stock_detail [not null]
-
-  indexes {
-    (oshAccYear, oshCompanyId, oshBranchId, oshVoucherId) [unique]
-  }
-}
-
-Table item_category_master {
-  categoryId String [pk]
-  categoryName String [unique, not null]
-  categoryAlias String
-  categoryShort String
-  categoryDescription String
-  categoryParentId String
-  parent item_category_master
-  children item_category_master [not null]
-  items item_master [not null]
-  categorySort Int
-  categoryLevel Int
-  categoryPathIdsCache String[] [not null]
-  categoryPhoto Bytes
-  categoryPhotoUrl String
-  categoryIsActive Boolean [not null, default: true]
-  categoryIsDeleted Boolean [not null, default: false]
-  categorySyncDate DateTime
-  categoryCreatedOn DateTime [default: `now()`, not null]
-  categoryCreatedBy String
-  categoryModifiedOn DateTime [default: `now()`, not null]
-  categoryModifiedBy String
-}
-
-Table godown_locations {
-  gdlId String [pk]
-  gdlGodownId String [not null]
-  gdlBranchId String [not null]
-  gdlName String [not null]
-  gdlShort String
-  gdlCode String
-  gdlType String [not null, default: 'BIN']
-  gdlParentId String
-  gdlSort Int [not null, default: 0]
-  gdlLevel Int [not null, default: 0]
-  gdlPathIdsCache String[] [not null]
-  gdlDelSheet Boolean [not null, default: false]
-  gdlSplitStock Boolean [not null, default: false]
-  gdlNegativeStock Boolean [not null, default: false]
-  gdlVolume Decimal [not null, default: 0]
-  gdlIsActive Boolean [not null, default: true]
-  gdlIsDeleted Boolean [not null, default: false]
-  gdlCreatedOn DateTime [default: `now()`, not null]
-  gdlCreatedBy String
-  gdlModifiedOn DateTime [default: `now()`, not null]
-  gdlModifiedBy String
-  gdlRemarks String
-  parent godown_locations
-  children godown_locations [not null]
-  itemPrices item_price_master [not null]
-
-  indexes {
-    (gdlGodownId, gdlParentId, gdlName) [unique]
-  }
-}
-
 Table item_brand_master {
   brand_id String [pk]
   brand_name String [unique, not null]
@@ -1512,30 +1325,6 @@ Table item_brand_master {
   brand_modified_by String
   parent item_brand_master
   children item_brand_master [not null]
-}
-
-Table cust_item_rates {
-  csrId String [pk]
-  csrBranchId String
-  csrCustomerId String [not null]
-  csrUnitRateId String [not null]
-  csrRateType String [not null, default: 'FIXED']
-  csrItemRate Decimal [not null, default: 0]
-  csrDiscPerc Decimal [not null, default: 0]
-  csrDiscQty Decimal [not null, default: 0]
-  csrPriceLevel String
-  csrValidFrom DateTime
-  csrValidTo DateTime
-  csrPriority Int [not null, default: 0]
-  csrIsActive Boolean [not null, default: true]
-  csrIsDeleted Boolean [not null, default: false]
-  csrCreatedOn DateTime [default: `now()`, not null]
-  csrCreatedBy String
-  csrModifiedOn DateTime [default: `now()`, not null]
-  csrModifiedBy String
-  csrUploadedAt DateTime
-  csrUploadedBy String
-  csrRemarks String
 }
 
 Table item_ean_codes {
@@ -1795,6 +1584,91 @@ Table item_section_master {
   secModifiedBy String
 }
 
+Table item_stock_balance {
+  isbId String [pk]
+  isbAccYear String [not null]
+  isbCompanyId String [not null]
+  isbBranchId String [not null]
+  isbGodownId String [not null]
+  isbItemId String [not null]
+  isbUnitId String [not null]
+  isbTrackingType ItemStockBalanceTrackingType [not null, default: 'NONE']
+  isbStockBucket ItemStockBucket [not null, default: 'SALEABLE']
+  isbOpeningQty Decimal [not null, default: 0]
+  isbInQty Decimal [not null, default: 0]
+  isbOutQty Decimal [not null, default: 0]
+  isbClosingQty Decimal [not null, default: 0]
+  isbOpeningFreeQty Decimal [not null, default: 0]
+  isbFreeInQty Decimal [not null, default: 0]
+  isbFreeOutQty Decimal [not null, default: 0]
+  isbFreeClosingQty Decimal [not null, default: 0]
+  isbReservedQty Decimal [not null, default: 0]
+  isbTransitQty Decimal [not null, default: 0]
+  isbAvailableQty Decimal [not null, default: 0]
+  isbOpeningAvgRate Decimal [not null, default: 0]
+  isbAvgStockRate Decimal [not null, default: 0]
+  isbOpeningValue Decimal [not null, default: 0]
+  isbStockValue Decimal [not null, default: 0]
+  isbLastInDate DateTime
+  isbLastOutDate DateTime
+  isbSyncDate DateTime
+  isbCreatedOn DateTime [default: `now()`, not null]
+  isbCreatedBy String
+  isbUpdatedOn DateTime
+  isbUpdatedBy String
+
+  indexes {
+    (isbAccYear, isbCompanyId, isbBranchId, isbGodownId, isbItemId, isbUnitId, isbStockBucket) [unique]
+  }
+}
+
+Table item_stock_ledger {
+  stlId String [pk]
+  stlAccYear String [not null]
+  stlCompanyId String [not null]
+  stlBranchId String [not null]
+  stlGodownId String [not null]
+  stlVoucherId String [not null]
+  stlVoucherDate DateTime [not null]
+  stlLineNo Int [not null, default: 1]
+  stlSplitNo Int [not null, default: 1]
+  stlVoucherTypeId Int [not null]
+  stlTxnType StockTxnType [not null]
+  stlStockEffect Int [not null]
+  stlDocDate DateTime [not null]
+  stlPostedOn DateTime [default: `now()`, not null]
+  stlDocRefNo String
+  stlItemId String [not null]
+  stlTrackingType StockTrackingType [not null, default: 'NONE']
+  stlUomId String [not null]
+  stlBaseUomId String [not null]
+  stlConversionFactor Decimal [not null, default: 1]
+  stlBatchId String
+  stlBatchNo String
+  stlMfgDate DateTime
+  stlExpiryDate DateTime
+  stlQty Decimal [not null, default: 0]
+  stlBaseQty Decimal [not null, default: 0]
+  stlFreeQty Decimal [not null, default: 0]
+  stlFreeBaseQty Decimal [not null, default: 0]
+  stlStockRate Decimal [not null, default: 0]
+  stlStockValue Decimal [not null, default: 0]
+  stlLandedCostRate Decimal [not null, default: 0]
+  stlLandedCostValue Decimal [not null, default: 0]
+  stlDocRateWot Decimal [not null, default: 0]
+  stlDocAmountWot Decimal [not null, default: 0]
+  stlNarration String
+  stlIsActive Boolean [not null, default: true]
+  stlIsDeleted Boolean [not null, default: false]
+  stlSyncedOn DateTime
+  stlCreatedOn DateTime [default: `now()`, not null]
+  stlCreatedBy String
+
+  indexes {
+    (stlVoucherId, stlLineNo, stlSplitNo, stlGodownId, stlBatchId) [unique]
+  }
+}
+
 Table item_tax_history {
   ithId String [pk]
   ithItemId String [not null]
@@ -1905,6 +1779,108 @@ Table item_unit_master {
   eanCodes item_ean_codes [not null]
   itemMasters item_master [not null]
   itemReorders item_reorders [not null]
+}
+
+Table opening_stock_detail {
+  oslId String [pk]
+  oslVoucherId String [not null]
+  oslOpeningId String [not null]
+  oslLineNo Int [not null]
+  oslAccYear String [not null]
+  oslCompanyId String [not null]
+  oslBranchId String [not null]
+  oslItemId String [not null]
+  oslUnitId String [not null]
+  oslBaseUomId String
+  oslGodownId String [not null]
+  oslTrackingType OpeningStockDetailTrackingType [not null, default: 'NONE']
+  oslBatchId String
+  oslBarcode String
+  oslBatchNo String
+  oslMfgBatchNo String
+  oslBatchDate DateTime
+  oslMfgDate DateTime
+  oslExpiryDate DateTime
+  oslSerialNo String
+  oslQty Decimal [not null, default: 0]
+  oslBaseQty Decimal [not null, default: 0]
+  oslFreeQty Decimal [not null, default: 0]
+  oslConvFactor Decimal [not null, default: 1]
+  oslTaxId String
+  oslTaxPerc Decimal [not null, default: 0]
+  oslCessType OpeningStockDetailCessType [not null, default: 'NONE']
+  oslCessPerc Decimal [not null, default: 0]
+  oslCessPerUnit Decimal [not null, default: 0]
+  oslCostRate Decimal [not null, default: 0]
+  oslCostRateWot Decimal [not null, default: 0]
+  oslStockValue Decimal [not null, default: 0]
+  oslStockValueWot Decimal [not null, default: 0]
+  oslMrpRate Decimal [not null, default: 0]
+  oslMinRate Decimal [not null, default: 0]
+  oslSaleRateA Decimal [not null, default: 0]
+  oslSaleRateB Decimal [not null, default: 0]
+  oslSaleRateC Decimal [not null, default: 0]
+  oslSaleRateD Decimal [not null, default: 0]
+  oslSaleRateAWot Decimal [not null, default: 0]
+  oslSaleRateBWot Decimal [not null, default: 0]
+  oslSaleRateCWot Decimal [not null, default: 0]
+  oslSaleRateDWot Decimal [not null, default: 0]
+  oslMarkupPercA Decimal [not null, default: 0]
+  oslMarkupPercB Decimal [not null, default: 0]
+  oslMarkupPercC Decimal [not null, default: 0]
+  oslMarkupPercD Decimal [not null, default: 0]
+  oslRemarks String
+  oslIsActive Boolean [not null, default: true]
+  oslIsDeleted Boolean [not null, default: false]
+  oslSyncDate DateTime
+  oslCreatedOn DateTime [default: `now()`, not null]
+  oslCreatedBy String
+  oslUpdatedOn DateTime
+  oslUpdatedBy String
+  voucherHeader acc_voucher_header [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  openingHeader opening_stock_header [not null]
+
+  indexes {
+    (oslCompanyId, oslBranchId, oslAccYear, oslVoucherId, oslLineNo) [unique]
+  }
+}
+
+Table opening_stock_header {
+  oshId String [pk]
+  oshVoucherId String [not null]
+  oshAccYear String [not null]
+  oshCompanyId String [not null]
+  oshBranchId String [not null]
+  oshVoucherNo BigInt [not null]
+  oshVoucherDate DateTime [not null]
+  oshRefNo String
+  oshNarration String
+  oshTotalLines Int [not null, default: 0]
+  oshTotalQty Decimal [not null, default: 0]
+  oshTotalValue Decimal [not null, default: 0]
+  oshStatus OpeningStockStatus [not null, default: 'DRAFT']
+  oshUserId String [not null]
+  oshSessionId String
+  oshDeviceType OpeningStockDeviceType [not null]
+  oshDeviceId String
+  oshCounterId String
+  oshIsActive Boolean [not null, default: true]
+  oshIsDeleted Boolean [not null, default: false]
+  oshSyncDate DateTime
+  oshCreatedOn DateTime [default: `now()`, not null]
+  oshCreatedBy String
+  oshUpdatedOn DateTime
+  oshUpdatedBy String
+  voucherHeader acc_voucher_header [not null]
+  company companys [not null]
+  branch branch_master [not null]
+  details opening_stock_detail [not null]
+
+  indexes {
+    (oshAccYear, oshCompanyId, oshBranchId, oshVoucherId) [unique]
+  }
 }
 
 Table branch_master {
@@ -2073,6 +2049,30 @@ Table company_group_master {
   cogCreatedBy String
   cogModifiedOn DateTime [default: `now()`, not null]
   cogModifiedBy String
+}
+
+Table cust_item_rates {
+  csrId String [pk]
+  csrBranchId String
+  csrCustomerId String [not null]
+  csrUnitRateId String [not null]
+  csrRateType String [not null, default: 'FIXED']
+  csrItemRate Decimal [not null, default: 0]
+  csrDiscPerc Decimal [not null, default: 0]
+  csrDiscQty Decimal [not null, default: 0]
+  csrPriceLevel String
+  csrValidFrom DateTime
+  csrValidTo DateTime
+  csrPriority Int [not null, default: 0]
+  csrIsActive Boolean [not null, default: true]
+  csrIsDeleted Boolean [not null, default: false]
+  csrCreatedOn DateTime [default: `now()`, not null]
+  csrCreatedBy String
+  csrModifiedOn DateTime [default: `now()`, not null]
+  csrModifiedBy String
+  csrUploadedAt DateTime
+  csrUploadedBy String
+  csrRemarks String
 }
 
 Table suppliers {
@@ -2787,25 +2787,11 @@ Ref: menu_master.menuParentId - menu_master.menuId [delete: Set Null]
 
 Ref: ui_table_columns.uiTblClmTableId > ui_tables.uiTblId
 
-Ref: item_batch_stock.ibsBatchId > item_batch_master.btmId
-
-Ref: opening_stock_detail.oslVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
-
-Ref: opening_stock_detail.oslCompanyId > companys.compId
-
-Ref: opening_stock_detail.oslBranchId > branch_master.brId
-
-Ref: opening_stock_detail.oslOpeningId > opening_stock_header.oshId
-
-Ref: opening_stock_header.oshVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
-
-Ref: opening_stock_header.oshCompanyId > companys.compId
-
-Ref: opening_stock_header.oshBranchId > branch_master.brId
-
 Ref: item_category_master.categoryParentId - item_category_master.categoryId [delete: Restrict]
 
 Ref: godown_locations.gdlParentId - godown_locations.gdlId [delete: Restrict]
+
+Ref: item_batch_stock.ibsBatchId > item_batch_master.btmId
 
 Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
 
@@ -2854,6 +2840,20 @@ Ref: item_unit_conversion.iucUnitId > item_unit_master.unit_id [delete: Restrict
 Ref: item_unit_conversion.iucBaseUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Restrict]
+
+Ref: opening_stock_detail.oslVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: opening_stock_detail.oslCompanyId > companys.compId
+
+Ref: opening_stock_detail.oslBranchId > branch_master.brId
+
+Ref: opening_stock_detail.oslOpeningId > opening_stock_header.oshId
+
+Ref: opening_stock_header.oshVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
+
+Ref: opening_stock_header.oshCompanyId > companys.compId
+
+Ref: opening_stock_header.oshBranchId > branch_master.brId
 
 Ref: branch_master.compId > companys.compId
 
