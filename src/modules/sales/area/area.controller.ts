@@ -38,7 +38,6 @@ import {
   AreaPayload,
   AreaSuccessResponse,
 } from './types/area-api.types';
-
 @ApiTags('Areas')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -46,7 +45,6 @@ import {
 @UseFilters(AreaExceptionFilter)
 export class AreaController {
   constructor(private readonly areaService: AreaService) {}
-
   @Post('create')
   @Version('1')
   @ApiOperation({ summary: 'Create or update area (by armId presence)' })
@@ -56,14 +54,12 @@ export class AreaController {
   @ApiNotFoundResponse({ type: AreaErrorResponseDto })
   async save(@Body() saveAreaDto: SaveAreaDto): Promise<AreaSuccessResponse<AreaPayload>> {
     const data = await this.areaService.save(saveAreaDto);
-
     return {
       success: true,
       message: saveAreaDto.armId ? 'Area updated successfully' : 'Area created successfully',
       data,
     };
   }
-
   @Get('list')
   @Version('1')
   @ApiOperation({ summary: 'List areas with filter/search/pagination' })
@@ -73,7 +69,6 @@ export class AreaController {
     @Query() queryDto: ListAreaQueryDto,
   ): Promise<AreaSuccessResponse<AreaListItem[], AreaListMeta>> {
     const result = await this.areaService.list(queryDto);
-
     return {
       success: true,
       message: 'Areas fetched successfully',
@@ -82,7 +77,6 @@ export class AreaController {
       ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get area by id' })
@@ -94,14 +88,12 @@ export class AreaController {
     @Query('armId', new ParseUUIDPipe({ version: '7' })) armId: string,
   ): Promise<AreaSuccessResponse<AreaPayload>> {
     const data = await this.areaService.getById(armId);
-
     return {
       success: true,
       message: 'Area fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete area by id' })
@@ -113,7 +105,6 @@ export class AreaController {
     @Query('armId', new ParseUUIDPipe({ version: '7' })) armId: string,
   ): Promise<AreaSuccessResponse<{ armId: string; deleted: true }>> {
     const data = await this.areaService.softDelete(armId);
-
     return {
       success: true,
       message: 'Area deleted successfully',

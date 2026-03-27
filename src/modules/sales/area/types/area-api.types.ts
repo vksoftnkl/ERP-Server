@@ -2,13 +2,11 @@ export interface AreaErrorDetail {
   field: string;
   message: string;
 }
-
 export interface AreaErrorResponse {
   success: false;
   message: string;
   errors: AreaErrorDetail[];
 }
-
 export interface AreaSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
@@ -16,7 +14,6 @@ export interface AreaSuccessResponse<T, TMeta = Record<string, unknown>, TStyles
   meta?: TMeta;
   styles?: TStyles;
 }
-
 export interface AreaPayload {
   armId: string;
   armName: string;
@@ -34,9 +31,7 @@ export interface AreaPayload {
   armModifiedOn: string;
   armModifiedBy: string | null;
 }
-
 export type AreaListItem = AreaPayload | Record<string, unknown>;
-
 export interface AreaListMeta {
   page: number;
   limit: number;

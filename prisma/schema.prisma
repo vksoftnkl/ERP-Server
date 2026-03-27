@@ -1831,7 +1831,8 @@ model BankMaster {
   bnkModifiedOn     DateTime  @default(now()) @db.Timestamptz                  @map("bnk_modified_on")
   bnkModifiedBy     String?   @db.VarChar(100)                                 @map("bnk_modified_by")
 
-  @@index([bnkIsActive], name: "idx_bnk_active")
+  // Expression/partial indexes are maintained in SQL because Prisma schema
+  // cannot express filtered indexes or `lower(...)` index expressions.
   @@map("bank_master")
   @@schema("fixed")
 }
@@ -1902,11 +1903,8 @@ model ErpDeviceMaster {
   // =========================================================
   @@unique([devCompanyId, devDeviceUid], map: "uq_erp_device_company_uid")
 
-  // CREATE INDEX idx_dev_login_check ON (...) WHERE dev_is_deleted = false;
-  @@index([devCompanyId, devDeviceUid], map: "idx_dev_login_check")
-
-  // CREATE INDEX idx_dev_allowed ON (...) WHERE dev_is_deleted = false;
-  @@index([devCompanyId, devIsAllowed, devIsBlocked], map: "idx_dev_allowed")
+  // Partial indexes `idx_dev_login_check` and `idx_dev_allowed` are maintained
+  // in SQL because Prisma schema cannot express filtered indexes.
 
   @@map("erp_device_master")
   @@schema("fixed")
@@ -3068,6 +3066,7 @@ model ItemUnitConversion {
   item               ItemMaster @relation("ItemUnitConversions", fields: [iucItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_item_id")
   unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
+  company            Company    @relation("iucCompanyId", fields: [iucCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_company_id")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")
@@ -3484,6 +3483,7 @@ model Company {
   voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
+  ItemUnitConversions   ItemUnitConversion[] @relation("iucCompanyId")
   @@map("companys")
   @@schema("public")
 }
@@ -3552,6 +3552,29 @@ model CustItemRate {
   @@index([csrUnitRateId], map: "idx_csr_unit_rate")
   @@index([csrBranchId], map: "idx_csr_branch")
   @@index([csrIsDeleted, csrIsActive], map: "idx_csr_active_deleted")
+}
+
+// ----- prisma/public/widget.prisma -----
+enum WidgetPlatform {
+  mobile
+  desktop
+  web
+
+  @@schema("public")
+}
+
+model Widget {
+  widgetNo            Int              @id @default(autoincrement()) @map("widget_no")
+  widgetGroupId       Int              @map("widget_group_id")
+  widgetName          String           @map("widget_name") @db.VarChar(255)
+  widgetPosition      Int              @default(0) @map("widget_position")
+  widgetVisibility    Boolean          @default(true) @map("widget_visibility")
+  widgetGuiName       String?          @map("widget_gui_name") @db.VarChar(255)
+  widgetType          WidgetPlatform   @map("widget_type")
+  widgetSecondaryText String?          @map("widget_secondary_text")
+
+  @@map("widget")
+  @@schema("public")
 }
 
 // ----- prisma/purchase/suppliers.prisma -----

@@ -1747,6 +1747,7 @@ Table item_unit_conversion {
   item item_master [not null]
   unit item_unit_master [not null]
   baseUnit item_unit_master [not null]
+  company companys [not null]
 }
 
 Table item_unit_master {
@@ -2036,6 +2037,7 @@ Table companys {
   voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
+  ItemUnitConversions item_unit_conversion [not null]
 }
 
 Table company_group_master {
@@ -2073,6 +2075,17 @@ Table cust_item_rates {
   csrUploadedAt DateTime
   csrUploadedBy String
   csrRemarks String
+}
+
+Table widget {
+  widgetNo Int [pk, increment]
+  widgetGroupId Int [not null]
+  widgetName String [not null]
+  widgetPosition Int [not null, default: 0]
+  widgetVisibility Boolean [not null, default: true]
+  widgetGuiName String
+  widgetType WidgetPlatform [not null]
+  widgetSecondaryText String
 }
 
 Table suppliers {
@@ -2659,6 +2672,12 @@ Enum OpeningStockDeviceType {
   WEB
 }
 
+Enum WidgetPlatform {
+  mobile
+  desktop
+  web
+}
+
 Ref: account_groups.accGroupParentId - account_groups.accGroupId
 
 Ref: account_groups.accGroupCompanyId > companys.compId [delete: Restrict]
@@ -2838,6 +2857,8 @@ Ref: item_unit_conversion.iucItemId > item_master.itemId [delete: Restrict]
 Ref: item_unit_conversion.iucUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: item_unit_conversion.iucBaseUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: item_unit_conversion.iucCompanyId > companys.compId [delete: Restrict]
 
 Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Restrict]
 

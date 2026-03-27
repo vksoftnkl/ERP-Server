@@ -96,6 +96,7 @@ model Company {
   voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
+  ItemUnitConversions   ItemUnitConversion[] @relation("iucCompanyId")
   @@map("companys")
   @@schema("public")
 }

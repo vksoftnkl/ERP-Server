@@ -13,7 +13,8 @@ model BankMaster {
   bnkModifiedOn     DateTime  @default(now()) @db.Timestamptz                  @map("bnk_modified_on")
   bnkModifiedBy     String?   @db.VarChar(100)                                 @map("bnk_modified_by")
 
-  @@index([bnkIsActive], name: "idx_bnk_active")
+  // Expression/partial indexes are maintained in SQL because Prisma schema
+  // cannot express filtered indexes or `lower(...)` index expressions.
   @@map("bank_master")
   @@schema("fixed")
 }

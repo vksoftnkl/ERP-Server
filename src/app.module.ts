@@ -66,6 +66,7 @@ import { UiTableColumnsModule } from './modules/fixed/ui-table-columns/ui-table-
 import { UiTableMasterModule } from './modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
+import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;
@@ -139,6 +140,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     UiTableMasterModule,
     UserLoginSessionsModule,
     MasterLookupModule,
+    WidgetMasterModule,
     GodownsMasterModule,
     GridDetailsModule,
     GridColumnsModule,

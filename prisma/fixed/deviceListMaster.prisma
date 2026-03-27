@@ -63,11 +63,8 @@ model ErpDeviceMaster {
   // =========================================================
   @@unique([devCompanyId, devDeviceUid], map: "uq_erp_device_company_uid")
 
-  // CREATE INDEX idx_dev_login_check ON (...) WHERE dev_is_deleted = false;
-  @@index([devCompanyId, devDeviceUid], map: "idx_dev_login_check")
-
-  // CREATE INDEX idx_dev_allowed ON (...) WHERE dev_is_deleted = false;
-  @@index([devCompanyId, devIsAllowed, devIsBlocked], map: "idx_dev_allowed")
+  // Partial indexes `idx_dev_login_check` and `idx_dev_allowed` are maintained
+  // in SQL because Prisma schema cannot express filtered indexes.
 
   @@map("erp_device_master")
   @@schema("fixed")

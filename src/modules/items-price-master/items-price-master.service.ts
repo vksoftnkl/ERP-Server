@@ -8,10 +8,12 @@ import {
   ConfiguredGridListResult,
   ConfiguredGridSqlService,
 } from '../../common/configured-grid-sql/configured-grid-sql.service';
-import { ItemPriceMaster, Prisma } from '@prisma/client';
+import { ItemPriceMaster, ItemUnitConversion, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { ListItemUnitConversionQueryDto } from './dto/list-item-unit-conversion-query.dto';
 import { ListItemPriceQueryDto } from './dto/list-item-price-query.dto';
+import { SaveItemUnitConversionDto } from './dto/save-item-unit-conversion.dto';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import {
   ItemPriceDeleteResult,
@@ -20,6 +22,10 @@ import {
   ItemPriceListItem,
   ItemPriceListMeta,
   ItemPricePayload,
+  ItemUnitConversionDeleteResult,
+  ItemUnitConversionListItem,
+  ItemUnitConversionListMeta,
+  ItemUnitConversionPayload,
 } from './types/item-price-api.types';
 
 const DEFAULT_AUDIT_ACTOR = 'system';
@@ -28,6 +34,21 @@ const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const ITEM_PRICE_TABLE_NAME = 'item_price_master';
 const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
+const ITEM_UNIT_CONVERSION_TABLE_NAME = 'item_unit_conversion';
+const ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME = 'Item Unit Conversion Master';
+
+type ItemUnitConversionSnapshot = Pick<
+  ItemUnitConversion,
+  | 'iucCompanyId'
+  | 'iucBaseUnitId'
+  | 'iucToBaseFactor'
+  | 'iucUnitSlno'
+  | 'iulUnitFactor'
+  | 'iucIsDefaultUnit'
+  | 'iucIsBaseUnit'
+  | 'iucIsBigUnit'
+  | 'iucUomRemarks'
+>;
 
 @Injectable()
 export class ItemsPriceMasterService {
@@ -61,6 +82,40 @@ export class ItemsPriceMasterService {
       return Array.isArray(saveItemPriceDto) ? results : results[0];
     } catch (error: unknown) {
       this.handleWriteError(error);
+      throw error;
+    }
+  }
+
+  async saveItemUnitConversions(
+    saveItemUnitConversionDto: SaveItemUnitConversionDto,
+  ): Promise<ItemUnitConversionPayload>;
+  async saveItemUnitConversions(
+    saveItemUnitConversionDto: SaveItemUnitConversionDto[],
+  ): Promise<ItemUnitConversionPayload[]>;
+  async saveItemUnitConversions(
+    saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[],
+  ): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]>;
+  async saveItemUnitConversions(
+    saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[],
+  ): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]> {
+    const saveItems = Array.isArray(saveItemUnitConversionDto)
+      ? saveItemUnitConversionDto
+      : [saveItemUnitConversionDto];
+
+    try {
+      const results = await this.prisma.$transaction(async (tx) => {
+        const savedItems: ItemUnitConversionPayload[] = [];
+
+        for (const saveItem of saveItems) {
+          savedItems.push(await this.saveItemUnitConversion(tx, saveItem));
+        }
+
+        return savedItems;
+      });
+
+      return Array.isArray(saveItemUnitConversionDto) ? results : results[0];
+    } catch (error: unknown) {
+      this.handleItemUnitConversionWriteError(error);
       throw error;
     }
   }
@@ -104,6 +159,58 @@ export class ItemsPriceMasterService {
 
     return {
       items: records.map((record) => this.toPayload(record)),
+      meta: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async listItemUnitConversions(
+    queryDto: ListItemUnitConversionQueryDto,
+  ): Promise<ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta>> {
+    const page = queryDto.page ?? DEFAULT_PAGE;
+    const limit = queryDto.limit ?? DEFAULT_LIMIT;
+    const skip = (page - 1) * limit;
+
+    const hasStructuredFilters =
+      queryDto.iuc_company_id !== undefined ||
+      queryDto.iuc_item_id !== undefined ||
+      queryDto.iuc_unit_id !== undefined ||
+      queryDto.iuc_base_unit_id !== undefined ||
+      queryDto.iuc_is_default_unit !== undefined ||
+      queryDto.iuc_is_base_unit !== undefined ||
+      queryDto.iuc_is_big_unit !== undefined ||
+      queryDto.iuc_is_active !== undefined ||
+      queryDto.iuc_is_deleted !== undefined ||
+      Boolean(queryDto.search?.trim());
+
+    if (!hasStructuredFilters) {
+      const configuredList = await this.listItemUnitConversionsFromConfiguredGridSql(
+        page,
+        limit,
+        skip,
+      );
+      if (configuredList) {
+        return configuredList;
+      }
+    }
+
+    const where = this.buildItemUnitConversionListWhere(queryDto);
+    const [total, records] = await Promise.all([
+      this.prisma.itemUnitConversion.count({ where }),
+      this.prisma.itemUnitConversion.findMany({
+        where,
+        orderBy: [{ iucItemId: 'asc' }, { iucUnitSlno: 'asc' }, { iucId: 'asc' }],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return {
+      items: records.map((record) => this.toItemUnitConversionPayload(record)),
       meta: {
         page,
         limit,
@@ -170,6 +277,66 @@ export class ItemsPriceMasterService {
     return null;
   }
 
+  private async listItemUnitConversionsFromConfiguredGridSql(
+    page: number,
+    limit: number,
+    skip: number,
+  ): Promise<
+    ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta> | null
+  > {
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
+    });
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      ITEM_UNIT_CONVERSION_TABLE_NAME,
+    );
+    if (primaryConfiguredGrids.length === 0) {
+      return null;
+    }
+
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
+      });
+      if (!validation.isValid) {
+        continue;
+      }
+
+      try {
+        const result =
+          await this.configuredGridSqlService.runPagedQuery<ItemUnitConversionListItem>({
+            baseSql: validation.normalizedSql,
+            alias: 'item_unit_conversion_grid',
+            limit,
+            skip,
+            gridId: configuredGrid.gridId,
+          });
+
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+          styles: result.styles,
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
   async getById(ipmId: string): Promise<ItemPricePayload> {
     const record = await this.prisma.itemPriceMaster.findFirst({
       where: {
@@ -183,6 +350,21 @@ export class ItemsPriceMasterService {
     }
 
     return this.toPayload(record);
+  }
+
+  async getItemUnitConversionById(iucId: string): Promise<ItemUnitConversionPayload> {
+    const record = await this.prisma.itemUnitConversion.findFirst({
+      where: {
+        iucId,
+        iucIsDeleted: false,
+      },
+    });
+
+    if (!record) {
+      this.throwItemUnitConversionNotFound(iucId);
+    }
+
+    return this.toItemUnitConversionPayload(record);
   }
 
   async delete(ipmId: string): Promise<ItemPriceDeleteResult>;
@@ -205,6 +387,34 @@ export class ItemsPriceMasterService {
       return Array.isArray(ipmId) ? results : results[0];
     } catch (error: unknown) {
       this.handleDeleteError(error);
+      throw error;
+    }
+  }
+
+  async deleteItemUnitConversions(iucId: string): Promise<ItemUnitConversionDeleteResult>;
+  async deleteItemUnitConversions(iucId: string[]): Promise<ItemUnitConversionDeleteResult[]>;
+  async deleteItemUnitConversions(
+    iucId: string | string[],
+  ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]>;
+  async deleteItemUnitConversions(
+    iucId: string | string[],
+  ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]> {
+    const deleteIds = Array.isArray(iucId) ? iucId : [iucId];
+
+    try {
+      const results = await this.prisma.$transaction(async (tx) => {
+        const deletedItems: ItemUnitConversionDeleteResult[] = [];
+
+        for (const deleteId of deleteIds) {
+          deletedItems.push(await this.deleteItemUnitConversion(tx, deleteId));
+        }
+
+        return deletedItems;
+      });
+
+      return Array.isArray(iucId) ? results : results[0];
+    } catch (error: unknown) {
+      this.handleItemUnitConversionDeleteError(error);
       throw error;
     }
   }
@@ -267,6 +477,164 @@ export class ItemsPriceMasterService {
     };
   }
 
+  private async saveItemUnitConversion(
+    tx: Prisma.TransactionClient,
+    saveItemUnitConversionDto: SaveItemUnitConversionDto,
+  ): Promise<ItemUnitConversionPayload> {
+    if (saveItemUnitConversionDto.iuc_id) {
+      return this.updateItemUnitConversion(tx, saveItemUnitConversionDto);
+    }
+
+    return this.createItemUnitConversion(tx, saveItemUnitConversionDto);
+  }
+
+  private async createItemUnitConversion(
+    tx: Prisma.TransactionClient,
+    saveItemUnitConversionDto: SaveItemUnitConversionDto,
+  ): Promise<ItemUnitConversionPayload> {
+    this.validateItemUnitConversion(saveItemUnitConversionDto);
+
+    const now = new Date();
+    const createdBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_created_by);
+    const updatedBy =
+      this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by) ?? createdBy;
+    const data: Prisma.ItemUnitConversionUncheckedCreateInput = {
+      iucCompanyId: saveItemUnitConversionDto.iuc_company_id,
+      iucItemId: saveItemUnitConversionDto.iuc_item_id,
+      iucUnitId: saveItemUnitConversionDto.iuc_unit_id,
+      iucBaseUnitId: saveItemUnitConversionDto.iuc_base_unit_id,
+      iucCreatedOn: now,
+      iucCreatedBy: createdBy,
+      iucUpdatedOn: now,
+      iucUpdatedBy: updatedBy,
+    };
+    this.applyItemUnitConversionOptionalFields(data, saveItemUnitConversionDto);
+
+    const created = await tx.itemUnitConversion.create({ data });
+    const payload = this.toItemUnitConversionPayload(created);
+
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
+        screenName: ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: payload.iuc_id,
+        displayName: this.buildItemUnitConversionDisplayName(created),
+        originalRecord: null,
+        modifiedRecord: payload,
+        userId: this.resolveAuditActor(createdBy),
+        notes: 'Item unit conversion created',
+      },
+      tx,
+    );
+
+    return payload;
+  }
+
+  private async updateItemUnitConversion(
+    tx: Prisma.TransactionClient,
+    saveItemUnitConversionDto: SaveItemUnitConversionDto,
+  ): Promise<ItemUnitConversionPayload> {
+    this.validateItemUnitConversion(saveItemUnitConversionDto);
+
+    const iucId = saveItemUnitConversionDto.iuc_id!;
+    const existing = await tx.itemUnitConversion.findFirst({
+      where: {
+        iucId,
+        iucIsDeleted: false,
+      },
+    });
+    if (!existing) {
+      this.throwItemUnitConversionNotFound(iucId);
+    }
+
+    const data: Prisma.ItemUnitConversionUncheckedUpdateInput = {
+      iucCompanyId: saveItemUnitConversionDto.iuc_company_id,
+      iucItemId: saveItemUnitConversionDto.iuc_item_id,
+      iucUnitId: saveItemUnitConversionDto.iuc_unit_id,
+      iucBaseUnitId: saveItemUnitConversionDto.iuc_base_unit_id,
+      iucUpdatedOn: new Date(),
+    };
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_updated_by')) {
+      data.iucUpdatedBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by);
+    }
+    this.applyItemUnitConversionOptionalFields(data, saveItemUnitConversionDto);
+
+    const updated = await tx.itemUnitConversion.update({
+      where: {
+        iucId,
+      },
+      data,
+    });
+
+    const payload = this.toItemUnitConversionPayload(updated);
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
+        screenName: ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: iucId,
+        displayName: this.buildItemUnitConversionDisplayName(updated),
+        originalRecord: this.toItemUnitConversionPayload(existing),
+        modifiedRecord: payload,
+        userId: this.resolveAuditActor(payload.iuc_updated_by),
+        notes: 'Item unit conversion updated',
+      },
+      tx,
+    );
+
+    return payload;
+  }
+
+  private async deleteItemUnitConversion(
+    tx: Prisma.TransactionClient,
+    iucId: string,
+  ): Promise<ItemUnitConversionDeleteResult> {
+    const existing = await tx.itemUnitConversion.findFirst({
+      where: {
+        iucId,
+        iucIsDeleted: false,
+      },
+    });
+    if (!existing) {
+      this.throwItemUnitConversionNotFound(iucId);
+    }
+
+    const deletedOn = new Date();
+    const updated = await tx.itemUnitConversion.update({
+      where: {
+        iucId,
+      },
+      data: {
+        iucIsDeleted: true,
+        iucUpdatedOn: deletedOn,
+      },
+    });
+
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'cancel',
+        tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
+        screenName: ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: iucId,
+        displayName: this.buildItemUnitConversionDisplayName(existing),
+        originalRecord: this.toItemUnitConversionPayload(existing),
+        modifiedRecord: this.toItemUnitConversionPayload(updated),
+        userId: this.resolveAuditActor(updated.iucUpdatedBy),
+        notes: 'Item unit conversion soft deleted',
+      },
+      tx,
+    );
+
+    return {
+      iuc_id: iucId,
+      deleted: true,
+    };
+  }
+
   private async createItemPrice(
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
@@ -281,6 +649,7 @@ export class ItemsPriceMasterService {
       ]);
     }
 
+    const unitConversion = await this.resolveUnitConversion(tx, saveItemPriceDto);
     const now = new Date();
     const createdBy = this.resolveRecordActor(saveItemPriceDto.ipm_created_by);
     const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
@@ -295,6 +664,7 @@ export class ItemsPriceMasterService {
       ipmUpdatedBy: updatedBy,
     };
     this.applyOptionalFields(data, saveItemPriceDto);
+    this.applyUnitConversionFields(data, unitConversion, saveItemPriceDto);
 
     const created = await tx.itemPriceMaster.create({ data });
     const payload = this.toPayload(created);
@@ -343,6 +713,7 @@ export class ItemsPriceMasterService {
       this.throwNotFound(ipmId);
     }
 
+    const unitConversion = await this.resolveUnitConversion(tx, saveItemPriceDto);
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
       ipmUnitId: saveItemPriceDto.ipm_unit_id,
@@ -354,6 +725,7 @@ export class ItemsPriceMasterService {
       data.ipmUpdatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by);
     }
     this.applyOptionalFields(data, saveItemPriceDto);
+    this.applyUnitConversionFields(data, unitConversion, saveItemPriceDto);
 
     const updated = await tx.itemPriceMaster.update({
       where: {
@@ -429,6 +801,213 @@ export class ItemsPriceMasterService {
     }
 
     return where;
+  }
+
+  private buildItemUnitConversionListWhere(
+    queryDto: ListItemUnitConversionQueryDto,
+  ): Prisma.ItemUnitConversionWhereInput {
+    const where: Prisma.ItemUnitConversionWhereInput = {
+      iucIsDeleted: queryDto.iuc_is_deleted ?? false,
+    };
+
+    if (queryDto.iuc_company_id !== undefined) {
+      where.iucCompanyId = queryDto.iuc_company_id;
+    }
+
+    if (queryDto.iuc_item_id !== undefined) {
+      where.iucItemId = queryDto.iuc_item_id;
+    }
+
+    if (queryDto.iuc_unit_id !== undefined) {
+      where.iucUnitId = queryDto.iuc_unit_id;
+    }
+
+    if (queryDto.iuc_base_unit_id !== undefined) {
+      where.iucBaseUnitId = queryDto.iuc_base_unit_id;
+    }
+
+    if (queryDto.iuc_is_default_unit !== undefined) {
+      where.iucIsDefaultUnit = queryDto.iuc_is_default_unit;
+    }
+
+    if (queryDto.iuc_is_base_unit !== undefined) {
+      where.iucIsBaseUnit = queryDto.iuc_is_base_unit;
+    }
+
+    if (queryDto.iuc_is_big_unit !== undefined) {
+      where.iucIsBigUnit = queryDto.iuc_is_big_unit;
+    }
+
+    if (queryDto.iuc_is_active !== undefined) {
+      where.iucIsActive = queryDto.iuc_is_active;
+    }
+
+    if (queryDto.search?.trim()) {
+      const search = queryDto.search.trim();
+      where.OR = [{ iucUomRemarks: { contains: search, mode: 'insensitive' } }];
+    }
+
+    return where;
+  }
+
+  private validateItemUnitConversion(saveItemUnitConversionDto: SaveItemUnitConversionDto): void {
+    const factor = saveItemUnitConversionDto.iuc_to_base_factor;
+    if (factor !== undefined && factor <= 0) {
+      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'iuc_to_base_factor',
+          message: 'iuc_to_base_factor must be greater than 0',
+        },
+      ]);
+    }
+
+    const unitFactor = saveItemUnitConversionDto.iul_unit_factor;
+    if (unitFactor !== undefined && unitFactor <= 0) {
+      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'iul_unit_factor',
+          message: 'iul_unit_factor must be greater than 0',
+        },
+      ]);
+    }
+
+    const uomWeight = saveItemUnitConversionDto.iuc_uom_weight;
+    if (uomWeight !== undefined && uomWeight < 0) {
+      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'iuc_uom_weight',
+          message: 'iuc_uom_weight cannot be negative',
+        },
+      ]);
+    }
+
+    if (saveItemUnitConversionDto.iuc_is_base_unit !== true) {
+      return;
+    }
+
+    if (saveItemUnitConversionDto.iuc_unit_id !== saveItemUnitConversionDto.iuc_base_unit_id) {
+      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'iuc_unit_id',
+          message: 'Base unit conversion row must use the selected base unit as iuc_unit_id',
+        },
+      ]);
+    }
+
+    if (factor !== undefined && factor !== 1) {
+      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'iuc_to_base_factor',
+          message: 'Base unit conversion row must use iuc_to_base_factor = 1',
+        },
+      ]);
+    }
+  }
+
+  private async resolveUnitConversion(
+    tx: Prisma.TransactionClient,
+    saveItemPriceDto: SaveItemPriceDto,
+  ): Promise<ItemUnitConversionSnapshot> {
+    const unitConversion = await tx.itemUnitConversion.findFirst({
+      where: {
+        iucItemId: saveItemPriceDto.ipm_item_id,
+        iucUnitId: saveItemPriceDto.ipm_unit_id,
+        iucIsActive: true,
+        iucIsDeleted: false,
+      },
+    });
+
+    if (!unitConversion) {
+      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'ipm_unit_id',
+          message: 'No active item unit conversion exists for the selected item and unit',
+        },
+      ]);
+    }
+
+    if (
+      saveItemPriceDto.ipm_company_id !== undefined &&
+      saveItemPriceDto.ipm_company_id !== null &&
+      saveItemPriceDto.ipm_company_id !== unitConversion.iucCompanyId
+    ) {
+      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'ipm_company_id',
+          message: 'ipm_company_id must match the company configured on the selected item unit conversion',
+        },
+      ]);
+    }
+
+    return unitConversion;
+  }
+
+  private applyUnitConversionFields(
+    data: Prisma.ItemPriceMasterUncheckedCreateInput | Prisma.ItemPriceMasterUncheckedUpdateInput,
+    unitConversion: ItemUnitConversionSnapshot,
+    saveItemPriceDto: SaveItemPriceDto,
+  ): void {
+    data.ipmBaseUnitId = unitConversion.iucBaseUnitId;
+    data.ipmToBaseFactor = unitConversion.iucToBaseFactor;
+    data.ipmUnitSlno = unitConversion.iucUnitSlno;
+    data.ipmUnitFactor = unitConversion.iulUnitFactor;
+    data.ipmIsDefaultUnit = unitConversion.iucIsDefaultUnit;
+    data.ipmIsBigUnit = unitConversion.iucIsBigUnit;
+    data.ipmIsBaseUnit = unitConversion.iucIsBaseUnit;
+
+    if (!this.hasOwnProperty(saveItemPriceDto, 'ipm_uom_remarks')) {
+      data.ipmUomRemarks = unitConversion.iucUomRemarks;
+    }
+  }
+
+  private applyItemUnitConversionOptionalFields(
+    data:
+      | Prisma.ItemUnitConversionUncheckedCreateInput
+      | Prisma.ItemUnitConversionUncheckedUpdateInput,
+    saveItemUnitConversionDto: SaveItemUnitConversionDto,
+  ): void {
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_to_base_factor')) {
+      data.iucToBaseFactor = saveItemUnitConversionDto.iuc_to_base_factor;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_unit_slno')) {
+      data.iucUnitSlno = saveItemUnitConversionDto.iuc_unit_slno;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iul_unit_factor')) {
+      data.iulUnitFactor = saveItemUnitConversionDto.iul_unit_factor;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_default_unit')) {
+      data.iucIsDefaultUnit = saveItemUnitConversionDto.iuc_is_default_unit;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_base_unit')) {
+      data.iucIsBaseUnit = saveItemUnitConversionDto.iuc_is_base_unit;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_big_unit')) {
+      data.iucIsBigUnit = saveItemUnitConversionDto.iuc_is_big_unit;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_uom_weight')) {
+      data.iucUomWeight = saveItemUnitConversionDto.iuc_uom_weight;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_uom_remarks')) {
+      data.iucUomRemarks = saveItemUnitConversionDto.iuc_uom_remarks;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_active')) {
+      data.iucIsActive = saveItemUnitConversionDto.iuc_is_active;
+    }
+
+    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_sync_date')) {
+      data.iucSyncDate = this.parseOptionalDate(
+        saveItemUnitConversionDto.iuc_sync_date,
+        'iuc_sync_date',
+      );
+    }
   }
 
   private applyOptionalFields(
@@ -656,6 +1235,31 @@ export class ItemsPriceMasterService {
     };
   }
 
+  private toItemUnitConversionPayload(record: ItemUnitConversion): ItemUnitConversionPayload {
+    return {
+      iuc_id: record.iucId,
+      iuc_company_id: record.iucCompanyId,
+      iuc_item_id: record.iucItemId,
+      iuc_unit_id: record.iucUnitId,
+      iuc_base_unit_id: record.iucBaseUnitId,
+      iuc_to_base_factor: this.toNumber(record.iucToBaseFactor),
+      iuc_unit_slno: record.iucUnitSlno,
+      iul_unit_factor: this.toNumber(record.iulUnitFactor),
+      iuc_is_default_unit: record.iucIsDefaultUnit,
+      iuc_is_base_unit: record.iucIsBaseUnit,
+      iuc_is_big_unit: record.iucIsBigUnit,
+      iuc_uom_weight: this.toNumber(record.iucUomWeight),
+      iuc_uom_remarks: record.iucUomRemarks,
+      iuc_is_active: record.iucIsActive,
+      iuc_is_deleted: record.iucIsDeleted,
+      iuc_sync_date: record.iucSyncDate ? record.iucSyncDate.toISOString() : null,
+      iuc_created_on: record.iucCreatedOn.toISOString(),
+      iuc_created_by: record.iucCreatedBy,
+      iuc_updated_on: record.iucUpdatedOn ? record.iucUpdatedOn.toISOString() : null,
+      iuc_updated_by: record.iucUpdatedBy,
+    };
+  }
+
   private toNumber(value: Prisma.Decimal | number): number {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -664,6 +1268,10 @@ export class ItemsPriceMasterService {
   private buildDisplayName(record: ItemPriceMaster): string {
     const branchSegment = record.ipmBranchId ?? 'NO_BRANCH';
     return `${record.ipmItemId}:${record.ipmUnitId}:${branchSegment}:${record.ipmGodownId}`;
+  }
+
+  private buildItemUnitConversionDisplayName(record: ItemUnitConversion): string {
+    return `${record.iucItemId}:${record.iucUnitId}:${record.iucBaseUnitId}`;
   }
 
   private resolveRecordActor(value: string | null | undefined): string | null {
@@ -700,6 +1308,31 @@ export class ItemsPriceMasterService {
     }
   }
 
+  private handleItemUnitConversionWriteError(error: unknown): void {
+    if (this.isUniqueConstraintError(error)) {
+      throw new ConflictException(
+        this.buildItemUnitConversionErrorResponse('Item unit conversion already exists', [
+          {
+            field: 'iuc_unit_id',
+            message:
+              'Duplicate item unit conversion, default-unit, or base-unit configuration is not allowed',
+          },
+        ]),
+      );
+    }
+
+    if (this.isForeignKeyConstraintError(error)) {
+      throw new BadRequestException(
+        this.buildItemUnitConversionErrorResponse('Invalid relation reference', [
+          {
+            field: 'request',
+            message: 'Referenced company, item, unit, or base unit does not exist',
+          },
+        ]),
+      );
+    }
+  }
+
   private handleDeleteError(error: unknown): void {
     if (this.isForeignKeyConstraintError(error)) {
       throw new BadRequestException(
@@ -707,6 +1340,19 @@ export class ItemsPriceMasterService {
           {
             field: 'ipm_id',
             message: 'Item price is referenced by related records',
+          },
+        ]),
+      );
+    }
+  }
+
+  private handleItemUnitConversionDeleteError(error: unknown): void {
+    if (this.isForeignKeyConstraintError(error)) {
+      throw new BadRequestException(
+        this.buildItemUnitConversionErrorResponse('Cannot delete item unit conversion', [
+          {
+            field: 'iuc_id',
+            message: 'Item unit conversion is referenced by related records',
           },
         ]),
       );
@@ -740,11 +1386,40 @@ export class ItemsPriceMasterService {
     );
   }
 
+  private throwItemUnitConversionNotFound(iucId: string): never {
+    throw new NotFoundException(
+      this.buildItemUnitConversionErrorResponse('Item unit conversion not found', [
+        {
+          field: 'iuc_id',
+          message: `No item unit conversion found with id ${iucId}`,
+        },
+      ]),
+    );
+  }
+
   private throwBadRequest(message: string, errors: ItemPriceErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
 
+  private throwItemUnitConversionBadRequest(
+    message: string,
+    errors: ItemPriceErrorDetail[],
+  ): never {
+    throw new BadRequestException(this.buildItemUnitConversionErrorResponse(message, errors));
+  }
+
   private buildErrorResponse(
+    message: string,
+    errors: ItemPriceErrorDetail[] = [],
+  ): ItemPriceErrorResponse {
+    return {
+      success: false,
+      message,
+      errors,
+    };
+  }
+
+  private buildItemUnitConversionErrorResponse(
     message: string,
     errors: ItemPriceErrorDetail[] = [],
   ): ItemPriceErrorResponse {

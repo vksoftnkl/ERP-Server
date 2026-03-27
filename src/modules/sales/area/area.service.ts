@@ -17,15 +17,12 @@ import {
   AreaListMeta,
   AreaPayload,
 } from './types/area-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const AREA_TABLE_NAME = 'area_master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
-
 type AreaWriteClient = Prisma.TransactionClient | PrismaService;
-
 @Injectable()
 export class AreaService {
   constructor(
@@ -33,15 +30,12 @@ export class AreaService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
     if (saveAreaDto.armId) {
       return this.updateArea(saveAreaDto);
     }
-
     return this.createArea(saveAreaDto);
   }
-
   async list(queryDto: ListAreaQueryDto): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
@@ -50,26 +44,21 @@ export class AreaService {
       queryDto.armCityId !== undefined ||
       queryDto.armIsActive !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.AreaMasterWhereInput = {
       armIsDeleted: false,
     };
-
     if (queryDto.armCityId !== undefined) {
       where.armCityId = queryDto.armCityId;
     }
-
     if (queryDto.armIsActive !== undefined) {
       where.armIsActive = queryDto.armIsActive;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -78,7 +67,6 @@ export class AreaService {
         { armShort: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.areaMaster.count({ where }),
       this.prisma.areaMaster.findMany({
@@ -88,7 +76,6 @@ export class AreaService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -99,7 +86,6 @@ export class AreaService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -115,13 +101,11 @@ export class AreaService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: AREA_TABLE_NAME,
@@ -129,7 +113,6 @@ export class AreaService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result = await this.configuredGridSqlService.runPagedQuery<AreaListItem>({
           baseSql: validation.normalizedSql,
@@ -152,10 +135,8 @@ export class AreaService {
         continue;
       }
     }
-
     return null;
   }
-
   async getById(armId: string): Promise<AreaPayload> {
     const record = await this.prisma.areaMaster.findFirst({
       where: {
@@ -163,14 +144,11 @@ export class AreaService {
         armIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(armId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(armId: string): Promise<{ armId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.areaMaster.findFirst({
@@ -179,11 +157,9 @@ export class AreaService {
           armIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(armId);
       }
-
       const customerCount = await tx.customer.count({
         where: {
           cusAreaId: armId,
@@ -198,7 +174,6 @@ export class AreaService {
           },
         ]);
       }
-
       const modifiedOn = new Date();
       const result = await tx.areaMaster.updateMany({
         where: {
@@ -212,11 +187,9 @@ export class AreaService {
           armModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(armId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -225,7 +198,6 @@ export class AreaService {
         armModifiedOn: modifiedOn,
         armModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -241,14 +213,12 @@ export class AreaService {
         },
         tx,
       );
-
       return {
         armId,
         deleted: true,
       };
     });
   }
-
   private async createArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
     const normalizedName = this.normalizeRequiredName(saveAreaDto.armName);
     const now = new Date();
@@ -266,15 +236,12 @@ export class AreaService {
       armModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveAreaDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureCityExists(tx, data.armCityId);
         await this.ensureNameIsUnique(tx, normalizedName, data.armCityId);
-
         const created = await tx.areaMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -290,7 +257,6 @@ export class AreaService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -298,10 +264,8 @@ export class AreaService {
       throw error;
     }
   }
-
   private async updateArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
     const armId = saveAreaDto.armId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.areaMaster.findFirst({
@@ -310,19 +274,15 @@ export class AreaService {
             armIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(armId);
         }
-
         const normalizedName = this.normalizeRequiredName(saveAreaDto.armName);
         const nextCityId = this.hasOwnProperty(saveAreaDto, 'armCityId')
           ? saveAreaDto.armCityId
           : existing.armCityId;
-
         await this.ensureCityExists(tx, nextCityId);
         await this.ensureNameIsUnique(tx, normalizedName, nextCityId, armId);
-
         const data: Prisma.AreaMasterUncheckedUpdateInput = {
           armName: normalizedName,
           armCityId: nextCityId,
@@ -330,7 +290,6 @@ export class AreaService {
           armModifiedBy: this.resolveActor(saveAreaDto.armModifiedBy),
         };
         this.applyOptionalFields(data, saveAreaDto);
-
         const updated = await tx.areaMaster.update({
           where: {
             armId,
@@ -338,7 +297,6 @@ export class AreaService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -354,7 +312,6 @@ export class AreaService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -362,7 +319,6 @@ export class AreaService {
       throw error;
     }
   }
-
   private async ensureCityExists(tx: AreaWriteClient, cityId: string): Promise<void> {
     const city = await tx.cityMaster.findFirst({
       where: {
@@ -373,7 +329,6 @@ export class AreaService {
         ctmId: true,
       },
     });
-
     if (!city) {
       this.throwBadRequest('City does not exist', [
         {
@@ -383,7 +338,6 @@ export class AreaService {
       ]);
     }
   }
-
   private async ensureNameIsUnique(
     tx: AreaWriteClient,
     areaName: string,
@@ -410,7 +364,6 @@ export class AreaService {
         armId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Area name already exists for this city', [
@@ -422,7 +375,6 @@ export class AreaService {
       );
     }
   }
-
   private applyOptionalFields(
     data: Prisma.AreaMasterUncheckedCreateInput | Prisma.AreaMasterUncheckedUpdateInput,
     saveAreaDto: SaveAreaDto,
@@ -430,28 +382,22 @@ export class AreaService {
     if (this.hasOwnProperty(saveAreaDto, 'armAlias')) {
       data.armAlias = saveAreaDto.armAlias;
     }
-
     if (this.hasOwnProperty(saveAreaDto, 'armShort')) {
       data.armShort = saveAreaDto.armShort;
     }
-
     if (this.hasOwnProperty(saveAreaDto, 'armSort')) {
       data.armSort = saveAreaDto.armSort;
     }
-
     if (this.hasOwnProperty(saveAreaDto, 'armDistanceKm')) {
       data.armDistanceKm = saveAreaDto.armDistanceKm;
     }
-
     if (this.hasOwnProperty(saveAreaDto, 'armCollectionDays')) {
       data.armCollectionDays = saveAreaDto.armCollectionDays;
     }
-
     if (this.hasOwnProperty(saveAreaDto, 'armIsActive')) {
       data.armIsActive = saveAreaDto.armIsActive;
     }
   }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -462,10 +408,8 @@ export class AreaService {
         },
       ]);
     }
-
     return trimmed;
   }
-
   private toPayload(record: AreaMaster): AreaPayload {
     return {
       armId: record.armId,
@@ -485,24 +429,19 @@ export class AreaService {
       armModifiedBy: record.armModifiedBy,
     };
   }
-
   private toNumber(value: Prisma.Decimal | number): number {
     if (typeof value === 'number') {
       return value;
     }
-
     return Number(value.toString());
   }
-
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
     if (!value) {
       return fallback;
     }
-
     const trimmed = value.trim();
     return trimmed || fallback;
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -515,15 +454,12 @@ export class AreaService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(armId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Area not found', [
@@ -534,11 +470,9 @@ export class AreaService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: AreaErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(message: string, errors: AreaErrorDetail[] = []): AreaErrorResponse {
     return {
       success: false,
@@ -546,7 +480,6 @@ export class AreaService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

@@ -182,6 +182,76 @@ export class ItemPriceDeleteResultDto {
   deleted!: true;
 }
 
+export class ItemUnitConversionPayloadDto {
+  @ApiProperty({ format: 'uuid' })
+  iuc_id!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  iuc_company_id!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  iuc_item_id!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  iuc_unit_id!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  iuc_base_unit_id!: string;
+
+  @ApiProperty({ example: 1 })
+  iuc_to_base_factor!: number;
+
+  @ApiProperty({ example: 0 })
+  iuc_unit_slno!: number;
+
+  @ApiProperty({ example: 1 })
+  iul_unit_factor!: number;
+
+  @ApiProperty({ example: false })
+  iuc_is_default_unit!: boolean;
+
+  @ApiProperty({ example: false })
+  iuc_is_base_unit!: boolean;
+
+  @ApiProperty({ example: false })
+  iuc_is_big_unit!: boolean;
+
+  @ApiProperty({ example: 0 })
+  iuc_uom_weight!: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  iuc_uom_remarks!: string | null;
+
+  @ApiProperty({ example: true })
+  iuc_is_active!: boolean;
+
+  @ApiProperty({ example: false })
+  iuc_is_deleted!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  iuc_sync_date!: string | null;
+
+  @ApiProperty()
+  iuc_created_on!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  iuc_created_by!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  iuc_updated_on!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  iuc_updated_by!: string | null;
+}
+
+export class ItemUnitConversionDeleteResultDto {
+  @ApiProperty({ format: 'uuid' })
+  iuc_id!: string;
+
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
+
 export class ItemPriceSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -189,11 +259,21 @@ export class ItemPriceSuccessSingleDto {
   @ApiProperty({ example: 'Item price fetched successfully' })
   message!: string;
 
-  @ApiProperty({ type: ItemPricePayloadDto })
-  data!: ItemPricePayloadDto;
+  @ApiProperty({
+    oneOf: [
+      { $ref: getSchemaPath(ItemPricePayloadDto) },
+      { $ref: getSchemaPath(ItemUnitConversionPayloadDto) },
+    ],
+  })
+  data!: ItemPricePayloadDto | ItemUnitConversionPayloadDto;
 }
 
-@ApiExtraModels(ItemPricePayloadDto)
+@ApiExtraModels(
+  ItemPricePayloadDto,
+  ItemUnitConversionPayloadDto,
+  ItemPriceDeleteResultDto,
+  ItemUnitConversionDeleteResultDto,
+)
 export class ItemPriceSuccessSaveDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -208,9 +288,18 @@ export class ItemPriceSuccessSaveDto {
         type: 'array',
         items: { $ref: getSchemaPath(ItemPricePayloadDto) },
       },
+      { $ref: getSchemaPath(ItemUnitConversionPayloadDto) },
+      {
+        type: 'array',
+        items: { $ref: getSchemaPath(ItemUnitConversionPayloadDto) },
+      },
     ],
   })
-  data!: ItemPricePayloadDto | ItemPricePayloadDto[];
+  data!:
+    | ItemPricePayloadDto
+    | ItemPricePayloadDto[]
+    | ItemUnitConversionPayloadDto
+    | ItemUnitConversionPayloadDto[];
 }
 
 export class ItemPriceSuccessListDto {
@@ -220,8 +309,16 @@ export class ItemPriceSuccessListDto {
   @ApiProperty({ example: 'Item prices fetched successfully' })
   message!: string;
 
-  @ApiProperty({ type: ItemPricePayloadDto, isArray: true })
-  data!: ItemPricePayloadDto[];
+  @ApiProperty({
+    type: 'array',
+    items: {
+      oneOf: [
+        { $ref: getSchemaPath(ItemPricePayloadDto) },
+        { $ref: getSchemaPath(ItemUnitConversionPayloadDto) },
+      ],
+    },
+  })
+  data!: Array<ItemPricePayloadDto | ItemUnitConversionPayloadDto>;
 
   @ApiProperty({ type: ItemPriceListMetaDto })
   meta!: ItemPriceListMetaDto;
@@ -244,7 +341,16 @@ export class ItemPriceSuccessDeleteDto {
         type: 'array',
         items: { $ref: getSchemaPath(ItemPriceDeleteResultDto) },
       },
+      { $ref: getSchemaPath(ItemUnitConversionDeleteResultDto) },
+      {
+        type: 'array',
+        items: { $ref: getSchemaPath(ItemUnitConversionDeleteResultDto) },
+      },
     ],
   })
-  data!: ItemPriceDeleteResultDto | ItemPriceDeleteResultDto[];
+  data!:
+    | ItemPriceDeleteResultDto
+    | ItemPriceDeleteResultDto[]
+    | ItemUnitConversionDeleteResultDto
+    | ItemUnitConversionDeleteResultDto[];
 }
