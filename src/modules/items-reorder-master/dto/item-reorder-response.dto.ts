@@ -30,8 +30,8 @@ export class ItemReorderPayloadDto {
   @ApiProperty({ format: 'uuid' })
   ir_item_id!: string;
 
-  @ApiProperty({ format: 'uuid' })
-  ir_unit_id!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ir_unit_id!: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   ir_godown_id!: string | null;

@@ -284,7 +284,7 @@ export class ItemsReorderMasterService {
     const modifiedBy = this.resolveActor(saveItemReorderDto.ir_modified_by, createdBy);
     const data: Prisma.ItemReorderUncheckedCreateInput = {
       irItemId: saveItemReorderDto.ir_item_id,
-      irUnitId: saveItemReorderDto.ir_unit_id,
+      irUnitId: saveItemReorderDto.ir_unit_id ?? null,
       irCreatedOn: now,
       irCreatedBy: createdBy,
       irModifiedOn: now,
@@ -333,7 +333,7 @@ export class ItemsReorderMasterService {
 
     const data: Prisma.ItemReorderUncheckedUpdateInput = {
       irItemId: saveItemReorderDto.ir_item_id,
-      irUnitId: saveItemReorderDto.ir_unit_id,
+      irUnitId: saveItemReorderDto.ir_unit_id ?? null,
       irModifiedOn: new Date(),
       irModifiedBy: this.resolveActor(saveItemReorderDto.ir_modified_by),
     };
@@ -508,8 +508,9 @@ export class ItemsReorderMasterService {
   }
 
   private buildDisplayName(record: ItemReorder): string {
+    const unitSegment = record.irUnitId ?? 'NO_UNIT';
     const godownSegment = record.irGodownId ?? 'GLOBAL';
-    return `${record.irItemId}:${record.irUnitId}:${godownSegment}`;
+    return `${record.irItemId}:${unitSegment}:${godownSegment}`;
   }
 
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {

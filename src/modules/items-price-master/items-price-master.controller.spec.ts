@@ -164,6 +164,23 @@ describe('ItemsPriceMasterController', () => {
     });
   });
 
+  it('accepts unit conversion payloads when iuc_base_unit_id is an empty string', async () => {
+    serviceMock.saveItemUnitConversions.mockResolvedValue(itemUnitConversionPayload);
+
+    await expect(
+      controller.save({
+        iuc_company_id: ITEM_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: UNIT_ID,
+        iuc_base_unit_id: '',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Item unit conversion created successfully',
+      data: itemUnitConversionPayload,
+    });
+  });
+
   it('returns list wrapper with pagination meta', async () => {
     serviceMock.list.mockResolvedValue({
       items: [itemPricePayload],

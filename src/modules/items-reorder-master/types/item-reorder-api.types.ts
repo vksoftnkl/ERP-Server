@@ -26,7 +26,7 @@ export interface ItemReorderPayload {
   ir_id: string;
   ir_branch_id: string | null;
   ir_item_id: string;
-  ir_unit_id: string;
+  ir_unit_id: string | null;
   ir_godown_id: string | null;
   ir_min_level: number;
   ir_max_level: number;

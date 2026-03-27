@@ -20,7 +20,7 @@ model ItemMaster {
   itemSupplierId       String?  @db.Uuid @map("item_supplier_id")
   itemCustGroup        String?  @db.Uuid @map("item_cust_group")
   // Units / Batch / Expiry
-  itemBaseUnitId       String   @db.Uuid @map("item_base_unit_id")
+  itemBaseUnitId       String?  @db.Uuid @map("item_base_unit_id")
   itemIsService        Boolean  @default(false) @map("item_is_service")
   itemIsBatchBased     Boolean  @default(false) @map("item_is_batch_based")
   itemIsExpiryItem     Boolean  @default(false) @map("item_is_expiry_item")
@@ -72,7 +72,7 @@ model ItemMaster {
   // Relations
   group                ItemGroupMaster @relation(fields: [itemGroupId], references: [itgId], onUpdate: Cascade, onDelete: Restrict)
   category             categoryMaster? @relation(fields: [itemCategoryId], references: [categoryId], onUpdate: Cascade, onDelete: SetNull)
-  baseUnit             Unit            @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
   prices               ItemPriceMaster[] @relation("ItemPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")

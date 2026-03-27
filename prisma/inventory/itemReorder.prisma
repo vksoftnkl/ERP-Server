@@ -4,7 +4,7 @@ model ItemReorder {
   // Scope / link
   irBranchId          String? @db.Uuid @map("ir_branch_id")
   irItemId            String  @db.Uuid @map("ir_item_id")
-  irUnitId            String  @db.Uuid @map("ir_unit_id")
+  irUnitId            String? @db.Uuid @map("ir_unit_id")
   irGodownId          String? @db.Uuid @map("ir_godown_id") // NULL = global reorder rule
 
   // Core reorder controls
@@ -35,7 +35,7 @@ model ItemReorder {
 
   // Relations
   item                ItemMaster @relation(fields: [irItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-  unit                Unit       @relation(fields: [irUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  unit                Unit?      @relation(fields: [irUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("item_reorders")
    @@schema("inventory")

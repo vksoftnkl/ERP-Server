@@ -15,6 +15,12 @@ const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fd10';
 const USER_ID = '019c6f6c-be87-7a11-8905-36092c46fd11';
 
 type PrismaMock = {
+  itemMaster: {
+    findFirst: jest.Mock<
+      Promise<{ itemBaseUnitId: string | null } | null>,
+      [Prisma.ItemMasterFindFirstArgs]
+    >;
+  };
   itemPriceMaster: {
     create: jest.Mock<Promise<ItemPriceMaster>, [Prisma.ItemPriceMasterCreateArgs]>;
     findFirst: jest.Mock<Promise<ItemPriceMaster | null>, [Prisma.ItemPriceMasterFindFirstArgs]>;
@@ -128,6 +134,12 @@ describe('ItemsPriceMasterService', () => {
 
   beforeEach(() => {
     prisma = {
+      itemMaster: {
+        findFirst: jest.fn<
+          Promise<{ itemBaseUnitId: string | null } | null>,
+          [Prisma.ItemMasterFindFirstArgs]
+        >(),
+      },
       itemPriceMaster: {
         create: jest.fn<Promise<ItemPriceMaster>, [Prisma.ItemPriceMasterCreateArgs]>(),
         findFirst: jest.fn<
@@ -270,8 +282,20 @@ describe('ItemsPriceMasterService', () => {
     expect(updateArgs.data.ipmUomRemarks).toBe('Manual UOM note');
   });
 
-  it('rejects saves when no active item unit conversion exists for the selected item and unit', async () => {
+  it('falls back to request-derived structural fields when no active item unit conversion exists', async () => {
     prisma.itemUnitConversion.findFirst.mockResolvedValue(null);
+    prisma.itemPriceMaster.create.mockResolvedValue(
+      makeItemPriceRecord({
+        ipmBaseUnitId: UNIT_ID,
+        ipmToBaseFactor: new Prisma.Decimal(1),
+        ipmUnitSlno: 0,
+        ipmUnitFactor: new Prisma.Decimal(1),
+        ipmIsDefaultUnit: false,
+        ipmIsBigUnit: false,
+        ipmIsBaseUnit: true,
+        ipmUomRemarks: null,
+      }),
+    );
 
     const input: SaveItemPriceDto = {
       ipm_item_id: ITEM_ID,
@@ -280,8 +304,14 @@ describe('ItemsPriceMasterService', () => {
       ipm_profit_type: 'MANUAL',
     };
 
-    await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.itemPriceMaster.create).not.toHaveBeenCalled();
+    await expect(service.save(input)).resolves.toMatchObject({
+      ipm_base_unit_id: UNIT_ID,
+      ipm_to_base_factor: 1,
+      ipm_unit_slno: 0,
+      ipm_unit_factor: 1,
+      ipm_is_base_unit: true,
+    });
+    expect(prisma.itemPriceMaster.create).toHaveBeenCalled();
   });
 
   it('rejects saves when ipm_company_id does not match item unit conversion company', async () => {
@@ -301,6 +331,9 @@ describe('ItemsPriceMasterService', () => {
 
   it('creates item unit conversions through the item price service', async () => {
     prisma.itemUnitConversion.create.mockResolvedValue(makeItemUnitConversionRecord());
+    prisma.itemMaster.findFirst.mockResolvedValue({
+      itemBaseUnitId: BASE_UNIT_ID,
+    });
 
     const result = await service.saveItemUnitConversions({
       iuc_company_id: COMPANY_ID,
@@ -323,6 +356,63 @@ describe('ItemsPriceMasterService', () => {
       iuc_to_base_factor: 12,
       iuc_unit_slno: 2,
     });
+  });
+
+  it('derives missing base-unit ids from a base-unit row elsewhere in the same batch', async () => {
+    const secondaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd13';
+    prisma.itemUnitConversion.create
+      .mockResolvedValueOnce(
+        makeItemUnitConversionRecord({
+          iucUnitId: secondaryUnitId,
+          iucBaseUnitId: BASE_UNIT_ID,
+          iucIsBaseUnit: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeItemUnitConversionRecord({
+          iucId: '019c6f6c-be87-7a11-8905-36092c46fd14',
+          iucUnitId: BASE_UNIT_ID,
+          iucBaseUnitId: BASE_UNIT_ID,
+          iucIsBaseUnit: true,
+          iucToBaseFactor: new Prisma.Decimal(1),
+          iulUnitFactor: new Prisma.Decimal(1),
+        }),
+      );
+
+    const result = await service.saveItemUnitConversions([
+      {
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: secondaryUnitId,
+        iuc_to_base_factor: 12,
+      },
+      {
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: BASE_UNIT_ID,
+        iuc_is_base_unit: true,
+      },
+    ]);
+
+    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          iucUnitId: secondaryUnitId,
+          iucBaseUnitId: BASE_UNIT_ID,
+        }),
+      }),
+    );
+    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          iucUnitId: BASE_UNIT_ID,
+          iucBaseUnitId: BASE_UNIT_ID,
+        }),
+      }),
+    );
+    expect(result).toHaveLength(2);
   });
 
   it('rejects invalid base-unit conversion rows', async () => {

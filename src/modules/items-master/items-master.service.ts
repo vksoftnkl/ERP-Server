@@ -229,7 +229,7 @@ export class ItemsMasterService {
       itemCompanyId: saveItemDto.item_company_id,
       itemNameEn,
       itemGroupId: saveItemDto.item_group_id,
-      itemBaseUnitId: saveItemDto.item_base_unit_id,
+      itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
       itemPackingItemIds: saveItemDto.item_packing_item_ids ?? [],
       itemCreatedOn: now,
       itemCreatedBy: createdBy,
@@ -288,7 +288,7 @@ export class ItemsMasterService {
         const data: Prisma.ItemMasterUncheckedUpdateInput = {
           itemNameEn,
           itemGroupId: saveItemDto.item_group_id,
-          itemBaseUnitId: saveItemDto.item_base_unit_id,
+          itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
           itemModifiedOn: new Date(),
           itemModifiedBy: this.resolveActor(saveItemDto.item_modified_by),
         };

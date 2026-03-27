@@ -136,12 +136,12 @@ export class SaveItemReorderDto {
   @IsUUID('all')
   ir_item_id!: string;
 
-  @ApiProperty({ format: 'uuid' })
-  @Transform(({ value }) => toRequiredTrimmedString(value))
-  @IsString()
-  @IsNotEmpty()
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
-  ir_unit_id!: string;
+  ir_unit_id?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()

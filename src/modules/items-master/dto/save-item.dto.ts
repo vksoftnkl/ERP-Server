@@ -287,12 +287,12 @@ export class SaveItemDto {
   @IsUUID('all')
   item_cust_group?: string | null;
 
-  @ApiProperty({ format: 'uuid' })
-  @Transform(({ value }) => toRequiredTrimmedString(value))
-  @IsString()
-  @IsNotEmpty()
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
-  item_base_unit_id!: string;
+  item_base_unit_id?: string | null;
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
