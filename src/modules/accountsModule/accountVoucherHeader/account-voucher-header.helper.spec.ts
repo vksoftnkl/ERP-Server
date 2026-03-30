@@ -169,6 +169,7 @@ describe('account voucher header helper', () => {
       data: expect.objectContaining({
         avhVoucherNo: BigInt(25),
         avhVoucherSlno: BigInt(10),
+        avhBillDate: new Date('2026-03-27T10:00:00.000Z'),
         avhVoucherRefno: 'clo-10',
         avhBillRefno: 'clo-10',
       }),
@@ -195,6 +196,7 @@ describe('account voucher header helper', () => {
 
     expect(result.avhVoucherNo).toBe(BigInt(1));
     expect(result.avhVoucherSlno).toBe(BigInt(5));
+    expect(result.avhBillDate).toEqual(new Date('2026-03-27T10:00:00.000Z'));
     expect(result.avhVoucherRefno).toBe('JV-5');
     expect(result.avhBillRefno).toBe('JV-5');
     expect(tx.accVoucherHeader.findFirst.mock.calls[1][0]).toEqual({
@@ -277,6 +279,24 @@ describe('account voucher header helper', () => {
     });
     expect(result.avhVoucherNo).toBe(existing.avhVoucherNo);
     expect(result.avhVoucherRefno).toBe(existing.avhVoucherRefno);
+  });
+
+  it('syncs bill date with voucher date when building update input', async () => {
+    const existing = makeRecord({
+      avhBillDate: new Date('2026-03-20T10:00:00.000Z'),
+    });
+
+    tx.accVoucherHeader.findFirst.mockResolvedValue(existing);
+
+    const result = await buildAccountVoucherHeaderUpdateInput(
+      tx as unknown as Prisma.TransactionClient,
+      existing.avhVoucherId,
+      makeUpdatePayload({
+        avhVoucherDate: new Date('2026-03-29T10:00:00.000Z'),
+      }),
+    );
+
+    expect(result.avhBillDate).toEqual(new Date('2026-03-29T10:00:00.000Z'));
   });
 
   it('rebuilds voucher serial and refno when the voucher type changes', async () => {

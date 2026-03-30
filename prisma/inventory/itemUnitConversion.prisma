@@ -7,7 +7,7 @@ model ItemUnitConversion {
   iucBaseUnitId      String    @db.Uuid @map("iuc_base_unit_id")
   iucToBaseFactor    Decimal   @default(1) @db.Decimal(18, 6) @map("iuc_to_base_factor")
   iucUnitSlno        Int       @default(0) @map("iuc_unit_slno")
-  iulUnitFactor      Decimal   @default(1) @db.Decimal(18, 6) @map("iul_unit_factor")
+  iucUnitFactor      Decimal   @default(1) @db.Decimal(18, 6) @map("iuc_unit_factor")
   iucIsDefaultUnit   Boolean   @default(false) @map("iuc_is_default_unit")
   iucIsBaseUnit      Boolean   @default(false) @map("iuc_is_base_unit")
   iucIsBigUnit       Boolean   @default(false) @map("iuc_is_big_unit")

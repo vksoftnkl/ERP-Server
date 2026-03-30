@@ -125,6 +125,10 @@ export class SaveItemUnitConversionDto {
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
+  iuc_unit_factor?: number;
+  @IsOptional()
+  @Transform(({ value }) => toOptionalNumber(value))
+  @IsNumber()
   iul_unit_factor?: number;
   @ApiPropertyOptional({ default: false })
   @IsOptional()

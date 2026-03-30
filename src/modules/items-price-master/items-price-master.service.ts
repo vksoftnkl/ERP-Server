@@ -42,7 +42,7 @@ type ItemUnitConversionSnapshot = Pick<
   | 'iucBaseUnitId'
   | 'iucToBaseFactor'
   | 'iucUnitSlno'
-  | 'iulUnitFactor'
+  | 'iucUnitFactor'
   | 'iucIsDefaultUnit'
   | 'iucIsBaseUnit'
   | 'iucIsBigUnit'
@@ -856,6 +856,8 @@ export class ItemsPriceMasterService {
 
   private validateItemUnitConversion(saveItemUnitConversionDto: SaveItemUnitConversionDto): void {
     const factor = saveItemUnitConversionDto.iuc_to_base_factor;
+    const unitFactor =
+      saveItemUnitConversionDto.iuc_unit_factor ?? saveItemUnitConversionDto.iul_unit_factor;
     const resolvedBaseUnitId =
       saveItemUnitConversionDto.iuc_base_unit_id ?? saveItemUnitConversionDto.iuc_unit_id;
     if (factor !== undefined && factor <= 0) {
@@ -867,12 +869,11 @@ export class ItemsPriceMasterService {
       ]);
     }
 
-    const unitFactor = saveItemUnitConversionDto.iul_unit_factor;
     if (unitFactor !== undefined && unitFactor <= 0) {
       this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
         {
-          field: 'iul_unit_factor',
-          message: 'iul_unit_factor must be greater than 0',
+          field: 'iuc_unit_factor',
+          message: 'iuc_unit_factor must be greater than 0',
         },
       ]);
     }
@@ -905,6 +906,15 @@ export class ItemsPriceMasterService {
         {
           field: 'iuc_to_base_factor',
           message: 'Base unit conversion row must use iuc_to_base_factor = 1',
+        },
+      ]);
+    }
+
+    if (unitFactor !== undefined && unitFactor !== 1) {
+      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'iuc_unit_factor',
+          message: 'Base unit conversion row must use iuc_unit_factor = 1',
         },
       ]);
     }
@@ -1054,7 +1064,7 @@ export class ItemsPriceMasterService {
       iucBaseUnitId: resolvedBaseUnitId,
       iucToBaseFactor: new Prisma.Decimal(saveItemPriceDto.ipm_to_base_factor ?? 1),
       iucUnitSlno: saveItemPriceDto.ipm_unit_slno ?? 0,
-      iulUnitFactor: new Prisma.Decimal(saveItemPriceDto.ipm_unit_factor ?? 1),
+      iucUnitFactor: new Prisma.Decimal(saveItemPriceDto.ipm_unit_factor ?? 1),
       iucIsDefaultUnit: saveItemPriceDto.ipm_is_default_unit ?? false,
       iucIsBaseUnit: isBaseUnit,
       iucIsBigUnit: saveItemPriceDto.ipm_is_big_unit ?? false,
@@ -1070,7 +1080,7 @@ export class ItemsPriceMasterService {
     data.ipmBaseUnitId = unitConversion.iucBaseUnitId;
     data.ipmToBaseFactor = unitConversion.iucToBaseFactor;
     data.ipmUnitSlno = unitConversion.iucUnitSlno;
-    data.ipmUnitFactor = unitConversion.iulUnitFactor;
+    data.ipmUnitFactor = unitConversion.iucUnitFactor;
     data.ipmIsDefaultUnit = unitConversion.iucIsDefaultUnit;
     data.ipmIsBigUnit = unitConversion.iucIsBigUnit;
     data.ipmIsBaseUnit = unitConversion.iucIsBaseUnit;
@@ -1094,8 +1104,13 @@ export class ItemsPriceMasterService {
       data.iucUnitSlno = saveItemUnitConversionDto.iuc_unit_slno;
     }
 
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iul_unit_factor')) {
-      data.iulUnitFactor = saveItemUnitConversionDto.iul_unit_factor;
+    const hasUnitFactor =
+      this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_unit_factor') ||
+      this.hasOwnProperty(saveItemUnitConversionDto, 'iul_unit_factor');
+    const unitFactor =
+      saveItemUnitConversionDto.iuc_unit_factor ?? saveItemUnitConversionDto.iul_unit_factor;
+    if (hasUnitFactor && unitFactor !== undefined) {
+      data.iucUnitFactor = unitFactor;
     }
 
     if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_default_unit')) {
@@ -1364,7 +1379,7 @@ export class ItemsPriceMasterService {
       iuc_base_unit_id: record.iucBaseUnitId,
       iuc_to_base_factor: this.toNumber(record.iucToBaseFactor),
       iuc_unit_slno: record.iucUnitSlno,
-      iul_unit_factor: this.toNumber(record.iulUnitFactor),
+      iuc_unit_factor: this.toNumber(record.iucUnitFactor),
       iuc_is_default_unit: record.iucIsDefaultUnit,
       iuc_is_base_unit: record.iucIsBaseUnit,
       iuc_is_big_unit: record.iucIsBigUnit,

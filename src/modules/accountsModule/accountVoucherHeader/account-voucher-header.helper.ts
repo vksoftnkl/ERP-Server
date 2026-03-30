@@ -115,7 +115,7 @@ export async function buildAccountVoucherHeaderCreateInput(
   const avhVoucherSlno = await getNextVoucherSlno(client, payload);
   const avhVoucherRefno = buildVoucherRefno(voucherType.vchrTypeCode, avhVoucherSlno);
   return {
-    ...payload,
+    ...syncBillDateWithVoucherDate(payload),
     avhVoucherNo,
     avhVoucherSlno,
     avhVoucherRefno,
@@ -139,7 +139,7 @@ export async function buildAccountVoucherHeaderUpdateInput(
   const voucherSlnoScopeChanged =
     voucherNoScopeChanged || existing.avhVoucherTypeId !== nextScope.avhVoucherTypeId;
   const data: Prisma.AccVoucherHeaderUncheckedUpdateInput = {
-    ...payload,
+    ...syncBillDateWithVoucherDate(payload),
     avhUpdatedOn: new Date(),
   };
   if (voucherNoScopeChanged) {
@@ -166,6 +166,17 @@ export async function buildAccountVoucherHeaderUpdateInput(
   data.avhVoucherRefno = buildVoucherRefno(voucherType.vchrTypeCode, avhVoucherSlno);
   data.avhBillRefno = data.avhVoucherRefno;
   return data;
+}
+function syncBillDateWithVoucherDate<
+  T extends { avhVoucherDate?: Date | string | null; avhBillDate?: Date | string | null },
+>(payload: T): T {
+  if (!Object.prototype.hasOwnProperty.call(payload, 'avhVoucherDate') || payload.avhVoucherDate == null) {
+    return payload;
+  }
+  return {
+    ...payload,
+    avhBillDate: payload.avhVoucherDate,
+  };
 }
 function isPrismaService(client: AccountVoucherHeaderWriteClient): client is PrismaService {
   return '$transaction' in client;

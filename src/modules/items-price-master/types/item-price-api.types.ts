@@ -93,7 +93,7 @@ export interface ItemUnitConversionPayload {
   iuc_base_unit_id: string;
   iuc_to_base_factor: number;
   iuc_unit_slno: number;
-  iul_unit_factor: number;
+  iuc_unit_factor: number;
   iuc_is_default_unit: boolean;
   iuc_is_base_unit: boolean;
   iuc_is_big_unit: boolean;

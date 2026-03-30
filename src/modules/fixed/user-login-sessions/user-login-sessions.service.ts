@@ -17,13 +17,11 @@ import {
   UserLoginSessionsListMeta,
   UserLoginSessionsPayload,
 } from './types/user-login-sessions-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const USER_LOGIN_SESSIONS_TABLE_NAME = 'user_login_sessions';
 const USER_LOGIN_SESSIONS_AUDIT_SCREEN_NAME = 'User Login Sessions';
-
 @Injectable()
 export class UserLoginSessionsService {
   constructor(
@@ -31,15 +29,12 @@ export class UserLoginSessionsService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveUserLoginSessionDto: SaveUserLoginSessionDto): Promise<UserLoginSessionsPayload> {
     if (saveUserLoginSessionDto.ulsId) {
       return this.updateSession(saveUserLoginSessionDto);
     }
-
     return this.createSession(saveUserLoginSessionDto);
   }
-
   async list(
     queryDto: ListUserLoginSessionsQueryDto,
   ): Promise<ConfiguredGridListResult<UserLoginSessionsListItem, UserLoginSessionsListMeta>> {
@@ -55,49 +50,39 @@ export class UserLoginSessionsService {
       queryDto.ulsIsActiveSession !== undefined ||
       queryDto.ulsIsActive !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.UserLoginSessionWhereInput = {
       ulsIsDeleted: false,
     };
-
     if (queryDto.ulsCompanyId !== undefined) {
       where.ulsCompanyId = queryDto.ulsCompanyId;
     }
-
     if (queryDto.ulsBranchId !== undefined) {
       where.ulsBranchId = queryDto.ulsBranchId;
     }
-
     if (queryDto.ulsUserId !== undefined) {
       where.ulsUserId = queryDto.ulsUserId;
     }
-
     if (queryDto.ulsDeviceId !== undefined) {
       where.ulsDeviceId = queryDto.ulsDeviceId;
     }
-
     if (queryDto.ulsLoginStatus?.trim()) {
       where.ulsLoginStatus = {
         equals: queryDto.ulsLoginStatus.trim(),
         mode: 'insensitive',
       };
     }
-
     if (queryDto.ulsIsActiveSession !== undefined) {
       where.ulsIsActiveSession = queryDto.ulsIsActiveSession;
     }
-
     if (queryDto.ulsIsActive !== undefined) {
       where.ulsIsActive = queryDto.ulsIsActive;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -110,7 +95,6 @@ export class UserLoginSessionsService {
         { ulsAppVersion: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.userLoginSession.count({ where }),
       this.prisma.userLoginSession.findMany({
@@ -120,7 +104,6 @@ export class UserLoginSessionsService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -131,7 +114,6 @@ export class UserLoginSessionsService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -152,7 +134,6 @@ export class UserLoginSessionsService {
     if (!rawGridSql) {
       return null;
     }
-
     const validation = this.configuredGridSqlService.validateBaseSql({
       sql: rawGridSql,
       tableName: USER_LOGIN_SESSIONS_TABLE_NAME,
@@ -165,7 +146,6 @@ export class UserLoginSessionsService {
         },
       ]);
     }
-
     try {
       const result = await this.configuredGridSqlService.runPagedQuery<UserLoginSessionsListItem>({
         baseSql: validation.normalizedSql,
@@ -174,7 +154,6 @@ export class UserLoginSessionsService {
         skip,
           gridId: configuredGrid.gridId,
       });
-
       return {
         items: result.items,
         meta: {
@@ -194,7 +173,6 @@ export class UserLoginSessionsService {
       ]);
     }
   }
-
   async getById(ulsId: string): Promise<UserLoginSessionsPayload> {
     const record = await this.prisma.userLoginSession.findFirst({
       where: {
@@ -202,14 +180,11 @@ export class UserLoginSessionsService {
         ulsIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(ulsId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(ulsId: string): Promise<{ ulsId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.userLoginSession.findFirst({
@@ -218,11 +193,9 @@ export class UserLoginSessionsService {
           ulsIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(ulsId);
       }
-
       const modifiedOn = new Date();
       const logoutOn = existing.ulsLogoutOn ?? modifiedOn;
       const result = await tx.userLoginSession.updateMany({
@@ -239,11 +212,9 @@ export class UserLoginSessionsService {
           ulsModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(ulsId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -254,7 +225,6 @@ export class UserLoginSessionsService {
         ulsModifiedOn: modifiedOn,
         ulsModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -270,14 +240,12 @@ export class UserLoginSessionsService {
         },
         tx,
       );
-
       return {
         ulsId,
         deleted: true,
       };
     });
   }
-
   private async createSession(
     saveUserLoginSessionDto: SaveUserLoginSessionDto,
   ): Promise<UserLoginSessionsPayload> {
@@ -294,12 +262,10 @@ export class UserLoginSessionsService {
       ulsModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveUserLoginSessionDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const created = await tx.userLoginSession.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -315,7 +281,6 @@ export class UserLoginSessionsService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -323,12 +288,10 @@ export class UserLoginSessionsService {
       throw error;
     }
   }
-
   private async updateSession(
     saveUserLoginSessionDto: SaveUserLoginSessionDto,
   ): Promise<UserLoginSessionsPayload> {
     const ulsId = saveUserLoginSessionDto.ulsId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.userLoginSession.findFirst({
@@ -337,11 +300,9 @@ export class UserLoginSessionsService {
             ulsIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(ulsId);
         }
-
         const data: Prisma.UserLoginSessionUncheckedUpdateInput = {
           ulsCompanyId: saveUserLoginSessionDto.ulsCompanyId,
           ulsBranchId: saveUserLoginSessionDto.ulsBranchId,
@@ -350,7 +311,6 @@ export class UserLoginSessionsService {
           ulsModifiedBy: this.resolveActor(saveUserLoginSessionDto.ulsModifiedBy),
         };
         this.applyOptionalFields(data, saveUserLoginSessionDto);
-
         const updated = await tx.userLoginSession.update({
           where: {
             ulsId,
@@ -358,7 +318,6 @@ export class UserLoginSessionsService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -374,7 +333,6 @@ export class UserLoginSessionsService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -382,7 +340,6 @@ export class UserLoginSessionsService {
       throw error;
     }
   }
-
   private applyOptionalFields(
     data: Prisma.UserLoginSessionUncheckedCreateInput | Prisma.UserLoginSessionUncheckedUpdateInput,
     saveUserLoginSessionDto: SaveUserLoginSessionDto,
@@ -390,60 +347,46 @@ export class UserLoginSessionsService {
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsDeviceId')) {
       data.ulsDeviceId = saveUserLoginSessionDto.ulsDeviceId;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsSessionId')) {
       data.ulsSessionId = saveUserLoginSessionDto.ulsSessionId;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsSessionToken')) {
       data.ulsSessionToken = saveUserLoginSessionDto.ulsSessionToken;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsRefreshTokenId')) {
       data.ulsRefreshTokenId = saveUserLoginSessionDto.ulsRefreshTokenId;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsLoginOn')) {
       data.ulsLoginOn = saveUserLoginSessionDto.ulsLoginOn;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsLogoutOn')) {
       data.ulsLogoutOn = saveUserLoginSessionDto.ulsLogoutOn;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsLogoutType')) {
       data.ulsLogoutType = saveUserLoginSessionDto.ulsLogoutType;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsLoginStatus')) {
       data.ulsLoginStatus = saveUserLoginSessionDto.ulsLoginStatus;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsFailReason')) {
       data.ulsFailReason = saveUserLoginSessionDto.ulsFailReason;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsIpAddress')) {
       data.ulsIpAddress = saveUserLoginSessionDto.ulsIpAddress;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsUserAgent')) {
       data.ulsUserAgent = saveUserLoginSessionDto.ulsUserAgent;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsAppVersion')) {
       data.ulsAppVersion = saveUserLoginSessionDto.ulsAppVersion;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsIsActiveSession')) {
       data.ulsIsActiveSession = saveUserLoginSessionDto.ulsIsActiveSession;
     }
-
     if (this.hasOwnProperty(saveUserLoginSessionDto, 'ulsIsActive')) {
       data.ulsIsActive = saveUserLoginSessionDto.ulsIsActive;
     }
   }
-
   private toPayload(record: UserLoginSession): UserLoginSessionsPayload {
     return {
       ulsId: record.ulsId,
@@ -472,16 +415,13 @@ export class UserLoginSessionsService {
       ulsModifiedBy: record.ulsModifiedBy,
     };
   }
-
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
     if (!value) {
       return fallback;
     }
-
     const trimmed = value.trim();
     return trimmed || fallback;
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -494,15 +434,12 @@ export class UserLoginSessionsService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(ulsId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('User login session not found', [
@@ -513,11 +450,9 @@ export class UserLoginSessionsService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: UserLoginSessionsErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: UserLoginSessionsErrorDetail[] = [],
@@ -528,7 +463,6 @@ export class UserLoginSessionsService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

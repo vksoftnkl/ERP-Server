@@ -110,7 +110,7 @@ const makeItemUnitConversionRecord = (
     iucBaseUnitId: BASE_UNIT_ID,
     iucToBaseFactor: new Prisma.Decimal(12),
     iucUnitSlno: 2,
-    iulUnitFactor: new Prisma.Decimal(6),
+    iucUnitFactor: new Prisma.Decimal(6),
     iucIsDefaultUnit: true,
     iucIsBaseUnit: false,
     iucIsBigUnit: true,
@@ -342,7 +342,7 @@ describe('ItemsPriceMasterService', () => {
       iuc_base_unit_id: BASE_UNIT_ID,
       iuc_to_base_factor: 12,
       iuc_unit_slno: 2,
-      iul_unit_factor: 6,
+      iuc_unit_factor: 6,
       iuc_is_default_unit: true,
       iuc_is_big_unit: true,
       iuc_created_by: USER_ID,
@@ -375,7 +375,7 @@ describe('ItemsPriceMasterService', () => {
           iucBaseUnitId: BASE_UNIT_ID,
           iucIsBaseUnit: true,
           iucToBaseFactor: new Prisma.Decimal(1),
-          iulUnitFactor: new Prisma.Decimal(1),
+          iucUnitFactor: new Prisma.Decimal(1),
         }),
       );
 

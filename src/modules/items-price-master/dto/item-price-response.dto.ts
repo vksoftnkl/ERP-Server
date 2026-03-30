@@ -140,7 +140,7 @@ export class ItemUnitConversionPayloadDto {
   @ApiProperty({ example: 0 })
   iuc_unit_slno!: number;
   @ApiProperty({ example: 1 })
-  iul_unit_factor!: number;
+  iuc_unit_factor!: number;
   @ApiProperty({ example: false })
   iuc_is_default_unit!: boolean;
   @ApiProperty({ example: false })

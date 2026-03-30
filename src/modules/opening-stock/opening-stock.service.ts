@@ -242,14 +242,14 @@ export class OpeningStockService {
       return await this.prisma.$transaction(async (tx) => {
         const context = this.resolveHeaderContext(saveOpeningStockDto.header);
         const normalizedDetails = this.normalizeDetailLines(saveOpeningStockDto.details);
+        const totals = this.resolveHeaderTotals(saveOpeningStockDto.header);
         await this.validateHeaderReferences(tx, saveOpeningStockDto.header, context);
         await this.validateDetailReferences(tx, normalizedDetails);
         const voucherHeader = await createAccountVoucherHeader(
           tx,
-          this.buildCreateVoucherPayload(saveOpeningStockDto.header, context),
+          this.buildCreateVoucherPayload(saveOpeningStockDto.header, context, totals.totalValue),
         );
         const now = new Date();
-        const totals = this.resolveHeaderTotals(saveOpeningStockDto.header);
         const voucherDate = this.parseRequiredDate(
           saveOpeningStockDto.header.osh_voucher_date,
           'osh_voucher_date',
@@ -262,7 +262,7 @@ export class OpeningStockService {
             oshBranchId: context.branchId,
             oshVoucherNo: voucherHeader.avhVoucherNo,
             oshVoucherDate: voucherDate,
-            oshRefNo: saveOpeningStockDto.header.osh_ref_no ?? null,
+            oshRefNo: voucherHeader.avhVoucherRefno,
             oshNarration: saveOpeningStockDto.header.osh_narration ?? null,
             oshTotalLines: totals.totalLines,
             oshTotalQty: totals.totalQty,
@@ -332,15 +332,15 @@ export class OpeningStockService {
         const existingDocument = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
         const context = this.resolveHeaderContext(saveOpeningStockDto.header);
         const normalizedDetails = this.normalizeDetailLines(saveOpeningStockDto.details);
+        const totals = this.resolveHeaderTotals(saveOpeningStockDto.header);
         await this.validateHeaderReferences(tx, saveOpeningStockDto.header, context);
         await this.validateDetailReferences(tx, normalizedDetails);
         const voucherHeader = await updateAccountVoucherHeader(
           tx,
           avhVoucherId,
-          this.buildUpdateVoucherPayload(saveOpeningStockDto.header, context),
+          this.buildUpdateVoucherPayload(saveOpeningStockDto.header, context, totals.totalValue),
         );
         const now = new Date();
-        const totals = this.resolveHeaderTotals(saveOpeningStockDto.header);
         const voucherDate = this.parseRequiredDate(
           saveOpeningStockDto.header.osh_voucher_date,
           'osh_voucher_date',
@@ -355,7 +355,7 @@ export class OpeningStockService {
             oshBranchId: context.branchId,
             oshVoucherNo: voucherHeader.avhVoucherNo,
             oshVoucherDate: voucherDate,
-            oshRefNo: saveOpeningStockDto.header.osh_ref_no ?? null,
+            oshRefNo: voucherHeader.avhVoucherRefno,
             oshNarration: saveOpeningStockDto.header.osh_narration ?? null,
             oshTotalLines: totals.totalLines,
             oshTotalQty: totals.totalQty,
@@ -440,6 +440,7 @@ export class OpeningStockService {
   private buildCreateVoucherPayload(
     header: OpeningStockHeaderInputDto,
     context: ResolvedHeaderContext,
+    totalValue: number,
   ): CreateAccountVoucherHeaderPayload {
     return {
       avhAccYear: context.accYear,
@@ -449,6 +450,8 @@ export class OpeningStockService {
       avhVoucherDate: this.parseRequiredDate(header.osh_voucher_date, 'osh_voucher_date'),
       avhUserRefno: null,
       avhBillDate: this.parseNullableDate(header.avh_bill_date, 'avh_bill_date'),
+      avhBillAmount: totalValue,
+      avhTotalDebit: totalValue,
       avhPartyId: header.avh_party_id,
       avhOppositeLedgerId: header.avh_opposite_ledger_id ?? null,
       avhEmployeeId: header.avh_employee_id ?? [],
@@ -467,6 +470,7 @@ export class OpeningStockService {
   private buildUpdateVoucherPayload(
     header: OpeningStockHeaderInputDto,
     context: ResolvedHeaderContext,
+    totalValue: number,
   ): UpdateAccountVoucherHeaderPayload {
     return {
       avhAccYear: context.accYear,
@@ -476,6 +480,8 @@ export class OpeningStockService {
       avhVoucherDate: this.parseRequiredDate(header.osh_voucher_date, 'osh_voucher_date'),
       avhUserRefno: null,
       avhBillDate: this.parseNullableDate(header.avh_bill_date, 'avh_bill_date'),
+      avhBillAmount: totalValue,
+      avhTotalDebit: totalValue,
       avhPartyId: header.avh_party_id,
       avhOppositeLedgerId: header.avh_opposite_ledger_id ?? null,
       avhEmployeeId: header.avh_employee_id ?? [],

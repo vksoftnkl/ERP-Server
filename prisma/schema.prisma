@@ -34,7 +34,6 @@ model User {
   @@map("users")
   @@schema("public")
 }
-
 // ----- prisma/accounts/accountGroups.prisma -----
 model AccountGroup {
   accGroupId                  String         @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("acc_group_id")
@@ -81,7 +80,6 @@ model AccountGroup {
   @@map("account_groups")
   @@schema("accounts")
 }
-
 // ----- prisma/accounts/accountLedgerMasters.prisma -----
 enum LedGstPartyRegType {
   REGULAR
@@ -196,7 +194,6 @@ model AccLedgerMaster {
   @@map("acc_ledger_master")
   @@schema("accounts")
 }
-
 // ----- prisma/accounts/AccounttenderMaster.prisma -----
 model AccountTenderMaster {
   acctndId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid          @map("acc_tnd_id")
@@ -213,26 +210,22 @@ model AccountTenderMaster {
   acctndRemarks         String?                                                            @map("acc_tnd_tnd_remarks")
   acctndEditSurcharge   Boolean   @default(false)                                         @map("acc_tnd_tnd_edit_surcharge")
   acctndEditLedger      Boolean   @default(false)                                         @map("acc_tnd_tnd_edit_ledger")
-
   // Audit
   acctndSyncDate        DateTime? @db.Timestamptz                                         @map("acc_tnd_tnd_sync_date")
   acctndCreatedOn       DateTime  @default(now()) @db.Timestamptz                         @map("acc_tnd_tnd_created_on")
   acctndCreatedBy       String?   @db.VarChar(100)                                        @map("acc_tnd_tnd_created_by")
   acctndModifiedOn      DateTime  @default(now()) @db.Timestamptz                         @map("acc_tnd_tnd_modified_on")
   acctndModifiedBy      String?   @db.VarChar(100)                                        @map("acc_tnd_tnd_modified_by")
-
   // Relations
   tenderType  AccountTenderTypes @relation(fields: [acctndTypeId], references: [accttTypeId])
   ledger      AccLedgerMaster    @relation(fields: [acctndLedgerId], references: [ledId])
   voucherTenders AccVoucherTender[]
-
   @@index([acctndTypeId],          name: "idx_tnd_master_type")
   @@index([acctndLedgerId],        name: "idx_tnd_master_ledger")
   @@index([acctndDisplayPosition], name: "idx_tnd_master_position")
   @@map("account_tender_master")
   @@schema("accounts")
 }
-
 // ----- prisma/accounts/AccountTenderTypes.prisma -----
 model AccountTenderTypes {
   accttTypeId         BigInt    @id @default(autoincrement())          @map("acc_ttm_type_id")
@@ -245,16 +238,13 @@ model AccountTenderTypes {
   accttTypeCreatedBy  String?   @db.VarChar(100)                      @map("acc_ttm_type_created_by")
   accttTypeModifiedOn DateTime  @default(now()) @db.Timestamptz       @map("acc_ttm_type_modified_on")
   accttTypeModifiedBy String?   @db.VarChar(100)                      @map("acc_ttm_type_modified_by")
-
   // Relations
   accttTenders AccountTenderMaster[]  // fixed: was TenderMaster[]
   voucherTenders AccVoucherTender[]
-
   @@index([accttTypeIsActive], name: "idx_acc_ttm_type_is_active")
   @@map("tender_type")
   @@schema("accounts")
 }
-
 // ----- prisma/accounts/AccountVoucherBills.prisma -----
 enum VoucherBillRefType {
   NEW_REF
@@ -264,50 +254,41 @@ enum VoucherBillRefType {
   AGAINST_ADVANCE
   @@schema("accounts")
 }
-
 enum VoucherBillDrCr {
   DR
   CR
   @@schema("accounts")
 }
-
 enum VoucherBillTraType {
   R
   P
   @@schema("accounts")
 }
-
 model AccVoucherBill {
   // Primary
   avbdId                    String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("avbd_id")
-
   // Links
   avbdVoucherId             String               @db.Uuid @map("avbd_voucher_id")
   avbdVoucherLineId         String?              @db.Uuid @map("avbd_voucher_line_id")
   avbdRowNo                 Int                  @map("avbd_row_no")
-
   // Multi-branch snapshot
   avbdAccYear               String               @db.VarChar(9) @map("avbd_acc_year")
   avbdCompanyId             String               @db.Uuid @map("avbd_company_id")
   avbdBranchId              String               @db.Uuid @map("avbd_branch_id")
-
   // Voucher snapshot
   avbdVoucherTypeId         Int                  @map("avbd_voucher_type_id")
   avbdVoucherNo             BigInt               @map("avbd_voucher_no")
   avbdVoucherDate           DateTime             @db.Timestamptz(6) @map("avbd_voucher_date")
   avbdVoucherRefno          String?              @db.VarChar(50) @map("avbd_voucher_refno")
-
   // Party / ownership snapshot
   avbdPartyId               String               @db.Uuid @map("avbd_party_id")
   avbdSalesmanId            String?              @db.Uuid @map("avbd_salesman_id")
   avbdUserId                String?              @db.Uuid @map("avbd_user_id")
   avbdSessionId             String?              @db.Uuid @map("avbd_session_id")
-
   // Bill/reference classification
   avbdRefType               VoucherBillRefType   @map("avbd_ref_type")
   avbdDrCr                  VoucherBillDrCr      @map("avbd_dr_cr")
   avbdTraType               VoucherBillTraType   @map("avbd_tra_type")
-
   // Current bill/reference
   avbdOriginVoucherId       String               @db.Uuid @map("avbd_origin_voucher_id")
   avbdDocDate               DateTime             @db.Date @map("avbd_doc_date")
@@ -316,36 +297,30 @@ model AccVoucherBill {
   avbdBillRefno             String               @db.VarChar(100) @map("avbd_bill_refno")
   avbdDueDate               DateTime?            @db.Date @map("avbd_due_date")
   avbdBillNarration         String?              @map("avbd_bill_narration")
-
   // Amounts
   avbdBillAmount            Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_bill_amount")
   avbdAllocAmount           Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_alloc_amount")
   avbdDiscAmount            Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_disc_amount")
   avbdBalanceAmount         Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_balance_amount")
   avbdProfitAmount          Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_profit_amount")
-
   // Adjustment target
   avbdAgainstBillRefno      String?              @db.VarChar(100) @map("avbd_against_bill_refno")
   avbdAgainstBillDate       DateTime?            @db.Date @map("avbd_against_bill_date")
   avbdAgainstVoucherId      String?              @db.Uuid @map("avbd_against_voucher_id")
   avbdAgainstVoucherLineId  String?              @db.Uuid @map("avbd_against_voucher_line_id")
-
   // Settlement / narration
   avbdSettlementMode        String?              @db.VarChar(20) @map("avbd_settlement_mode")
   avbdSettlementLedgerId    String?              @db.Uuid @map("avbd_settlement_ledger_id")
   avbdIsPostDated           Boolean              @default(false) @map("avbd_is_post_dated")
-
   // Status
   avbdIsActive              Boolean              @default(true) @map("avbd_is_active")
   avbdIsDeleted             Boolean              @default(false) @map("avbd_is_deleted")
-
   // Audit
   avbdSyncDate              DateTime?            @db.Timestamptz(6) @map("avbd_sync_date")
   avbdCreatedOn             DateTime             @default(now()) @db.Timestamptz(6) @map("avbd_created_on")
   avbdCreatedBy             String?              @db.Uuid @map("avbd_created_by")
   avbdUpdatedOn             DateTime?            @db.Timestamptz(6) @map("avbd_updated_on")
   avbdUpdatedBy             String?              @db.Uuid @map("avbd_updated_by")
-
   // Relations
   voucherHeader             AccVoucherHeader     @relation("VoucherBillHeader", fields: [avbdVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_bills_header")
   voucherType               AccVoucherType       @relation(fields: [avbdVoucherTypeId], references: [vchrTypeId], map: "fk_acc_voucher_bills_voucher_type")
@@ -353,27 +328,23 @@ model AccVoucherBill {
   branch                    BranchMaster         @relation(fields: [avbdBranchId], references: [brId], map: "fk_acc_voucher_bills_branch")
   party                     AccLedgerMaster      @relation("VoucherBillParty", fields: [avbdPartyId], references: [ledId], map: "fk_acc_voucher_bills_party")
   againstVoucherHeader      AccVoucherHeader?    @relation("VoucherBillAgainstHeader", fields: [avbdAgainstVoucherId], references: [avhVoucherId], map: "fk_acc_voucher_bills_against_header")
-
   @@map("acc_voucher_bills")
   @@schema("accounts")
   // Partial indexes idx_acc_voucher_bills_voucher, idx_acc_voucher_bills_party,
   // idx_acc_voucher_bills_salesman, and idx_acc_voucher_bills_origin
   // WHERE avbd_is_deleted = false are not expressible in Prisma schema.
 }
-
 // ----- prisma/accounts/AccountVoucherCheques.prisma -----
 enum ChequeTraType {
   R
   P
   @@schema("accounts")
 }
-
 enum ChequeInstrumentType {
   CHEQUE
   PDC
   @@schema("accounts")
 }
-
 enum ChequeStatus {
   PENDING
   IN_HAND
@@ -385,44 +356,36 @@ enum ChequeStatus {
   CANCELLED
   @@schema("accounts")
 }
-
 model AccVoucherCheque {
   // Primary
   chqId                String                @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("chq_id")
-
   // Links
   chqVoucherId         String                @db.Uuid @map("chq_voucher_id")
   chqVoucherLineId     String?               @db.Uuid @map("chq_voucher_line_id")
   chqBillId            String?               @db.Uuid @map("chq_bill_id")
-
   // Multi-branch snapshot
   chqAccYear           String                @db.VarChar(9) @map("chq_acc_year")
   chqCompanyId         String                @db.Uuid @map("chq_company_id")
   chqBranchId          String                @db.Uuid @map("chq_branch_id")
-
   // Voucher snapshot
   chqVoucherTypeId     Int                   @map("chq_voucher_type_id")
   chqVoucherNo         BigInt                @map("chq_voucher_no")
   chqVoucherDate       DateTime              @db.Date @map("chq_voucher_date")
   chqVoucherRefno      String?               @db.VarChar(50) @map("chq_voucher_refno")
-
   // Party / ownership
   chqPartyId           String                @db.Uuid @map("chq_party_id")
   chqSalesmanId        String?               @db.Uuid @map("chq_salesman_id")
   chqUserId            String?               @db.Uuid @map("chq_user_id")
   chqSessionId         String?               @db.Uuid @map("chq_session_id")
-
   // Instrument classification
   chqTraType           ChequeTraType         @map("chq_tra_type")
   chqInstrumentType    ChequeInstrumentType  @default(CHEQUE) @map("chq_instrument_type")
   chqIsPostDated       Boolean               @default(false) @map("chq_is_post_dated")
   chqIsAccountPayee    Boolean               @default(false) @map("chq_is_account_payee")
-
   // Cheque details
   chqChequeNo          String                @db.VarChar(30) @map("chq_cheque_no")
   chqChequeDate        DateTime              @db.Date @map("chq_cheque_date")
   chqChequeAmount      Decimal               @default(0) @db.Decimal(15, 2) @map("chq_cheque_amount")
-
   // Bank / payee snapshot
   chqBankLedgerId      String?               @db.Uuid @map("chq_bank_ledger_id")
   chqBankName          String?               @db.VarChar(500) @map("chq_bank_name")
@@ -430,11 +393,9 @@ model AccVoucherCheque {
   chqBankIfsc          String?               @db.VarChar(20) @map("chq_bank_ifsc")
   chqPayeeName         String?               @db.VarChar(500) @map("chq_payee_name")
   chqDrawerName        String?               @db.VarChar(500) @map("chq_drawer_name")
-
   // Printing
   chqIsPrinted         Boolean               @default(false) @map("chq_is_printed")
   chqPrintedOn         DateTime?             @db.Timestamptz(6) @map("chq_printed_on")
-
   // Lifecycle dates
   chqReceivedOn        DateTime?             @db.Date @map("chq_received_on")
   chqIssuedOn          DateTime?             @db.Date @map("chq_issued_on")
@@ -443,31 +404,25 @@ model AccVoucherCheque {
   chqBounceDate        DateTime?             @db.Date @map("chq_bounce_date")
   chqReturnDate        DateTime?             @db.Date @map("chq_return_date")
   chqCancelledOn       DateTime?             @db.Date @map("chq_cancelled_on")
-
   // Status
   chqStatus            ChequeStatus          @map("chq_status")
-
   // Notes
   chqNotes             String?               @map("chq_notes")
   chqLogText           String?               @map("chq_log_text")
-
   // Common status
   chqIsActive          Boolean               @default(true) @map("chq_is_active")
   chqIsDeleted         Boolean               @default(false) @map("chq_is_deleted")
-
   // Audit
   chqSyncDate          DateTime?             @db.Timestamptz(6) @map("chq_sync_date")
   chqCreatedOn         DateTime              @default(now()) @db.Timestamptz(6) @map("chq_created_on")
   chqCreatedBy         String?               @db.Uuid @map("chq_created_by")
   chqUpdatedOn         DateTime?             @db.Timestamptz(6) @map("chq_updated_on")
   chqUpdatedBy         String?               @db.Uuid @map("chq_updated_by")
-
   // Relations
   voucherHeader        AccVoucherHeader      @relation(fields: [chqVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_cheques_voucher_header")
   voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
-
   @@index([chqCompanyId, chqBranchId, chqPartyId], map: "idx_acc_cheques_party")
   @@index([chqCompanyId, chqBranchId, chqStatus], map: "idx_acc_cheques_status")
   @@index([chqCompanyId, chqBranchId, chqChequeDate, chqDepositDate, chqClearDate], map: "idx_acc_cheques_dates")
@@ -477,7 +432,6 @@ model AccVoucherCheque {
   // Partial unique index uq_acc_cheques_branch_cheque
   // WHERE chq_is_deleted = false is not expressible in Prisma schema.
 }
-
 // ----- prisma/accounts/AccountVoucherDocApiLog.prisma -----
 enum GdlApiName {
   EINVOICE
@@ -486,7 +440,6 @@ enum GdlApiName {
   OTHER
   @@schema("accounts")
 }
-
 enum GdlActionName {
   GENERATE
   CANCEL
@@ -498,48 +451,37 @@ enum GdlActionName {
   OTHER
   @@schema("accounts")
 }
-
 enum GdlStatus {
   SUCCESS
   FAILED
   PENDING
   @@schema("accounts")
 }
-
 model AccVoucherDocApiLog {
   gdlId                String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")
   gdlGdrId             String               @db.Uuid @map("gdl_gdr_id")
-
   gdlApiName           GdlApiName           @map("gdl_api_name")
   gdlActionName        GdlActionName        @map("gdl_action_name")
   gdlStatus            GdlStatus            @map("gdl_status")
   gdlAttemptNo         Int                  @default(1) @map("gdl_attempt_no")
-
   gdlRequestRefNo      String?              @db.VarChar(100) @map("gdl_request_ref_no")
   gdlExternalRefNo     String?              @db.VarChar(100) @map("gdl_external_ref_no")
   gdlHttpStatus        Int?                 @map("gdl_http_status")
   gdlErrorCode         String?              @db.VarChar(50) @map("gdl_error_code")
   gdlErrorMessage      String?              @db.VarChar(1000) @map("gdl_error_message")
   gdlResponseMessage   String?              @db.VarChar(1000) @map("gdl_response_message")
-
   gdlRequestPayload    Json?                @map("gdl_request_payload")
   gdlResponsePayload   Json?                @map("gdl_response_payload")
-
   gdlRequestedOn       DateTime             @default(now()) @db.Timestamptz(6) @map("gdl_requested_on")
   gdlRespondedOn       DateTime?            @db.Timestamptz(6) @map("gdl_responded_on")
-
   gdlCreatedOn         DateTime             @default(now()) @db.Timestamptz(6) @map("gdl_created_on")
   gdlCreatedBy         String?              @db.Uuid @map("gdl_created_by")
-
   docRegister          AccVoucherDocRegister @relation(fields: [gdlGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdl_gdr")
-
   @@index([gdlGdrId, gdlRequestedOn(sort: Desc)], map: "idx_gdl_gdr_requested_on")
   @@index([gdlApiName, gdlActionName, gdlStatus], map: "idx_gdl_api_action_status")
-
   @@map("acc_voucher_doc_api_log")
   @@schema("accounts")
 }
-
 // ----- prisma/accounts/AccountVoucherDocDetail.prisma -----
 enum VoucherDocDetailTaxability {
   TAXABLE
@@ -549,31 +491,25 @@ enum VoucherDocDetailTaxability {
   MIXED
   @@schema("accounts")
 }
-
 enum VoucherDocDetailSupplyNature {
   INTRA_STATE
   INTER_STATE
   @@schema("accounts")
 }
-
 model AccVoucherDocDetail {
   // Primary
   vtxId               String                         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("vtx_id")
-
   // Links
   vtxGdrId            String                         @db.Uuid @map("vtx_gdr_id")
   vtxVoucherId        String                         @db.Uuid @map("vtx_voucher_id")
   vtxRowNo            Int                            @map("vtx_row_no")
-
   // Multi-branch snapshot
   vtxAccYear          String                         @db.VarChar(9) @map("vtx_acc_year")
   vtxCompanyId        String                         @db.Uuid @map("vtx_company_id")
   vtxBranchId         String                         @db.Uuid @map("vtx_branch_id")
-
   // Tax classification snapshot
   vtxTaxability       VoucherDocDetailTaxability    @default(TAXABLE) @map("vtx_taxability")
   vtxSupplyNature     VoucherDocDetailSupplyNature  @map("vtx_supply_nature")
-
   // Item snapshot
   vtxItemId           String?                        @db.Uuid @map("vtx_item_id")
   vtxItemCode         String?                        @db.VarChar(50) @map("vtx_item_code")
@@ -586,56 +522,46 @@ model AccVoucherDocDetail {
   vtxItemRate         Decimal                        @default(0) @db.Decimal(18, 4) @map("vtx_item_rate")
   vtxItemDiscount     Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_item_discount")
   vtxIsService        Boolean                        @default(false) @map("vtx_is_service")
-
   // Tax values
   vtxTaxableValue     Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_taxable_value")
   vtxTotalTaxRate     Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_total_tax_rate")
   vtxTaxId            String?                        @db.Uuid @map("vtx_tax_id")
-
   vtxCgstRate         Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_cgst_rate")
   vtxSgstRate         Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_sgst_rate")
   vtxIgstRate         Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_igst_rate")
   vtxCessRate         Decimal                        @default(0) @db.Decimal(9, 3) @map("vtx_cess_rate")
-
   vtxCgstAmount       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_cgst_amount")
   vtxSgstAmount       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_sgst_amount")
   vtxIgstAmount       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_igst_amount")
   vtxCessAmount       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_cess_amount")
-
   vtxTotalTaxAmount   Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_total_tax_amount")
   vtxOtherAmount      Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_other_amount")
   vtxTotalValue       Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_total_value")
   vtxBillValue        Decimal                        @default(0) @db.Decimal(18, 2) @map("vtx_bill_value")
-
   // Tax ledger mapping
   vtxTaxableLedgerId  String?                        @db.Uuid @map("vtx_taxable_ledger_id")
   vtxCgstLedgerId     String?                        @db.Uuid @map("vtx_cgst_ledger_id")
   vtxSgstLedgerId     String?                        @db.Uuid @map("vtx_sgst_ledger_id")
   vtxIgstLedgerId     String?                        @db.Uuid @map("vtx_igst_ledger_id")
   vtxCessLedgerId     String?                        @db.Uuid @map("vtx_cess_ledger_id")
-
   // Status / audit
   vtxIsActive         Boolean                        @default(true) @map("vtx_is_active")
   vtxIsDeleted        Boolean                        @default(false) @map("vtx_is_deleted")
-
   vtxSyncDate         DateTime?                      @db.Timestamptz(6) @map("vtx_sync_date")
   vtxCreatedOn        DateTime                       @default(now()) @db.Timestamptz(6) @map("vtx_created_on")
   vtxCreatedBy        String?                        @db.Uuid @map("vtx_created_by")
   vtxUpdatedOn        DateTime?                      @db.Timestamptz(6) @map("vtx_updated_on")
   vtxUpdatedBy        String?                        @db.Uuid @map("vtx_updated_by")
-
   // Relations
   company             Company                        @relation(fields: [vtxCompanyId], references: [compId], map: "fk_acc_voucher_doc_detail_company")
   branch              BranchMaster                   @relation(fields: [vtxBranchId], references: [brId], map: "fk_acc_voucher_doc_detail_branch")
   docRegister         AccVoucherDocRegister          @relation(fields: [vtxGdrId], references: [gdrId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_gdr")
   voucherHeader       AccVoucherHeader               @relation(fields: [vtxVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_header")
-
   @@map("acc_voucher_doc_detail")
   @@schema("accounts")
   // Partial index idx_acc_voucher_doc_detail_voucher
   // WHERE vtx_is_deleted = false is not expressible in Prisma schema.
 }
-
 // ----- prisma/accounts/AccountVoucherDocEinvoice.prisma -----
 enum GdeStatus {
   NA
@@ -645,32 +571,25 @@ enum GdeStatus {
   CANCELED
   @@schema("accounts")
 }
-
 model AccVoucherDocEinvoice {
   gdeId             String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gde_id")
   gdeGdrId          String               @db.Uuid @map("gde_gdr_id")
   gdeVoucherId      String               @db.Uuid @map("gde_voucher_id")
-
   // Multi-branch snapshot
   gdeAccYear        String               @db.VarChar(9) @map("gde_acc_year")
   gdeCompanyId      String               @db.Uuid @map("gde_company_id")
   gdeBranchId       String               @db.Uuid @map("gde_branch_id")
-
   gdeStatus         GdeStatus            @default(NA) @map("gde_status")
   gdeIrn            String?              @db.VarChar(200) @map("gde_irn")
   gdeAckNo          String?              @db.VarChar(100) @map("gde_ack_no")
   gdeAckOn          DateTime?            @db.Timestamptz(6) @map("gde_ack_on")
   gdeQrcode         String?              @map("gde_qrcode")
-
   gdeSignedInvoice  String?              @map("gde_signed_invoice")
   gdeSignedQrcode   String?              @map("gde_signed_qrcode")
-
   gdeCancelReason   String?              @db.VarChar(200) @map("gde_cancel_reason")
   gdeCanceledOn     DateTime?            @db.Timestamptz(6) @map("gde_canceled_on")
-
   gdeLastErrorCode  String?              @db.VarChar(50) @map("gde_last_error_code")
   gdeLastMessage    String?              @db.VarChar(500) @map("gde_last_message")
-
   gdeIsActive       Boolean              @default(true) @map("gde_is_active")
   gdeIsDeleted      Boolean              @default(false) @map("gde_is_deleted")
   gdeSyncDate       DateTime?            @db.Timestamptz(6) @map("gde_sync_date")
@@ -678,17 +597,14 @@ model AccVoucherDocEinvoice {
   gdeCreatedBy      String?              @db.Uuid @map("gde_created_by")
   gdeUpdatedOn      DateTime?            @db.Timestamptz(6) @map("gde_updated_on")
   gdeUpdatedBy      String?              @db.Uuid @map("gde_updated_by")
-
   // Relations
   docRegister       AccVoucherDocRegister @relation(fields: [gdeGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gde_gdr")
-
   @@unique([gdeGdrId], map: "uq_gde_gdr")
   @@map("acc_voucher_doc_einvoice")
   @@schema("accounts")
   // Partial unique index uq_acc_voucher_doc_einvoice_irn and partial index
   // idx_gde_status are not expressible in Prisma schema.
 }
-
 // ----- prisma/accounts/AccountVoucherDocEwayBill.prisma -----
 enum GdwStatus {
   NA
@@ -699,7 +615,6 @@ enum GdwStatus {
   EXPIRED
   @@schema("accounts")
 }
-
 enum GdwTransportMode {
   ROAD
   RAIL
@@ -708,32 +623,26 @@ enum GdwTransportMode {
   OTHER
   @@schema("accounts")
 }
-
 enum GdwVehicleType {
   REGULAR
   ODC
   OTHER
   @@schema("accounts")
 }
-
 model AccVoucherDocEwaybill {
   gdwId               String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdw_id")
   gdwGdrId            String            @db.Uuid @map("gdw_gdr_id")
   gdwVoucherId        String            @db.Uuid @map("gdw_voucher_id")
-
   // Multi-branch snapshot
   gdwAccYear          String            @db.VarChar(9) @map("gdw_acc_year")
   gdwCompanyId        String            @db.Uuid @map("gdw_company_id")
   gdwBranchId         String            @db.Uuid @map("gdw_branch_id")
-
   gdwStatus           GdwStatus         @default(NA) @map("gdw_status")
   gdwNo               String?           @db.VarChar(100) @map("gdw_no")
   gdwGeneratedOn      DateTime?         @db.Timestamptz(6) @map("gdw_generated_on")
   gdwValidUpto        DateTime?         @db.Timestamptz(6) @map("gdw_valid_upto")
-
   gdwCancelReason     String?           @db.VarChar(200) @map("gdw_cancel_reason")
   gdwCanceledOn       DateTime?         @db.Timestamptz(6) @map("gdw_canceled_on")
-
   gdwVehicleNo        String?           @db.VarChar(20) @map("gdw_vehicle_no")
   gdwTransportMode    GdwTransportMode? @map("gdw_transport_mode")
   gdwTransporterId    String?           @db.VarChar(15) @map("gdw_transporter_id")
@@ -744,10 +653,8 @@ model AccVoucherDocEwaybill {
   gdwVehicleType      GdwVehicleType?   @map("gdw_vehicle_type")
   gdwTransactionType  String?           @db.VarChar(30) @map("gdw_transaction_type")
   gdwSubSupplyType    String?           @db.VarChar(50) @map("gdw_sub_supply_type")
-
   gdwLastErrorCode    String?           @db.VarChar(50) @map("gdw_last_error_code")
   gdwLastMessage      String?           @db.VarChar(500) @map("gdw_last_message")
-
   gdwIsActive         Boolean           @default(true) @map("gdw_is_active")
   gdwIsDeleted        Boolean           @default(false) @map("gdw_is_deleted")
   gdwSyncDate         DateTime?         @db.Timestamptz(6) @map("gdw_sync_date")
@@ -755,17 +662,14 @@ model AccVoucherDocEwaybill {
   gdwCreatedBy        String?           @db.Uuid @map("gdw_created_by")
   gdwUpdatedOn        DateTime?         @db.Timestamptz(6) @map("gdw_updated_on")
   gdwUpdatedBy        String?           @db.Uuid @map("gdw_updated_by")
-
   // Relations
   docRegister         AccVoucherDocRegister @relation(fields: [gdwGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdw_gdr")
-
   @@unique([gdwGdrId], map: "uq_gdw_gdr")
   @@map("acc_voucher_doc_ewaybill")
   @@schema("accounts")
   // Partial unique index uq_acc_voucher_doc_ewaybill_no and partial index
   // idx_gdw_status are not expressible in Prisma schema.
 }
-
 // ----- prisma/accounts/AccountVoucherDocRegister.prisma -----
 enum GdrSourceModule {
   SALES
@@ -778,7 +682,6 @@ enum GdrSourceModule {
   OTHER
   @@schema("accounts")
 }
-
 enum GdrTranNature {
   SALE
   SALES_RETURN
@@ -798,14 +701,12 @@ enum GdrTranNature {
   OTHER
   @@schema("accounts")
 }
-
 enum GdrDocFlow {
   OUTWARD
   INWARD
   INTERNAL
   @@schema("accounts")
 }
-
 enum GdrDocType {
   INVOICE
   CREDIT_NOTE
@@ -820,7 +721,6 @@ enum GdrDocType {
   OTHER
   @@schema("accounts")
 }
-
 enum GdrDocStatus {
   DRAFT
   POSTED
@@ -828,14 +728,12 @@ enum GdrDocStatus {
   ARCHIVED
   @@schema("accounts")
 }
-
 enum GdrSupplyClass {
   GOODS
   SERVICES
   MIXED
   @@schema("accounts")
 }
-
 enum GdrTaxability {
   TAXABLE
   EXEMPT
@@ -844,7 +742,6 @@ enum GdrTaxability {
   MIXED
   @@schema("accounts")
 }
-
 enum GdrSupplyNature {
   INTRA_STATE
   INTER_STATE
@@ -854,7 +751,6 @@ enum GdrSupplyNature {
   OTHER
   @@schema("accounts")
 }
-
 enum GdrPartyType {
   CUSTOMER
   VENDOR
@@ -864,30 +760,25 @@ enum GdrPartyType {
   OTHER
   @@schema("accounts")
 }
-
 model AccVoucherDocRegister {
   // Primary
   gdrId                    String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdr_id")
-
   // Source mapping
   gdrSourceModule          GdrSourceModule   @map("gdr_source_module")
   gdrTranNature            GdrTranNature     @map("gdr_tran_nature")
   gdrDocFlow               GdrDocFlow        @map("gdr_doc_flow")
   gdrDocSign               Int               @default(1) @db.SmallInt @map("gdr_doc_sign")
   gdrSourceDocId           String            @db.Uuid @map("gdr_source_doc_id")
-
   // Multi-branch / financial identity
   gdrAccYear               String            @db.VarChar(9) @map("gdr_acc_year")
   gdrCompanyId             String            @db.Uuid @map("gdr_company_id")
   gdrBranchId              String            @db.Uuid @map("gdr_branch_id")
-
   // Internal voucher identity
   gdrVoucherTypeId         Int               @map("gdr_voucher_type_id")
   gdrVoucherId             String            @db.Uuid @map("gdr_voucher_id")
   gdrVoucherNo             BigInt            @map("gdr_voucher_no")
   gdrVoucherDate           DateTime          @db.Date @map("gdr_voucher_date")
   gdrVoucherRefno          String?           @db.VarChar(50) @map("gdr_voucher_refno")
-
   // Business document identity
   gdrDocType               GdrDocType        @map("gdr_doc_type")
   gdrDocNo                 String            @db.VarChar(50) @map("gdr_doc_no")
@@ -899,18 +790,15 @@ model AccVoucherDocRegister {
   gdrDocNoteNo             String?           @db.VarChar(50) @map("gdr_doc_note_no")
   gdrDocNoteDate           DateTime?         @db.Date @map("gdr_doc_note_date")
   gdrDocNoteReason         String?           @db.VarChar(150) @map("gdr_doc_note_reason")
-
   // GST / supply classification
   gdrSupplyClass           GdrSupplyClass?   @map("gdr_supply_class")
   gdrTaxability            GdrTaxability     @default(TAXABLE) @map("gdr_taxability")
   gdrSupplyNature          GdrSupplyNature?  @map("gdr_supply_nature")
   gdrPlaceOfSupplyCode     String?           @db.Char(2) @map("gdr_place_of_supply_code")
   gdrPlaceOfSupplyName     String?           @db.VarChar(100) @map("gdr_place_of_supply_name")
-
   gdrIsReverseCharge       Boolean           @default(false) @map("gdr_is_reverse_charge")
   gdrIsEinvoiceApplicable  Boolean           @default(false) @map("gdr_is_einvoice_applicable")
   gdrIsEwaybillApplicable  Boolean           @default(false) @map("gdr_is_ewaybill_applicable")
-
   // Party snapshot
   gdrPartyType             GdrPartyType      @default(OTHER) @map("gdr_party_type")
   gdrPartyId               String            @db.Uuid @map("gdr_party_id")
@@ -925,7 +813,6 @@ model AccVoucherDocRegister {
   gdrPartyGstType          String?           @db.VarChar(30) @map("gdr_party_gst_type")
   gdrPartyGstin            String?           @db.VarChar(15) @map("gdr_party_gstin")
   gdrPartyEcomGstin        String?           @db.VarChar(15) @map("gdr_party_ecom_gstin")
-
   // Ship-to snapshot
   gdrShipName              String?           @db.VarChar(200) @map("gdr_ship_name")
   gdrShipAddr1             String?           @db.VarChar(200) @map("gdr_ship_addr1")
@@ -936,7 +823,6 @@ model AccVoucherDocRegister {
   gdrShipStateCode         String?           @db.Char(2) @map("gdr_ship_state_code")
   gdrShipStateName         String?           @db.VarChar(100) @map("gdr_ship_state_name")
   gdrShipGstin             String?           @db.VarChar(15) @map("gdr_ship_gstin")
-
   // Dispatch-from snapshot
   gdrDispatchName          String?           @db.VarChar(200) @map("gdr_dispatch_name")
   gdrDispatchAddr1         String?           @db.VarChar(200) @map("gdr_dispatch_addr1")
@@ -947,7 +833,6 @@ model AccVoucherDocRegister {
   gdrDispatchStateCode     String?           @db.Char(2) @map("gdr_dispatch_state_code")
   gdrDispatchStateName     String?           @db.VarChar(100) @map("gdr_dispatch_state_name")
   gdrDispatchGstin         String?           @db.VarChar(15) @map("gdr_dispatch_gstin")
-
   // Amount summary
   gdrGrossValue            Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_gross_value")
   gdrDiscountValue         Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_discount_value")
@@ -961,9 +846,7 @@ model AccVoucherDocRegister {
   gdrOtherCharge           Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_other_charge")
   gdrRoundOff              Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_round_off")
   gdrBillValue             Decimal           @default(0) @db.Decimal(18, 2) @map("gdr_bill_value")
-
   gdrRemarks               String?           @db.VarChar(500) @map("gdr_remarks")
-
   // Lifecycle / audit
   gdrIsActive              Boolean           @default(true) @map("gdr_is_active")
   gdrIsDeleted             Boolean           @default(false) @map("gdr_is_deleted")
@@ -972,7 +855,6 @@ model AccVoucherDocRegister {
   gdrCreatedBy             String?           @db.Uuid @map("gdr_created_by")
   gdrUpdatedOn             DateTime?         @db.Timestamptz(6) @map("gdr_updated_on")
   gdrUpdatedBy             String?           @db.Uuid @map("gdr_updated_by")
-
   // Relations
   company                  Company           @relation(fields: [gdrCompanyId], references: [compId], map: "fk_gdr_voucher_company")
   branch                   BranchMaster      @relation(fields: [gdrBranchId], references: [brId], map: "fk_gdr_voucher_branch")
@@ -983,7 +865,6 @@ model AccVoucherDocRegister {
   details                  AccVoucherDocDetail[]
   einvoice                 AccVoucherDocEinvoice?
   ewaybill                 AccVoucherDocEwaybill?
-
   @@map("acc_voucher_doc_register")
   @@schema("accounts")
   // Partial unique indexes uq_acc_voucher_doc_register_source,
@@ -993,7 +874,6 @@ model AccVoucherDocRegister {
   // idx_gdr_party, idx_gdr_doc_class, and idx_gdr_doc_status
   // are not expressible in Prisma schema.
 }
-
 // ----- prisma/accounts/AccountVoucherHeader.prisma -----
 enum VoucherStatus {
   DRAFT
@@ -1002,21 +882,18 @@ enum VoucherStatus {
   CANCELLED
   @@schema("accounts")
 }
-
 enum DeviceType {
   PC
   WEB
   MOBILE
   @@schema("accounts")
 }
-
 enum TallyExportStatus {
   PENDING
   EXPORTED
   FAILED
   @@schema("accounts")
 }
-
 enum MessageSendStatus {
   NA
   PENDING
@@ -1024,10 +901,8 @@ enum MessageSendStatus {
   FAILED
   @@schema("accounts")
 }
-
 model AccVoucherHeader {
   avhVoucherId           String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("avh_voucher_id")
-
   // Multi-branch identity
   avhAccYear             String            @db.VarChar(9) @map("avh_acc_year")
   avhCompanyId           String            @db.Uuid @map("avh_company_id")
@@ -3052,7 +2927,7 @@ model ItemUnitConversion {
   iucBaseUnitId      String    @db.Uuid @map("iuc_base_unit_id")
   iucToBaseFactor    Decimal   @default(1) @db.Decimal(18, 6) @map("iuc_to_base_factor")
   iucUnitSlno        Int       @default(0) @map("iuc_unit_slno")
-  iulUnitFactor      Decimal   @default(1) @db.Decimal(18, 6) @map("iul_unit_factor")
+  iucUnitFactor      Decimal   @default(1) @db.Decimal(18, 6) @map("iuc_unit_factor")
   iucIsDefaultUnit   Boolean   @default(false) @map("iuc_is_default_unit")
   iucIsBaseUnit      Boolean   @default(false) @map("iuc_is_base_unit")
   iucIsBigUnit       Boolean   @default(false) @map("iuc_is_big_unit")

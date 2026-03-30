@@ -1734,7 +1734,7 @@ Table item_unit_conversion {
   iucBaseUnitId String [not null]
   iucToBaseFactor Decimal [not null, default: 1]
   iucUnitSlno Int [not null, default: 0]
-  iulUnitFactor Decimal [not null, default: 1]
+  iucUnitFactor Decimal [not null, default: 1]
   iucIsDefaultUnit Boolean [not null, default: false]
   iucIsBaseUnit Boolean [not null, default: false]
   iucIsBigUnit Boolean [not null, default: false]

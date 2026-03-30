@@ -67,7 +67,7 @@ const itemUnitConversionPayload = {
   iuc_base_unit_id: UNIT_ID,
   iuc_to_base_factor: 1,
   iuc_unit_slno: 0,
-  iul_unit_factor: 1,
+  iuc_unit_factor: 1,
   iuc_is_default_unit: true,
   iuc_is_base_unit: true,
   iuc_is_big_unit: false,
