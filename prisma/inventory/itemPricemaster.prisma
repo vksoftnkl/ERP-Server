@@ -52,6 +52,7 @@ model ItemPriceMaster {
   unit                Unit           @relation("IpmUnit", fields: [ipmUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_unit")
   baseUnit            Unit?          @relation("IpmBaseUnit", fields: [ipmBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_base_unit")
   godown              GodownLocation @relation("GodownPrices", fields: [ipmGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_godown_id")
+  openingStockBaseUomDetails OpeningStockDetail[] @relation("OpeningStockDetailBaseUomPrice")
   qtywiseRates        ItemQtywiseRate[]
 
   @@index([ipmItemId, ipmUnitId], map: "idx_item_price_master_item")

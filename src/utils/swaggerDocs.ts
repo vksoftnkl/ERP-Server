@@ -51,6 +51,7 @@ import { StateCodeMasterModule } from '../modules/fixed/state-code-master/state-
 import { UiTableColumnsModule } from '../modules/fixed/ui-table-columns/ui-table-columns.module';
 import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
+import { OpeningStockModule } from '../modules/opening-stock/opening-stock.module';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -237,6 +238,12 @@ export const swaggerModuleDocuments = [
     title: 'Godowns API',
     description: 'Godowns module endpoints',
     include: [GodownsMasterModule],
+  },
+  {
+    path: 'opening-stocks',
+    title: 'Opening Stock API',
+    description: 'Opening stock module endpoints',
+    include: [OpeningStockModule],
   },
   {
     path: 'grid-details',

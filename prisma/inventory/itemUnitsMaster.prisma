@@ -42,6 +42,7 @@ model Unit {
   // Back-relations — ItemPriceMaster
   ipmUnits     ItemPriceMaster[] @relation("IpmUnit")
   ipmBaseUnits ItemPriceMaster[] @relation("IpmBaseUnit")
+  openingStockUnits OpeningStockDetail[] @relation("OpeningStockDetailUnit")
 
   // Back-relations — others
   eanCodes     ItemEanCode[]

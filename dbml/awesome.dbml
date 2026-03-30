@@ -1227,6 +1227,7 @@ Table godown_locations {
   parent godown_locations
   children godown_locations [not null]
   itemPrices item_price_master [not null]
+  openingStockDetails opening_stock_detail [not null]
 
   indexes {
     (gdlGodownId, gdlParentId, gdlName) [unique]
@@ -1391,7 +1392,7 @@ Table item_master {
   itemMfgrId String
   itemSupplierId String
   itemCustGroup String
-  itemBaseUnitId String [not null]
+  itemBaseUnitId String
   itemIsService Boolean [not null, default: false]
   itemIsBatchBased Boolean [not null, default: false]
   itemIsExpiryItem Boolean [not null, default: false]
@@ -1437,10 +1438,11 @@ Table item_master {
   itemModifiedBy String
   group item_group_master [not null]
   category item_category_master
-  baseUnit item_unit_master [not null]
+  baseUnit item_unit_master
   defaultTax item_tax_master
   prices item_price_master [not null]
   unitConversions item_unit_conversion [not null]
+  openingStockDetails opening_stock_detail [not null]
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
   company companys [not null]
@@ -1499,6 +1501,7 @@ Table item_price_master {
   unit item_unit_master [not null]
   baseUnit item_unit_master
   godown godown_locations [not null]
+  openingStockBaseUomDetails opening_stock_detail [not null]
   qtywiseRates item_qtywise_rates [not null]
 }
 
@@ -1532,7 +1535,7 @@ Table item_reorders {
   irId String [pk]
   irBranchId String
   irItemId String [not null]
-  irUnitId String [not null]
+  irUnitId String
   irGodownId String
   irMinLevel Decimal [not null, default: 0]
   irMaxLevel Decimal [not null, default: 0]
@@ -1551,7 +1554,7 @@ Table item_reorders {
   irModifiedOn DateTime [default: `now()`, not null]
   irModifiedBy String
   item item_master [not null]
-  unit item_unit_master [not null]
+  unit item_unit_master
 
   indexes {
     (irItemId, irUnitId, irGodownId) [unique]
@@ -1777,6 +1780,7 @@ Table item_unit_master {
   iucBaseUnits item_unit_conversion [not null]
   ipmUnits item_price_master [not null]
   ipmBaseUnits item_price_master [not null]
+  openingStockUnits opening_stock_detail [not null]
   eanCodes item_ean_codes [not null]
   itemMasters item_master [not null]
   itemReorders item_reorders [not null]
@@ -1841,6 +1845,10 @@ Table opening_stock_detail {
   voucherHeader acc_voucher_header [not null]
   company companys [not null]
   branch branch_master [not null]
+  item item_master [not null]
+  unitMaster item_unit_master [not null]
+  baseUomPriceMaster item_price_master
+  godown godown_locations [not null]
   openingHeader opening_stock_header [not null]
 
   indexes {
@@ -2867,6 +2875,14 @@ Ref: opening_stock_detail.oslVoucherId > acc_voucher_header.avhVoucherId [delete
 Ref: opening_stock_detail.oslCompanyId > companys.compId
 
 Ref: opening_stock_detail.oslBranchId > branch_master.brId
+
+Ref: opening_stock_detail.oslItemId > item_master.itemId [delete: Restrict]
+
+Ref: opening_stock_detail.oslUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: opening_stock_detail.oslBaseUomId > item_price_master.ipmId [delete: Restrict]
+
+Ref: opening_stock_detail.oslGodownId > godown_locations.gdlId [delete: Restrict]
 
 Ref: opening_stock_detail.oslOpeningId > opening_stock_header.oshId
 
