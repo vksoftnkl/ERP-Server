@@ -14,57 +14,75 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 const ITEM_PRICE_PROFIT_TYPES = ['BY_PERCENT', 'BY_AMOUNT', 'MANUAL'] as const;
+
+const unwrapScalarValue = (value: unknown): unknown => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  const nestedValue =
+    record.value ?? record.id ?? record._id ?? record.code ?? record.name ?? record.label;
+
+  return nestedValue === undefined ? undefined : nestedValue;
+};
+
 const toOptionalUuid = (value: unknown): string | undefined => {
-  if (value === undefined || value === null || value === '') {
+  const normalizedValue = unwrapScalarValue(value);
+  if (normalizedValue === undefined || normalizedValue === null || normalizedValue === '') {
     return undefined;
   }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
+  if (typeof normalizedValue === 'string') {
+    const trimmed = normalizedValue.trim();
     return trimmed || undefined;
   }
-  return value as string;
+  return normalizedValue as string;
 };
 const toNullableUuid = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
+  const normalizedValue = unwrapScalarValue(value);
+  if (normalizedValue === undefined) {
     return undefined;
   }
-  if (value === null || value === '') {
+  if (normalizedValue === null || normalizedValue === '') {
     return null;
   }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
+  if (typeof normalizedValue === 'string') {
+    const trimmed = normalizedValue.trim();
     return trimmed || null;
   }
-  return value as string;
+  return normalizedValue as string;
 };
 const toRequiredTrimmedString = (value: unknown): string => {
-  if (typeof value !== 'string') {
-    return value as string;
+  const normalizedValue = unwrapScalarValue(value);
+  if (typeof normalizedValue !== 'string') {
+    return normalizedValue as string;
   }
-  return value.trim();
+  return normalizedValue.trim();
 };
 const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
+  const normalizedValue = unwrapScalarValue(value);
+  if (normalizedValue === undefined) {
     return undefined;
   }
-  if (value === null) {
+  if (normalizedValue === null) {
     return null;
   }
-  if (typeof value !== 'string') {
-    return value as string;
+  if (typeof normalizedValue !== 'string') {
+    return normalizedValue as string;
   }
-  const trimmed = value.trim();
+  const trimmed = normalizedValue.trim();
   return trimmed || null;
 };
 const toOptionalBoolean = (value: unknown): boolean | undefined => {
-  if (value === undefined || value === null || value === '') {
+  const normalizedValue = unwrapScalarValue(value);
+  if (normalizedValue === undefined || normalizedValue === null || normalizedValue === '') {
     return undefined;
   }
-  if (typeof value === 'boolean') {
-    return value;
+  if (typeof normalizedValue === 'boolean') {
+    return normalizedValue;
   }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
+  if (typeof normalizedValue === 'string') {
+    const normalized = normalizedValue.trim().toLowerCase();
     if (['1', 'true', 'yes', 'on'].includes(normalized)) {
       return true;
     }
@@ -72,14 +90,15 @@ const toOptionalBoolean = (value: unknown): boolean | undefined => {
       return false;
     }
   }
-  return value as boolean;
+  return normalizedValue as boolean;
 };
 const toOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
+  const normalizedValue = unwrapScalarValue(value);
+  if (normalizedValue === undefined || normalizedValue === null || normalizedValue === '') {
     return undefined;
   }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : (value as number);
+  const parsed = Number(normalizedValue);
+  return Number.isFinite(parsed) ? parsed : (normalizedValue as number);
 };
 export class SaveItemPriceDto {
   @ApiPropertyOptional({
@@ -90,13 +109,13 @@ export class SaveItemPriceDto {
   @Transform(({ value }) => toOptionalUuid(value))
   @IsUUID('all')
   ipm_id?: string;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
   ipm_company_id?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
@@ -120,7 +139,7 @@ export class SaveItemPriceDto {
   @IsNotEmpty()
   @IsUUID('all')
   ipm_godown_id!: string;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
@@ -278,14 +297,14 @@ export class SaveItemPriceDto {
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
   ipm_loyalty_points?: number;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ type: String, maxLength: 250, nullable: true, example: null })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
   @MaxLength(250)
   ipm_uom_remarks?: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
+  @ApiPropertyOptional({ type: String, maxLength: 250, nullable: true, example: null })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
@@ -303,13 +322,13 @@ export class SaveItemPriceDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsDateString()
   ipm_sync_date?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
   ipm_created_by?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
