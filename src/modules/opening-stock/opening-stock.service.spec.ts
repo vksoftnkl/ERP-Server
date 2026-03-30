@@ -2,7 +2,6 @@ import { BadRequestException } from '@nestjs/common';
 import {
   AccVoucherHeader,
   DeviceType,
-  OpeningStockStatus,
   Prisma,
   VoucherStatus,
 } from '@prisma/client';
@@ -15,6 +14,7 @@ import {
   updateAccountVoucherHeader,
 } from '../accountsModule/accountVoucherHeader/account-voucher-header.helper';
 import { SaveOpeningStockDto } from './dto/save-opening-stock.dto';
+import { OpeningStockStatus } from './opening-stock.enums';
 import { OpeningStockService } from './opening-stock.service';
 
 jest.mock('../accountsModule/accountVoucherHeader/account-voucher-header.helper', () => ({

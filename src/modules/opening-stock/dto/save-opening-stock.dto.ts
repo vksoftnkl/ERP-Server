@@ -16,12 +16,12 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { ApiHideProperty, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { DeviceType } from '@prisma/client';
 import {
-  DeviceType,
   OpeningStockDetailCessType,
   OpeningStockDetailTrackingType,
   OpeningStockStatus,
-} from '@prisma/client';
+} from '../opening-stock.enums';
 const toOptionalUuid = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;

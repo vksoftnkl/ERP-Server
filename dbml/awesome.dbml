@@ -1798,7 +1798,7 @@ Table opening_stock_detail {
   oslUnitId String [not null]
   oslBaseUomId String
   oslGodownId String [not null]
-  oslTrackingType OpeningStockDetailTrackingType [not null, default: 'NONE']
+  oslTrackingType String [not null, default: 'NONE']
   oslBatchId String
   oslBarcode String
   oslBatchNo String
@@ -1813,7 +1813,7 @@ Table opening_stock_detail {
   oslConvFactor Decimal [not null, default: 1]
   oslTaxId String
   oslTaxPerc Decimal [not null, default: 0]
-  oslCessType OpeningStockDetailCessType [not null, default: 'NONE']
+  oslCessType String [not null, default: 'NONE']
   oslCessPerc Decimal [not null, default: 0]
   oslCessPerUnit Decimal [not null, default: 0]
   oslCostRate Decimal [not null, default: 0]
@@ -1869,10 +1869,10 @@ Table opening_stock_header {
   oshTotalLines Int [not null, default: 0]
   oshTotalQty Decimal [not null, default: 0]
   oshTotalValue Decimal [not null, default: 0]
-  oshStatus OpeningStockStatus [not null, default: 'DRAFT']
+  oshStatus String [not null, default: 'DRAFT']
   oshUserId String [not null]
   oshSessionId String
-  oshDeviceType OpeningStockDeviceType [not null]
+  oshDeviceType String [not null]
   oshDeviceId String
   oshCounterId String
   oshIsActive Boolean [not null, default: true]
@@ -2653,31 +2653,6 @@ Enum StockTxnType {
   CONSUMPTION
   DAMAGE
   EXPIRED
-}
-
-Enum OpeningStockDetailTrackingType {
-  NONE
-  BATCH
-  LOT
-}
-
-Enum OpeningStockDetailCessType {
-  NONE
-  PERCENT
-  PER_UNIT
-}
-
-Enum OpeningStockStatus {
-  DRAFT
-  APPROVED
-  POSTED
-  CANCELLED
-}
-
-Enum OpeningStockDeviceType {
-  PC
-  MOBILE
-  WEB
 }
 
 Enum WidgetPlatform {

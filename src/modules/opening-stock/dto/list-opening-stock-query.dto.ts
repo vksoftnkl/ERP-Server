@@ -11,7 +11,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OpeningStockStatus } from '@prisma/client';
+import { OpeningStockStatus } from '../opening-stock.enums';
 const toOptionalUuid = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;

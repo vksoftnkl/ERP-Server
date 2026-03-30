@@ -7,14 +7,15 @@ import {
 import {
   DeviceType,
   OpeningStockDetail,
-  OpeningStockDetailCessType,
-  OpeningStockDetailTrackingType,
-  OpeningStockDeviceType,
-  OpeningStockHeader,
-  OpeningStockStatus,
   Prisma,
   VoucherStatus,
 } from '@prisma/client';
+import {
+  OpeningStockDetailCessType,
+  OpeningStockDetailTrackingType,
+  OpeningStockDeviceType,
+  OpeningStockStatus,
+} from './opening-stock.enums';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import {
@@ -617,7 +618,6 @@ export class OpeningStockService {
     this.throwMissingReferenceError('osh_company_id', [context.companyId], companies.map((record) => record.compId));
     this.throwMissingReferenceError('osh_branch_id', [context.branchId], branches.map((record) => record.brId));
     this.throwMissingReferenceError('avh_party_id', [header.avh_party_id], partyLedgers.map((record) => record.ledId));
-
     if (header.avh_opposite_ledger_id) {
       this.throwMissingReferenceError(
         'avh_opposite_ledger_id',
@@ -625,7 +625,6 @@ export class OpeningStockService {
         oppositeLedgers.map((record) => record.ledId),
       );
     }
-
     this.throwMissingReferenceError(
       'osh_user_id',
       [context.openingUserId],
@@ -1124,10 +1123,10 @@ export class OpeningStockService {
     return header.avh_voucher_refno || header.osh_voucher_no;
   }
   private mapOpeningStatusToVoucherStatus(status: OpeningStockStatus): VoucherStatus {
-    return status as unknown as VoucherStatus;
+    return status;
   }
   private mapDeviceType(deviceType: DeviceType): OpeningStockDeviceType {
-    return deviceType as unknown as OpeningStockDeviceType;
+    return deviceType;
   }
   private parseRequiredDate(value: string, field: string): Date {
     const parsed = new Date(value);

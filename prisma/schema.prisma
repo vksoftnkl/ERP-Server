@@ -3137,54 +3137,43 @@ model Unit {
 }
 
 // ----- prisma/inventory/OpeningStockDetail.prisma -----
-enum OpeningStockDetailTrackingType {
-  NONE
-  BATCH
-  LOT
-  @@schema("inventory")
-}
-enum OpeningStockDetailCessType {
-  NONE
-  PERCENT
-  PER_UNIT
-  @@schema("inventory")
-}
 model OpeningStockDetail {
   // Primary
-  oslId               String                         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("osl_id")
+  oslId               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("osl_id")
   // Header link
-  oslVoucherId        String                         @db.Uuid @map("osl_voucher_id")
-  oslOpeningId        String                         @db.Uuid @map("osl_opening_id")
-  oslLineNo           Int                            @map("osl_line_no")
+  oslVoucherId        String    @db.Uuid @map("osl_voucher_id")
+  oslOpeningId        String    @db.Uuid @map("osl_opening_id")
+  oslLineNo           Int       @map("osl_line_no")
   // Multi-branch snapshot
-  oslAccYear          String                         @db.VarChar(9) @map("osl_acc_year")
-  oslCompanyId        String                         @db.Uuid @map("osl_company_id")
-  oslBranchId         String                         @db.Uuid @map("osl_branch_id")
+  oslAccYear          String    @db.VarChar(9) @map("osl_acc_year")
+  oslCompanyId        String    @db.Uuid @map("osl_company_id")
+  oslBranchId         String    @db.Uuid @map("osl_branch_id")
   // Item / location
-  oslItemId           String                         @db.Uuid @map("osl_item_id")
-  oslUnitId           String                         @db.Uuid @map("osl_unit_id")
-  oslBaseUomId        String?                        @db.Uuid @map("osl_base_uom_id")
-  oslGodownId         String                         @db.Uuid @map("osl_godown_id")
-  // Tracking
-  oslTrackingType     OpeningStockDetailTrackingType @default(NONE) @map("osl_tracking_type")
-  oslBatchId          String?                        @db.Uuid @map("osl_batch_id")
+  oslItemId           String    @db.Uuid @map("osl_item_id")
+  oslUnitId           String    @db.Uuid @map("osl_unit_id")
+  oslBaseUomId        String?   @db.Uuid @map("osl_base_uom_id")
+  oslGodownId         String    @db.Uuid @map("osl_godown_id")
+  // Tracking — validated at app level (OpeningStockDetailTrackingType)
+  oslTrackingType     String    @default("NONE") @db.VarChar(20) @map("osl_tracking_type")
+  oslBatchId          String?   @db.Uuid @map("osl_batch_id")
   // Batch / lot / serial fields
-  oslBarcode          String?                        @db.VarChar(100) @map("osl_barcode")
-  oslBatchNo          String?                        @db.VarChar(100) @map("osl_batch_no")
-  oslMfgBatchNo       String?                        @db.VarChar(100) @map("osl_mfg_batch_no")
-  oslBatchDate        DateTime?                      @db.Date @map("osl_batch_date")
-  oslMfgDate          DateTime?                      @db.Date @map("osl_mfg_date")
-  oslExpiryDate       DateTime?                      @db.Date @map("osl_expiry_date")
-  oslSerialNo         String?                        @db.VarChar(100) @map("osl_serial_no")
+  oslBarcode          String?   @db.VarChar(100) @map("osl_barcode")
+  oslBatchNo          String?   @db.VarChar(100) @map("osl_batch_no")
+  oslMfgBatchNo       String?   @db.VarChar(100) @map("osl_mfg_batch_no")
+  oslBatchDate        DateTime? @db.Date @map("osl_batch_date")
+  oslMfgDate          DateTime? @db.Date @map("osl_mfg_date")
+  oslExpiryDate       DateTime? @db.Date @map("osl_expiry_date")
+  oslSerialNo         String?   @db.VarChar(100) @map("osl_serial_no")
   // Quantity
-  oslQty              Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_qty")
-  oslBaseQty          Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_base_qty")
-  oslFreeQty          Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_free_qty")
-  oslConvFactor       Decimal                        @default(1) @db.Decimal(18, 6) @map("osl_conv_factor")
+  oslQty              Decimal   @default(0) @db.Decimal(18, 6) @map("osl_qty")
+  oslBaseQty          Decimal   @default(0) @db.Decimal(18, 6) @map("osl_base_qty")
+  oslFreeQty          Decimal   @default(0) @db.Decimal(18, 6) @map("osl_free_qty")
+  oslConvFactor       Decimal   @default(1) @db.Decimal(18, 6) @map("osl_conv_factor")
   // Tax snapshot
-  oslTaxId            String?                        @db.Uuid @map("osl_tax_id")
-  oslTaxPerc          Decimal                        @default(0) @db.Decimal(9, 3) @map("osl_tax_perc")
-  oslCessType         OpeningStockDetailCessType     @default(NONE) @map("osl_cess_type")
+  oslTaxId            String?   @db.Uuid @map("osl_tax_id")
+  oslTaxPerc          Decimal   @default(0) @db.Decimal(9, 3) @map("osl_tax_perc")
+  // Validated at app level (OpeningStockDetailCessType)
+  oslCessType         String    @default("NONE") @db.VarChar(20) @map("osl_cess_type")
   oslCessPerc         Decimal                        @default(0) @db.Decimal(9, 3) @map("osl_cess_perc")
   oslCessPerUnit      Decimal                        @default(0) @db.Decimal(18, 6) @map("osl_cess_per_unit")
   // Cost / value snapshot
@@ -3236,44 +3225,32 @@ model OpeningStockDetail {
 }
 
 // ----- prisma/inventory/OpeningStockHeader.prisma -----
-enum OpeningStockStatus {
-  DRAFT
-  APPROVED
-  POSTED
-  CANCELLED
-  @@schema("inventory")
-}
-enum OpeningStockDeviceType {
-  PC
-  MOBILE
-  WEB
-  @@schema("inventory")
-}
 model OpeningStockHeader {
   // Primary
-  oshId            String                 @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("osh_id")
+  oshId            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("osh_id")
   // Business / document identity
-  oshVoucherId     String                 @db.Uuid @map("osh_voucher_id")
-  oshAccYear       String                 @db.VarChar(9) @map("osh_acc_year")
-  oshCompanyId     String                 @db.Uuid @map("osh_company_id")
-  oshBranchId      String                 @db.Uuid @map("osh_branch_id")
+  oshVoucherId     String   @db.Uuid @map("osh_voucher_id")
+  oshAccYear       String   @db.VarChar(9) @map("osh_acc_year")
+  oshCompanyId     String   @db.Uuid @map("osh_company_id")
+  oshBranchId      String   @db.Uuid @map("osh_branch_id")
   // Voucher details
-  oshVoucherNo     BigInt                 @map("osh_voucher_no")
-  oshVoucherDate   DateTime               @db.Date @map("osh_voucher_date")
-  oshRefNo         String?                @db.VarChar(50) @map("osh_ref_no")
-  oshNarration     String?                @map("osh_narration")
+  oshVoucherNo     BigInt   @map("osh_voucher_no")
+  oshVoucherDate   DateTime @db.Date @map("osh_voucher_date")
+  oshRefNo         String?  @db.VarChar(50) @map("osh_ref_no")
+  oshNarration     String?  @map("osh_narration")
   // Optional header totals
-  oshTotalLines    Int                    @default(0) @map("osh_total_lines")
-  oshTotalQty      Decimal                @default(0) @db.Decimal(18, 6) @map("osh_total_qty")
-  oshTotalValue    Decimal                @default(0) @db.Decimal(18, 2) @map("osh_total_value")
-  // Workflow
-  oshStatus        OpeningStockStatus     @default(DRAFT) @map("osh_status")
+  oshTotalLines    Int      @default(0) @map("osh_total_lines")
+  oshTotalQty      Decimal  @default(0) @db.Decimal(18, 6) @map("osh_total_qty")
+  oshTotalValue    Decimal  @default(0) @db.Decimal(18, 2) @map("osh_total_value")
+  // Workflow — validated at app level (OpeningStockStatus)
+  oshStatus        String   @default("DRAFT") @db.VarChar(20) @map("osh_status")
   // User / session / device
-  oshUserId        String                 @db.Uuid @map("osh_user_id")
-  oshSessionId     String?                @db.Uuid @map("osh_session_id")
-  oshDeviceType    OpeningStockDeviceType @map("osh_device_type")
-  oshDeviceId      String?                @db.Uuid @map("osh_device_id")
-  oshCounterId     String?                @db.VarChar(20) @map("osh_counter_id")
+  oshUserId        String   @db.Uuid @map("osh_user_id")
+  oshSessionId     String?  @db.Uuid @map("osh_session_id")
+  // Validated at app level (OpeningStockDeviceType)
+  oshDeviceType    String   @db.VarChar(20) @map("osh_device_type")
+  oshDeviceId      String?  @db.Uuid @map("osh_device_id")
+  oshCounterId     String?  @db.VarChar(20) @map("osh_counter_id")
   // Status flags
   oshIsActive      Boolean                @default(true) @map("osh_is_active")
   oshIsDeleted     Boolean                @default(false) @map("osh_is_deleted")
