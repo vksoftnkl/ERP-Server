@@ -49,6 +49,17 @@ type ItemUnitConversionSnapshot = Pick<
   | 'iucUomRemarks'
 >;
 
+type EffectiveItemUnitConversionRow = {
+  saveIndex?: number;
+  iucId?: string;
+  unitId: string;
+  baseUnitId: string;
+  unitSlno: number;
+  toBaseFactor?: number;
+  unitFactor?: number;
+  isBaseUnit: boolean;
+};
+
 @Injectable()
 export class ItemsPriceMasterService {
   constructor(
@@ -103,7 +114,10 @@ export class ItemsPriceMasterService {
 
     try {
       const results = await this.prisma.$transaction(async (tx) => {
-        const normalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(tx, saveItems);
+        const normalizedSaveItems = await this.normalizeItemUnitConversionFactors(
+          tx,
+          await this.normalizeItemUnitConversionBaseUnits(tx, saveItems),
+        );
         const savedItems: ItemUnitConversionPayload[] = [];
 
         for (const saveItem of normalizedSaveItems) {
@@ -965,6 +979,164 @@ export class ItemsPriceMasterService {
     );
   }
 
+  private async normalizeItemUnitConversionFactors(
+    tx: Prisma.TransactionClient,
+    saveItems: SaveItemUnitConversionDto[],
+  ): Promise<SaveItemUnitConversionDto[]> {
+    if (saveItems.length === 0) {
+      return saveItems;
+    }
+
+    const normalizedItems = [...saveItems];
+    const saveItemsByItemId = new Map<string, Array<{ index: number; item: SaveItemUnitConversionDto }>>();
+
+    saveItems.forEach((saveItem, index) => {
+      const existingEntries = saveItemsByItemId.get(saveItem.iuc_item_id) ?? [];
+      existingEntries.push({ index, item: saveItem });
+      saveItemsByItemId.set(saveItem.iuc_item_id, existingEntries);
+    });
+
+    for (const [itemId, indexedSaveItems] of saveItemsByItemId.entries()) {
+      const persistedRows = await tx.itemUnitConversion.findMany({
+        where: {
+          iucItemId: itemId,
+          iucIsDeleted: false,
+        },
+        orderBy: [{ iucIsBaseUnit: 'desc' }, { iucUnitSlno: 'asc' }, { iucId: 'asc' }],
+      });
+
+      const effectiveRows: EffectiveItemUnitConversionRow[] = persistedRows.map((row) => ({
+        iucId: row.iucId,
+        unitId: row.iucUnitId,
+        baseUnitId: row.iucBaseUnitId,
+        unitSlno: row.iucUnitSlno,
+        toBaseFactor: this.toPositiveFactor(row.iucToBaseFactor),
+        unitFactor: this.toPositiveFactor(row.iucUnitFactor),
+        isBaseUnit: row.iucIsBaseUnit,
+      }));
+
+      for (const { index, item } of indexedSaveItems) {
+        const nextRow: EffectiveItemUnitConversionRow = {
+          saveIndex: index,
+          iucId: item.iuc_id,
+          unitId: item.iuc_unit_id,
+          baseUnitId: item.iuc_base_unit_id ?? item.iuc_unit_id,
+          unitSlno: item.iuc_unit_slno ?? 0,
+          toBaseFactor: this.toPositiveFactor(item.iuc_to_base_factor),
+          unitFactor: this.toPositiveFactor(item.iuc_unit_factor ?? item.iul_unit_factor),
+          isBaseUnit:
+            item.iuc_is_base_unit === true ||
+            (item.iuc_base_unit_id ?? item.iuc_unit_id) === item.iuc_unit_id,
+        };
+
+        const existingIndex = effectiveRows.findIndex((row) =>
+          item.iuc_id ? row.iucId === item.iuc_id : row.unitId === item.iuc_unit_id,
+        );
+
+        if (existingIndex >= 0) {
+          effectiveRows[existingIndex] = {
+            ...effectiveRows[existingIndex],
+            ...nextRow,
+          };
+        } else {
+          effectiveRows.push(nextRow);
+        }
+      }
+
+      effectiveRows.sort((left, right) => {
+        if (left.isBaseUnit !== right.isBaseUnit) {
+          return left.isBaseUnit ? -1 : 1;
+        }
+        if (left.unitSlno !== right.unitSlno) {
+          return left.unitSlno - right.unitSlno;
+        }
+        return left.unitId.localeCompare(right.unitId);
+      });
+
+      let previousToBaseFactor = 1;
+      for (const row of effectiveRows) {
+        const normalizedFactors = this.resolveNormalizedFactorValues({
+          isBaseUnit: row.isBaseUnit,
+          previousToBaseFactor,
+          toBaseFactor: row.toBaseFactor,
+          unitFactor: row.unitFactor,
+        });
+
+        row.toBaseFactor = normalizedFactors.toBaseFactor;
+        row.unitFactor = normalizedFactors.unitFactor;
+        previousToBaseFactor = normalizedFactors.toBaseFactor;
+      }
+
+      for (const row of effectiveRows) {
+        if (row.saveIndex === undefined) {
+          continue;
+        }
+
+        const saveItem = normalizedItems[row.saveIndex];
+        normalizedItems[row.saveIndex] = {
+          ...saveItem,
+          iuc_base_unit_id: row.baseUnitId,
+          iuc_unit_slno: row.unitSlno,
+          iuc_to_base_factor: row.toBaseFactor,
+          iuc_unit_factor: row.unitFactor,
+          iul_unit_factor: row.unitFactor,
+          iuc_is_base_unit: row.isBaseUnit,
+        };
+      }
+    }
+
+    return normalizedItems;
+  }
+
+  private resolveNormalizedFactorValues(params: {
+    isBaseUnit: boolean;
+    previousToBaseFactor: number;
+    toBaseFactor?: number;
+    unitFactor?: number;
+  }): { toBaseFactor: number; unitFactor: number } {
+    if (params.isBaseUnit) {
+      return {
+        toBaseFactor: 1,
+        unitFactor: 1,
+      };
+    }
+
+    const resolvedUnitFactor =
+      params.unitFactor ??
+      (() => {
+        if (params.toBaseFactor === undefined) {
+          return 1;
+        }
+
+        if (params.previousToBaseFactor <= 0) {
+          return params.toBaseFactor;
+        }
+
+        return params.toBaseFactor / params.previousToBaseFactor;
+      })();
+
+    const unitFactor = Number(resolvedUnitFactor.toFixed(6));
+    const toBaseFactor = Number((params.previousToBaseFactor * resolvedUnitFactor).toFixed(6));
+
+    return {
+      toBaseFactor,
+      unitFactor,
+    };
+  }
+
+  private toPositiveFactor(value: Prisma.Decimal | number | null | undefined): number | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return undefined;
+    }
+
+    return parsed;
+  }
+
   private async resolvePersistedItemUnitConversionBaseUnitId(
     tx: Prisma.TransactionClient,
     iucId: string | undefined,
@@ -1059,12 +1231,18 @@ export class ItemsPriceMasterService {
       saveItemPriceDto.ipm_base_unit_id ?? saveItemPriceDto.ipm_unit_id;
     const isBaseUnit =
       saveItemPriceDto.ipm_is_base_unit ?? resolvedBaseUnitId === saveItemPriceDto.ipm_unit_id;
+    const normalizedFactors = this.resolveNormalizedFactorValues({
+      isBaseUnit,
+      previousToBaseFactor: 1,
+      toBaseFactor: this.toPositiveFactor(saveItemPriceDto.ipm_to_base_factor),
+      unitFactor: this.toPositiveFactor(saveItemPriceDto.ipm_unit_factor),
+    });
 
     return {
       iucBaseUnitId: resolvedBaseUnitId,
-      iucToBaseFactor: new Prisma.Decimal(saveItemPriceDto.ipm_to_base_factor ?? 1),
+      iucToBaseFactor: new Prisma.Decimal(normalizedFactors.toBaseFactor),
       iucUnitSlno: saveItemPriceDto.ipm_unit_slno ?? 0,
-      iucUnitFactor: new Prisma.Decimal(saveItemPriceDto.ipm_unit_factor ?? 1),
+      iucUnitFactor: new Prisma.Decimal(normalizedFactors.unitFactor),
       iucIsDefaultUnit: saveItemPriceDto.ipm_is_default_unit ?? false,
       iucIsBaseUnit: isBaseUnit,
       iucIsBigUnit: saveItemPriceDto.ipm_is_big_unit ?? false,

@@ -171,6 +171,7 @@ describe('ItemsPriceMasterService', () => {
       async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
         callback(prisma as unknown as Prisma.TransactionClient),
     );
+    prisma.itemUnitConversion.findMany.mockResolvedValue([]);
 
     auditLogService = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
@@ -356,6 +357,189 @@ describe('ItemsPriceMasterService', () => {
       iuc_to_base_factor: 12,
       iuc_unit_slno: 2,
     });
+  });
+
+  it('derives cumulative to-base factors from step unit factors across a batch', async () => {
+    const tertiaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd15';
+    prisma.itemUnitConversion.create
+      .mockResolvedValueOnce(
+        makeItemUnitConversionRecord({
+          iucUnitId: BASE_UNIT_ID,
+          iucBaseUnitId: BASE_UNIT_ID,
+          iucUnitSlno: 1,
+          iucIsBaseUnit: true,
+          iucToBaseFactor: new Prisma.Decimal(1),
+          iucUnitFactor: new Prisma.Decimal(1),
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeItemUnitConversionRecord({
+          iucId: '019c6f6c-be87-7a11-8905-36092c46fd16',
+          iucUnitId: UNIT_ID,
+          iucBaseUnitId: BASE_UNIT_ID,
+          iucUnitSlno: 2,
+          iucIsBaseUnit: false,
+          iucToBaseFactor: new Prisma.Decimal(10),
+          iucUnitFactor: new Prisma.Decimal(10),
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeItemUnitConversionRecord({
+          iucId: '019c6f6c-be87-7a11-8905-36092c46fd17',
+          iucUnitId: tertiaryUnitId,
+          iucBaseUnitId: BASE_UNIT_ID,
+          iucUnitSlno: 3,
+          iucIsBaseUnit: false,
+          iucToBaseFactor: new Prisma.Decimal(60),
+          iucUnitFactor: new Prisma.Decimal(6),
+        }),
+      );
+
+    await service.saveItemUnitConversions([
+      {
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: BASE_UNIT_ID,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 1,
+        iuc_is_base_unit: true,
+        iuc_created_by: USER_ID,
+      },
+      {
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: UNIT_ID,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 2,
+        iuc_unit_factor: 10,
+        iuc_created_by: USER_ID,
+      },
+      {
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: tertiaryUnitId,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 3,
+        iuc_unit_factor: 6,
+        iuc_created_by: USER_ID,
+      },
+    ]);
+
+    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          iucUnitId: BASE_UNIT_ID,
+          iucToBaseFactor: 1,
+          iucUnitFactor: 1,
+        }),
+      }),
+    );
+    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          iucUnitId: UNIT_ID,
+          iucToBaseFactor: 10,
+          iucUnitFactor: 10,
+        }),
+      }),
+    );
+    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          iucUnitId: tertiaryUnitId,
+          iucToBaseFactor: 60,
+          iucUnitFactor: 6,
+        }),
+      }),
+    );
+  });
+
+  it('derives a new row cumulative factor from persisted item unit conversion rows', async () => {
+    const tertiaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd18';
+    prisma.itemUnitConversion.findMany.mockResolvedValue([
+      makeItemUnitConversionRecord({
+        iucId: '019c6f6c-be87-7a11-8905-36092c46fd19',
+        iucUnitId: BASE_UNIT_ID,
+        iucBaseUnitId: BASE_UNIT_ID,
+        iucUnitSlno: 1,
+        iucIsBaseUnit: true,
+        iucToBaseFactor: new Prisma.Decimal(1),
+        iucUnitFactor: new Prisma.Decimal(1),
+      }),
+      makeItemUnitConversionRecord({
+        iucId: '019c6f6c-be87-7a11-8905-36092c46fd20',
+        iucUnitId: UNIT_ID,
+        iucBaseUnitId: BASE_UNIT_ID,
+        iucUnitSlno: 2,
+        iucIsBaseUnit: false,
+        iucToBaseFactor: new Prisma.Decimal(10),
+        iucUnitFactor: new Prisma.Decimal(10),
+      }),
+    ]);
+    prisma.itemUnitConversion.create.mockResolvedValue(
+      makeItemUnitConversionRecord({
+        iucId: '019c6f6c-be87-7a11-8905-36092c46fd21',
+        iucUnitId: tertiaryUnitId,
+        iucBaseUnitId: BASE_UNIT_ID,
+        iucUnitSlno: 3,
+        iucIsBaseUnit: false,
+        iucToBaseFactor: new Prisma.Decimal(60),
+        iucUnitFactor: new Prisma.Decimal(6),
+      }),
+    );
+
+    await service.saveItemUnitConversions({
+      iuc_company_id: COMPANY_ID,
+      iuc_item_id: ITEM_ID,
+      iuc_unit_id: tertiaryUnitId,
+      iuc_base_unit_id: BASE_UNIT_ID,
+      iuc_unit_slno: 3,
+      iuc_unit_factor: 6,
+      iuc_created_by: USER_ID,
+    });
+
+    expect(prisma.itemUnitConversion.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          iucUnitId: tertiaryUnitId,
+          iucToBaseFactor: 60,
+          iucUnitFactor: 6,
+        }),
+      }),
+    );
+  });
+
+  it('uses ipm_unit_factor to build fallback structural factors when no unit conversion exists', async () => {
+    prisma.itemUnitConversion.findFirst.mockResolvedValue(null);
+    prisma.itemPriceMaster.create.mockResolvedValue(
+      makeItemPriceRecord({
+        ipmBaseUnitId: BASE_UNIT_ID,
+        ipmToBaseFactor: new Prisma.Decimal(4),
+        ipmUnitSlno: 3,
+        ipmUnitFactor: new Prisma.Decimal(4),
+        ipmIsDefaultUnit: false,
+        ipmIsBigUnit: true,
+        ipmIsBaseUnit: false,
+      }),
+    );
+
+    await service.save({
+      ipm_item_id: ITEM_ID,
+      ipm_unit_id: UNIT_ID,
+      ipm_godown_id: GODOWN_ID,
+      ipm_base_unit_id: BASE_UNIT_ID,
+      ipm_profit_type: 'MANUAL',
+      ipm_unit_slno: 3,
+      ipm_unit_factor: 4,
+      ipm_is_big_unit: true,
+    });
+
+    const createArgs = prisma.itemPriceMaster.create.mock.calls.at(-1)?.[0];
+    expect(createArgs?.data.ipmToBaseFactor).toEqual(new Prisma.Decimal(4));
+    expect(createArgs?.data.ipmUnitFactor).toEqual(new Prisma.Decimal(4));
   });
 
   it('derives missing base-unit ids from a base-unit row elsewhere in the same batch', async () => {
