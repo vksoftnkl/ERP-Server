@@ -114,9 +114,18 @@ export class ItemsPriceMasterService {
 
     try {
       const results = await this.prisma.$transaction(async (tx) => {
+        const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(
+          tx,
+          saveItems,
+        );
+
+        for (const saveItem of baseUnitNormalizedSaveItems) {
+          this.validateItemUnitConversion(saveItem);
+        }
+
         const normalizedSaveItems = await this.normalizeItemUnitConversionFactors(
           tx,
-          await this.normalizeItemUnitConversionBaseUnits(tx, saveItems),
+          baseUnitNormalizedSaveItems,
         );
         const savedItems: ItemUnitConversionPayload[] = [];
 
@@ -126,21 +135,18 @@ export class ItemsPriceMasterService {
 
         return savedItems;
       });
-
       return Array.isArray(saveItemUnitConversionDto) ? results : results[0];
     } catch (error: unknown) {
       this.handleItemUnitConversionWriteError(error);
       throw error;
     }
   }
-
   async list(
     queryDto: ListItemPriceQueryDto,
   ): Promise<ConfiguredGridListResult<ItemPriceListItem, ItemPriceListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.ipm_company_id !== undefined ||
       queryDto.ipm_branch_id !== undefined ||
@@ -152,14 +158,12 @@ export class ItemsPriceMasterService {
       queryDto.ipm_is_active !== undefined ||
       queryDto.ipm_is_deleted !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where = this.buildListWhere(queryDto);
     const [total, records] = await Promise.all([
       this.prisma.itemPriceMaster.count({ where }),
@@ -170,7 +174,6 @@ export class ItemsPriceMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -181,14 +184,12 @@ export class ItemsPriceMasterService {
       },
     };
   }
-
   async listItemUnitConversions(
     queryDto: ListItemUnitConversionQueryDto,
   ): Promise<ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.iuc_company_id !== undefined ||
       queryDto.iuc_item_id !== undefined ||
@@ -200,7 +201,6 @@ export class ItemsPriceMasterService {
       queryDto.iuc_is_active !== undefined ||
       queryDto.iuc_is_deleted !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listItemUnitConversionsFromConfiguredGridSql(
         page,
@@ -211,7 +211,6 @@ export class ItemsPriceMasterService {
         return configuredList;
       }
     }
-
     const where = this.buildItemUnitConversionListWhere(queryDto);
     const [total, records] = await Promise.all([
       this.prisma.itemUnitConversion.count({ where }),
@@ -222,7 +221,6 @@ export class ItemsPriceMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toItemUnitConversionPayload(record)),
       meta: {
@@ -233,7 +231,6 @@ export class ItemsPriceMasterService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -249,13 +246,11 @@ export class ItemsPriceMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: ITEM_PRICE_TABLE_NAME,
@@ -263,7 +258,6 @@ export class ItemsPriceMasterService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemPriceListItem>({
           baseSql: validation.normalizedSql,
@@ -272,7 +266,6 @@ export class ItemsPriceMasterService {
           skip,
           gridId: configuredGrid.gridId,
         });
-
         return {
           items: result.items,
           meta: {
@@ -287,10 +280,8 @@ export class ItemsPriceMasterService {
         continue;
       }
     }
-
     return null;
   }
-
   private async listItemUnitConversionsFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -308,13 +299,11 @@ export class ItemsPriceMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
@@ -322,7 +311,6 @@ export class ItemsPriceMasterService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result =
           await this.configuredGridSqlService.runPagedQuery<ItemUnitConversionListItem>({
@@ -332,8 +320,7 @@ export class ItemsPriceMasterService {
             skip,
             gridId: configuredGrid.gridId,
           });
-
-        return {
+       return {
           items: result.items,
           meta: {
             page,
@@ -347,10 +334,8 @@ export class ItemsPriceMasterService {
         continue;
       }
     }
-
     return null;
   }
-
   async getById(ipmId: string): Promise<ItemPricePayload> {
     const record = await this.prisma.itemPriceMaster.findFirst({
       where: {
@@ -358,14 +343,11 @@ export class ItemsPriceMasterService {
         ipmIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(ipmId);
     }
-
     return this.toPayload(record);
   }
-
   async getItemUnitConversionById(iucId: string): Promise<ItemUnitConversionPayload> {
     const record = await this.prisma.itemUnitConversion.findFirst({
       where: {
@@ -373,20 +355,16 @@ export class ItemsPriceMasterService {
         iucIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwItemUnitConversionNotFound(iucId);
     }
-
     return this.toItemUnitConversionPayload(record);
   }
-
   async delete(ipmId: string): Promise<ItemPriceDeleteResult>;
   async delete(ipmId: string[]): Promise<ItemPriceDeleteResult[]>;
   async delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
   async delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]> {
     const deleteIds = Array.isArray(ipmId) ? ipmId : [ipmId];
-
     try {
       const results = await this.prisma.$transaction(async (tx) => {
         const deletedItems: ItemPriceDeleteResult[] = [];
@@ -394,17 +372,14 @@ export class ItemsPriceMasterService {
         for (const deleteId of deleteIds) {
           deletedItems.push(await this.deleteItemPrice(tx, deleteId));
         }
-
         return deletedItems;
       });
-
       return Array.isArray(ipmId) ? results : results[0];
     } catch (error: unknown) {
       this.handleDeleteError(error);
       throw error;
     }
   }
-
   async deleteItemUnitConversions(iucId: string): Promise<ItemUnitConversionDeleteResult>;
   async deleteItemUnitConversions(iucId: string[]): Promise<ItemUnitConversionDeleteResult[]>;
   async deleteItemUnitConversions(
@@ -414,7 +389,6 @@ export class ItemsPriceMasterService {
     iucId: string | string[],
   ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]> {
     const deleteIds = Array.isArray(iucId) ? iucId : [iucId];
-
     try {
       const results = await this.prisma.$transaction(async (tx) => {
         const deletedItems: ItemUnitConversionDeleteResult[] = [];
@@ -422,17 +396,14 @@ export class ItemsPriceMasterService {
         for (const deleteId of deleteIds) {
           deletedItems.push(await this.deleteItemUnitConversion(tx, deleteId));
         }
-
         return deletedItems;
       });
-
       return Array.isArray(iucId) ? results : results[0];
     } catch (error: unknown) {
       this.handleItemUnitConversionDeleteError(error);
       throw error;
     }
   }
-
   private async saveItemPrice(
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
@@ -440,10 +411,8 @@ export class ItemsPriceMasterService {
     if (saveItemPriceDto.ipm_id) {
       return this.updateItemPrice(tx, saveItemPriceDto);
     }
-
     return this.createItemPrice(tx, saveItemPriceDto);
   }
-
   private async deleteItemPrice(
     tx: Prisma.TransactionClient,
     ipmId: string,
@@ -457,7 +426,6 @@ export class ItemsPriceMasterService {
     if (!existing) {
       this.throwNotFound(ipmId);
     }
-
     const deletedOn = new Date();
     const updated = await tx.itemPriceMaster.update({
       where: {
@@ -468,7 +436,6 @@ export class ItemsPriceMasterService {
         ipmUpdatedOn: deletedOn,
       },
     });
-
     await this.auditLogService.logEntityChange(
       {
         action: 'cancel',
@@ -484,13 +451,11 @@ export class ItemsPriceMasterService {
       },
       tx,
     );
-
     return {
       ipm_id: ipmId,
       deleted: true,
     };
   }
-
   private async saveItemUnitConversion(
     tx: Prisma.TransactionClient,
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
@@ -498,16 +463,13 @@ export class ItemsPriceMasterService {
     if (saveItemUnitConversionDto.iuc_id) {
       return this.updateItemUnitConversion(tx, saveItemUnitConversionDto);
     }
-
     return this.createItemUnitConversion(tx, saveItemUnitConversionDto);
   }
-
   private async createItemUnitConversion(
     tx: Prisma.TransactionClient,
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
   ): Promise<ItemUnitConversionPayload> {
     this.validateItemUnitConversion(saveItemUnitConversionDto);
-
     const now = new Date();
     const createdBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_created_by);
     const updatedBy =
@@ -525,10 +487,8 @@ export class ItemsPriceMasterService {
       iucUpdatedBy: updatedBy,
     };
     this.applyItemUnitConversionOptionalFields(data, saveItemUnitConversionDto);
-
     const created = await tx.itemUnitConversion.create({ data });
     const payload = this.toItemUnitConversionPayload(created);
-
     await this.auditLogService.logEntityChange(
       {
         action: 'New',
@@ -544,10 +504,8 @@ export class ItemsPriceMasterService {
       },
       tx,
     );
-
     return payload;
   }
-
   private async updateItemUnitConversion(
     tx: Prisma.TransactionClient,
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
@@ -564,7 +522,6 @@ export class ItemsPriceMasterService {
     if (!existing) {
       this.throwItemUnitConversionNotFound(iucId);
     }
-
     const baseUnitId =
       saveItemUnitConversionDto.iuc_base_unit_id ?? existing.iucBaseUnitId;
     const data: Prisma.ItemUnitConversionUncheckedUpdateInput = {
@@ -578,14 +535,12 @@ export class ItemsPriceMasterService {
       data.iucUpdatedBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by);
     }
     this.applyItemUnitConversionOptionalFields(data, saveItemUnitConversionDto);
-
     const updated = await tx.itemUnitConversion.update({
       where: {
         iucId,
       },
       data,
     });
-
     const payload = this.toItemUnitConversionPayload(updated);
     await this.auditLogService.logEntityChange(
       {
@@ -605,7 +560,6 @@ export class ItemsPriceMasterService {
 
     return payload;
   }
-
   private async deleteItemUnitConversion(
     tx: Prisma.TransactionClient,
     iucId: string,
@@ -619,7 +573,6 @@ export class ItemsPriceMasterService {
     if (!existing) {
       this.throwItemUnitConversionNotFound(iucId);
     }
-
     const deletedOn = new Date();
     const updated = await tx.itemUnitConversion.update({
       where: {
@@ -630,7 +583,6 @@ export class ItemsPriceMasterService {
         iucUpdatedOn: deletedOn,
       },
     });
-
     await this.auditLogService.logEntityChange(
       {
         action: 'cancel',
@@ -646,13 +598,11 @@ export class ItemsPriceMasterService {
       },
       tx,
     );
-
     return {
       iuc_id: iucId,
       deleted: true,
     };
   }
-
   private async createItemPrice(
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
@@ -666,8 +616,7 @@ export class ItemsPriceMasterService {
         },
       ]);
     }
-
-    const unitConversion = await this.resolveUnitConversion(tx, saveItemPriceDto);
+    const unitConversion = await this.syncUnitConversionFromItemPriceInput(tx, saveItemPriceDto);
     const now = new Date();
     const createdBy = this.resolveRecordActor(saveItemPriceDto.ipm_created_by);
     const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
@@ -683,10 +632,8 @@ export class ItemsPriceMasterService {
     };
     this.applyOptionalFields(data, saveItemPriceDto);
     this.applyUnitConversionFields(data, unitConversion, saveItemPriceDto);
-
     const created = await tx.itemPriceMaster.create({ data });
     const payload = this.toPayload(created);
-
     await this.auditLogService.logEntityChange(
       {
         action: 'New',
@@ -702,10 +649,8 @@ export class ItemsPriceMasterService {
       },
       tx,
     );
-
     return payload;
   }
-
   private async updateItemPrice(
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
@@ -720,7 +665,6 @@ export class ItemsPriceMasterService {
         },
       ]);
     }
-
     const existing = await tx.itemPriceMaster.findFirst({
       where: {
         ipmId,
@@ -730,8 +674,7 @@ export class ItemsPriceMasterService {
     if (!existing) {
       this.throwNotFound(ipmId);
     }
-
-    const unitConversion = await this.resolveUnitConversion(tx, saveItemPriceDto);
+    const unitConversion = await this.syncUnitConversionFromItemPriceInput(tx, saveItemPriceDto);
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
       ipmUnitId: saveItemPriceDto.ipm_unit_id,
@@ -744,14 +687,12 @@ export class ItemsPriceMasterService {
     }
     this.applyOptionalFields(data, saveItemPriceDto);
     this.applyUnitConversionFields(data, unitConversion, saveItemPriceDto);
-
     const updated = await tx.itemPriceMaster.update({
       where: {
         ipmId,
       },
       data,
     });
-
     const payload = this.toPayload(updated);
     await this.auditLogService.logEntityChange(
       {
@@ -768,47 +709,36 @@ export class ItemsPriceMasterService {
       },
       tx,
     );
-
     return payload;
   }
-
   private buildListWhere(queryDto: ListItemPriceQueryDto): Prisma.ItemPriceMasterWhereInput {
     const where: Prisma.ItemPriceMasterWhereInput = {
       ipmIsDeleted: queryDto.ipm_is_deleted ?? false,
     };
-
     if (queryDto.ipm_company_id !== undefined) {
       where.ipmCompanyId = queryDto.ipm_company_id;
     }
-
     if (queryDto.ipm_branch_id !== undefined) {
       where.ipmBranchId = queryDto.ipm_branch_id;
     }
-
     if (queryDto.ipm_item_id !== undefined) {
       where.ipmItemId = queryDto.ipm_item_id;
     }
-
     if (queryDto.ipm_unit_id !== undefined) {
       where.ipmUnitId = queryDto.ipm_unit_id;
     }
-
     if (queryDto.ipm_godown_id !== undefined) {
       where.ipmGodownId = queryDto.ipm_godown_id;
     }
-
     if (queryDto.ipm_base_unit_id !== undefined) {
       where.ipmBaseUnitId = queryDto.ipm_base_unit_id;
     }
-
     if (queryDto.ipm_profit_type !== undefined) {
       where.ipmProfitType = queryDto.ipm_profit_type;
     }
-
     if (queryDto.ipm_is_active !== undefined) {
       where.ipmIsActive = queryDto.ipm_is_active;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -817,57 +747,44 @@ export class ItemsPriceMasterService {
         { ipmCostRemarks: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     return where;
   }
-
   private buildItemUnitConversionListWhere(
     queryDto: ListItemUnitConversionQueryDto,
   ): Prisma.ItemUnitConversionWhereInput {
     const where: Prisma.ItemUnitConversionWhereInput = {
       iucIsDeleted: queryDto.iuc_is_deleted ?? false,
     };
-
     if (queryDto.iuc_company_id !== undefined) {
       where.iucCompanyId = queryDto.iuc_company_id;
     }
-
     if (queryDto.iuc_item_id !== undefined) {
       where.iucItemId = queryDto.iuc_item_id;
     }
-
     if (queryDto.iuc_unit_id !== undefined) {
       where.iucUnitId = queryDto.iuc_unit_id;
     }
-
     if (queryDto.iuc_base_unit_id !== undefined) {
       where.iucBaseUnitId = queryDto.iuc_base_unit_id;
     }
-
     if (queryDto.iuc_is_default_unit !== undefined) {
       where.iucIsDefaultUnit = queryDto.iuc_is_default_unit;
     }
-
     if (queryDto.iuc_is_base_unit !== undefined) {
       where.iucIsBaseUnit = queryDto.iuc_is_base_unit;
     }
-
     if (queryDto.iuc_is_big_unit !== undefined) {
       where.iucIsBigUnit = queryDto.iuc_is_big_unit;
     }
-
     if (queryDto.iuc_is_active !== undefined) {
       where.iucIsActive = queryDto.iuc_is_active;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [{ iucUomRemarks: { contains: search, mode: 'insensitive' } }];
     }
-
     return where;
   }
-
   private validateItemUnitConversion(saveItemUnitConversionDto: SaveItemUnitConversionDto): void {
     const factor = saveItemUnitConversionDto.iuc_to_base_factor;
     const unitFactor =
@@ -882,7 +799,6 @@ export class ItemsPriceMasterService {
         },
       ]);
     }
-
     if (unitFactor !== undefined && unitFactor <= 0) {
       this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
         {
@@ -891,7 +807,6 @@ export class ItemsPriceMasterService {
         },
       ]);
     }
-
     const uomWeight = saveItemUnitConversionDto.iuc_uom_weight;
     if (uomWeight !== undefined && uomWeight < 0) {
       this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
@@ -901,11 +816,9 @@ export class ItemsPriceMasterService {
         },
       ]);
     }
-
     if (saveItemUnitConversionDto.iuc_is_base_unit !== true) {
       return;
     }
-
     if (saveItemUnitConversionDto.iuc_unit_id !== resolvedBaseUnitId) {
       this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
         {
@@ -915,23 +828,17 @@ export class ItemsPriceMasterService {
       ]);
     }
 
-    if (factor !== undefined && factor !== 1) {
-      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'iuc_to_base_factor',
-          message: 'Base unit conversion row must use iuc_to_base_factor = 1',
-        },
-      ]);
-    }
+    // if (factor !== undefined && factor !== 1) {
+    //   this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+    //     {
+    //       field: 'iuc_to_base_factor',
+    //       message: 'Base unit conversion row must use iuc_to_base_factor = 1',
+    //     },
+    //   ]);
+    // }
 
-    if (unitFactor !== undefined && unitFactor !== 1) {
-      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'iuc_unit_factor',
-          message: 'Base unit conversion row must use iuc_unit_factor = 1',
-        },
-      ]);
-    }
+    // Do not force iuc_unit_factor = 1 for base row.
+    // Base unit may be first, middle, or last row in the chain.
   }
 
   private async normalizeItemUnitConversionBaseUnits(
@@ -988,7 +895,10 @@ export class ItemsPriceMasterService {
     }
 
     const normalizedItems = [...saveItems];
-    const saveItemsByItemId = new Map<string, Array<{ index: number; item: SaveItemUnitConversionDto }>>();
+    const saveItemsByItemId = new Map<
+      string,
+      Array<{ index: number; item: SaveItemUnitConversionDto }>
+    >();
 
     saveItems.forEach((saveItem, index) => {
       const existingEntries = saveItemsByItemId.get(saveItem.iuc_item_id) ?? [];
@@ -1002,7 +912,7 @@ export class ItemsPriceMasterService {
           iucItemId: itemId,
           iucIsDeleted: false,
         },
-        orderBy: [{ iucIsBaseUnit: 'desc' }, { iucUnitSlno: 'asc' }, { iucId: 'asc' }],
+        orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
       });
 
       const effectiveRows: EffectiveItemUnitConversionRow[] = persistedRows.map((row) => ({
@@ -1043,28 +953,62 @@ export class ItemsPriceMasterService {
         }
       }
 
+      if (effectiveRows.length === 0) {
+        continue;
+      }
+
       effectiveRows.sort((left, right) => {
-        if (left.isBaseUnit !== right.isBaseUnit) {
-          return left.isBaseUnit ? -1 : 1;
-        }
         if (left.unitSlno !== right.unitSlno) {
           return left.unitSlno - right.unitSlno;
         }
         return left.unitId.localeCompare(right.unitId);
       });
 
-      let previousToBaseFactor = 1;
-      for (const row of effectiveRows) {
-        const normalizedFactors = this.resolveNormalizedFactorValues({
-          isBaseUnit: row.isBaseUnit,
-          previousToBaseFactor,
-          toBaseFactor: row.toBaseFactor,
-          unitFactor: row.unitFactor,
-        });
+      const resolvedBaseUnitId =
+        indexedSaveItems.find(({ item }) => item.iuc_is_base_unit === true)?.item.iuc_unit_id ??
+        effectiveRows.find((row) => row.isBaseUnit)?.unitId ??
+        effectiveRows[0].baseUnitId ??
+        effectiveRows[0].unitId;
 
-        row.toBaseFactor = normalizedFactors.toBaseFactor;
-        row.unitFactor = normalizedFactors.unitFactor;
-        previousToBaseFactor = normalizedFactors.toBaseFactor;
+      for (const row of effectiveRows) {
+        row.baseUnitId = resolvedBaseUnitId;
+        row.isBaseUnit = row.unitId === resolvedBaseUnitId;
+      }
+
+      const cumulativeByUnitId = new Map<string, number>();
+
+      for (let i = 0; i < effectiveRows.length; i++) {
+        const row = effectiveRows[i];
+
+        if (i === 0) {
+          row.unitFactor = 1;
+          cumulativeByUnitId.set(row.unitId, 1);
+          continue;
+        }
+
+        const previousRow = effectiveRows[i - 1];
+        const resolvedUnitFactor = this.resolveChainUnitFactor(previousRow, row);
+
+        row.unitFactor = resolvedUnitFactor;
+
+        const previousCumulative = cumulativeByUnitId.get(previousRow.unitId)!;
+        const currentCumulative = this.roundFactor(previousCumulative * resolvedUnitFactor);
+        cumulativeByUnitId.set(row.unitId, currentCumulative);
+      }
+
+      const baseCumulative = cumulativeByUnitId.get(resolvedBaseUnitId);
+      if (!baseCumulative) {
+        this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+          {
+            field: 'iuc_base_unit_id',
+            message: 'Unable to resolve base unit cumulative factor',
+          },
+        ]);
+      }
+
+      for (const row of effectiveRows) {
+        const rowCumulative = cumulativeByUnitId.get(row.unitId)!;
+        row.toBaseFactor = this.roundFactor(baseCumulative / rowCumulative);
       }
 
       for (const row of effectiveRows) {
@@ -1075,7 +1019,7 @@ export class ItemsPriceMasterService {
         const saveItem = normalizedItems[row.saveIndex];
         normalizedItems[row.saveIndex] = {
           ...saveItem,
-          iuc_base_unit_id: row.baseUnitId,
+          iuc_base_unit_id: resolvedBaseUnitId,
           iuc_unit_slno: row.unitSlno,
           iuc_to_base_factor: row.toBaseFactor,
           iuc_unit_factor: row.unitFactor,
@@ -1088,40 +1032,36 @@ export class ItemsPriceMasterService {
     return normalizedItems;
   }
 
-  private resolveNormalizedFactorValues(params: {
-    isBaseUnit: boolean;
-    previousToBaseFactor: number;
-    toBaseFactor?: number;
-    unitFactor?: number;
-  }): { toBaseFactor: number; unitFactor: number } {
-    if (params.isBaseUnit) {
-      return {
-        toBaseFactor: 1,
-        unitFactor: 1,
-      };
+  private resolveChainUnitFactor(
+    previousRow: EffectiveItemUnitConversionRow,
+    currentRow: EffectiveItemUnitConversionRow,
+  ): number {
+    const explicitUnitFactor = this.toPositiveFactor(currentRow.unitFactor);
+    if (explicitUnitFactor !== undefined) {
+      return this.roundFactor(explicitUnitFactor);
     }
 
-    const resolvedUnitFactor =
-      params.unitFactor ??
-      (() => {
-        if (params.toBaseFactor === undefined) {
-          return 1;
-        }
+    const previousToBaseFactor = this.toPositiveFactor(previousRow.toBaseFactor);
+    const currentToBaseFactor = this.toPositiveFactor(currentRow.toBaseFactor);
 
-        if (params.previousToBaseFactor <= 0) {
-          return params.toBaseFactor;
-        }
+    if (
+      previousToBaseFactor !== undefined &&
+      currentToBaseFactor !== undefined &&
+      currentToBaseFactor > 0
+    ) {
+      return this.roundFactor(previousToBaseFactor / currentToBaseFactor);
+    }
 
-        return params.toBaseFactor / params.previousToBaseFactor;
-      })();
+    this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+      {
+        field: 'iuc_unit_factor',
+        message: `Missing iuc_unit_factor for unit row ${currentRow.unitId}`,
+      },
+    ]);
+  }
 
-    const unitFactor = Number(resolvedUnitFactor.toFixed(6));
-    const toBaseFactor = Number((params.previousToBaseFactor * resolvedUnitFactor).toFixed(6));
-
-    return {
-      toBaseFactor,
-      unitFactor,
-    };
+  private roundFactor(value: number, scale = 9): number {
+    return Number(value.toFixed(scale));
   }
 
   private toPositiveFactor(value: Prisma.Decimal | number | null | undefined): number | undefined {
@@ -1191,6 +1131,174 @@ export class ItemsPriceMasterService {
     return item?.itemBaseUnitId ?? undefined;
   }
 
+  private async syncUnitConversionFromItemPriceInput(
+    tx: Prisma.TransactionClient,
+    saveItemPriceDto: SaveItemPriceDto,
+  ): Promise<ItemUnitConversionSnapshot> {
+    const explicitUnitFactor = this.toPositiveFactor(saveItemPriceDto.ipm_unit_factor);
+
+    if (explicitUnitFactor === undefined) {
+      return this.resolveUnitConversion(tx, saveItemPriceDto);
+    }
+
+    const persistedRows = await tx.itemUnitConversion.findMany({
+      where: {
+        iucItemId: saveItemPriceDto.ipm_item_id,
+        iucIsDeleted: false,
+      },
+      orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
+    });
+
+    if (persistedRows.length === 0) {
+      return this.buildFallbackUnitConversionSnapshot(saveItemPriceDto);
+    }
+
+    type ChainRow = {
+      iucId: string;
+      unitId: string;
+      baseUnitId: string;
+      unitSlno: number;
+      unitFactor: number;
+      toBaseFactor: number;
+      isBaseUnit: boolean;
+      isDefaultUnit: boolean;
+      isBigUnit: boolean;
+      uomRemarks: string | null;
+      cumulative: number;
+      companyId: string;
+    };
+
+    const chainRows: ChainRow[] = persistedRows.map((row) => ({
+      iucId: row.iucId,
+      unitId: row.iucUnitId,
+      baseUnitId: row.iucBaseUnitId,
+      unitSlno: row.iucUnitSlno,
+      unitFactor: this.toPositiveFactor(row.iucUnitFactor) ?? 1,
+      toBaseFactor: this.toPositiveFactor(row.iucToBaseFactor) ?? 1,
+      isBaseUnit: row.iucIsBaseUnit,
+      isDefaultUnit: row.iucIsDefaultUnit,
+      isBigUnit: row.iucIsBigUnit,
+      uomRemarks: row.iucUomRemarks,
+      cumulative: 1,
+      companyId: row.iucCompanyId,
+    }));
+
+    if (
+      saveItemPriceDto.ipm_company_id !== undefined &&
+      saveItemPriceDto.ipm_company_id !== null
+    ) {
+      const wrongCompanyRow = chainRows.find(
+        (row) => row.companyId !== saveItemPriceDto.ipm_company_id,
+      );
+
+      if (wrongCompanyRow) {
+        this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+          {
+            field: 'ipm_company_id',
+            message:
+              'ipm_company_id must match the company configured on the selected item unit conversion',
+          },
+        ]);
+      }
+    }
+
+    const targetRow = chainRows.find((row) => row.unitId === saveItemPriceDto.ipm_unit_id);
+
+    if (!targetRow) {
+      return this.buildFallbackUnitConversionSnapshot(saveItemPriceDto);
+    }
+
+    if (saveItemPriceDto.ipm_unit_slno !== undefined) {
+      targetRow.unitSlno = saveItemPriceDto.ipm_unit_slno;
+    }
+
+    chainRows.sort((left, right) => {
+      if (left.unitSlno !== right.unitSlno) {
+        return left.unitSlno - right.unitSlno;
+      }
+      return left.unitId.localeCompare(right.unitId);
+    });
+
+    const resolvedBaseUnitId =
+      saveItemPriceDto.ipm_base_unit_id ??
+      (saveItemPriceDto.ipm_is_base_unit === true ? saveItemPriceDto.ipm_unit_id : undefined) ??
+      chainRows.find((row) => row.isBaseUnit)?.unitId ??
+      chainRows[0].baseUnitId ??
+      chainRows[0].unitId;
+
+    for (const row of chainRows) {
+      row.baseUnitId = resolvedBaseUnitId;
+      row.isBaseUnit = row.unitId === resolvedBaseUnitId;
+    }
+
+    for (let i = 0; i < chainRows.length; i++) {
+      const row = chainRows[i];
+
+      if (i === 0) {
+        row.unitFactor = 1;
+        row.cumulative = 1;
+        continue;
+      }
+
+      if (row.unitId === saveItemPriceDto.ipm_unit_id) {
+        row.unitFactor = explicitUnitFactor;
+      }
+
+      const previousRow = chainRows[i - 1];
+      row.cumulative = this.roundFactor(previousRow.cumulative * row.unitFactor);
+    }
+
+    const baseRow = chainRows.find((row) => row.unitId === resolvedBaseUnitId);
+
+    if (!baseRow) {
+      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'ipm_base_unit_id',
+          message: 'Unable to resolve base unit for item price conversion',
+        },
+      ]);
+    }
+
+    for (const row of chainRows) {
+      row.toBaseFactor = this.roundFactor(baseRow.cumulative / row.cumulative);
+    }
+
+    const actor =
+      this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ??
+      this.resolveRecordActor(saveItemPriceDto.ipm_created_by);
+    const now = new Date();
+
+    for (const row of chainRows) {
+      await tx.itemUnitConversion.update({
+        where: {
+          iucId: row.iucId,
+        },
+        data: {
+          iucBaseUnitId: row.baseUnitId,
+          iucUnitSlno: row.unitSlno,
+          iucUnitFactor: row.unitFactor,
+          iucToBaseFactor: row.toBaseFactor,
+          iucIsBaseUnit: row.isBaseUnit,
+          iucUpdatedOn: now,
+          ...(actor ? { iucUpdatedBy: actor } : {}),
+        },
+      });
+    }
+
+    const selectedRow = chainRows.find((row) => row.unitId === saveItemPriceDto.ipm_unit_id)!;
+
+    return {
+      iucBaseUnitId: selectedRow.baseUnitId,
+      iucToBaseFactor: new Prisma.Decimal(selectedRow.toBaseFactor),
+      iucUnitSlno: selectedRow.unitSlno,
+      iucUnitFactor: new Prisma.Decimal(selectedRow.unitFactor),
+      iucIsDefaultUnit: selectedRow.isDefaultUnit,
+      iucIsBaseUnit: selectedRow.isBaseUnit,
+      iucIsBigUnit: selectedRow.isBigUnit,
+      iucUomRemarks: selectedRow.uomRemarks,
+    };
+  }
+
   private async resolveUnitConversion(
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
@@ -1231,18 +1339,22 @@ export class ItemsPriceMasterService {
       saveItemPriceDto.ipm_base_unit_id ?? saveItemPriceDto.ipm_unit_id;
     const isBaseUnit =
       saveItemPriceDto.ipm_is_base_unit ?? resolvedBaseUnitId === saveItemPriceDto.ipm_unit_id;
-    const normalizedFactors = this.resolveNormalizedFactorValues({
-      isBaseUnit,
-      previousToBaseFactor: 1,
-      toBaseFactor: this.toPositiveFactor(saveItemPriceDto.ipm_to_base_factor),
-      unitFactor: this.toPositiveFactor(saveItemPriceDto.ipm_unit_factor),
-    });
+
+    // only unit_factor defaults to 1
+    const unitFactor =
+      this.toPositiveFactor(saveItemPriceDto.ipm_unit_factor) ?? 1;
+
+    // do NOT force to_base_factor = 1
+    const toBaseFactor =
+      this.toPositiveFactor(saveItemPriceDto.ipm_to_base_factor) ??
+      this.toPositiveFactor(saveItemPriceDto.ipm_unit_factor) ??
+      1;
 
     return {
       iucBaseUnitId: resolvedBaseUnitId,
-      iucToBaseFactor: new Prisma.Decimal(normalizedFactors.toBaseFactor),
+      iucToBaseFactor: new Prisma.Decimal(toBaseFactor),
       iucUnitSlno: saveItemPriceDto.ipm_unit_slno ?? 0,
-      iucUnitFactor: new Prisma.Decimal(normalizedFactors.unitFactor),
+      iucUnitFactor: new Prisma.Decimal(unitFactor),
       iucIsDefaultUnit: saveItemPriceDto.ipm_is_default_unit ?? false,
       iucIsBaseUnit: isBaseUnit,
       iucIsBigUnit: saveItemPriceDto.ipm_is_big_unit ?? false,

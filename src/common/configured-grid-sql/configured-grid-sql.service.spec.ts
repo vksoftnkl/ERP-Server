@@ -143,6 +143,18 @@ describe('ConfiguredGridSqlService', () => {
     });
   });
 
+  it('normalizes a top-level trailing comma before FROM', () => {
+    const result = service.validateBaseSql({
+      sql: "SELECT unit_id, ', FROM' AS label, FROM units",
+      tableName: 'units',
+    });
+
+    expect(result).toEqual({
+      isValid: true,
+      normalizedSql: "SELECT unit_id, ', FROM' AS label FROM units",
+    });
+  });
+
   it('applies extra forbidden patterns', () => {
     const result = service.validateBaseSql({
       sql: 'SELECT * FROM units WHERE unit_id = 1',

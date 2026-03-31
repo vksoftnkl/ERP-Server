@@ -457,6 +457,94 @@ describe('ItemsPriceMasterService', () => {
     );
   });
 
+  it('derives step unit factors from cumulative to-base factors across a batch', async () => {
+    const tertiaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd22';
+    prisma.itemUnitConversion.create
+      .mockResolvedValueOnce(
+        makeItemUnitConversionRecord({
+          iucUnitId: BASE_UNIT_ID,
+          iucBaseUnitId: BASE_UNIT_ID,
+          iucUnitSlno: 1,
+          iucIsBaseUnit: true,
+          iucToBaseFactor: new Prisma.Decimal(1),
+          iucUnitFactor: new Prisma.Decimal(1),
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeItemUnitConversionRecord({
+          iucId: '019c6f6c-be87-7a11-8905-36092c46fd23',
+          iucUnitId: UNIT_ID,
+          iucBaseUnitId: BASE_UNIT_ID,
+          iucUnitSlno: 2,
+          iucIsBaseUnit: false,
+          iucToBaseFactor: new Prisma.Decimal(10),
+          iucUnitFactor: new Prisma.Decimal(10),
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeItemUnitConversionRecord({
+          iucId: '019c6f6c-be87-7a11-8905-36092c46fd24',
+          iucUnitId: tertiaryUnitId,
+          iucBaseUnitId: BASE_UNIT_ID,
+          iucUnitSlno: 3,
+          iucIsBaseUnit: false,
+          iucToBaseFactor: new Prisma.Decimal(60),
+          iucUnitFactor: new Prisma.Decimal(6),
+        }),
+      );
+
+    await service.saveItemUnitConversions([
+      {
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: BASE_UNIT_ID,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 1,
+        iuc_is_base_unit: true,
+        iuc_created_by: USER_ID,
+      },
+      {
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: UNIT_ID,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 2,
+        iuc_to_base_factor: 10,
+        iuc_created_by: USER_ID,
+      },
+      {
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: tertiaryUnitId,
+        iuc_base_unit_id: BASE_UNIT_ID,
+        iuc_unit_slno: 3,
+        iuc_to_base_factor: 60,
+        iuc_created_by: USER_ID,
+      },
+    ]);
+
+    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          iucUnitId: UNIT_ID,
+          iucToBaseFactor: 10,
+          iucUnitFactor: 10,
+        }),
+      }),
+    );
+    expect(prisma.itemUnitConversion.create).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          iucUnitId: tertiaryUnitId,
+          iucToBaseFactor: 60,
+          iucUnitFactor: 6,
+        }),
+      }),
+    );
+  });
+
   it('derives a new row cumulative factor from persisted item unit conversion rows', async () => {
     const tertiaryUnitId = '019c6f6c-be87-7a11-8905-36092c46fd18';
     prisma.itemUnitConversion.findMany.mockResolvedValue([
