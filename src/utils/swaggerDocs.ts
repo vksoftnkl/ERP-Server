@@ -31,6 +31,7 @@ import { ItemsEanCodeMasterModule } from '../modules/items-ean-code-master/items
 import { ItemsGroupMasterModule } from '../modules/items-group-master/items-group-master.module';
 import { ItemsMasterModule } from '../modules/items-master/items-master.module';
 import { ItemsPriceMasterModule } from '../modules/items-price-master/items-price-master.module';
+import { ItemPriceDetailsModule } from '../modules/item-price-details/item-price-details.module';
 import { ItemsQtywiseRatesMasterModule } from '../modules/items-qtywise-rates-master/items-qtywise-rates-master.module';
 import { ItemsReorderMasterModule } from '../modules/items-reorder-master/items-reorder-master.module';
 import { ItemsSectionMasterModule } from '../modules/items-section-master/items-section-master.module';
@@ -118,6 +119,12 @@ export const swaggerModuleDocuments = [
     title: 'Item Prices API',
     description: 'Item prices module endpoints',
     include: [ItemsPriceMasterModule],
+  },
+  {
+    path: 'item-price-details',
+    title: 'Item Price Details API',
+    description: 'Item price details module endpoints',
+    include: [ItemPriceDetailsModule],
   },
   {
     path: 'item-qtywise-rates',

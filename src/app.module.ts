@@ -31,6 +31,7 @@ import { ItemsTaxMasterModule } from './modules/items-tax-master/items-tax-maste
 import { ItemsEanCodeMasterModule } from './modules/items-ean-code-master/items-ean-code-master.module';
 import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemsPriceMasterModule } from './modules/items-price-master/items-price-master.module';
+import { ItemPriceDetailsModule } from './modules/item-price-details/item-price-details.module';
 import { ItemsQtywiseRatesMasterModule } from './modules/items-qtywise-rates-master/items-qtywise-rates-master.module';
 import { ItemsReorderMasterModule } from './modules/items-reorder-master/items-reorder-master.module';
 import { ItemsTaxHistoryMasterModule } from './modules/items-tax-history-master/items-tax-history-master.module';
@@ -106,6 +107,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     ItemsEanCodeMasterModule,
     ItemsCustRatesMasterModule,
     ItemsPriceMasterModule,
+    ItemPriceDetailsModule,
     ItemsQtywiseRatesMasterModule,
     ItemsReorderMasterModule,
     ItemsTaxHistoryMasterModule,
