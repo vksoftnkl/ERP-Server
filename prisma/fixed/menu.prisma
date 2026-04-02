@@ -1,0 +1,25 @@
+model Menu {
+  menuId       Int   @id @default(autoincrement()) @map("menu_id")
+  // Self parent/child hierarchy
+  menuParentId Int?  @map("menu_parent")
+  parent       Menu? @relation("MenuHierarchy", fields: [menuParentId], references: [menuId], onDelete: SetNull, onUpdate: Cascade)
+  children     Menu[] @relation("MenuHierarchy")
+  menuName      String  @db.VarChar(200) @map("menu_name")
+  menuAlias     String? @db.VarChar(200) @map("menu_alias")
+  // Note: column name is "menu_visiblity" (typo kept as-is in @map)
+  menuVisibility Boolean @default(true) @map("menu_visiblity")
+  menuPosition  Decimal? @db.Decimal(12, 2) @map("menu_position")
+  menuIconLocationDesktop String? @db.Text @map("menu_icon_location_desktop")
+  menuIconLocationWeb     String? @db.Text @map("menu_icon_location_web")
+  menuIconLocationMobile  String? @db.Text @map("menu_icon_location_mobile")
+  menuSeparator Boolean  @default(false) @map("menu_separator")
+  menuIsActive  Boolean  @default(true)  @map("menu_is_active")
+  menuCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("menu_created_on")
+  menuModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("menu_modified_on")
+  menuSyncDate   DateTime?               @db.Timestamptz(6) @map("menu_sync_date")
+
+  @@index([menuParentId])
+  @@index([menuPosition])
+  @@map("menu_master")
+  @@schema("fixed")
+}

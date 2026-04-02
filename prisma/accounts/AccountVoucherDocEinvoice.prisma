@@ -1,0 +1,51 @@
+enum GdeStatus {
+  NA
+  PENDING
+  GENERATED
+  FAILED
+  CANCELED
+  @@schema("accounts")
+}
+
+model AccVoucherDocEinvoice {
+  gdeId             String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gde_id")
+  gdeGdrId          String               @db.Uuid @map("gde_gdr_id")
+  gdeVoucherId      String               @db.Uuid @map("gde_voucher_id")
+
+  // Multi-branch snapshot
+  gdeAccYear        String               @db.VarChar(9) @map("gde_acc_year")
+  gdeCompanyId      String               @db.Uuid @map("gde_company_id")
+  gdeBranchId       String               @db.Uuid @map("gde_branch_id")
+
+  gdeStatus         GdeStatus            @default(NA) @map("gde_status")
+  gdeIrn            String?              @db.VarChar(200) @map("gde_irn")
+  gdeAckNo          String?              @db.VarChar(100) @map("gde_ack_no")
+  gdeAckOn          DateTime?            @db.Timestamptz(6) @map("gde_ack_on")
+  gdeQrcode         String?              @map("gde_qrcode")
+
+  gdeSignedInvoice  String?              @map("gde_signed_invoice")
+  gdeSignedQrcode   String?              @map("gde_signed_qrcode")
+
+  gdeCancelReason   String?              @db.VarChar(200) @map("gde_cancel_reason")
+  gdeCanceledOn     DateTime?            @db.Timestamptz(6) @map("gde_canceled_on")
+
+  gdeLastErrorCode  String?              @db.VarChar(50) @map("gde_last_error_code")
+  gdeLastMessage    String?              @db.VarChar(500) @map("gde_last_message")
+
+  gdeIsActive       Boolean              @default(true) @map("gde_is_active")
+  gdeIsDeleted      Boolean              @default(false) @map("gde_is_deleted")
+  gdeSyncDate       DateTime?            @db.Timestamptz(6) @map("gde_sync_date")
+  gdeCreatedOn      DateTime             @default(now()) @db.Timestamptz(6) @map("gde_created_on")
+  gdeCreatedBy      String?              @db.Uuid @map("gde_created_by")
+  gdeUpdatedOn      DateTime?            @db.Timestamptz(6) @map("gde_updated_on")
+  gdeUpdatedBy      String?              @db.Uuid @map("gde_updated_by")
+
+  // Relations
+  docRegister       AccVoucherDocRegister @relation(fields: [gdeGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gde_gdr")
+
+  @@unique([gdeGdrId], map: "uq_gde_gdr")
+  @@map("acc_voucher_doc_einvoice")
+  @@schema("accounts")
+  // Partial unique index uq_acc_voucher_doc_einvoice_irn and partial index
+  // idx_gde_status are not expressible in Prisma schema.
+}

@@ -1,0 +1,49 @@
+model ItemReorder {
+  irId               String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ir_id")
+
+  // Scope / link
+  irBranchId          String? @db.Uuid @map("ir_branch_id")
+  irItemId            String  @db.Uuid @map("ir_item_id")
+  irUnitId            String? @db.Uuid @map("ir_unit_id")
+  irGodownId          String? @db.Uuid @map("ir_godown_id") // NULL = global reorder rule
+
+  // Core reorder controls
+  irMinLevel          Decimal @default(0) @db.Decimal(15, 4) @map("ir_min_level")
+  irMaxLevel          Decimal @default(0) @db.Decimal(15, 4) @map("ir_max_level")
+  irReorderLevel      Decimal @default(0) @db.Decimal(15, 4) @map("ir_reorder_level")
+  irReorderQty        Decimal @default(0) @db.Decimal(15, 4) @map("ir_reorder_qty")
+
+  // Time parameters
+  irLeadTimeDays      Int     @default(0) @map("ir_lead_time_days")
+  irReviewCycleDays   Int     @default(0) @map("ir_review_cycle_days")
+  irReorderDays       Int     @default(0) @map("ir_reorder_days")
+  irExpiryBufferDays  Int     @default(0) @map("ir_expiry_buffer_days")
+
+  // Policy / type
+  irReorderType       String  @default("MIN_MAX") @db.VarChar(20) @map("ir_reorder_type")
+
+  // Flags
+  irIsActive          Boolean @default(true)  @map("ir_is_active")
+  irIsDeleted         Boolean @default(false) @map("ir_is_deleted")
+
+  // Notes / audit
+  irRemarks           String?  @db.VarChar(250) @map("ir_remarks")
+  irCreatedOn         DateTime @default(now()) @db.Timestamptz(6) @map("ir_created_on")
+  irCreatedBy         String?  @db.VarChar(100) @map("ir_created_by")
+  irModifiedOn        DateTime @default(now()) @db.Timestamptz(6) @map("ir_modified_on")
+  irModifiedBy        String?  @db.VarChar(100) @map("ir_modified_by")
+
+  // Relations
+  item                ItemMaster @relation(fields: [irItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
+  unit                Unit?      @relation(fields: [irUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("item_reorders")
+   @@schema("inventory")
+
+  // Prevent duplicates per scope (no company)
+  @@unique([irItemId, irUnitId, irGodownId], map: "uq_ir_item_unit_godown")
+
+  @@index([irItemId], map: "idx_ir_item")
+  @@index([irUnitId], map: "idx_ir_unit")
+  @@index([irGodownId], map: "idx_ir_godown")
+}

@@ -1,0 +1,272 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { ListItemPriceQueryDto } from './dto/list-item-price-query.dto';
+import { ItemsPriceMasterController } from './items-price-master.controller';
+import { ItemsPriceMasterService } from './items-price-master.service';
+
+const ITEM_PRICE_ID = '019c6f6c-be87-7a11-8905-36092c46fd05';
+const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
+const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
+const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fd08';
+const USER_ID = '019c6f6c-be87-7a11-8905-36092c46fd09';
+const UNIT_CONVERSION_ID = '019c6f6c-be87-7a11-8905-36092c46fd10';
+
+const itemPricePayload = {
+  ipm_id: ITEM_PRICE_ID,
+  ipm_company_id: null,
+  ipm_branch_id: null,
+  ipm_item_id: ITEM_ID,
+  ipm_unit_id: UNIT_ID,
+  ipm_godown_id: GODOWN_ID,
+  ipm_base_unit_id: null,
+  ipm_to_base_factor: 1,
+  ipm_unit_slno: 0,
+  ipm_unit_factor: 1,
+  ipm_is_default_unit: false,
+  ipm_is_big_unit: false,
+  ipm_is_base_unit: false,
+  ipm_cost_price: 0,
+  ipm_cost_wot: 0,
+  ipm_sales_price_a: 0,
+  ipm_sales_price_b: 0,
+  ipm_sales_price_c: 0,
+  ipm_sales_price_d: 0,
+  ipm_price_a_wot: 0,
+  ipm_price_b_wot: 0,
+  ipm_price_c_wot: 0,
+  ipm_price_d_wot: 0,
+  ipm_price_a_markup_perc: 0,
+  ipm_price_b_markup_perc: 0,
+  ipm_price_c_markup_perc: 0,
+  ipm_price_d_markup_perc: 0,
+  ipm_max_price: 0,
+  ipm_min_price: 0,
+  ipm_disc_perc: 0,
+  ipm_disc_qty: 0,
+  ipm_addl_cess: 0,
+  ipm_profit_type: 'MANUAL',
+  ipm_round_off: 0,
+  ipm_loading_charge: 0,
+  ipm_freight_charge: 0,
+  ipm_loyalty_points: 0,
+  ipm_uom_remarks: null,
+  ipm_cost_remarks: null,
+  ipm_is_active: true,
+  ipm_is_deleted: false,
+  ipm_sync_date: null,
+  ipm_created_on: '2026-02-20T10:00:00.000Z',
+  ipm_created_by: USER_ID,
+  ipm_updated_on: '2026-02-20T10:00:00.000Z',
+  ipm_updated_by: USER_ID,
+};
+
+const itemUnitConversionPayload = {
+  iuc_id: UNIT_CONVERSION_ID,
+  iuc_company_id: ITEM_ID,
+  iuc_item_id: ITEM_ID,
+  iuc_unit_id: UNIT_ID,
+  iuc_base_unit_id: UNIT_ID,
+  iuc_to_base_factor: 1,
+  iuc_unit_slno: 0,
+  iuc_unit_factor: 1,
+  iuc_is_default_unit: true,
+  iuc_is_base_unit: true,
+  iuc_is_big_unit: false,
+  iuc_uom_weight: 0,
+  iuc_uom_remarks: null,
+  iuc_is_active: true,
+  iuc_is_deleted: false,
+  iuc_sync_date: null,
+  iuc_created_on: '2026-02-20T10:00:00.000Z',
+  iuc_created_by: USER_ID,
+  iuc_updated_on: '2026-02-20T10:00:00.000Z',
+  iuc_updated_by: USER_ID,
+};
+
+describe('ItemsPriceMasterController', () => {
+  let controller: ItemsPriceMasterController;
+
+  const serviceMock = {
+    save: jest.fn(),
+    saveItemUnitConversions: jest.fn(),
+    list: jest.fn(),
+    listItemUnitConversions: jest.fn(),
+    getById: jest.fn(),
+    getItemUnitConversionById: jest.fn(),
+    delete: jest.fn(),
+    deleteItemUnitConversions: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      controllers: [ItemsPriceMasterController],
+      providers: [
+        {
+          provide: ItemsPriceMasterService,
+          useValue: serviceMock,
+        },
+      ],
+    }).compile();
+
+    controller = moduleRef.get<ItemsPriceMasterController>(ItemsPriceMasterController);
+    jest.clearAllMocks();
+  });
+
+  it('wraps create response with success envelope', async () => {
+    serviceMock.save.mockResolvedValue(itemPricePayload);
+
+    await expect(
+      controller.save({
+        ipm_item_id: ITEM_ID,
+        ipm_unit_id: UNIT_ID,
+        ipm_godown_id: GODOWN_ID,
+        ipm_profit_type: 'MANUAL',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Item price created successfully',
+      data: itemPricePayload,
+    });
+  });
+
+  it('wraps array save response with success envelope', async () => {
+    serviceMock.save.mockResolvedValue([itemPricePayload]);
+
+    await expect(
+      controller.save([
+        {
+          ipm_item_id: ITEM_ID,
+          ipm_unit_id: UNIT_ID,
+          ipm_godown_id: GODOWN_ID,
+          ipm_profit_type: 'MANUAL',
+        },
+      ]),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Item prices saved successfully',
+      data: [itemPricePayload],
+    });
+  });
+
+  it('wraps unit conversion save response with success envelope', async () => {
+    serviceMock.saveItemUnitConversions.mockResolvedValue(itemUnitConversionPayload);
+
+    await expect(
+      controller.save({
+        iuc_company_id: ITEM_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: UNIT_ID,
+        iuc_base_unit_id: UNIT_ID,
+      }),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Item unit conversion created successfully',
+      data: itemUnitConversionPayload,
+    });
+  });
+
+  it('accepts unit conversion payloads when iuc_base_unit_id is an empty string', async () => {
+    serviceMock.saveItemUnitConversions.mockResolvedValue(itemUnitConversionPayload);
+
+    await expect(
+      controller.save({
+        iuc_company_id: ITEM_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: UNIT_ID,
+        iuc_base_unit_id: '',
+      }),
+    ).resolves.toEqual({
+      success: true,
+      message: 'Item unit conversion created successfully',
+      data: itemUnitConversionPayload,
+    });
+  });
+
+  it('returns list wrapper with pagination meta', async () => {
+    serviceMock.list.mockResolvedValue({
+      items: [itemPricePayload],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+    });
+
+    const query: ListItemPriceQueryDto = {
+      page: 1,
+      limit: 20,
+    };
+
+    await expect(controller.list(query as unknown as Record<string, unknown>)).resolves.toEqual({
+      success: true,
+      message: 'Item prices fetched successfully',
+      data: [itemPricePayload],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+    });
+  });
+
+  it('returns wrapped getById response', async () => {
+    serviceMock.getById.mockResolvedValue(itemPricePayload);
+
+    await expect(controller.getById({ ipm_id: ITEM_PRICE_ID })).resolves.toEqual({
+      success: true,
+      message: 'Item price fetched successfully',
+      data: itemPricePayload,
+    });
+  });
+
+  it('returns wrapped item unit conversion getById response', async () => {
+    serviceMock.getItemUnitConversionById.mockResolvedValue(itemUnitConversionPayload);
+
+    await expect(controller.getById({ iuc_id: UNIT_CONVERSION_ID })).resolves.toEqual({
+      success: true,
+      message: 'Item unit conversion fetched successfully',
+      data: itemUnitConversionPayload,
+    });
+  });
+
+  it('supports delete with body arrays', async () => {
+    serviceMock.delete.mockResolvedValue([
+      {
+        ipm_id: ITEM_PRICE_ID,
+        deleted: true,
+      },
+    ]);
+
+    await expect(controller.remove([{ ipm_id: ITEM_PRICE_ID }], {})).resolves.toEqual({
+      success: true,
+      message: 'Item prices deleted successfully',
+      data: [
+        {
+          ipm_id: ITEM_PRICE_ID,
+          deleted: true,
+        },
+      ],
+    });
+  });
+
+  it('supports unit conversion delete with body arrays', async () => {
+    serviceMock.deleteItemUnitConversions.mockResolvedValue([
+      {
+        iuc_id: UNIT_CONVERSION_ID,
+        deleted: true,
+      },
+    ]);
+
+    await expect(controller.remove([{ iuc_id: UNIT_CONVERSION_ID }], {})).resolves.toEqual({
+      success: true,
+      message: 'Item unit conversions deleted successfully',
+      data: [
+        {
+          iuc_id: UNIT_CONVERSION_ID,
+          deleted: true,
+        },
+      ],
+    });
+  });
+});

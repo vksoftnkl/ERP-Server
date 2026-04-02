@@ -1,0 +1,45 @@
+model OpeningStockHeader {
+  // Primary
+  oshId            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("osh_id")
+  // Business / document identity
+  oshVoucherId     String   @db.Uuid @map("osh_voucher_id")
+  oshAccYear       String   @db.VarChar(9) @map("osh_acc_year")
+  oshCompanyId     String   @db.Uuid @map("osh_company_id")
+  oshBranchId      String   @db.Uuid @map("osh_branch_id")
+  // Voucher details
+  oshVoucherNo     BigInt   @map("osh_voucher_no")
+  oshVoucherDate   DateTime @db.Date @map("osh_voucher_date")
+  oshRefNo         String?  @db.VarChar(50) @map("osh_ref_no")
+  oshNarration     String?  @map("osh_narration")
+  // Optional header totals
+  oshTotalLines    Int      @default(0) @map("osh_total_lines")
+  oshTotalQty      Decimal  @default(0) @db.Decimal(18, 6) @map("osh_total_qty")
+  oshTotalValue    Decimal  @default(0) @db.Decimal(18, 2) @map("osh_total_value")
+  // Workflow — validated at app level (OpeningStockStatus)
+  oshStatus        String   @default("DRAFT") @db.VarChar(20) @map("osh_status")
+  // User / session / device
+  oshUserId        String   @db.Uuid @map("osh_user_id")
+  oshSessionId     String?  @db.Uuid @map("osh_session_id")
+  // Validated at app level (OpeningStockDeviceType)
+  oshDeviceType    String   @db.VarChar(20) @map("osh_device_type")
+  oshDeviceId      String?  @db.Uuid @map("osh_device_id")
+  oshCounterId     String?  @db.VarChar(20) @map("osh_counter_id")
+  // Status flags
+  oshIsActive      Boolean                @default(true) @map("osh_is_active")
+  oshIsDeleted     Boolean                @default(false) @map("osh_is_deleted")
+  // Audit
+  oshSyncDate      DateTime?              @db.Timestamptz(6) @map("osh_sync_date")
+  oshCreatedOn     DateTime               @default(now()) @db.Timestamptz(6) @map("osh_created_on")
+  oshCreatedBy     String?                @db.Uuid @map("osh_created_by")
+  oshUpdatedOn     DateTime?              @db.Timestamptz(6) @map("osh_updated_on")
+  oshUpdatedBy     String?                @db.Uuid @map("osh_updated_by")
+  //relations
+  voucherHeader    AccVoucherHeader       @relation("OpeningStockHeaderVoucher", fields: [oshVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_osh_voucher_header")
+  company          Company                @relation(fields: [oshCompanyId], references: [compId], map: "fk_osh_company")
+  branch           BranchMaster           @relation(fields: [oshBranchId], references: [brId], map: "fk_osh_branch")
+  details          OpeningStockDetail[]
+  @@unique([oshAccYear, oshCompanyId, oshBranchId, oshVoucherId], map: "uq_opening_stock_header_voucher_id")
+  @@index([oshAccYear, oshCompanyId, oshBranchId, oshVoucherDate], map: "idx_opening_stock_header_date")
+  @@map("opening_stock_header")
+  @@schema("inventory")
+}

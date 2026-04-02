@@ -1,11 +1,10 @@
 generator client {
   provider = "prisma-client-js"
 }
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["public"]
+  schemas  = ["public", "grid", "audit", "purchase", "sales", "settings", "fixed", "accounts", "inventory", "stock", "reports", "transport"]
 }
 generator dbml {
   provider   = "prisma-dbml-generator"
@@ -19,13 +18,16 @@ generator docs {
   provider = "node node_modules/prisma-docs-generator"
   output = "../../docs"
 }
-
 model User {
   user_id        String    @id @default(uuid()) @db.Uuid
-
-  user_name  String    @unique @db.VarChar(50)   // <-- Added field
+  user_code      String    @unique @default(dbgenerated("('us'::text || nextval('user_code_seq'::regclass))")) @db.VarChar(20)
+  user_phone     String    @unique @db.VarChar(20)
+  user_name      String    @unique @db.VarChar(50)
   user_password  String    @db.Text
-
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+  voucherHeaders AccVoucherHeader[]
+  vouchers       AccVoucher[]
   @@map("users")
   @@schema("public")
 }

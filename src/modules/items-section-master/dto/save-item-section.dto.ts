@@ -1,6 +1,5 @@
 import { Transform } from 'class-transformer';
 import {
-  IsArray,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -83,10 +82,6 @@ export class SaveItemSectionDto {
   @MaxLength(250)
   sec_description?: string;
 
-  @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
-  sec_company_id!: string;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableUuid(value))
@@ -103,12 +98,6 @@ export class SaveItemSectionDto {
   @IsOptional()
   @IsInt()
   sec_level?: number;
-
-  @ApiPropertyOptional({ type: [String], example: [] })
-  @IsOptional()
-  @IsArray()
-  @IsUUID('all', { each: true })
-  sec_path_ids?: string[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -130,13 +119,13 @@ export class SaveItemSectionDto {
   @ApiPropertyOptional({
     nullable: true,
     description:
-      'Raw base64 string or data URL (data:*;base64,...). For multipart/form-data, upload a file using the same field name.',
+      'Base64 string or data URL (data:*;base64,...). For multipart/form-data, upload a file using the same field name to send raw bytes.',
   })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
-  sec_photo?: string | null;
+  sec_photo?: string | Buffer | Uint8Array | null;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -9,11 +9,12 @@ export interface ItemGroupErrorResponse {
   errors: ItemGroupErrorDetail[];
 }
 
-export interface ItemGroupSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface ItemGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface ItemGroupPayload {
@@ -40,6 +41,8 @@ export interface ItemGroupPayload {
   itg_modified_on: string;
   itg_modified_by: string | null;
 }
+
+export type ItemGroupListItem = ItemGroupPayload | Record<string, unknown>;
 
 export interface ItemGroupListMeta {
   page: number;

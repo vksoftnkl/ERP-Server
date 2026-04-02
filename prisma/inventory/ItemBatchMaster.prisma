@@ -1,0 +1,47 @@
+enum ItemBatchStatus {
+  ACTIVE
+  CLOSED
+  BLOCKED
+  @@schema("inventory")
+}
+model ItemBatchMaster {
+  // Primary
+  btmId                    String           @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("btm_id")
+  // Ownership
+  btmCompanyId             String           @db.Uuid @map("btm_company_id")
+  btmItemId                String           @db.Uuid @map("btm_item_id")
+  btmBaseUnitId            String           @db.Uuid @map("btm_base_unit_id")
+  // Batch identity
+  btmBatchNo               String           @db.VarChar(100) @map("btm_batch_no")
+  btmMfgBatchNo            String?          @db.VarChar(100) @map("btm_mfg_batch_no")
+  // Dates
+  btmBatchDate             DateTime?        @db.Date @map("btm_batch_date")
+  btmMfgDate               DateTime?        @db.Date @map("btm_mfg_date")
+  btmExpiryDate            DateTime?        @db.Date @map("btm_expiry_date")
+  // Commercial helper fields
+  btmMrp                   Decimal          @default(0) @db.Decimal(18, 6) @map("btm_mrp")
+  btmLastPurchaseRateWot   Decimal          @default(0) @db.Decimal(18, 6) @map("btm_last_purchase_rate_wot")
+  btmLastSaleRateWot       Decimal          @default(0) @db.Decimal(18, 6) @map("btm_last_sale_rate_wot")
+  // Optional identifiers
+  btmBarcode               String?          @db.VarChar(100) @map("btm_barcode")
+  // Status
+  btmStatus                ItemBatchStatus  @default(ACTIVE) @map("btm_status")
+  btmClosedOn              DateTime?        @db.Timestamptz(6) @map("btm_closed_on")
+  btmClosedReason          String?          @db.VarChar(250) @map("btm_closed_reason")
+  // Notes
+  btmNotes                 String?          @map("btm_notes")
+  // Concurrency
+  btmRowVersion            BigInt           @default(1) @map("btm_row_version")
+  // Audit
+  btmCreatedOn             DateTime         @default(now()) @db.Timestamptz(6) @map("btm_created_on")
+  btmCreatedBy             String?          @db.Uuid @map("btm_created_by")
+  btmUpdatedOn             DateTime?        @db.Timestamptz(6) @map("btm_updated_on")
+  btmUpdatedBy             String?          @db.Uuid @map("btm_updated_by")
+  batchStocks              ItemBatchStock[]
+
+  // Expression/partial indexes are maintained in SQL because Prisma schema
+  // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
+  @@index([btmCompanyId, btmItemId], map: "idx_btm_item")
+  @@map("item_batch_master")
+  @@schema("inventory")
+}

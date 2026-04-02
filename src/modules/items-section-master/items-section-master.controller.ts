@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -14,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiBody,
   ApiConflictResponse,
@@ -22,9 +22,11 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
 import {
   ItemSectionErrorResponseDto,
@@ -36,6 +38,7 @@ import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import { ItemSectionExceptionFilter } from './item-section-exception.filter';
 import { ItemsSectionMasterService } from './items-section-master.service';
 import {
+  ItemSectionListItem,
   ItemSectionListMeta,
   ItemSectionPayload,
   ItemSectionSuccessResponse,
@@ -46,6 +49,8 @@ type UploadedPhotoFile = {
 };
 
 @ApiTags('Item Sections')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @Controller('item-sections')
 @UseFilters(ItemSectionExceptionFilter)
 export class ItemsSectionMasterController {
@@ -84,7 +89,7 @@ export class ItemsSectionMasterController {
   @ApiBadRequestResponse({ type: ItemSectionErrorResponseDto })
   async list(
     @Query() queryDto: ListItemSectionQueryDto,
-  ): Promise<ItemSectionSuccessResponse<ItemSectionPayload[], ItemSectionListMeta>> {
+  ): Promise<ItemSectionSuccessResponse<ItemSectionListItem[], ItemSectionListMeta>> {
     const result = await this.itemsSectionMasterService.list(queryDto);
 
     return {
@@ -92,18 +97,19 @@ export class ItemsSectionMasterController {
       message: 'Item sections fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 
-  @Get('get/:sec_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item section by id' })
-  @ApiParam({ name: 'sec_id', format: 'uuid' })
+  @ApiQuery({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSectionSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemSectionErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemSectionErrorResponseDto })
   async getById(
-    @Param('sec_id', new ParseUUIDPipe({ version: '7' })) secId: string,
+    @Query('sec_id', new ParseUUIDPipe({ version: '7' })) secId: string,
   ): Promise<ItemSectionSuccessResponse<ItemSectionPayload>> {
     const data = await this.itemsSectionMasterService.getById(secId);
 
@@ -114,15 +120,15 @@ export class ItemsSectionMasterController {
     };
   }
 
-  @Delete('delete/:sec_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete item section by id' })
-  @ApiParam({ name: 'sec_id', format: 'uuid' })
+  @ApiQuery({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSectionSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemSectionErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemSectionErrorResponseDto })
   async remove(
-    @Param('sec_id', new ParseUUIDPipe({ version: '7' })) secId: string,
+    @Query('sec_id', new ParseUUIDPipe({ version: '7' })) secId: string,
   ): Promise<ItemSectionSuccessResponse<{ sec_id: string; deleted: true }>> {
     const data = await this.itemsSectionMasterService.softDelete(secId);
 
@@ -143,7 +149,7 @@ export class ItemsSectionMasterController {
 
     return {
       ...saveItemSectionDto,
-      sec_photo: secPhotoFile.buffer.toString('base64'),
+      sec_photo: secPhotoFile.buffer,
     };
   }
 }

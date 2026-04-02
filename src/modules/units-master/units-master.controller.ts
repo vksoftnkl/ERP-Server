@@ -3,23 +3,25 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
-  ParseIntPipe,
+  ParseUUIDPipe,
   Post,
   Query,
   UseFilters,
   Version,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiParam,
+  ApiQuery,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListUnitQueryDto } from './dto/list-unit-query.dto';
 import { SaveUnitDto } from './dto/save-unit.dto';
 import {
@@ -29,10 +31,18 @@ import {
   UnitSuccessSingleDto,
 } from './dto/unit-response.dto';
 import { UnitExceptionFilter } from './unit-exception.filter';
-import { UnitListMeta, UnitPayload, UnitSuccessResponse } from './types/unit-api.types';
+import {
+  UnitGridStyle,
+  UnitListItem,
+  UnitListMeta,
+  UnitPayload,
+  UnitSuccessResponse,
+} from './types/unit-api.types';
 import { UnitsMasterService } from './units-master.service';
 
 @ApiTags('Units')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @Controller('units')
 @UseFilters(UnitExceptionFilter)
 export class UnitsMasterController {
@@ -62,7 +72,7 @@ export class UnitsMasterController {
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   async list(
     @Query() queryDto: ListUnitQueryDto,
-  ): Promise<UnitSuccessResponse<UnitPayload[], UnitListMeta>> {
+  ): Promise<UnitSuccessResponse<UnitListItem[], UnitListMeta, UnitGridStyle[]>> {
     const result = await this.unitsMasterService.list(queryDto);
 
     return {
@@ -70,18 +80,19 @@ export class UnitsMasterController {
       message: 'Units fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 
-  @Get('get/:unit_id')
+  @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get unit by id' })
-  @ApiParam({ name: 'unit_id', type: Number })
+  @ApiQuery({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UnitSuccessSingleDto })
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   @ApiNotFoundResponse({ type: UnitErrorResponseDto })
   async getById(
-    @Param('unit_id', ParseIntPipe) unitId: number,
+    @Query('unit_id', new ParseUUIDPipe({ version: '7' })) unitId: string,
   ): Promise<UnitSuccessResponse<UnitPayload>> {
     const data = await this.unitsMasterService.getById(unitId);
 
@@ -92,16 +103,16 @@ export class UnitsMasterController {
     };
   }
 
-  @Delete('delete/:unit_id')
+  @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete unit by id' })
-  @ApiParam({ name: 'unit_id', type: Number })
+  @ApiQuery({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UnitSuccessDeleteDto })
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   @ApiNotFoundResponse({ type: UnitErrorResponseDto })
   async remove(
-    @Param('unit_id', ParseIntPipe) unitId: number,
-  ): Promise<UnitSuccessResponse<{ unit_id: number; deleted: true }>> {
+    @Query('unit_id', new ParseUUIDPipe({ version: '7' })) unitId: string,
+  ): Promise<UnitSuccessResponse<{ unit_id: string; deleted: true }>> {
     const data = await this.unitsMasterService.softDelete(unitId);
 
     return {

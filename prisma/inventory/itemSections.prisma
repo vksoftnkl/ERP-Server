@@ -1,0 +1,47 @@
+model ItemSectionMaster {
+  secId          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sec_id")
+
+  // Master
+  secName        String   @db.VarChar(150) @map("sec_name")
+  secAlias       String?  @db.VarChar(100) @map("sec_alias")
+  secShort       String?  @db.VarChar(50)  @map("sec_short")
+  secDescription String?  @db.VarChar(250) @map("sec_description")
+
+
+  // Hierarchy
+  secParentId    String?  @db.Uuid @map("sec_parent_id")
+  parent         ItemSectionMaster?  @relation("SectionParent", fields: [secParentId], references: [secId], onUpdate: Cascade, onDelete: Restrict)
+  children       ItemSectionMaster[] @relation("SectionParent")
+
+  secSort        Int?     @map("sec_sort")
+  secLevel       Int?     @map("sec_level")
+  secPathIds     String[] @default([]) @db.Uuid @map("sec_path_ids")
+
+  // Display / POS UI
+  secPosition    Int?     @map("sec_position")
+  secColorCode   String?  @db.VarChar(20)  @map("sec_color_code")
+  secIcon        String?  @db.VarChar(100) @map("sec_icon")
+
+  // Media
+  secPhoto       Bytes?   @map("sec_photo")
+  secPhotoUrl    String?  @db.Text @map("sec_photo_url")
+
+  // Status / audit
+  secIsActive    Boolean  @default(true)  @map("sec_is_active")
+  secIsDeleted   Boolean  @default(false) @map("sec_is_deleted")
+
+  secSyncDate    DateTime? @db.Timestamptz(6) @map("sec_sync_date")
+  secCreatedOn   DateTime  @default(now())    @db.Timestamptz(6) @map("sec_created_on")
+  secCreatedBy   String?   @db.VarChar(100)   @map("sec_created_by")
+  secModifiedOn  DateTime  @default(now())    @db.Timestamptz(6) @map("sec_modified_on")
+  secModifiedBy  String?   @db.VarChar(100)   @map("sec_modified_by")
+
+  @@map("item_section_master")
+   @@schema("inventory")
+
+
+  // Indexes (match your SQL intent)
+  @@index([secParentId],  map: "idx_sec_parent_id")
+  @@index([secIsActive],  map: "idx_sec_active")
+  @@index([secPosition],  map: "idx_sec_position")
+}

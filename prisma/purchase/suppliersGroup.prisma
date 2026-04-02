@@ -1,0 +1,19 @@
+model SupplierGroup {
+  spgId         String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  spgName       String
+  spgAlias      String?
+  spgShort      String?    @db.VarChar(50)
+  spgDesc       String?
+  spgIsActive   Boolean    @default(true)
+  spgIsDeleted  Boolean    @default(false)
+  spgSyncDate   DateTime?  @db.Timestamptz
+  spgCreatedOn  DateTime   @default(now()) @db.Timestamptz
+  spgCreatedBy  String?    @db.VarChar(100)
+  spgModifiedOn DateTime   @default(now()) @db.Timestamptz
+  spgModifiedBy String?    @db.VarChar(100)
+  // Relations
+  suppliers     Supplier[]
+  @@index([spgIsActive], name: "idx_spg_active")
+  @@map("supplier_groups")
+  @@schema("purchase")
+}

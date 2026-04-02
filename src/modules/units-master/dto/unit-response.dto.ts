@@ -20,8 +20,8 @@ export class UnitErrorResponseDto {
 }
 
 export class UnitPayloadDto {
-  @ApiProperty({ example: 1 })
-  unit_id!: number;
+  @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
+  unit_id!: string;
 
   @ApiProperty({ maxLength: 50 })
   unit_name!: string;
@@ -53,8 +53,12 @@ export class UnitPayloadDto {
   @ApiProperty({ example: false })
   unit_is_pack_unit!: boolean;
 
-  @ApiPropertyOptional({ nullable: true, example: 1 })
-  unit_base_unit_id!: number | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    example: '019c6f6c-be87-7a11-8905-36092c46fd06',
+  })
+  unit_base_unit_id!: string | null;
 
   @ApiPropertyOptional({ nullable: true, example: 10 })
   unit_conversion!: number | null;
@@ -95,9 +99,50 @@ export class UnitListMetaDto {
   total_pages!: number;
 }
 
-export class UnitDeleteResultDto {
+export class UnitGridStyleDto {
   @ApiProperty({ example: 1 })
-  unit_id!: number;
+  grid_column_number!: number;
+
+  @ApiProperty({ example: 'unit_name' })
+  grid_column_name!: string;
+
+  @ApiPropertyOptional({ nullable: true, example: 180 })
+  grid_column_width!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'left' })
+  grid_column_alignment!: string | null;
+
+  @ApiProperty({ example: true })
+  grid_column_visibility!: boolean;
+
+  @ApiProperty({ example: true })
+  grid_column_filter!: boolean;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  grid_column_condition!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  grid_column_condition_color!: string | null;
+
+  @ApiProperty({ example: false })
+  grid_column_group!: boolean;
+
+  @ApiProperty({ example: false })
+  grid_column_total!: boolean;
+
+  @ApiPropertyOptional({ nullable: true, example: 'text' })
+  grid_column_data_type!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  grid_column_color!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: null })
+  grid_column_notes!: string | null;
+}
+
+export class UnitDeleteResultDto {
+  @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
+  unit_id!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;
@@ -126,6 +171,9 @@ export class UnitSuccessListDto {
 
   @ApiProperty({ type: UnitListMetaDto })
   meta!: UnitListMetaDto;
+
+  @ApiPropertyOptional({ type: UnitGridStyleDto, isArray: true })
+  styles?: UnitGridStyleDto[];
 }
 
 export class UnitSuccessDeleteDto {

@@ -1,6 +1,6 @@
 import 'reflect-metadata';
-import { readFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import * as compression from 'compression';
 import { json, urlencoded } from 'express';
 import helmet from 'helmet';
@@ -11,50 +11,93 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FileLoggerService } from './common/logging/file-logger.service';
 import { PrismaService } from './database/prisma/prisma.service';
-
+import { swaggerModuleDocuments } from './utils/swaggerDocs';
 const parseBoolean = (value: string | undefined, defaultValue = false): boolean => {
   if (value === undefined) {
     return defaultValue;
   }
-
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 };
-
-const resolveFilePath = (filePath: string): string =>
-  isAbsolute(filePath) ? filePath : resolve(process.cwd(), filePath);
-
+const parseCsv = (value: string | undefined): string[] => {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+const getDefaultDevCorsOrigins = (): string[] => [
+  'http://localhost:3000',
+  'https://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://127.0.0.1:3000',
+];
+const resolveFilePath = (filePath: string): string => {
+  const isPkgRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
+  if (isAbsolute(filePath)) {
+    return filePath;
+  }
+  const cwdPath = resolve(process.cwd(), filePath);
+  if (existsSync(cwdPath)) {
+    return cwdPath;
+  }
+  if (isPkgRuntime) {
+    const execDirPath = resolve(dirname(process.execPath), filePath);
+    if (existsSync(execDirPath)) {
+      return execDirPath;
+    }
+    const snapshotPath = resolve(__dirname, '..', filePath);
+    if (existsSync(snapshotPath)) {
+      return snapshotPath;
+    }
+  }
+  return cwdPath;
+};
 const normalizeUrlPath = (path: string): string => {
   const cleanedPath = path.replace(/^\/+|\/+$/g, '');
   return cleanedPath ? `/${cleanedPath}` : '';
 };
-
 const buildAbsoluteUrl = (baseUrl: string, path: string): string => {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/g, '');
   const normalizedPath = normalizeUrlPath(path);
   return `${normalizedBaseUrl}${normalizedPath}`;
 };
-
 const buildHttpsOptions = () => {
   if (!parseBoolean(process.env.HTTPS_ENABLED, false)) {
     return undefined;
   }
-
   const certPath = process.env.HTTPS_CERT_PATH;
   const keyPath = process.env.HTTPS_KEY_PATH;
   if (!certPath || !keyPath) {
     throw new Error('HTTPS_ENABLED=true requires HTTPS_CERT_PATH and HTTPS_KEY_PATH.');
   }
-
   const resolvedCertPath = resolveFilePath(certPath);
   const resolvedKeyPath = resolveFilePath(keyPath);
-
   return {
     cert: readFileSync(resolvedCertPath),
     key: readFileSync(resolvedKeyPath),
     passphrase: process.env.HTTPS_PASSPHRASE || undefined,
   };
 };
-
+const buildSwaggerConfig = (title: string, description: string) =>
+  new DocumentBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setVersion('1.0.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Paste access token as JWT (without Bearer prefix).',
+      },
+      'access-token',
+    )
+    // Use current origin so Swagger "Try it out" works on localhost, IPv6, and proxied hosts.
+    // API paths already include the global prefix (e.g. /api/v1/*), so root-relative is required.
+    .addServer('/')
+    .build();
 async function bootstrap(): Promise<void> {
   const httpsOptions = buildHttpsOptions();
   const logger = new FileLoggerService();
@@ -65,17 +108,26 @@ async function bootstrap(): Promise<void> {
   app.useLogger(logger);
   const configService = app.get(ConfigService);
   const requestBodyLimit = configService.get<string>('app.requestBodyLimit', '10mb');
-
+  const swaggerModuleDocs = swaggerModuleDocuments;
   app.enableShutdownHooks();
   app.use(json({ limit: requestBodyLimit }));
   app.use(urlencoded({ extended: true, limit: requestBodyLimit }));
   app.use(helmet());
   app.use(compression());
-  app.enableCors({
-    origin: true,
-    credentials: true,
-  });
-
+  const configuredCorsOrigins = parseCsv(process.env.CORS_ORIGINS);
+  const corsOrigins =
+    process.env.NODE_ENV === 'production'
+      ? configuredCorsOrigins
+      : Array.from(new Set([...configuredCorsOrigins, ...getDefaultDevCorsOrigins()]));
+  const allowAnyCorsOrigin = corsOrigins.includes('*');
+  const corsCredentialsDefault = allowAnyCorsOrigin ? false : true;
+  const corsCredentials = parseBoolean(process.env.CORS_CREDENTIALS, corsCredentialsDefault);
+  if (allowAnyCorsOrigin || corsOrigins.length > 0) {
+    app.enableCors({
+      origin: allowAnyCorsOrigin ? true : corsOrigins,
+      credentials: corsCredentials,
+    });
+  }
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -86,37 +138,37 @@ async function bootstrap(): Promise<void> {
       },
     }),
   );
-
   app.enableVersioning({
     type: VersioningType.URI,
     defaultVersion: '1',
   });
-
   const rawApiPrefix = configService.get<string>('app.apiPrefix', 'api');
   const apiPrefix = rawApiPrefix.replace(/^\/+|\/+$/g, '');
   if (apiPrefix) {
     app.setGlobalPrefix(apiPrefix);
   }
-
   const port = configService.get<number>('app.port', 3000);
-
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('ERP Server API')
-    .setDescription('API documentation for ERP Server')
-    .setVersion('1.0.0')
-    // Use current origin so Swagger "Try it out" works on localhost, IPv6, and proxied hosts.
-    // API paths already include the global prefix (e.g. /api/v1/*), so root-relative is required.
-    .addServer('/')
-    .build();
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(apiPrefix ? `${apiPrefix}/docs` : 'docs', app, swaggerDocument);
-
-  await app.listen(port);
-
+  const host = configService.get<string>('app.host', '0.0.0.0');
+  const allDocsPath = apiPrefix ? `${apiPrefix}/docs` : 'docs';
+  const allSwaggerDocument = SwaggerModule.createDocument(
+    app,
+    buildSwaggerConfig('ERP Server API', 'API documentation for ERP Server'),
+  );
+  SwaggerModule.setup(allDocsPath, app, allSwaggerDocument);
+  for (const docs of swaggerModuleDocs) {
+    const docsPath = apiPrefix ? `${apiPrefix}/docs/${docs.path}` : `docs/${docs.path}`;
+    const moduleSwaggerDocument = SwaggerModule.createDocument(
+      app,
+      buildSwaggerConfig(docs.title, docs.description),
+      {
+        include: docs.include,
+      },
+    );
+    SwaggerModule.setup(docsPath, app, moduleSwaggerDocument);
+  }
+  await app.listen(port, host);
   const appUrl = await app.getUrl();
-  const docsPath = apiPrefix ? `${apiPrefix}/docs` : 'docs';
-  const docsUrl = buildAbsoluteUrl(appUrl, docsPath);
-
+  const docsUrl = buildAbsoluteUrl(appUrl, allDocsPath);
   const prisma = app.get(PrismaService);
   let isDbConnected = false;
   try {
@@ -126,9 +178,11 @@ async function bootstrap(): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Database startup check failed: ${errorMessage}`, undefined, 'Bootstrap');
   }
-
   logger.log(`API docs URL: ${docsUrl}`, 'Bootstrap');
+  for (const docs of swaggerModuleDocs) {
+    const docsPath = apiPrefix ? `${apiPrefix}/docs/${docs.path}` : `docs/${docs.path}`;
+    logger.log(`API docs URL (${docs.path}): ${buildAbsoluteUrl(appUrl, docsPath)}`, 'Bootstrap');
+  }
   logger.log(`DB connected: ${isDbConnected}`, 'Bootstrap');
 }
-
 void bootstrap();

@@ -2,41 +2,34 @@ const parseBoolean = (value: string | undefined, defaultValue = false): boolean 
   if (value === undefined) {
     return defaultValue;
   }
-
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 };
-
 const parseNumber = (value: string | undefined, defaultValue: number): number => {
   if (!value) {
     return defaultValue;
   }
-
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : defaultValue;
 };
-
 const buildDatabaseUrl = (): string => {
   if (process.env.DATABASE_URL) {
     return process.env.DATABASE_URL;
   }
-
   const username = encodeURIComponent(process.env.DB_USER ?? 'erp_app');
   const password = encodeURIComponent(process.env.DB_PASSWORD ?? 'erp_password');
   const host = process.env.DB_HOST ?? 'localhost';
   const port = parseNumber(process.env.DB_PORT, 5432);
   const databaseName = process.env.DB_NAME ?? 'erp_db';
   const searchParams = new URLSearchParams({ schema: 'public' });
-
   if (parseBoolean(process.env.DB_SSL)) {
     searchParams.set('sslmode', 'require');
   }
-
   return `postgresql://${username}:${password}@${host}:${port}/${databaseName}?${searchParams.toString()}`;
 };
-
 export default () => ({
   app: {
     nodeEnv: process.env.NODE_ENV ?? 'development',
+    host: process.env.HOST ?? '0.0.0.0',
     port: parseNumber(process.env.PORT, 3010),
     apiPrefix: process.env.API_PREFIX ?? 'api',
     requestBodyLimit: process.env.REQUEST_BODY_LIMIT ?? '10mb',
@@ -66,6 +59,37 @@ export default () => ({
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET ?? '',
-    jwtExpiresIn: parseNumber(process.env.JWT_EXPIRES_IN, 3600),
+    accessTokenTtlSeconds: parseNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 3600),
   },
+  redis: (() => {
+    const redisUrl = process.env.REDIS_URL?.trim();
+    const redisEnabled = parseBoolean(process.env.REDIS_ENABLED, Boolean(redisUrl));
+
+    if (redisUrl) {
+      const parsedRedisUrl = new URL(redisUrl);
+      const databasePath = parsedRedisUrl.pathname.replace(/^\/+/, '');
+
+      return {
+        enabled: redisEnabled,
+        host: parsedRedisUrl.hostname || '127.0.0.1',
+        port: parseNumber(parsedRedisUrl.port, parsedRedisUrl.protocol === 'rediss:' ? 6380 : 6379),
+        username: decodeURIComponent(parsedRedisUrl.username || ''),
+        password: decodeURIComponent(parsedRedisUrl.password || ''),
+        db: parseNumber(databasePath || undefined, 0),
+        tls: parsedRedisUrl.protocol === 'rediss:',
+        connectTimeoutMs: parseNumber(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000),
+      };
+    }
+
+    return {
+      enabled: redisEnabled,
+      host: process.env.REDIS_HOST ?? '127.0.0.1',
+      port: parseNumber(process.env.REDIS_PORT, 6379),
+      username: process.env.REDIS_USERNAME ?? '',
+      password: process.env.REDIS_PASSWORD ?? '',
+      db: parseNumber(process.env.REDIS_DB, 0),
+      tls: parseBoolean(process.env.REDIS_TLS),
+      connectTimeoutMs: parseNumber(process.env.REDIS_CONNECT_TIMEOUT_MS, 5000),
+    };
+  })(),
 });

@@ -1,0 +1,75 @@
+enum GdwStatus {
+  NA
+  PENDING
+  GENERATED
+  FAILED
+  CANCELED
+  EXPIRED
+  @@schema("accounts")
+}
+
+enum GdwTransportMode {
+  ROAD
+  RAIL
+  AIR
+  SHIP
+  OTHER
+  @@schema("accounts")
+}
+
+enum GdwVehicleType {
+  REGULAR
+  ODC
+  OTHER
+  @@schema("accounts")
+}
+
+model AccVoucherDocEwaybill {
+  gdwId               String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdw_id")
+  gdwGdrId            String            @db.Uuid @map("gdw_gdr_id")
+  gdwVoucherId        String            @db.Uuid @map("gdw_voucher_id")
+
+  // Multi-branch snapshot
+  gdwAccYear          String            @db.VarChar(9) @map("gdw_acc_year")
+  gdwCompanyId        String            @db.Uuid @map("gdw_company_id")
+  gdwBranchId         String            @db.Uuid @map("gdw_branch_id")
+
+  gdwStatus           GdwStatus         @default(NA) @map("gdw_status")
+  gdwNo               String?           @db.VarChar(100) @map("gdw_no")
+  gdwGeneratedOn      DateTime?         @db.Timestamptz(6) @map("gdw_generated_on")
+  gdwValidUpto        DateTime?         @db.Timestamptz(6) @map("gdw_valid_upto")
+
+  gdwCancelReason     String?           @db.VarChar(200) @map("gdw_cancel_reason")
+  gdwCanceledOn       DateTime?         @db.Timestamptz(6) @map("gdw_canceled_on")
+
+  gdwVehicleNo        String?           @db.VarChar(20) @map("gdw_vehicle_no")
+  gdwTransportMode    GdwTransportMode? @map("gdw_transport_mode")
+  gdwTransporterId    String?           @db.VarChar(15) @map("gdw_transporter_id")
+  gdwTransporterName  String?           @db.VarChar(150) @map("gdw_transporter_name")
+  gdwDistanceKm       Int?              @map("gdw_distance_km")
+  gdwDocNo            String?           @db.VarChar(50) @map("gdw_doc_no")
+  gdwDocDate          DateTime?         @db.Date @map("gdw_doc_date")
+  gdwVehicleType      GdwVehicleType?   @map("gdw_vehicle_type")
+  gdwTransactionType  String?           @db.VarChar(30) @map("gdw_transaction_type")
+  gdwSubSupplyType    String?           @db.VarChar(50) @map("gdw_sub_supply_type")
+
+  gdwLastErrorCode    String?           @db.VarChar(50) @map("gdw_last_error_code")
+  gdwLastMessage      String?           @db.VarChar(500) @map("gdw_last_message")
+
+  gdwIsActive         Boolean           @default(true) @map("gdw_is_active")
+  gdwIsDeleted        Boolean           @default(false) @map("gdw_is_deleted")
+  gdwSyncDate         DateTime?         @db.Timestamptz(6) @map("gdw_sync_date")
+  gdwCreatedOn        DateTime          @default(now()) @db.Timestamptz(6) @map("gdw_created_on")
+  gdwCreatedBy        String?           @db.Uuid @map("gdw_created_by")
+  gdwUpdatedOn        DateTime?         @db.Timestamptz(6) @map("gdw_updated_on")
+  gdwUpdatedBy        String?           @db.Uuid @map("gdw_updated_by")
+
+  // Relations
+  docRegister         AccVoucherDocRegister @relation(fields: [gdwGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdw_gdr")
+
+  @@unique([gdwGdrId], map: "uq_gdw_gdr")
+  @@map("acc_voucher_doc_ewaybill")
+  @@schema("accounts")
+  // Partial unique index uq_acc_voucher_doc_ewaybill_no and partial index
+  // idx_gdw_status are not expressible in Prisma schema.
+}

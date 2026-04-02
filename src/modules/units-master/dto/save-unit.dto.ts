@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
   ValidateIf,
@@ -23,7 +24,7 @@ const toNullableInteger = (value: unknown): number | null | undefined => {
   }
 
   if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : (value as number);
+    return Number.isInteger(value) ? value : value;
   }
 
   if (typeof value === 'string') {
@@ -49,7 +50,7 @@ const toNullableNumber = (value: unknown): number | null | undefined => {
   }
 
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : (value as number);
+    return Number.isFinite(value) ? value : value;
   }
 
   if (typeof value === 'string') {
@@ -82,14 +83,30 @@ const toNullableString = (value: unknown): string | null | undefined => {
   return trimmed ? trimmed : null;
 };
 
+const toNullableUuid = (value: unknown): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === '') {
+    return null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  return value as string;
+};
+
 export class SaveUnitDto {
-  @ApiPropertyOptional({ type: Number, description: 'When provided, request updates the unit' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'When provided, request updates the unit',
+  })
   @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
+  @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(1)
-  unit_id?: number;
+  @IsUUID('all')
+  unit_id?: string;
 
   @ApiProperty({ maxLength: 50 })
   @IsString()
@@ -162,18 +179,18 @@ export class SaveUnitDto {
   @IsBoolean()
   unit_is_pack_unit?: boolean;
 
-  @ApiPropertyOptional({ type: Number, nullable: true })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
+  @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(1)
-  unit_base_unit_id?: number | null;
+  unit_base_unit_id?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableNumber(value))
-  @ValidateIf((dto: SaveUnitDto) => dto.unit_base_unit_id !== undefined && dto.unit_base_unit_id !== null)
+  @ValidateIf(
+    (dto: SaveUnitDto) => dto.unit_base_unit_id !== undefined && dto.unit_base_unit_id !== null,
+  )
   @IsNumber()
   @IsPositive()
   unit_conversion?: number | null;

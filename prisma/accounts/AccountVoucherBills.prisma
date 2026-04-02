@@ -1,0 +1,104 @@
+enum VoucherBillRefType {
+  NEW_REF
+  AGAINST_REF
+  ON_ACCOUNT
+  ADVANCE
+  AGAINST_ADVANCE
+  @@schema("accounts")
+}
+
+enum VoucherBillDrCr {
+  DR
+  CR
+  @@schema("accounts")
+}
+
+enum VoucherBillTraType {
+  R
+  P
+  @@schema("accounts")
+}
+
+model AccVoucherBill {
+  // Primary
+  avbdId                    String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("avbd_id")
+
+  // Links
+  avbdVoucherId             String               @db.Uuid @map("avbd_voucher_id")
+  avbdVoucherLineId         String?              @db.Uuid @map("avbd_voucher_line_id")
+  avbdRowNo                 Int                  @map("avbd_row_no")
+
+  // Multi-branch snapshot
+  avbdAccYear               String               @db.VarChar(9) @map("avbd_acc_year")
+  avbdCompanyId             String               @db.Uuid @map("avbd_company_id")
+  avbdBranchId              String               @db.Uuid @map("avbd_branch_id")
+
+  // Voucher snapshot
+  avbdVoucherTypeId         Int                  @map("avbd_voucher_type_id")
+  avbdVoucherNo             BigInt               @map("avbd_voucher_no")
+  avbdVoucherDate           DateTime             @db.Timestamptz(6) @map("avbd_voucher_date")
+  avbdVoucherRefno          String?              @db.VarChar(50) @map("avbd_voucher_refno")
+
+  // Party / ownership snapshot
+  avbdPartyId               String               @db.Uuid @map("avbd_party_id")
+  avbdSalesmanId            String?              @db.Uuid @map("avbd_salesman_id")
+  avbdUserId                String?              @db.Uuid @map("avbd_user_id")
+  avbdSessionId             String?              @db.Uuid @map("avbd_session_id")
+
+  // Bill/reference classification
+  avbdRefType               VoucherBillRefType   @map("avbd_ref_type")
+  avbdDrCr                  VoucherBillDrCr      @map("avbd_dr_cr")
+  avbdTraType               VoucherBillTraType   @map("avbd_tra_type")
+
+  // Current bill/reference
+  avbdOriginVoucherId       String               @db.Uuid @map("avbd_origin_voucher_id")
+  avbdDocDate               DateTime             @db.Date @map("avbd_doc_date")
+  avbdDocRefno              String?              @db.VarChar(50) @map("avbd_doc_refno")
+  avbdBillDate              DateTime?            @db.Date @map("avbd_bill_date")
+  avbdBillRefno             String               @db.VarChar(100) @map("avbd_bill_refno")
+  avbdDueDate               DateTime?            @db.Date @map("avbd_due_date")
+  avbdBillNarration         String?              @map("avbd_bill_narration")
+
+  // Amounts
+  avbdBillAmount            Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_bill_amount")
+  avbdAllocAmount           Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_alloc_amount")
+  avbdDiscAmount            Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_disc_amount")
+  avbdBalanceAmount         Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_balance_amount")
+  avbdProfitAmount          Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_profit_amount")
+
+  // Adjustment target
+  avbdAgainstBillRefno      String?              @db.VarChar(100) @map("avbd_against_bill_refno")
+  avbdAgainstBillDate       DateTime?            @db.Date @map("avbd_against_bill_date")
+  avbdAgainstVoucherId      String?              @db.Uuid @map("avbd_against_voucher_id")
+  avbdAgainstVoucherLineId  String?              @db.Uuid @map("avbd_against_voucher_line_id")
+
+  // Settlement / narration
+  avbdSettlementMode        String?              @db.VarChar(20) @map("avbd_settlement_mode")
+  avbdSettlementLedgerId    String?              @db.Uuid @map("avbd_settlement_ledger_id")
+  avbdIsPostDated           Boolean              @default(false) @map("avbd_is_post_dated")
+
+  // Status
+  avbdIsActive              Boolean              @default(true) @map("avbd_is_active")
+  avbdIsDeleted             Boolean              @default(false) @map("avbd_is_deleted")
+
+  // Audit
+  avbdSyncDate              DateTime?            @db.Timestamptz(6) @map("avbd_sync_date")
+  avbdCreatedOn             DateTime             @default(now()) @db.Timestamptz(6) @map("avbd_created_on")
+  avbdCreatedBy             String?              @db.Uuid @map("avbd_created_by")
+  avbdUpdatedOn             DateTime?            @db.Timestamptz(6) @map("avbd_updated_on")
+  avbdUpdatedBy             String?              @db.Uuid @map("avbd_updated_by")
+
+  // Relations
+  voucherHeader             AccVoucherHeader     @relation("VoucherBillHeader", fields: [avbdVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_bills_header")
+  voucherType               AccVoucherType       @relation(fields: [avbdVoucherTypeId], references: [vchrTypeId], map: "fk_acc_voucher_bills_voucher_type")
+  company                   Company              @relation(fields: [avbdCompanyId], references: [compId], map: "fk_acc_voucher_bills_company")
+  branch                    BranchMaster         @relation(fields: [avbdBranchId], references: [brId], map: "fk_acc_voucher_bills_branch")
+  party                     AccLedgerMaster      @relation("VoucherBillParty", fields: [avbdPartyId], references: [ledId], map: "fk_acc_voucher_bills_party")
+  againstVoucherHeader      AccVoucherHeader?    @relation("VoucherBillAgainstHeader", fields: [avbdAgainstVoucherId], references: [avhVoucherId], map: "fk_acc_voucher_bills_against_header")
+
+  @@map("acc_voucher_bills")
+  @@schema("accounts")
+  // Partial indexes idx_acc_voucher_bills_voucher, idx_acc_voucher_bills_party,
+  // idx_acc_voucher_bills_salesman, and idx_acc_voucher_bills_origin
+  // WHERE avbd_is_deleted = false are not expressible in Prisma schema.
+}

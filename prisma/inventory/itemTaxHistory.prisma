@@ -1,0 +1,24 @@
+model ItemTaxHistory {
+  ithId            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ith_id")
+
+  
+  ithItemId        String   @db.Uuid @map("ith_item_id")
+  ithTaxId         String   @db.Uuid @map("ith_tax_id")
+
+  ithEffectiveFrom DateTime @db.Date @map("ith_effective_from")
+  ithEffectiveTo   DateTime? @db.Date @map("ith_effective_to")
+
+  ithReason        String?  @db.VarChar(250) @map("ith_reason")
+
+  ithCreatedOn     DateTime @default(now()) @db.Timestamptz(6) @map("ith_created_on")
+  ithCreatedBy     String?  @db.VarChar(100) @map("ith_created_by")
+
+  // Relations
+  item             ItemMaster    @relation(fields: [ithItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
+  tax              ItemTaxMaster  @relation(fields: [ithTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
+
+  @@map("item_tax_history")
+ @@schema("inventory")
+
+  @@index([ithItemId, ithEffectiveFrom, ithEffectiveTo], map: "idx_ith_item_dates")
+}

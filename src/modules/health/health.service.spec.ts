@@ -4,12 +4,20 @@ import { HealthService } from './health.service';
 describe('HealthService', () => {
   let service: HealthService;
   let prismaService: { $queryRawUnsafe: jest.Mock };
+  let redisCacheService: { isEnabled: jest.Mock; ping: jest.Mock };
 
   beforeEach(() => {
     prismaService = {
       $queryRawUnsafe: jest.fn().mockResolvedValue([{ now: new Date().toISOString() }]),
     };
-    service = new HealthService(prismaService as unknown as PrismaService);
+    redisCacheService = {
+      isEnabled: jest.fn().mockReturnValue(false),
+      ping: jest.fn(),
+    };
+    service = new HealthService(
+      prismaService as unknown as PrismaService,
+      redisCacheService as any,
+    );
   });
 
   it('returns ok when database is reachable', async () => {

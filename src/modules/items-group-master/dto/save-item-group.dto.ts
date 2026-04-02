@@ -1,5 +1,4 @@
 import {
-  IsArray,
   IsBoolean,
   IsInt,
   IsNotEmpty,
@@ -34,7 +33,7 @@ const toNullableUuid = (value: unknown): string | null | undefined => {
   return isUUID(trimmed, 'all') ? trimmed : null;
 };
 
-const toNullableString = (value: unknown): string | null | undefined => {
+const toNullablePhotoString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
     return undefined;
   }
@@ -43,12 +42,35 @@ const toNullableString = (value: unknown): string | null | undefined => {
     return null;
   }
 
-  if (typeof value !== 'string') {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+
+  if (typeof value !== 'object') {
     return null;
   }
 
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+  const photoPayload = value as {
+    data_base64?: unknown;
+    data_url?: unknown;
+  };
+
+  if (typeof photoPayload.data_base64 === 'string') {
+    const trimmed = photoPayload.data_base64.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  if (typeof photoPayload.data_url === 'string') {
+    const trimmed = photoPayload.data_url.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  return null;
 };
 
 export class SaveItemGroupDto {
@@ -101,12 +123,6 @@ export class SaveItemGroupDto {
   @IsInt()
   itg_level?: number;
 
-  @ApiPropertyOptional({ type: [String], example: [] })
-  @IsOptional()
-  @IsArray()
-  @IsUUID('all', { each: true })
-  itg_path_ids_cache?: string[];
-
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
@@ -135,10 +151,10 @@ export class SaveItemGroupDto {
   @ApiPropertyOptional({
     nullable: true,
     description:
-      'Raw base64 string or data URL (data:*;base64,...). For multipart/form-data, upload a file using the same field name.',
+      'Raw base64 string, data URL (data:*;base64,...) or object payload containing data_base64/data_url. For multipart/form-data, upload a file using the same field name.',
   })
   @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
+  @Transform(({ value }) => toNullablePhotoString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
   itg_photo?: string | null;

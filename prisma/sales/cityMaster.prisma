@@ -1,0 +1,24 @@
+model CityMaster {
+  ctmId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("ctm_id")
+  ctmName       String                                                      @map("ctm_name")
+  ctmAlias      String?                                                     @map("ctm_alias")
+  ctmShort      String?   @db.VarChar(50)                                  @map("ctm_short")
+  ctmStateId    String    @db.Uuid                                          @map("ctm_state_id")
+  ctmOrder      Decimal   @default(0.0) @db.Decimal                        @map("ctm_order")
+  ctmIsActive   Boolean   @default(true)                                    @map("ctm_is_active")
+  ctmIsDeleted  Boolean   @default(false)                                   @map("ctm_is_deleted")
+  ctmSyncDate   DateTime? @db.Timestamptz                                  @map("ctm_sync_date")
+  ctmCreatedOn  DateTime  @default(now()) @db.Timestamptz                  @map("ctm_created_on")
+  ctmCreatedBy  String?   @db.VarChar(100)                                 @map("ctm_created_by")
+  ctmModifiedOn DateTime  @default(now()) @db.Timestamptz                  @map("ctm_modified_on")
+  ctmModifiedBy String?   @db.VarChar(100)                                 @map("ctm_modified_by")
+
+  // Relations
+  state         StateMaster  @relation(fields: [ctmStateId], references: [stmId])
+  areas         AreaMaster[]
+
+  @@index([ctmStateId],  name: "idx_ctm_state")
+  @@index([ctmIsActive], name: "idx_ctm_active")
+  @@map("city_master")
+  @@schema("sales")
+}

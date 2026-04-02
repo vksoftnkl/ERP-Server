@@ -1,0 +1,45 @@
+{
+  "name": "custom-api-mix",
+  "duration": "90s",
+  "concurrency": 30,
+  "timeoutMs": 5000,
+  "thinkTimeMs": 0,
+  "maxFailureRate": 5,
+  "routes": [
+    {
+      "name": "health",
+      "method": "GET",
+      "path": "/api/v1/health",
+      "weight": 4,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "users.list",
+      "method": "GET",
+      "path": "/api/v1/users",
+      "weight": 3,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "itemGroups.list",
+      "method": "GET",
+      "path": "/api/v1/item-groups/list",
+      "weight": 2,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "itemBrands.list",
+      "method": "GET",
+      "path": "/api/v1/item-brands/list",
+      "weight": 2,
+      "expectedStatuses": [200]
+    },
+    {
+      "name": "units.list",
+      "method": "GET",
+      "path": "/api/v1/units/list",
+      "weight": 2,
+      "expectedStatuses": [200]
+    }
+  ]
+}

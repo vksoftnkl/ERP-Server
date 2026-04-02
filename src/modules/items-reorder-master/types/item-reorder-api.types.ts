@@ -1,0 +1,56 @@
+export interface ItemReorderErrorDetail {
+  field: string;
+  message: string;
+}
+
+export interface ItemReorderErrorResponse {
+  success: false;
+  message: string;
+  errors: ItemReorderErrorDetail[];
+}
+
+export interface ItemReorderSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
+  success: true;
+  message: string;
+  data: T;
+  meta?: TMeta;
+  styles?: TStyles;
+}
+
+export interface ItemReorderDeleteResult {
+  ir_id: string;
+  deleted: true;
+}
+
+export interface ItemReorderPayload {
+  ir_id: string;
+  ir_branch_id: string | null;
+  ir_item_id: string;
+  ir_unit_id: string | null;
+  ir_godown_id: string | null;
+  ir_min_level: number;
+  ir_max_level: number;
+  ir_reorder_level: number;
+  ir_reorder_qty: number;
+  ir_lead_time_days: number;
+  ir_review_cycle_days: number;
+  ir_reorder_days: number;
+  ir_expiry_buffer_days: number;
+  ir_reorder_type: string;
+  ir_is_active: boolean;
+  ir_is_deleted: boolean;
+  ir_remarks: string | null;
+  ir_created_on: string;
+  ir_created_by: string | null;
+  ir_modified_on: string;
+  ir_modified_by: string | null;
+}
+
+export type ItemReorderListItem = ItemReorderPayload | Record<string, unknown>;
+
+export interface ItemReorderListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+}

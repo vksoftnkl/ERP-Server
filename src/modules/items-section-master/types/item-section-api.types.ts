@@ -9,11 +9,12 @@ export interface ItemSectionErrorResponse {
   errors: ItemSectionErrorDetail[];
 }
 
-export interface ItemSectionSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface ItemSectionSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface ItemSectionPayload {
@@ -22,7 +23,6 @@ export interface ItemSectionPayload {
   sec_alias: string | null;
   sec_short: string | null;
   sec_description: string | null;
-  sec_company_id: string;
   sec_parent_id: string | null;
   sec_sort: number | null;
   sec_level: number | null;
@@ -40,6 +40,13 @@ export interface ItemSectionPayload {
   sec_modified_on: string;
   sec_modified_by: string | null;
 }
+
+export interface ItemSectionDefaultListItem {
+  sec_id: string;
+  sec_name: string;
+}
+
+export type ItemSectionListItem = ItemSectionDefaultListItem | Record<string, unknown>;
 
 export interface ItemSectionListMeta {
   page: number;

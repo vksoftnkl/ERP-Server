@@ -1,0 +1,60 @@
+enum GdlApiName {
+  EINVOICE
+  EWAYBILL
+  GST
+  OTHER
+  @@schema("accounts")
+}
+
+enum GdlActionName {
+  GENERATE
+  CANCEL
+  GET_DETAILS
+  UPDATE_VEHICLE
+  EXTEND_VALIDITY
+  PRINT
+  SYNC
+  OTHER
+  @@schema("accounts")
+}
+
+enum GdlStatus {
+  SUCCESS
+  FAILED
+  PENDING
+  @@schema("accounts")
+}
+
+model AccVoucherDocApiLog {
+  gdlId                String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")
+  gdlGdrId             String               @db.Uuid @map("gdl_gdr_id")
+
+  gdlApiName           GdlApiName           @map("gdl_api_name")
+  gdlActionName        GdlActionName        @map("gdl_action_name")
+  gdlStatus            GdlStatus            @map("gdl_status")
+  gdlAttemptNo         Int                  @default(1) @map("gdl_attempt_no")
+
+  gdlRequestRefNo      String?              @db.VarChar(100) @map("gdl_request_ref_no")
+  gdlExternalRefNo     String?              @db.VarChar(100) @map("gdl_external_ref_no")
+  gdlHttpStatus        Int?                 @map("gdl_http_status")
+  gdlErrorCode         String?              @db.VarChar(50) @map("gdl_error_code")
+  gdlErrorMessage      String?              @db.VarChar(1000) @map("gdl_error_message")
+  gdlResponseMessage   String?              @db.VarChar(1000) @map("gdl_response_message")
+
+  gdlRequestPayload    Json?                @map("gdl_request_payload")
+  gdlResponsePayload   Json?                @map("gdl_response_payload")
+
+  gdlRequestedOn       DateTime             @default(now()) @db.Timestamptz(6) @map("gdl_requested_on")
+  gdlRespondedOn       DateTime?            @db.Timestamptz(6) @map("gdl_responded_on")
+
+  gdlCreatedOn         DateTime             @default(now()) @db.Timestamptz(6) @map("gdl_created_on")
+  gdlCreatedBy         String?              @db.Uuid @map("gdl_created_by")
+
+  docRegister          AccVoucherDocRegister @relation(fields: [gdlGdrId], references: [gdrId], onDelete: Cascade, map: "fk_gdl_gdr")
+
+  @@index([gdlGdrId, gdlRequestedOn(sort: Desc)], map: "idx_gdl_gdr_requested_on")
+  @@index([gdlApiName, gdlActionName, gdlStatus], map: "idx_gdl_api_action_status")
+
+  @@map("acc_voucher_doc_api_log")
+  @@schema("accounts")
+}

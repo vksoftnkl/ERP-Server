@@ -1,0 +1,3 @@
+-- Historical migration placeholder.
+-- This file preserves migration history for environments where
+-- 20260221054057_purchase was already applied.

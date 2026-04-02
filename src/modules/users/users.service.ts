@@ -16,6 +16,7 @@ export class UsersService {
 
   async create(createUserDto: CreateUserDto): Promise<User> {
     const username = createUserDto.user_name.trim();
+    const userPhone = createUserDto.user_phone.trim();
     const userWithUsername = await this.prisma.user.findUnique({
       where: { user_name: username },
     });
@@ -24,10 +25,19 @@ export class UsersService {
       throw new ConflictException('User with this username already exists');
     }
 
+    const userWithPhone = await this.prisma.user.findUnique({
+      where: { user_phone: userPhone },
+    });
+
+    if (userWithPhone) {
+      throw new ConflictException('User with this phone already exists');
+    }
+
     const hashedPassword = await this.hashPassword(createUserDto.user_password);
 
     return this.prisma.user.create({
       data: {
+        user_phone: userPhone,
         user_name: username,
         user_password: hashedPassword,
       },
@@ -58,6 +68,7 @@ export class UsersService {
   async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
     const user = await this.getUserOrThrow(id);
     const nextUsername = updateUserDto.user_name?.trim();
+    const nextUserPhone = updateUserDto.user_phone?.trim();
     const nextPassword = updateUserDto.user_password;
 
     if (nextUsername && nextUsername !== user.user_name) {
@@ -70,13 +81,26 @@ export class UsersService {
       }
     }
 
-    if (!nextUsername && nextPassword === undefined) {
+    if (nextUserPhone && nextUserPhone !== user.user_phone) {
+      const phoneAlreadyUsed = await this.prisma.user.findUnique({
+        where: { user_phone: nextUserPhone },
+      });
+
+      if (phoneAlreadyUsed && phoneAlreadyUsed.user_id !== user.user_id) {
+        throw new ConflictException('User with this phone already exists');
+      }
+    }
+
+    if (!nextUsername && !nextUserPhone && nextPassword === undefined) {
       return user;
     }
 
-    const data: Partial<Pick<User, 'user_name' | 'user_password'>> = {};
+    const data: Partial<Pick<User, 'user_name' | 'user_phone' | 'user_password'>> = {};
     if (nextUsername) {
       data.user_name = nextUsername;
+    }
+    if (nextUserPhone) {
+      data.user_phone = nextUserPhone;
     }
     if (nextPassword !== undefined) {
       data.user_password = await this.hashPassword(nextPassword);
