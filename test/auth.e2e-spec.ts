@@ -19,6 +19,9 @@ type PrismaMock = {
   user: {
     findUnique: jest.Mock<Promise<User | null>, [{ where: { user_name: string } }]>;
   };
+  userLoginSession: {
+    create: jest.Mock<Promise<unknown>, [unknown]>;
+  };
   $queryRawUnsafe: jest.Mock<Promise<unknown>, [string]>;
 };
 const hashPasswordForTest = async (plainPassword: string): Promise<string> => {
@@ -45,11 +48,17 @@ describe('Auth (e2e)', () => {
       user: {
         findUnique: jest.fn<Promise<User | null>, [{ where: { user_name: string } }]>(),
       },
+      userLoginSession: {
+        create: jest.fn<Promise<unknown>, [unknown]>(),
+      },
       $queryRawUnsafe: jest.fn<Promise<unknown>, [string]>(),
     };
     prismaMock.user.findUnique.mockImplementation(({ where }) =>
       Promise.resolve(where.user_name === userRecord.user_name ? userRecord : null),
     );
+    prismaMock.userLoginSession.create.mockResolvedValue({
+      ulsId: 'login-session-id',
+    });
     prismaMock.$queryRawUnsafe.mockResolvedValue([{ ok: true }]);
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -77,6 +86,7 @@ describe('Auth (e2e)', () => {
   });
   afterEach(() => {
     prismaMock.user.findUnique.mockClear();
+    prismaMock.userLoginSession.create.mockClear();
   });
   afterAll(async () => {
     await app.close();
@@ -96,6 +106,14 @@ describe('Auth (e2e)', () => {
       where: {
         user_name: 'john.doe',
       },
+    });
+    expect(prismaMock.userLoginSession.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        ulsCompanyId: null,
+        ulsBranchId: null,
+        ulsUserId: USER_ID,
+        ulsLoginStatus: 'SUCCESS',
+      }),
     });
   });
   it('/api/v1/auth/login (POST) returns 401 for invalid password', async () => {

@@ -18,8 +18,8 @@ export class CompanyMasterErrorResponseDto {
   errors!: CompanyMasterErrorFieldDto[];
 }
 export class CompanyMasterPayloadDto {
-  @ApiProperty()
-  compId!: number;
+  @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac1' })
+  compId!: string;
 
   @ApiPropertyOptional({ nullable: true })
   compCode!: string | null;
@@ -226,8 +226,8 @@ export class CompanyMasterListMetaDto {
 }
 
 export class CompanyMasterDeleteResultDto {
-  @ApiProperty({ example: 1 })
-  compId!: number;
+  @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac1' })
+  compId!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;

@@ -325,3 +325,137 @@ ServiceUnavailableException: connect ECONNREFUSED 127.0.0.1:6379
     at async RedisCacheService.set (/home/vk/Dev/erp/ERP server/src/common/redis/redis-cache.service.ts:86:22)
     at async AuthSessionService.storeAccessTokenSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth-session.service.ts:40:5)
     at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:40:5)
+2026-04-02T07:42:54.591Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:42:58.637Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:42:59.264Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:42:59.478Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:42:59.680Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:43:14.635Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:43:14.873Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:43:15.101Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:43:15.305Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T07:43:15.537Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:204:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T08:09:32.770Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:164:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T08:09:33.508Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:164:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T08:09:33.730Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:164:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T08:09:38.757Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+InternalServerErrorException: No active branch is configured for login session tracking
+    at AuthService.resolveLoginSessionScope (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:164:13)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:106:19)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:63:5)
+2026-04-02T08:21:24.527Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userLoginSession.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:40
+
+  101 const loginTimestamp = new Date();
+  102 const resolvedAppVersion = loginAuthDto.app_version ?? requestMetadata.appVersion ?? null;
+  103 
+→ 104 await this.prisma.userLoginSession.create(
+Null constraint violation on the fields: (`uls_branch_id`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:5)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:58:5)
+2026-04-02T08:21:48.667Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userLoginSession.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:40
+
+  101 const loginTimestamp = new Date();
+  102 const resolvedAppVersion = loginAuthDto.app_version ?? requestMetadata.appVersion ?? null;
+  103 
+→ 104 await this.prisma.userLoginSession.create(
+Null constraint violation on the fields: (`uls_branch_id`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:5)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:58:5)
+2026-04-02T08:21:58.672Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userLoginSession.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:40
+
+  101 const loginTimestamp = new Date();
+  102 const resolvedAppVersion = loginAuthDto.app_version ?? requestMetadata.appVersion ?? null;
+  103 
+→ 104 await this.prisma.userLoginSession.create(
+Null constraint violation on the fields: (`uls_branch_id`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:5)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:58:5)
+2026-04-02T08:22:47.582Z ERROR [AllExceptionsFilter] POST /api/v1/auth/login
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userLoginSession.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:40
+
+  101 const loginTimestamp = new Date();
+  102 const resolvedAppVersion = loginAuthDto.app_version ?? requestMetadata.appVersion ?? null;
+  103 
+→ 104 await this.prisma.userLoginSession.create(
+Null constraint violation on the fields: (`uls_branch_id`)
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:5)
+    at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:58:5)

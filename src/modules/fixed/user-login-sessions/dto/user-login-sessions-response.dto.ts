@@ -24,11 +24,11 @@ export class UserLoginSessionsPayloadDto {
   @ApiProperty({ format: 'uuid' })
   ulsId!: string;
 
-  @ApiProperty({ format: 'uuid' })
-  ulsCompanyId!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ulsCompanyId!: string | null;
 
-  @ApiProperty({ format: 'uuid' })
-  ulsBranchId!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ulsBranchId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   ulsUserId!: string;

@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Max,
   MaxLength,
@@ -51,11 +52,28 @@ const toUpper = (value: unknown): unknown => {
   return value.trim().toUpperCase();
 };
 
+const toOptionalTrimmedString = (value: unknown): string | undefined | unknown => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+};
+
 export class ListBranchMasterQueryDto {
-  @ApiPropertyOptional({ type: Number })
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c',
+  })
   @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
+  @Transform(({ value }) => toOptionalTrimmedString(value))
+  @IsUUID('all')
   compId?: string;
 
   @ApiPropertyOptional({ maxLength: 2 })

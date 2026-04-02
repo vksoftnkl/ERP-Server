@@ -19,8 +19,8 @@ export interface UserLoginSessionsSuccessResponse<T, TMeta = Record<string, unkn
 
 export interface UserLoginSessionsPayload {
   ulsId: string;
-  ulsCompanyId: string;
-  ulsBranchId: string;
+  ulsCompanyId: string | null;
+  ulsBranchId: string | null;
   ulsUserId: string;
   ulsDeviceId: string | null;
   ulsSessionId: string | null;

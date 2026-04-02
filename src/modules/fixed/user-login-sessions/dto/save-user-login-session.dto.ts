@@ -119,19 +119,19 @@ export class SaveUserLoginSessionDto {
   @IsUUID('all')
   ulsId?: string;
 
-  @ApiProperty({ format: 'uuid' })
-  @Transform(({ value }) => toRequiredTrimmedString(value))
-  @IsString()
-  @IsNotEmpty()
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
-  ulsCompanyId!: string;
+  ulsCompanyId?: string | null;
 
-  @ApiProperty({ format: 'uuid' })
-  @Transform(({ value }) => toRequiredTrimmedString(value))
-  @IsString()
-  @IsNotEmpty()
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
-  ulsBranchId!: string;
+  ulsBranchId?: string | null;
 
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))

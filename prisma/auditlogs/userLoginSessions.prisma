@@ -4,8 +4,8 @@ model UserLoginSession {
   // =========================================================
   ulsId        String @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("uls_id")
 
-  ulsCompanyId String @db.Uuid @map("uls_company_id")
-  ulsBranchId  String @db.Uuid @map("uls_branch_id")
+  ulsCompanyId String? @db.Uuid @map("uls_company_id")
+  ulsBranchId  String? @db.Uuid @map("uls_branch_id")
   ulsUserId    String @db.Uuid @map("uls_user_id")
   ulsDeviceId  String? @db.Uuid @map("uls_device_id")
 
@@ -52,7 +52,7 @@ model UserLoginSession {
   // =========================================================
   // 7) Relations
   // =========================================================
-  company         Company   @relation(fields: [ulsCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  company         Company?  @relation(fields: [ulsCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
 
   // =========================================================
   // 8) Indexes (partial)

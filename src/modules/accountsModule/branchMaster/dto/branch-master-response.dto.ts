@@ -21,11 +21,11 @@ export class BranchMasterErrorResponseDto {
 }
 
 export class BranchMasterPayloadDto {
-  @ApiProperty({ example: 1 })
-  brId!: number;
+  @ApiProperty({ example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  brId!: string;
 
-  @ApiProperty({ example: 1 })
-  compId!: number;
+  @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac1' })
+  compId!: string;
 
   @ApiPropertyOptional({ nullable: true })
   brCode!: string | null;
@@ -190,8 +190,8 @@ export class BranchMasterListMetaDto {
 }
 
 export class BranchMasterDeleteResultDto {
-  @ApiProperty({ example: 1 })
-  brId!: number;
+  @ApiProperty({ example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
+  brId!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;

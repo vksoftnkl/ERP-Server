@@ -906,8 +906,8 @@ Table audit_screen {
 
 Table user_login_sessions {
   ulsId String [pk]
-  ulsCompanyId String [not null]
-  ulsBranchId String [not null]
+  ulsCompanyId String
+  ulsBranchId String
   ulsUserId String [not null]
   ulsDeviceId String
   ulsSessionId String
@@ -929,7 +929,7 @@ Table user_login_sessions {
   ulsCreatedBy String
   ulsModifiedOn DateTime [default: `now()`, not null]
   ulsModifiedBy String
-  company companys [not null]
+  company companys
 }
 
 Table dropdown_columns {

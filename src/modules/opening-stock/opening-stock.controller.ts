@@ -40,7 +40,6 @@ import {
   OpeningStockListMeta,
   OpeningStockSuccessResponse,
 } from './types/opening-stock-api.types';
-
 @ApiTags('Opening Stock')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -48,7 +47,6 @@ import {
 @UseFilters(OpeningStockExceptionFilter)
 export class OpeningStockController {
   constructor(private readonly openingStockService: OpeningStockService) {}
-
   @Post()
   @Version('1')
   @ApiOperation({
@@ -65,9 +63,7 @@ export class OpeningStockController {
   ): Promise<OpeningStockSuccessResponse<OpeningStockDocumentPayload>> {
     const isUpdate = Boolean(saveOpeningStockDto.header.avh_voucher_id);
     response.status(isUpdate ? HttpStatus.OK : HttpStatus.CREATED);
-
     const data = await this.openingStockService.save(saveOpeningStockDto);
-
     return {
       success: true,
       message: isUpdate
@@ -76,7 +72,6 @@ export class OpeningStockController {
       data,
     };
   }
-
   @Get()
   @Version('1')
   @ApiOperation({
@@ -101,7 +96,6 @@ export class OpeningStockController {
         data,
       };
     }
-
     const result = await this.openingStockService.list(queryDto);
     return {
       success: true,
@@ -110,7 +104,6 @@ export class OpeningStockController {
       meta: result.meta,
     };
   }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get opening stock document by avh_voucher_id' })
@@ -127,7 +120,6 @@ export class OpeningStockController {
       data,
     };
   }
-
   @Get('list')
   @Version('1')
   @ApiOperation({ summary: 'List opening stock documents' })
@@ -144,7 +136,6 @@ export class OpeningStockController {
       meta: result.meta,
     };
   }
-
   @Delete()
   @Version('1')
   @ApiOperation({ summary: 'Soft delete opening stock by avh_voucher_id' })
@@ -161,7 +152,6 @@ export class OpeningStockController {
       data,
     };
   }
-
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete opening stock by avh_voucher_id' })
