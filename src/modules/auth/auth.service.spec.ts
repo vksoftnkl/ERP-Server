@@ -105,6 +105,7 @@ describe('AuthService', () => {
     ).resolves.toEqual({
       access_token: 'signed-jwt-token',
       token_type: 'Bearer',
+      user_id: TEST_USER_ID,
     });
 
     expect(usersService.findByUsername).toHaveBeenCalledWith('john.doe');

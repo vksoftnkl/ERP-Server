@@ -13,6 +13,7 @@ const TEST_TIMESTAMP = new Date('2026-03-20T00:00:00.000Z');
 type LoginResponse = {
   access_token: string;
   token_type: string;
+  user_id: string;
 };
 type PrismaMock = {
   user: {
@@ -80,7 +81,7 @@ describe('Auth (e2e)', () => {
   afterAll(async () => {
     await app.close();
   });
-  it('/api/v1/auth/login (POST) returns access token for valid credentials', async () => {
+  it('/api/v1/auth/login (POST) returns access token and user id for valid credentials', async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(httpServer).post('/api/v1/auth/login').send({
       user_name: 'john.doe',
@@ -90,6 +91,7 @@ describe('Auth (e2e)', () => {
     expect(response.statusCode).toBe(200);
     expect(responseBody.token_type).toBe('Bearer');
     expect(responseBody.access_token).toEqual(expect.any(String));
+    expect(responseBody.user_id).toBe(USER_ID);
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
       where: {
         user_name: 'john.doe',
