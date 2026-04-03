@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Controller, Get, Query, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -20,7 +21,8 @@ import {
 @ApiTags('Audit Logs')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@Controller('audit-logs')
+@CacheTTL(60)
+@Controller(['audit-logs', 'audit-log'])
 export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}
 

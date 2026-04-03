@@ -56,8 +56,14 @@ export class AuditLogListItemDto {
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   log_user_id!: string | null;
 
+  @ApiPropertyOptional({ nullable: true, example: 'Admin User' })
+  log_user_name!: string | null;
+
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   log_branch_id!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Head Office' })
+  log_branch_name!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   log_notes!: string | null;

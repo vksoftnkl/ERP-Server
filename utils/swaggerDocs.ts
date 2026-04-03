@@ -148,7 +148,7 @@ import { MasterLookupModule } from '../src/modules/master-lookup/master-lookup.m
       include: [MasterLookupModule],
     },
     {
-      path: 'audit-log',
+      path: 'audit-logs',
       title: 'Audit Log API',
       description: 'Audit log module endpoints',
       include: [AuditLogModule],

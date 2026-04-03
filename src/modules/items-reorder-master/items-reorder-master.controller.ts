@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   BadRequestException,
   Body,
@@ -62,6 +63,7 @@ import {
   ItemReorderPayloadDto,
   ItemReorderDeleteResultDto,
 )
+@CacheTTL(60)
 @Controller('item-reorders')
 @UseFilters(ItemReorderExceptionFilter)
 export class ItemsReorderMasterController {

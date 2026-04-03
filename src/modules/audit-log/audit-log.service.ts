@@ -17,6 +17,9 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 
 type AuditWriteClient = Prisma.TransactionClient | PrismaService;
+type AuditLogListRecord = Prisma.AuditLogGetPayload<{
+  include: { auditScreen: { select: { screenName: true } } };
+}>;
 
 @Injectable()
 export class AuditLogService {
@@ -119,9 +122,13 @@ export class AuditLogService {
         take: limit,
       }),
     ]);
+    const [userNameById, branchNameById] = await Promise.all([
+      this.getUserNameById(records),
+      this.getBranchNameById(records),
+    ]);
 
     return {
-      items: records.map((record) => this.toListItem(record)),
+      items: records.map((record) => this.toListItem(record, userNameById, branchNameById)),
       meta: {
         page,
         limit,
@@ -337,9 +344,9 @@ export class AuditLogService {
   }
 
   private toListItem(
-    record: Prisma.AuditLogGetPayload<{
-      include: { auditScreen: { select: { screenName: true } } };
-    }>,
+    record: AuditLogListRecord,
+    userNameById: ReadonlyMap<string, string>,
+    branchNameById: ReadonlyMap<string, string>,
   ): AuditLogListItem {
     return {
       log_id: record.logId,
@@ -354,9 +361,67 @@ export class AuditLogService {
       log_modified_record: record.logModifiedRecord,
       log_changed_fields: record.logChangedFields,
       log_user_id: record.logUserId,
+      log_user_name: record.logUserId ? userNameById.get(record.logUserId) ?? null : null,
       log_branch_id: record.logBranchId,
+      log_branch_name: record.logBranchId ? branchNameById.get(record.logBranchId) ?? null : null,
       log_notes: record.logNotes,
     };
+  }
+
+  private async getUserNameById(records: AuditLogListRecord[]): Promise<Map<string, string>> {
+    const userIds = Array.from(
+      new Set(
+        records
+          .map((record) => record.logUserId)
+          .filter((userId): userId is string => Boolean(userId)),
+      ),
+    );
+
+    if (userIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: {
+        user_id: {
+          in: userIds,
+        },
+      },
+      select: {
+        user_id: true,
+        user_name: true,
+      },
+    });
+
+    return new Map(users.map((user) => [user.user_id, user.user_name]));
+  }
+
+  private async getBranchNameById(records: AuditLogListRecord[]): Promise<Map<string, string>> {
+    const branchIds = Array.from(
+      new Set(
+        records
+          .map((record) => record.logBranchId)
+          .filter((branchId): branchId is string => Boolean(branchId)),
+      ),
+    );
+
+    if (branchIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    const branches = await this.prisma.branchMaster.findMany({
+      where: {
+        brId: {
+          in: branchIds,
+        },
+      },
+      select: {
+        brId: true,
+        brName: true,
+      },
+    });
+
+    return new Map(branches.map((branch) => [branch.brId, branch.brName]));
   }
 
   private normalizeScreenType(screenType?: string): AuditScreenType {
@@ -384,7 +449,6 @@ export class AuditLogService {
     const diff = this.computeJsonDiff(originalRecord, modifiedRecord);
     return diff ?? null;
   }
-
   private computeJsonDiff(
     left: Prisma.JsonValue | null,
     right: Prisma.JsonValue | null,
@@ -392,7 +456,6 @@ export class AuditLogService {
     if (this.areJsonValuesEqual(left, right)) {
       return undefined;
     }
-
     if (this.isJsonObject(left) && this.isJsonObject(right)) {
       const diff: Prisma.JsonObject = {};
       const keys = new Set<string>([...Object.keys(left), ...Object.keys(right)]);
@@ -406,16 +469,13 @@ export class AuditLogService {
           diff[key] = childDiff;
         }
       }
-
       return Object.keys(diff).length > 0 ? diff : undefined;
     }
-
     return {
       from: left ?? null,
       to: right ?? null,
     };
   }
-
   private areJsonValuesEqual(
     left: Prisma.JsonValue | null,
     right: Prisma.JsonValue | null,
@@ -423,11 +483,9 @@ export class AuditLogService {
     if (left === right) {
       return true;
     }
-
     if (left === null || right === null) {
       return false;
     }
-
     if (Array.isArray(left) && Array.isArray(right)) {
       if (left.length !== right.length) {
         return false;
@@ -439,7 +497,6 @@ export class AuditLogService {
       }
       return true;
     }
-
     if (this.isJsonObject(left) && this.isJsonObject(right)) {
       const leftKeys = Object.keys(left);
       const rightKeys = Object.keys(right);
@@ -461,74 +518,58 @@ export class AuditLogService {
 
     return false;
   }
-
   private isJsonObject(value: Prisma.JsonValue | null): value is Prisma.JsonObject {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   }
-
   private toJsonInput(
     value: unknown,
   ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined {
     if (value === undefined) {
       return undefined;
     }
-
     if (value === null) {
       return Prisma.JsonNull;
     }
-
     return this.normalizeJsonValue(value) as Prisma.InputJsonValue;
   }
-
   private toNullableJson(value: unknown): Prisma.JsonValue | null {
     if (value === undefined || value === null) {
       return null;
     }
-
     return this.normalizeJsonValue(value);
   }
-
   private normalizeJsonValue(value: unknown): Prisma.JsonValue {
     return JSON.parse(JSON.stringify(value)) as Prisma.JsonValue;
   }
-
   private normalizePk(value: string | number | bigint | null | undefined): string | null {
     if (value === undefined || value === null) {
       return null;
     }
-
     const normalized = String(value).trim();
     return normalized || null;
   }
-
   private normalizeOptionalText(value: string | null | undefined): string | null {
     if (value === undefined || value === null) {
       return null;
     }
-
     const normalized = value.trim();
     return normalized || null;
   }
-
   private normalizeUuid(value: string | number | null | undefined): string | null {
     if (value === undefined || value === null) {
       return null;
     }
-
     const normalized = String(value).trim();
     if (!normalized) {
       return null;
     }
-
     return UUID_PATTERN.test(normalized) ? normalized : null;
   }
-
   private resolveAuditUserId(providedUserId: string | number | null | undefined): string | null {
     const explicitUserId = this.normalizeUuid(providedUserId);
     if (explicitUserId) {
       return explicitUserId;
     }
-
     return this.normalizeUuid(this.requestContextService.getUserId());
   }
 

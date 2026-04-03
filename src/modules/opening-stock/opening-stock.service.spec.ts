@@ -16,13 +16,11 @@ import {
 import { SaveOpeningStockDto } from './dto/save-opening-stock.dto';
 import { OpeningStockStatus } from './opening-stock.enums';
 import { OpeningStockService } from './opening-stock.service';
-
 jest.mock('../accountsModule/accountVoucherHeader/account-voucher-header.helper', () => ({
   createAccountVoucherHeader: jest.fn(),
   updateAccountVoucherHeader: jest.fn(),
   softDeleteAccountVoucherHeader: jest.fn(),
 }));
-
 const COMPANY_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0001';
 const BRANCH_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0002';
 const PARTY_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0003';
@@ -38,7 +36,6 @@ const OPENING_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0012';
 const DETAIL_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0013';
 const SESSION_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0014';
 const DEVICE_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0015';
-
 type OpeningStockTxMock = {
   openingStockHeader: {
     count: jest.Mock;
@@ -81,19 +78,15 @@ type OpeningStockTxMock = {
     findMany: jest.Mock;
   };
 };
-
 type PrismaMock = OpeningStockTxMock & {
   $transaction: jest.Mock;
 };
-
 type AuditLogServiceMock = {
   logEntityChange: jest.Mock;
 };
-
 type RequestContextServiceMock = {
   getUserId: jest.Mock<string | null, []>;
 };
-
 const makeSaveDto = (overrides: Partial<SaveOpeningStockDto> = {}): SaveOpeningStockDto => ({
   header: {
     osh_acc_year: '2025-2026',
@@ -148,7 +141,6 @@ const makeSaveDto = (overrides: Partial<SaveOpeningStockDto> = {}): SaveOpeningS
   ],
   ...overrides,
 });
-
 const makeVoucherHeaderRecord = (
   overrides: Partial<AccVoucherHeader> = {},
 ): AccVoucherHeader =>
@@ -199,7 +191,6 @@ const makeVoucherHeaderRecord = (
     avhUpdatedBy: null,
     ...overrides,
   }) as AccVoucherHeader;
-
 const makeOpeningHeaderWithVoucher = (voucherHeader: AccVoucherHeader, overrides: Record<string, unknown> = {}) =>
   ({
     oshId: OPENING_ID,
@@ -230,7 +221,6 @@ const makeOpeningHeaderWithVoucher = (voucherHeader: AccVoucherHeader, overrides
     voucherHeader,
     ...overrides,
   }) as any;
-
 const makeDetailRecord = (overrides: Record<string, unknown> = {}) =>
   ({
     oslId: DETAIL_ID,
@@ -290,14 +280,12 @@ const makeDetailRecord = (overrides: Record<string, unknown> = {}) =>
     oslUpdatedBy: null,
     ...overrides,
   }) as any;
-
 describe('OpeningStockService', () => {
   let service: OpeningStockService;
   let tx: OpeningStockTxMock;
   let prisma: PrismaMock;
   let auditLogService: AuditLogServiceMock;
   let requestContextService: RequestContextServiceMock;
-
   beforeEach(() => {
     tx = {
       openingStockHeader: {
@@ -341,28 +329,23 @@ describe('OpeningStockService', () => {
         findMany: jest.fn(),
       },
     };
-
     prisma = {
       ...tx,
       $transaction: jest.fn(async (callback: (client: unknown) => Promise<unknown>) =>
         callback(tx),
       ),
     };
-
     auditLogService = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
     };
-
     requestContextService = {
       getUserId: jest.fn().mockReturnValue(USER_ID),
     };
-
     service = new OpeningStockService(
       prisma as unknown as PrismaService,
       auditLogService as unknown as AuditLogService,
       requestContextService as unknown as RequestContextService,
     );
-
     tx.itemMaster.findMany.mockResolvedValue([
       {
         itemId: ITEM_ID,
@@ -424,7 +407,6 @@ describe('OpeningStockService', () => {
   afterEach(() => {
     jest.clearAllMocks();
   });
-
   it('creates opening stock by creating voucher header first and linking header/detail rows', async () => {
     const voucherHeader = makeVoucherHeaderRecord();
     (createAccountVoucherHeader as jest.MockedFunction<typeof createAccountVoucherHeader>).mockResolvedValue(
@@ -434,9 +416,7 @@ describe('OpeningStockService', () => {
     tx.openingStockHeader.findFirst.mockResolvedValue(makeOpeningHeaderWithVoucher(voucherHeader));
     tx.openingStockDetail.createMany.mockResolvedValue({ count: 1 });
     tx.openingStockDetail.findMany.mockResolvedValue([makeDetailRecord()]);
-
     const result = await service.save(makeSaveDto());
-
     expect(createAccountVoucherHeader).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({
@@ -480,6 +460,19 @@ describe('OpeningStockService', () => {
         }),
       ],
     });
+    expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'New',
+        tableName: 'opening_stock_header',
+        screenName: 'Opening Stock',
+        screenType: 'transaction',
+        pk: VOUCHER_ID,
+        userId: USER_ID,
+        branchId: BRANCH_ID,
+        notes: 'Opening stock created',
+      }),
+      tx,
+    );
     expect(result.header.avh_voucher_id).toBe(VOUCHER_ID);
     expect(result.details[0].osl_item_name).toBe('Opening Item');
     expect(result.details[0].osl_base_uom_name).toBe('BOX');
@@ -561,6 +554,19 @@ describe('OpeningStockService', () => {
         }),
       ],
     });
+    expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'update',
+        tableName: 'opening_stock_header',
+        screenName: 'Opening Stock',
+        screenType: 'transaction',
+        pk: VOUCHER_ID,
+        userId: USER_ID,
+        branchId: BRANCH_ID,
+        notes: 'Opening stock updated',
+      }),
+      tx,
+    );
   });
 
   it('soft deletes opening stock by avh_voucher_id', async () => {
@@ -607,6 +613,19 @@ describe('OpeningStockService', () => {
       avh_voucher_id: VOUCHER_ID,
       deleted: true,
     });
+    expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'cancel',
+        tableName: 'opening_stock_header',
+        screenName: 'Opening Stock',
+        screenType: 'transaction',
+        pk: VOUCHER_ID,
+        userId: USER_ID,
+        branchId: BRANCH_ID,
+        notes: 'Opening stock deleted',
+      }),
+      tx,
+    );
   });
 
   it('gets opening stock by voucher id with enriched detail labels', async () => {

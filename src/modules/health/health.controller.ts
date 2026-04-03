@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Controller, Get, ServiceUnavailableException, Version } from '@nestjs/common';
 import {
   ApiOkResponse,
@@ -11,6 +12,7 @@ import { HealthResponseDto } from './dto/health-response.dto';
 import { HealthService } from './health.service';
 
 @ApiTags('Health')
+@CacheTTL(0)
 @Controller('health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}

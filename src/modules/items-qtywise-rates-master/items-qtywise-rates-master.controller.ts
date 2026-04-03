@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -42,6 +43,7 @@ import {
 @ApiTags('Item Qtywise Rates')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(60)
 @Controller('item-qtywise-rates')
 @UseFilters(ItemQtywiseRateExceptionFilter)
 export class ItemsQtywiseRatesMasterController {

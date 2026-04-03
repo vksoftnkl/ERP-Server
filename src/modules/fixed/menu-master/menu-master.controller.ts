@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Controller, Get, Query, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -24,6 +25,7 @@ import {
 @ApiTags('Menu Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(86400)
 @Controller('menu-masters')
 export class MenuMasterController {
   constructor(private readonly menuMasterService: MenuMasterService) {}
@@ -51,4 +53,3 @@ export class MenuMasterController {
     };
   }
 }
-

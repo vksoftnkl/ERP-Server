@@ -29,7 +29,9 @@ export interface AuditLogListItem {
   log_modified_record: unknown;
   log_changed_fields: unknown;
   log_user_id: string | null;
+  log_user_name: string | null;
   log_branch_id: string | null;
+  log_branch_name: string | null;
   log_notes: string | null;
 }
 

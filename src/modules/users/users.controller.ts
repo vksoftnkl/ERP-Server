@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -33,6 +34,7 @@ import { UserResponseDto } from './dto/user-response.dto';
 import { UsersService } from './users.service';
 @Public()
 @ApiTags('Users')
+@CacheTTL(0)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -43,6 +44,7 @@ import {
 @ApiTags('Opening Stock')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(60)
 @Controller('opening-stocks')
 @UseFilters(OpeningStockExceptionFilter)
 export class OpeningStockController {

@@ -379,7 +379,7 @@ export const swaggerModuleDocuments = [
     include: [UserLoginSessionsModule],
   },
   {
-    path: 'audit-log',
+    path: 'audit-logs',
     title: 'Audit Log API',
     description: 'Audit log module endpoints',
     include: [AuditLogModule],

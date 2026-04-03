@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { RedisCacheService } from '../../common/redis/redis-cache.service';
 import { AccessTokenPayload } from './token.service';
@@ -37,11 +37,19 @@ export class AuthSessionService {
       exp: payload.exp,
     };
 
-    await this.redisCacheService.set(
-      this.buildSessionKey(payload.sid),
-      JSON.stringify(session),
-      ttlSeconds,
-    );
+    try {
+      await this.redisCacheService.set(
+        this.buildSessionKey(payload.sid),
+        JSON.stringify(session),
+        ttlSeconds,
+      );
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   async assertAccessTokenIsActive(token: string, payload: AccessTokenPayload): Promise<void> {
@@ -49,7 +57,17 @@ export class AuthSessionService {
       return;
     }
 
-    const cachedSessionValue = await this.redisCacheService.get(this.buildSessionKey(payload.sid));
+    let cachedSessionValue: string | null;
+    try {
+      cachedSessionValue = await this.redisCacheService.get(this.buildSessionKey(payload.sid));
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return;
+      }
+
+      throw error;
+    }
+
     if (!cachedSessionValue) {
       throw new UnauthorizedException('Access token is no longer active');
     }
@@ -75,7 +93,15 @@ export class AuthSessionService {
       return;
     }
 
-    await this.redisCacheService.del(this.buildSessionKey(payload.sid));
+    try {
+      await this.redisCacheService.del(this.buildSessionKey(payload.sid));
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        return;
+      }
+
+      throw error;
+    }
   }
 
   private buildSessionKey(sessionId: string): string {

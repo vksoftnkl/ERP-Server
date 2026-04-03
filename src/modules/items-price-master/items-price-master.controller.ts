@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   BadRequestException,
   Body,
@@ -74,6 +75,7 @@ import {
   ItemPriceDeleteResultDto,
   ItemUnitConversionDeleteResultDto,
 )
+@CacheTTL(60)
 @Controller('item-prices')
 @UseFilters(ItemPriceExceptionFilter)
 export class ItemsPriceMasterController {

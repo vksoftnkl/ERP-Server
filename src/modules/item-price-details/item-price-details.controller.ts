@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Controller, Get, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -32,6 +33,7 @@ import {
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @ApiExtraModels(ItemPayloadDto, ItemPricePayloadDto, ItemTaxPayloadDto, ItemPriceDetailPayloadDto)
+@CacheTTL(60)
 @Controller('item-price-details')
 @UseFilters(ItemPriceDetailExceptionFilter)
 export class ItemPriceDetailsController {

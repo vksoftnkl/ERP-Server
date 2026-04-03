@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Controller, Get, Query, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -19,6 +20,7 @@ import { MasterLookupQueryDto } from './dto/master-lookup-query.dto';
 @ApiTags('Master Lookup')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(86400)
 @Controller('master-lookups')
 export class MasterLookupController {
   constructor(private readonly masterLookupService: MasterLookupService) {}

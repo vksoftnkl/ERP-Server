@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { HttpCacheInterceptor } from './common/interceptors/http-cache.interceptor';
+import { HttpCacheInvalidationInterceptor } from './common/interceptors/http-cache-invalidation.interceptor';
 import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
@@ -166,6 +168,14 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: HttpCacheInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: HttpCacheInvalidationInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,

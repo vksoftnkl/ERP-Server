@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -43,6 +44,7 @@ import { UnitsMasterService } from './units-master.service';
 @ApiTags('Units')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(86400)
 @Controller('units')
 @UseFilters(UnitExceptionFilter)
 export class UnitsMasterController {

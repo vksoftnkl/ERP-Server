@@ -5,6 +5,12 @@ import { AuditLogService } from './audit-log.service';
 
 type PrismaMock = {
   $executeRaw: jest.Mock;
+  branchMaster: {
+    findMany: jest.Mock;
+  };
+  user: {
+    findMany: jest.Mock;
+  };
   auditScreen: {
     findFirst: jest.Mock;
     create: jest.Mock;
@@ -33,6 +39,12 @@ describe('AuditLogService', () => {
   beforeEach(() => {
     prisma = {
       $executeRaw: jest.fn(),
+      branchMaster: {
+        findMany: jest.fn(),
+      },
+      user: {
+        findMany: jest.fn(),
+      },
       auditScreen: {
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -181,7 +193,6 @@ describe('AuditLogService', () => {
     prisma.auditLog.create.mockResolvedValue({
       logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
     });
-    prisma.$executeRaw.mockResolvedValue(1);
 
     await service.createAuditLog({
       action: 'insert',
@@ -193,7 +204,6 @@ describe('AuditLogService', () => {
 
     const createArgs = getCreateArgs(prisma);
     expect(createArgs.data.logUserId).toBe('019d6f6c-be87-7a11-8905-36092c46fd06');
-    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
   });
 
   it('createAuditLog rejects unsupported delete action', async () => {
@@ -221,12 +231,24 @@ describe('AuditLogService', () => {
         logOriginalRecord: { itg_name: 'Raw Materials' },
         logModifiedRecord: null,
         logChangedFields: null,
-        logUserId: null,
-        logBranchId: null,
+        logUserId: '019d6f6c-be87-7a11-8905-36092c46fd06',
+        logBranchId: '019d6f6c-be87-7a11-8905-36092c46fd07',
         logNotes: 'Item group created',
         auditScreen: {
           screenName: 'Item Group Master',
         },
+      },
+    ]);
+    prisma.user.findMany.mockResolvedValue([
+      {
+        user_id: '019d6f6c-be87-7a11-8905-36092c46fd06',
+        user_name: 'Admin User',
+      },
+    ]);
+    prisma.branchMaster.findMany.mockResolvedValue([
+      {
+        brId: '019d6f6c-be87-7a11-8905-36092c46fd07',
+        brName: 'Head Office',
       },
     ]);
 
@@ -240,8 +262,14 @@ describe('AuditLogService', () => {
 
     expect(prisma.auditLog.count).toHaveBeenCalledTimes(1);
     expect(prisma.auditLog.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.branchMaster.findMany).toHaveBeenCalledTimes(1);
     expect(result.meta.total).toBe(1);
     expect(result.items[0].log_action).toBe('New');
+    expect(result.items[0].log_user_id).toBe('019d6f6c-be87-7a11-8905-36092c46fd06');
+    expect(result.items[0].log_user_name).toBe('Admin User');
+    expect(result.items[0].log_branch_id).toBe('019d6f6c-be87-7a11-8905-36092c46fd07');
+    expect(result.items[0].log_branch_name).toBe('Head Office');
   });
 
   it('list rejects invalid date range', async () => {
