@@ -18,16 +18,13 @@ import {
   GodownListMeta,
   GodownPayload,
 } from './types/godown-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const GODOWN_LOCATION_TABLE_NAME = 'godown_locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
-
 type GodownLocationWriteClient = Prisma.TransactionClient | PrismaService;
-
 @Injectable()
 export class GodownsMasterService {
   constructor(
@@ -35,23 +32,18 @@ export class GodownsMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
     const normalizedSaveGodownDto = this.normalizeLegacySaveGodownDto(saveGodownDto);
-
     if (normalizedSaveGodownDto.gdl_id) {
       return this.updateGodownLocation(normalizedSaveGodownDto);
     }
-
     return this.createGodownLocation(normalizedSaveGodownDto);
   }
-
   async getList(
     queryDto: ListOrGetGodownQueryDto,
   ): Promise<ConfiguredGridListResult<GodownListItem, GodownListMeta>> {
     return this.list(queryDto);
   }
-
   async list(
     queryDto: ListOrGetGodownQueryDto,
   ): Promise<ConfiguredGridListResult<GodownListItem, GodownListMeta>> {
@@ -63,7 +55,6 @@ export class GodownsMasterService {
       return configuredList;
     }
     const where = this.buildListWhere(queryDto);
-
     const [total, records] = await Promise.all([
       this.prisma.godownLocation.count({ where }),
       this.prisma.godownLocation.findMany({
@@ -73,7 +64,6 @@ export class GodownsMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -84,7 +74,6 @@ export class GodownsMasterService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     queryDto: ListOrGetGodownQueryDto,
     page: number,
@@ -106,7 +95,6 @@ export class GodownsMasterService {
     if (!rawGridSql) {
       return null;
     }
-
     const validation = this.configuredGridSqlService.validateBaseSql({
       sql: rawGridSql,
       tableName: GODOWN_LOCATION_TABLE_NAME,
@@ -119,7 +107,6 @@ export class GodownsMasterService {
         },
       ]);
     }
-
     const baseSql = validation.normalizedSql;
     const searchableFieldNames = queryDto.search?.trim()
       ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
@@ -138,7 +125,6 @@ export class GodownsMasterService {
         skip,
           gridId: configuredGrid.gridId,
       });
-
       return {
         items: result.items,
         meta: {
@@ -158,7 +144,6 @@ export class GodownsMasterService {
       ]);
     }
   }
-
   private buildConfiguredGridListSql(
     baseSql: string,
     queryDto: ListOrGetGodownQueryDto,
@@ -166,27 +151,22 @@ export class GodownsMasterService {
   ): { sql: string; params: unknown[] } {
     const conditions: string[] = [];
     const params: unknown[] = [];
-
     if (queryDto.gdl_godown_id !== undefined) {
       params.push(queryDto.gdl_godown_id);
       conditions.push(`godown_grid.gdl_godown_id = $${params.length}`);
     }
-
     if (queryDto.gdl_branch_id !== undefined) {
       params.push(queryDto.gdl_branch_id);
       conditions.push(`godown_grid.gdl_branch_id = $${params.length}`);
     }
-
     if (queryDto.gdl_parent_id !== undefined) {
       params.push(queryDto.gdl_parent_id);
       conditions.push(`godown_grid.gdl_parent_id = $${params.length}`);
     }
-
     if (queryDto.gdl_is_active !== undefined) {
       params.push(queryDto.gdl_is_active);
       conditions.push(`godown_grid.gdl_is_active = $${params.length}`);
     }
-
     if (queryDto.search?.trim()) {
       const searchText = `%${queryDto.search.trim()}%`;
       if (searchableFieldNames.length > 0) {
@@ -209,14 +189,12 @@ export class GodownsMasterService {
         conditions.push('1 = 0');
       }
     }
-
     const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     return {
       sql: `SELECT * FROM (${baseSql}) AS godown_grid${whereClause}`,
       params,
     };
   }
-
   private async getConfiguredSearchableFieldNames(
     gridId: bigint,
     baseSql: string,
@@ -225,7 +203,6 @@ export class GodownsMasterService {
     if (sqlFieldNames.length === 0) {
       return [];
     }
-
     const configuredColumns = await this.prisma.gridColumn.findMany({
       where: {
         gridId,
@@ -240,7 +217,6 @@ export class GodownsMasterService {
         gridColumnName: true,
       },
     });
-
     const filteredColumnNames: string[] = [];
     for (const column of configuredColumns) {
       const columnName = column.gridColumnName.trim();
@@ -249,20 +225,17 @@ export class GodownsMasterService {
       }
       filteredColumnNames.push(columnName);
     }
-
     const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
       fieldName,
       normalizedFieldName: this.normalizeSearchColumnName(fieldName),
     }));
     const usedSqlFieldIndexes = new Set<number>();
     const matchedFieldNames: string[] = [];
-
     for (const columnName of filteredColumnNames) {
       const normalizedColumnName = this.normalizeSearchColumnName(columnName);
       if (!normalizedColumnName) {
         continue;
       }
-
       const matchedSqlFieldIndex = normalizedSqlFields.findIndex(
         (sqlField, index) =>
           !usedSqlFieldIndexes.has(index) && sqlField.normalizedFieldName === normalizedColumnName,
@@ -272,25 +245,20 @@ export class GodownsMasterService {
         matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
       }
     }
-
     if (matchedFieldNames.length > 0) {
       return matchedFieldNames;
     }
-
     const fallbackFieldCount = Math.min(filteredColumnNames.length, sqlFieldNames.length);
     return sqlFieldNames.slice(0, fallbackFieldCount);
   }
-
   private normalizeSearchColumnName(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
-
   private extractSelectFieldNames(sql: string): string[] {
     const selectClause = this.extractTopLevelSelectClause(sql);
     if (!selectClause) {
       return [];
     }
-
     const expressions = this.splitTopLevelCommaSeparated(selectClause);
     const fieldNames: string[] = [];
     for (const expression of expressions) {
@@ -304,23 +272,19 @@ export class GodownsMasterService {
     }
     return fieldNames;
   }
-
   private extractTopLevelSelectClause(sql: string): string | null {
     const trimmed = sql.trim();
     const selectMatch = trimmed.match(/^select\b/i);
     if (!selectMatch) {
       return null;
     }
-
     const selectStartIndex = selectMatch[0].length;
     let depth = 0;
     let insideSingleQuote = false;
     let insideDoubleQuote = false;
-
     for (let i = selectStartIndex; i < trimmed.length; i += 1) {
       const current = trimmed[i];
       const next = trimmed[i + 1];
-
       if (insideSingleQuote) {
         if (current === "'" && next === "'") {
           i += 1;
@@ -331,7 +295,6 @@ export class GodownsMasterService {
         }
         continue;
       }
-
       if (insideDoubleQuote) {
         if (current === '"' && next === '"') {
           i += 1;
@@ -342,7 +305,6 @@ export class GodownsMasterService {
         }
         continue;
       }
-
       if (current === "'") {
         insideSingleQuote = true;
         continue;
@@ -359,7 +321,6 @@ export class GodownsMasterService {
         depth = Math.max(0, depth - 1);
         continue;
       }
-
       if (
         depth === 0 &&
         /^from$/i.test(trimmed.slice(i, i + 4)) &&

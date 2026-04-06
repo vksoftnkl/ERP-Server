@@ -74,6 +74,35 @@ describe('GridDetailsService', () => {
     expect(result.grid_sql).toBe('SELECT brand_id, brand_name FROM inventory.item_brand_master');
   });
 
+  it('preserves valid raw sql formatting when saving', async () => {
+    prisma.$queryRawUnsafe.mockResolvedValueOnce([]);
+    prisma.gridDetails.create.mockResolvedValueOnce(
+      makeRecord({
+        gridSql:
+          'SELECT brand_id,\n       brand_name\nFROM inventory.item_brand_master\nORDER BY brand_name',
+      }),
+    );
+
+    const result = await service.save({
+      grid_name: 'Item Brand Master',
+      grid_sql:
+        '  SELECT brand_id,\n       brand_name\nFROM inventory.item_brand_master\nORDER BY brand_name;  ',
+    });
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      'SELECT * FROM (SELECT brand_id,\n       brand_name\nFROM inventory.item_brand_master\nORDER BY brand_name) AS grid_sql_validation LIMIT 0',
+    );
+    expect(prisma.gridDetails.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        gridSql:
+          'SELECT brand_id,\n       brand_name\nFROM inventory.item_brand_master\nORDER BY brand_name',
+      }),
+    });
+    expect(result.grid_sql).toBe(
+      'SELECT brand_id,\n       brand_name\nFROM inventory.item_brand_master\nORDER BY brand_name',
+    );
+  });
+
   it('rejects grid_sql that cannot be executed', async () => {
     prisma.$queryRawUnsafe.mockRejectedValueOnce(new Error('syntax error at or near "FROM"'));
 

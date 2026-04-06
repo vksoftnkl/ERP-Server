@@ -2,13 +2,11 @@ export interface GodownErrorDetail {
   field: string;
   message: string;
 }
-
 export interface GodownErrorResponse {
   success: false;
   message: string;
   errors: GodownErrorDetail[];
 }
-
 export interface GodownSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
@@ -16,7 +14,6 @@ export interface GodownSuccessResponse<T, TMeta = Record<string, unknown>, TStyl
   meta?: TMeta;
   styles?: TStyles;
 }
-
 export interface GodownPayload {
   gdl_id: string;
   gdl_godown_id: string;
@@ -41,9 +38,7 @@ export interface GodownPayload {
   gdl_modified_by: string | null;
   gdl_remarks: string | null;
 }
-
 export type GodownListItem = GodownPayload | Record<string, unknown>;
-
 export interface GodownListMeta {
   page: number;
   limit: number;

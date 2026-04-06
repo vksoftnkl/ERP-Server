@@ -143,15 +143,21 @@ describe('ConfiguredGridSqlService', () => {
     });
   });
 
-  it('normalizes a top-level trailing comma before FROM', () => {
+  it('preserves valid raw sql formatting apart from trimming a trailing semicolon', () => {
     const result = service.validateBaseSql({
-      sql: "SELECT unit_id, ', FROM' AS label, FROM units",
+      sql: `  SELECT unit_id,
+         unit_name
+FROM units
+ORDER BY unit_name;  `,
       tableName: 'units',
     });
 
     expect(result).toEqual({
       isValid: true,
-      normalizedSql: "SELECT unit_id, ', FROM' AS label FROM units",
+      normalizedSql: `SELECT unit_id,
+         unit_name
+FROM units
+ORDER BY unit_name`,
     });
   });
 

@@ -16,8 +16,6 @@ const GRID_SQL_FORBIDDEN_TOKENS =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 const POSITIONAL_PARAMETER_PATTERN = /\$[1-9][0-9]*/;
-const GRID_SQL_TRAILING_COMMA_CLAUSE_PATTERN =
-  /^(from|where|group\s+by|order\s+by|having|union|limit|offset)\b/i;
 @Injectable()
 export class ConfiguredGridSqlService {
   constructor(private readonly prisma: PrismaService) { }
@@ -63,7 +61,7 @@ export class ConfiguredGridSqlService {
     });
   }
   validateBaseSql(options: ValidateConfiguredGridSqlOptions): ConfiguredGridSqlValidationResult {
-    const normalizedSql = this.normalizeBaseSql(options.sql);
+    const normalizedSql = this.prepareBaseSql(options.sql);
     if (!/^select\b/i.test(normalizedSql)) {
       return {
         isValid: false,
@@ -194,71 +192,8 @@ export class ConfiguredGridSqlService {
     }
     return 0;
   }
-  private normalizeBaseSql(sql: string): string {
-    const trimmed = sql.trim().replace(/;+\s*$/g, '');
-    return this.removeTopLevelTrailingCommaBeforeClause(trimmed);
-  }
-  private removeTopLevelTrailingCommaBeforeClause(sql: string): string {
-    let depth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-    let normalized = '';
-    for (let index = 0; index < sql.length; index += 1) {
-      const current = sql[index];
-      const next = sql[index + 1];
-      if (insideSingleQuote) {
-        normalized += current;
-        if (current === "'" && next === "'") {
-          normalized += next;
-          index += 1;
-          continue;
-        }
-        if (current === "'") {
-          insideSingleQuote = false;
-        }
-        continue;
-      }
-      if (insideDoubleQuote) {
-        normalized += current;
-        if (current === '"' && next === '"') {
-          normalized += next;
-          index += 1;
-          continue;
-        }
-        if (current === '"') {
-          insideDoubleQuote = false;
-        }
-        continue;
-      }
-      if (current === "'") {
-        insideSingleQuote = true;
-        normalized += current;
-        continue;
-      }
-      if (current === '"') {
-        insideDoubleQuote = true;
-        normalized += current;
-        continue;
-      }
-      if (current === '(') {
-        depth += 1;
-        normalized += current;
-        continue;
-      }
-      if (current === ')') {
-        depth = Math.max(0, depth - 1);
-        normalized += current;
-        continue;
-      }
-      if (current === ',' && depth === 0) {
-        const nextToken = sql.slice(index + 1).trimStart();
-        if (GRID_SQL_TRAILING_COMMA_CLAUSE_PATTERN.test(nextToken)) {
-          continue;
-        }
-      }
-      normalized += current;
-    }
-    return normalized;
+  private prepareBaseSql(sql: string): string {
+    return sql.trim().replace(/;+\s*$/g, '');
   }
   extractTopLevelFromTableName(sql: string): string | null {
     const trimmed = sql.trim();
