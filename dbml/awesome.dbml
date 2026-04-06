@@ -2085,6 +2085,83 @@ Table cust_item_rates {
   csrRemarks String
 }
 
+Table loyaltysch_gift {
+  gift_ls_id Int [not null]
+  gift_slno Int [not null]
+  gift_item_id Int [not null]
+  gift_unit_id Int [not null]
+  gift_qty Decimal [not null, default: 1]
+  gift_points Decimal [not null]
+  gift_repeat Boolean [not null, default: false]
+  gift_is_active Boolean [not null, default: true]
+  gift_is_deleted Boolean [not null, default: false]
+  created_on DateTime [default: `now()`, not null]
+  created_by Int
+  modified_on DateTime
+  modified_by Int
+  scheme loyaltysch_list [not null]
+
+  indexes {
+    (gift_ls_id, gift_slno) [pk]
+    (gift_ls_id, gift_item_id, gift_unit_id, gift_points) [unique]
+  }
+}
+
+Table loyaltysch_list {
+  ls_id Int [pk, increment]
+  ls_code String [unique]
+  ls_name String [not null]
+  ls_type String [not null]
+  ls_apply_on String [not null, default: 'BILL_AMOUNT']
+  ls_bill_type String [not null, default: 'ALL']
+  ls_cust_type String [not null, default: 'ALL']
+  ls_item_type String [not null, default: 'ALL']
+  ls_start_date DateTime [not null]
+  ls_end_date DateTime [not null]
+  ls_comp_id Int [not null]
+  ls_branch_id Int
+  ls_points_per_inr Decimal [not null, default: 0]
+  ls_points_per_qty Decimal [not null, default: 0]
+  ls_min_bill_amount Decimal [not null, default: 0]
+  ls_max_points_per_bill Decimal [not null, default: 0]
+  ls_recur_apl Boolean [not null, default: false]
+  ls_bal_apl Boolean [not null, default: false]
+  ls_allow_point_earn Boolean [not null, default: true]
+  ls_allow_point_redeem Boolean [not null, default: false]
+  ls_allow_gift_redeem Boolean [not null, default: false]
+  ls_is_active Boolean [not null, default: true]
+  ls_is_deleted Boolean [not null, default: false]
+  created_on DateTime [default: `now()`, not null]
+  created_by Int
+  modified_on DateTime
+  modified_by Int
+  gifts loyaltysch_gift [not null]
+  points loyaltysch_points [not null]
+}
+
+Table loyaltysch_points {
+  lspt_id Int [pk, increment]
+  lspt_ls_id Int [not null]
+  lspt_slno Int [not null]
+  lspt_item_id Int
+  lspt_unit_id Int
+  lspt_exceeds Decimal [not null, default: 0]
+  lspt_each Decimal [not null, default: 1]
+  lspt_factor Decimal [not null, default: 1]
+  lspt_points Decimal [not null]
+  lspt_is_active Boolean [not null, default: true]
+  lspt_is_deleted Boolean [not null, default: false]
+  created_on DateTime [default: `now()`, not null]
+  created_by Int
+  modified_on DateTime
+  modified_by Int
+  scheme loyaltysch_list [not null]
+
+  indexes {
+    (lspt_ls_id, lspt_slno) [unique]
+  }
+}
+
 Table widget {
   widgetNo Int [pk, increment]
   widgetGroupId Int [not null]
@@ -2868,6 +2945,10 @@ Ref: opening_stock_header.oshCompanyId > companys.compId
 Ref: opening_stock_header.oshBranchId > branch_master.brId
 
 Ref: branch_master.compId > companys.compId
+
+Ref: loyaltysch_gift.gift_ls_id > loyaltysch_list.ls_id [delete: Cascade]
+
+Ref: loyaltysch_points.lspt_ls_id > loyaltysch_list.ls_id [delete: Cascade]
 
 Ref: suppliers.supGroupId > supplier_groups.spgId [delete: Restrict]
 

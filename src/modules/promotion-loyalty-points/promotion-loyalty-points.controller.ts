@@ -1,0 +1,308 @@
+import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
+import { DeleteLoyaltyGiftQueryDto } from './dto/delete-loyalty-gift-query.dto';
+import { DeleteLoyaltyPointQueryDto } from './dto/delete-loyalty-point-query.dto';
+import { DeleteLoyaltySchemeQueryDto } from './dto/delete-loyalty-scheme-query.dto';
+import { ListLoyaltyGiftQueryDto } from './dto/list-loyalty-gift-query.dto';
+import { ListLoyaltyPointQueryDto } from './dto/list-loyalty-point-query.dto';
+import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
+import { LoyaltyGiftIdQueryDto } from './dto/loyalty-gift-id-query.dto';
+import { LoyaltyPointIdQueryDto } from './dto/loyalty-point-id-query.dto';
+import { LoyaltySchemeIdQueryDto } from './dto/loyalty-scheme-id-query.dto';
+import {
+  LoyaltyGiftSuccessDeleteDto,
+  LoyaltyGiftSuccessListDto,
+  LoyaltyGiftSuccessSingleDto,
+  LoyaltyPointSuccessDeleteDto,
+  LoyaltyPointSuccessListDto,
+  LoyaltyPointSuccessSingleDto,
+  LoyaltySchemeSuccessDeleteDto,
+  LoyaltySchemeSuccessListDto,
+  LoyaltySchemeSuccessSingleDto,
+  PromotionLoyaltyPointsErrorResponseDto,
+} from './dto/promotion-loyalty-points-response.dto';
+import { SaveLoyaltyGiftDto } from './dto/save-loyalty-gift.dto';
+import { SaveLoyaltyPointDto } from './dto/save-loyalty-point.dto';
+import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
+import { PromotionLoyaltyPointsExceptionFilter } from './promotion-loyalty-points-exception.filter';
+import { PromotionLoyaltyPointsService } from './promotion-loyalty-points.service';
+import {
+  LoyaltyGiftDeleteResult,
+  LoyaltyGiftPayload,
+  LoyaltyPointDeleteResult,
+  LoyaltyPointPayload,
+  LoyaltySchemeDeleteResult,
+  LoyaltySchemePayload,
+  LoyaltySchemeSummaryPayload,
+  PromotionLoyaltyPointsListMeta,
+  PromotionLoyaltyPointsSuccessResponse,
+} from './types/promotion-loyalty-points-api.types';
+
+@ApiTags('Promotion Loyalty Points')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@Controller('promotion-loyalty-points')
+@UseFilters(PromotionLoyaltyPointsExceptionFilter)
+export class PromotionLoyaltyPointsController {
+  constructor(private readonly promotionLoyaltyPointsService: PromotionLoyaltyPointsService) {}
+
+  @Post('create')
+  @Version('1')
+  @ApiOperation({ summary: 'Create or update loyalty scheme by ls_id presence' })
+  @ApiCreatedResponse({ type: LoyaltySchemeSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiConflictResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async saveScheme(
+    @Body() saveLoyaltySchemeDto: SaveLoyaltySchemeDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemePayload>> {
+    const data = await this.promotionLoyaltyPointsService.saveScheme(saveLoyaltySchemeDto);
+
+    return {
+      success: true,
+      message: saveLoyaltySchemeDto.ls_id
+        ? 'Loyalty scheme updated successfully'
+        : 'Loyalty scheme created successfully',
+      data,
+    };
+  }
+
+  @Get('list')
+  @Version('1')
+  @ApiOperation({ summary: 'List loyalty schemes with basic filters and pagination' })
+  @ApiOkResponse({ type: LoyaltySchemeSuccessListDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async listSchemes(
+    @Query() queryDto: ListLoyaltySchemeQueryDto,
+  ): Promise<
+    PromotionLoyaltyPointsSuccessResponse<
+      LoyaltySchemeSummaryPayload[],
+      PromotionLoyaltyPointsListMeta
+    >
+  > {
+    const result = await this.promotionLoyaltyPointsService.listSchemes(queryDto);
+
+    return {
+      success: true,
+      message: 'Loyalty schemes fetched successfully',
+      data: result.items,
+      meta: result.meta,
+    };
+  }
+
+  @Get('get')
+  @Version('1')
+  @ApiOperation({ summary: 'Get loyalty scheme by ls_id with active points and gifts' })
+  @ApiOkResponse({ type: LoyaltySchemeSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async getSchemeById(
+    @Query() queryDto: LoyaltySchemeIdQueryDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemePayload>> {
+    const data = await this.promotionLoyaltyPointsService.getSchemeById(queryDto.ls_id);
+
+    return {
+      success: true,
+      message: 'Loyalty scheme fetched successfully',
+      data,
+    };
+  }
+
+  @Delete('delete')
+  @Version('1')
+  @ApiOperation({ summary: 'Soft delete loyalty scheme by ls_id' })
+  @ApiOkResponse({ type: LoyaltySchemeSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async deleteScheme(
+    @Query() queryDto: DeleteLoyaltySchemeQueryDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemeDeleteResult>> {
+    const data = await this.promotionLoyaltyPointsService.softDeleteScheme(
+      queryDto.ls_id,
+      queryDto.modified_by,
+    );
+
+    return {
+      success: true,
+      message: 'Loyalty scheme deleted successfully',
+      data,
+    };
+  }
+
+  @Post('points/create')
+  @Version('1')
+  @ApiOperation({ summary: 'Create or update loyalty point slab by lspt_id presence' })
+  @ApiCreatedResponse({ type: LoyaltyPointSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiConflictResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async savePoint(
+    @Body() saveLoyaltyPointDto: SaveLoyaltyPointDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyPointPayload>> {
+    const data = await this.promotionLoyaltyPointsService.savePoint(saveLoyaltyPointDto);
+
+    return {
+      success: true,
+      message: saveLoyaltyPointDto.lspt_id
+        ? 'Loyalty point updated successfully'
+        : 'Loyalty point created successfully',
+      data,
+    };
+  }
+
+  @Get('points/list')
+  @Version('1')
+  @ApiOperation({ summary: 'List loyalty point slabs for a scheme' })
+  @ApiOkResponse({ type: LoyaltyPointSuccessListDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async listPoints(
+    @Query() queryDto: ListLoyaltyPointQueryDto,
+  ): Promise<
+    PromotionLoyaltyPointsSuccessResponse<LoyaltyPointPayload[], PromotionLoyaltyPointsListMeta>
+  > {
+    const result = await this.promotionLoyaltyPointsService.listPoints(queryDto);
+
+    return {
+      success: true,
+      message: 'Loyalty points fetched successfully',
+      data: result.items,
+      meta: result.meta,
+    };
+  }
+
+  @Get('points/get')
+  @Version('1')
+  @ApiOperation({ summary: 'Get loyalty point slab by lspt_id' })
+  @ApiOkResponse({ type: LoyaltyPointSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async getPointById(
+    @Query() queryDto: LoyaltyPointIdQueryDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyPointPayload>> {
+    const data = await this.promotionLoyaltyPointsService.getPointById(queryDto.lspt_id);
+
+    return {
+      success: true,
+      message: 'Loyalty point fetched successfully',
+      data,
+    };
+  }
+
+  @Delete('points/delete')
+  @Version('1')
+  @ApiOperation({ summary: 'Soft delete loyalty point slab by lspt_id' })
+  @ApiOkResponse({ type: LoyaltyPointSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async deletePoint(
+    @Query() queryDto: DeleteLoyaltyPointQueryDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyPointDeleteResult>> {
+    const data = await this.promotionLoyaltyPointsService.softDeletePoint(
+      queryDto.lspt_id,
+      queryDto.modified_by,
+    );
+
+    return {
+      success: true,
+      message: 'Loyalty point deleted successfully',
+      data,
+    };
+  }
+
+  @Post('gifts/create')
+  @Version('1')
+  @ApiOperation({
+    summary: 'Create or update loyalty gift rule by gift_ls_id + gift_slno presence',
+  })
+  @ApiCreatedResponse({ type: LoyaltyGiftSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiConflictResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async saveGift(
+    @Body() saveLoyaltyGiftDto: SaveLoyaltyGiftDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftPayload>> {
+    const data = await this.promotionLoyaltyPointsService.saveGift(saveLoyaltyGiftDto);
+
+    return {
+      success: true,
+      message: saveLoyaltyGiftDto.gift_slno
+        ? 'Loyalty gift updated successfully'
+        : 'Loyalty gift created successfully',
+      data,
+    };
+  }
+
+  @Get('gifts/list')
+  @Version('1')
+  @ApiOperation({ summary: 'List loyalty gift rules for a scheme' })
+  @ApiOkResponse({ type: LoyaltyGiftSuccessListDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async listGifts(
+    @Query() queryDto: ListLoyaltyGiftQueryDto,
+  ): Promise<
+    PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftPayload[], PromotionLoyaltyPointsListMeta>
+  > {
+    const result = await this.promotionLoyaltyPointsService.listGifts(queryDto);
+
+    return {
+      success: true,
+      message: 'Loyalty gifts fetched successfully',
+      data: result.items,
+      meta: result.meta,
+    };
+  }
+
+  @Get('gifts/get')
+  @Version('1')
+  @ApiOperation({ summary: 'Get loyalty gift rule by gift_ls_id and gift_slno' })
+  @ApiOkResponse({ type: LoyaltyGiftSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async getGiftById(
+    @Query() queryDto: LoyaltyGiftIdQueryDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftPayload>> {
+    const data = await this.promotionLoyaltyPointsService.getGiftById(
+      queryDto.gift_ls_id,
+      queryDto.gift_slno,
+    );
+
+    return {
+      success: true,
+      message: 'Loyalty gift fetched successfully',
+      data,
+    };
+  }
+
+  @Delete('gifts/delete')
+  @Version('1')
+  @ApiOperation({ summary: 'Soft delete loyalty gift rule by gift_ls_id and gift_slno' })
+  @ApiOkResponse({ type: LoyaltyGiftSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async deleteGift(
+    @Query() queryDto: DeleteLoyaltyGiftQueryDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftDeleteResult>> {
+    const data = await this.promotionLoyaltyPointsService.softDeleteGift(
+      queryDto.gift_ls_id,
+      queryDto.gift_slno,
+      queryDto.modified_by,
+    );
+
+    return {
+      success: true,
+      message: 'Loyalty gift deleted successfully',
+      data,
+    };
+  }
+}

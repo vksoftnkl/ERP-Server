@@ -1,0 +1,30 @@
+model loyaltysch_points {
+  lspt_id         Int       @id @default(autoincrement())
+  lspt_ls_id      Int
+  lspt_slno       Int
+
+  lspt_item_id    Int?
+  lspt_unit_id    Int?
+
+  lspt_exceeds    Decimal   @default(0) @db.Decimal(18, 3)
+  lspt_each       Decimal   @default(1) @db.Decimal(18, 3)
+  lspt_factor     Decimal   @default(1) @db.Decimal(18, 4)
+  lspt_points     Decimal   @db.Decimal(18, 2)
+
+  lspt_is_active  Boolean   @default(true)
+  lspt_is_deleted Boolean   @default(false)
+
+  created_on      DateTime  @default(now()) @db.Timestamptz(6)
+  created_by      Int?
+  modified_on     DateTime? @db.Timestamptz(6)
+  modified_by     Int?
+
+  scheme          loyaltysch_list @relation("LoyaltySchemeToPoints", fields: [lspt_ls_id], references: [ls_id], onDelete: Cascade)
+
+  @@unique([lspt_ls_id, lspt_slno], map: "uq_loyaltysch_points_scheme_slno")
+  @@index([lspt_ls_id], map: "idx_loyaltysch_points_scheme")
+  @@index([lspt_item_id], map: "idx_loyaltysch_points_item")
+  @@index([lspt_unit_id], map: "idx_loyaltysch_points_unit")
+  @@map("loyaltysch_points")
+  @@schema("public")
+}

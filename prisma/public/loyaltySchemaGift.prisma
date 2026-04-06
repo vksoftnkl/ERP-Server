@@ -1,0 +1,28 @@
+model loyaltysch_gift {
+  gift_ls_id      Int
+  gift_slno       Int
+
+  gift_item_id    Int
+  gift_unit_id    Int
+  gift_qty        Decimal   @default(1) @db.Decimal(18, 3)
+
+  gift_points     Decimal   @db.Decimal(18, 2)
+  gift_repeat     Boolean   @default(false)
+
+  gift_is_active  Boolean   @default(true)
+  gift_is_deleted Boolean   @default(false)
+
+  created_on      DateTime  @default(now()) @db.Timestamptz(6)
+  created_by      Int?
+  modified_on     DateTime? @db.Timestamptz(6)
+  modified_by     Int?
+
+  scheme          loyaltysch_list @relation("LoyaltySchemeToGift", fields: [gift_ls_id], references: [ls_id], onDelete: Cascade)
+
+  @@id([gift_ls_id, gift_slno], map: "pkey_loyaltysch_gift")
+  @@unique([gift_ls_id, gift_item_id, gift_unit_id, gift_points], map: "uq_loyaltysch_gift")
+  @@index([gift_item_id], map: "idx_loyaltysch_gift_item")
+  @@index([gift_unit_id], map: "idx_loyaltysch_gift_unit")
+  @@map("loyaltysch_gift")
+  @@schema("public")
+}
