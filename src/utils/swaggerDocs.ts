@@ -53,7 +53,7 @@ import { UiTableColumnsModule } from '../modules/fixed/ui-table-columns/ui-table
 import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
 import { OpeningStockModule } from '../modules/opening-stock/opening-stock.module';
-import { PromotionLoyaltyPointsModule } from '../modules/promotion-loyalty-points/promotion-loyalty-points.module';
+import { PromotionLoyaltyPointsModule } from '../modules/sales/loyalty/promotion-loyalty-points.module';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',

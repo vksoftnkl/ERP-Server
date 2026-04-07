@@ -3521,115 +3521,6 @@ model CustItemRate {
   @@index([csrIsDeleted, csrIsActive], map: "idx_csr_active_deleted")
 }
 
-// ----- prisma/public/loyaltySchemaGift.prisma -----
-model loyaltysch_gift {
-  gift_ls_id      Int
-  gift_slno       Int
-
-  gift_item_id    Int
-  gift_unit_id    Int
-  gift_qty        Decimal   @default(1) @db.Decimal(18, 3)
-
-  gift_points     Decimal   @db.Decimal(18, 2)
-  gift_repeat     Boolean   @default(false)
-
-  gift_is_active  Boolean   @default(true)
-  gift_is_deleted Boolean   @default(false)
-
-  created_on      DateTime  @default(now()) @db.Timestamptz(6)
-  created_by      Int?
-  modified_on     DateTime? @db.Timestamptz(6)
-  modified_by     Int?
-
-  scheme          loyaltysch_list @relation("LoyaltySchemeToGift", fields: [gift_ls_id], references: [ls_id], onDelete: Cascade)
-
-  @@id([gift_ls_id, gift_slno], map: "pkey_loyaltysch_gift")
-  @@unique([gift_ls_id, gift_item_id, gift_unit_id, gift_points], map: "uq_loyaltysch_gift")
-  @@index([gift_item_id], map: "idx_loyaltysch_gift_item")
-  @@index([gift_unit_id], map: "idx_loyaltysch_gift_unit")
-  @@map("loyaltysch_gift")
-  @@schema("public")
-}
-
-// ----- prisma/public/loyaltySchemaList.prisma -----
-model loyaltysch_list {
-  ls_id                  Int       @id @default(autoincrement())
-  ls_code                String?   @db.VarChar(30)
-  ls_name                String    @db.VarChar(150)
-
-  ls_type                String    @db.VarChar(20)
-  ls_apply_on            String    @default("BILL_AMOUNT") @db.VarChar(20)
-  ls_bill_type           String    @default("ALL") @db.VarChar(20)
-  ls_cust_type           String    @default("ALL") @db.VarChar(20)
-  ls_item_type           String    @default("ALL") @db.VarChar(20)
-
-  ls_start_date          DateTime  @db.Date
-  ls_end_date            DateTime  @db.Date
-
-  ls_comp_id             Int
-  ls_branch_id           Int?
-
-  ls_points_per_inr      Decimal   @default(0) @db.Decimal(18, 4)
-  ls_points_per_qty      Decimal   @default(0) @db.Decimal(18, 4)
-  ls_min_bill_amount     Decimal   @default(0) @db.Decimal(18, 2)
-  ls_max_points_per_bill Decimal   @default(0) @db.Decimal(18, 2)
-
-  ls_recur_apl           Boolean   @default(false)
-  ls_bal_apl             Boolean   @default(false)
-  ls_allow_point_earn    Boolean   @default(true)
-  ls_allow_point_redeem  Boolean   @default(false)
-  ls_allow_gift_redeem   Boolean   @default(false)
-
-  ls_is_active           Boolean   @default(true)
-  ls_is_deleted          Boolean   @default(false)
-
-  created_on             DateTime  @default(now()) @db.Timestamptz(6)
-  created_by             Int?
-  modified_on            DateTime? @db.Timestamptz(6)
-  modified_by            Int?
-
-  gifts                  loyaltysch_gift[]   @relation("LoyaltySchemeToGift")
-  points                 loyaltysch_points[] @relation("LoyaltySchemeToPoints")
-
-  @@unique([ls_code], map: "uq_loyaltysch_list_code")
-  @@index([ls_comp_id, ls_branch_id, ls_is_active], map: "idx_loyaltysch_list_active")
-  @@index([ls_start_date, ls_end_date], map: "idx_loyaltysch_list_dates")
-  @@map("loyaltysch_list")
-  @@schema("public")
-}
-
-// ----- prisma/public/loyaltySchemaPoints.prisma -----
-model loyaltysch_points {
-  lspt_id         Int       @id @default(autoincrement())
-  lspt_ls_id      Int
-  lspt_slno       Int
-
-  lspt_item_id    Int?
-  lspt_unit_id    Int?
-
-  lspt_exceeds    Decimal   @default(0) @db.Decimal(18, 3)
-  lspt_each       Decimal   @default(1) @db.Decimal(18, 3)
-  lspt_factor     Decimal   @default(1) @db.Decimal(18, 4)
-  lspt_points     Decimal   @db.Decimal(18, 2)
-
-  lspt_is_active  Boolean   @default(true)
-  lspt_is_deleted Boolean   @default(false)
-
-  created_on      DateTime  @default(now()) @db.Timestamptz(6)
-  created_by      Int?
-  modified_on     DateTime? @db.Timestamptz(6)
-  modified_by     Int?
-
-  scheme          loyaltysch_list @relation("LoyaltySchemeToPoints", fields: [lspt_ls_id], references: [ls_id], onDelete: Cascade)
-
-  @@unique([lspt_ls_id, lspt_slno], map: "uq_loyaltysch_points_scheme_slno")
-  @@index([lspt_ls_id], map: "idx_loyaltysch_points_scheme")
-  @@index([lspt_item_id], map: "idx_loyaltysch_points_item")
-  @@index([lspt_unit_id], map: "idx_loyaltysch_points_unit")
-  @@map("loyaltysch_points")
-  @@schema("public")
-}
-
 // ----- prisma/public/widget.prisma -----
 enum WidgetPlatform {
   mobile
@@ -3949,6 +3840,136 @@ model CustGroup {
   @@map("cust_groups")
   @@index([cgrCompanyId], map: "idx_cgr_company")
   @@index([cgrCompanyId, cgrIsActive], map: "idx_cgr_active")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltyScheme.prisma -----
+model LoyaltyScheme {
+  lsId                           String              @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ls_id")
+  lsCode                         String?             @db.VarChar(30)                         @map("ls_code")
+  lsName                         String              @db.VarChar(150)                        @map("ls_name")
+  lsType                         String              @db.VarChar(20)                         @map("ls_type")
+  lsStatus                       String              @default("DRAFT") @db.VarChar(20)      @map("ls_status")
+  lsAutoApply                    Boolean             @default(true)                          @map("ls_auto_apply")
+  lsApplyOn                      String              @default("BILL_AMOUNT") @db.VarChar(20) @map("ls_apply_on")
+  lsCalcOnAmountType             String              @default("NET_AMOUNT") @db.VarChar(20) @map("ls_calc_on_amount_type")
+  lsBillType                     String              @default("ALL") @db.VarChar(20)        @map("ls_bill_type")
+  lsCustType                     String              @default("ALL") @db.VarChar(20)        @map("ls_cust_type")
+  lsItemType                     String              @default("ALL") @db.VarChar(20)        @map("ls_item_type")
+  lsStartDate                    DateTime            @db.Date                                @map("ls_start_date")
+  lsEndDate                      DateTime            @db.Date                                @map("ls_end_date")
+  lsValidFromTime                DateTime?           @db.Time(6)                             @map("ls_valid_from_time")
+  lsValidToTime                  DateTime?           @db.Time(6)                             @map("ls_valid_to_time")
+  lsValidWeekdays                String?             @db.VarChar(30)                         @map("ls_valid_weekdays")
+  lsCompId                       String              @db.Uuid                                @map("ls_comp_id")
+  lsBranchId                     String?             @db.Uuid                                @map("ls_branch_id")
+  lsIncludeTaxForPoints          Boolean             @default(false)                         @map("ls_include_tax_for_points")
+  lsRoundingMethod               String              @default("FLOOR") @db.VarChar(10)      @map("ls_rounding_method")
+  lsRecurApl                     Boolean             @default(false)                         @map("ls_recur_apl")
+  lsBalApl                       Boolean             @default(false)                         @map("ls_bal_apl")
+  lsAllowPointRedeem             Boolean             @default(false)                         @map("ls_allow_point_redeem")
+  lsAllowGiftRedeem              Boolean             @default(false)                         @map("ls_allow_gift_redeem")
+  lsRedeemValuePerPoint          Decimal             @default(0) @db.Decimal(18, 4)         @map("ls_redeem_value_per_point")
+  lsMinRedeemPoints              Decimal             @default(0) @db.Decimal(18, 4)         @map("ls_min_redeem_points")
+  lsMaxRedeemPointsPerBill       Decimal             @default(0) @db.Decimal(18, 4)         @map("ls_max_redeem_points_per_bill")
+  lsMaxRedeemPercentPerBill      Decimal             @default(0) @db.Decimal(18, 4)         @map("ls_max_redeem_percent_per_bill")
+  lsRedeemMinBillAmount          Decimal             @default(0) @db.Decimal(18, 2)         @map("ls_redeem_min_bill_amount")
+  lsPointsValidDays              Int                 @default(0)                             @map("ls_points_valid_days")
+  lsExpiryBasis                  String              @default("EARN_DATE") @db.VarChar(20)  @map("ls_expiry_basis")
+  lsRemarks                      String?             @db.Text                                @map("ls_remarks")
+  lsIsActive                     Boolean             @default(true)                          @map("ls_is_active")
+  lsIsDeleted                    Boolean             @default(false)                         @map("ls_is_deleted")
+  lsSyncDate                     DateTime?           @db.Timestamptz(6)                      @map("ls_sync_date")
+  lsCreatedOn                    DateTime            @default(now()) @db.Timestamptz(6)     @map("ls_created_on")
+  lsCreatedBy                    String?             @db.Uuid                                @map("ls_created_by")
+  lsUpdatedOn                    DateTime?           @db.Timestamptz(6)                      @map("ls_updated_on")
+  lsUpdatedBy                    String?             @db.Uuid                                @map("ls_updated_by")
+  lsApprovedOn                   DateTime?           @db.Timestamptz(6)                      @map("ls_approved_on")
+  lsApprovedBy                   String?             @db.Uuid                                @map("ls_approved_by")
+
+  parties                        LoyaltySchemeParty[]
+  points                         LoyaltySchemePoint[]
+  gifts                          LoyaltySchemeGift[]
+
+  @@index([lsCompId, lsBranchId, lsIsActive, lsIsDeleted, lsStartDate, lsEndDate], map: "ix_loyalty_sch_list_active_dates")
+  @@map("loyalty_sch_list")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltySchemeGift.prisma -----
+model LoyaltySchemeGift {
+  lsgId                          String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsg_id")
+  lsgLsId                        String         @db.Uuid                                @map("lsg_ls_id")
+  lsgSlno                        Int                                                   @map("lsg_slno")
+  lsgItemId                      String         @db.Uuid                                @map("lsg_item_id")
+  lsgUnitId                      String         @db.Uuid                                @map("lsg_unit_id")
+  lsgItemQty                     Decimal        @default(1) @db.Decimal(18, 3)         @map("lsg_item_qty")
+  lsgRedeemPoints                Decimal        @default(0) @db.Decimal(18, 2)         @map("lsg_redeem_points")
+  lsgRepeat                      Boolean        @default(false)                         @map("lsg_repeat")
+  lsgNotes                       String?        @db.Text                                @map("lsg_notes")
+  lsgIsActive                    Boolean        @default(true)                          @map("lsg_is_active")
+  lsgIsDeleted                   Boolean        @default(false)                         @map("lsg_is_deleted")
+  lsgSyncDate                    DateTime?      @db.Timestamptz(6)                      @map("lsg_sync_date")
+  lsgCreatedOn                   DateTime       @default(now()) @db.Timestamptz(6)     @map("lsg_created_on")
+  lsgCreatedBy                   String?        @db.Uuid                                @map("lsg_created_by")
+  lsgUpdatedOn                   DateTime?      @db.Timestamptz(6)                      @map("lsg_updated_on")
+  lsgUpdatedBy                   String?        @db.Uuid                                @map("lsg_updated_by")
+
+  scheme                         LoyaltyScheme  @relation(fields: [lsgLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([lsgLsId], map: "ix_loyalty_sch_gift_scheme")
+  @@map("loyalty_sch_gift")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltySchemeParty.prisma -----
+model LoyaltySchemeParty {
+  lpsId                          String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lps_id")
+  lpsLsId                        String         @db.Uuid                                @map("lps_ls_id")
+  lpsSlno                        Int                                                   @map("lps_slno")
+  lpsScopeType                   String         @db.VarChar(20)                         @map("lps_scope_type")
+  lpsScopeId                     String         @db.Uuid                                @map("lps_scope_id")
+  lpsIsExclude                   Boolean        @default(false)                         @map("lps_is_exclude")
+  lpsNotes                       String?        @db.Text                                @map("lps_notes")
+  lpsIsActive                    Boolean        @default(true)                          @map("lps_is_active")
+  lpsIsDeleted                   Boolean        @default(false)                         @map("lps_is_deleted")
+  lpsSyncDate                    DateTime?      @db.Timestamptz(6)                      @map("lps_sync_date")
+  lpsCreatedOn                   DateTime       @default(now()) @db.Timestamptz(6)     @map("lps_created_on")
+  lpsCreatedBy                   String?        @db.Uuid                                @map("lps_created_by")
+  lpsUpdatedOn                   DateTime?      @db.Timestamptz(6)                      @map("lps_updated_on")
+  lpsUpdatedBy                   String?        @db.Uuid                                @map("lps_updated_by")
+
+  scheme                         LoyaltyScheme  @relation(fields: [lpsLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([lpsLsId], map: "ix_loyalty_sch_party_scheme")
+  @@map("loyalty_sch_party")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltySchemePoint.prisma -----
+model LoyaltySchemePoint {
+  lsptId                         String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lspt_id")
+  lsptLsId                       String         @db.Uuid                                @map("lspt_ls_id")
+  lsptSlno                       Int                                                   @map("lspt_slno")
+  lsptItemId                     String?        @db.Uuid                                @map("lspt_item_id")
+  lsptUnitId                     String?        @db.Uuid                                @map("lspt_unit_id")
+  lsptExceeds                    Decimal        @default(0) @db.Decimal(18, 3)         @map("lspt_exceeds")
+  lsptEach                       Decimal        @default(1) @db.Decimal(18, 3)         @map("lspt_each")
+  lsptFactor                     Decimal        @default(1) @db.Decimal(18, 4)         @map("lspt_factor")
+  lsptPoints                     Decimal        @default(0) @db.Decimal(18, 2)         @map("lspt_points")
+  lsptNotes                      String?        @db.Text                                @map("lspt_notes")
+  lsptIsActive                   Boolean        @default(true)                          @map("lspt_is_active")
+  lsptIsDeleted                  Boolean        @default(false)                         @map("lspt_is_deleted")
+  lsptSyncDate                   DateTime?      @db.Timestamptz(6)                      @map("lspt_sync_date")
+  lsptCreatedOn                  DateTime       @default(now()) @db.Timestamptz(6)     @map("lspt_created_on")
+  lsptCreatedBy                  String?        @db.Uuid                                @map("lspt_created_by")
+  lsptUpdatedOn                  DateTime?      @db.Timestamptz(6)                      @map("lspt_updated_on")
+  lsptUpdatedBy                  String?        @db.Uuid                                @map("lspt_updated_by")
+
+  scheme                         LoyaltyScheme  @relation(fields: [lsptLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([lsptLsId], map: "ix_loyalty_sch_points_scheme")
+  @@map("loyalty_sch_points")
   @@schema("sales")
 }
 

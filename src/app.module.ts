@@ -71,7 +71,7 @@ import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/use
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
 import { OpeningStockModule } from './modules/opening-stock/opening-stock.module';
-import { PromotionLoyaltyPointsModule } from './modules/promotion-loyalty-points/promotion-loyalty-points.module';
+import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;

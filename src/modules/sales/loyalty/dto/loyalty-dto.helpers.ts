@@ -6,6 +6,11 @@ export const toTrimmedString = (value: unknown): string => {
   return value.trim();
 };
 
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d{1,6})?)?$/;
+
 export const toNullableString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
     return undefined;
@@ -21,6 +26,37 @@ export const toNullableString = (value: unknown): string | null | undefined => {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+};
+
+export const toOptionalUuid = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    return value as string;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+};
+
+export const toNullableUuid = (value: unknown): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  const parsed = toOptionalUuid(value);
+  return parsed === undefined ? null : parsed;
+};
+
+export const toRequiredUuid = (value: unknown): string => {
+  const parsed = toOptionalUuid(value);
+  return parsed === undefined ? '' : parsed;
 };
 
 export const toOptionalInteger = (value: unknown): number | undefined => {
@@ -96,6 +132,19 @@ export const toOptionalBoolean = (value: unknown): boolean | undefined => {
 };
 
 export const toOptionalDateString = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    return value as string;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+};
+
+export const toOptionalTimeString = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }

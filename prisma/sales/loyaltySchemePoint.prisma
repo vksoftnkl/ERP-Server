@@ -1,0 +1,25 @@
+model LoyaltySchemePoint {
+  lsptId                         String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lspt_id")
+  lsptLsId                       String         @db.Uuid                                @map("lspt_ls_id")
+  lsptSlno                       Int                                                   @map("lspt_slno")
+  lsptItemId                     String?        @db.Uuid                                @map("lspt_item_id")
+  lsptUnitId                     String?        @db.Uuid                                @map("lspt_unit_id")
+  lsptExceeds                    Decimal        @default(0) @db.Decimal(18, 3)         @map("lspt_exceeds")
+  lsptEach                       Decimal        @default(1) @db.Decimal(18, 3)         @map("lspt_each")
+  lsptFactor                     Decimal        @default(1) @db.Decimal(18, 4)         @map("lspt_factor")
+  lsptPoints                     Decimal        @default(0) @db.Decimal(18, 2)         @map("lspt_points")
+  lsptNotes                      String?        @db.Text                                @map("lspt_notes")
+  lsptIsActive                   Boolean        @default(true)                          @map("lspt_is_active")
+  lsptIsDeleted                  Boolean        @default(false)                         @map("lspt_is_deleted")
+  lsptSyncDate                   DateTime?      @db.Timestamptz(6)                      @map("lspt_sync_date")
+  lsptCreatedOn                  DateTime       @default(now()) @db.Timestamptz(6)     @map("lspt_created_on")
+  lsptCreatedBy                  String?        @db.Uuid                                @map("lspt_created_by")
+  lsptUpdatedOn                  DateTime?      @db.Timestamptz(6)                      @map("lspt_updated_on")
+  lsptUpdatedBy                  String?        @db.Uuid                                @map("lspt_updated_by")
+
+  scheme                         LoyaltyScheme  @relation(fields: [lsptLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([lsptLsId], map: "ix_loyalty_sch_points_scheme")
+  @@map("loyalty_sch_points")
+  @@schema("sales")
+}

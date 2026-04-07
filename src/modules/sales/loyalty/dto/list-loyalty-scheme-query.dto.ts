@@ -4,18 +4,25 @@ import {
   IsBoolean,
   IsDateString,
   IsInt,
+  IsIn,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import {
+  UUID_PATTERN,
   toOptionalBoolean,
   toOptionalDateString,
   toOptionalInteger,
+  toOptionalUuid,
   toTrimmedString,
 } from './loyalty-dto.helpers';
+
+const LOYALTY_SCHEME_TYPES = ['REDEEM', 'BOTH', 'GIFT'] as const;
+const LOYALTY_SCHEME_STATUSES = ['DRAFT', 'APPROVED', 'ACTIVE', 'CLOSED', 'CANCELLED'] as const;
 
 export class ListLoyaltySchemeQueryDto {
   @ApiPropertyOptional({ maxLength: 150 })
@@ -25,19 +32,17 @@ export class ListLoyaltySchemeQueryDto {
   @MaxLength(150)
   search?: string;
 
-  @ApiPropertyOptional({ minimum: 1, example: 1 })
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
   @IsOptional()
-  @Transform(({ value }) => toOptionalInteger(value))
-  @IsInt()
-  @Min(1)
-  ls_comp_id?: number;
+  @Transform(({ value }) => toOptionalUuid(value))
+  @Matches(UUID_PATTERN)
+  ls_comp_id?: string;
 
-  @ApiPropertyOptional({ minimum: 1, example: 1 })
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
   @IsOptional()
-  @Transform(({ value }) => toOptionalInteger(value))
-  @IsInt()
-  @Min(1)
-  ls_branch_id?: number;
+  @Transform(({ value }) => toOptionalUuid(value))
+  @Matches(UUID_PATTERN)
+  ls_branch_id?: string;
 
   @ApiPropertyOptional({ type: Boolean, example: true })
   @IsOptional()
@@ -50,7 +55,16 @@ export class ListLoyaltySchemeQueryDto {
   @Transform(({ value }) => toTrimmedString(value))
   @IsString()
   @MaxLength(20)
+  @IsIn(LOYALTY_SCHEME_TYPES)
   ls_type?: string;
+
+  @ApiPropertyOptional({ maxLength: 20, example: 'ACTIVE' })
+  @IsOptional()
+  @Transform(({ value }) => toTrimmedString(value))
+  @IsString()
+  @MaxLength(20)
+  @IsIn(LOYALTY_SCHEME_STATUSES)
+  ls_status?: string;
 
   @ApiPropertyOptional({ format: 'date' })
   @IsOptional()

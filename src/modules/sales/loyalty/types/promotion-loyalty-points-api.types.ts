@@ -24,67 +24,86 @@ export interface PromotionLoyaltyPointsListMeta {
 }
 
 export interface LoyaltyPointPayload {
-  lspt_id: number;
-  lspt_ls_id: number;
+  lspt_id: string;
+  lspt_ls_id: string;
   lspt_slno: number;
-  lspt_item_id: number | null;
-  lspt_unit_id: number | null;
+  lspt_item_id: string | null;
+  lspt_unit_id: string | null;
   lspt_exceeds: number;
   lspt_each: number;
   lspt_factor: number;
   lspt_points: number;
+  lspt_notes: string | null;
   lspt_is_active: boolean;
   lspt_is_deleted: boolean;
-  created_on: string;
-  created_by: number | null;
-  modified_on: string | null;
-  modified_by: number | null;
+  lspt_sync_date: string | null;
+  lspt_created_on: string;
+  lspt_created_by: string | null;
+  lspt_updated_on: string | null;
+  lspt_updated_by: string | null;
 }
 
 export interface LoyaltyGiftPayload {
-  gift_ls_id: number;
-  gift_slno: number;
-  gift_item_id: number;
-  gift_unit_id: number;
-  gift_qty: number;
-  gift_points: number;
-  gift_repeat: boolean;
-  gift_is_active: boolean;
-  gift_is_deleted: boolean;
-  created_on: string;
-  created_by: number | null;
-  modified_on: string | null;
-  modified_by: number | null;
+  lsg_id: string;
+  lsg_ls_id: string;
+  lsg_slno: number;
+  lsg_item_id: string;
+  lsg_unit_id: string;
+  lsg_item_qty: number;
+  lsg_redeem_points: number;
+  lsg_repeat: boolean;
+  lsg_notes: string | null;
+  lsg_is_active: boolean;
+  lsg_is_deleted: boolean;
+  lsg_sync_date: string | null;
+  lsg_created_on: string;
+  lsg_created_by: string | null;
+  lsg_updated_on: string | null;
+  lsg_updated_by: string | null;
 }
 
 export interface LoyaltySchemeSummaryPayload {
-  ls_id: number;
+  ls_id: string;
   ls_code: string | null;
   ls_name: string;
   ls_type: string;
+  ls_status: string;
+  ls_auto_apply: boolean;
   ls_apply_on: string;
+  ls_calc_on_amount_type: string;
   ls_bill_type: string;
   ls_cust_type: string;
   ls_item_type: string;
   ls_start_date: string;
   ls_end_date: string;
-  ls_comp_id: number;
-  ls_branch_id: number | null;
-  ls_points_per_inr: number;
-  ls_points_per_qty: number;
-  ls_min_bill_amount: number;
-  ls_max_points_per_bill: number;
+  ls_valid_from_time: string | null;
+  ls_valid_to_time: string | null;
+  ls_valid_weekdays: string | null;
+  ls_comp_id: string;
+  ls_branch_id: string | null;
+  ls_include_tax_for_points: boolean;
+  ls_rounding_method: string;
   ls_recur_apl: boolean;
   ls_bal_apl: boolean;
-  ls_allow_point_earn: boolean;
   ls_allow_point_redeem: boolean;
   ls_allow_gift_redeem: boolean;
+  ls_redeem_value_per_point: number;
+  ls_min_redeem_points: number;
+  ls_max_redeem_points_per_bill: number;
+  ls_max_redeem_percent_per_bill: number;
+  ls_redeem_min_bill_amount: number;
+  ls_points_valid_days: number;
+  ls_expiry_basis: string;
+  ls_remarks: string | null;
   ls_is_active: boolean;
   ls_is_deleted: boolean;
-  created_on: string;
-  created_by: number | null;
-  modified_on: string | null;
-  modified_by: number | null;
+  ls_sync_date: string | null;
+  ls_created_on: string;
+  ls_created_by: string | null;
+  ls_updated_on: string | null;
+  ls_updated_by: string | null;
+  ls_approved_on: string | null;
+  ls_approved_by: string | null;
 }
 
 export interface LoyaltySchemePayload extends LoyaltySchemeSummaryPayload {
@@ -97,14 +116,13 @@ export interface LoyaltyDeleteResult {
 }
 
 export interface LoyaltySchemeDeleteResult extends LoyaltyDeleteResult {
-  ls_id: number;
+  ls_id: string;
 }
 
 export interface LoyaltyPointDeleteResult extends LoyaltyDeleteResult {
-  lspt_id: number;
+  lspt_id: string;
 }
 
 export interface LoyaltyGiftDeleteResult extends LoyaltyDeleteResult {
-  gift_ls_id: number;
-  gift_slno: number;
+  lsg_id: string;
 }

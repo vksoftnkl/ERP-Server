@@ -1,0 +1,22 @@
+model LoyaltySchemeParty {
+  lpsId                          String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lps_id")
+  lpsLsId                        String         @db.Uuid                                @map("lps_ls_id")
+  lpsSlno                        Int                                                   @map("lps_slno")
+  lpsScopeType                   String         @db.VarChar(20)                         @map("lps_scope_type")
+  lpsScopeId                     String         @db.Uuid                                @map("lps_scope_id")
+  lpsIsExclude                   Boolean        @default(false)                         @map("lps_is_exclude")
+  lpsNotes                       String?        @db.Text                                @map("lps_notes")
+  lpsIsActive                    Boolean        @default(true)                          @map("lps_is_active")
+  lpsIsDeleted                   Boolean        @default(false)                         @map("lps_is_deleted")
+  lpsSyncDate                    DateTime?      @db.Timestamptz(6)                      @map("lps_sync_date")
+  lpsCreatedOn                   DateTime       @default(now()) @db.Timestamptz(6)     @map("lps_created_on")
+  lpsCreatedBy                   String?        @db.Uuid                                @map("lps_created_by")
+  lpsUpdatedOn                   DateTime?      @db.Timestamptz(6)                      @map("lps_updated_on")
+  lpsUpdatedBy                   String?        @db.Uuid                                @map("lps_updated_by")
+
+  scheme                         LoyaltyScheme  @relation(fields: [lpsLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([lpsLsId], map: "ix_loyalty_sch_party_scheme")
+  @@map("loyalty_sch_party")
+  @@schema("sales")
+}

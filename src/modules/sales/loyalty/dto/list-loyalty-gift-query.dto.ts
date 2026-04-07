@@ -1,20 +1,24 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { toOptionalBoolean, toOptionalInteger, toRequiredInteger } from './loyalty-dto.helpers';
+import { IsBoolean, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
+import {
+  UUID_PATTERN,
+  toOptionalBoolean,
+  toOptionalInteger,
+  toRequiredUuid,
+} from './loyalty-dto.helpers';
 
-export class ListLoyaltyPointQueryDto {
-  @ApiProperty({ minimum: 1, example: 1 })
-  @Transform(({ value }) => toRequiredInteger(value))
-  @IsInt()
-  @Min(1)
-  lspt_ls_id!: number;
+export class ListLoyaltyGiftQueryDto {
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  @Transform(({ value }) => toRequiredUuid(value))
+  @Matches(UUID_PATTERN)
+  lsg_ls_id!: string;
 
   @ApiPropertyOptional({ type: Boolean, example: true })
   @IsOptional()
   @Transform(({ value }) => toOptionalBoolean(value))
   @IsBoolean()
-  lspt_is_active?: boolean;
+  lsg_is_active?: boolean;
 
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()

@@ -10,7 +10,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
+import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { DeleteLoyaltyGiftQueryDto } from './dto/delete-loyalty-gift-query.dto';
 import { DeleteLoyaltyPointQueryDto } from './dto/delete-loyalty-point-query.dto';
 import { DeleteLoyaltySchemeQueryDto } from './dto/delete-loyalty-scheme-query.dto';
@@ -130,7 +130,7 @@ export class PromotionLoyaltyPointsController {
   ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemeDeleteResult>> {
     const data = await this.promotionLoyaltyPointsService.softDeleteScheme(
       queryDto.ls_id,
-      queryDto.modified_by,
+      queryDto.ls_updated_by,
     );
 
     return {
@@ -210,7 +210,7 @@ export class PromotionLoyaltyPointsController {
   ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyPointDeleteResult>> {
     const data = await this.promotionLoyaltyPointsService.softDeletePoint(
       queryDto.lspt_id,
-      queryDto.modified_by,
+      queryDto.lspt_updated_by,
     );
 
     return {
@@ -222,9 +222,7 @@ export class PromotionLoyaltyPointsController {
 
   @Post('gifts/create')
   @Version('1')
-  @ApiOperation({
-    summary: 'Create or update loyalty gift rule by gift_ls_id + gift_slno presence',
-  })
+  @ApiOperation({ summary: 'Create or update loyalty gift rule by lsg_id presence' })
   @ApiCreatedResponse({ type: LoyaltyGiftSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiConflictResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
@@ -236,7 +234,7 @@ export class PromotionLoyaltyPointsController {
 
     return {
       success: true,
-      message: saveLoyaltyGiftDto.gift_slno
+      message: saveLoyaltyGiftDto.lsg_id
         ? 'Loyalty gift updated successfully'
         : 'Loyalty gift created successfully',
       data,
@@ -265,17 +263,14 @@ export class PromotionLoyaltyPointsController {
 
   @Get('gifts/get')
   @Version('1')
-  @ApiOperation({ summary: 'Get loyalty gift rule by gift_ls_id and gift_slno' })
+  @ApiOperation({ summary: 'Get loyalty gift rule by lsg_id' })
   @ApiOkResponse({ type: LoyaltyGiftSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   async getGiftById(
     @Query() queryDto: LoyaltyGiftIdQueryDto,
   ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftPayload>> {
-    const data = await this.promotionLoyaltyPointsService.getGiftById(
-      queryDto.gift_ls_id,
-      queryDto.gift_slno,
-    );
+    const data = await this.promotionLoyaltyPointsService.getGiftById(queryDto.lsg_id);
 
     return {
       success: true,
@@ -286,7 +281,7 @@ export class PromotionLoyaltyPointsController {
 
   @Delete('gifts/delete')
   @Version('1')
-  @ApiOperation({ summary: 'Soft delete loyalty gift rule by gift_ls_id and gift_slno' })
+  @ApiOperation({ summary: 'Soft delete loyalty gift rule by lsg_id' })
   @ApiOkResponse({ type: LoyaltyGiftSuccessDeleteDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
@@ -294,9 +289,8 @@ export class PromotionLoyaltyPointsController {
     @Query() queryDto: DeleteLoyaltyGiftQueryDto,
   ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftDeleteResult>> {
     const data = await this.promotionLoyaltyPointsService.softDeleteGift(
-      queryDto.gift_ls_id,
-      queryDto.gift_slno,
-      queryDto.modified_by,
+      queryDto.lsg_id,
+      queryDto.lsg_updated_by,
     );
 
     return {

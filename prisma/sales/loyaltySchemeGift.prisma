@@ -1,0 +1,24 @@
+model LoyaltySchemeGift {
+  lsgId                          String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsg_id")
+  lsgLsId                        String         @db.Uuid                                @map("lsg_ls_id")
+  lsgSlno                        Int                                                   @map("lsg_slno")
+  lsgItemId                      String         @db.Uuid                                @map("lsg_item_id")
+  lsgUnitId                      String         @db.Uuid                                @map("lsg_unit_id")
+  lsgItemQty                     Decimal        @default(1) @db.Decimal(18, 3)         @map("lsg_item_qty")
+  lsgRedeemPoints                Decimal        @default(0) @db.Decimal(18, 2)         @map("lsg_redeem_points")
+  lsgRepeat                      Boolean        @default(false)                         @map("lsg_repeat")
+  lsgNotes                       String?        @db.Text                                @map("lsg_notes")
+  lsgIsActive                    Boolean        @default(true)                          @map("lsg_is_active")
+  lsgIsDeleted                   Boolean        @default(false)                         @map("lsg_is_deleted")
+  lsgSyncDate                    DateTime?      @db.Timestamptz(6)                      @map("lsg_sync_date")
+  lsgCreatedOn                   DateTime       @default(now()) @db.Timestamptz(6)     @map("lsg_created_on")
+  lsgCreatedBy                   String?        @db.Uuid                                @map("lsg_created_by")
+  lsgUpdatedOn                   DateTime?      @db.Timestamptz(6)                      @map("lsg_updated_on")
+  lsgUpdatedBy                   String?        @db.Uuid                                @map("lsg_updated_by")
+
+  scheme                         LoyaltyScheme  @relation(fields: [lsgLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+
+  @@index([lsgLsId], map: "ix_loyalty_sch_gift_scheme")
+  @@map("loyalty_sch_gift")
+  @@schema("sales")
+}

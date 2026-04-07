@@ -34,20 +34,20 @@ export class PromotionLoyaltyPointsListMetaDto {
 }
 
 export class LoyaltyPointPayloadDto {
-  @ApiProperty({ example: 1 })
-  lspt_id!: number;
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lspt_id!: string;
 
-  @ApiProperty({ example: 1 })
-  lspt_ls_id!: number;
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lspt_ls_id!: string;
 
   @ApiProperty({ example: 1 })
   lspt_slno!: number;
 
-  @ApiPropertyOptional({ example: 100, nullable: true })
-  lspt_item_id!: number | null;
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  lspt_item_id!: string | null;
 
-  @ApiPropertyOptional({ example: 1, nullable: true })
-  lspt_unit_id!: number | null;
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  lspt_unit_id!: string | null;
 
   @ApiProperty({ example: 0 })
   lspt_exceeds!: number;
@@ -61,69 +61,84 @@ export class LoyaltyPointPayloadDto {
   @ApiProperty({ example: 10 })
   lspt_points!: number;
 
+  @ApiPropertyOptional({ example: 'Bill amount slab', nullable: true })
+  lspt_notes!: string | null;
+
   @ApiProperty({ example: true })
   lspt_is_active!: boolean;
 
   @ApiProperty({ example: false })
   lspt_is_deleted!: boolean;
 
-  @ApiProperty({ example: '2026-04-06T12:00:00.000Z' })
-  created_on!: string;
+  @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
+  lspt_sync_date!: string | null;
 
-  @ApiPropertyOptional({ example: 1001, nullable: true })
-  created_by!: number | null;
+  @ApiProperty({ example: '2026-04-06T12:00:00.000Z' })
+  lspt_created_on!: string;
+
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  lspt_created_by!: string | null;
 
   @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
-  modified_on!: string | null;
+  lspt_updated_on!: string | null;
 
-  @ApiPropertyOptional({ example: 1001, nullable: true })
-  modified_by!: number | null;
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  lspt_updated_by!: string | null;
 }
 
 export class LoyaltyGiftPayloadDto {
-  @ApiProperty({ example: 1 })
-  gift_ls_id!: number;
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lsg_id!: string;
+
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lsg_ls_id!: string;
 
   @ApiProperty({ example: 1 })
-  gift_slno!: number;
+  lsg_slno!: number;
+
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lsg_item_id!: string;
+
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lsg_unit_id!: string;
+
+  @ApiProperty({ example: 1 })
+  lsg_item_qty!: number;
 
   @ApiProperty({ example: 100 })
-  gift_item_id!: number;
-
-  @ApiProperty({ example: 1 })
-  gift_unit_id!: number;
-
-  @ApiProperty({ example: 1 })
-  gift_qty!: number;
-
-  @ApiProperty({ example: 100 })
-  gift_points!: number;
+  lsg_redeem_points!: number;
 
   @ApiProperty({ example: false })
-  gift_repeat!: boolean;
+  lsg_repeat!: boolean;
+
+  @ApiPropertyOptional({ example: 'Festival gift', nullable: true })
+  lsg_notes!: string | null;
 
   @ApiProperty({ example: true })
-  gift_is_active!: boolean;
+  lsg_is_active!: boolean;
 
   @ApiProperty({ example: false })
-  gift_is_deleted!: boolean;
-
-  @ApiProperty({ example: '2026-04-06T12:00:00.000Z' })
-  created_on!: string;
-
-  @ApiPropertyOptional({ example: 1001, nullable: true })
-  created_by!: number | null;
+  lsg_is_deleted!: boolean;
 
   @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
-  modified_on!: string | null;
+  lsg_sync_date!: string | null;
 
-  @ApiPropertyOptional({ example: 1001, nullable: true })
-  modified_by!: number | null;
+  @ApiProperty({ example: '2026-04-06T12:00:00.000Z' })
+  lsg_created_on!: string;
+
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  lsg_created_by!: string | null;
+
+  @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
+  lsg_updated_on!: string | null;
+
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  lsg_updated_by!: string | null;
 }
 
 export class LoyaltySchemeSummaryPayloadDto {
-  @ApiProperty({ example: 1 })
-  ls_id!: number;
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  ls_id!: string;
 
   @ApiPropertyOptional({ example: 'LS001', nullable: true })
   ls_code!: string | null;
@@ -131,11 +146,20 @@ export class LoyaltySchemeSummaryPayloadDto {
   @ApiProperty({ example: 'Summer Rewards' })
   ls_name!: string;
 
-  @ApiProperty({ example: 'GENERAL' })
+  @ApiProperty({ example: 'REDEEM' })
   ls_type!: string;
+
+  @ApiProperty({ example: 'ACTIVE' })
+  ls_status!: string;
+
+  @ApiProperty({ example: true })
+  ls_auto_apply!: boolean;
 
   @ApiProperty({ example: 'BILL_AMOUNT' })
   ls_apply_on!: string;
+
+  @ApiProperty({ example: 'NET_AMOUNT' })
+  ls_calc_on_amount_type!: string;
 
   @ApiProperty({ example: 'ALL' })
   ls_bill_type!: string;
@@ -146,29 +170,32 @@ export class LoyaltySchemeSummaryPayloadDto {
   @ApiProperty({ example: 'ALL' })
   ls_item_type!: string;
 
-  @ApiProperty({ example: '2026-04-01T00:00:00.000Z' })
+  @ApiProperty({ example: '2026-04-01' })
   ls_start_date!: string;
 
-  @ApiProperty({ example: '2026-04-30T00:00:00.000Z' })
+  @ApiProperty({ example: '2026-04-30' })
   ls_end_date!: string;
 
-  @ApiProperty({ example: 1 })
-  ls_comp_id!: number;
+  @ApiPropertyOptional({ example: '09:00:00', nullable: true })
+  ls_valid_from_time!: string | null;
 
-  @ApiPropertyOptional({ example: 1, nullable: true })
-  ls_branch_id!: number | null;
+  @ApiPropertyOptional({ example: '18:00:00', nullable: true })
+  ls_valid_to_time!: string | null;
 
-  @ApiProperty({ example: 1 })
-  ls_points_per_inr!: number;
+  @ApiPropertyOptional({ example: '1,2,3,4,5', nullable: true })
+  ls_valid_weekdays!: string | null;
 
-  @ApiProperty({ example: 0 })
-  ls_points_per_qty!: number;
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  ls_comp_id!: string;
 
-  @ApiProperty({ example: 100 })
-  ls_min_bill_amount!: number;
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  ls_branch_id!: string | null;
 
-  @ApiProperty({ example: 500 })
-  ls_max_points_per_bill!: number;
+  @ApiProperty({ example: false })
+  ls_include_tax_for_points!: boolean;
+
+  @ApiProperty({ example: 'FLOOR' })
+  ls_rounding_method!: string;
 
   @ApiProperty({ example: false })
   ls_recur_apl!: boolean;
@@ -176,14 +203,35 @@ export class LoyaltySchemeSummaryPayloadDto {
   @ApiProperty({ example: false })
   ls_bal_apl!: boolean;
 
-  @ApiProperty({ example: true })
-  ls_allow_point_earn!: boolean;
-
   @ApiProperty({ example: false })
   ls_allow_point_redeem!: boolean;
 
   @ApiProperty({ example: false })
   ls_allow_gift_redeem!: boolean;
+
+  @ApiProperty({ example: 1 })
+  ls_redeem_value_per_point!: number;
+
+  @ApiProperty({ example: 100 })
+  ls_min_redeem_points!: number;
+
+  @ApiProperty({ example: 500 })
+  ls_max_redeem_points_per_bill!: number;
+
+  @ApiProperty({ example: 50 })
+  ls_max_redeem_percent_per_bill!: number;
+
+  @ApiProperty({ example: 2500 })
+  ls_redeem_min_bill_amount!: number;
+
+  @ApiProperty({ example: 180 })
+  ls_points_valid_days!: number;
+
+  @ApiProperty({ example: 'EARN_DATE' })
+  ls_expiry_basis!: string;
+
+  @ApiPropertyOptional({ example: 'Approved for summer promotion', nullable: true })
+  ls_remarks!: string | null;
 
   @ApiProperty({ example: true })
   ls_is_active!: boolean;
@@ -191,17 +239,26 @@ export class LoyaltySchemeSummaryPayloadDto {
   @ApiProperty({ example: false })
   ls_is_deleted!: boolean;
 
-  @ApiProperty({ example: '2026-04-06T12:00:00.000Z' })
-  created_on!: string;
+  @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
+  ls_sync_date!: string | null;
 
-  @ApiPropertyOptional({ example: 1001, nullable: true })
-  created_by!: number | null;
+  @ApiProperty({ example: '2026-04-06T12:00:00.000Z' })
+  ls_created_on!: string;
+
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  ls_created_by!: string | null;
 
   @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
-  modified_on!: string | null;
+  ls_updated_on!: string | null;
 
-  @ApiPropertyOptional({ example: 1001, nullable: true })
-  modified_by!: number | null;
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  ls_updated_by!: string | null;
+
+  @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
+  ls_approved_on!: string | null;
+
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  ls_approved_by!: string | null;
 }
 
 export class LoyaltySchemePayloadDto extends LoyaltySchemeSummaryPayloadDto {
@@ -213,27 +270,24 @@ export class LoyaltySchemePayloadDto extends LoyaltySchemeSummaryPayloadDto {
 }
 
 export class LoyaltySchemeDeleteResultDto {
-  @ApiProperty({ example: 1 })
-  ls_id!: number;
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  ls_id!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;
 }
 
 export class LoyaltyPointDeleteResultDto {
-  @ApiProperty({ example: 1 })
-  lspt_id!: number;
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lspt_id!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;
 }
 
 export class LoyaltyGiftDeleteResultDto {
-  @ApiProperty({ example: 1 })
-  gift_ls_id!: number;
-
-  @ApiProperty({ example: 1 })
-  gift_slno!: number;
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lsg_id!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;

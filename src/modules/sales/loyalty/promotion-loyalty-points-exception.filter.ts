@@ -104,7 +104,9 @@ export class PromotionLoyaltyPointsExceptionFilter implements ExceptionFilter {
   }
 
   private inferFieldName(message: string): string {
-    const fieldMatch = message.match(/\b((?:ls|lspt|gift)_[a-z0-9_]+|created_by|modified_by)\b/i);
+    const fieldMatch = message.match(
+      /\b((?:ls|lspt|lsg|lps)_[a-z0-9_]+|ls_updated_by|lspt_updated_by|lsg_updated_by)\b/i,
+    );
     if (fieldMatch) {
       return fieldMatch[1];
     }

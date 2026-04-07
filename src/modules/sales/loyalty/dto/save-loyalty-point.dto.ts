@@ -1,34 +1,41 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsNumber, IsOptional, Min, ValidateIf } from 'class-validator';
 import {
-  toNullableInteger,
+  IsBoolean,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  Matches,
+  Min,
+  ValidateIf,
+} from 'class-validator';
+import {
+  UUID_PATTERN,
   toOptionalBoolean,
   toOptionalInteger,
   toOptionalNumber,
+  toOptionalUuid,
+  toNullableUuid,
 } from './loyalty-dto.helpers';
 
 export class SaveLoyaltyPointDto {
   @ApiPropertyOptional({
     description: 'When provided, updates an existing loyalty point slab',
-    minimum: 1,
-    example: 1,
+    example: '01963d86-caf0-7b26-89f0-58ac380a2d5e',
   })
   @IsOptional()
-  @Transform(({ value }) => toOptionalInteger(value))
-  @IsInt()
-  @Min(1)
-  lspt_id?: number;
+  @Transform(({ value }) => toOptionalUuid(value))
+  @Matches(UUID_PATTERN)
+  lspt_id?: string;
 
-  @ApiProperty({ minimum: 1, example: 1 })
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
   @ValidateIf(
     (object: SaveLoyaltyPointDto) =>
       object.lspt_id === undefined || object.lspt_ls_id !== undefined,
   )
-  @Transform(({ value }) => toOptionalInteger(value))
-  @IsInt()
-  @Min(1)
-  lspt_ls_id?: number;
+  @Transform(({ value }) => toOptionalUuid(value))
+  @Matches(UUID_PATTERN)
+  lspt_ls_id?: string;
 
   @ApiPropertyOptional({ minimum: 1, example: 1 })
   @IsOptional()
@@ -37,21 +44,19 @@ export class SaveLoyaltyPointDto {
   @Min(1)
   lspt_slno?: number;
 
-  @ApiPropertyOptional({ minimum: 1, nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
   @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
+  @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(1)
-  lspt_item_id?: number | null;
+  @Matches(UUID_PATTERN)
+  lspt_item_id?: string | null;
 
-  @ApiPropertyOptional({ minimum: 1, nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
   @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
+  @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(1)
-  lspt_unit_id?: number | null;
+  @Matches(UUID_PATTERN)
+  lspt_unit_id?: string | null;
 
   @ApiPropertyOptional({ minimum: 0, default: 0 })
   @IsOptional()
@@ -71,7 +76,7 @@ export class SaveLoyaltyPointDto {
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
-  @Min(0)
+  @Min(Number.EPSILON)
   lspt_factor?: number;
 
   @ApiProperty({ minimum: 0, example: 10 })
@@ -90,19 +95,22 @@ export class SaveLoyaltyPointDto {
   @IsBoolean()
   lspt_is_active?: boolean;
 
-  @ApiPropertyOptional({ minimum: 1, nullable: true })
+  @ApiPropertyOptional({ maxLength: 65535, nullable: true })
   @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(1)
-  created_by?: number | null;
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() || null : value))
+  lspt_notes?: string | null;
 
-  @ApiPropertyOptional({ minimum: 1, nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
   @IsOptional()
-  @Transform(({ value }) => toNullableInteger(value))
+  @Transform(({ value }) => toNullableUuid(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsInt()
-  @Min(1)
-  modified_by?: number | null;
+  @Matches(UUID_PATTERN)
+  lspt_created_by?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUuid(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @Matches(UUID_PATTERN)
+  lspt_updated_by?: string | null;
 }
