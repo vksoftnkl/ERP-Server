@@ -62,6 +62,23 @@ export interface LoyaltyGiftPayload {
   lsg_updated_by: string | null;
 }
 
+export interface LoyaltyPartyPayload {
+  lps_id: string;
+  lps_ls_id: string;
+  lps_slno: number;
+  lps_scope_type: string;
+  lps_scope_id: string;
+  lps_is_exclude: boolean;
+  lps_notes: string | null;
+  lps_is_active: boolean;
+  lps_is_deleted: boolean;
+  lps_sync_date: string | null;
+  lps_created_on: string;
+  lps_created_by: string | null;
+  lps_updated_on: string | null;
+  lps_updated_by: string | null;
+}
+
 export interface LoyaltySchemeSummaryPayload {
   ls_id: string;
   ls_code: string | null;
@@ -107,6 +124,7 @@ export interface LoyaltySchemeSummaryPayload {
 }
 
 export interface LoyaltySchemePayload extends LoyaltySchemeSummaryPayload {
+  parties: LoyaltyPartyPayload[];
   points: LoyaltyPointPayload[];
   gifts: LoyaltyGiftPayload[];
 }

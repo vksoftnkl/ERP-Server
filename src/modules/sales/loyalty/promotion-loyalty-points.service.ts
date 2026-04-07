@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { LoyaltyScheme, LoyaltySchemeGift, LoyaltySchemePoint, Prisma } from '@prisma/client';
+import {
+  LoyaltyScheme,
+  LoyaltySchemeGift,
+  LoyaltySchemeParty,
+  LoyaltySchemePoint,
+  Prisma,
+} from '@prisma/client';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,6 +23,7 @@ import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
 import {
   LoyaltyGiftDeleteResult,
   LoyaltyGiftPayload,
+  LoyaltyPartyPayload,
   LoyaltyPointDeleteResult,
   LoyaltyPointPayload,
   LoyaltySchemeDeleteResult,
@@ -40,6 +47,7 @@ const UUID_PATTERN =
 type LoyaltyWriteClient = Prisma.TransactionClient | PrismaService;
 type ListResult<T> = { items: T[]; meta: PromotionLoyaltyPointsListMeta };
 type SchemeWithChildren = LoyaltyScheme & {
+  parties: LoyaltySchemeParty[];
   points: LoyaltySchemePoint[];
   gifts: LoyaltySchemeGift[];
 };
@@ -62,7 +70,7 @@ export class PromotionLoyaltyPointsService {
 
   async listSchemes(
     queryDto: ListLoyaltySchemeQueryDto,
-  ): Promise<ListResult<LoyaltySchemeSummaryPayload>> {
+  ): Promise<ListResult<LoyaltySchemePayload>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
@@ -123,6 +131,20 @@ export class PromotionLoyaltyPointsService {
       this.prisma.loyaltyScheme.count({ where }),
       this.prisma.loyaltyScheme.findMany({
         where,
+        include: {
+          parties: {
+            where: { lpsIsDeleted: false, lpsIsActive: true },
+            orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }],
+          },
+          points: {
+            where: { lsptIsDeleted: false, lsptIsActive: true },
+            orderBy: [{ lsptSlno: 'asc' }, { lsptId: 'asc' }],
+          },
+          gifts: {
+            where: { lsgIsDeleted: false, lsgIsActive: true },
+            orderBy: [{ lsgSlno: 'asc' }, { lsgId: 'asc' }],
+          },
+        },
         orderBy: [{ lsName: 'asc' }, { lsId: 'asc' }],
         skip,
         take: limit,
@@ -130,7 +152,7 @@ export class PromotionLoyaltyPointsService {
     ]);
 
     return {
-      items: schemes.map((scheme) => this.toSchemeSummaryPayload(scheme)),
+      items: schemes.map((scheme) => this.toSchemePayload(scheme)),
       meta: this.buildMeta(page, limit, total),
     };
   }
@@ -208,6 +230,13 @@ export class PromotionLoyaltyPointsService {
           originalRecord: this.toSchemePayload(existing),
           modifiedRecord: this.toSchemePayload({
             ...updatedScheme,
+            parties: existing.parties.map((party) => ({
+              ...party,
+              lpsIsDeleted: true,
+              lpsIsActive: false,
+              lpsUpdatedOn: updatedOn,
+              lpsUpdatedBy: updatedBy,
+            })),
             points: existing.points.map((point) => ({
               ...point,
               lsptIsDeleted: true,
@@ -453,7 +482,7 @@ export class PromotionLoyaltyPointsService {
         await this.ensureSchemeCodeUnique(tx, lsCompId, lsCode);
 
         const created = await tx.loyaltyScheme.create({ data });
-        const payload = this.toSchemePayload({ ...created, points: [], gifts: [] });
+        const payload = this.toSchemePayload({ ...created, parties: [], points: [], gifts: [] });
 
         await this.auditLogService.logEntityChange(
           {
@@ -539,6 +568,7 @@ export class PromotionLoyaltyPointsService {
 
         const payload = this.toSchemePayload({
           ...updated,
+          parties: existing.parties,
           points: existing.points,
           gifts: existing.gifts,
         });
@@ -842,6 +872,10 @@ export class PromotionLoyaltyPointsService {
     return client.loyaltyScheme.findFirst({
       where: { lsId, lsIsDeleted: false },
       include: {
+        parties: {
+          where: { lpsIsDeleted: false, lpsIsActive: true },
+          orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }],
+        },
         points: {
           where: { lsptIsDeleted: false, lsptIsActive: true },
           orderBy: [{ lsptSlno: 'asc' }, { lsptId: 'asc' }],
@@ -1165,6 +1199,7 @@ export class PromotionLoyaltyPointsService {
   private toSchemePayload(scheme: SchemeWithChildren): LoyaltySchemePayload {
     return {
       ...this.toSchemeSummaryPayload(scheme),
+      parties: scheme.parties.map((party) => this.toPartyPayload(party)),
       points: scheme.points.map((point) => this.toPointPayload(point)),
       gifts: scheme.gifts.map((gift) => this.toGiftPayload(gift)),
     };
@@ -1213,6 +1248,25 @@ export class PromotionLoyaltyPointsService {
       ls_updated_by: scheme.lsUpdatedBy,
       ls_approved_on: scheme.lsApprovedOn?.toISOString() ?? null,
       ls_approved_by: scheme.lsApprovedBy,
+    };
+  }
+
+  private toPartyPayload(party: LoyaltySchemeParty): LoyaltyPartyPayload {
+    return {
+      lps_id: party.lpsId,
+      lps_ls_id: party.lpsLsId,
+      lps_slno: party.lpsSlno,
+      lps_scope_type: party.lpsScopeType,
+      lps_scope_id: party.lpsScopeId,
+      lps_is_exclude: party.lpsIsExclude,
+      lps_notes: party.lpsNotes,
+      lps_is_active: party.lpsIsActive,
+      lps_is_deleted: party.lpsIsDeleted,
+      lps_sync_date: party.lpsSyncDate?.toISOString() ?? null,
+      lps_created_on: party.lpsCreatedOn.toISOString(),
+      lps_created_by: party.lpsCreatedBy,
+      lps_updated_on: party.lpsUpdatedOn?.toISOString() ?? null,
+      lps_updated_by: party.lpsUpdatedBy,
     };
   }
 

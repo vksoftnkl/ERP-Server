@@ -97,6 +97,7 @@ model Company {
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   ItemUnitConversions   ItemUnitConversion[] @relation("iucCompanyId")
+  loyaltySchemes        LoyaltyScheme[]
   @@map("companys")
   @@schema("public")
 }

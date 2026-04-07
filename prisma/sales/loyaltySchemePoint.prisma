@@ -18,6 +18,8 @@ model LoyaltySchemePoint {
   lsptUpdatedBy                  String?        @db.Uuid                                @map("lspt_updated_by")
 
   scheme                         LoyaltyScheme  @relation(fields: [lsptLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+  item                           ItemMaster?    @relation(fields: [lsptItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_points_item")
+  unit                           Unit?          @relation(fields: [lsptUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_points_unit")
 
   @@index([lsptLsId], map: "ix_loyalty_sch_points_scheme")
   @@map("loyalty_sch_points")

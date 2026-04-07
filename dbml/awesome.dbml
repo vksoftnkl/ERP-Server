@@ -1446,6 +1446,8 @@ Table item_master {
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
   company companys [not null]
+  loyaltySchemePoints loyalty_sch_points [not null]
+  loyaltySchemeGifts loyalty_sch_gift [not null]
 }
 
 Table item_price_master {
@@ -1784,6 +1786,8 @@ Table item_unit_master {
   eanCodes item_ean_codes [not null]
   itemMasters item_master [not null]
   itemReorders item_reorders [not null]
+  loyaltySchemePoints loyalty_sch_points [not null]
+  loyaltySchemeGifts loyalty_sch_gift [not null]
 }
 
 Table opening_stock_detail {
@@ -1956,6 +1960,7 @@ Table branch_master {
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
   itemPrices item_price_master [not null]
+  loyaltySchemes loyalty_sch_list [not null]
 }
 
 Table companys {
@@ -2046,6 +2051,7 @@ Table companys {
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
   ItemUnitConversions item_unit_conversion [not null]
+  loyaltySchemes loyalty_sch_list [not null]
 }
 
 Table company_group_master {
@@ -2351,6 +2357,8 @@ Table loyalty_sch_list {
   lsUpdatedBy String
   lsApprovedOn DateTime
   lsApprovedBy String
+  company companys [not null]
+  branch branch_master
   parties loyalty_sch_party [not null]
   points loyalty_sch_points [not null]
   gifts loyalty_sch_gift [not null]
@@ -2374,6 +2382,8 @@ Table loyalty_sch_gift {
   lsgUpdatedOn DateTime
   lsgUpdatedBy String
   scheme loyalty_sch_list [not null]
+  item item_master [not null]
+  unit item_unit_master [not null]
 }
 
 Table loyalty_sch_party {
@@ -2413,6 +2423,8 @@ Table loyalty_sch_points {
   lsptUpdatedOn DateTime
   lsptUpdatedBy String
   scheme loyalty_sch_list [not null]
+  item item_master
+  unit item_unit_master
 }
 
 Table state_master {
@@ -2989,8 +3001,20 @@ Ref: customers.cusCompanyId > companys.compId
 
 Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]
 
+Ref: loyalty_sch_list.lsCompId > companys.compId [delete: Restrict]
+
+Ref: loyalty_sch_list.lsBranchId > branch_master.brId [delete: Restrict]
+
 Ref: loyalty_sch_gift.lsgLsId > loyalty_sch_list.lsId [delete: Cascade]
+
+Ref: loyalty_sch_gift.lsgItemId > item_master.itemId [delete: Restrict]
+
+Ref: loyalty_sch_gift.lsgUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: loyalty_sch_party.lpsLsId > loyalty_sch_list.lsId [delete: Cascade]
 
 Ref: loyalty_sch_points.lsptLsId > loyalty_sch_list.lsId [delete: Cascade]
+
+Ref: loyalty_sch_points.lsptItemId > item_master.itemId [delete: Restrict]
+
+Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]

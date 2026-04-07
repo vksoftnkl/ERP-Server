@@ -2557,6 +2557,8 @@ model ItemMaster {
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
   company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  loyaltySchemePoints  LoyaltySchemePoint[]
+  loyaltySchemeGifts   LoyaltySchemeGift[]
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
@@ -3129,6 +3131,8 @@ model Unit {
   eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
   itemReorders ItemReorder[]
+  loyaltySchemePoints LoyaltySchemePoint[]
+  loyaltySchemeGifts  LoyaltySchemeGift[]
 
   @@map("item_unit_master")
   @@schema("inventory")
@@ -3345,6 +3349,7 @@ model BranchMaster {
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
+  loyaltySchemes        LoyaltyScheme[]
   @@index([compId],      name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
@@ -3451,6 +3456,7 @@ model Company {
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   ItemUnitConversions   ItemUnitConversion[] @relation("iucCompanyId")
+  loyaltySchemes        LoyaltyScheme[]
   @@map("companys")
   @@schema("public")
 }
@@ -3887,6 +3893,8 @@ model LoyaltyScheme {
   lsApprovedOn                   DateTime?           @db.Timestamptz(6)                      @map("ls_approved_on")
   lsApprovedBy                   String?             @db.Uuid                                @map("ls_approved_by")
 
+  company                        Company             @relation(fields: [lsCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_list_company")
+  branch                         BranchMaster?       @relation(fields: [lsBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_list_branch")
   parties                        LoyaltySchemeParty[]
   points                         LoyaltySchemePoint[]
   gifts                          LoyaltySchemeGift[]
@@ -3916,6 +3924,8 @@ model LoyaltySchemeGift {
   lsgUpdatedBy                   String?        @db.Uuid                                @map("lsg_updated_by")
 
   scheme                         LoyaltyScheme  @relation(fields: [lsgLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+  item                           ItemMaster     @relation(fields: [lsgItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_gift_item")
+  unit                           Unit           @relation(fields: [lsgUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_gift_unit")
 
   @@index([lsgLsId], map: "ix_loyalty_sch_gift_scheme")
   @@map("loyalty_sch_gift")
@@ -3967,6 +3977,8 @@ model LoyaltySchemePoint {
   lsptUpdatedBy                  String?        @db.Uuid                                @map("lspt_updated_by")
 
   scheme                         LoyaltyScheme  @relation(fields: [lsptLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+  item                           ItemMaster?    @relation(fields: [lsptItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_points_item")
+  unit                           Unit?          @relation(fields: [lsptUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_points_unit")
 
   @@index([lsptLsId], map: "ix_loyalty_sch_points_scheme")
   @@map("loyalty_sch_points")

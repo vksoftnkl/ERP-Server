@@ -48,6 +48,8 @@ model Unit {
   eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
   itemReorders ItemReorder[]
+  loyaltySchemePoints LoyaltySchemePoint[]
+  loyaltySchemeGifts  LoyaltySchemeGift[]
 
   @@map("item_unit_master")
   @@schema("inventory")

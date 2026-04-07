@@ -41,6 +41,8 @@ model LoyaltyScheme {
   lsApprovedOn                   DateTime?           @db.Timestamptz(6)                      @map("ls_approved_on")
   lsApprovedBy                   String?             @db.Uuid                                @map("ls_approved_by")
 
+  company                        Company             @relation(fields: [lsCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_list_company")
+  branch                         BranchMaster?       @relation(fields: [lsBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_list_branch")
   parties                        LoyaltySchemeParty[]
   points                         LoyaltySchemePoint[]
   gifts                          LoyaltySchemeGift[]

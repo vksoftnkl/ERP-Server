@@ -44,7 +44,6 @@ import {
   LoyaltyPointPayload,
   LoyaltySchemeDeleteResult,
   LoyaltySchemePayload,
-  LoyaltySchemeSummaryPayload,
   PromotionLoyaltyPointsListMeta,
   PromotionLoyaltyPointsSuccessResponse,
 } from './types/promotion-loyalty-points-api.types';
@@ -80,16 +79,18 @@ export class PromotionLoyaltyPointsController {
 
   @Get('list')
   @Version('1')
-  @ApiOperation({ summary: 'List loyalty schemes with basic filters and pagination' })
-  @ApiOkResponse({ type: LoyaltySchemeSuccessListDto })
+  @ApiOperation({
+    summary: 'List loyalty schemes with parties, points, and gifts in a single response',
+  })
+  @ApiOkResponse({
+    type: LoyaltySchemeSuccessListDto,
+    description: 'Each loyalty scheme includes nested parties, points, and gifts.',
+  })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   async listSchemes(
     @Query() queryDto: ListLoyaltySchemeQueryDto,
   ): Promise<
-    PromotionLoyaltyPointsSuccessResponse<
-      LoyaltySchemeSummaryPayload[],
-      PromotionLoyaltyPointsListMeta
-    >
+    PromotionLoyaltyPointsSuccessResponse<LoyaltySchemePayload[], PromotionLoyaltyPointsListMeta>
   > {
     const result = await this.promotionLoyaltyPointsService.listSchemes(queryDto);
 
@@ -103,8 +104,13 @@ export class PromotionLoyaltyPointsController {
 
   @Get('get')
   @Version('1')
-  @ApiOperation({ summary: 'Get loyalty scheme by ls_id with active points and gifts' })
-  @ApiOkResponse({ type: LoyaltySchemeSuccessSingleDto })
+  @ApiOperation({
+    summary: 'Get a full loyalty scheme graph by ls_id in a single response',
+  })
+  @ApiOkResponse({
+    type: LoyaltySchemeSuccessSingleDto,
+    description: 'Returns the scheme header along with nested parties, points, and gifts.',
+  })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   async getSchemeById(
@@ -163,7 +169,10 @@ export class PromotionLoyaltyPointsController {
 
   @Get('points/list')
   @Version('1')
-  @ApiOperation({ summary: 'List loyalty point slabs for a scheme' })
+  @ApiOperation({
+    summary: 'Compatibility endpoint for loyalty point slabs',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: LoyaltyPointSuccessListDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   async listPoints(
@@ -183,7 +192,10 @@ export class PromotionLoyaltyPointsController {
 
   @Get('points/get')
   @Version('1')
-  @ApiOperation({ summary: 'Get loyalty point slab by lspt_id' })
+  @ApiOperation({
+    summary: 'Compatibility endpoint for a single loyalty point slab',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: LoyaltyPointSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
@@ -243,7 +255,10 @@ export class PromotionLoyaltyPointsController {
 
   @Get('gifts/list')
   @Version('1')
-  @ApiOperation({ summary: 'List loyalty gift rules for a scheme' })
+  @ApiOperation({
+    summary: 'Compatibility endpoint for loyalty gift rules',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: LoyaltyGiftSuccessListDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   async listGifts(
@@ -263,7 +278,10 @@ export class PromotionLoyaltyPointsController {
 
   @Get('gifts/get')
   @Version('1')
-  @ApiOperation({ summary: 'Get loyalty gift rule by lsg_id' })
+  @ApiOperation({
+    summary: 'Compatibility endpoint for a single loyalty gift rule',
+    deprecated: true,
+  })
   @ApiOkResponse({ type: LoyaltyGiftSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })

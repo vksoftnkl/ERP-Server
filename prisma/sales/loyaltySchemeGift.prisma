@@ -17,6 +17,8 @@ model LoyaltySchemeGift {
   lsgUpdatedBy                   String?        @db.Uuid                                @map("lsg_updated_by")
 
   scheme                         LoyaltyScheme  @relation(fields: [lsgLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+  item                           ItemMaster     @relation(fields: [lsgItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_gift_item")
+  unit                           Unit           @relation(fields: [lsgUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_gift_unit")
 
   @@index([lsgLsId], map: "ix_loyalty_sch_gift_scheme")
   @@map("loyalty_sch_gift")

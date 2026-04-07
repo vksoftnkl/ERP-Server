@@ -136,6 +136,50 @@ export class LoyaltyGiftPayloadDto {
   lsg_updated_by!: string | null;
 }
 
+export class LoyaltyPartyPayloadDto {
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lps_id!: string;
+
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lps_ls_id!: string;
+
+  @ApiProperty({ example: 1 })
+  lps_slno!: number;
+
+  @ApiProperty({ example: 'CUSTOMER_GROUP' })
+  lps_scope_type!: string;
+
+  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  lps_scope_id!: string;
+
+  @ApiProperty({ example: false })
+  lps_is_exclude!: boolean;
+
+  @ApiPropertyOptional({ example: 'Premium customers only', nullable: true })
+  lps_notes!: string | null;
+
+  @ApiProperty({ example: true })
+  lps_is_active!: boolean;
+
+  @ApiProperty({ example: false })
+  lps_is_deleted!: boolean;
+
+  @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
+  lps_sync_date!: string | null;
+
+  @ApiProperty({ example: '2026-04-06T12:00:00.000Z' })
+  lps_created_on!: string;
+
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  lps_created_by!: string | null;
+
+  @ApiPropertyOptional({ example: '2026-04-06T12:00:00.000Z', nullable: true })
+  lps_updated_on!: string | null;
+
+  @ApiPropertyOptional({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e', nullable: true })
+  lps_updated_by!: string | null;
+}
+
 export class LoyaltySchemeSummaryPayloadDto {
   @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
   ls_id!: string;
@@ -262,6 +306,9 @@ export class LoyaltySchemeSummaryPayloadDto {
 }
 
 export class LoyaltySchemePayloadDto extends LoyaltySchemeSummaryPayloadDto {
+  @ApiProperty({ type: LoyaltyPartyPayloadDto, isArray: true })
+  parties!: LoyaltyPartyPayloadDto[];
+
   @ApiProperty({ type: LoyaltyPointPayloadDto, isArray: true })
   points!: LoyaltyPointPayloadDto[];
 
@@ -311,8 +358,8 @@ export class LoyaltySchemeSuccessListDto {
   @ApiProperty({ example: 'Loyalty schemes fetched successfully' })
   message!: string;
 
-  @ApiProperty({ type: LoyaltySchemeSummaryPayloadDto, isArray: true })
-  data!: LoyaltySchemeSummaryPayloadDto[];
+  @ApiProperty({ type: LoyaltySchemePayloadDto, isArray: true })
+  data!: LoyaltySchemePayloadDto[];
 
   @ApiProperty({ type: PromotionLoyaltyPointsListMetaDto })
   meta!: PromotionLoyaltyPointsListMetaDto;
