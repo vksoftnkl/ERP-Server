@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -13,6 +14,7 @@ import {
   MaxLength,
   Min,
   Validate,
+  ValidateNested,
   ValidateIf,
   ValidatorConstraint,
   ValidatorConstraintInterface,
@@ -33,6 +35,7 @@ import {
   toRequiredUuid,
   toTrimmedString,
 } from './loyalty-dto.helpers';
+import { SaveLoyaltyPartyDto } from './save-loyalty-party.dto';
 
 const LOYALTY_SCHEME_TYPES = ['REDEEM', 'BOTH', 'GIFT'] as const;
 const LOYALTY_SCHEME_STATUSES = ['DRAFT', 'APPROVED', 'ACTIVE', 'CLOSED', 'CANCELLED'] as const;
@@ -369,4 +372,11 @@ export class SaveLoyaltySchemeDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @Matches(UUID_PATTERN)
   ls_approved_by?: string | null;
+
+  @ApiPropertyOptional({ type: SaveLoyaltyPartyDto, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaveLoyaltyPartyDto)
+  parties?: SaveLoyaltyPartyDto[];
 }

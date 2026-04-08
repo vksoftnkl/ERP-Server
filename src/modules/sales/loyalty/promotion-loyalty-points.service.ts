@@ -18,6 +18,7 @@ import { ListLoyaltyGiftQueryDto } from './dto/list-loyalty-gift-query.dto';
 import { ListLoyaltyPointQueryDto } from './dto/list-loyalty-point-query.dto';
 import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
 import { SaveLoyaltyGiftDto } from './dto/save-loyalty-gift.dto';
+import { SaveLoyaltyPartyDto } from './dto/save-loyalty-party.dto';
 import { SaveLoyaltyPointDto } from './dto/save-loyalty-point.dto';
 import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
 import {
@@ -59,6 +60,40 @@ export class PromotionLoyaltyPointsService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
   ) {}
+
+  private parseTimeToUtcDate(value: string, field: string): Date {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      this.throwBadRequest('Validation failed', [{ field, message: `${field} is required` }]);
+    }
+
+    const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.(\d{1,3}))?)?$/.exec(trimmed);
+    if (!match) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field,
+          message: `${field} must be a valid time (HH:mm or HH:mm:ss)` ,
+        },
+      ]);
+    }
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const seconds = match[3] ? Number(match[3]) : 0;
+    const millis = match[4] ? Number(match[4].padEnd(3, '0')) : 0;
+
+    const date = new Date(Date.UTC(1970, 0, 1, hours, minutes, seconds, millis));
+    if (Number.isNaN(date.getTime())) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field,
+          message: `${field} must be a valid time`,
+        },
+      ]);
+    }
+
+    return date;
+  }
 
   async saveScheme(dto: SaveLoyaltySchemeDto): Promise<LoyaltySchemePayload> {
     if (dto.ls_id) {
@@ -482,7 +517,8 @@ export class PromotionLoyaltyPointsService {
         await this.ensureSchemeCodeUnique(tx, lsCompId, lsCode);
 
         const created = await tx.loyaltyScheme.create({ data });
-        const payload = this.toSchemePayload({ ...created, parties: [], points: [], gifts: [] });
+        const parties = await this.syncSchemeParties(tx, created.lsId, dto.parties, actorId);
+        const payload = this.toSchemePayload({ ...created, parties, points: [], gifts: [] });
 
         await this.auditLogService.logEntityChange(
           {
@@ -566,9 +602,10 @@ export class PromotionLoyaltyPointsService {
           data,
         });
 
+        const parties = await this.syncSchemeParties(tx, lsId, dto.parties, actorId);
         const payload = this.toSchemePayload({
           ...updated,
-          parties: existing.parties,
+          parties: this.hasOwn(dto, 'parties') ? parties : existing.parties,
           points: existing.points,
           gifts: existing.gifts,
         });
@@ -920,10 +957,12 @@ export class PromotionLoyaltyPointsService {
       data.lsItemType = this.requireString(dto.ls_item_type, 'ls_item_type');
     }
     if (this.hasOwn(dto, 'ls_valid_from_time')) {
-      data.lsValidFromTime = dto.ls_valid_from_time;
+      const value = dto.ls_valid_from_time;
+      data.lsValidFromTime = value ? this.parseTimeToUtcDate(value, 'ls_valid_from_time') : null;
     }
     if (this.hasOwn(dto, 'ls_valid_to_time')) {
-      data.lsValidToTime = dto.ls_valid_to_time;
+      const value = dto.ls_valid_to_time;
+      data.lsValidToTime = value ? this.parseTimeToUtcDate(value, 'ls_valid_to_time') : null;
     }
     if (this.hasOwn(dto, 'ls_valid_weekdays')) {
       data.lsValidWeekdays = dto.ls_valid_weekdays ?? null;
@@ -997,7 +1036,12 @@ export class PromotionLoyaltyPointsService {
       data.lsIsActive = dto.ls_is_active ?? true;
     }
     if (this.hasOwn(dto, 'ls_approved_on')) {
-      data.lsApprovedOn = this.requireDateTime(dto.ls_approved_on, 'ls_approved_on');
+      const approvedOn = (dto as { ls_approved_on?: unknown }).ls_approved_on;
+      if (approvedOn === null || approvedOn === undefined || approvedOn === '') {
+        data.lsApprovedOn = null;
+      } else {
+        data.lsApprovedOn = this.requireDateTime(String(approvedOn), 'ls_approved_on');
+      }
     }
     if (this.hasOwn(dto, 'ls_approved_by')) {
       data.lsApprovedBy = this.resolveActorUuid(dto.ls_approved_by, actorId);
@@ -1048,6 +1092,108 @@ export class PromotionLoyaltyPointsService {
     if (this.hasOwn(dto, 'lsg_is_active')) {
       data.lsgIsActive = dto.lsg_is_active ?? true;
     }
+  }
+
+  private async syncSchemeParties(
+    client: LoyaltyWriteClient,
+    lsId: string,
+    inputParties: SaveLoyaltyPartyDto[] | undefined,
+    actorId: string | null,
+  ): Promise<LoyaltySchemeParty[]> {
+    const existing = await client.loyaltySchemeParty.findMany({
+      where: { lpsLsId: lsId, lpsIsDeleted: false },
+      orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }],
+    });
+
+    if (inputParties === undefined) {
+      return existing;
+    }
+
+    const existingMap = new Map(existing.map((party) => [party.lpsId, party]));
+    const keptIds = new Set<string>();
+    const seenSlnos = new Set<number>();
+    const now = new Date();
+    const persisted: LoyaltySchemeParty[] = [];
+
+    for (const [index, inputParty] of inputParties.entries()) {
+      const lpsSlno = inputParty.lps_slno ?? index + 1;
+      if (seenSlnos.has(lpsSlno)) {
+        this.throwConflict('Duplicate loyalty party serial number is not allowed', [
+          {
+            field: 'lps_slno',
+            message: `A loyalty party scope row already exists with serial number ${lpsSlno}`,
+          },
+        ]);
+      }
+      seenSlnos.add(lpsSlno);
+
+      if (inputParty.lps_id) {
+        const existingParty = existingMap.get(inputParty.lps_id);
+        if (!existingParty) {
+          this.throwNotFound('lps_id', inputParty.lps_id, 'Loyalty party scope row not found');
+        }
+
+        const updated = await client.loyaltySchemeParty.update({
+          where: { lpsId: inputParty.lps_id },
+          data: {
+            lpsSlno,
+            lpsScopeType: this.requireString(inputParty.lps_scope_type, 'lps_scope_type'),
+            lpsScopeId: this.requireUuid(inputParty.lps_scope_id, 'lps_scope_id'),
+            lpsIsExclude: inputParty.lps_is_exclude ?? false,
+            lpsNotes: inputParty.lps_notes ?? null,
+            lpsIsActive: inputParty.lps_is_active ?? true,
+            lpsUpdatedOn: now,
+            lpsUpdatedBy: this.resolveActorUuid(inputParty.lps_updated_by, actorId),
+          },
+        });
+        keptIds.add(updated.lpsId);
+        persisted.push(updated);
+        continue;
+      }
+
+      const createdBy = this.resolveActorUuid(inputParty.lps_created_by, actorId);
+      const updatedBy = this.resolveActorUuid(inputParty.lps_updated_by, createdBy, actorId);
+      const created = await client.loyaltySchemeParty.create({
+        data: {
+          lpsLsId: lsId,
+          lpsSlno,
+          lpsScopeType: this.requireString(inputParty.lps_scope_type, 'lps_scope_type'),
+          lpsScopeId: this.requireUuid(inputParty.lps_scope_id, 'lps_scope_id'),
+          lpsIsExclude: inputParty.lps_is_exclude ?? false,
+          lpsNotes: inputParty.lps_notes ?? null,
+          lpsIsActive: inputParty.lps_is_active ?? true,
+          lpsCreatedOn: now,
+          lpsCreatedBy: createdBy,
+          lpsUpdatedOn: now,
+          lpsUpdatedBy: updatedBy,
+        },
+      });
+      keptIds.add(created.lpsId);
+      persisted.push(created);
+    }
+
+    const removedIds = existing
+      .filter((party) => !keptIds.has(party.lpsId))
+      .map((party) => party.lpsId);
+
+    if (removedIds.length > 0) {
+      await client.loyaltySchemeParty.updateMany({
+        where: { lpsId: { in: removedIds } },
+        data: {
+          lpsIsDeleted: true,
+          lpsIsActive: false,
+          lpsUpdatedOn: now,
+          lpsUpdatedBy: this.resolveActorUuid(actorId),
+        },
+      });
+    }
+
+    return persisted.sort((left, right) => {
+      if (left.lpsSlno === right.lpsSlno) {
+        return left.lpsId.localeCompare(right.lpsId);
+      }
+      return left.lpsSlno - right.lpsSlno;
+    });
   }
 
   private buildDateRangeFilter(
