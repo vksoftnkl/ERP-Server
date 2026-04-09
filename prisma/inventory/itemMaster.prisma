@@ -80,7 +80,6 @@ model ItemMaster {
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
   company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  loyaltySchemePoints  LoyaltySchemePoint[]
   loyaltySchemeGifts   LoyaltySchemeGift[]
   @@map("item_master")
   @@schema("inventory")
