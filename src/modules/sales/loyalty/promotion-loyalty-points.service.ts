@@ -637,6 +637,22 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
     }
   }
 
+  private calculatePointFactor(points: number | undefined, each: number | undefined): number {
+    const normalizedPoints = this.requireNumber(points, 'lspt_points', 0);
+    const normalizedEach = this.requireNumber(each, 'lspt_each', Number.EPSILON);
+
+    if (normalizedEach <= 0) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field: 'lspt_each',
+          message: 'lspt_each must be greater than 0',
+        },
+      ]);
+    }
+
+    return normalizedPoints / normalizedEach;
+  }
+
   private async createPoint(dto: SaveLoyaltyPointDto): Promise<LoyaltyPointPayload> {
     const now = new Date();
     const actorId = this.resolveActorUuid(this.requestContextService.getUserId());
@@ -652,10 +668,16 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
         const lsptSlno = dto.lspt_slno ?? (await this.getNextPointSlno(tx, lsptLsId));
         await this.ensurePointSlnoUnique(tx, lsptLsId, lsptSlno);
 
+        const lsptPoints = this.requireNumber(dto.lspt_points, 'lspt_points', 0);
+        const lsptEach = this.requireNumber(dto.lspt_each, 'lspt_each', Number.EPSILON);
+        const lsptFactor = this.calculatePointFactor(lsptPoints, lsptEach);
+
         const data: Prisma.LoyaltySchemePointUncheckedCreateInput = {
           lsptLsId,
           lsptSlno,
-          lsptPoints: this.requireNumber(dto.lspt_points, 'lspt_points', 0),
+          lsptPoints,
+          lsptEach,
+          lsptFactor,
           lsptCreatedOn: now,
           lsptCreatedBy,
           lsptUpdatedOn: now,
@@ -663,6 +685,9 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
         };
 
         this.applyOptionalPointFields(data, dto);
+
+        data.lsptEach = lsptEach;
+        data.lsptFactor = lsptFactor;
 
         const created = await tx.loyaltySchemePoint.create({ data });
         const payload = this.toPointPayload(created);
@@ -716,6 +741,16 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
         await this.ensurePointReferenceRecords(tx, scheme.lsItemType, dto);
         await this.ensurePointSlnoUnique(tx, effectiveSchemeId, effectiveSlno, lsptId);
 
+        const effectivePoints = this.hasOwn(dto, 'lspt_points')
+          ? this.requireNumber(dto.lspt_points, 'lspt_points', 0)
+          : this.requireNumber(existing.lsptPoints.toNumber(), 'lspt_points', 0);
+
+        const effectiveEach = this.hasOwn(dto, 'lspt_each')
+          ? this.requireNumber(dto.lspt_each, 'lspt_each', Number.EPSILON)
+          : this.requireNumber(existing.lsptEach.toNumber(), 'lspt_each', Number.EPSILON);
+
+        const effectiveFactor = this.calculatePointFactor(effectivePoints, effectiveEach);
+
         const data: Prisma.LoyaltySchemePointUncheckedUpdateInput = {
           lsptUpdatedOn: new Date(),
           lsptUpdatedBy: this.resolveActorUuid(dto.lspt_updated_by, actorId),
@@ -728,10 +763,14 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           data.lsptSlno = effectiveSlno;
         }
         if (this.hasOwn(dto, 'lspt_points')) {
-          data.lsptPoints = this.requireNumber(dto.lspt_points, 'lspt_points', 0);
+          data.lsptPoints = effectivePoints;
         }
 
         this.applyOptionalPointFields(data, dto);
+
+        data.lsptPoints = effectivePoints;
+        data.lsptEach = effectiveEach;
+        data.lsptFactor = effectiveFactor;
 
         const updated = await tx.loyaltySchemePoint.update({
           where: { lsptId },
@@ -1072,9 +1111,6 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
     }
     if (this.hasOwn(dto, 'lspt_each')) {
       data.lsptEach = this.requireNumber(dto.lspt_each, 'lspt_each', Number.EPSILON);
-    }
-    if (this.hasOwn(dto, 'lspt_factor')) {
-      data.lsptFactor = this.requireNumber(dto.lspt_factor, 'lspt_factor', Number.EPSILON);
     }
     if (this.hasOwn(dto, 'lspt_notes')) {
       data.lsptNotes = dto.lspt_notes ?? null;

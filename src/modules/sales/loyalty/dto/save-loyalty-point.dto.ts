@@ -75,8 +75,6 @@ export class SaveLoyaltyPointDto {
   @ApiPropertyOptional({ minimum: 0, default: 1 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
-  @IsNumber()
-  @Min(Number.EPSILON)
   lspt_factor?: number;
 
   @ApiProperty({ minimum: 0, example: 10 })
