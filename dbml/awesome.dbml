@@ -897,6 +897,7 @@ Table audit_screen {
   screenType AuditScreenType [not null, default: 'other']
   screenStatus Boolean [not null, default: true]
   screenModule String
+  screenAuditSql String
   screenCreatedOn DateTime [default: `now()`, not null]
   screenCreatedBy String
   screenModifiedOn DateTime
@@ -1446,7 +1447,6 @@ Table item_master {
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
   company companys [not null]
-  loyaltySchemePoints loyalty_sch_points [not null]
   loyaltySchemeGifts loyalty_sch_gift [not null]
 }
 
@@ -2423,7 +2423,6 @@ Table loyalty_sch_points {
   lsptUpdatedOn DateTime
   lsptUpdatedBy String
   scheme loyalty_sch_list [not null]
-  item item_master
   unit item_unit_master
 }
 
@@ -3014,7 +3013,5 @@ Ref: loyalty_sch_gift.lsgUnitId > item_unit_master.unit_id [delete: Restrict]
 Ref: loyalty_sch_party.lpsLsId > loyalty_sch_list.lsId [delete: Cascade]
 
 Ref: loyalty_sch_points.lsptLsId > loyalty_sch_list.lsId [delete: Cascade]
-
-Ref: loyalty_sch_points.lsptItemId > item_master.itemId [delete: Restrict]
 
 Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]

@@ -22,10 +22,10 @@ model AuditScreen {
   screenType        AuditScreenType @default(other) @map("screen_type")
   screenStatus      Boolean         @default(true) @map("screen_status")
   screenModule      String?         @db.Text @map("screen_module")
-
+  screenAuditSql    String?           @db.Text @map("screen_audit_sql")
   screenCreatedOn   DateTime        @default(now()) @db.Timestamptz(6) @map("screen_created_on")
   screenCreatedBy   String?         @db.Uuid @map("screen_created_by")
-
+  
   screenModifiedOn  DateTime?       @db.Timestamptz(6) @map("screen_modified_on")
   screenModifiedBy  String?         @db.Uuid @map("screen_modified_by")
 
