@@ -106,13 +106,11 @@ export class UnitsMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: UNIT_TABLE_NAME,

@@ -340,11 +340,9 @@ export class GodownsMasterService {
     let depth = 0;
     let insideSingleQuote = false;
     let insideDoubleQuote = false;
-
     for (let i = 0; i < value.length; i += 1) {
       const current = value[i];
       const next = value[i + 1];
-
       if (insideSingleQuote) {
         if (current === "'" && next === "'") {
           i += 1;
@@ -355,7 +353,6 @@ export class GodownsMasterService {
         }
         continue;
       }
-
       if (insideDoubleQuote) {
         if (current === '"' && next === '"') {
           i += 1;
@@ -366,7 +363,6 @@ export class GodownsMasterService {
         }
         continue;
       }
-
       if (current === "'") {
         insideSingleQuote = true;
         continue;
@@ -388,25 +384,21 @@ export class GodownsMasterService {
         startIndex = i + 1;
       }
     }
-
     const tail = value.slice(startIndex).trim();
     if (tail) {
       chunks.push(tail);
     }
     return chunks;
   }
-
   private extractSqlOutputFieldName(expression: string): string | null {
     const trimmed = expression.trim();
     if (!trimmed || trimmed === '*' || /\.\*$/.test(trimmed)) {
       return null;
     }
-
     const explicitAliasMatch = trimmed.match(/\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
     if (explicitAliasMatch) {
       return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
     }
-
     const simpleColumnMatch = trimmed.match(
       /^((?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)\.)*(?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)$/i,
     );
@@ -414,37 +406,28 @@ export class GodownsMasterService {
       const parts = trimmed.split('.');
       return this.parseSqlIdentifierToken(parts[parts.length - 1]);
     }
-
     return null;
   }
-
   private parseSqlIdentifierToken(token: string): string | null {
     const trimmed = token.trim();
     if (!trimmed) {
       return null;
     }
-
     if (/^"([^"]|"")+"$/.test(trimmed)) {
       return trimmed.slice(1, -1).replace(/""/g, '"');
     }
-
     if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
       return trimmed;
     }
-
     return null;
   }
-
   async getById(gdlId: string): Promise<GodownPayload> {
     const record = await this.findActiveLocation(this.prisma, gdlId);
-
     if (!record) {
       this.throwNotFound(gdlId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(gdlId: string): Promise<{ gdl_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await this.getActiveLocationOrThrow(tx, gdlId);
@@ -1066,15 +1049,12 @@ export class GodownsMasterService {
     ) {
       data.gdlBranchId = saveGodownDto.gdl_branch_id;
     }
-
     if (this.hasOwnProperty(saveGodownDto, 'gdl_short') && saveGodownDto.gdl_short !== undefined) {
       data.gdlShort = saveGodownDto.gdl_short;
     }
-
     if (this.hasOwnProperty(saveGodownDto, 'gdl_code') && saveGodownDto.gdl_code !== undefined) {
       data.gdlCode = saveGodownDto.gdl_code;
     }
-
     if (this.hasOwnProperty(saveGodownDto, 'gdl_type') && saveGodownDto.gdl_type !== undefined) {
       if (!saveGodownDto.gdl_type.trim()) {
         this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
@@ -1084,57 +1064,47 @@ export class GodownsMasterService {
           },
         ]);
       }
-
       data.gdlType = saveGodownDto.gdl_type.trim();
     }
-
     if (this.hasOwnProperty(saveGodownDto, 'gdl_parent_id')) {
       data.gdlParentId = saveGodownDto.gdl_parent_id ?? null;
     }
-
     if (this.hasOwnProperty(saveGodownDto, 'gdl_sort') && saveGodownDto.gdl_sort !== undefined) {
       data.gdlSort = saveGodownDto.gdl_sort;
     }
-
     if (this.hasOwnProperty(saveGodownDto, 'gdl_level') && saveGodownDto.gdl_level !== undefined) {
       data.gdlLevel = saveGodownDto.gdl_level;
     }
-
     if (
       this.hasOwnProperty(saveGodownDto, 'gdl_del_sheet') &&
       saveGodownDto.gdl_del_sheet !== undefined
     ) {
       data.gdlDelSheet = saveGodownDto.gdl_del_sheet;
     }
-
     if (
       this.hasOwnProperty(saveGodownDto, 'gdl_split_stock') &&
       saveGodownDto.gdl_split_stock !== undefined
     ) {
       data.gdlSplitStock = saveGodownDto.gdl_split_stock;
     }
-
     if (
       this.hasOwnProperty(saveGodownDto, 'gdl_negative_stock') &&
       saveGodownDto.gdl_negative_stock !== undefined
     ) {
       data.gdlNegativeStock = saveGodownDto.gdl_negative_stock;
     }
-
     if (
       this.hasOwnProperty(saveGodownDto, 'gdl_volume') &&
       saveGodownDto.gdl_volume !== undefined
     ) {
       data.gdlVolume = saveGodownDto.gdl_volume;
     }
-
     if (
       this.hasOwnProperty(saveGodownDto, 'gdl_is_active') &&
       saveGodownDto.gdl_is_active !== undefined
     ) {
       data.gdlIsActive = saveGodownDto.gdl_is_active;
     }
-
     if (
       this.hasOwnProperty(saveGodownDto, 'gdl_remarks') &&
       saveGodownDto.gdl_remarks !== undefined
@@ -1142,7 +1112,6 @@ export class GodownsMasterService {
       data.gdlRemarks = saveGodownDto.gdl_remarks;
     }
   }
-
   private toPayload(record: GodownLocation): GodownPayload {
     return {
       gdl_id: record.gdlId,
@@ -1169,15 +1138,12 @@ export class GodownsMasterService {
       gdl_remarks: record.gdlRemarks,
     };
   }
-
   private toNumber(value: Prisma.Decimal | number): number {
     if (typeof value === 'number') {
       return value;
     }
-
     return Number(value.toString());
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -1189,7 +1155,6 @@ export class GodownsMasterService {
         ]),
       );
     }
-
     if (this.isForeignKeyConstraintError(error)) {
       this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
         {
@@ -1199,23 +1164,18 @@ export class GodownsMasterService {
       ]);
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private isForeignKeyConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2003';
   }
-
   private throwNotFound(gdlId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Godown location not found', [
@@ -1226,11 +1186,9 @@ export class GodownsMasterService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: GodownErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: GodownErrorDetail[] = [],
@@ -1241,7 +1199,6 @@ export class GodownsMasterService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

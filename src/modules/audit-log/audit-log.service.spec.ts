@@ -2,9 +2,19 @@ import { BadRequestException } from '@nestjs/common';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from './audit-log.service';
+import { getAuditScreenSql } from './audit-screen-sql.constants';
 
 type PrismaMock = {
   $executeRaw: jest.Mock;
+  itemGroupMaster: {
+    findMany: jest.Mock;
+  };
+  itemTaxMaster: {
+    findMany: jest.Mock;
+  };
+  unit: {
+    findMany: jest.Mock;
+  };
   branchMaster: {
     findMany: jest.Mock;
   };
@@ -14,6 +24,7 @@ type PrismaMock = {
   auditScreen: {
     findFirst: jest.Mock;
     create: jest.Mock;
+    update: jest.Mock;
   };
   auditLog: {
     create: jest.Mock;
@@ -39,6 +50,15 @@ describe('AuditLogService', () => {
   beforeEach(() => {
     prisma = {
       $executeRaw: jest.fn(),
+      itemGroupMaster: {
+        findMany: jest.fn(),
+      },
+      itemTaxMaster: {
+        findMany: jest.fn(),
+      },
+      unit: {
+        findMany: jest.fn(),
+      },
       branchMaster: {
         findMany: jest.fn(),
       },
@@ -48,6 +68,7 @@ describe('AuditLogService', () => {
       auditScreen: {
         findFirst: jest.fn(),
         create: jest.fn(),
+        update: jest.fn(),
       },
       auditLog: {
         create: jest.fn(),
@@ -264,6 +285,83 @@ describe('AuditLogService', () => {
     });
   });
 
+  it('logEntityChange creates missing audit screens with configured screenAuditSql', async () => {
+    prisma.auditScreen.findFirst.mockResolvedValue(null);
+    prisma.auditScreen.create.mockResolvedValue({
+      screenId: 11,
+      screenAuditSql: getAuditScreenSql('Units Master'),
+    });
+    prisma.auditLog.create.mockResolvedValue({
+      logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
+    });
+
+    await service.logEntityChange({
+      action: 'New',
+      tableName: 'item_unit_master',
+      screenName: 'Units Master',
+      modifiedRecord: {
+        unit_name: 'Box',
+        unit_is_active: true,
+      },
+      originalRecord: null,
+      pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+    });
+
+    expect(prisma.auditScreen.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        screenName: 'Units Master',
+        screenAuditSql: getAuditScreenSql('Units Master'),
+      }),
+      select: {
+        screenId: true,
+        screenAuditSql: true,
+      },
+    });
+  });
+
+  it('logEntityChange backfills configured screenAuditSql for existing audit screens', async () => {
+    prisma.auditScreen.findFirst.mockResolvedValue({
+      screenId: 12,
+      screenName: 'State Master',
+      screenAuditSql: null,
+    });
+    prisma.auditScreen.update.mockResolvedValue({
+      screenId: 12,
+      screenAuditSql: getAuditScreenSql('State Master'),
+    });
+    prisma.auditLog.create.mockResolvedValue({
+      logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
+    });
+
+    await service.logEntityChange({
+      action: 'update',
+      tableName: 'state_master',
+      screenName: 'State Master',
+      originalRecord: {
+        stm_name: 'Kerala',
+        stm_is_active: true,
+      },
+      modifiedRecord: {
+        stm_name: 'Karnataka',
+        stm_is_active: true,
+      },
+      pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+    });
+
+    expect(prisma.auditScreen.update).toHaveBeenCalledWith({
+      where: {
+        screenId: 12,
+      },
+      data: {
+        screenAuditSql: getAuditScreenSql('State Master'),
+      },
+      select: {
+        screenId: true,
+        screenAuditSql: true,
+      },
+    });
+  });
+
   it('createAuditLog supports cancel action', async () => {
     prisma.auditLog.create.mockResolvedValue({
       logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
@@ -360,10 +458,113 @@ describe('AuditLogService', () => {
     expect(prisma.branchMaster.findMany).toHaveBeenCalledTimes(1);
     expect(result.meta.total).toBe(1);
     expect(result.items[0].log_action).toBe('New');
-    expect(result.items[0].log_user_id).toBe('019d6f6c-be87-7a11-8905-36092c46fd06');
+    expect(result.items[0].log_pk).toBe('Raw Materials');
+    expect(result.items[0].log_user_id).toBeNull();
     expect(result.items[0].log_user_name).toBe('Admin User');
-    expect(result.items[0].log_branch_id).toBe('019d6f6c-be87-7a11-8905-36092c46fd07');
+    expect(result.items[0].log_branch_id).toBeNull();
     expect(result.items[0].log_branch_name).toBe('Head Office');
+    expect(result.items[0].log_original_record).toEqual({
+      'Item Group Name': 'Raw Materials',
+    });
+  });
+
+  it('list resolves configured audit reference fields to names inside audit payloads', async () => {
+    const parentGroupId = '019d6f6c-be87-7a11-8905-36092c46fd10';
+    const currentGroupId = '019d6f6c-be87-7a11-8905-36092c46fd11';
+    const nextParentGroupId = '019d6f6c-be87-7a11-8905-36092c46fd12';
+    const defaultTaxId = '019d6f6c-be87-7a11-8905-36092c46fd13';
+    const oldUnitId = '019d6f6c-be87-7a11-8905-36092c46fd14';
+    const newUnitId = '019d6f6c-be87-7a11-8905-36092c46fd15';
+
+    prisma.auditLog.count.mockResolvedValue(1);
+    prisma.auditLog.findMany.mockResolvedValue([
+      {
+        logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
+        logDate: new Date('2026-02-20T11:00:00.000Z'),
+        logAction: 'update',
+        logScreenId: 10,
+        logTableName: 'item_group_master',
+        logPk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+        logDisplayName: null,
+        logOriginalRecord: {
+          itg_name: 'Beverages',
+          itg_parent_id: parentGroupId,
+          itg_path_ids_cache: [parentGroupId, currentGroupId],
+          itg_default_tax_id: defaultTaxId,
+          itg_default_uom_id: oldUnitId,
+        },
+        logModifiedRecord: {
+          itg_name: 'Cold Drinks',
+          itg_parent_id: nextParentGroupId,
+          itg_path_ids_cache: [nextParentGroupId, currentGroupId],
+          itg_default_tax_id: defaultTaxId,
+          itg_default_uom_id: newUnitId,
+        },
+        logChangedFields: {
+          itg_parent_id: {
+            from: parentGroupId,
+            to: nextParentGroupId,
+          },
+          itg_default_uom_id: {
+            from: oldUnitId,
+            to: newUnitId,
+          },
+        },
+        logUserId: null,
+        logBranchId: null,
+        logNotes: 'Item group updated',
+        auditScreen: {
+          screenName: 'Item Group Master',
+        },
+      },
+    ]);
+    prisma.itemGroupMaster.findMany.mockResolvedValue([
+      { itgId: parentGroupId, itgName: 'Parent Group A' },
+      { itgId: currentGroupId, itgName: 'Current Group' },
+      { itgId: nextParentGroupId, itgName: 'Parent Group B' },
+    ]);
+    prisma.itemTaxMaster.findMany.mockResolvedValue([
+      { taxId: defaultTaxId, taxName: 'GST 18%' },
+    ]);
+    prisma.unit.findMany.mockResolvedValue([
+      { unit_id: oldUnitId, unit_name: 'Box' },
+      { unit_id: newUnitId, unit_name: 'Carton' },
+    ]);
+
+    const result = await service.list({
+      page: 1,
+      limit: 20,
+    });
+
+    expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.itemTaxMaster.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.unit.findMany).toHaveBeenCalledTimes(1);
+    expect(result.items[0].log_display_name).toBe('Cold Drinks');
+    expect(result.items[0].log_pk).toBe('Cold Drinks');
+    expect(result.items[0].log_original_record).toEqual({
+      'Item Group Name': 'Beverages',
+      'Parent Group ID': 'Parent Group A',
+      'Path IDs Cache': ['Parent Group A', 'Current Group'],
+      'Default Tax ID': 'GST 18%',
+      'Default UOM ID': 'Box',
+    });
+    expect(result.items[0].log_modified_record).toEqual({
+      'Item Group Name': 'Cold Drinks',
+      'Parent Group ID': 'Parent Group B',
+      'Path IDs Cache': ['Parent Group B', 'Current Group'],
+      'Default Tax ID': 'GST 18%',
+      'Default UOM ID': 'Carton',
+    });
+    expect(result.items[0].log_changed_fields).toEqual({
+      'Parent Group ID': {
+        from: 'Parent Group A',
+        to: 'Parent Group B',
+      },
+      'Default UOM ID': {
+        from: 'Box',
+        to: 'Carton',
+      },
+    });
   });
 
   it('list rejects invalid date range', async () => {

@@ -11,10 +11,13 @@ import {
 } from './types/audit-log.types';
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto';
 import { AuditLogListItem, AuditLogListMeta } from './types/audit-log-api.types';
+import { getAuditScreenSql } from './audit-screen-sql.constants';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const NUMERIC_ID_PATTERN = /^\d+$/;
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
+const DISPLAY_FIELD_PATTERN = /\b(name|title)\b/i;
 
 type AuditWriteClient = Prisma.TransactionClient | PrismaService;
 type AuditLogListRecord = Prisma.AuditLogGetPayload<{
@@ -28,6 +31,147 @@ type ResolvedAuditScreen = {
   screenId: number;
   auditFields: AuditFieldDefinition[];
 };
+type PreparedAuditLogListRecord = {
+  record: AuditLogListRecord;
+  screenName: string;
+  auditFields: AuditFieldDefinition[];
+  originalRecord: Prisma.JsonValue | null;
+  modifiedRecord: Prisma.JsonValue | null;
+  changedFields: Prisma.JsonValue | null;
+};
+type AuditReferenceLookupType =
+  | 'accountGroup'
+  | 'area'
+  | 'branch'
+  | 'category'
+  | 'city'
+  | 'company'
+  | 'customer'
+  | 'customerGroup'
+  | 'employeeDepartment'
+  | 'employeeDesignation'
+  | 'godownGroup'
+  | 'godownLocation'
+  | 'gspProvider'
+  | 'item'
+  | 'itemBrand'
+  | 'itemGroup'
+  | 'itemSection'
+  | 'itemTax'
+  | 'ledger'
+  | 'state'
+  | 'supplierGroup'
+  | 'tenderType'
+  | 'unit'
+  | 'unitRate';
+type AuditReferenceNameLookup = Partial<Record<AuditReferenceLookupType, ReadonlyMap<string, string>>>;
+
+const normalizeAuditFieldLookupToken = (value: string): string =>
+  value
+    .replace(/["'`]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+
+const createAuditReferenceTypeMap = (
+  entries: readonly (readonly [string, AuditReferenceLookupType])[],
+): ReadonlyMap<string, AuditReferenceLookupType> =>
+  new Map(
+    entries.map(([label, lookupType]) => [normalizeAuditFieldLookupToken(label), lookupType] as const),
+  );
+
+const GLOBAL_AUDIT_FIELD_REFERENCE_TYPES = createAuditReferenceTypeMap([
+  ['Area ID', 'area'],
+  ['Base Unit ID', 'unit'],
+  ['Branch ID', 'branch'],
+  ['City ID', 'city'],
+  ['Company ID', 'company'],
+  ['Company IDs', 'company'],
+  ['Customer Group ID', 'customerGroup'],
+  ['Customer ID', 'customer'],
+  ['Default Tax ID', 'itemTax'],
+  ['Default UOM ID', 'unit'],
+  ['Department ID', 'employeeDepartment'],
+  ['Designation ID', 'employeeDesignation'],
+  ['GSP Provider ID', 'gspProvider'],
+  ['Item ID', 'item'],
+  ['Ledger ID', 'ledger'],
+  ['State ID', 'state'],
+  ['Supplier Group ID', 'supplierGroup'],
+  ['Tax ID', 'itemTax'],
+  ['Tender Type ID', 'tenderType'],
+  ['Unit ID', 'unit'],
+  ['Unit Rate ID', 'unitRate'],
+]);
+
+const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
+  string,
+  ReadonlyMap<string, AuditReferenceLookupType>
+>([
+  [
+    'Account Group Master',
+    createAuditReferenceTypeMap([
+      ['Child IDs', 'accountGroup'],
+      ['Group ID', 'accountGroup'],
+      ['Parent Group ID', 'accountGroup'],
+    ]),
+  ],
+  [
+    'Account Ledger Master',
+    createAuditReferenceTypeMap([
+      ['Group ID', 'accountGroup'],
+    ]),
+  ],
+  [
+    'Category Master',
+    createAuditReferenceTypeMap([
+      ['Parent Category ID', 'category'],
+      ['Path IDs Cache', 'category'],
+    ]),
+  ],
+  [
+    'Godown Location Master',
+    createAuditReferenceTypeMap([
+      ['Godown ID', 'godownGroup'],
+      ['Parent Location ID', 'godownLocation'],
+      ['Path IDs Cache', 'godownLocation'],
+    ]),
+  ],
+  [
+    'Item Brand Master',
+    createAuditReferenceTypeMap([
+      ['Parent Brand ID', 'itemBrand'],
+      ['Path IDs', 'itemBrand'],
+    ]),
+  ],
+  [
+    'Item EAN Code Master',
+    createAuditReferenceTypeMap([
+      ['Godown ID', 'godownLocation'],
+    ]),
+  ],
+  [
+    'Item Group Master',
+    createAuditReferenceTypeMap([
+      ['Parent Group ID', 'itemGroup'],
+      ['Path IDs Cache', 'itemGroup'],
+    ]),
+  ],
+  [
+    'Item Reorder Master',
+    createAuditReferenceTypeMap([
+      ['Godown ID', 'godownLocation'],
+    ]),
+  ],
+  [
+    'Item Section Master',
+    createAuditReferenceTypeMap([
+      ['Parent Section ID', 'itemSection'],
+      ['Path IDs', 'itemSection'],
+    ]),
+  ],
+]);
 
 @Injectable()
 export class AuditLogService {
@@ -134,9 +278,13 @@ export class AuditLogService {
       this.getUserNameById(records),
       this.getBranchNameById(records),
     ]);
+    const preparedRecords = records.map((record) => this.prepareAuditLogListRecord(record));
+    const auditReferenceNameLookup = await this.getAuditReferenceNameLookup(preparedRecords);
 
     return {
-      items: records.map((record) => this.toListItem(record, userNameById, branchNameById)),
+      items: preparedRecords.map((preparedRecord) =>
+        this.toListItem(preparedRecord, userNameById, branchNameById, auditReferenceNameLookup),
+      ),
       meta: {
         page,
         limit,
@@ -286,6 +434,7 @@ export class AuditLogService {
         },
         select: {
           screenId: true,
+          screenName: true,
           screenAuditSql: true,
         },
       });
@@ -294,9 +443,11 @@ export class AuditLogService {
         throw new BadRequestException(`No active audit screen found with id ${input.screenId}`);
       }
 
+      const resolvedScreen = await this.syncAuditScreenSqlIfNeeded(tx, existingScreen);
+
       return {
-        screenId: existingScreen.screenId,
-        auditFields: this.extractAuditFields(existingScreen.screenAuditSql),
+        screenId: resolvedScreen.screenId,
+        auditFields: this.extractAuditFields(resolvedScreen.screenAuditSql),
       };
     }
 
@@ -312,6 +463,7 @@ export class AuditLogService {
       },
       select: {
         screenId: true,
+        screenName: true,
         screenAuditSql: true,
       },
       orderBy: {
@@ -320,17 +472,20 @@ export class AuditLogService {
     });
 
     if (existingScreen) {
+      const resolvedScreen = await this.syncAuditScreenSqlIfNeeded(tx, existingScreen);
       return {
-        screenId: existingScreen.screenId,
-        auditFields: this.extractAuditFields(existingScreen.screenAuditSql),
+        screenId: resolvedScreen.screenId,
+        auditFields: this.extractAuditFields(resolvedScreen.screenAuditSql),
       };
     }
 
+    const screenAuditSql = getAuditScreenSql(screenName);
     const createdScreen = await tx.auditScreen.create({
       data: {
         screenName,
         screenType: this.normalizeScreenType(input.screenType),
         screenStatus: true,
+        screenAuditSql,
       },
       select: {
         screenId: true,
@@ -342,6 +497,32 @@ export class AuditLogService {
       screenId: createdScreen.screenId,
       auditFields: this.extractAuditFields(createdScreen.screenAuditSql),
     };
+  }
+
+  private async syncAuditScreenSqlIfNeeded(
+    tx: AuditWriteClient,
+    screen: { screenId: number; screenName: string; screenAuditSql: string | null },
+  ): Promise<{ screenId: number; screenAuditSql: string | null }> {
+    const desiredScreenAuditSql = getAuditScreenSql(screen.screenName);
+    if (!desiredScreenAuditSql || screen.screenAuditSql === desiredScreenAuditSql) {
+      return {
+        screenId: screen.screenId,
+        screenAuditSql: screen.screenAuditSql,
+      };
+    }
+
+    return tx.auditScreen.update({
+      where: {
+        screenId: screen.screenId,
+      },
+      data: {
+        screenAuditSql: desiredScreenAuditSql,
+      },
+      select: {
+        screenId: true,
+        screenAuditSql: true,
+      },
+    });
   }
 
   private normalizeAction(action: string): AuditAction {
@@ -374,28 +555,767 @@ export class AuditLogService {
   }
 
   private toListItem(
-    record: AuditLogListRecord,
+    preparedRecord: PreparedAuditLogListRecord,
     userNameById: ReadonlyMap<string, string>,
     branchNameById: ReadonlyMap<string, string>,
+    auditReferenceNameLookup: AuditReferenceNameLookup,
   ): AuditLogListItem {
+    const { record, screenName } = preparedRecord;
+    const originalRecord = this.resolveAuditReferenceNames(
+      preparedRecord.originalRecord,
+      screenName,
+      auditReferenceNameLookup,
+    );
+    const modifiedRecord = this.resolveAuditReferenceNames(
+      preparedRecord.modifiedRecord,
+      screenName,
+      auditReferenceNameLookup,
+    );
+    const changedFields = this.resolveAuditReferenceNames(
+      preparedRecord.changedFields,
+      screenName,
+      auditReferenceNameLookup,
+    );
+    const displayName =
+      this.normalizeOptionalText(record.logDisplayName) ??
+      this.findAuditDisplayName(modifiedRecord) ??
+      this.findAuditDisplayName(originalRecord);
+    const userName = record.logUserId ? (userNameById.get(record.logUserId) ?? null) : null;
+    const branchName = record.logBranchId ? (branchNameById.get(record.logBranchId) ?? null) : null;
+
     return {
       log_id: record.logId,
       log_date: record.logDate.toISOString(),
       log_action: record.logAction === 'insert' ? 'New' : record.logAction,
       log_screen_id: record.logScreenId,
-      screen_name: record.auditScreen.screenName,
+      screen_name: screenName,
       log_table_name: record.logTableName,
-      log_pk: record.logPk,
-      log_display_name: record.logDisplayName,
-      log_original_record: record.logOriginalRecord,
-      log_modified_record: record.logModifiedRecord,
-      log_changed_fields: record.logChangedFields,
-      log_user_id: record.logUserId,
-      log_user_name: record.logUserId ? (userNameById.get(record.logUserId) ?? null) : null,
-      log_branch_id: record.logBranchId,
-      log_branch_name: record.logBranchId ? (branchNameById.get(record.logBranchId) ?? null) : null,
+      log_pk: displayName ?? record.logPk,
+      log_display_name: displayName,
+      log_original_record: originalRecord,
+      log_modified_record: modifiedRecord,
+      log_changed_fields: changedFields,
+      log_user_id: userName ? null : record.logUserId,
+      log_user_name: userName,
+      log_branch_id: branchName ? null : record.logBranchId,
+      log_branch_name: branchName,
       log_notes: record.logNotes,
     };
+  }
+
+  private prepareAuditLogListRecord(record: AuditLogListRecord): PreparedAuditLogListRecord {
+    const screenName = record.auditScreen.screenName;
+    const auditFields = this.extractAuditFields(getAuditScreenSql(screenName));
+
+    return {
+      record,
+      screenName,
+      auditFields,
+      originalRecord: this.renameAuditRecordFields(record.logOriginalRecord, auditFields),
+      modifiedRecord: this.renameAuditRecordFields(record.logModifiedRecord, auditFields),
+      changedFields: this.renameAuditRecordFields(record.logChangedFields, auditFields),
+    };
+  }
+
+  private renameAuditRecordFields(
+    record: Prisma.JsonValue | null,
+    auditFields: readonly AuditFieldDefinition[],
+  ): Prisma.JsonValue | null {
+    if (record === null || auditFields.length === 0 || !this.isJsonObject(record)) {
+      return record;
+    }
+
+    const renamedRecord: Prisma.JsonObject = {};
+    for (const [key, value] of Object.entries(record)) {
+      const auditField = this.findAuditFieldDefinitionByKey(key, auditFields);
+      const targetKey = auditField?.targetFieldName ?? key;
+      renamedRecord[targetKey] = value as Prisma.JsonValue;
+    }
+
+    return renamedRecord;
+  }
+
+  private findAuditFieldDefinitionByKey(
+    key: string,
+    auditFields: readonly AuditFieldDefinition[],
+  ): AuditFieldDefinition | null {
+    const lookupTokens = new Set(this.buildAuditFieldLookupTokens(key));
+    if (lookupTokens.size === 0) {
+      return null;
+    }
+
+    for (const auditField of auditFields) {
+      const candidateFieldNames = [
+        auditField.sourceFieldName,
+        auditField.targetFieldName,
+      ].filter((fieldName): fieldName is string => Boolean(fieldName));
+      for (const candidateFieldName of candidateFieldNames) {
+        const candidateTokens = this.buildAuditFieldLookupTokens(candidateFieldName);
+        if (candidateTokens.some((token) => lookupTokens.has(token))) {
+          return auditField;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private async getAuditReferenceNameLookup(
+    preparedRecords: readonly PreparedAuditLogListRecord[],
+  ): Promise<AuditReferenceNameLookup> {
+    const referenceIdsByType = new Map<AuditReferenceLookupType, Set<string>>();
+
+    for (const preparedRecord of preparedRecords) {
+      this.collectAuditReferenceIds(
+        preparedRecord.originalRecord,
+        preparedRecord.screenName,
+        referenceIdsByType,
+      );
+      this.collectAuditReferenceIds(
+        preparedRecord.modifiedRecord,
+        preparedRecord.screenName,
+        referenceIdsByType,
+      );
+      this.collectAuditReferenceIds(
+        preparedRecord.changedFields,
+        preparedRecord.screenName,
+        referenceIdsByType,
+      );
+    }
+
+    const entries = await Promise.all(
+      Array.from(referenceIdsByType.entries()).map(async ([lookupType, ids]) => [
+        lookupType,
+        await this.fetchAuditReferenceNameMap(lookupType, Array.from(ids)),
+      ]),
+    );
+
+    return Object.fromEntries(entries) as AuditReferenceNameLookup;
+  }
+
+  private collectAuditReferenceIds(
+    value: Prisma.JsonValue | null,
+    screenName: string,
+    referenceIdsByType: Map<AuditReferenceLookupType, Set<string>>,
+  ): void {
+    if (value === null) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        this.collectAuditReferenceIds(item, screenName, referenceIdsByType);
+      }
+      return;
+    }
+
+    if (!this.isJsonObject(value)) {
+      return;
+    }
+
+    for (const [fieldName, fieldValue] of Object.entries(value)) {
+      const normalizedFieldValue = (fieldValue ?? null) as Prisma.JsonValue;
+      const lookupType = this.resolveAuditFieldReferenceType(screenName, fieldName);
+      if (!lookupType) {
+        this.collectAuditReferenceIds(normalizedFieldValue, screenName, referenceIdsByType);
+        continue;
+      }
+
+      if (this.isAuditDiffLeaf(normalizedFieldValue)) {
+        this.collectAuditReferenceLeafId(normalizedFieldValue.from, lookupType, referenceIdsByType);
+        this.collectAuditReferenceLeafId(normalizedFieldValue.to, lookupType, referenceIdsByType);
+        continue;
+      }
+
+      this.collectAuditReferenceLeafId(normalizedFieldValue, lookupType, referenceIdsByType);
+    }
+  }
+
+  private collectAuditReferenceLeafId(
+    value: Prisma.JsonValue,
+    lookupType: AuditReferenceLookupType,
+    referenceIdsByType: Map<AuditReferenceLookupType, Set<string>>,
+  ): void {
+    if (value === null) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        this.collectAuditReferenceLeafId(item, lookupType, referenceIdsByType);
+      }
+      return;
+    }
+
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
+      return;
+    }
+
+    const normalizedValue = String(value).trim();
+    if (!normalizedValue || !this.isValidAuditReferenceId(lookupType, normalizedValue)) {
+      return;
+    }
+
+    const existingIds = referenceIdsByType.get(lookupType) ?? new Set<string>();
+    existingIds.add(normalizedValue);
+    referenceIdsByType.set(lookupType, existingIds);
+  }
+
+  private resolveAuditReferenceNames(
+    value: Prisma.JsonValue | null,
+    screenName: string,
+    auditReferenceNameLookup: AuditReferenceNameLookup,
+  ): Prisma.JsonValue | null {
+    if (value === null) {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) =>
+        this.resolveAuditReferenceNames(item, screenName, auditReferenceNameLookup),
+      );
+    }
+
+    if (!this.isJsonObject(value)) {
+      return value;
+    }
+
+    const transformedValue: Prisma.JsonObject = {};
+    for (const [fieldName, fieldValue] of Object.entries(value)) {
+      const normalizedFieldValue = (fieldValue ?? null) as Prisma.JsonValue;
+      const lookupType = this.resolveAuditFieldReferenceType(screenName, fieldName);
+      if (!lookupType) {
+        transformedValue[fieldName] = this.resolveAuditReferenceNames(
+          normalizedFieldValue,
+          screenName,
+          auditReferenceNameLookup,
+        ) as Prisma.JsonValue;
+        continue;
+      }
+
+      if (this.isAuditDiffLeaf(normalizedFieldValue)) {
+        transformedValue[fieldName] = {
+          from: this.resolveAuditReferenceLeafValue(
+            normalizedFieldValue.from,
+            lookupType,
+            auditReferenceNameLookup,
+          ),
+          to: this.resolveAuditReferenceLeafValue(
+            normalizedFieldValue.to,
+            lookupType,
+            auditReferenceNameLookup,
+          ),
+        };
+        continue;
+      }
+
+      transformedValue[fieldName] = this.resolveAuditReferenceLeafValue(
+        normalizedFieldValue,
+        lookupType,
+        auditReferenceNameLookup,
+      );
+    }
+
+    return transformedValue;
+  }
+
+  private resolveAuditReferenceLeafValue(
+    value: Prisma.JsonValue,
+    lookupType: AuditReferenceLookupType,
+    auditReferenceNameLookup: AuditReferenceNameLookup,
+  ): Prisma.JsonValue {
+    if (value === null) {
+      return null;
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) =>
+        this.resolveAuditReferenceLeafValue(item, lookupType, auditReferenceNameLookup),
+      );
+    }
+
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
+      return value;
+    }
+
+    const normalizedValue = String(value).trim();
+    if (!normalizedValue) {
+      return value;
+    }
+
+    return auditReferenceNameLookup[lookupType]?.get(normalizedValue) ?? value;
+  }
+
+  private resolveAuditFieldReferenceType(
+    screenName: string,
+    fieldName: string,
+  ): AuditReferenceLookupType | null {
+    const normalizedFieldName = this.normalizeAuditFieldLookup(fieldName);
+    const screenResolver = SCREEN_AUDIT_FIELD_REFERENCE_TYPES.get(screenName);
+    if (screenResolver?.has(normalizedFieldName)) {
+      return screenResolver.get(normalizedFieldName) ?? null;
+    }
+
+    return GLOBAL_AUDIT_FIELD_REFERENCE_TYPES.get(normalizedFieldName) ?? null;
+  }
+
+  private isValidAuditReferenceId(lookupType: AuditReferenceLookupType, value: string): boolean {
+    if (lookupType === 'tenderType') {
+      return NUMERIC_ID_PATTERN.test(value);
+    }
+
+    return UUID_PATTERN.test(value);
+  }
+
+  private isAuditDiffLeaf(
+    value: Prisma.JsonValue,
+  ): value is Prisma.JsonObject & { from: Prisma.JsonValue; to: Prisma.JsonValue } {
+    return (
+      this.isJsonObject(value) &&
+      Object.prototype.hasOwnProperty.call(value, 'from') &&
+      Object.prototype.hasOwnProperty.call(value, 'to')
+    );
+  }
+
+  private findAuditDisplayName(value: Prisma.JsonValue | null): string | null {
+    if (!this.isJsonObject(value)) {
+      return null;
+    }
+
+    for (const [fieldName, fieldValue] of Object.entries(value)) {
+      const normalizedFieldValue = (fieldValue ?? null) as Prisma.JsonValue;
+      if (
+        !DISPLAY_FIELD_PATTERN.test(fieldName) ||
+        fieldName.toLowerCase().startsWith('parent ') ||
+        fieldName.toLowerCase().includes('contact')
+      ) {
+        continue;
+      }
+
+      if (
+        normalizedFieldValue === null ||
+        Array.isArray(normalizedFieldValue) ||
+        this.isJsonObject(normalizedFieldValue)
+      ) {
+        continue;
+      }
+
+      const normalizedValue = String(normalizedFieldValue).trim();
+      if (normalizedValue) {
+        return normalizedValue;
+      }
+    }
+
+    return null;
+  }
+
+  private async fetchAuditReferenceNameMap(
+    lookupType: AuditReferenceLookupType,
+    ids: readonly string[],
+  ): Promise<ReadonlyMap<string, string>> {
+    if (ids.length === 0) {
+      return new Map<string, string>();
+    }
+
+    switch (lookupType) {
+      case 'accountGroup': {
+        const groups = await this.prisma.accountGroup.findMany({
+          where: {
+            accGroupId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            accGroupId: true,
+            accGroupName: true,
+          },
+        });
+
+        return new Map(groups.map((group) => [group.accGroupId, group.accGroupName]));
+      }
+      case 'area': {
+        const areas = await this.prisma.areaMaster.findMany({
+          where: {
+            armId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            armId: true,
+            armName: true,
+          },
+        });
+
+        return new Map(areas.map((area) => [area.armId, area.armName]));
+      }
+      case 'branch':
+        return this.getBranchNameLookupByIds(ids);
+      case 'category': {
+        const categories = await this.prisma.categoryMaster.findMany({
+          where: {
+            categoryId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            categoryId: true,
+            categoryName: true,
+          },
+        });
+
+        return new Map(categories.map((category) => [category.categoryId, category.categoryName]));
+      }
+      case 'city': {
+        const cities = await this.prisma.cityMaster.findMany({
+          where: {
+            ctmId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            ctmId: true,
+            ctmName: true,
+          },
+        });
+
+        return new Map(cities.map((city) => [city.ctmId, city.ctmName]));
+      }
+      case 'company': {
+        const companies = await this.prisma.company.findMany({
+          where: {
+            compId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            compId: true,
+            compName: true,
+          },
+        });
+
+        return new Map(companies.map((company) => [company.compId, company.compName]));
+      }
+      case 'customer': {
+        const customers = await this.prisma.customer.findMany({
+          where: {
+            cusId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            cusId: true,
+            cusName: true,
+            cusCode: true,
+          },
+        });
+
+        return new Map(
+          customers.map((customer) => [
+            customer.cusId,
+            customer.cusName?.trim() || customer.cusCode?.trim() || customer.cusId,
+          ]),
+        );
+      }
+      case 'customerGroup': {
+        const groups = await this.prisma.custGroup.findMany({
+          where: {
+            cgrId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            cgrId: true,
+            cgrName: true,
+          },
+        });
+
+        return new Map(groups.map((group) => [group.cgrId, group.cgrName]));
+      }
+      case 'employeeDepartment': {
+        const departments = await this.prisma.employeeDepartment.findMany({
+          where: {
+            edptId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            edptId: true,
+            edptName: true,
+          },
+        });
+
+        return new Map(
+          departments.map((department) => [department.edptId, department.edptName]),
+        );
+      }
+      case 'employeeDesignation': {
+        const designations = await this.prisma.employeeDesignation.findMany({
+          where: {
+            edId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            edId: true,
+            edName: true,
+          },
+        });
+
+        return new Map(
+          designations.map((designation) => [designation.edId, designation.edName]),
+        );
+      }
+      case 'godownGroup': {
+        const godownLocations = await this.prisma.godownLocation.findMany({
+          where: {
+            gdlGodownId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            gdlGodownId: true,
+            gdlName: true,
+            gdlParentId: true,
+            gdlLevel: true,
+            gdlSort: true,
+          },
+          orderBy: [{ gdlLevel: 'asc' }, { gdlSort: 'asc' }, { gdlName: 'asc' }],
+        });
+
+        const godownNameById = new Map<string, string>();
+        for (const location of godownLocations) {
+          if (!godownNameById.has(location.gdlGodownId)) {
+            godownNameById.set(location.gdlGodownId, location.gdlName);
+          }
+        }
+
+        return godownNameById;
+      }
+      case 'godownLocation': {
+        const locations = await this.prisma.godownLocation.findMany({
+          where: {
+            gdlId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            gdlId: true,
+            gdlName: true,
+          },
+        });
+
+        return new Map(locations.map((location) => [location.gdlId, location.gdlName]));
+      }
+      case 'gspProvider': {
+        const providers = await this.prisma.gspProviderMaster.findMany({
+          where: {
+            gspProviderId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            gspProviderId: true,
+            gspProviderName: true,
+          },
+        });
+
+        return new Map(
+          providers.map((provider) => [provider.gspProviderId, provider.gspProviderName]),
+        );
+      }
+      case 'item': {
+        const items = await this.prisma.itemMaster.findMany({
+          where: {
+            itemId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            itemId: true,
+            itemNameEn: true,
+          },
+        });
+
+        return new Map(items.map((item) => [item.itemId, item.itemNameEn]));
+      }
+      case 'itemBrand': {
+        const brands = await this.prisma.itemBrandMaster.findMany({
+          where: {
+            brand_id: {
+              in: [...ids],
+            },
+          },
+          select: {
+            brand_id: true,
+            brand_name: true,
+          },
+        });
+
+        return new Map(brands.map((brand) => [brand.brand_id, brand.brand_name]));
+      }
+      case 'itemGroup': {
+        const groups = await this.prisma.itemGroupMaster.findMany({
+          where: {
+            itgId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            itgId: true,
+            itgName: true,
+          },
+        });
+
+        return new Map(groups.map((group) => [group.itgId, group.itgName]));
+      }
+      case 'itemSection': {
+        const sections = await this.prisma.itemSectionMaster.findMany({
+          where: {
+            secId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            secId: true,
+            secName: true,
+          },
+        });
+
+        return new Map(sections.map((section) => [section.secId, section.secName]));
+      }
+      case 'itemTax': {
+        const taxes = await this.prisma.itemTaxMaster.findMany({
+          where: {
+            taxId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            taxId: true,
+            taxName: true,
+          },
+        });
+
+        return new Map(taxes.map((tax) => [tax.taxId, tax.taxName]));
+      }
+      case 'ledger': {
+        const ledgers = await this.prisma.accLedgerMaster.findMany({
+          where: {
+            ledId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            ledId: true,
+            ledName: true,
+          },
+        });
+
+        return new Map(ledgers.map((ledger) => [ledger.ledId, ledger.ledName]));
+      }
+      case 'state': {
+        const states = await this.prisma.stateMaster.findMany({
+          where: {
+            stmId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            stmId: true,
+            stmName: true,
+          },
+        });
+
+        return new Map(states.map((state) => [state.stmId, state.stmName]));
+      }
+      case 'supplierGroup': {
+        const groups = await this.prisma.supplierGroup.findMany({
+          where: {
+            spgId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            spgId: true,
+            spgName: true,
+          },
+        });
+
+        return new Map(groups.map((group) => [group.spgId, group.spgName]));
+      }
+      case 'tenderType': {
+        const tenderTypeIds = ids.map((id) => BigInt(id));
+        const tenderTypes = await this.prisma.accountTenderTypes.findMany({
+          where: {
+            accttTypeId: {
+              in: tenderTypeIds,
+            },
+          },
+          select: {
+            accttTypeId: true,
+            accttTypeName: true,
+          },
+        });
+
+        return new Map(
+          tenderTypes.map((tenderType) => [
+            tenderType.accttTypeId.toString(),
+            tenderType.accttTypeName,
+          ]),
+        );
+      }
+      case 'unit': {
+        const units = await this.prisma.unit.findMany({
+          where: {
+            unit_id: {
+              in: [...ids],
+            },
+          },
+          select: {
+            unit_id: true,
+            unit_name: true,
+          },
+        });
+
+        return new Map(units.map((unit) => [unit.unit_id, unit.unit_name]));
+      }
+      case 'unitRate': {
+        const unitRates = await this.prisma.itemPriceMaster.findMany({
+          where: {
+            ipmId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            ipmId: true,
+            item: {
+              select: {
+                itemNameEn: true,
+              },
+            },
+            unit: {
+              select: {
+                unit_name: true,
+              },
+            },
+            godown: {
+              select: {
+                gdlName: true,
+              },
+            },
+          },
+        });
+
+        return new Map(
+          unitRates.map((unitRate) => [
+            unitRate.ipmId,
+            [unitRate.item.itemNameEn, unitRate.unit.unit_name, unitRate.godown.gdlName]
+              .filter(Boolean)
+              .join(' / '),
+          ]),
+        );
+      }
+    }
   }
 
   private async getUserNameById(records: AuditLogListRecord[]): Promise<Map<string, string>> {
@@ -411,10 +1331,14 @@ export class AuditLogService {
       return new Map<string, string>();
     }
 
+    return this.getUserNameLookupByIds(userIds);
+  }
+
+  private async getUserNameLookupByIds(userIds: readonly string[]): Promise<Map<string, string>> {
     const users = await this.prisma.user.findMany({
       where: {
         user_id: {
-          in: userIds,
+          in: [...userIds],
         },
       },
       select: {
@@ -439,10 +1363,14 @@ export class AuditLogService {
       return new Map<string, string>();
     }
 
+    return this.getBranchNameLookupByIds(branchIds);
+  }
+
+  private async getBranchNameLookupByIds(branchIds: readonly string[]): Promise<Map<string, string>> {
     const branches = await this.prisma.branchMaster.findMany({
       where: {
         brId: {
-          in: branchIds,
+          in: [...branchIds],
         },
       },
       select: {
@@ -670,12 +1598,7 @@ export class AuditLogService {
   }
 
   private normalizeAuditFieldLookup(value: string): string {
-    return value
-      .replace(/["'`]/g, '')
-      .replace(/[^A-Za-z0-9]+/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .toLowerCase();
+    return normalizeAuditFieldLookupToken(value);
   }
 
   private computeChangedFields(
