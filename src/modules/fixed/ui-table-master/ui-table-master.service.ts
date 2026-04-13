@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const UI_TABLE_MASTER_TABLE_NAME = 'ui_tables';
+const UI_TABLE_MASTER_TABLE_NAME = 'ui tables';
 const UI_TABLE_MASTER_AUDIT_SCREEN_NAME = 'UI Table Master';
 
 type UiTableMasterWriteClient = Prisma.TransactionClient | PrismaService;

@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const ITEM_CATEGORY_TABLE_NAME = 'category_master';
+const ITEM_CATEGORY_TABLE_NAME = 'category master';
 const ITEM_CATEGORY_AUDIT_SCREEN_NAME = 'Category Master';
 type ItemCategoryWriteClient = Prisma.TransactionClient | PrismaService;
 

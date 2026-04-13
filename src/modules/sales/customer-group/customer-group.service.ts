@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const CUSTOMER_GROUP_TABLE_NAME = 'cust_groups';
+const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
 
 type CustomerGroupWriteClient = Prisma.TransactionClient | PrismaService;

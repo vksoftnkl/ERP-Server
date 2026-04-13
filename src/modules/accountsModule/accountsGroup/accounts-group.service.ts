@@ -20,7 +20,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const ACCOUNT_GROUP_TABLE_NAME = 'account_groups';
+const ACCOUNT_GROUP_TABLE_NAME = 'account groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
 type AccountGroupWriteClient = Prisma.TransactionClient | PrismaService;

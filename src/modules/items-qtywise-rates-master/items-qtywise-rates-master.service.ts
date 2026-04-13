@@ -22,7 +22,7 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
-const ITEM_QTYWISE_RATE_TABLE_NAME = 'item_qtywise_rates';
+const ITEM_QTYWISE_RATE_TABLE_NAME = 'item qtywise rates';
 const ITEM_QTYWISE_RATE_AUDIT_SCREEN_NAME = 'Item Qtywise Rate Master';
 
 @Injectable()

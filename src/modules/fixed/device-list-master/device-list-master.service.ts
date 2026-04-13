@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const DEVICE_LIST_MASTER_TABLE_NAME = 'erp_device_master';
+const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
 
 type DeviceListMasterWriteClient = Prisma.TransactionClient | PrismaService;

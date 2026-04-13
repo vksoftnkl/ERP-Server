@@ -20,7 +20,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const USER_LOGIN_SESSIONS_TABLE_NAME = 'user_login_sessions';
+const USER_LOGIN_SESSIONS_TABLE_NAME = 'user login sessions';
 const USER_LOGIN_SESSIONS_AUDIT_SCREEN_NAME = 'User Login Sessions';
 @Injectable()
 export class UserLoginSessionsService {

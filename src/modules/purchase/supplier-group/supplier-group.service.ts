@@ -20,7 +20,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const SUPPLIER_GROUP_TABLE_NAME = 'supplier_groups';
+const SUPPLIER_GROUP_TABLE_NAME = 'supplier groups';
 const SUPPLIER_GROUP_AUDIT_SCREEN_NAME = 'Supplier Group Master';
 type SupplierGroupWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()

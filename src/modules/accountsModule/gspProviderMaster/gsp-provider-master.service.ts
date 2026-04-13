@@ -22,7 +22,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const GSP_PROVIDER_MASTER_TABLE_NAME = 'gsp_provider_master';
+const GSP_PROVIDER_MASTER_TABLE_NAME = 'gsp provider master';
 const GSP_PROVIDER_MASTER_AUDIT_SCREEN_NAME = 'GSP Provider Master';
 
 type GspProviderMasterWriteClient = Prisma.TransactionClient | PrismaService;

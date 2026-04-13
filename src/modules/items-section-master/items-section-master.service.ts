@@ -22,7 +22,7 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ROOT_SECTION_LEVEL = 1;
-const ITEM_SECTION_TABLE_NAME = 'item_section_master';
+const ITEM_SECTION_TABLE_NAME = 'item section master';
 const ITEM_SECTION_AUDIT_SCREEN_NAME = 'Item Section Master';
 type ItemSectionWriteClient = Prisma.TransactionClient | PrismaService;
 

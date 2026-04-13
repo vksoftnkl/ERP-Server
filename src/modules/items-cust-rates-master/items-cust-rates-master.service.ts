@@ -22,7 +22,7 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
-const ITEM_CUST_RATE_TABLE_NAME = 'cust_item_rates';
+const ITEM_CUST_RATE_TABLE_NAME = 'cust item rates';
 const ITEM_CUST_RATE_AUDIT_SCREEN_NAME = 'Item Customer Rate Master';
 
 @Injectable()

@@ -21,7 +21,7 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
-const ITEM_TAX_HISTORY_TABLE_NAME = 'item_tax_history';
+const ITEM_TAX_HISTORY_TABLE_NAME = 'item tax history';
 const ITEM_TAX_HISTORY_AUDIT_SCREEN_NAME = 'Item Tax History';
 @Injectable()
 export class ItemsTaxHistoryMasterService {

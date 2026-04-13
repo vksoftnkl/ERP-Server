@@ -20,7 +20,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const AREA_TABLE_NAME = 'area_master';
+const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
 type AreaWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()

@@ -22,7 +22,7 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
-const GODOWN_LOCATION_TABLE_NAME = 'godown_locations';
+const GODOWN_LOCATION_TABLE_NAME = 'godown locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
 type GodownLocationWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()

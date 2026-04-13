@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const BRANCH_MASTER_TABLE_NAME = 'branch_master';
+const BRANCH_MASTER_TABLE_NAME = 'branch master';
 const BRANCH_MASTER_AUDIT_SCREEN_NAME = 'Branch Master';
 
 type BranchMasterWriteClient = Prisma.TransactionClient | PrismaService;

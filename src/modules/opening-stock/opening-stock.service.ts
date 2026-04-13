@@ -44,7 +44,7 @@ import {
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
-const OPENING_STOCK_HEADER_TABLE_NAME = 'opening_stock_header';
+const OPENING_STOCK_HEADER_TABLE_NAME = 'opening stock header';
 const OPENING_STOCK_AUDIT_SCREEN_NAME = 'Opening Stock';
 type OpeningStockWriteClient = Prisma.TransactionClient | PrismaService;
 type OpeningStockHeaderWithVoucher = Prisma.OpeningStockHeaderGetPayload<{

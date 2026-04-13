@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME = 'employee_designations';
+const EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME = 'employee designations';
 const EMPLOYEE_DESIGNATION_MASTER_AUDIT_SCREEN_NAME = 'Employee Designation Master';
 
 type EmployeeDesignationWriteClient = Prisma.TransactionClient | PrismaService;

@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
+const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'Account ledger master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
 

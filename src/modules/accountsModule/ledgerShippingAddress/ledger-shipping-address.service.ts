@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const LEDGER_SHIPPING_ADDRESS_TABLE_NAME = 'acc_ship_addrs';
+const LEDGER_SHIPPING_ADDRESS_TABLE_NAME = 'acc ship addrs';
 const LEDGER_SHIPPING_ADDRESS_AUDIT_SCREEN_NAME = 'Ledger Shipping Address';
 const DEFAULT_ADDR_TYPE = 'SHIP_TO';
 

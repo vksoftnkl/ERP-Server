@@ -20,7 +20,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME = 'employee_departments';
+const EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME = 'employee departments';
 const EMPLOYEE_DEPARTMENT_MASTER_AUDIT_SCREEN_NAME = 'Employee Department Master';
 type EmployeeDepartmentWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()

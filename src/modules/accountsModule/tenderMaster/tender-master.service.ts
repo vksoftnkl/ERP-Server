@@ -24,7 +24,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const TENDER_MASTER_TABLE_NAME = 'account_tender_master';
+const TENDER_MASTER_TABLE_NAME = 'account tender master';
 const TENDER_MASTER_AUDIT_SCREEN_NAME = 'Tender Master';
 
 type TenderMasterWriteClient = Prisma.TransactionClient | PrismaService;

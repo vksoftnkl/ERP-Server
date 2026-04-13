@@ -15,7 +15,7 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
-const ITEM_TAX_TABLE_NAME = 'item_tax_master';
+const ITEM_TAX_TABLE_NAME = 'item tax master';
 const ITEM_TAX_AUDIT_SCREEN_NAME = 'Item Tax Master';
 @Injectable()
 export class ItemsTaxMasterService {

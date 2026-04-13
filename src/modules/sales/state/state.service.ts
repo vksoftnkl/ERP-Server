@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const STATE_TABLE_NAME = 'state_master';
+const STATE_TABLE_NAME = 'state master';
 const STATE_AUDIT_SCREEN_NAME = 'State Master';
 
 type StateWriteClient = Prisma.TransactionClient | PrismaService;

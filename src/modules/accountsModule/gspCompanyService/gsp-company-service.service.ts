@@ -20,7 +20,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const GSP_COMPANY_SERVICE_TABLE_NAME = 'gsp_company_service';
+const GSP_COMPANY_SERVICE_TABLE_NAME = 'gsp company service';
 const GSP_COMPANY_SERVICE_AUDIT_SCREEN_NAME = 'GSP Company Service';
 const COMPANY_ID_KEYS = ['csgCompanyId', 'csg_company_id', 'companyId', 'company_id'] as const;
 const PROVIDER_ID_KEYS = [

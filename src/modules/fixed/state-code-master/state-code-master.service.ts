@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const STATE_CODE_MASTER_TABLE_NAME = 'state_codes';
+const STATE_CODE_MASTER_TABLE_NAME = 'state codes';
 const STATE_CODE_MASTER_AUDIT_SCREEN_NAME = 'State Code Master';
 
 type StateCodeMasterWriteClient = Prisma.TransactionClient | PrismaService;

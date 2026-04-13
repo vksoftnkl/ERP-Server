@@ -20,7 +20,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const ITEM_BRAND_TABLE_NAME = 'item_brand_master';
+const ITEM_BRAND_TABLE_NAME = 'item brand master';
 const ITEM_BRAND_AUDIT_SCREEN_NAME = 'Item Brand Master';
 type ItemBrandWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()

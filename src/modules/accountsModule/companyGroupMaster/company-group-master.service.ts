@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const COMPANY_GROUP_MASTER_TABLE_NAME = 'company_group_master';
+const COMPANY_GROUP_MASTER_TABLE_NAME = 'company group master';
 const COMPANY_GROUP_MASTER_AUDIT_SCREEN_NAME = 'Company Group Master';
 
 type CompanyGroupWriteClient = Prisma.TransactionClient | PrismaService;

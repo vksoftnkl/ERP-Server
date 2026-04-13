@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const EMPLOYEE_MASTER_TABLE_NAME = 'emp_master';
+const EMPLOYEE_MASTER_TABLE_NAME = 'employee master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
