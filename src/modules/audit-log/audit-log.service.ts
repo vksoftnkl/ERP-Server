@@ -20,6 +20,14 @@ type AuditWriteClient = Prisma.TransactionClient | PrismaService;
 type AuditLogListRecord = Prisma.AuditLogGetPayload<{
   include: { auditScreen: { select: { screenName: true } } };
 }>;
+type AuditFieldDefinition = {
+  sourceFieldName: string | null;
+  targetFieldName: string;
+};
+type ResolvedAuditScreen = {
+  screenId: number;
+  auditFields: AuditFieldDefinition[];
+};
 
 @Injectable()
 export class AuditLogService {
@@ -174,22 +182,32 @@ export class AuditLogService {
   async logEntityChange(input: LogEntityChangeInput, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma;
     const action = this.normalizeAction(input.action);
-    const screenId = await this.resolveScreenId(input, client);
-    const originalRecord = this.toNullableJson(input.originalRecord);
+    const screen = await this.resolveAuditScreen(input, client);
+    const screenId = screen.screenId;
+    const originalRecord = this.projectAuditRecord(
+      this.toNullableJson(input.originalRecord),
+      screen.auditFields,
+    );
 
     const isModifiedRecordProvided = input.modifiedRecord !== undefined;
-    let modifiedRecord = this.toNullableJson(input.modifiedRecord);
+    let modifiedRecord = this.projectAuditRecord(
+      this.toNullableJson(input.modifiedRecord),
+      screen.auditFields,
+    );
 
     if (!isModifiedRecordProvided) {
       const pk = this.normalizePk(input.pk);
       if (pk !== null) {
-        modifiedRecord = await this.captureScreenSnapshot(
-          {
-            screenId,
-            keyNo: pk,
-            accYear: input.accYear ?? null,
-          },
-          tx,
+        modifiedRecord = this.projectAuditRecord(
+          await this.captureScreenSnapshot(
+            {
+              screenId,
+              keyNo: pk,
+              accYear: input.accYear ?? null,
+            },
+            tx,
+          ),
+          screen.auditFields,
         );
       }
     }
@@ -252,10 +270,10 @@ export class AuditLogService {
     );
   }
 
-  private async resolveScreenId(
+  private async resolveAuditScreen(
     input: LogEntityChangeInput,
     tx: AuditWriteClient,
-  ): Promise<number> {
+  ): Promise<ResolvedAuditScreen> {
     if (input.screenId !== undefined) {
       if (!Number.isInteger(input.screenId) || input.screenId <= 0) {
         throw new BadRequestException('screenId must be a positive integer');
@@ -268,6 +286,7 @@ export class AuditLogService {
         },
         select: {
           screenId: true,
+          screenAuditSql: true,
         },
       });
 
@@ -275,7 +294,10 @@ export class AuditLogService {
         throw new BadRequestException(`No active audit screen found with id ${input.screenId}`);
       }
 
-      return existingScreen.screenId;
+      return {
+        screenId: existingScreen.screenId,
+        auditFields: this.extractAuditFields(existingScreen.screenAuditSql),
+      };
     }
 
     const screenName = input.screenName?.trim();
@@ -290,6 +312,7 @@ export class AuditLogService {
       },
       select: {
         screenId: true,
+        screenAuditSql: true,
       },
       orderBy: {
         screenId: 'asc',
@@ -297,7 +320,10 @@ export class AuditLogService {
     });
 
     if (existingScreen) {
-      return existingScreen.screenId;
+      return {
+        screenId: existingScreen.screenId,
+        auditFields: this.extractAuditFields(existingScreen.screenAuditSql),
+      };
     }
 
     const createdScreen = await tx.auditScreen.create({
@@ -308,10 +334,14 @@ export class AuditLogService {
       },
       select: {
         screenId: true,
+        screenAuditSql: true,
       },
     });
 
-    return createdScreen.screenId;
+    return {
+      screenId: createdScreen.screenId,
+      auditFields: this.extractAuditFields(createdScreen.screenAuditSql),
+    };
   }
 
   private normalizeAction(action: string): AuditAction {
@@ -361,9 +391,9 @@ export class AuditLogService {
       log_modified_record: record.logModifiedRecord,
       log_changed_fields: record.logChangedFields,
       log_user_id: record.logUserId,
-      log_user_name: record.logUserId ? userNameById.get(record.logUserId) ?? null : null,
+      log_user_name: record.logUserId ? (userNameById.get(record.logUserId) ?? null) : null,
       log_branch_id: record.logBranchId,
-      log_branch_name: record.logBranchId ? branchNameById.get(record.logBranchId) ?? null : null,
+      log_branch_name: record.logBranchId ? (branchNameById.get(record.logBranchId) ?? null) : null,
       log_notes: record.logNotes,
     };
   }
@@ -440,6 +470,212 @@ export class AuditLogService {
       default:
         throw new BadRequestException(`Unsupported audit screen type: ${screenType}`);
     }
+  }
+
+  private projectAuditRecord(
+    record: Prisma.JsonValue | null,
+    auditFields: readonly AuditFieldDefinition[],
+  ): Prisma.JsonValue | null {
+    if (record === null || auditFields.length === 0 || !this.isJsonObject(record)) {
+      return record;
+    }
+
+    const projectedRecord: Prisma.JsonObject = {};
+    for (const auditField of auditFields) {
+      projectedRecord[auditField.targetFieldName] = this.resolveAuditFieldValue(record, auditField);
+    }
+
+    return projectedRecord;
+  }
+
+  private resolveAuditFieldValue(
+    record: Prisma.JsonObject,
+    auditField: AuditFieldDefinition,
+  ): Prisma.JsonValue {
+    const sourceKey = auditField.sourceFieldName
+      ? this.findAuditFieldKey(record, auditField.sourceFieldName)
+      : null;
+    if (sourceKey) {
+      return (record[sourceKey] as Prisma.JsonValue | null | undefined) ?? null;
+    }
+
+    const targetKey = this.findAuditFieldKey(record, auditField.targetFieldName);
+    if (!targetKey) {
+      return null;
+    }
+
+    return (record[targetKey] as Prisma.JsonValue | null | undefined) ?? null;
+  }
+
+  private findAuditFieldKey(record: Prisma.JsonObject, auditFieldName: string): string | null {
+    const lookupTokens = new Set(this.buildAuditFieldLookupTokens(auditFieldName));
+    if (lookupTokens.size === 0) {
+      return null;
+    }
+
+    for (const key of Object.keys(record)) {
+      const keyTokens = this.buildAuditFieldLookupTokens(key);
+      if (keyTokens.some((token) => lookupTokens.has(token))) {
+        return key;
+      }
+    }
+
+    return null;
+  }
+
+  private buildAuditFieldLookupTokens(value: string): string[] {
+    const normalizedValue = value.trim();
+    if (!normalizedValue) {
+      return [];
+    }
+
+    const normalizedSnake = this.toSnakeCase(normalizedValue);
+    return Array.from(
+      new Set(
+        [
+          this.normalizeAuditFieldLookup(normalizedValue),
+          normalizedSnake,
+          this.normalizeAuditFieldLookup(this.toCamelCase(normalizedSnake)),
+        ].filter(Boolean),
+      ),
+    );
+  }
+
+  private extractAuditFields(screenAuditSql?: string | null): AuditFieldDefinition[] {
+    const normalizedSql = screenAuditSql?.trim();
+    if (!normalizedSql) {
+      return [];
+    }
+
+    const selectClauseMatch = normalizedSql.match(/^\s*select\s+([\s\S]+?)\s+from\b/i);
+    if (!selectClauseMatch) {
+      return [];
+    }
+
+    const fields = this.splitSelectClause(selectClauseMatch[1])
+      .map((fieldExpression) => this.extractAuditFieldDefinition(fieldExpression))
+      .filter((field): field is AuditFieldDefinition => Boolean(field));
+
+    const seen = new Set<string>();
+    return fields.filter((field) => {
+      if (seen.has(field.targetFieldName)) {
+        return false;
+      }
+      seen.add(field.targetFieldName);
+      return true;
+    });
+  }
+
+  private splitSelectClause(selectClause: string): string[] {
+    const fields: string[] = [];
+    let currentField = '';
+    let parenthesisDepth = 0;
+    let insideSingleQuote = false;
+    let insideDoubleQuote = false;
+
+    for (const character of selectClause) {
+      if (character === "'" && !insideDoubleQuote) {
+        insideSingleQuote = !insideSingleQuote;
+      } else if (character === '"' && !insideSingleQuote) {
+        insideDoubleQuote = !insideDoubleQuote;
+      } else if (!insideSingleQuote && !insideDoubleQuote) {
+        if (character === '(') {
+          parenthesisDepth += 1;
+        } else if (character === ')' && parenthesisDepth > 0) {
+          parenthesisDepth -= 1;
+        } else if (character === ',' && parenthesisDepth === 0) {
+          const field = currentField.trim();
+          if (field) {
+            fields.push(field);
+          }
+          currentField = '';
+          continue;
+        }
+      }
+
+      currentField += character;
+    }
+
+    const trailingField = currentField.trim();
+    if (trailingField) {
+      fields.push(trailingField);
+    }
+
+    return fields;
+  }
+
+  private extractAuditFieldDefinition(fieldExpression: string): AuditFieldDefinition | null {
+    const normalizedExpression = fieldExpression.trim();
+    if (!normalizedExpression) {
+      return null;
+    }
+
+    const explicitAliasMatch = normalizedExpression.match(
+      /^(?<source>[\s\S]+?)\s+as\s+("(?<quotedAlias>[^"]+)"|(?<alias>[A-Za-z_][A-Za-z0-9_]*))\s*$/i,
+    );
+    if (explicitAliasMatch?.groups) {
+      const targetFieldName =
+        explicitAliasMatch.groups.quotedAlias ?? explicitAliasMatch.groups.alias ?? null;
+      if (!targetFieldName) {
+        return null;
+      }
+      return {
+        sourceFieldName: this.extractSourceFieldName(explicitAliasMatch.groups.source),
+        targetFieldName,
+      };
+    }
+
+    const sourceFieldName = this.extractSourceFieldName(normalizedExpression);
+    if (!sourceFieldName) {
+      return null;
+    }
+
+    return {
+      sourceFieldName,
+      targetFieldName: sourceFieldName,
+    };
+  }
+
+  private extractSourceFieldName(expression: string): string | null {
+    const expressionWithoutCast = expression
+      .trim()
+      .replace(/::\s*("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)(\[\])?\s*$/g, '')
+      .trim();
+    const quotedIdentifierMatch = expressionWithoutCast.match(/"([^"]+)"\s*$/);
+    if (quotedIdentifierMatch) {
+      return quotedIdentifierMatch[1];
+    }
+
+    const identifierMatch = expressionWithoutCast.match(/([A-Za-z_][A-Za-z0-9_]*)\s*$/);
+    return identifierMatch?.[1] ?? null;
+  }
+
+  private toSnakeCase(value: string): string {
+    return this.normalizeAuditFieldLookup(value.replace(/([a-z0-9])([A-Z])/g, '$1_$2'));
+  }
+
+  private toCamelCase(value: string): string {
+    const normalized = this.normalizeAuditFieldLookup(value);
+    if (!normalized) {
+      return '';
+    }
+
+    return normalized
+      .split('_')
+      .filter(Boolean)
+      .map((segment, index) =>
+        index === 0 ? segment : `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`,
+      )
+      .join('');
+  }
+
+  private normalizeAuditFieldLookup(value: string): string {
+    return value
+      .replace(/["'`]/g, '')
+      .replace(/[^A-Za-z0-9]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase();
   }
 
   private computeChangedFields(

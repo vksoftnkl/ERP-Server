@@ -170,6 +170,100 @@ describe('AuditLogService', () => {
     });
   });
 
+  it('logEntityChange projects audit payloads to the screenAuditSql field names', async () => {
+    prisma.auditScreen.findFirst.mockResolvedValue({
+      screenId: 10,
+      screenAuditSql:
+        'SELECT itg_id, itg_name AS item_name, itg_status FROM inventory.item_group_master',
+    });
+    prisma.auditLog.create.mockResolvedValue({
+      logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
+    });
+
+    await service.logEntityChange({
+      action: 'update',
+      tableName: 'item_group_master',
+      screenName: 'Item Group Master',
+      originalRecord: {
+        itg_id: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+        itemName: 'Raw Materials',
+        itg_status: true,
+        ignored_field: 'before',
+      },
+      modifiedRecord: {
+        itg_id: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+        itemName: 'Finished Goods',
+        itg_status: true,
+        ignored_field: 'after',
+      },
+      pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+    });
+
+    const createArgs = getCreateArgs(prisma);
+    expect(createArgs.data.logOriginalRecord).toEqual({
+      itg_id: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+      item_name: 'Raw Materials',
+      itg_status: true,
+    });
+    expect(createArgs.data.logModifiedRecord).toEqual({
+      itg_id: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+      item_name: 'Finished Goods',
+      itg_status: true,
+    });
+    expect(createArgs.data.logChangedFields).toEqual({
+      item_name: {
+        from: 'Raw Materials',
+        to: 'Finished Goods',
+      },
+    });
+  });
+
+  it('logEntityChange maps source payload fields into human-readable screenAuditSql aliases', async () => {
+    prisma.auditScreen.findFirst.mockResolvedValue({
+      screenId: 10,
+      screenAuditSql:
+        'SELECT itg_name AS "Item Group Name", itg_alias AS "Item Group Alias" FROM inventory.item_group_master',
+    });
+    prisma.auditLog.create.mockResolvedValue({
+      logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
+    });
+
+    await service.logEntityChange({
+      action: 'update',
+      tableName: 'item_group_master',
+      screenName: 'Item Group Master',
+      originalRecord: {
+        itg_name: 'Raw Materials',
+        itg_alias: 'RM',
+      },
+      modifiedRecord: {
+        itg_name: 'Coffee Powder',
+        itg_alias: 'CP',
+      },
+      pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+    });
+
+    const createArgs = getCreateArgs(prisma);
+    expect(createArgs.data.logOriginalRecord).toEqual({
+      'Item Group Name': 'Raw Materials',
+      'Item Group Alias': 'RM',
+    });
+    expect(createArgs.data.logModifiedRecord).toEqual({
+      'Item Group Name': 'Coffee Powder',
+      'Item Group Alias': 'CP',
+    });
+    expect(createArgs.data.logChangedFields).toEqual({
+      'Item Group Name': {
+        from: 'Raw Materials',
+        to: 'Coffee Powder',
+      },
+      'Item Group Alias': {
+        from: 'RM',
+        to: 'CP',
+      },
+    });
+  });
+
   it('createAuditLog supports cancel action', async () => {
     prisma.auditLog.create.mockResolvedValue({
       logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
