@@ -409,6 +409,68 @@ describe('AuditLogService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('list filters by exact screen_name and record_pk', async () => {
+    prisma.auditLog.count.mockResolvedValue(1);
+    prisma.auditLog.findMany.mockResolvedValue([
+      {
+        logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
+        logDate: new Date('2026-02-20T11:00:00.000Z'),
+        logAction: 'update',
+        logScreenId: 10,
+        logTableName: 'item_group_master',
+        logPk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+        logDisplayName: 'Raw Materials',
+        logOriginalRecord: { itg_name: 'Raw Materials' },
+        logModifiedRecord: { itg_name: 'Finished Goods' },
+        logChangedFields: {
+          itg_name: {
+            from: 'Raw Materials',
+            to: 'Finished Goods',
+          },
+        },
+        logUserId: null,
+        logBranchId: null,
+        logNotes: 'Updated item group',
+        auditScreen: {
+          screenName: 'Item Group Master',
+        },
+      },
+    ]);
+
+    const result = await service.list({
+      screen_name: 'Item Group Master',
+      record_pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+      page: 1,
+      limit: 20,
+    });
+
+    expect(prisma.auditLog.count).toHaveBeenCalledWith({
+      where: {
+        auditScreen: {
+          is: {
+            screenName: 'Item Group Master',
+          },
+        },
+        logPk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+      },
+    });
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          auditScreen: {
+            is: {
+              screenName: 'Item Group Master',
+            },
+          },
+          logPk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
+        },
+      }),
+    );
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].screen_name).toBe('Item Group Master');
+    expect(result.items[0].log_pk).toBe('Raw Materials');
+  });
+
   it('list supports search and date filters', async () => {
     prisma.auditLog.count.mockResolvedValue(1);
     prisma.auditLog.findMany.mockResolvedValue([
@@ -466,6 +528,30 @@ describe('AuditLogService', () => {
     expect(result.items[0].log_original_record).toEqual({
       'Item Group Name': 'Raw Materials',
     });
+  });
+
+  it('list returns an empty result set when the per-record filters match nothing', async () => {
+    prisma.auditLog.count.mockResolvedValue(0);
+    prisma.auditLog.findMany.mockResolvedValue([]);
+
+    const result = await service.list({
+      screen_name: 'Item Group Master',
+      record_pk: 'missing-record',
+      page: 1,
+      limit: 20,
+    });
+
+    expect(result).toEqual({
+      items: [],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 0,
+        total_pages: 0,
+      },
+    });
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+    expect(prisma.branchMaster.findMany).not.toHaveBeenCalled();
   });
 
   it('list resolves configured audit reference fields to names inside audit payloads', async () => {

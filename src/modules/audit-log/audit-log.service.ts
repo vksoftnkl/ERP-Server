@@ -224,6 +224,18 @@ export class AuditLogService {
       where.logScreenId = queryDto.screen_id;
     }
 
+    if (queryDto.screen_name?.trim()) {
+      where.auditScreen = {
+        is: {
+          screenName: queryDto.screen_name.trim(),
+        },
+      };
+    }
+
+    if (queryDto.record_pk?.trim()) {
+      where.logPk = queryDto.record_pk.trim();
+    }
+
     const dateFrom = queryDto.date_from
       ? this.parseDateBoundary(queryDto.date_from, 'start')
       : undefined;

@@ -34,6 +34,18 @@ export class ListAuditLogQueryDto {
   @Min(1)
   screen_id?: number;
 
+  @ApiPropertyOptional({ description: 'Filter by exact audit screen name', maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  screen_name?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by exact audit primary key value', maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  record_pk?: string;
+
   @ApiPropertyOptional({
     description: 'Start date/time (ISO). Date-only (YYYY-MM-DD) is accepted.',
   })
