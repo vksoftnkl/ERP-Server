@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
 export class OpeningStockErrorFieldDto {
   @ApiProperty({ example: 'avh_voucher_id' })
   field!: string;
@@ -7,115 +6,79 @@ export class OpeningStockErrorFieldDto {
   @ApiProperty({ example: 'Opening stock document not found' })
   message!: string;
 }
-
 export class OpeningStockErrorResponseDto {
   @ApiProperty({ example: false })
   success!: false;
-
   @ApiProperty({ example: 'Validation failed' })
   message!: string;
-
   @ApiProperty({ type: OpeningStockErrorFieldDto, isArray: true })
   errors!: OpeningStockErrorFieldDto[];
 }
-
 export class OpeningStockHeaderPayloadDto {
   @ApiProperty({ format: 'uuid' })
   avh_voucher_id!: string;
-
   @ApiProperty()
   avh_voucher_refno!: string;
-
   @ApiProperty()
   avh_voucher_type_id!: number;
-
   @ApiProperty()
   avh_bill_refno!: string;
-
   @ApiPropertyOptional({ nullable: true })
   avh_user_refno!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   avh_bill_date!: string | null;
-
   @ApiProperty({ format: 'uuid' })
   avh_party_id!: string;
-
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   avh_opposite_ledger_id!: string | null;
-
   @ApiProperty({ type: [String] })
   avh_employee_id!: string[];
-
   @ApiPropertyOptional({ nullable: true })
   avh_pay_notes!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   avh_remarks!: string | null;
-
   @ApiProperty()
   avh_voucher_status!: string;
-
   @ApiProperty({ format: 'uuid' })
   avh_user_id!: string;
-
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   avh_session_id!: string | null;
-
   @ApiProperty()
   avh_device_type!: string;
-
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   avh_device_id!: string | null;
-
   @ApiProperty()
   avh_counter_id!: string;
-
   @ApiProperty({ format: 'uuid' })
   osh_id!: string;
-
   @ApiProperty()
   osh_acc_year!: string;
-
   @ApiProperty({ format: 'uuid' })
   osh_company_id!: string;
-
   @ApiProperty({ format: 'uuid' })
   osh_branch_id!: string;
-
   @ApiProperty()
   osh_voucher_no!: string;
-
   @ApiProperty()
   osh_voucher_date!: string;
-
   @ApiPropertyOptional({ nullable: true })
   osh_ref_no!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   osh_narration!: string | null;
-
   @ApiProperty()
   osh_total_lines!: number;
-
   @ApiProperty()
   osh_total_qty!: number;
-
   @ApiProperty()
   osh_total_value!: number;
-
   @ApiProperty()
   osh_status!: string;
-
   @ApiProperty({ format: 'uuid' })
   osh_user_id!: string;
-
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   osh_session_id!: string | null;
-
   @ApiProperty()
   osh_device_type!: string;
-
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   osh_device_id!: string | null;
 

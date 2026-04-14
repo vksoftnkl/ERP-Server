@@ -1597,8 +1597,8 @@ Table item_stock_balance {
   isbGodownId String [not null]
   isbItemId String [not null]
   isbUnitId String [not null]
-  isbTrackingType ItemStockBalanceTrackingType [not null, default: 'NONE']
-  isbStockBucket ItemStockBucket [not null, default: 'SALEABLE']
+  isbTrackingType String [not null, default: 'NONE']
+  isbStockBucket String [not null, default: 'SALEABLE']
   isbOpeningQty Decimal [not null, default: 0]
   isbInQty Decimal [not null, default: 0]
   isbOutQty Decimal [not null, default: 0]
@@ -1638,13 +1638,13 @@ Table item_stock_ledger {
   stlLineNo Int [not null, default: 1]
   stlSplitNo Int [not null, default: 1]
   stlVoucherTypeId Int [not null]
-  stlTxnType StockTxnType [not null]
+  stlTxnType String [not null]
   stlStockEffect Int [not null]
   stlDocDate DateTime [not null]
   stlPostedOn DateTime [default: `now()`, not null]
   stlDocRefNo String
   stlItemId String [not null]
-  stlTrackingType StockTrackingType [not null, default: 'NONE']
+  stlTrackingType String [not null, default: 'NONE']
   stlUomId String [not null]
   stlBaseUomId String [not null]
   stlConversionFactor Decimal [not null, default: 1]
@@ -2736,40 +2736,12 @@ Enum ItemBatchStatus {
   BLOCKED
 }
 
-Enum ItemStockBalanceTrackingType {
-  NONE
-  BATCH
-  LOT
-}
-
 Enum ItemStockBucket {
   SALEABLE
   DAMAGED
   EXPIRED
   HOLD
   RETURN
-}
-
-Enum StockTrackingType {
-  NONE
-  BATCH
-  LOT
-}
-
-Enum StockTxnType {
-  OPENING
-  PURCHASE
-  PURCHASE_RETURN
-  SALE
-  SALES_RETURN
-  TRANSFER_IN
-  TRANSFER_OUT
-  ADJUSTMENT_IN
-  ADJUSTMENT_OUT
-  PRODUCTION_IN
-  CONSUMPTION
-  DAMAGE
-  EXPIRED
 }
 
 Enum WidgetPlatform {

@@ -26,6 +26,7 @@ import {
   UpdateAccountVoucherHeaderPayload,
 } from '../accountsModule/accountVoucherHeader/account-voucher-header.helper';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { ItemStockLedgerService } from './item-stock-ledger.service';
 import { ListOpeningStockQueryDto } from './dto/list-opening-stock-query.dto';
 import {
   OpeningStockDetailLineDto,
@@ -120,6 +121,7 @@ export class OpeningStockService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    private readonly itemStockLedgerService: ItemStockLedgerService,
   ) {}
   async save(saveOpeningStockDto: SaveOpeningStockDto): Promise<OpeningStockDocumentPayload> {
     if (saveOpeningStockDto.header.avh_voucher_id) {
@@ -290,6 +292,7 @@ export class OpeningStockService {
           ),
         });
         const payload = await this.buildDocumentPayloadByVoucherId(tx, voucherHeader.avhVoucherId);
+        await this.itemStockLedgerService.syncFromOpeningStockDocument(tx, payload);
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -388,6 +391,11 @@ export class OpeningStockService {
           ),
         });
         const payload = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
+        await this.itemStockLedgerService.syncFromOpeningStockDocument(
+          tx,
+          payload,
+          existingDocument,
+        );
         await this.auditLogService.logEntityChange(
           {
             action: 'update',

@@ -19,8 +19,8 @@ export const OpeningStockDeviceType = {
 export type OpeningStockDeviceType = (typeof OpeningStockDeviceType)[keyof typeof OpeningStockDeviceType];
 export const OpeningStockDetailTrackingType = {
   NONE: 'NONE',
+  MRP:"MRP",
   BATCH: 'BATCH',
-  LOT: 'LOT',
 } as const;
 export type OpeningStockDetailTrackingType =
   (typeof OpeningStockDetailTrackingType)[keyof typeof OpeningStockDetailTrackingType];
