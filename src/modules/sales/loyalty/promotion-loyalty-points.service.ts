@@ -34,7 +34,6 @@ import {
   PromotionLoyaltyPointsErrorResponse,
   PromotionLoyaltyPointsListMeta,
 } from './types/promotion-loyalty-points-api.types';
-
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const DEFAULT_AUDIT_ACTOR = 'system';
@@ -45,7 +44,6 @@ const LOYALTY_GIFT_TABLE_NAME = 'loyalty scheme gift';
 const LOYALTY_PARTY_TABLE_NAME = 'loyalty scheme party scope';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 type LoyaltyWriteClient = Prisma.TransactionClient | PrismaService;
 type ListResult<T> = { items: T[]; meta: PromotionLoyaltyPointsListMeta };
 type SchemeWithChildren = LoyaltyScheme & {
@@ -53,7 +51,6 @@ type SchemeWithChildren = LoyaltyScheme & {
   points: LoyaltySchemePoint[];
   gifts: LoyaltySchemeGift[];
 };
-
 @Injectable()
 export class PromotionLoyaltyPointsService {
   constructor(
@@ -61,13 +58,11 @@ export class PromotionLoyaltyPointsService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
   ) {}
-
   private parseTimeToUtcDate(value: string, field: string): Date {
     const trimmed = value.trim();
     if (!trimmed) {
       this.throwBadRequest('Validation failed', [{ field, message: `${field} is required` }]);
     }
-
     const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.(\d{1,3}))?)?$/.exec(trimmed);
     if (!match) {
       this.throwBadRequest('Validation failed', [
@@ -77,12 +72,10 @@ export class PromotionLoyaltyPointsService {
         },
       ]);
     }
-
     const hours = Number(match[1]);
     const minutes = Number(match[2]);
     const seconds = match[3] ? Number(match[3]) : 0;
     const millis = match[4] ? Number(match[4].padEnd(3, '0')) : 0;
-
     const date = new Date(Date.UTC(1970, 0, 1, hours, minutes, seconds, millis));
     if (Number.isNaN(date.getTime())) {
       this.throwBadRequest('Validation failed', [
@@ -92,47 +85,36 @@ export class PromotionLoyaltyPointsService {
         },
       ]);
     }
-
     return date;
   }
-
-  async saveScheme(dto: SaveLoyaltySchemeDto): Promise<LoyaltySchemePayload> {
+ async saveScheme(dto: SaveLoyaltySchemeDto): Promise<LoyaltySchemePayload> {
     if (dto.ls_id) {
       return this.updateScheme(dto);
     }
-
     return this.createScheme(dto);
   }
-
   async listSchemes(
     queryDto: ListLoyaltySchemeQueryDto,
   ): Promise<ListResult<LoyaltySchemePayload>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const filters: Prisma.LoyaltySchemeWhereInput[] = [{ lsIsDeleted: false }];
-
     if (queryDto.ls_comp_id) {
       filters.push({ lsCompId: queryDto.ls_comp_id });
     }
-
     if (queryDto.ls_branch_id) {
       filters.push({ lsBranchId: queryDto.ls_branch_id });
     }
-
     if (queryDto.ls_is_active !== undefined) {
       filters.push({ lsIsActive: queryDto.ls_is_active });
     }
-
     if (queryDto.ls_type) {
       filters.push({ lsType: queryDto.ls_type });
     }
-
     if (queryDto.ls_status) {
       filters.push({ lsStatus: queryDto.ls_status });
     }
-
     if (queryDto.search) {
       filters.push({
         OR: [
@@ -141,7 +123,6 @@ export class PromotionLoyaltyPointsService {
         ],
       });
     }
-
     const startDateFilter = this.buildDateRangeFilter(
       queryDto.ls_start_date_from,
       queryDto.ls_start_date_to,
@@ -150,7 +131,6 @@ export class PromotionLoyaltyPointsService {
     if (startDateFilter) {
       filters.push({ lsStartDate: startDateFilter });
     }
-
     const endDateFilter = this.buildDateRangeFilter(
       queryDto.ls_end_date_from,
       queryDto.ls_end_date_to,
@@ -225,8 +205,7 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           lsUpdatedOn: updatedOn,
           lsUpdatedBy: updatedBy,
         },
-      });
-
+      });          
       await Promise.all([
         tx.loyaltySchemeParty.updateMany({
           where: { lpsLsId: lsId, lpsIsDeleted: false },

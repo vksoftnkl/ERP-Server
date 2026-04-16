@@ -81,6 +81,7 @@ type NormalizedDetailLine = {
   oslBaseUomId: string | null;
   oslGodownId: string;
   oslTrackingType: OpeningStockDetailTrackingType;
+  oslBatchId: string | null;
   oslTaxId: string | null;
   oslTaxPerc: number;
   oslCessType: OpeningStockDetailCessType;
@@ -89,6 +90,7 @@ type NormalizedDetailLine = {
   oslQty: number;
   oslFreeQty: number;
   oslBaseQty: number;
+  oslFreeBaseQty: number;
   oslConvFactor: number;
   oslBatchNo: string | null;
   oslSerialNo: string | null;
@@ -506,12 +508,27 @@ export class OpeningStockService {
     };
   }
   private normalizeDetailLines(details: OpeningStockDetailLineDto[]): NormalizedDetailLine[] {
-    return details.map((detail) => {
+    return details.map((detail, index) => {
       const qty = detail.osl_qty;
       const convFactor = detail.osl_conv_factor ?? 1;
       const baseQty = detail.osl_base_qty ?? qty * convFactor;
+      const freeQty = detail.osl_free_qty ?? 0;
+      const freeBaseQty = this.roundQuantity(freeQty * convFactor);
       const costRate = detail.osl_cost_rate ?? 0;
       const costRateWot = detail.osl_cost_rate_wot ?? 0;
+      const batchDate = this.parseNullableDate(detail.osl_batch_date, 'osl_batch_date');
+      const mfgDate = this.parseNullableDate(detail.osl_mfg_date, 'osl_mfg_date');
+      const expiryDate = this.parseNullableDate(detail.osl_expiry_date, 'osl_expiry_date');
+
+      if (mfgDate && expiryDate && expiryDate.getTime() < mfgDate.getTime()) {
+        this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+          {
+            field: `details[${index}].osl_expiry_date`,
+            message: 'osl_expiry_date must be greater than or equal to osl_mfg_date',
+          },
+        ]);
+      }
+
       return {
         oslBarcode: detail.osl_barcode ?? null,
         oslItemId: detail.osl_item_id,
@@ -519,20 +536,22 @@ export class OpeningStockService {
         oslBaseUomId: detail.osl_base_uom_id ?? null,
         oslGodownId: detail.osl_godown_id,
         oslTrackingType: detail.osl_tracking_type ?? OpeningStockDetailTrackingType.NONE,
+        oslBatchId: detail.osl_batch_id ?? null,
         oslTaxId: detail.osl_tax_id ?? null,
         oslTaxPerc: detail.osl_tax_perc ?? 0,
         oslCessType: detail.osl_cess_type ?? OpeningStockDetailCessType.NONE,
         oslCessPerc: detail.osl_cess_perc ?? 0,
         oslCessPerUnit: detail.osl_cess_per_unit ?? 0,
         oslQty: qty,
-        oslFreeQty: detail.osl_free_qty ?? 0,
+        oslFreeQty: freeQty,
         oslBaseQty: baseQty,
+        oslFreeBaseQty: freeBaseQty,
         oslConvFactor: convFactor,
         oslBatchNo: detail.osl_batch_no ?? null,
         oslSerialNo: detail.osl_serial_no ?? null,
-        oslBatchDate: this.parseNullableDate(detail.osl_batch_date, 'osl_batch_date'),
-        oslMfgDate: this.parseNullableDate(detail.osl_mfg_date, 'osl_mfg_date'),
-        oslExpiryDate: this.parseNullableDate(detail.osl_expiry_date, 'osl_expiry_date'),
+        oslBatchDate: batchDate,
+        oslMfgDate: mfgDate,
+        oslExpiryDate: expiryDate,
         oslCostRate: costRate,
         oslCostRateWot: costRateWot,
         oslStockValue: this.roundAmount(qty * costRate),
@@ -778,6 +797,7 @@ export class OpeningStockService {
       oslGodownId: detail.oslGodownId,
       oslTrackingType: detail.oslTrackingType,
       oslBarcode: detail.oslBarcode,
+      oslBatchId: detail.oslBatchId,
       oslBatchNo: detail.oslBatchNo,
       oslBatchDate: detail.oslBatchDate,
       oslMfgDate: detail.oslMfgDate,
@@ -786,6 +806,7 @@ export class OpeningStockService {
       oslQty: detail.oslQty,
       oslBaseQty: detail.oslBaseQty,
       oslFreeQty: detail.oslFreeQty,
+      oslFreeBaseQty: detail.oslFreeBaseQty,
       oslConvFactor: detail.oslConvFactor,
       oslTaxId: detail.oslTaxId,
       oslTaxPerc: detail.oslTaxPerc,
@@ -1091,6 +1112,7 @@ export class OpeningStockService {
       osl_godown_name: lookups.godownsById.get(record.oslGodownId)?.gdlName ?? null,
       osl_tracking_type: record.oslTrackingType,
       osl_barcode: record.oslBarcode,
+      osl_batch_id: record.oslBatchId,
       osl_batch_no: record.oslBatchNo,
       osl_batch_date: this.toNullableIsoString(record.oslBatchDate),
       osl_mfg_date: this.toNullableIsoString(record.oslMfgDate),
@@ -1099,6 +1121,7 @@ export class OpeningStockService {
       osl_qty: this.toNumber(record.oslQty),
       osl_base_qty: this.toNumber(record.oslBaseQty),
       osl_free_qty: this.toNumber(record.oslFreeQty),
+      osl_free_base_qty: this.toNumber(record.oslFreeBaseQty),
       osl_conv_factor: this.toNumber(record.oslConvFactor),
       osl_tax_id: record.oslTaxId,
       osl_tax_name: record.oslTaxId ? lookups.taxesById.get(record.oslTaxId)?.taxName ?? null : null,

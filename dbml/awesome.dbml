@@ -1814,6 +1814,7 @@ Table opening_stock_detail {
   oslQty Decimal [not null, default: 0]
   oslBaseQty Decimal [not null, default: 0]
   oslFreeQty Decimal [not null, default: 0]
+  oslFreeBaseQty Decimal [not null, default: 0]
   oslConvFactor Decimal [not null, default: 1]
   oslTaxId String
   oslTaxPerc Decimal [not null, default: 0]

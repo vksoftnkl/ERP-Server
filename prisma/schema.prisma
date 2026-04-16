@@ -3140,6 +3140,7 @@ model OpeningStockDetail {
   oslQty              Decimal   @default(0) @db.Decimal(18, 6) @map("osl_qty")
   oslBaseQty          Decimal   @default(0) @db.Decimal(18, 6) @map("osl_base_qty")
   oslFreeQty          Decimal   @default(0) @db.Decimal(18, 6) @map("osl_free_qty")
+  oslFreeBaseQty      Decimal   @default(0) @db.Decimal(18, 6) @map("osl_free_base_qty")
   oslConvFactor       Decimal   @default(1) @db.Decimal(18, 6) @map("osl_conv_factor")
   // Tax snapshot
   oslTaxId            String?   @db.Uuid @map("osl_tax_id")

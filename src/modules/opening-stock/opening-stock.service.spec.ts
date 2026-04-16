@@ -14,6 +14,7 @@ import {
   updateAccountVoucherHeader,
 } from '../accountsModule/accountVoucherHeader/account-voucher-header.helper';
 import { SaveOpeningStockDto } from './dto/save-opening-stock.dto';
+import { ItemStockLedgerService } from './item-stock-ledger.service';
 import { OpeningStockStatus } from './opening-stock.enums';
 import { OpeningStockService } from './opening-stock.service';
 jest.mock('../accountsModule/accountVoucherHeader/account-voucher-header.helper', () => ({
@@ -87,6 +88,9 @@ type AuditLogServiceMock = {
 type RequestContextServiceMock = {
   getUserId: jest.Mock<string | null, []>;
 };
+type ItemStockLedgerServiceMock = {
+  syncFromOpeningStockDocument: jest.Mock;
+};
 const makeSaveDto = (overrides: Partial<SaveOpeningStockDto> = {}): SaveOpeningStockDto => ({
   header: {
     osh_acc_year: '2025-2026',
@@ -119,6 +123,7 @@ const makeSaveDto = (overrides: Partial<SaveOpeningStockDto> = {}): SaveOpeningS
       osl_tax_perc: 18,
       osl_qty: 5,
       osl_free_qty: 1,
+      osl_free_base_qty: 0,
       osl_conv_factor: 2,
       osl_cost_rate: 100,
       osl_cost_rate_wot: 84.75,
@@ -246,6 +251,7 @@ const makeDetailRecord = (overrides: Record<string, unknown> = {}) =>
     oslQty: new Prisma.Decimal('5.000000'),
     oslBaseQty: new Prisma.Decimal('10.000000'),
     oslFreeQty: new Prisma.Decimal('1.000000'),
+    oslFreeBaseQty: new Prisma.Decimal('2.000000'),
     oslConvFactor: new Prisma.Decimal('2.000000'),
     oslTaxId: TAX_ID,
     oslTaxPerc: new Prisma.Decimal('18.000'),
@@ -286,6 +292,7 @@ describe('OpeningStockService', () => {
   let prisma: PrismaMock;
   let auditLogService: AuditLogServiceMock;
   let requestContextService: RequestContextServiceMock;
+  let itemStockLedgerService: ItemStockLedgerServiceMock;
   beforeEach(() => {
     tx = {
       openingStockHeader: {
@@ -341,10 +348,18 @@ describe('OpeningStockService', () => {
     requestContextService = {
       getUserId: jest.fn().mockReturnValue(USER_ID),
     };
+    itemStockLedgerService = {
+      syncFromOpeningStockDocument: jest.fn().mockResolvedValue({
+        itemStockLedger: [],
+        itemStockBalance: [],
+        itemBatchStock: [],
+      }),
+    };
     service = new OpeningStockService(
       prisma as unknown as PrismaService,
       auditLogService as unknown as AuditLogService,
       requestContextService as unknown as RequestContextService,
+      itemStockLedgerService as unknown as ItemStockLedgerService,
     );
     tx.itemMaster.findMany.mockResolvedValue([
       {
@@ -457,13 +472,14 @@ describe('OpeningStockService', () => {
           oslVoucherId: VOUCHER_ID,
           oslOpeningId: OPENING_ID,
           oslItemId: ITEM_ID,
+          oslFreeBaseQty: 2,
         }),
       ],
     });
     expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'New',
-        tableName: 'opening_stock_header',
+        tableName: 'opening stock header',
         screenName: 'Opening Stock',
         screenType: 'transaction',
         pk: VOUCHER_ID,
@@ -476,6 +492,7 @@ describe('OpeningStockService', () => {
     expect(result.header.avh_voucher_id).toBe(VOUCHER_ID);
     expect(result.details[0].osl_item_name).toBe('Opening Item');
     expect(result.details[0].osl_base_uom_name).toBe('BOX');
+    expect(result.details[0].osl_free_base_qty).toBe(2);
   });
 
   it('updates opening stock by voucher id and replaces existing detail rows', async () => {
@@ -557,7 +574,7 @@ describe('OpeningStockService', () => {
     expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'update',
-        tableName: 'opening_stock_header',
+        tableName: 'opening stock header',
         screenName: 'Opening Stock',
         screenType: 'transaction',
         pk: VOUCHER_ID,
@@ -616,7 +633,7 @@ describe('OpeningStockService', () => {
     expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'cancel',
-        tableName: 'opening_stock_header',
+        tableName: 'opening stock header',
         screenName: 'Opening Stock',
         screenType: 'transaction',
         pk: VOUCHER_ID,
@@ -673,6 +690,37 @@ describe('OpeningStockService', () => {
           {
             field: 'osh_company_id',
             message: `Invalid osh_company_id reference: ${COMPANY_ID}`,
+          },
+        ],
+      });
+    }
+  });
+
+  it('rejects save when expiry date is earlier than manufacturing date', async () => {
+    try {
+      await service.save(
+        makeSaveDto({
+          details: [
+            {
+              ...makeSaveDto().details[0],
+              osl_mfg_date: '2026-04-23T00:00:00.000Z',
+              osl_expiry_date: '2026-04-20T00:00:00.000Z',
+            },
+          ],
+        }),
+      );
+      fail('Expected save to throw BadRequestException');
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(createAccountVoucherHeader).not.toHaveBeenCalled();
+      expect(itemStockLedgerService.syncFromOpeningStockDocument).not.toHaveBeenCalled();
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        success: false,
+        message: 'Validation failed',
+        errors: [
+          {
+            field: 'details[0].osl_expiry_date',
+            message: 'osl_expiry_date must be greater than or equal to osl_mfg_date',
           },
         ],
       });

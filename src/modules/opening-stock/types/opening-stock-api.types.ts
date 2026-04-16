@@ -74,6 +74,7 @@ export interface OpeningStockDetailPayload {
   osl_godown_name: string | null;
   osl_tracking_type: string;
   osl_barcode: string | null;
+  osl_batch_id: string | null;
   osl_batch_no: string | null;
   osl_batch_date: string | null;
   osl_mfg_date: string | null;
@@ -82,6 +83,7 @@ export interface OpeningStockDetailPayload {
   osl_qty: number;
   osl_base_qty: number;
   osl_free_qty: number;
+  osl_free_base_qty: number;
   osl_conv_factor: number;
   osl_tax_id: string | null;
   osl_tax_name: string | null;

@@ -153,6 +153,9 @@ export class OpeningStockDetailPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   osl_batch_no!: string | null;
 
+  @ApiPropertyOptional({ nullable: true, format: 'uuid' })
+  osl_batch_id!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   osl_batch_date!: string | null;
 
@@ -173,6 +176,9 @@ export class OpeningStockDetailPayloadDto {
 
   @ApiProperty()
   osl_free_qty!: number;
+
+  @ApiProperty()
+  osl_free_base_qty!: number;
 
   @ApiProperty()
   osl_conv_factor!: number;

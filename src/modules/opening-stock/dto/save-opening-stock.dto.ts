@@ -355,6 +355,12 @@ export class OpeningStockDetailLineDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0)
+  osl_free_base_qty?: number;
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
   osl_base_qty?: number;
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
@@ -369,6 +375,12 @@ export class OpeningStockDetailLineDto {
   @IsString()
   @MaxLength(100)
   osl_batch_no?: string | null;
+  @ApiPropertyOptional({ nullable: true, format: 'uuid' })
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsUUID('all')
+  osl_batch_id?: string | null;
   @ApiPropertyOptional({ nullable: true, maxLength: 100 })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
