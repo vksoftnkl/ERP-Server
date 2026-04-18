@@ -168,6 +168,21 @@ export class OpeningStockService {
   async getByVoucherId(avhVoucherId: string): Promise<OpeningStockDocumentPayload> {
     return this.buildDocumentPayloadByVoucherId(this.prisma, avhVoucherId);
   }
+  async getByVoucherRefNo(
+    queryDto: Pick<
+      ListOpeningStockQueryDto,
+      | 'avh_voucher_refno'
+      | 'osh_acc_year'
+      | 'osh_company_id'
+      | 'osh_branch_id'
+      | 'osh_status'
+      | 'date_from'
+      | 'date_to'
+    >,
+  ): Promise<OpeningStockDocumentPayload> {
+    const openingHeader = await this.getActiveHeaderByVoucherRefNoOrThrow(this.prisma, queryDto);
+    return this.buildDocumentPayloadFromHeader(this.prisma, openingHeader);
+  }
   async softDelete(avhVoucherId: string): Promise<{ avh_voucher_id: string; deleted: true }> {
     const actorUserId = this.resolveActorUserId();
     try {
@@ -519,7 +534,6 @@ export class OpeningStockService {
       const batchDate = this.parseNullableDate(detail.osl_batch_date, 'osl_batch_date');
       const mfgDate = this.parseNullableDate(detail.osl_mfg_date, 'osl_mfg_date');
       const expiryDate = this.parseNullableDate(detail.osl_expiry_date, 'osl_expiry_date');
-
       if (mfgDate && expiryDate && expiryDate.getTime() < mfgDate.getTime()) {
         this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
           {
@@ -528,7 +542,6 @@ export class OpeningStockService {
           },
         ]);
       }
-
       return {
         oslBarcode: detail.osl_barcode ?? null,
         oslItemId: detail.osl_item_id,
@@ -647,7 +660,6 @@ export class OpeningStockService {
           },
         }),
       ]);
-
     this.throwMissingReferenceError('osh_company_id', [context.companyId], companies.map((record) => record.compId));
     this.throwMissingReferenceError('osh_branch_id', [context.branchId], branches.map((record) => record.brId));
     this.throwMissingReferenceError('avh_party_id', [header.avh_party_id], partyLedgers.map((record) => record.ledId));
@@ -836,7 +848,12 @@ export class OpeningStockService {
       oslCreatedBy: context.actorUserId,
     };
   }
-  private buildListWhere(queryDto: ListOpeningStockQueryDto): Prisma.OpeningStockHeaderWhereInput {
+  private buildScopedListWhere(
+    queryDto: Pick<
+      ListOpeningStockQueryDto,
+      'osh_acc_year' | 'osh_company_id' | 'osh_branch_id' | 'osh_status' | 'date_from' | 'date_to'
+    >,
+  ): Prisma.OpeningStockHeaderWhereInput {
     const where: Prisma.OpeningStockHeaderWhereInput = {
       oshIsDeleted: false,
     };
@@ -871,6 +888,10 @@ export class OpeningStockService {
         where.oshVoucherDate.lte = dateTo;
       }
     }
+    return where;
+  }
+  private buildListWhere(queryDto: ListOpeningStockQueryDto): Prisma.OpeningStockHeaderWhereInput {
+    const where = this.buildScopedListWhere(queryDto);
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -915,9 +936,15 @@ export class OpeningStockService {
     avhVoucherId: string,
   ): Promise<OpeningStockDocumentPayload> {
     const openingHeader = await this.getActiveHeaderByVoucherIdOrThrow(client, avhVoucherId);
+    return this.buildDocumentPayloadFromHeader(client, openingHeader);
+  }
+  private async buildDocumentPayloadFromHeader(
+    client: OpeningStockWriteClient,
+    openingHeader: OpeningStockHeaderWithVoucher,
+  ): Promise<OpeningStockDocumentPayload> {
     const details = await client.openingStockDetail.findMany({
       where: {
-        oslVoucherId: avhVoucherId,
+        oslVoucherId: openingHeader.oshVoucherId,
         oslIsDeleted: false,
       },
       orderBy: [{ oslLineNo: 'asc' }, { oslId: 'asc' }],
@@ -943,6 +970,49 @@ export class OpeningStockService {
     });
     if (!header) {
       this.throwNotFound(avhVoucherId);
+    }
+    return header;
+  }
+  private async getActiveHeaderByVoucherRefNoOrThrow(
+    client: OpeningStockWriteClient,
+    queryDto: Pick<
+      ListOpeningStockQueryDto,
+      | 'avh_voucher_refno'
+      | 'osh_acc_year'
+      | 'osh_company_id'
+      | 'osh_branch_id'
+      | 'osh_status'
+      | 'date_from'
+      | 'date_to'
+    >,
+  ): Promise<OpeningStockHeaderWithVoucher> {
+    const avhVoucherRefno = queryDto.avh_voucher_refno?.trim() ?? '';
+    if (!avhVoucherRefno) {
+      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'avh_voucher_refno',
+          message: 'avh_voucher_refno is required',
+        },
+      ]);
+    }
+    const where = this.buildScopedListWhere(queryDto);
+    where.voucherHeader = {
+      is: {
+        avhVoucherRefno: {
+          equals: avhVoucherRefno,
+          mode: 'insensitive',
+        },
+      },
+    };
+    const header = await client.openingStockHeader.findFirst({
+      where,
+      include: {
+        voucherHeader: true,
+      },
+      orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
+    });
+    if (!header) {
+      this.throwNotFound(avhVoucherRefno ?? '', 'avh_voucher_refno');
     }
     return header;
   }
@@ -1255,12 +1325,15 @@ export class OpeningStockService {
     }
     return (error as { code?: string }).code === 'P2003';
   }
-  private throwNotFound(avhVoucherId: string): never {
+  private throwNotFound(
+    value: string,
+    field: 'avh_voucher_id' | 'avh_voucher_refno' = 'avh_voucher_id',
+  ): never {
     throw new NotFoundException(
       this.buildErrorResponse('Opening stock document not found', [
         {
-          field: 'avh_voucher_id',
-          message: `No active opening stock document found with avh_voucher_id ${avhVoucherId}`,
+          field,
+          message: `No active opening stock document found with ${field} ${value}`,
         },
       ]),
     );

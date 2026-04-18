@@ -45,6 +45,16 @@ export class ListOpeningStockQueryDto {
   @Transform(({ value }) => toOptionalUuid(value))
   @IsUUID('all')
   avh_voucher_id?: string;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    description: 'When present, fetch a single document by voucher reference number',
+  })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalString(value))
+  @IsString()
+  @MaxLength(100)
+  avh_voucher_refno?: string;
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))

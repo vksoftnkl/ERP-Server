@@ -665,6 +665,48 @@ describe('OpeningStockService', () => {
     );
   });
 
+  it('gets opening stock by voucher ref no with scoped filters', async () => {
+    const voucherHeader = makeVoucherHeaderRecord();
+    prisma.openingStockHeader.findFirst.mockResolvedValue(makeOpeningHeaderWithVoucher(voucherHeader));
+    prisma.openingStockDetail.findMany.mockResolvedValue([makeDetailRecord()]);
+
+    const result = await service.getByVoucherRefNo({
+      avh_voucher_refno: 'os-3',
+      osh_acc_year: '2025-2026',
+      osh_company_id: COMPANY_ID,
+      osh_branch_id: BRANCH_ID,
+      date_from: '2026-03-01T00:00:00.000Z',
+      date_to: '2026-03-31T23:59:59.999Z',
+    });
+
+    expect(prisma.openingStockHeader.findFirst).toHaveBeenCalledWith({
+      where: {
+        oshIsDeleted: false,
+        oshAccYear: '2025-2026',
+        oshCompanyId: COMPANY_ID,
+        oshBranchId: BRANCH_ID,
+        oshVoucherDate: {
+          gte: new Date('2026-03-01T00:00:00.000Z'),
+          lte: new Date('2026-03-31T23:59:59.999Z'),
+        },
+        voucherHeader: {
+          is: {
+            avhVoucherRefno: {
+              equals: 'os-3',
+              mode: 'insensitive',
+            },
+          },
+        },
+      },
+      include: {
+        voucherHeader: true,
+      },
+      orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
+    });
+    expect(result.header.avh_voucher_refno).toBe('OS-3');
+    expect(result.details[0].osl_item_name).toBe('Opening Item');
+  });
+
   it('rejects save when detail rows are empty', async () => {
     await expect(
       service.save({

@@ -17,11 +17,13 @@ import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListOpeningStockQueryDto } from './dto/list-opening-stock-query.dto';
@@ -44,6 +46,7 @@ import {
 @ApiTags('Opening Stock')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@ApiExtraModels(OpeningStockSuccessListDto, OpeningStockSuccessSingleDto)
 @CacheTTL(60)
 @Controller('opening-stocks')
 @UseFilters(OpeningStockExceptionFilter)
@@ -77,9 +80,17 @@ export class OpeningStockController {
   @Get()
   @Version('1')
   @ApiOperation({
-    summary: 'List opening stock documents or get single document when avh_voucher_id is provided',
+    summary:
+      'List opening stock documents or get a single document when avh_voucher_id or avh_voucher_refno is provided',
   })
-  @ApiOkResponse({ type: OpeningStockSuccessListDto })
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(OpeningStockSuccessListDto) },
+        { $ref: getSchemaPath(OpeningStockSuccessSingleDto) },
+      ],
+    },
+  })
   @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
   @ApiNotFoundResponse({ type: OpeningStockErrorResponseDto })
   async listOrGet(
@@ -90,12 +101,12 @@ export class OpeningStockController {
       OpeningStockListMeta
     >
   > {
-    if (queryDto.avh_voucher_id) {
-      const data = await this.openingStockService.getByVoucherId(queryDto.avh_voucher_id);
+    const document = await this.resolveDocumentQuery(queryDto);
+    if (document) {
       return {
         success: true,
         message: 'Opening stock fetched successfully',
-        data,
+        data: document,
       };
     }
     const result = await this.openingStockService.list(queryDto);
@@ -124,12 +135,36 @@ export class OpeningStockController {
   }
   @Get('list')
   @Version('1')
-  @ApiOperation({ summary: 'List opening stock documents' })
-  @ApiOkResponse({ type: OpeningStockSuccessListDto })
+  @ApiOperation({
+    summary:
+      'List opening stock documents or get a single document when avh_voucher_id or avh_voucher_refno is provided',
+  })
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(OpeningStockSuccessListDto) },
+        { $ref: getSchemaPath(OpeningStockSuccessSingleDto) },
+      ],
+    },
+  })
   @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
+  @ApiNotFoundResponse({ type: OpeningStockErrorResponseDto })
   async getList(
     @Query() queryDto: ListOpeningStockQueryDto,
-  ): Promise<OpeningStockSuccessResponse<OpeningStockHeaderPayload[], OpeningStockListMeta>> {
+  ): Promise<
+    OpeningStockSuccessResponse<
+      OpeningStockDocumentPayload | OpeningStockHeaderPayload[],
+      OpeningStockListMeta
+    >
+  > {
+    const document = await this.resolveDocumentQuery(queryDto);
+    if (document) {
+      return {
+        success: true,
+        message: 'Opening stock fetched successfully',
+        data: document,
+      };
+    }
     const result = await this.openingStockService.getList(queryDto);
     return {
       success: true,
@@ -164,5 +199,17 @@ export class OpeningStockController {
     @Query() queryDto: OpeningStockIdQueryDto,
   ): Promise<OpeningStockSuccessResponse<{ avh_voucher_id: string; deleted: true }>> {
     return this.remove(queryDto);
+  }
+
+  private async resolveDocumentQuery(
+    queryDto: ListOpeningStockQueryDto,
+  ): Promise<OpeningStockDocumentPayload | null> {
+    if (queryDto.avh_voucher_id) {
+      return this.openingStockService.getByVoucherId(queryDto.avh_voucher_id);
+    }
+    if (queryDto.avh_voucher_refno) {
+      return this.openingStockService.getByVoucherRefNo(queryDto);
+    }
+    return null;
   }
 }
