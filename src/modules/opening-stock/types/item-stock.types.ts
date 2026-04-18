@@ -102,6 +102,10 @@ export interface ItemStockBalance {
   isbAvgStockRate: number;
   isbOpeningValue: number;
   isbStockValue: number;
+  isbOpeningAvgRateWot: number;
+  isbAvgStockRateWot: number;
+  isbOpeningValueWot: number;
+  isbStockValueWot: number;
   isbLastInDate: Date | null;
   isbLastOutDate: Date | null;
   isbSyncDate: Date | null;

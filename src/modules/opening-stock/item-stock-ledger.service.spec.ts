@@ -348,10 +348,15 @@ describe('ItemStockLedgerService', () => {
     expect(create.isbAvgStockRate).toBe(29.166667);
     expect(create.isbOpeningValue).toBe(700);
     expect(create.isbStockValue).toBe(700);
+    expect(create.isbOpeningAvgRateWot).toBe(23.333333);
+    expect(create.isbAvgStockRateWot).toBe(23.333333);
+    expect(create.isbOpeningValueWot).toBe(560);
+    expect(create.isbStockValueWot).toBe(560);
 
     expect(update.isbClosingQty).toBe(16);
     expect(update.isbAvailableQty).toBe(16);
     expect(update.isbStockValue).toBe(700);
+    expect(update.isbStockValueWot).toBe(560);
   });
 
   it('normalizes free base quantity from free qty and conversion factor when the payload is inconsistent', async () => {
@@ -392,6 +397,8 @@ describe('ItemStockLedgerService', () => {
     const summaryWrite = tx.itemStockBalance.upsert.mock.calls[0][0];
     expect(summaryWrite.create.isbOpeningFreeQty).toBe(2);
     expect(summaryWrite.create.isbFreeClosingQty).toBe(2);
+    expect(summaryWrite.create.isbOpeningValueWot).toBe(400);
+    expect(summaryWrite.create.isbStockValueWot).toBe(400);
   });
 
   it('updates batch stock first and rolls it up to summary for batch-tracked opening stock', async () => {
@@ -442,6 +449,8 @@ describe('ItemStockLedgerService', () => {
     expect(summaryWrite.create.isbOpeningFreeQty).toBe(2);
     expect(summaryWrite.create.isbAvailableQty).toBe(10);
     expect(summaryWrite.create.isbOpeningValue).toBe(500);
+    expect(summaryWrite.create.isbOpeningValueWot).toBe(400);
+    expect(summaryWrite.create.isbStockValueWot).toBe(400);
   });
 
   it('falls back to legacy WOT opening value when reversing an older batch row during update', async () => {
@@ -524,6 +533,14 @@ describe('ItemStockLedgerService', () => {
     expect(finalWrite.update.ibsOpeningFreeQty).toBe(2);
     expect(finalWrite.update.ibsOpeningValue).toBe(600);
     expect(finalWrite.update.ibsStockValue).toBe(600);
+
+    const reverseSummaryWrite = tx.itemStockBalance.upsert.mock.calls[0][0];
+    expect(reverseSummaryWrite.create.isbOpeningValueWot).toBe(0);
+    expect(reverseSummaryWrite.create.isbStockValueWot).toBe(0);
+
+    const finalSummaryWrite = tx.itemStockBalance.upsert.mock.calls[1][0];
+    expect(finalSummaryWrite.create.isbOpeningValueWot).toBe(480);
+    expect(finalSummaryWrite.create.isbStockValueWot).toBe(480);
   });
 
   it('resolves or creates batch id from batch number when batch id is not sent', async () => {

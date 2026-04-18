@@ -486,6 +486,30 @@ export class ItemStockBalanceRowDto {
   @IsNumber()
   isbStockValue?: number;
 
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalNumber(value))
+  @IsNumber()
+  isbOpeningAvgRateWot?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalNumber(value))
+  @IsNumber()
+  isbAvgStockRateWot?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalNumber(value))
+  @IsNumber()
+  isbOpeningValueWot?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @Transform(({ value }) => toOptionalNumber(value))
+  @IsNumber()
+  isbStockValueWot?: number;
+
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))

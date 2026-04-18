@@ -36,7 +36,9 @@ type StockMovementInput = {
   qty: number;
   freeQty: number;
   inwardValue: number;
+  inwardValueWot: number;
   legacyInwardValue?: number;
+  legacyInwardValueWot?: number;
   txnDate: Date;
   batchId?: string | null;
   batchNo?: string | null;
@@ -63,6 +65,10 @@ type StockEngineState = {
   avgStockRate: number;
   openingValue: number;
   stockValue: number;
+  openingAvgRateWot: number;
+  avgStockRateWot: number;
+  openingValueWot: number;
+  stockValueWot: number;
   lastInDate: Date | null;
   lastOutDate: Date | null;
 };
@@ -236,8 +242,16 @@ export class ItemStockLedgerService {
         (detail.osl_stock_value ?? (detail.osl_cost_rate ?? 0) * (detail.osl_qty ?? 0)) *
           direction,
       );
+      const inwardValueWot = this.roundAmount(
+        (detail.osl_stock_value_wot ?? (detail.osl_cost_rate_wot ?? 0) * (detail.osl_qty ?? 0)) *
+          direction,
+      );
       const legacyInwardValue = this.roundAmount(
         (detail.osl_stock_value_wot ?? (detail.osl_cost_rate_wot ?? 0) * (detail.osl_qty ?? 0)) *
+          direction,
+      );
+      const legacyInwardValueWot = this.roundAmount(
+        (detail.osl_stock_value ?? (detail.osl_cost_rate ?? 0) * (detail.osl_qty ?? 0)) *
           direction,
       );
 
@@ -254,7 +268,9 @@ export class ItemStockLedgerService {
         qty,
         freeQty,
         inwardValue,
+        inwardValueWot,
         legacyInwardValue,
+        legacyInwardValueWot,
         txnDate,
         batchId: detail.osl_batch_id ?? null,
         batchNo: detail.osl_batch_no ?? null,
@@ -529,7 +545,10 @@ export class ItemStockLedgerService {
       return null;
     }
 
-    const nextState = this.aggregateBatchStates(batchRows);
+    const nextState = this.mergeSummaryWotValuation(
+      this.aggregateBatchStates(batchRows),
+      this.resolveBatchSummaryWotState(existingSummary, movement),
+    );
 
     return tx.itemStockBalance.upsert({
       where,
@@ -580,13 +599,31 @@ export class ItemStockLedgerService {
     const qty = this.roundQuantity(movement.qty);
     const freeQty = this.roundQuantity(movement.freeQty);
     const physicalQty = this.roundQuantity(qty + freeQty);
-    const inwardValue = this.resolveMovementValue(currentState, movement);
+    const inwardValue = this.resolveMovementValue(
+      movement,
+      movement.inwardValue,
+      currentState.openingValue,
+      currentState.stockValue,
+      movement.legacyInwardValue,
+    );
+    const inwardValueWot = this.resolveMovementValue(
+      movement,
+      movement.inwardValueWot,
+      currentState.openingValueWot,
+      currentState.stockValueWot,
+      movement.legacyInwardValueWot,
+      true,
+    );
 
     if (category === 'OPENING') {
       nextState.openingQty = this.roundQuantity(nextState.openingQty + qty);
       nextState.openingFreeQty = this.roundQuantity(nextState.openingFreeQty + freeQty);
       nextState.openingValue = this.roundAmount(nextState.openingValue + inwardValue);
       nextState.stockValue = this.roundAmount(nextState.stockValue + inwardValue);
+      nextState.openingValueWot = this.roundAmount(
+        nextState.openingValueWot + inwardValueWot,
+      );
+      nextState.stockValueWot = this.roundAmount(nextState.stockValueWot + inwardValueWot);
       nextState.lastInDate = this.maxDate(nextState.lastInDate, movement.txnDate);
 
       return this.recalculateState(nextState);
@@ -596,6 +633,7 @@ export class ItemStockLedgerService {
       nextState.inQty = this.roundQuantity(nextState.inQty + qty);
       nextState.freeInQty = this.roundQuantity(nextState.freeInQty + freeQty);
       nextState.stockValue = this.roundAmount(nextState.stockValue + inwardValue);
+      nextState.stockValueWot = this.roundAmount(nextState.stockValueWot + inwardValueWot);
       nextState.lastInDate = this.maxDate(nextState.lastInDate, movement.txnDate);
 
       return this.recalculateState(nextState);
@@ -610,11 +648,14 @@ export class ItemStockLedgerService {
     }
 
     const issueRate = currentState.avgStockRate;
+    const issueRateWot = currentState.avgStockRateWot;
     const outwardValue = this.roundAmount(physicalQty * issueRate);
+    const outwardValueWot = this.roundAmount(physicalQty * issueRateWot);
 
     nextState.outQty = this.roundQuantity(nextState.outQty + qty);
     nextState.freeOutQty = this.roundQuantity(nextState.freeOutQty + freeQty);
     nextState.stockValue = this.roundAmount(nextState.stockValue - outwardValue);
+    nextState.stockValueWot = this.roundAmount(nextState.stockValueWot - outwardValueWot);
     nextState.lastOutDate = this.maxDate(nextState.lastOutDate, movement.txnDate);
 
     return this.recalculateState(nextState);
@@ -633,8 +674,12 @@ export class ItemStockLedgerService {
       transitQty: this.sanitizeQty(state.transitQty),
       openingValue: this.sanitizeAmount(state.openingValue),
       stockValue: this.sanitizeAmount(state.stockValue),
+      openingValueWot: this.sanitizeAmount(state.openingValueWot),
+      stockValueWot: this.sanitizeAmount(state.stockValueWot),
       openingAvgRate: this.roundRate(state.openingAvgRate),
       avgStockRate: this.roundRate(state.avgStockRate),
+      openingAvgRateWot: this.roundRate(state.openingAvgRateWot),
+      avgStockRateWot: this.roundRate(state.avgStockRateWot),
       closingQty: 0,
       freeClosingQty: 0,
       availableQty: 0,
@@ -659,18 +704,26 @@ export class ItemStockLedgerService {
     const physicalOpeningQty = this.getPhysicalOpeningQty(nextState);
     if (physicalOpeningQty > 0) {
       nextState.openingAvgRate = this.roundRate(nextState.openingValue / physicalOpeningQty);
+      nextState.openingAvgRateWot = this.roundRate(
+        nextState.openingValueWot / physicalOpeningQty,
+      );
     } else {
       nextState.openingAvgRate = 0;
       nextState.openingValue = 0;
+      nextState.openingAvgRateWot = 0;
+      nextState.openingValueWot = 0;
     }
 
     const physicalClosingQty = this.getPhysicalClosingQty(nextState);
 
     if (physicalClosingQty > 0) {
       nextState.avgStockRate = this.roundRate(nextState.stockValue / physicalClosingQty);
+      nextState.avgStockRateWot = this.roundRate(nextState.stockValueWot / physicalClosingQty);
     } else {
       nextState.avgStockRate = 0;
       nextState.stockValue = 0;
+      nextState.avgStockRateWot = 0;
+      nextState.stockValueWot = 0;
     }
 
     return nextState;
@@ -721,38 +774,46 @@ export class ItemStockLedgerService {
       avgStockRate: 0,
       openingValue: 0,
       stockValue: 0,
+      openingAvgRateWot: 0,
+      avgStockRateWot: 0,
+      openingValueWot: 0,
+      stockValueWot: 0,
       lastInDate: null,
       lastOutDate: null,
     };
   }
 
   private resolveMovementValue(
-    currentState: StockEngineState,
     movement: StockMovementInput,
+    primaryValue: number,
+    currentOpeningValue: number,
+    currentStockValue: number,
+    fallbackValue?: number,
+    fallbackToZero = false,
   ): number {
-    const inwardValue = this.roundAmount(movement.inwardValue);
+    const inwardValue = this.roundAmount(primaryValue);
 
-    if (
-      movement.movementType !== StockTxnType.OPENING ||
-      inwardValue >= 0 ||
-      movement.legacyInwardValue === undefined
-    ) {
+    if (movement.movementType !== StockTxnType.OPENING || inwardValue >= 0) {
       return inwardValue;
     }
 
-    const grossOpeningValue = this.roundAmount(currentState.openingValue + inwardValue);
-    const grossStockValue = this.roundAmount(currentState.stockValue + inwardValue);
+    const grossOpeningValue = this.roundAmount(currentOpeningValue + inwardValue);
+    const grossStockValue = this.roundAmount(currentStockValue + inwardValue);
     if (grossOpeningValue >= 0 && grossStockValue >= 0) {
       return inwardValue;
     }
 
-    const legacyInwardValue = this.roundAmount(movement.legacyInwardValue);
-    const legacyOpeningValue = this.roundAmount(currentState.openingValue + legacyInwardValue);
-    const legacyStockValue = this.roundAmount(currentState.stockValue + legacyInwardValue);
+    if (fallbackValue !== undefined) {
+      const legacyInwardValue = this.roundAmount(fallbackValue);
+      const legacyOpeningValue = this.roundAmount(currentOpeningValue + legacyInwardValue);
+      const legacyStockValue = this.roundAmount(currentStockValue + legacyInwardValue);
 
-    return legacyOpeningValue >= 0 && legacyStockValue >= 0
-      ? legacyInwardValue
-      : inwardValue;
+      if (legacyOpeningValue >= 0 && legacyStockValue >= 0) {
+        return legacyInwardValue;
+      }
+    }
+
+    return fallbackToZero ? 0 : inwardValue;
   }
 
   private toStateFromStockBalance(row: PrismaItemStockBalance): StockEngineState {
@@ -772,6 +833,10 @@ export class ItemStockLedgerService {
       avgStockRate: this.toNumber(row.isbAvgStockRate),
       openingValue: this.toNumber(row.isbOpeningValue),
       stockValue: this.toNumber(row.isbStockValue),
+      openingAvgRateWot: this.toNumber(row.isbOpeningAvgRateWot),
+      avgStockRateWot: this.toNumber(row.isbAvgStockRateWot),
+      openingValueWot: this.toNumber(row.isbOpeningValueWot),
+      stockValueWot: this.toNumber(row.isbStockValueWot),
       lastInDate: row.isbLastInDate,
       lastOutDate: row.isbLastOutDate,
     };
@@ -794,9 +859,41 @@ export class ItemStockLedgerService {
       avgStockRate: this.toNumber(row.ibsAvgStockRate),
       openingValue: this.toNumber(row.ibsOpeningValue),
       stockValue: this.toNumber(row.ibsStockValue),
+      openingAvgRateWot: 0,
+      avgStockRateWot: 0,
+      openingValueWot: 0,
+      stockValueWot: 0,
       lastInDate: row.ibsLastInDate,
       lastOutDate: row.ibsLastOutDate,
     };
+  }
+
+  private mergeSummaryWotValuation(
+    baseState: StockEngineState,
+    wotState: StockEngineState,
+  ): StockEngineState {
+    return this.recalculateState({
+      ...baseState,
+      openingAvgRateWot: wotState.openingAvgRateWot,
+      avgStockRateWot: wotState.avgStockRateWot,
+      openingValueWot: wotState.openingValueWot,
+      stockValueWot: wotState.stockValueWot,
+    });
+  }
+
+  private resolveBatchSummaryWotState(
+    existingSummary: PrismaItemStockBalance | null,
+    movement: StockMovementInput,
+  ): StockEngineState {
+    if (existingSummary) {
+      return this.applyMovementToState(this.toStateFromStockBalance(existingSummary), movement);
+    }
+
+    if (this.isReverseOpeningMovement(movement)) {
+      return this.createEmptyState();
+    }
+
+    return this.applyMovementToState(this.createEmptyState(), movement);
   }
 
   private buildStockBalanceCreateInput(
@@ -829,6 +926,10 @@ export class ItemStockLedgerService {
       isbAvgStockRate: state.avgStockRate,
       isbOpeningValue: state.openingValue,
       isbStockValue: state.stockValue,
+      isbOpeningAvgRateWot: state.openingAvgRateWot,
+      isbAvgStockRateWot: state.avgStockRateWot,
+      isbOpeningValueWot: state.openingValueWot,
+      isbStockValueWot: state.stockValueWot,
       isbLastInDate: state.lastInDate,
       isbLastOutDate: state.lastOutDate,
       isbSyncDate: null,
@@ -862,6 +963,10 @@ export class ItemStockLedgerService {
       isbAvgStockRate: state.avgStockRate,
       isbOpeningValue: state.openingValue,
       isbStockValue: state.stockValue,
+      isbOpeningAvgRateWot: state.openingAvgRateWot,
+      isbAvgStockRateWot: state.avgStockRateWot,
+      isbOpeningValueWot: state.openingValueWot,
+      isbStockValueWot: state.stockValueWot,
       isbLastInDate: state.lastInDate,
       isbLastOutDate: state.lastOutDate,
       isbSyncDate: null,

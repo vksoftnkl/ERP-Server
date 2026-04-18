@@ -1614,6 +1614,10 @@ Table item_stock_balance {
   isbAvgStockRate Decimal [not null, default: 0]
   isbOpeningValue Decimal [not null, default: 0]
   isbStockValue Decimal [not null, default: 0]
+  isbOpeningAvgRateWot Decimal [not null, default: 0]
+  isbAvgStockRateWot Decimal [not null, default: 0]
+  isbOpeningValueWot Decimal [not null, default: 0]
+  isbStockValueWot Decimal [not null, default: 0]
   isbLastInDate DateTime
   isbLastOutDate DateTime
   isbSyncDate DateTime
