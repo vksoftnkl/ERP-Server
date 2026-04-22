@@ -103,7 +103,9 @@ export class ItemStockLedgerService {
       const reverseMovements = resolvedPreviousDocument
         ? this.buildOpeningStockMovements(resolvedPreviousDocument, -1)
         : [];
-      const currentMovements = this.buildOpeningStockMovements(resolvedDocument, 1);
+      const currentMovements = resolvedDocument.header.osh_is_deleted
+        ? []
+        : this.buildOpeningStockMovements(resolvedDocument, 1);
       await tx.itemStockLedger.deleteMany({
         where: {
           stlVoucherId: document.header.avh_voucher_id,
@@ -151,6 +153,7 @@ export class ItemStockLedgerService {
     const freeQty = detail.osl_free_qty ?? 0;
     const conversionFactor = detail.osl_conv_factor ?? 1;
     const freeBaseQty = this.roundQuantity(freeQty * conversionFactor);
+    const isDeleted = header.osh_is_deleted || detail.osl_is_deleted;
     return {
       stlAccYear: detail.osl_acc_year,
       stlCompanyId: detail.osl_company_id,
@@ -193,8 +196,8 @@ export class ItemStockLedgerService {
       stlDocRateWot: detail.osl_cost_rate_wot ?? 0,
       stlDocAmountWot: detail.osl_stock_value_wot ?? 0,
       stlNarration: detail.osl_remarks ?? header.osh_narration ?? null,
-      stlIsActive: detail.osl_is_active,
-      stlIsDeleted: detail.osl_is_deleted,
+      stlIsActive: isDeleted ? false : detail.osl_is_active,
+      stlIsDeleted: isDeleted,
       stlSyncedOn: null,
       stlCreatedOn: createdOn,
       stlCreatedBy: detail.osl_created_by ?? actorUserId,
@@ -208,7 +211,9 @@ export class ItemStockLedgerService {
       document.header.osh_voucher_date,
       'header.osh_voucher_date',
     );
-    return document.details.map((detail) => {
+    return document.details
+      .filter((detail) => !detail.osl_is_deleted)
+      .map((detail) => {
       const conversionFactor = detail.osl_conv_factor ?? 1;
       const qty = this.roundQuantity(
         (detail.osl_base_qty ?? (detail.osl_qty ?? 0) * conversionFactor) * direction,
@@ -257,7 +262,7 @@ export class ItemStockLedgerService {
         mrp: detail.osl_mrp_rate ?? 0,
         barcode: detail.osl_barcode ?? null,
       };
-    });
+      });
   }
   private async resolveBatchIdsForDocument(
     tx: Prisma.TransactionClient,

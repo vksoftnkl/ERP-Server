@@ -19,6 +19,7 @@ export interface OpeningStockHeaderPayload {
   avh_voucher_type_id: number;
   avh_bill_refno: string;
   avh_user_refno: string | null;
+  avh_user_name?: string | null;
   avh_bill_date: string | null;
   avh_party_id: string;
   avh_opposite_ledger_id: string | null;
@@ -43,6 +44,7 @@ export interface OpeningStockHeaderPayload {
   osh_total_qty: number;
   osh_total_value: number;
   osh_status: string;
+  osh_user_name?: string | null;
   osh_user_id: string;
   osh_session_id: string | null;
   osh_device_type: string;

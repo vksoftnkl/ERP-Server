@@ -26,6 +26,8 @@ export class OpeningStockHeaderPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   avh_user_refno!: string | null;
   @ApiPropertyOptional({ nullable: true })
+  avh_user_name!: string | null;
+  @ApiPropertyOptional({ nullable: true })
   avh_bill_date!: string | null;
   @ApiProperty({ format: 'uuid' })
   avh_party_id!: string;
@@ -73,6 +75,8 @@ export class OpeningStockHeaderPayloadDto {
   osh_total_value!: number;
   @ApiProperty()
   osh_status!: string;
+  @ApiPropertyOptional({ nullable: true })
+  osh_user_name!: string | null;
   @ApiProperty({ format: 'uuid' })
   osh_user_id!: string;
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })

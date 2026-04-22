@@ -26,6 +26,7 @@ const COMPANY_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0001';
 const BRANCH_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0002';
 const PARTY_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0003';
 const USER_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0004';
+const USER_NAME = 'admin.user';
 const EMPLOYEE_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0005';
 const ITEM_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0006';
 const UNIT_ID = '01960231-76f1-7ef5-bbb1-63d6f1df0007';
@@ -176,6 +177,9 @@ const makeVoucherHeaderRecord = (
     avhStatusBy: null,
     avhCancelReason: null,
     avhUserId: USER_ID,
+    user: {
+      user_name: USER_NAME,
+    },
     avhSessionId: null,
     avhDeviceType: DeviceType.WEB,
     avhDeviceId: null,
@@ -626,6 +630,30 @@ describe('OpeningStockService', () => {
         oslIsDeleted: true,
       }),
     });
+    expect(itemStockLedgerService.syncFromOpeningStockDocument).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        header: expect.objectContaining({
+          avh_voucher_id: VOUCHER_ID,
+          osh_status: OpeningStockStatus.CANCELLED,
+          osh_is_active: false,
+          osh_is_deleted: true,
+        }),
+        details: [
+          expect.objectContaining({
+            osl_voucher_id: VOUCHER_ID,
+            osl_is_active: false,
+            osl_is_deleted: true,
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        header: expect.objectContaining({
+          avh_voucher_id: VOUCHER_ID,
+          osh_is_deleted: false,
+        }),
+      }),
+    );
     expect(result).toEqual({
       avh_voucher_id: VOUCHER_ID,
       deleted: true,
@@ -653,6 +681,8 @@ describe('OpeningStockService', () => {
     const result = await service.getByVoucherId(VOUCHER_ID);
 
     expect(result.header.avh_voucher_id).toBe(VOUCHER_ID);
+    expect(result.header.avh_user_name).toBe(USER_NAME);
+    expect(result.header.osh_user_name).toBe(USER_NAME);
     expect(result.details[0]).toEqual(
       expect.objectContaining({
         osl_item_code: 'ITEM-001',
@@ -699,12 +729,63 @@ describe('OpeningStockService', () => {
         },
       },
       include: {
-        voucherHeader: true,
+        voucherHeader: {
+          include: {
+            user: {
+              select: {
+                user_name: true,
+              },
+            },
+          },
+        },
       },
       orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
     });
     expect(result.header.avh_voucher_refno).toBe('OS-3');
+    expect(result.header.avh_user_name).toBe(USER_NAME);
     expect(result.details[0].osl_item_name).toBe('Opening Item');
+  });
+
+  it('lists opening stock headers with resolved user names', async () => {
+    const voucherHeader = makeVoucherHeaderRecord();
+    prisma.openingStockHeader.count.mockResolvedValue(1);
+    prisma.openingStockHeader.findMany.mockResolvedValue([makeOpeningHeaderWithVoucher(voucherHeader)]);
+
+    const result = await service.list({
+      page: 1,
+      limit: 20,
+      search: 'OS-3',
+    });
+
+    expect(prisma.openingStockHeader.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          voucherHeader: {
+            include: {
+              user: {
+                select: {
+                  user_name: true,
+                },
+              },
+            },
+          },
+        },
+        skip: 0,
+        take: 20,
+      }),
+    );
+    expect(result.items[0]).toMatchObject({
+      avh_user_id: USER_ID,
+      avh_user_name: USER_NAME,
+      osh_user_id: USER_ID,
+      osh_user_name: USER_NAME,
+    });
+    expect(result.meta).toEqual({
+      page: 1,
+      limit: 20,
+      total: 1,
+      total_pages: 1,
+    });
   });
 
   it('rejects save when detail rows are empty', async () => {

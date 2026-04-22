@@ -168,10 +168,45 @@ describe('ItemStockLedgerService', () => {
     ...overrides,
   });
 
+  const makeBalanceRow = (overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> => ({
+    isbAccYear: '2025-2026',
+    isbCompanyId: 'company-1',
+    isbBranchId: 'branch-1',
+    isbGodownId: 'godown-1',
+    isbItemId: 'item-1',
+    isbUnitId: 'base-unit-1',
+    isbTrackingType: 'NONE',
+    isbStockBucket: 'SALEABLE',
+    isbOpeningQty: 16,
+    isbInQty: 0,
+    isbOutQty: 0,
+    isbClosingQty: 16,
+    isbOpeningFreeQty: 8,
+    isbFreeInQty: 0,
+    isbFreeOutQty: 0,
+    isbFreeClosingQty: 8,
+    isbReservedQty: 0,
+    isbTransitQty: 0,
+    isbAvailableQty: 16,
+    isbOpeningAvgRate: 29.166667,
+    isbAvgStockRate: 29.166667,
+    isbOpeningValue: 700,
+    isbStockValue: 700,
+    isbOpeningAvgRateWot: 23.333333,
+    isbAvgStockRateWot: 23.333333,
+    isbOpeningValueWot: 560,
+    isbStockValueWot: 560,
+    isbLastInDate: new Date('2026-04-15T10:00:00.000Z'),
+    isbLastOutDate: null,
+    ...overrides,
+  });
+
   const createTx = ({
     initialBatchRows = [],
+    initialBalanceRows = [],
   }: {
     initialBatchRows?: Array<Record<string, unknown>>;
+    initialBalanceRows?: Array<Record<string, unknown>>;
   } = {}) => {
     const batchRows = new Map<string, Record<string, unknown>>();
     const balanceRows = new Map<string, Record<string, unknown>>();
@@ -225,6 +260,21 @@ describe('ItemStockLedgerService', () => {
           ibsBatchId: String(row.ibsBatchId),
           ibsStockBucket: String(row.ibsStockBucket),
         }),
+        row,
+      );
+    }
+
+    for (const row of initialBalanceRows) {
+      balanceRows.set(
+        [
+          row.isbAccYear,
+          row.isbCompanyId,
+          row.isbBranchId,
+          row.isbGodownId,
+          row.isbItemId,
+          row.isbUnitId,
+          row.isbStockBucket,
+        ].join('|'),
         row,
       );
     }
@@ -594,5 +644,67 @@ describe('ItemStockLedgerService', () => {
         }),
       }),
     );
+  });
+
+  it('reverses stock balances and recreates ledger rows as deleted when opening stock is deleted', async () => {
+    const previousDocument = makeDocument();
+    const deletedDocument: OpeningStockDocumentPayload = {
+      header: {
+        ...makeHeader(),
+        osh_status: 'CANCELLED',
+        osh_is_active: false,
+        osh_is_deleted: true,
+        osh_updated_on: '2026-04-16T08:00:00.000Z',
+        osh_updated_by: 'user-1',
+      },
+      details: previousDocument.details.map((detail) => ({
+        ...detail,
+        osl_is_active: false,
+        osl_is_deleted: true,
+        osl_updated_on: '2026-04-16T08:00:00.000Z',
+        osl_updated_by: 'user-1',
+      })),
+    };
+    const tx = createTx({
+      initialBalanceRows: [makeBalanceRow()],
+    });
+
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await service.syncFromOpeningStockDocument(
+      tx as never,
+      deletedDocument,
+      previousDocument,
+    );
+
+    expect(tx.itemStockLedger.deleteMany).toHaveBeenCalledWith({
+      where: {
+        stlVoucherId: 'voucher-1',
+      },
+    });
+    expect(tx.itemStockLedger.create).toHaveBeenCalledTimes(2);
+    expect(tx.itemStockLedger.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stlIsActive: false,
+          stlIsDeleted: true,
+        }),
+      }),
+    );
+
+    const summaryWrite = tx.itemStockBalance.upsert.mock.calls.at(-1)?.[0];
+    expect(summaryWrite.update.isbOpeningQty).toBe(0);
+    expect(summaryWrite.update.isbClosingQty).toBe(0);
+    expect(summaryWrite.update.isbOpeningFreeQty).toBe(0);
+    expect(summaryWrite.update.isbFreeClosingQty).toBe(0);
+    expect(summaryWrite.update.isbAvailableQty).toBe(0);
+    expect(summaryWrite.update.isbOpeningValue).toBe(0);
+    expect(summaryWrite.update.isbStockValue).toBe(0);
+    expect(summaryWrite.update.isbOpeningValueWot).toBe(0);
+    expect(summaryWrite.update.isbStockValueWot).toBe(0);
   });
 });

@@ -47,11 +47,20 @@ const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const OPENING_STOCK_HEADER_TABLE_NAME = 'opening stock header';
 const OPENING_STOCK_AUDIT_SCREEN_NAME = 'Opening Stock';
+const OPENING_STOCK_HEADER_INCLUDE = {
+  voucherHeader: {
+    include: {
+      user: {
+        select: {
+          user_name: true,
+        },
+      },
+    },
+  },
+} as const;
 type OpeningStockWriteClient = Prisma.TransactionClient | PrismaService;
 type OpeningStockHeaderWithVoucher = Prisma.OpeningStockHeaderGetPayload<{
-  include: {
-    voucherHeader: true;
-  };
+  include: typeof OPENING_STOCK_HEADER_INCLUDE;
 }>;
 type DetailLookupMaps = {
   itemsById: Map<string, { itemCode: string | null; itemNameEn: string | null }>;
@@ -147,9 +156,7 @@ export class OpeningStockService {
       this.prisma.openingStockHeader.count({ where }),
       this.prisma.openingStockHeader.findMany({
         where,
-        include: {
-          voucherHeader: true,
-        },
+        include: OPENING_STOCK_HEADER_INCLUDE,
         orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
         skip,
         take: limit,
@@ -219,6 +226,30 @@ export class OpeningStockService {
             oslUpdatedBy: actorUserId,
           },
         });
+        const deletedDocument: OpeningStockDocumentPayload = {
+          ...existingDocument,
+          header: {
+            ...existingDocument.header,
+            avh_voucher_status: VoucherStatus.CANCELLED,
+            osh_status: OpeningStockStatus.CANCELLED,
+            osh_is_active: false,
+            osh_is_deleted: true,
+            osh_updated_on: now.toISOString(),
+            osh_updated_by: actorUserId,
+          },
+          details: existingDocument.details.map((detail) => ({
+            ...detail,
+            osl_is_active: false,
+            osl_is_deleted: true,
+            osl_updated_on: now.toISOString(),
+            osl_updated_by: actorUserId,
+          })),
+        };
+        await this.itemStockLedgerService.syncFromOpeningStockDocument(
+          tx,
+          deletedDocument,
+          existingDocument,
+        );
         await this.auditLogService.logEntityChange(
           {
             action: 'cancel',
@@ -228,15 +259,7 @@ export class OpeningStockService {
             pk: avhVoucherId,
             displayName: this.buildDisplayName(existingDocument.header),
             originalRecord: existingDocument,
-            modifiedRecord: {
-              ...existingDocument,
-              header: {
-                ...existingDocument.header,
-                osh_status: OpeningStockStatus.CANCELLED,
-                osh_is_active: false,
-                osh_is_deleted: true,
-              },
-            },
+            modifiedRecord: deletedDocument,
             userId: actorUserId,
             branchId: existingHeader.oshBranchId,
             notes: 'Opening stock deleted',
@@ -964,9 +987,7 @@ export class OpeningStockService {
         oshVoucherId: avhVoucherId,
         oshIsDeleted: false,
       },
-      include: {
-        voucherHeader: true,
-      },
+      include: OPENING_STOCK_HEADER_INCLUDE,
     });
     if (!header) {
       this.throwNotFound(avhVoucherId);
@@ -1006,9 +1027,7 @@ export class OpeningStockService {
     };
     const header = await client.openingStockHeader.findFirst({
       where,
-      include: {
-        voucherHeader: true,
-      },
+      include: OPENING_STOCK_HEADER_INCLUDE,
       orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
     });
     if (!header) {
@@ -1114,12 +1133,14 @@ export class OpeningStockService {
     };
   }
   private toHeaderPayload(record: OpeningStockHeaderWithVoucher): OpeningStockHeaderPayload {
+    const userName = record.voucherHeader.user?.user_name ?? null;
     return {
       avh_voucher_id: record.voucherHeader.avhVoucherId,
       avh_voucher_refno: record.voucherHeader.avhVoucherRefno,
       avh_voucher_type_id: record.voucherHeader.avhVoucherTypeId,
       avh_bill_refno: record.voucherHeader.avhBillRefno,
       avh_user_refno: record.voucherHeader.avhUserRefno,
+      avh_user_name: userName,
       avh_bill_date: this.toNullableIsoString(record.voucherHeader.avhBillDate),
       avh_party_id: record.voucherHeader.avhPartyId,
       avh_opposite_ledger_id: record.voucherHeader.avhOppositeLedgerId,
@@ -1144,6 +1165,7 @@ export class OpeningStockService {
       osh_total_qty: this.toNumber(record.oshTotalQty),
       osh_total_value: this.toNumber(record.oshTotalValue),
       osh_status: record.oshStatus,
+      osh_user_name: userName,
       osh_user_id: record.oshUserId,
       osh_session_id: record.oshSessionId,
       osh_device_type: record.oshDeviceType,
