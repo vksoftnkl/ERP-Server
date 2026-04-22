@@ -562,6 +562,19 @@ export class SaveOpeningStockDto {
   @Transform(({ value }) => normalizeOpeningStockHeaderAliases(value), { toClassOnly: true })
   @Type(() => OpeningStockHeaderInputDto)
   header!: OpeningStockHeaderInputDto;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    maxLength: 1000,
+    description: 'Optional audit note captured when saving opening stock',
+  })
+  @IsOptional()
+  @Transform(({ value }) => toNullableString(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @MaxLength(1000)
+  audit_notes?: string | null;
+
   @ApiProperty({ type: OpeningStockDetailLineDto, isArray: true })
   @IsArray()
   @ArrayMinSize(1)

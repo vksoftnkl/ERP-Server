@@ -12,13 +12,11 @@ import {
 import { ListAuditLogQueryDto } from './dto/list-audit-log-query.dto';
 import { AuditLogListItem, AuditLogListMeta } from './types/audit-log-api.types';
 import { getAuditScreenSql } from './audit-screen-sql.constants';
-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NUMERIC_ID_PATTERN = /^\d+$/;
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const DISPLAY_FIELD_PATTERN = /\b(name|title)\b/i;
-
 type AuditWriteClient = Prisma.TransactionClient | PrismaService;
 type AuditLogListRecord = Prisma.AuditLogGetPayload<{
   include: { auditScreen: { select: { screenName: true } } };
@@ -65,7 +63,6 @@ type AuditReferenceLookupType =
   | 'unit'
   | 'unitRate';
 type AuditReferenceNameLookup = Partial<Record<AuditReferenceLookupType, ReadonlyMap<string, string>>>;
-
 const normalizeAuditFieldLookupToken = (value: string): string =>
   value
     .replace(/["'`]/g, '')
@@ -73,14 +70,12 @@ const normalizeAuditFieldLookupToken = (value: string): string =>
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '')
     .toLowerCase();
-
 const createAuditReferenceTypeMap = (
   entries: readonly (readonly [string, AuditReferenceLookupType])[],
 ): ReadonlyMap<string, AuditReferenceLookupType> =>
   new Map(
     entries.map(([label, lookupType]) => [normalizeAuditFieldLookupToken(label), lookupType] as const),
   );
-
 const GLOBAL_AUDIT_FIELD_REFERENCE_TYPES = createAuditReferenceTypeMap([
   ['Area ID', 'area'],
   ['Base Unit ID', 'unit'],
@@ -104,7 +99,6 @@ const GLOBAL_AUDIT_FIELD_REFERENCE_TYPES = createAuditReferenceTypeMap([
   ['Unit ID', 'unit'],
   ['Unit Rate ID', 'unitRate'],
 ]);
-
 const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
   string,
   ReadonlyMap<string, AuditReferenceLookupType>
@@ -172,14 +166,12 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
     ]),
   ],
 ]);
-
 @Injectable()
 export class AuditLogService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly requestContextService: RequestContextService,
   ) {}
-
   async captureScreenSnapshot(
     input: CaptureScreenSnapshotInput,
     tx?: Prisma.TransactionClient,
@@ -194,24 +186,19 @@ export class AuditLogService {
         screenId: true,
       },
     });
-
     if (!screen) {
       throw new BadRequestException(`No active audit screen found with id ${input.screenId}`);
     }
-
     // Snapshot SQL templates are intentionally disabled.
     return null;
   }
-
   async list(
     queryDto: ListAuditLogQueryDto,
   ): Promise<{ items: AuditLogListItem[]; meta: AuditLogListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const where: Prisma.AuditLogWhereInput = {};
-
     if (queryDto.action?.trim()) {
       where.logAction = this.normalizeAction(queryDto.action) as
         | 'insert'
@@ -219,11 +206,9 @@ export class AuditLogService {
         | 'approve'
         | 'cancel';
     }
-
     if (queryDto.screen_id !== undefined) {
       where.logScreenId = queryDto.screen_id;
     }
-
     if (queryDto.screen_name?.trim()) {
       where.auditScreen = {
         is: {
@@ -231,11 +216,9 @@ export class AuditLogService {
         },
       };
     }
-
     if (queryDto.record_pk?.trim()) {
       where.logPk = queryDto.record_pk.trim();
     }
-
     const dateFrom = queryDto.date_from
       ? this.parseDateBoundary(queryDto.date_from, 'start')
       : undefined;
@@ -252,7 +235,6 @@ export class AuditLogService {
         where.logDate.lte = dateTo;
       }
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -269,7 +251,6 @@ export class AuditLogService {
         },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.auditLog.count({ where }),
       this.prisma.auditLog.findMany({
@@ -292,7 +273,6 @@ export class AuditLogService {
     ]);
     const preparedRecords = records.map((record) => this.prepareAuditLogListRecord(record));
     const auditReferenceNameLookup = await this.getAuditReferenceNameLookup(preparedRecords);
-
     return {
       items: preparedRecords.map((preparedRecord) =>
         this.toListItem(preparedRecord, userNameById, branchNameById, auditReferenceNameLookup),
@@ -305,7 +285,6 @@ export class AuditLogService {
       },
     };
   }
-
   async createAuditLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma;
     const action = this.normalizeAction(input.action);
@@ -314,10 +293,8 @@ export class AuditLogService {
     if (!normalizedTableName) {
       throw new BadRequestException('tableName is required for audit log');
     }
-
     const resolvedUserId = this.resolveAuditUserId(input.userId);
     const resolvedIpAddress = this.resolveAuditIpAddress();
-
     const data: Prisma.AuditLogUncheckedCreateInput = {
       logAction: prismaAction,
       logScreenId: input.screenId,
@@ -333,12 +310,10 @@ export class AuditLogService {
       logIp: resolvedIpAddress,
       logNotes: this.normalizeOptionalText(input.notes),
     };
-
     await client.auditLog.create({
       data,
     });
   }
-
   async logEntityChange(input: LogEntityChangeInput, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma;
     const action = this.normalizeAction(input.action);
@@ -348,13 +323,11 @@ export class AuditLogService {
       this.toNullableJson(input.originalRecord),
       screen.auditFields,
     );
-
     const isModifiedRecordProvided = input.modifiedRecord !== undefined;
     let modifiedRecord = this.projectAuditRecord(
       this.toNullableJson(input.modifiedRecord),
       screen.auditFields,
     );
-
     if (!isModifiedRecordProvided) {
       const pk = this.normalizePk(input.pk);
       if (pk !== null) {
@@ -371,11 +344,9 @@ export class AuditLogService {
         );
       }
     }
-
     if (!isModifiedRecordProvided && modifiedRecord === null) {
       throw new BadRequestException('modifiedRecord is required when auto snapshot is unavailable');
     }
-
     if (action === 'insert') {
       const insertOriginalRecord = originalRecord ?? modifiedRecord;
       if (insertOriginalRecord === null) {
@@ -383,7 +354,6 @@ export class AuditLogService {
           'originalRecord or modifiedRecord is required for insert audit log',
         );
       }
-
       await this.createAuditLog(
         {
           action,
@@ -403,13 +373,11 @@ export class AuditLogService {
       );
       return;
     }
-
     if (action === 'update' && (originalRecord === null || modifiedRecord === null)) {
       throw new BadRequestException(
         'originalRecord and modifiedRecord are required for update audit log',
       );
     }
-
     const changedFields = this.computeChangedFields(originalRecord, modifiedRecord);
     await this.createAuditLog(
       {
@@ -429,7 +397,6 @@ export class AuditLogService {
       tx,
     );
   }
-
   private async resolveAuditScreen(
     input: LogEntityChangeInput,
     tx: AuditWriteClient,
@@ -438,7 +405,6 @@ export class AuditLogService {
       if (!Number.isInteger(input.screenId) || input.screenId <= 0) {
         throw new BadRequestException('screenId must be a positive integer');
       }
-
       const existingScreen = await tx.auditScreen.findFirst({
         where: {
           screenId: input.screenId,
@@ -450,24 +416,19 @@ export class AuditLogService {
           screenAuditSql: true,
         },
       });
-
       if (!existingScreen) {
         throw new BadRequestException(`No active audit screen found with id ${input.screenId}`);
       }
-
       const resolvedScreen = await this.syncAuditScreenSqlIfNeeded(tx, existingScreen);
-
       return {
         screenId: resolvedScreen.screenId,
         auditFields: this.extractAuditFields(resolvedScreen.screenAuditSql),
       };
     }
-
     const screenName = input.screenName?.trim();
     if (!screenName) {
       throw new BadRequestException('Either screenId or screenName is required');
     }
-
     const existingScreen = await tx.auditScreen.findFirst({
       where: {
         screenName,
@@ -482,7 +443,6 @@ export class AuditLogService {
         screenId: 'asc',
       },
     });
-
     if (existingScreen) {
       const resolvedScreen = await this.syncAuditScreenSqlIfNeeded(tx, existingScreen);
       return {
@@ -490,7 +450,6 @@ export class AuditLogService {
         auditFields: this.extractAuditFields(resolvedScreen.screenAuditSql),
       };
     }
-
     const screenAuditSql = getAuditScreenSql(screenName);
     const createdScreen = await tx.auditScreen.create({
       data: {
@@ -504,13 +463,11 @@ export class AuditLogService {
         screenAuditSql: true,
       },
     });
-
     return {
       screenId: createdScreen.screenId,
       auditFields: this.extractAuditFields(createdScreen.screenAuditSql),
     };
   }
-
   private async syncAuditScreenSqlIfNeeded(
     tx: AuditWriteClient,
     screen: { screenId: number; screenName: string; screenAuditSql: string | null },
@@ -522,7 +479,6 @@ export class AuditLogService {
         screenAuditSql: screen.screenAuditSql,
       };
     }
-
     return tx.auditScreen.update({
       where: {
         screenId: screen.screenId,
@@ -536,7 +492,6 @@ export class AuditLogService {
       },
     });
   }
-
   private normalizeAction(action: string): AuditAction {
     const normalizedAction = action.trim().toLowerCase();
     switch (normalizedAction) {
@@ -551,21 +506,18 @@ export class AuditLogService {
         throw new BadRequestException(`Unsupported audit action: ${action}`);
     }
   }
-
   private parseDateBoundary(value: string, boundary: 'start' | 'end'): Date {
     const normalized = value.trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
       const suffix = boundary === 'start' ? 'T00:00:00.000Z' : 'T23:59:59.999Z';
       return new Date(`${normalized}${suffix}`);
     }
-
     const parsed = new Date(normalized);
     if (Number.isNaN(parsed.getTime())) {
       throw new BadRequestException(`Invalid date value: ${value}`);
     }
     return parsed;
   }
-
   private toListItem(
     preparedRecord: PreparedAuditLogListRecord,
     userNameById: ReadonlyMap<string, string>,
@@ -594,7 +546,6 @@ export class AuditLogService {
       this.findAuditDisplayName(originalRecord);
     const userName = record.logUserId ? (userNameById.get(record.logUserId) ?? null) : null;
     const branchName = record.logBranchId ? (branchNameById.get(record.logBranchId) ?? null) : null;
-
     return {
       log_id: record.logId,
       log_date: record.logDate.toISOString(),
@@ -614,11 +565,9 @@ export class AuditLogService {
       log_notes: record.logNotes,
     };
   }
-
   private prepareAuditLogListRecord(record: AuditLogListRecord): PreparedAuditLogListRecord {
     const screenName = record.auditScreen.screenName;
     const auditFields = this.extractAuditFields(getAuditScreenSql(screenName));
-
     return {
       record,
       screenName,
@@ -628,7 +577,6 @@ export class AuditLogService {
       changedFields: this.renameAuditRecordFields(record.logChangedFields, auditFields),
     };
   }
-
   private renameAuditRecordFields(
     record: Prisma.JsonValue | null,
     auditFields: readonly AuditFieldDefinition[],
@@ -636,17 +584,14 @@ export class AuditLogService {
     if (record === null || auditFields.length === 0 || !this.isJsonObject(record)) {
       return record;
     }
-
     const renamedRecord: Prisma.JsonObject = {};
     for (const [key, value] of Object.entries(record)) {
       const auditField = this.findAuditFieldDefinitionByKey(key, auditFields);
       const targetKey = auditField?.targetFieldName ?? key;
       renamedRecord[targetKey] = value as Prisma.JsonValue;
     }
-
     return renamedRecord;
   }
-
   private findAuditFieldDefinitionByKey(
     key: string,
     auditFields: readonly AuditFieldDefinition[],
@@ -655,7 +600,6 @@ export class AuditLogService {
     if (lookupTokens.size === 0) {
       return null;
     }
-
     for (const auditField of auditFields) {
       const candidateFieldNames = [
         auditField.sourceFieldName,
@@ -668,15 +612,12 @@ export class AuditLogService {
         }
       }
     }
-
     return null;
   }
-
   private async getAuditReferenceNameLookup(
     preparedRecords: readonly PreparedAuditLogListRecord[],
   ): Promise<AuditReferenceNameLookup> {
     const referenceIdsByType = new Map<AuditReferenceLookupType, Set<string>>();
-
     for (const preparedRecord of preparedRecords) {
       this.collectAuditReferenceIds(
         preparedRecord.originalRecord,
@@ -694,17 +635,14 @@ export class AuditLogService {
         referenceIdsByType,
       );
     }
-
     const entries = await Promise.all(
       Array.from(referenceIdsByType.entries()).map(async ([lookupType, ids]) => [
         lookupType,
         await this.fetchAuditReferenceNameMap(lookupType, Array.from(ids)),
       ]),
     );
-
     return Object.fromEntries(entries) as AuditReferenceNameLookup;
   }
-
   private collectAuditReferenceIds(
     value: Prisma.JsonValue | null,
     screenName: string,
@@ -713,18 +651,15 @@ export class AuditLogService {
     if (value === null) {
       return;
     }
-
     if (Array.isArray(value)) {
       for (const item of value) {
         this.collectAuditReferenceIds(item, screenName, referenceIdsByType);
       }
       return;
     }
-
     if (!this.isJsonObject(value)) {
       return;
     }
-
     for (const [fieldName, fieldValue] of Object.entries(value)) {
       const normalizedFieldValue = (fieldValue ?? null) as Prisma.JsonValue;
       const lookupType = this.resolveAuditFieldReferenceType(screenName, fieldName);
@@ -732,17 +667,14 @@ export class AuditLogService {
         this.collectAuditReferenceIds(normalizedFieldValue, screenName, referenceIdsByType);
         continue;
       }
-
       if (this.isAuditDiffLeaf(normalizedFieldValue)) {
         this.collectAuditReferenceLeafId(normalizedFieldValue.from, lookupType, referenceIdsByType);
         this.collectAuditReferenceLeafId(normalizedFieldValue.to, lookupType, referenceIdsByType);
         continue;
       }
-
       this.collectAuditReferenceLeafId(normalizedFieldValue, lookupType, referenceIdsByType);
     }
   }
-
   private collectAuditReferenceLeafId(
     value: Prisma.JsonValue,
     lookupType: AuditReferenceLookupType,
@@ -751,28 +683,23 @@ export class AuditLogService {
     if (value === null) {
       return;
     }
-
     if (Array.isArray(value)) {
       for (const item of value) {
         this.collectAuditReferenceLeafId(item, lookupType, referenceIdsByType);
       }
       return;
     }
-
     if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
       return;
     }
-
     const normalizedValue = String(value).trim();
     if (!normalizedValue || !this.isValidAuditReferenceId(lookupType, normalizedValue)) {
       return;
     }
-
     const existingIds = referenceIdsByType.get(lookupType) ?? new Set<string>();
     existingIds.add(normalizedValue);
     referenceIdsByType.set(lookupType, existingIds);
   }
-
   private resolveAuditReferenceNames(
     value: Prisma.JsonValue | null,
     screenName: string,
@@ -781,17 +708,14 @@ export class AuditLogService {
     if (value === null) {
       return null;
     }
-
     if (Array.isArray(value)) {
       return value.map((item) =>
         this.resolveAuditReferenceNames(item, screenName, auditReferenceNameLookup),
       );
     }
-
     if (!this.isJsonObject(value)) {
       return value;
     }
-
     const transformedValue: Prisma.JsonObject = {};
     for (const [fieldName, fieldValue] of Object.entries(value)) {
       const normalizedFieldValue = (fieldValue ?? null) as Prisma.JsonValue;
@@ -804,7 +728,6 @@ export class AuditLogService {
         ) as Prisma.JsonValue;
         continue;
       }
-
       if (this.isAuditDiffLeaf(normalizedFieldValue)) {
         transformedValue[fieldName] = {
           from: this.resolveAuditReferenceLeafValue(
@@ -820,17 +743,14 @@ export class AuditLogService {
         };
         continue;
       }
-
       transformedValue[fieldName] = this.resolveAuditReferenceLeafValue(
         normalizedFieldValue,
         lookupType,
         auditReferenceNameLookup,
       );
     }
-
     return transformedValue;
   }
-
   private resolveAuditReferenceLeafValue(
     value: Prisma.JsonValue,
     lookupType: AuditReferenceLookupType,
@@ -839,25 +759,20 @@ export class AuditLogService {
     if (value === null) {
       return null;
     }
-
     if (Array.isArray(value)) {
       return value.map((item) =>
         this.resolveAuditReferenceLeafValue(item, lookupType, auditReferenceNameLookup),
       );
     }
-
     if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
       return value;
     }
-
     const normalizedValue = String(value).trim();
     if (!normalizedValue) {
       return value;
     }
-
     return auditReferenceNameLookup[lookupType]?.get(normalizedValue) ?? value;
   }
-
   private resolveAuditFieldReferenceType(
     screenName: string,
     fieldName: string,
@@ -867,18 +782,14 @@ export class AuditLogService {
     if (screenResolver?.has(normalizedFieldName)) {
       return screenResolver.get(normalizedFieldName) ?? null;
     }
-
     return GLOBAL_AUDIT_FIELD_REFERENCE_TYPES.get(normalizedFieldName) ?? null;
   }
-
   private isValidAuditReferenceId(lookupType: AuditReferenceLookupType, value: string): boolean {
     if (lookupType === 'tenderType') {
       return NUMERIC_ID_PATTERN.test(value);
     }
-
     return UUID_PATTERN.test(value);
   }
-
   private isAuditDiffLeaf(
     value: Prisma.JsonValue,
   ): value is Prisma.JsonObject & { from: Prisma.JsonValue; to: Prisma.JsonValue } {
@@ -888,12 +799,10 @@ export class AuditLogService {
       Object.prototype.hasOwnProperty.call(value, 'to')
     );
   }
-
   private findAuditDisplayName(value: Prisma.JsonValue | null): string | null {
     if (!this.isJsonObject(value)) {
       return null;
     }
-
     for (const [fieldName, fieldValue] of Object.entries(value)) {
       const normalizedFieldValue = (fieldValue ?? null) as Prisma.JsonValue;
       if (
@@ -903,7 +812,6 @@ export class AuditLogService {
       ) {
         continue;
       }
-
       if (
         normalizedFieldValue === null ||
         Array.isArray(normalizedFieldValue) ||
@@ -911,16 +819,13 @@ export class AuditLogService {
       ) {
         continue;
       }
-
       const normalizedValue = String(normalizedFieldValue).trim();
       if (normalizedValue) {
         return normalizedValue;
       }
     }
-
     return null;
   }
-
   private async fetchAuditReferenceNameMap(
     lookupType: AuditReferenceLookupType,
     ids: readonly string[],
@@ -928,7 +833,6 @@ export class AuditLogService {
     if (ids.length === 0) {
       return new Map<string, string>();
     }
-
     switch (lookupType) {
       case 'accountGroup': {
         const groups = await this.prisma.accountGroup.findMany({
@@ -942,7 +846,6 @@ export class AuditLogService {
             accGroupName: true,
           },
         });
-
         return new Map(groups.map((group) => [group.accGroupId, group.accGroupName]));
       }
       case 'area': {
@@ -957,7 +860,6 @@ export class AuditLogService {
             armName: true,
           },
         });
-
         return new Map(areas.map((area) => [area.armId, area.armName]));
       }
       case 'branch':
@@ -974,7 +876,6 @@ export class AuditLogService {
             categoryName: true,
           },
         });
-
         return new Map(categories.map((category) => [category.categoryId, category.categoryName]));
       }
       case 'city': {
@@ -989,7 +890,6 @@ export class AuditLogService {
             ctmName: true,
           },
         });
-
         return new Map(cities.map((city) => [city.ctmId, city.ctmName]));
       }
       case 'company': {
@@ -1004,7 +904,6 @@ export class AuditLogService {
             compName: true,
           },
         });
-
         return new Map(companies.map((company) => [company.compId, company.compName]));
       }
       case 'customer': {
@@ -1020,7 +919,6 @@ export class AuditLogService {
             cusCode: true,
           },
         });
-
         return new Map(
           customers.map((customer) => [
             customer.cusId,
@@ -1040,7 +938,6 @@ export class AuditLogService {
             cgrName: true,
           },
         });
-
         return new Map(groups.map((group) => [group.cgrId, group.cgrName]));
       }
       case 'employeeDepartment': {
@@ -1055,7 +952,6 @@ export class AuditLogService {
             edptName: true,
           },
         });
-
         return new Map(
           departments.map((department) => [department.edptId, department.edptName]),
         );
@@ -1072,7 +968,6 @@ export class AuditLogService {
             edName: true,
           },
         });
-
         return new Map(
           designations.map((designation) => [designation.edId, designation.edName]),
         );
@@ -1093,14 +988,12 @@ export class AuditLogService {
           },
           orderBy: [{ gdlLevel: 'asc' }, { gdlSort: 'asc' }, { gdlName: 'asc' }],
         });
-
         const godownNameById = new Map<string, string>();
         for (const location of godownLocations) {
           if (!godownNameById.has(location.gdlGodownId)) {
             godownNameById.set(location.gdlGodownId, location.gdlName);
           }
         }
-
         return godownNameById;
       }
       case 'godownLocation': {
@@ -1115,7 +1008,6 @@ export class AuditLogService {
             gdlName: true,
           },
         });
-
         return new Map(locations.map((location) => [location.gdlId, location.gdlName]));
       }
       case 'gspProvider': {
@@ -1130,7 +1022,6 @@ export class AuditLogService {
             gspProviderName: true,
           },
         });
-
         return new Map(
           providers.map((provider) => [provider.gspProviderId, provider.gspProviderName]),
         );
@@ -1147,7 +1038,6 @@ export class AuditLogService {
             itemNameEn: true,
           },
         });
-
         return new Map(items.map((item) => [item.itemId, item.itemNameEn]));
       }
       case 'itemBrand': {
@@ -1162,7 +1052,6 @@ export class AuditLogService {
             brand_name: true,
           },
         });
-
         return new Map(brands.map((brand) => [brand.brand_id, brand.brand_name]));
       }
       case 'itemGroup': {
@@ -1177,7 +1066,6 @@ export class AuditLogService {
             itgName: true,
           },
         });
-
         return new Map(groups.map((group) => [group.itgId, group.itgName]));
       }
       case 'itemSection': {
@@ -1192,7 +1080,6 @@ export class AuditLogService {
             secName: true,
           },
         });
-
         return new Map(sections.map((section) => [section.secId, section.secName]));
       }
       case 'itemTax': {
@@ -1207,7 +1094,6 @@ export class AuditLogService {
             taxName: true,
           },
         });
-
         return new Map(taxes.map((tax) => [tax.taxId, tax.taxName]));
       }
       case 'ledger': {
@@ -1222,7 +1108,6 @@ export class AuditLogService {
             ledName: true,
           },
         });
-
         return new Map(ledgers.map((ledger) => [ledger.ledId, ledger.ledName]));
       }
       case 'state': {
@@ -1237,7 +1122,6 @@ export class AuditLogService {
             stmName: true,
           },
         });
-
         return new Map(states.map((state) => [state.stmId, state.stmName]));
       }
       case 'supplierGroup': {
@@ -1252,7 +1136,6 @@ export class AuditLogService {
             spgName: true,
           },
         });
-
         return new Map(groups.map((group) => [group.spgId, group.spgName]));
       }
       case 'tenderType': {
@@ -1268,7 +1151,6 @@ export class AuditLogService {
             accttTypeName: true,
           },
         });
-
         return new Map(
           tenderTypes.map((tenderType) => [
             tenderType.accttTypeId.toString(),
@@ -1288,7 +1170,6 @@ export class AuditLogService {
             unit_name: true,
           },
         });
-
         return new Map(units.map((unit) => [unit.unit_id, unit.unit_name]));
       }
       case 'unitRate': {
@@ -1317,7 +1198,6 @@ export class AuditLogService {
             },
           },
         });
-
         return new Map(
           unitRates.map((unitRate) => [
             unitRate.ipmId,
@@ -1329,7 +1209,6 @@ export class AuditLogService {
       }
     }
   }
-
   private async getUserNameById(records: AuditLogListRecord[]): Promise<Map<string, string>> {
     const userIds = Array.from(
       new Set(
@@ -1338,14 +1217,11 @@ export class AuditLogService {
           .filter((userId): userId is string => Boolean(userId)),
       ),
     );
-
     if (userIds.length === 0) {
       return new Map<string, string>();
     }
-
     return this.getUserNameLookupByIds(userIds);
   }
-
   private async getUserNameLookupByIds(userIds: readonly string[]): Promise<Map<string, string>> {
     const users = await this.prisma.user.findMany({
       where: {
@@ -1358,10 +1234,8 @@ export class AuditLogService {
         user_name: true,
       },
     });
-
     return new Map(users.map((user) => [user.user_id, user.user_name]));
   }
-
   private async getBranchNameById(records: AuditLogListRecord[]): Promise<Map<string, string>> {
     const branchIds = Array.from(
       new Set(
@@ -1370,14 +1244,11 @@ export class AuditLogService {
           .filter((branchId): branchId is string => Boolean(branchId)),
       ),
     );
-
     if (branchIds.length === 0) {
       return new Map<string, string>();
     }
-
     return this.getBranchNameLookupByIds(branchIds);
   }
-
   private async getBranchNameLookupByIds(branchIds: readonly string[]): Promise<Map<string, string>> {
     const branches = await this.prisma.branchMaster.findMany({
       where: {
@@ -1390,10 +1261,8 @@ export class AuditLogService {
         brName: true,
       },
     });
-
     return new Map(branches.map((branch) => [branch.brId, branch.brName]));
   }
-
   private normalizeScreenType(screenType?: string): AuditScreenType {
     const normalizedScreenType = screenType?.trim().toLowerCase();
     switch (normalizedScreenType) {
@@ -1411,7 +1280,6 @@ export class AuditLogService {
         throw new BadRequestException(`Unsupported audit screen type: ${screenType}`);
     }
   }
-
   private projectAuditRecord(
     record: Prisma.JsonValue | null,
     auditFields: readonly AuditFieldDefinition[],
@@ -1419,15 +1287,12 @@ export class AuditLogService {
     if (record === null || auditFields.length === 0 || !this.isJsonObject(record)) {
       return record;
     }
-
     const projectedRecord: Prisma.JsonObject = {};
     for (const auditField of auditFields) {
       projectedRecord[auditField.targetFieldName] = this.resolveAuditFieldValue(record, auditField);
     }
-
     return projectedRecord;
   }
-
   private resolveAuditFieldValue(
     record: Prisma.JsonObject,
     auditField: AuditFieldDefinition,
@@ -1438,37 +1303,30 @@ export class AuditLogService {
     if (sourceKey) {
       return (record[sourceKey] as Prisma.JsonValue | null | undefined) ?? null;
     }
-
     const targetKey = this.findAuditFieldKey(record, auditField.targetFieldName);
     if (!targetKey) {
       return null;
     }
-
     return (record[targetKey] as Prisma.JsonValue | null | undefined) ?? null;
   }
-
   private findAuditFieldKey(record: Prisma.JsonObject, auditFieldName: string): string | null {
     const lookupTokens = new Set(this.buildAuditFieldLookupTokens(auditFieldName));
     if (lookupTokens.size === 0) {
       return null;
     }
-
     for (const key of Object.keys(record)) {
       const keyTokens = this.buildAuditFieldLookupTokens(key);
       if (keyTokens.some((token) => lookupTokens.has(token))) {
         return key;
       }
     }
-
     return null;
   }
-
   private buildAuditFieldLookupTokens(value: string): string[] {
     const normalizedValue = value.trim();
     if (!normalizedValue) {
       return [];
     }
-
     const normalizedSnake = this.toSnakeCase(normalizedValue);
     return Array.from(
       new Set(
@@ -1480,22 +1338,18 @@ export class AuditLogService {
       ),
     );
   }
-
   private extractAuditFields(screenAuditSql?: string | null): AuditFieldDefinition[] {
     const normalizedSql = screenAuditSql?.trim();
     if (!normalizedSql) {
       return [];
     }
-
     const selectClauseMatch = normalizedSql.match(/^\s*select\s+([\s\S]+?)\s+from\b/i);
     if (!selectClauseMatch) {
       return [];
     }
-
     const fields = this.splitSelectClause(selectClauseMatch[1])
       .map((fieldExpression) => this.extractAuditFieldDefinition(fieldExpression))
       .filter((field): field is AuditFieldDefinition => Boolean(field));
-
     const seen = new Set<string>();
     return fields.filter((field) => {
       if (seen.has(field.targetFieldName)) {
@@ -1505,14 +1359,12 @@ export class AuditLogService {
       return true;
     });
   }
-
   private splitSelectClause(selectClause: string): string[] {
     const fields: string[] = [];
     let currentField = '';
     let parenthesisDepth = 0;
     let insideSingleQuote = false;
     let insideDoubleQuote = false;
-
     for (const character of selectClause) {
       if (character === "'" && !insideDoubleQuote) {
         insideSingleQuote = !insideSingleQuote;
@@ -1532,24 +1384,19 @@ export class AuditLogService {
           continue;
         }
       }
-
       currentField += character;
     }
-
     const trailingField = currentField.trim();
     if (trailingField) {
       fields.push(trailingField);
     }
-
     return fields;
   }
-
   private extractAuditFieldDefinition(fieldExpression: string): AuditFieldDefinition | null {
     const normalizedExpression = fieldExpression.trim();
     if (!normalizedExpression) {
       return null;
     }
-
     const explicitAliasMatch = normalizedExpression.match(
       /^(?<source>[\s\S]+?)\s+as\s+("(?<quotedAlias>[^"]+)"|(?<alias>[A-Za-z_][A-Za-z0-9_]*))\s*$/i,
     );
@@ -1564,18 +1411,15 @@ export class AuditLogService {
         targetFieldName,
       };
     }
-
     const sourceFieldName = this.extractSourceFieldName(normalizedExpression);
     if (!sourceFieldName) {
       return null;
     }
-
     return {
       sourceFieldName,
       targetFieldName: sourceFieldName,
     };
   }
-
   private extractSourceFieldName(expression: string): string | null {
     const expressionWithoutCast = expression
       .trim()
@@ -1585,21 +1429,17 @@ export class AuditLogService {
     if (quotedIdentifierMatch) {
       return quotedIdentifierMatch[1];
     }
-
     const identifierMatch = expressionWithoutCast.match(/([A-Za-z_][A-Za-z0-9_]*)\s*$/);
     return identifierMatch?.[1] ?? null;
   }
-
   private toSnakeCase(value: string): string {
     return this.normalizeAuditFieldLookup(value.replace(/([a-z0-9])([A-Z])/g, '$1_$2'));
   }
-
   private toCamelCase(value: string): string {
     const normalized = this.normalizeAuditFieldLookup(value);
     if (!normalized) {
       return '';
     }
-
     return normalized
       .split('_')
       .filter(Boolean)
@@ -1608,11 +1448,9 @@ export class AuditLogService {
       )
       .join('');
   }
-
   private normalizeAuditFieldLookup(value: string): string {
     return normalizeAuditFieldLookupToken(value);
   }
-
   private computeChangedFields(
     originalRecord: Prisma.JsonValue | null,
     modifiedRecord: Prisma.JsonValue | null,
@@ -1686,7 +1524,6 @@ export class AuditLogService {
       }
       return true;
     }
-
     return false;
   }
   private isJsonObject(value: Prisma.JsonValue | null): value is Prisma.JsonObject {
@@ -1743,22 +1580,18 @@ export class AuditLogService {
     }
     return this.normalizeUuid(this.requestContextService.getUserId());
   }
-
   private resolveAuditIpAddress(): string | null {
     const requestIpAddress = this.requestContextService.getIpAddress();
     return this.normalizeIpAddress(requestIpAddress);
   }
-
   private normalizeIpAddress(value: string | null | undefined): string | null {
     if (!value) {
       return null;
     }
-
     const normalized = value.trim();
     if (!normalized) {
       return null;
     }
-
     return isIP(normalized) === 0 ? null : normalized;
   }
 }

@@ -21,6 +21,7 @@ describe('SaveOpeningStockDto', () => {
           osh_device_type: 'WEB',
           osh_counter_id: 'COUNTER-1',
         },
+        audit_notes: '  Updated item quantities after stock count  ',
         details: [
           {
             osl_item_id: '01960231-76f1-7ef5-bbb1-63d6f1df0006',
@@ -37,6 +38,7 @@ describe('SaveOpeningStockDto', () => {
     )) as SaveOpeningStockDto;
 
     expect(result.header.avh_voucher_type_id).toBe(7);
+    expect(result.audit_notes).toBe('Updated item quantities after stock count');
     expect(result.details[0].osl_qty).toBe(5);
   });
 });

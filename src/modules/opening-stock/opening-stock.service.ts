@@ -345,7 +345,10 @@ export class OpeningStockService {
             modifiedRecord: payload,
             userId: context.actorUserId,
             branchId: context.branchId,
-            notes: 'Opening stock created',
+            notes: this.resolveAuditNotes(
+              saveOpeningStockDto.audit_notes,
+              'Opening stock created',
+            ),
           },
           tx,
         );
@@ -448,7 +451,10 @@ export class OpeningStockService {
             modifiedRecord: payload,
             userId: context.actorUserId,
             branchId: context.branchId,
-            notes: 'Opening stock updated',
+            notes: this.resolveAuditNotes(
+              saveOpeningStockDto.audit_notes,
+              'Opening stock updated',
+            ),
           },
           tx,
         );
@@ -628,6 +634,12 @@ export class OpeningStockService {
     }
     return voucherTypeId;
   }
+
+  private resolveAuditNotes(notes: string | null | undefined, fallback: string): string {
+    const normalizedNotes = notes?.trim();
+    return normalizedNotes || fallback;
+  }
+
   private async validateHeaderReferences(
     tx: Prisma.TransactionClient,
     header: OpeningStockHeaderInputDto,

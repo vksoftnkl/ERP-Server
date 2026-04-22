@@ -590,6 +590,43 @@ describe('OpeningStockService', () => {
     );
   });
 
+  it('uses request audit notes when updating opening stock', async () => {
+    const existingVoucherHeader = makeVoucherHeaderRecord();
+    const updatedVoucherHeader = makeVoucherHeaderRecord({
+      avhVoucherRefno: 'OS-4',
+      avhVoucherNo: BigInt(12),
+    });
+
+    (updateAccountVoucherHeader as jest.MockedFunction<typeof updateAccountVoucherHeader>).mockResolvedValue(
+      updatedVoucherHeader,
+    );
+    tx.openingStockHeader.findFirst
+      .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(existingVoucherHeader))
+      .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(existingVoucherHeader))
+      .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(updatedVoucherHeader));
+    tx.openingStockHeader.update.mockResolvedValue(makeOpeningHeaderWithVoucher(updatedVoucherHeader));
+    tx.openingStockDetail.findMany.mockResolvedValue([makeDetailRecord()]);
+    tx.openingStockDetail.deleteMany.mockResolvedValue({ count: 1 });
+    tx.openingStockDetail.createMany.mockResolvedValue({ count: 1 });
+
+    await service.save(
+      makeSaveDto({
+        header: {
+          ...makeSaveDto().header,
+          avh_voucher_id: VOUCHER_ID,
+        },
+        audit_notes: 'Adjusted opening stock after audit recount',
+      }),
+    );
+
+    expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notes: 'Adjusted opening stock after audit recount',
+      }),
+      tx,
+    );
+  });
+
   it('soft deletes opening stock by avh_voucher_id', async () => {
     const voucherHeader = makeVoucherHeaderRecord();
     (softDeleteAccountVoucherHeader as jest.MockedFunction<typeof softDeleteAccountVoucherHeader>).mockResolvedValue(
