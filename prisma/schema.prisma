@@ -2228,12 +2228,6 @@ model GodownLocation {
 }
 
 // ----- prisma/inventory/ItemBatchMaster.prisma -----
-enum ItemBatchStatus {
-  ACTIVE
-  CLOSED
-  BLOCKED
-  @@schema("inventory")
-}
 model ItemBatchMaster {
   // Primary
   btmId                    String           @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("btm_id")
@@ -2254,8 +2248,8 @@ model ItemBatchMaster {
   btmLastSaleRateWot       Decimal          @default(0) @db.Decimal(18, 6) @map("btm_last_sale_rate_wot")
   // Optional identifiers
   btmBarcode               String?          @db.VarChar(100) @map("btm_barcode")
-  // Status
-  btmStatus                ItemBatchStatus  @default(ACTIVE) @map("btm_status")
+  // Status — validated at app level (ACTIVE, CLOSED, BLOCKED)
+  btmStatus                String           @default("ACTIVE") @db.VarChar(20) @map("btm_status")
   btmClosedOn              DateTime?        @db.Timestamptz(6) @map("btm_closed_on")
   btmClosedReason          String?          @db.VarChar(250) @map("btm_closed_reason")
   // Notes
@@ -2277,15 +2271,6 @@ model ItemBatchMaster {
 }
 
 // ----- prisma/inventory/ItemBatchStock.prisma -----
-enum ItemStockBucket {
-  SALEABLE
-  DAMAGED
-  EXPIRED
-  HOLD
-  RETURN
-  @@schema("inventory")
-}
-
 model ItemBatchStock {
   // Primary
   ibsId               String          @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ibs_id")
@@ -2307,7 +2292,7 @@ model ItemBatchStock {
   ibsMfgDate          DateTime?       @db.Date @map("ibs_mfg_date")
   ibsExpiryDate       DateTime?       @db.Date @map("ibs_expiry_date")
   ibsMrp              Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_mrp")
-  ibsStockBucket      ItemStockBucket @default(SALEABLE) @map("ibs_stock_bucket")
+  ibsStockBucket      String          @default("SALEABLE") @db.VarChar(20) @map("ibs_stock_bucket")
 
   // Normal qty
   ibsOpeningQty       Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_opening_qty")

@@ -1249,7 +1249,7 @@ Table item_batch_master {
   btmLastPurchaseRateWot Decimal [not null, default: 0]
   btmLastSaleRateWot Decimal [not null, default: 0]
   btmBarcode String
-  btmStatus ItemBatchStatus [not null, default: 'ACTIVE']
+  btmStatus String [not null, default: 'ACTIVE']
   btmClosedOn DateTime
   btmClosedReason String
   btmNotes String
@@ -1275,7 +1275,7 @@ Table item_batch_stock {
   ibsMfgDate DateTime
   ibsExpiryDate DateTime
   ibsMrp Decimal [not null, default: 0]
-  ibsStockBucket ItemStockBucket [not null, default: 'SALEABLE']
+  ibsStockBucket String [not null, default: 'SALEABLE']
   ibsOpeningQty Decimal [not null, default: 0]
   ibsInQty Decimal [not null, default: 0]
   ibsOutQty Decimal [not null, default: 0]
@@ -2733,20 +2733,6 @@ Enum AuditScreenType {
   transaction
   settings
   other
-}
-
-Enum ItemBatchStatus {
-  ACTIVE
-  CLOSED
-  BLOCKED
-}
-
-Enum ItemStockBucket {
-  SALEABLE
-  DAMAGED
-  EXPIRED
-  HOLD
-  RETURN
 }
 
 Enum WidgetPlatform {

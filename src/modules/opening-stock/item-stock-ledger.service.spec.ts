@@ -623,6 +623,13 @@ describe('ItemStockLedgerService', () => {
     await service.syncFromOpeningStockDocument(tx as never, document);
 
     expect(tx.itemBatchMaster.create).toHaveBeenCalledTimes(1);
+    expect(tx.itemBatchMaster.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          btmStatus: 'ACTIVE',
+        }),
+      }),
+    );
     expect(tx.openingStockDetail.update).toHaveBeenCalledWith({
       where: { oslId: 'detail-1' },
       data: expect.objectContaining({
@@ -643,6 +650,188 @@ describe('ItemStockLedgerService', () => {
           ibsBatchId: 'batch-master-1',
         }),
       }),
+    );
+  });
+
+  it('rejects unsupported batch status values before batch master insert', () => {
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    expect(() => (service as any).normalizeBatchStatus('archived', 'btmStatus')).toThrow(
+      'btmStatus must be one of: ACTIVE, CLOSED, BLOCKED',
+    );
+  });
+
+  it('rejects unsupported stock bucket values before balance writes', async () => {
+    const tx = createTx();
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await expect(
+      (service as any).applyStockMovements(
+        tx,
+        [
+          {
+            accYear: '2025-2026',
+            companyId: 'company-1',
+            branchId: 'branch-1',
+            godownId: 'godown-1',
+            itemId: 'item-1',
+            unitId: 'base-unit-1',
+            trackingType: 'NONE',
+            stockBucket: 'damaged-stock',
+            movementType: 'OPENING',
+            qty: 1,
+            freeQty: 0,
+            inwardValue: 100,
+            inwardValueWot: 80,
+            txnDate: new Date('2026-04-15T10:00:00.000Z'),
+          },
+        ],
+        'user-1',
+        new Date('2026-04-15T10:00:00.000Z'),
+      ),
+    ).rejects.toThrow(
+      'movement.stockBucket must be one of: SALEABLE, DAMAGED, EXPIRED, HOLD, RETURN',
+    );
+    expect(tx.itemStockBalance.upsert).not.toHaveBeenCalled();
+    expect(tx.itemBatchStock.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects negative batch stock mrp before batch writes', async () => {
+    const tx = createTx();
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await expect(
+      (service as any).applyStockMovements(
+        tx,
+        [
+          {
+            accYear: '2025-2026',
+            companyId: 'company-1',
+            branchId: 'branch-1',
+            godownId: 'godown-1',
+            itemId: 'item-1',
+            unitId: 'base-unit-1',
+            trackingType: 'BATCH',
+            stockBucket: 'SALEABLE',
+            movementType: 'OPENING',
+            qty: 1,
+            freeQty: 0,
+            inwardValue: 100,
+            inwardValueWot: 80,
+            txnDate: new Date('2026-04-15T10:00:00.000Z'),
+            batchId: 'batch-1',
+            batchNo: 'B-1',
+            mrp: -1,
+          },
+        ],
+        'user-1',
+        new Date('2026-04-15T10:00:00.000Z'),
+      ),
+    ).rejects.toThrow('itemBatchStock.ibsMrp must be greater than or equal to 0');
+    expect(tx.itemBatchStock.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid batch stock dates before batch writes', async () => {
+    const tx = createTx();
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await expect(
+      (service as any).applyStockMovements(
+        tx,
+        [
+          {
+            accYear: '2025-2026',
+            companyId: 'company-1',
+            branchId: 'branch-1',
+            godownId: 'godown-1',
+            itemId: 'item-1',
+            unitId: 'base-unit-1',
+            trackingType: 'BATCH',
+            stockBucket: 'SALEABLE',
+            movementType: 'OPENING',
+            qty: 1,
+            freeQty: 0,
+            inwardValue: 100,
+            inwardValueWot: 80,
+            txnDate: new Date('2026-04-15T10:00:00.000Z'),
+            batchId: 'batch-1',
+            batchNo: 'B-1',
+            mfgDate: new Date('2026-05-01T00:00:00.000Z'),
+            expiryDate: new Date('2026-04-01T00:00:00.000Z'),
+          },
+        ],
+        'user-1',
+        new Date('2026-04-15T10:00:00.000Z'),
+      ),
+    ).rejects.toThrow(
+      'itemBatchStock.ibsExpiryDate must be greater than or equal to itemBatchStock.ibsMfgDate',
+    );
+    expect(tx.itemBatchStock.upsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid batch stock quantity formulas before batch writes', () => {
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    expect(() =>
+      (service as any).assertValidBatchStockWrite(
+        {
+          accYear: '2025-2026',
+          companyId: 'company-1',
+          branchId: 'branch-1',
+          godownId: 'godown-1',
+          itemId: 'item-1',
+          unitId: 'base-unit-1',
+          trackingType: 'BATCH',
+          stockBucket: 'SALEABLE',
+          movementType: 'OPENING',
+          qty: 1,
+          freeQty: 0,
+          inwardValue: 100,
+          inwardValueWot: 80,
+          txnDate: new Date('2026-04-15T10:00:00.000Z'),
+          batchId: 'batch-1',
+        },
+        {
+          openingQty: 10,
+          inQty: 1,
+          outQty: 2,
+          closingQty: 20,
+          openingFreeQty: 0,
+          freeInQty: 0,
+          freeOutQty: 0,
+          freeClosingQty: 0,
+          reservedQty: 0,
+          transitQty: 0,
+          availableQty: 20,
+          openingAvgRate: 10,
+          avgStockRate: 10,
+          openingValue: 100,
+          stockValue: 100,
+          openingAvgRateWot: 0,
+          avgStockRateWot: 0,
+          openingValueWot: 0,
+          stockValueWot: 0,
+          lastInDate: null,
+          lastOutDate: null,
+        },
+      ),
+    ).toThrow(
+      'itemBatchStock.ibsClosingQty must equal ibsOpeningQty + ibsInQty - ibsOutQty',
     );
   });
 

@@ -16,6 +16,14 @@ import {
   ItemStockBucket,
   StockTxnType,
 } from './types/item-stock.types';
+
+const ITEM_BATCH_STATUS_VALUES = ['ACTIVE', 'CLOSED', 'BLOCKED'] as const;
+const ITEM_BATCH_STATUS_SET = new Set<(typeof ITEM_BATCH_STATUS_VALUES)[number]>(
+  ITEM_BATCH_STATUS_VALUES,
+);
+const ITEM_STOCK_BUCKET_VALUES = Object.values(ItemStockBucket) as ItemStockBucket[];
+const ITEM_STOCK_BUCKET_SET = new Set<ItemStockBucket>(ITEM_STOCK_BUCKET_VALUES);
+
 export type CreatedItemStockPosting = {
   itemStockLedger: PrismaItemStockLedger[];
   itemStockBalance: PrismaItemStockBalance[];
@@ -245,7 +253,10 @@ export class ItemStockLedgerService {
         itemId: detail.osl_item_id,
         unitId: detail.osl_base_uom_id ?? detail.osl_unit_id,
         trackingType: this.toBalanceTrackingType(detail.osl_tracking_type),
-        stockBucket: ItemStockBucket.SALEABLE,
+        stockBucket: this.normalizeStockBucket(
+          ItemStockBucket.SALEABLE,
+          'movement.stockBucket',
+        ),
         movementType: StockTxnType.OPENING,
         qty,
         freeQty,
@@ -340,6 +351,7 @@ export class ItemStockLedgerService {
       physicalQty > 0
         ? this.roundRate((detail.osl_stock_value_wot ?? 0) / physicalQty)
         : 0;
+    const batchStatus = this.normalizeBatchStatus('ACTIVE', 'btmStatus');
     const createdBatch = await tx.itemBatchMaster.create({
       data: {
         btmCompanyId: detail.osl_company_id,
@@ -353,7 +365,7 @@ export class ItemStockLedgerService {
         btmLastPurchaseRateWot: lastPurchaseRateWot,
         btmLastSaleRateWot: 0,
         btmBarcode: detail.osl_barcode ?? null,
-        btmStatus: 'ACTIVE',
+        btmStatus: batchStatus,
         btmCreatedOn: now,
         btmCreatedBy: actorUserId,
         btmUpdatedOn: now,
@@ -371,22 +383,38 @@ export class ItemStockLedgerService {
     const stockBalances = new Map<string, PrismaItemStockBalance>();
     const batchStocks = new Map<string, PrismaItemBatchStock>();
     for (const movement of movements) {
-      if (movement.trackingType === 'BATCH') {
-        if (!movement.batchId) {
+      const normalizedMovement = this.normalizeStockMovement(movement);
+      if (normalizedMovement.trackingType === 'BATCH') {
+        if (!normalizedMovement.batchId) {
           throw new BadRequestException('Batch-tracked stock movement requires batch id');
         }
-        const batchRow = await this.applyBatchMovement(tx, movement, actorUserId, now);
+        const batchRow = await this.applyBatchMovement(
+          tx,
+          normalizedMovement,
+          actorUserId,
+          now,
+        );
         if (batchRow) {
-          batchStocks.set(this.buildBatchScopeKey(movement), batchRow);
+          batchStocks.set(this.buildBatchScopeKey(normalizedMovement), batchRow);
         }
-        const summaryRow = await this.rollupBatchToItemSummary(tx, movement, actorUserId, now);
+        const summaryRow = await this.rollupBatchToItemSummary(
+          tx,
+          normalizedMovement,
+          actorUserId,
+          now,
+        );
         if (summaryRow) {
-          stockBalances.set(this.buildSummaryScopeKey(movement), summaryRow);
+          stockBalances.set(this.buildSummaryScopeKey(normalizedMovement), summaryRow);
         }
         continue;
       }
-      const summaryRow = await this.applySummaryMovement(tx, movement, actorUserId, now);
-      stockBalances.set(this.buildSummaryScopeKey(movement), summaryRow);
+      const summaryRow = await this.applySummaryMovement(
+        tx,
+        normalizedMovement,
+        actorUserId,
+        now,
+      );
+      stockBalances.set(this.buildSummaryScopeKey(normalizedMovement), summaryRow);
     }
     return {
       itemStockBalance: Array.from(stockBalances.values()),
@@ -446,6 +474,7 @@ export class ItemStockLedgerService {
       existing ? this.toStateFromBatchStock(existing) : this.createEmptyState(),
       movement,
     );
+    this.assertValidBatchStockWrite(movement, nextState);
     return tx.itemBatchStock.upsert({
       where,
       create: this.buildBatchStockCreateInput(movement, nextState, actorUserId, now),
@@ -990,6 +1019,109 @@ export class ItemStockLedgerService {
       return current;
     }
     return current.getTime() >= candidate.getTime() ? current : candidate;
+  }
+  private assertValidBatchStockWrite(
+    movement: StockMovementInput,
+    state: StockEngineState,
+  ): void {
+    this.normalizeStockBucket(movement.stockBucket, 'itemBatchStock.ibsStockBucket');
+    this.assertValidBatchStockDates(movement.mfgDate ?? null, movement.expiryDate ?? null);
+    this.assertNonNegativeQuantity(state.openingQty, 'itemBatchStock.ibsOpeningQty');
+    this.assertNonNegativeQuantity(state.inQty, 'itemBatchStock.ibsInQty');
+    this.assertNonNegativeQuantity(state.outQty, 'itemBatchStock.ibsOutQty');
+    this.assertNonNegativeQuantity(state.closingQty, 'itemBatchStock.ibsClosingQty');
+    this.assertNonNegativeQuantity(state.openingFreeQty, 'itemBatchStock.ibsOpeningFreeQty');
+    this.assertNonNegativeQuantity(state.freeInQty, 'itemBatchStock.ibsFreeInQty');
+    this.assertNonNegativeQuantity(state.freeOutQty, 'itemBatchStock.ibsFreeOutQty');
+    this.assertNonNegativeQuantity(state.freeClosingQty, 'itemBatchStock.ibsFreeClosingQty');
+    this.assertNonNegativeQuantity(state.reservedQty, 'itemBatchStock.ibsReservedQty');
+    this.assertNonNegativeQuantity(state.availableQty, 'itemBatchStock.ibsAvailableQty');
+    this.assertNonNegativeAmount(state.openingValue, 'itemBatchStock.ibsOpeningValue');
+    this.assertNonNegativeAmount(state.stockValue, 'itemBatchStock.ibsStockValue');
+    this.assertNonNegativeRate(state.openingAvgRate, 'itemBatchStock.ibsOpeningAvgRate');
+    this.assertNonNegativeRate(state.avgStockRate, 'itemBatchStock.ibsAvgStockRate');
+    this.assertNonNegativeRate(movement.mrp ?? 0, 'itemBatchStock.ibsMrp');
+    const expectedClosingQty = this.roundQuantity(state.openingQty + state.inQty - state.outQty);
+    if (this.roundQuantity(state.closingQty) !== expectedClosingQty) {
+      throw new BadRequestException(
+        'itemBatchStock.ibsClosingQty must equal ibsOpeningQty + ibsInQty - ibsOutQty',
+      );
+    }
+    const expectedFreeClosingQty = this.roundQuantity(
+      state.openingFreeQty + state.freeInQty - state.freeOutQty,
+    );
+    if (this.roundQuantity(state.freeClosingQty) !== expectedFreeClosingQty) {
+      throw new BadRequestException(
+        'itemBatchStock.ibsFreeClosingQty must equal ibsOpeningFreeQty + ibsFreeInQty - ibsFreeOutQty',
+      );
+    }
+    const expectedAvailableQty = this.roundQuantity(state.closingQty - state.reservedQty);
+    if (this.roundQuantity(state.availableQty) !== expectedAvailableQty) {
+      throw new BadRequestException(
+        'itemBatchStock.ibsAvailableQty must equal ibsClosingQty - ibsReservedQty',
+      );
+    }
+  }
+  private assertValidBatchStockDates(
+    mfgDate: Date | null,
+    expiryDate: Date | null,
+  ): void {
+    if (
+      mfgDate &&
+      expiryDate &&
+      expiryDate.getTime() < mfgDate.getTime()
+    ) {
+      throw new BadRequestException(
+        'itemBatchStock.ibsExpiryDate must be greater than or equal to itemBatchStock.ibsMfgDate',
+      );
+    }
+  }
+  private assertNonNegativeQuantity(value: number, field: string): void {
+    if (this.roundQuantity(value) < 0) {
+      throw new BadRequestException(`${field} must be greater than or equal to 0`);
+    }
+  }
+  private assertNonNegativeRate(value: number, field: string): void {
+    if (this.roundRate(value) < 0) {
+      throw new BadRequestException(`${field} must be greater than or equal to 0`);
+    }
+  }
+  private assertNonNegativeAmount(value: number, field: string): void {
+    if (this.roundAmount(value) < 0) {
+      throw new BadRequestException(`${field} must be greater than or equal to 0`);
+    }
+  }
+  private normalizeStockMovement(movement: StockMovementInput): StockMovementInput {
+    return {
+      ...movement,
+      stockBucket: this.normalizeStockBucket(movement.stockBucket, 'movement.stockBucket'),
+    };
+  }
+  private normalizeBatchStatus(
+    value: string | null | undefined,
+    field: string,
+  ): (typeof ITEM_BATCH_STATUS_VALUES)[number] {
+    const normalized = value?.trim().toUpperCase();
+    const candidate = normalized as (typeof ITEM_BATCH_STATUS_VALUES)[number] | undefined;
+    if (!candidate || !ITEM_BATCH_STATUS_SET.has(candidate)) {
+      throw new BadRequestException(
+        `${field} must be one of: ${ITEM_BATCH_STATUS_VALUES.join(', ')}`,
+      );
+    }
+    return candidate;
+  }
+  private normalizeStockBucket(
+    value: string | null | undefined,
+    field: string,
+  ): ItemStockBucket {
+    const normalized = value?.trim().toUpperCase();
+    const candidate = normalized as ItemStockBucket | undefined;
+    if (!candidate || !ITEM_STOCK_BUCKET_SET.has(candidate)) {
+      throw new BadRequestException(
+        `${field} must be one of: ${ITEM_STOCK_BUCKET_VALUES.join(', ')}`,
+      );
+    }
+    return candidate;
   }
   private toStockTrackingType(
     value: string | null | undefined,
