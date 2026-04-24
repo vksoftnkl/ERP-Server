@@ -69,6 +69,7 @@ import { UiTableColumnsModule } from './modules/fixed/ui-table-columns/ui-table-
 import { UiTableMasterModule } from './modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
+import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
 import { OpeningStockModule } from './modules/opening-stock/opening-stock.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
@@ -146,6 +147,7 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
     UiTableMasterModule,
     UserLoginSessionsModule,
     MasterLookupModule,
+    BatchPrefixModule,
     WidgetMasterModule,
     OpeningStockModule,
     PromotionLoyaltyPointsModule,

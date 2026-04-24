@@ -158,6 +158,7 @@ type BatchResolutionContext = {
   batchScopeEntriesByKey: Map<string, BatchScopeEntry[]>;
   batchMasterNosByItemKey: Map<string, string[]>;
   batchMastersById: Map<string, BatchMasterIdentity | null>;
+  configuredBatchPrefix?: string | null;
 };
 @Injectable()
 export class ItemStockLedgerService {
@@ -486,7 +487,8 @@ export class ItemStockLedgerService {
         ...(await this.getBatchMasterNosForItem(tx, detail, resolutionContext)),
         ...scopeEntries.map((entry) => entry.batchNo),
       ];
-      batchNo = generateNextBatchNo(existingBatchNos);
+      const configuredPrefix = await this.getConfiguredBatchPrefix(tx, resolutionContext);
+      batchNo = generateNextBatchNo(existingBatchNos, { prefix: configuredPrefix });
     }
 
     const existingBatch = await tx.itemBatchMaster.findFirst({
@@ -686,6 +688,27 @@ export class ItemStockLedgerService {
     });
     resolutionContext.batchMastersById.set(batchId, batchMaster ?? null);
     return batchMaster ?? null;
+  }
+  private async getConfiguredBatchPrefix(
+    tx: Prisma.TransactionClient,
+    resolutionContext: BatchResolutionContext,
+  ): Promise<string | null> {
+    if ('configuredBatchPrefix' in resolutionContext) {
+      return resolutionContext.configuredBatchPrefix ?? null;
+    }
+    const batchPrefix = await tx.batchPrefix.findFirst({
+      where: {
+        prefixUsed: {
+          not: null,
+        },
+      },
+      orderBy: [{ modifiedOn: 'desc' }, { createdOn: 'desc' }, { id: 'desc' }],
+      select: {
+        prefixUsed: true,
+      },
+    });
+    resolutionContext.configuredBatchPrefix = this.normalizeBatchNo(batchPrefix?.prefixUsed);
+    return resolutionContext.configuredBatchPrefix;
   }
   private normalizeBatchNo(value: string | null | undefined): string | null {
     const normalizedValue = value?.trim();

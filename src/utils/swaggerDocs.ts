@@ -40,6 +40,7 @@ import { ItemsTaxMasterModule } from '../modules/items-tax-master/items-tax-mast
 import { UnitsMasterModule } from '../modules/units-master/units-master.module';
 import { UsersModule } from '../modules/users/users.module';
 import { MasterLookupModule } from '../modules/master-lookup/master-lookup.module';
+import { BatchPrefixModule } from '../modules/master/batch-prefix/batch-prefix.module';
 import { SupplierGroupModule } from '../modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from '../modules/purchase/suppliers/suppliers.module';
 import { StateModule } from '../modules/sales/state/state.module';
@@ -72,6 +73,12 @@ export const swaggerModuleDocuments = [
     title: 'Users API',
     description: 'Users module endpoints',
     include: [UsersModule],
+  },
+  {
+    path: 'batch-prefixes',
+    title: 'Batch Prefix API',
+    description: 'Batch prefix module endpoints',
+    include: [BatchPrefixModule],
   },
   {
     path: 'items-group-master',
@@ -330,7 +337,7 @@ export const swaggerModuleDocuments = [
     title: 'Customer Groups API',
     description: 'Customer groups module endpoints',
     include: [CustomerGroupModule],
-  },  
+  },
   {
     path: 'bank-lists',
     title: 'Bank List API',

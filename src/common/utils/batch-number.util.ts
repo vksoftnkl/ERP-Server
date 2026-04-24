@@ -4,12 +4,24 @@ type BatchSequence = {
   width: number;
 };
 
+type GenerateNextBatchNoOptions = {
+  prefix?: string | null;
+};
+
 const normalizeBatchNo = (value: string | null | undefined): string | null => {
   const normalizedValue = value?.trim();
   return normalizedValue ? normalizedValue : null;
 };
 
 const normalizeBatchNoKey = (value: string): string => value.trim().toLowerCase();
+
+const normalizeConfiguredPrefix = (value: string | null | undefined): string | null => {
+  const normalizedPrefix = normalizeBatchNo(value);
+  if (!normalizedPrefix) {
+    return null;
+  }
+  return /[-_/]$/.test(normalizedPrefix) ? normalizedPrefix : `${normalizedPrefix}-`;
+};
 
 const parseBatchNoSequence = (batchNo: string): BatchSequence | null => {
   const normalizedBatchNo = normalizeBatchNo(batchNo);
@@ -33,7 +45,11 @@ const formatGeneratedBatchNo = (prefix: string, nextNumber: number, width: numbe
   return `${prefix}${String(nextNumber).padStart(minimumWidth, '0')}`;
 };
 
-export const generateNextBatchNo = (existingBatchNos: string[]): string => {
+export const generateNextBatchNo = (
+  existingBatchNos: string[],
+  options: GenerateNextBatchNoOptions = {},
+): string => {
+  const configuredPrefix = normalizeConfiguredPrefix(options.prefix);
   const normalizedBatchNos = new Set(
     existingBatchNos
       .map((batchNo) => normalizeBatchNo(batchNo))
@@ -44,12 +60,18 @@ export const generateNextBatchNo = (existingBatchNos: string[]): string => {
     .map((batchNo) => parseBatchNoSequence(batchNo))
     .filter((candidate): candidate is BatchSequence => candidate !== null);
 
-  let prefix = 'B-';
-  let width = 1;
+  let prefix = configuredPrefix ?? 'B-';
+  let width = configuredPrefix ? 2 : 1;
   let nextNumber = 1;
+  const candidateSequences = configuredPrefix
+    ? sequencedBatchNos.filter(
+        (sequence) =>
+          normalizeBatchNoKey(sequence.prefix) === normalizeBatchNoKey(configuredPrefix),
+      )
+    : sequencedBatchNos;
 
-  if (sequencedBatchNos.length > 0) {
-    const nextSequence = sequencedBatchNos.reduce<BatchSequence | null>((highest, candidate) => {
+  if (candidateSequences.length > 0) {
+    const nextSequence = candidateSequences.reduce<BatchSequence | null>((highest, candidate) => {
       if (!highest || candidate.numericValue > highest.numericValue) {
         return candidate;
       }

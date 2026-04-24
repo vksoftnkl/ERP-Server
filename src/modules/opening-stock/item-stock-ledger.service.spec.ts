@@ -213,10 +213,12 @@ describe('ItemStockLedgerService', () => {
     initialBatchRows = [],
     initialBalanceRows = [],
     initialBatchMasters = [],
+    batchPrefixUsed = null,
   }: {
     initialBatchRows?: Array<Record<string, unknown>>;
     initialBalanceRows?: Array<Record<string, unknown>>;
     initialBatchMasters?: Array<Record<string, unknown>>;
+    batchPrefixUsed?: string | null;
   } = {}) => {
     const batchRows = new Map<string, Record<string, unknown>>();
     const balanceRows = new Map<string, Record<string, unknown>>();
@@ -334,6 +336,15 @@ describe('ItemStockLedgerService', () => {
       itemStockLedger: {
         deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
         create: jest.fn().mockImplementation(async ({ data }: { data: unknown }) => data),
+      },
+      batchPrefix: {
+        findFirst: jest.fn().mockResolvedValue(
+          batchPrefixUsed
+            ? {
+                prefixUsed: batchPrefixUsed,
+              }
+            : null,
+        ),
       },
       itemBatchMaster: {
         findFirst: jest.fn().mockImplementation(async ({ where }) => {
@@ -955,6 +966,91 @@ describe('ItemStockLedgerService', () => {
         data: expect.objectContaining({
           stlBatchId: 'batch-master-3',
           stlBatchNo: 'B-003',
+        }),
+      }),
+    );
+  });
+
+  it('uses the configured batch prefix when auto-generating batch number', async () => {
+    const tx = createTx({
+      batchPrefixUsed: 'BATCH-2026',
+      initialBatchRows: [
+        makeBatchRow({
+          ibsBatchId: 'saved-batch-1',
+          ibsBatchNo: 'BATCH-2026-01',
+        }),
+        makeBatchRow({
+          ibsBatchId: 'saved-batch-2',
+          ibsBatchNo: 'BATCH-2026-02',
+        }),
+      ],
+      initialBatchMasters: [
+        {
+          btmId: 'saved-batch-1',
+          btmCompanyId: 'company-1',
+          btmItemId: 'item-1',
+          btmBatchNo: 'BATCH-2026-01',
+        },
+        {
+          btmId: 'saved-batch-2',
+          btmCompanyId: 'company-1',
+          btmItemId: 'item-1',
+          btmBatchNo: 'BATCH-2026-02',
+        },
+      ],
+    });
+    const document = {
+      ...makeDocument(),
+      details: [
+        makeDetail({
+          osl_line_no: 1,
+          osl_tracking_type: 'BATCH',
+          osl_batch_id: null,
+          osl_batch_no: null,
+          osl_qty: 5,
+          osl_free_qty: 1,
+          osl_free_base_qty: 2,
+          osl_base_qty: 10,
+          osl_conv_factor: 2,
+          osl_stock_value_wot: 400,
+          osl_cost_rate_wot: 80,
+        }),
+      ],
+    } satisfies OpeningStockDocumentPayload;
+
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await service.syncFromOpeningStockDocument(tx as never, document);
+
+    expect(tx.batchPrefix.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: {
+          prefixUsed: true,
+        },
+      }),
+    );
+    expect(tx.itemBatchMaster.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          btmBatchNo: 'BATCH-2026-03',
+        }),
+      }),
+    );
+    expect(tx.openingStockDetail.update).toHaveBeenCalledWith({
+      where: { oslId: 'detail-1' },
+      data: expect.objectContaining({
+        oslBatchId: 'batch-master-3',
+        oslBatchNo: 'BATCH-2026-03',
+      }),
+    });
+    expect(tx.itemStockLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stlBatchId: 'batch-master-3',
+          stlBatchNo: 'BATCH-2026-03',
         }),
       }),
     );
