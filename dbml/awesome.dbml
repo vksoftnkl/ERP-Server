@@ -1901,6 +1901,16 @@ Table opening_stock_header {
   }
 }
 
+Table batches_prefix {
+  id String [pk]
+  prefixUsed String
+  syncDate DateTime
+  createdBy String
+  createdOn DateTime
+  modifiedBy String
+  modifiedOn DateTime
+}
+
 Table branch_master {
   brId String [pk]
   compId String [not null]

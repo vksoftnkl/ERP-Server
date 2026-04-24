@@ -4,12 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  DeviceType,
-  OpeningStockDetail,
-  Prisma,
-  VoucherStatus,
-} from '@prisma/client';
+import { DeviceType, OpeningStockDetail, Prisma, VoucherStatus } from '@prisma/client';
 import {
   OpeningStockDetailCessType,
   OpeningStockDetailTrackingType,
@@ -331,8 +326,12 @@ export class OpeningStockService {
             ),
           ),
         });
+        const payloadBeforeSync = await this.buildDocumentPayloadByVoucherId(
+          tx,
+          voucherHeader.avhVoucherId,
+        );
+        await this.itemStockLedgerService.syncFromOpeningStockDocument(tx, payloadBeforeSync);
         const payload = await this.buildDocumentPayloadByVoucherId(tx, voucherHeader.avhVoucherId);
-        await this.itemStockLedgerService.syncFromOpeningStockDocument(tx, payload);
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -345,10 +344,7 @@ export class OpeningStockService {
             modifiedRecord: payload,
             userId: context.actorUserId,
             branchId: context.branchId,
-            notes: this.resolveAuditNotes(
-              saveOpeningStockDto.audit_notes,
-              'Opening stock created',
-            ),
+            notes: this.resolveAuditNotes(saveOpeningStockDto.audit_notes, 'Opening stock created'),
           },
           tx,
         );
@@ -433,12 +429,13 @@ export class OpeningStockService {
             ),
           ),
         });
-        const payload = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
+        const payloadBeforeSync = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
         await this.itemStockLedgerService.syncFromOpeningStockDocument(
           tx,
-          payload,
+          payloadBeforeSync,
           existingDocument,
         );
+        const payload = await this.buildDocumentPayloadByVoucherId(tx, avhVoucherId);
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -451,10 +448,7 @@ export class OpeningStockService {
             modifiedRecord: payload,
             userId: context.actorUserId,
             branchId: context.branchId,
-            notes: this.resolveAuditNotes(
-              saveOpeningStockDto.audit_notes,
-              'Opening stock updated',
-            ),
+            notes: this.resolveAuditNotes(saveOpeningStockDto.audit_notes, 'Opening stock updated'),
           },
           tx,
         );
@@ -645,59 +639,70 @@ export class OpeningStockService {
     header: OpeningStockHeaderInputDto,
     context: ResolvedHeaderContext,
   ): Promise<void> {
-    const [companies, branches, partyLedgers, oppositeLedgers, openingUsers] =
-      await Promise.all([
-        tx.company.findMany({
-          where: {
-            compId: { in: [context.companyId] },
-            compIsDeleted: false,
-          },
-          select: {
-            compId: true,
-          },
-        }),
-        tx.branchMaster.findMany({
-          where: {
-            brId: { in: [context.branchId] },
-            compId: context.companyId,
-            brIsDeleted: false,
-          },
-          select: {
-            brId: true,
-          },
-        }),
-        tx.accLedgerMaster.findMany({
-          where: {
-            ledId: { in: [header.avh_party_id] },
-            ledIsDeleted: false,
-          },
-          select: {
-            ledId: true,
-          },
-        }),
-        header.avh_opposite_ledger_id
-          ? tx.accLedgerMaster.findMany({
-              where: {
-                ledId: { in: [header.avh_opposite_ledger_id] },
-                ledIsDeleted: false,
-              },
-              select: {
-                ledId: true,
-              },
-            })
-          : Promise.resolve([]),
-        tx.user.findMany({
-          where: {
-            user_id: { in: [context.openingUserId] },
-          },
-          select: {
-            user_id: true,
-          },
-        }),
-      ]);
-    this.throwMissingReferenceError('osh_company_id', [context.companyId], companies.map((record) => record.compId));
-    this.throwMissingReferenceError('osh_branch_id', [context.branchId], branches.map((record) => record.brId));
-    this.throwMissingReferenceError('avh_party_id', [header.avh_party_id], partyLedgers.map((record) => record.ledId));
+    const [companies, branches, partyLedgers, oppositeLedgers, openingUsers] = await Promise.all([
+      tx.company.findMany({
+        where: {
+          compId: { in: [context.companyId] },
+          compIsDeleted: false,
+        },
+        select: {
+          compId: true,
+        },
+      }),
+      tx.branchMaster.findMany({
+        where: {
+          brId: { in: [context.branchId] },
+          compId: context.companyId,
+          brIsDeleted: false,
+        },
+        select: {
+          brId: true,
+        },
+      }),
+      tx.accLedgerMaster.findMany({
+        where: {
+          ledId: { in: [header.avh_party_id] },
+          ledIsDeleted: false,
+        },
+        select: {
+          ledId: true,
+        },
+      }),
+      header.avh_opposite_ledger_id
+        ? tx.accLedgerMaster.findMany({
+            where: {
+              ledId: { in: [header.avh_opposite_ledger_id] },
+              ledIsDeleted: false,
+            },
+            select: {
+              ledId: true,
+            },
+          })
+        : Promise.resolve([]),
+      tx.user.findMany({
+        where: {
+          user_id: { in: [context.openingUserId] },
+        },
+        select: {
+          user_id: true,
+        },
+      }),
+    ]);
+    this.throwMissingReferenceError(
+      'osh_company_id',
+      [context.companyId],
+      companies.map((record) => record.compId),
+    );
+    this.throwMissingReferenceError(
+      'osh_branch_id',
+      [context.branchId],
+      branches.map((record) => record.brId),
+    );
+    this.throwMissingReferenceError(
+      'avh_party_id',
+      [header.avh_party_id],
+      partyLedgers.map((record) => record.ledId),
+    );
     if (header.avh_opposite_ledger_id) {
       this.throwMissingReferenceError(
         'avh_opposite_ledger_id',
@@ -718,7 +723,9 @@ export class OpeningStockService {
     const itemIds = this.uniqueIds(details.map((detail) => detail.oslItemId));
     const unitIds = this.uniqueIds(details.map((detail) => detail.oslUnitId));
     const baseUomIds = this.uniqueIds(
-      details.map((detail) => detail.oslBaseUomId).filter((value): value is string => Boolean(value)),
+      details
+        .map((detail) => detail.oslBaseUomId)
+        .filter((value): value is string => Boolean(value)),
     );
     const godownIds = this.uniqueIds(details.map((detail) => detail.oslGodownId));
     const taxIds = this.uniqueIds(
@@ -781,8 +788,16 @@ export class OpeningStockService {
           })
         : Promise.resolve([]),
     ]);
-    this.throwMissingReferenceError('osl_item_id', itemIds, items.map((record) => record.itemId));
-    this.throwMissingReferenceError('osl_unit_id', unitIds, units.map((record) => record.unit_id));
+    this.throwMissingReferenceError(
+      'osl_item_id',
+      itemIds,
+      items.map((record) => record.itemId),
+    );
+    this.throwMissingReferenceError(
+      'osl_unit_id',
+      unitIds,
+      units.map((record) => record.unit_id),
+    );
     this.throwMissingReferenceError(
       'osl_base_uom_id',
       baseUomIds,
@@ -793,7 +808,11 @@ export class OpeningStockService {
       godownIds,
       godowns.map((record) => record.gdlId),
     );
-    this.throwMissingReferenceError('osl_tax_id', taxIds, taxes.map((record) => record.taxId));
+    this.throwMissingReferenceError(
+      'osl_tax_id',
+      taxIds,
+      taxes.map((record) => record.taxId),
+    );
   }
   private throwMissingReferenceError(
     field: string,
@@ -904,7 +923,9 @@ export class OpeningStockService {
     if (queryDto.osh_status) {
       where.oshStatus = queryDto.osh_status;
     }
-    const dateFrom = queryDto.date_from ? this.parseRequiredDate(queryDto.date_from, 'date_from') : null;
+    const dateFrom = queryDto.date_from
+      ? this.parseRequiredDate(queryDto.date_from, 'date_from')
+      : null;
     const dateTo = queryDto.date_to ? this.parseRequiredDate(queryDto.date_to, 'date_to') : null;
     if (dateFrom && dateTo && dateFrom.getTime() > dateTo.getTime()) {
       this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
@@ -1054,7 +1075,9 @@ export class OpeningStockService {
     const itemIds = this.uniqueIds(details.map((detail) => detail.oslItemId));
     const unitIds = this.uniqueIds(details.map((detail) => detail.oslUnitId));
     const baseUomPriceIds = this.uniqueIds(
-      details.map((detail) => detail.oslBaseUomId).filter((value): value is string => Boolean(value)),
+      details
+        .map((detail) => detail.oslBaseUomId)
+        .filter((value): value is string => Boolean(value)),
     );
     const godownIds = this.uniqueIds(details.map((detail) => detail.oslGodownId));
     const taxIds = this.uniqueIds(
@@ -1129,7 +1152,10 @@ export class OpeningStockService {
     ]);
     return {
       itemsById: new Map(
-        items.map((item) => [item.itemId, { itemCode: item.itemCode, itemNameEn: item.itemNameEn }]),
+        items.map((item) => [
+          item.itemId,
+          { itemCode: item.itemCode, itemNameEn: item.itemNameEn },
+        ]),
       ),
       unitsById: new Map(units.map((unit) => [unit.unit_id, { unit_name: unit.unit_name }])),
       baseUomPricesById: new Map(
@@ -1210,7 +1236,7 @@ export class OpeningStockService {
       osl_unit_name: lookups.unitsById.get(record.oslUnitId)?.unit_name ?? null,
       osl_base_uom_id: record.oslBaseUomId,
       osl_base_uom_name: record.oslBaseUomId
-        ? lookups.baseUomPricesById.get(record.oslBaseUomId)?.baseUomName ?? null
+        ? (lookups.baseUomPricesById.get(record.oslBaseUomId)?.baseUomName ?? null)
         : null,
       osl_godown_id: record.oslGodownId,
       osl_godown_name: lookups.godownsById.get(record.oslGodownId)?.gdlName ?? null,
@@ -1228,7 +1254,9 @@ export class OpeningStockService {
       osl_free_base_qty: this.toNumber(record.oslFreeBaseQty),
       osl_conv_factor: this.toNumber(record.oslConvFactor),
       osl_tax_id: record.oslTaxId,
-      osl_tax_name: record.oslTaxId ? lookups.taxesById.get(record.oslTaxId)?.taxName ?? null : null,
+      osl_tax_name: record.oslTaxId
+        ? (lookups.taxesById.get(record.oslTaxId)?.taxName ?? null)
+        : null,
       osl_tax_perc: this.toNumber(record.oslTaxPerc),
       osl_cess_type: record.oslCessType,
       osl_cess_perc: this.toNumber(record.oslCessPerc),
@@ -1378,7 +1406,9 @@ export class OpeningStockService {
   private buildErrorResponse(
     message: string,
     errors: OpeningStockErrorDetail[] = [],
-  ): OpeningStockSuccessResponse<never> | { success: false; message: string; errors: OpeningStockErrorDetail[] } {
+  ):
+    | OpeningStockSuccessResponse<never>
+    | { success: false; message: string; errors: OpeningStockErrorDetail[] } {
     return {
       success: false,
       message,

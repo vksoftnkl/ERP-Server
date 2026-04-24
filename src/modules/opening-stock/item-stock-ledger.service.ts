@@ -1,21 +1,14 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import {
-  ItemBatchStock as PrismaItemBatchStock,
-  ItemStockBalance as PrismaItemStockBalance,
-  ItemStockLedger as PrismaItemStockLedger,
-  Prisma,
-} from '@prisma/client';
+import { ItemStockLedger as PrismaItemStockLedger, Prisma } from '@prisma/client';
 import { RequestContextService } from '../../common/request-context/request-context.service';
+import { generateNextBatchNo } from '../../common/utils/batch-number.util';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import {
   OpeningStockDetailPayload,
   OpeningStockDocumentPayload,
   OpeningStockHeaderPayload,
 } from './types/opening-stock-api.types';
-import {
-  ItemStockBucket,
-  StockTxnType,
-} from './types/item-stock.types';
+import { ItemStockBucket, StockTxnType } from './types/item-stock.types';
 
 const ITEM_BATCH_STATUS_VALUES = ['ACTIVE', 'CLOSED', 'BLOCKED'] as const;
 const ITEM_BATCH_STATUS_SET = new Set<(typeof ITEM_BATCH_STATUS_VALUES)[number]>(
@@ -23,11 +16,71 @@ const ITEM_BATCH_STATUS_SET = new Set<(typeof ITEM_BATCH_STATUS_VALUES)[number]>
 );
 const ITEM_STOCK_BUCKET_VALUES = Object.values(ItemStockBucket) as ItemStockBucket[];
 const ITEM_STOCK_BUCKET_SET = new Set<ItemStockBucket>(ITEM_STOCK_BUCKET_VALUES);
+const ITEM_BATCH_STOCK_STATE_SELECT = Prisma.validator<Prisma.ItemBatchStockSelect>()({
+  ibsId: true,
+  ibsAccYear: true,
+  ibsCompanyId: true,
+  ibsBranchId: true,
+  ibsGodownId: true,
+  ibsItemId: true,
+  ibsUnitId: true,
+  ibsBatchId: true,
+  ibsBatchNo: true,
+  ibsMfgDate: true,
+  ibsExpiryDate: true,
+  ibsMrp: true,
+  ibsOpeningQty: true,
+  ibsInQty: true,
+  ibsOutQty: true,
+  ibsClosingQty: true,
+  ibsOpeningFreeQty: true,
+  ibsFreeInQty: true,
+  ibsFreeOutQty: true,
+  ibsFreeClosingQty: true,
+  ibsReservedQty: true,
+  ibsAvailableQty: true,
+  ibsOpeningAvgRate: true,
+  ibsAvgStockRate: true,
+  ibsOpeningValue: true,
+  ibsStockValue: true,
+  ibsLastInDate: true,
+  ibsLastOutDate: true,
+});
+const ITEM_STOCK_BALANCE_STATE_SELECT = Prisma.validator<Prisma.ItemStockBalanceSelect>()({
+  isbId: true,
+  isbAccYear: true,
+  isbCompanyId: true,
+  isbBranchId: true,
+  isbGodownId: true,
+  isbItemId: true,
+  isbUnitId: true,
+  isbOpeningQty: true,
+  isbInQty: true,
+  isbOutQty: true,
+  isbClosingQty: true,
+  isbOpeningFreeQty: true,
+  isbFreeInQty: true,
+  isbFreeOutQty: true,
+  isbFreeClosingQty: true,
+  isbReservedQty: true,
+  isbTransitQty: true,
+  isbAvailableQty: true,
+  isbOpeningAvgRate: true,
+  isbAvgStockRate: true,
+  isbOpeningValue: true,
+  isbStockValue: true,
+  isbOpeningAvgRateWot: true,
+  isbAvgStockRateWot: true,
+  isbOpeningValueWot: true,
+  isbStockValueWot: true,
+  isbLastInDate: true,
+  isbLastOutDate: true,
+});
 
 export type CreatedItemStockPosting = {
   itemStockLedger: PrismaItemStockLedger[];
-  itemStockBalance: PrismaItemStockBalance[];
-  itemBatchStock: PrismaItemBatchStock[];
+  itemStockBalance: StockBalanceStateRow[];
+  itemBatchStock: BatchStockStateRow[];
 };
 type StockMovementInput = {
   accYear: string;
@@ -76,6 +129,35 @@ type StockEngineState = {
   stockValueWot: number;
   lastInDate: Date | null;
   lastOutDate: Date | null;
+};
+type BatchScopeReference = {
+  companyId: string;
+  branchId: string;
+  godownId: string;
+  itemId: string;
+  unitId: string;
+};
+type ResolvedBatchIdentity = {
+  batchId: string;
+  batchNo: string;
+};
+type BatchScopeEntry = ResolvedBatchIdentity & {
+  batchNoKey: string;
+};
+type BatchMasterIdentity = {
+  btmId: string;
+  btmBatchNo: string;
+};
+type BatchStockStateRow = Prisma.ItemBatchStockGetPayload<{
+  select: typeof ITEM_BATCH_STOCK_STATE_SELECT;
+}>;
+type StockBalanceStateRow = Prisma.ItemStockBalanceGetPayload<{
+  select: typeof ITEM_STOCK_BALANCE_STATE_SELECT;
+}>;
+type BatchResolutionContext = {
+  batchScopeEntriesByKey: Map<string, BatchScopeEntry[]>;
+  batchMasterNosByItemKey: Map<string, string[]>;
+  batchMastersById: Map<string, BatchMasterIdentity | null>;
 };
 @Injectable()
 export class ItemStockLedgerService {
@@ -222,57 +304,54 @@ export class ItemStockLedgerService {
     return document.details
       .filter((detail) => !detail.osl_is_deleted)
       .map((detail) => {
-      const conversionFactor = detail.osl_conv_factor ?? 1;
-      const qty = this.roundQuantity(
-        (detail.osl_base_qty ?? (detail.osl_qty ?? 0) * conversionFactor) * direction,
-      );
-      const freeQty = this.roundQuantity(
-        ((detail.osl_free_qty ?? 0) * conversionFactor) * direction,
-      );
-      const inwardValue = this.roundAmount(
-        (detail.osl_stock_value ?? (detail.osl_cost_rate ?? 0) * (detail.osl_qty ?? 0)) *
-          direction,
-      );
-      const inwardValueWot = this.roundAmount(
-        (detail.osl_stock_value_wot ?? (detail.osl_cost_rate_wot ?? 0) * (detail.osl_qty ?? 0)) *
-          direction,
-      );
-      const legacyInwardValue = this.roundAmount(
-        (detail.osl_stock_value_wot ?? (detail.osl_cost_rate_wot ?? 0) * (detail.osl_qty ?? 0)) *
-          direction,
-      );
-      const legacyInwardValueWot = this.roundAmount(
-        (detail.osl_stock_value ?? (detail.osl_cost_rate ?? 0) * (detail.osl_qty ?? 0)) *
-          direction,
-      );
-      return {
-        accYear: detail.osl_acc_year,
-        companyId: detail.osl_company_id,
-        branchId: detail.osl_branch_id,
-        godownId: detail.osl_godown_id,
-        itemId: detail.osl_item_id,
-        unitId: detail.osl_base_uom_id ?? detail.osl_unit_id,
-        trackingType: this.toBalanceTrackingType(detail.osl_tracking_type),
-        stockBucket: this.normalizeStockBucket(
-          ItemStockBucket.SALEABLE,
-          'movement.stockBucket',
-        ),
-        movementType: StockTxnType.OPENING,
-        qty,
-        freeQty,
-        inwardValue,
-        inwardValueWot,
-        legacyInwardValue,
-        legacyInwardValueWot,
-        txnDate,
-        batchId: detail.osl_batch_id ?? null,
-        batchNo: detail.osl_batch_no ?? null,
-        batchDate: this.parseOptionalDate(detail.osl_batch_date, 'detail.osl_batch_date'),
-        mfgDate: this.parseOptionalDate(detail.osl_mfg_date, 'detail.osl_mfg_date'),
-        expiryDate: this.parseOptionalDate(detail.osl_expiry_date, 'detail.osl_expiry_date'),
-        mrp: detail.osl_mrp_rate ?? 0,
-        barcode: detail.osl_barcode ?? null,
-      };
+        const conversionFactor = detail.osl_conv_factor ?? 1;
+        const qty = this.roundQuantity(
+          (detail.osl_base_qty ?? (detail.osl_qty ?? 0) * conversionFactor) * direction,
+        );
+        const freeQty = this.roundQuantity(
+          (detail.osl_free_qty ?? 0) * conversionFactor * direction,
+        );
+        const inwardValue = this.roundAmount(
+          (detail.osl_stock_value ?? (detail.osl_cost_rate ?? 0) * (detail.osl_qty ?? 0)) *
+            direction,
+        );
+        const inwardValueWot = this.roundAmount(
+          (detail.osl_stock_value_wot ?? (detail.osl_cost_rate_wot ?? 0) * (detail.osl_qty ?? 0)) *
+            direction,
+        );
+        const legacyInwardValue = this.roundAmount(
+          (detail.osl_stock_value_wot ?? (detail.osl_cost_rate_wot ?? 0) * (detail.osl_qty ?? 0)) *
+            direction,
+        );
+        const legacyInwardValueWot = this.roundAmount(
+          (detail.osl_stock_value ?? (detail.osl_cost_rate ?? 0) * (detail.osl_qty ?? 0)) *
+            direction,
+        );
+        return {
+          accYear: detail.osl_acc_year,
+          companyId: detail.osl_company_id,
+          branchId: detail.osl_branch_id,
+          godownId: detail.osl_godown_id,
+          itemId: detail.osl_item_id,
+          unitId: detail.osl_base_uom_id ?? detail.osl_unit_id,
+          trackingType: this.toBalanceTrackingType(detail.osl_tracking_type),
+          stockBucket: this.normalizeStockBucket(ItemStockBucket.SALEABLE, 'movement.stockBucket'),
+          movementType: StockTxnType.OPENING,
+          qty,
+          freeQty,
+          inwardValue,
+          inwardValueWot,
+          legacyInwardValue,
+          legacyInwardValueWot,
+          txnDate,
+          batchId: detail.osl_batch_id ?? null,
+          batchNo: detail.osl_batch_no ?? null,
+          batchDate: this.parseOptionalDate(detail.osl_batch_date, 'detail.osl_batch_date'),
+          mfgDate: this.parseOptionalDate(detail.osl_mfg_date, 'detail.osl_mfg_date'),
+          expiryDate: this.parseOptionalDate(detail.osl_expiry_date, 'detail.osl_expiry_date'),
+          mrp: detail.osl_mrp_rate ?? 0,
+          barcode: detail.osl_barcode ?? null,
+        };
       });
   }
   private async resolveBatchIdsForDocument(
@@ -282,48 +361,134 @@ export class ItemStockLedgerService {
     now: Date,
     persistResolvedBatchIds = false,
   ): Promise<OpeningStockDocumentPayload> {
-    const details = await Promise.all(
-      document.details.map(async (detail) => {
-        if (this.toBalanceTrackingType(detail.osl_tracking_type) !== 'BATCH') {
-          return detail;
-        }
-        const batchId = await this.resolveOrCreateBatchId(tx, detail, actorUserId, now);
-        if (persistResolvedBatchIds && detail.osl_batch_id !== batchId) {
-          await tx.openingStockDetail.update({
-            where: { oslId: detail.osl_id },
-            data: {
-              oslBatchId: batchId,
-              oslUpdatedOn: now,
-              oslUpdatedBy: actorUserId,
-            },
-          });
-        }
-        return {
-          ...detail,
-          osl_batch_id: batchId,
-        };
-      }),
-    );
+    const resolutionContext: BatchResolutionContext = {
+      batchScopeEntriesByKey: new Map<string, BatchScopeEntry[]>(),
+      batchMasterNosByItemKey: new Map<string, string[]>(),
+      batchMastersById: new Map<string, BatchMasterIdentity | null>(),
+    };
+    const details: OpeningStockDocumentPayload['details'] = [];
+    for (const detail of document.details) {
+      const trackingType = this.toBalanceTrackingType(detail.osl_tracking_type);
+      if (!this.isBatchManagedTrackingType(trackingType)) {
+        details.push(detail);
+        continue;
+      }
+      const resolvedBatch = await this.resolveOrCreateBatchIdentity(
+        tx,
+        detail,
+        actorUserId,
+        now,
+        resolutionContext,
+      );
+      const hasBatchIdChanged = detail.osl_batch_id !== resolvedBatch.batchId;
+      const hasBatchNoChanged = detail.osl_batch_no !== resolvedBatch.batchNo;
+      if (persistResolvedBatchIds && (hasBatchIdChanged || hasBatchNoChanged)) {
+        await tx.openingStockDetail.update({
+          where: { oslId: detail.osl_id },
+          data: {
+            oslBatchId: resolvedBatch.batchId,
+            oslBatchNo: resolvedBatch.batchNo,
+            oslUpdatedOn: now,
+            oslUpdatedBy: actorUserId,
+          },
+        });
+      }
+      details.push({
+        ...detail,
+        osl_batch_id: resolvedBatch.batchId,
+        osl_batch_no: resolvedBatch.batchNo,
+      });
+    }
     return {
       ...document,
       details,
     };
   }
-  private async resolveOrCreateBatchId(
+  private async resolveOrCreateBatchIdentity(
     tx: Prisma.TransactionClient,
     detail: OpeningStockDetailPayload,
     actorUserId: string | null,
     now: Date,
-  ): Promise<string> {
+    resolutionContext: BatchResolutionContext,
+  ): Promise<ResolvedBatchIdentity> {
+    const scope = this.buildBatchScopeReference(detail);
+    const scopeEntries = await this.getBatchScopeEntries(tx, scope, resolutionContext);
+    const requestedBatchNo = this.normalizeBatchNo(detail.osl_batch_no);
+    const requestedBatchNoKey = requestedBatchNo
+      ? this.normalizeBatchNoKey(requestedBatchNo)
+      : null;
+
+    if (requestedBatchNoKey) {
+      const scopedBatch = scopeEntries.find((entry) => entry.batchNoKey === requestedBatchNoKey);
+      if (scopedBatch && detail.osl_batch_id && scopedBatch.batchId !== detail.osl_batch_id) {
+        throw new ConflictException(
+          `Batch no "${requestedBatchNo}" already exists for the selected company, branch, godown, item, and unit`,
+        );
+      }
+      if (!detail.osl_batch_id && scopedBatch) {
+        return scopedBatch;
+      }
+    }
+
     if (detail.osl_batch_id) {
-      return detail.osl_batch_id;
-    }
-    const batchNo = detail.osl_batch_no?.trim();
-    if (!batchNo) {
-      throw new BadRequestException(
-        'Batch-tracked stock movement requires batch no when batch id is not provided',
+      const scopedBatch = scopeEntries.find((entry) => entry.batchId === detail.osl_batch_id);
+      if (scopedBatch) {
+        if (requestedBatchNoKey && scopedBatch.batchNoKey !== requestedBatchNoKey) {
+          throw new ConflictException(
+            `Batch id "${detail.osl_batch_id}" is already linked to batch no "${scopedBatch.batchNo}" for the selected company, branch, godown, item, and unit`,
+          );
+        }
+        return scopedBatch;
+      }
+      const existingBatchMaster = await this.getBatchMasterById(
+        tx,
+        detail.osl_batch_id,
+        resolutionContext,
       );
+      if (!existingBatchMaster) {
+        if (!requestedBatchNo) {
+          throw new BadRequestException(
+            `Batch id "${detail.osl_batch_id}" does not exist for the requested stock movement`,
+          );
+        }
+        const resolvedIdentity = {
+          batchId: detail.osl_batch_id,
+          batchNo: requestedBatchNo,
+        };
+        this.registerBatchScopeEntry(resolutionContext, scope, resolvedIdentity);
+        return resolvedIdentity;
+      }
+      const resolvedBatchNo = this.normalizeBatchNo(existingBatchMaster.btmBatchNo);
+      if (!resolvedBatchNo) {
+        throw new BadRequestException(
+          `Batch id "${detail.osl_batch_id}" does not have a valid saved batch no`,
+        );
+      }
+      if (
+        requestedBatchNoKey &&
+        this.normalizeBatchNoKey(resolvedBatchNo) !== requestedBatchNoKey
+      ) {
+        throw new ConflictException(
+          `Batch id "${detail.osl_batch_id}" is already linked to batch no "${resolvedBatchNo}"`,
+        );
+      }
+      const resolvedIdentity = {
+        batchId: existingBatchMaster.btmId,
+        batchNo: resolvedBatchNo,
+      };
+      this.registerBatchScopeEntry(resolutionContext, scope, resolvedIdentity);
+      return resolvedIdentity;
     }
+
+    let batchNo = requestedBatchNo;
+    if (!batchNo) {
+      const existingBatchNos = [
+        ...(await this.getBatchMasterNosForItem(tx, detail, resolutionContext)),
+        ...scopeEntries.map((entry) => entry.batchNo),
+      ];
+      batchNo = generateNextBatchNo(existingBatchNos);
+    }
+
     const existingBatch = await tx.itemBatchMaster.findFirst({
       where: {
         btmCompanyId: detail.osl_company_id,
@@ -336,9 +501,18 @@ export class ItemStockLedgerService {
       orderBy: {
         btmCreatedOn: 'desc',
       },
+      select: {
+        btmId: true,
+        btmBatchNo: true,
+      },
     });
     if (existingBatch) {
-      return existingBatch.btmId;
+      const resolvedIdentity = {
+        batchId: existingBatch.btmId,
+        batchNo: this.normalizeBatchNo(existingBatch.btmBatchNo) ?? batchNo,
+      };
+      this.registerBatchScopeEntry(resolutionContext, scope, resolvedIdentity);
+      return resolvedIdentity;
     }
     const batchDate = this.parseOptionalDate(detail.osl_batch_date, 'detail.osl_batch_date');
     const mfgDate = this.parseOptionalDate(detail.osl_mfg_date, 'detail.osl_mfg_date');
@@ -348,9 +522,7 @@ export class ItemStockLedgerService {
         (detail.osl_free_qty ?? 0) * (detail.osl_conv_factor ?? 1),
     );
     const lastPurchaseRateWot =
-      physicalQty > 0
-        ? this.roundRate((detail.osl_stock_value_wot ?? 0) / physicalQty)
-        : 0;
+      physicalQty > 0 ? this.roundRate((detail.osl_stock_value_wot ?? 0) / physicalQty) : 0;
     const batchStatus = this.normalizeBatchStatus('ACTIVE', 'btmStatus');
     const createdBatch = await tx.itemBatchMaster.create({
       data: {
@@ -371,8 +543,156 @@ export class ItemStockLedgerService {
         btmUpdatedOn: now,
         btmUpdatedBy: actorUserId,
       },
+      select: {
+        btmId: true,
+        btmBatchNo: true,
+      },
     });
-    return createdBatch.btmId;
+    resolutionContext.batchMastersById.set(createdBatch.btmId, createdBatch);
+    const batchMasterNosKey = this.buildBatchMasterNosKey(
+      detail.osl_company_id,
+      detail.osl_item_id,
+    );
+    const knownBatchNos = resolutionContext.batchMasterNosByItemKey.get(batchMasterNosKey);
+    if (knownBatchNos) {
+      knownBatchNos.push(batchNo);
+    }
+    const resolvedIdentity = {
+      batchId: createdBatch.btmId,
+      batchNo,
+    };
+    this.registerBatchScopeEntry(resolutionContext, scope, resolvedIdentity);
+    return resolvedIdentity;
+  }
+  private buildBatchScopeReference(detail: OpeningStockDetailPayload): BatchScopeReference {
+    return {
+      companyId: detail.osl_company_id,
+      branchId: detail.osl_branch_id,
+      godownId: detail.osl_godown_id,
+      itemId: detail.osl_item_id,
+      unitId: detail.osl_base_uom_id ?? detail.osl_unit_id,
+    };
+  }
+  private buildBatchScopeCacheKey(scope: BatchScopeReference): string {
+    return [scope.companyId, scope.branchId, scope.godownId, scope.itemId, scope.unitId].join('|');
+  }
+  private buildBatchMasterNosKey(companyId: string, itemId: string): string {
+    return [companyId, itemId].join('|');
+  }
+  private async getBatchScopeEntries(
+    tx: Prisma.TransactionClient,
+    scope: BatchScopeReference,
+    resolutionContext: BatchResolutionContext,
+  ): Promise<BatchScopeEntry[]> {
+    const cacheKey = this.buildBatchScopeCacheKey(scope);
+    const cached = resolutionContext.batchScopeEntriesByKey.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const rows = await tx.itemBatchStock.findMany({
+      where: {
+        ibsCompanyId: scope.companyId,
+        ibsBranchId: scope.branchId,
+        ibsGodownId: scope.godownId,
+        ibsItemId: scope.itemId,
+        ibsUnitId: scope.unitId,
+      },
+      select: {
+        ibsBatchId: true,
+        ibsBatchNo: true,
+      },
+    });
+    const entries = rows.flatMap((row) => {
+      const batchNo = this.normalizeBatchNo(row.ibsBatchNo);
+      if (!batchNo) {
+        return [];
+      }
+      return [
+        {
+          batchId: row.ibsBatchId,
+          batchNo,
+          batchNoKey: this.normalizeBatchNoKey(batchNo),
+        },
+      ];
+    });
+    resolutionContext.batchScopeEntriesByKey.set(cacheKey, entries);
+    return entries;
+  }
+  private registerBatchScopeEntry(
+    resolutionContext: BatchResolutionContext,
+    scope: BatchScopeReference,
+    batch: ResolvedBatchIdentity,
+  ): void {
+    const cacheKey = this.buildBatchScopeCacheKey(scope);
+    const batchNoKey = this.normalizeBatchNoKey(batch.batchNo);
+    const entries = resolutionContext.batchScopeEntriesByKey.get(cacheKey) ?? [];
+    const existingEntry = entries.find(
+      (entry) => entry.batchId === batch.batchId || entry.batchNoKey === batchNoKey,
+    );
+    if (existingEntry) {
+      existingEntry.batchId = batch.batchId;
+      existingEntry.batchNo = batch.batchNo;
+      existingEntry.batchNoKey = batchNoKey;
+    } else {
+      entries.push({
+        batchId: batch.batchId,
+        batchNo: batch.batchNo,
+        batchNoKey,
+      });
+    }
+    resolutionContext.batchScopeEntriesByKey.set(cacheKey, entries);
+  }
+  private async getBatchMasterNosForItem(
+    tx: Prisma.TransactionClient,
+    detail: OpeningStockDetailPayload,
+    resolutionContext: BatchResolutionContext,
+  ): Promise<string[]> {
+    const cacheKey = this.buildBatchMasterNosKey(detail.osl_company_id, detail.osl_item_id);
+    const cached = resolutionContext.batchMasterNosByItemKey.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    const rows = await tx.itemBatchMaster.findMany({
+      where: {
+        btmCompanyId: detail.osl_company_id,
+        btmItemId: detail.osl_item_id,
+      },
+      select: {
+        btmBatchNo: true,
+      },
+    });
+    const batchNos = rows
+      .map((row) => this.normalizeBatchNo(row.btmBatchNo))
+      .filter((value): value is string => Boolean(value));
+    resolutionContext.batchMasterNosByItemKey.set(cacheKey, batchNos);
+    return batchNos;
+  }
+  private async getBatchMasterById(
+    tx: Prisma.TransactionClient,
+    batchId: string,
+    resolutionContext: BatchResolutionContext,
+  ): Promise<BatchMasterIdentity | null> {
+    if (resolutionContext.batchMastersById.has(batchId)) {
+      return resolutionContext.batchMastersById.get(batchId) ?? null;
+    }
+    const batchMaster = await tx.itemBatchMaster.findUnique({
+      where: {
+        btmId: batchId,
+      },
+      select: {
+        btmId: true,
+        btmBatchNo: true,
+      },
+    });
+    resolutionContext.batchMastersById.set(batchId, batchMaster ?? null);
+    return batchMaster ?? null;
+  }
+  private normalizeBatchNo(value: string | null | undefined): string | null {
+    const normalizedValue = value?.trim();
+    return normalizedValue ? normalizedValue : null;
+  }
+  private normalizeBatchNoKey(value: string): string {
+    return value.trim().toLowerCase();
   }
   private async applyStockMovements(
     tx: Prisma.TransactionClient,
@@ -380,20 +700,17 @@ export class ItemStockLedgerService {
     actorUserId: string | null,
     now: Date,
   ): Promise<Pick<CreatedItemStockPosting, 'itemStockBalance' | 'itemBatchStock'>> {
-    const stockBalances = new Map<string, PrismaItemStockBalance>();
-    const batchStocks = new Map<string, PrismaItemBatchStock>();
+    const stockBalances = new Map<string, StockBalanceStateRow>();
+    const batchStocks = new Map<string, BatchStockStateRow>();
     for (const movement of movements) {
       const normalizedMovement = this.normalizeStockMovement(movement);
-      if (normalizedMovement.trackingType === 'BATCH') {
+      if (this.isBatchManagedTrackingType(normalizedMovement.trackingType)) {
         if (!normalizedMovement.batchId) {
-          throw new BadRequestException('Batch-tracked stock movement requires batch id');
+          throw new BadRequestException(
+            'Batch-managed stock movement requires batch id for BATCH or MRP tracking',
+          );
         }
-        const batchRow = await this.applyBatchMovement(
-          tx,
-          normalizedMovement,
-          actorUserId,
-          now,
-        );
+        const batchRow = await this.applyBatchMovement(tx, normalizedMovement, actorUserId, now);
         if (batchRow) {
           batchStocks.set(this.buildBatchScopeKey(normalizedMovement), batchRow);
         }
@@ -408,12 +725,7 @@ export class ItemStockLedgerService {
         }
         continue;
       }
-      const summaryRow = await this.applySummaryMovement(
-        tx,
-        normalizedMovement,
-        actorUserId,
-        now,
-      );
+      const summaryRow = await this.applySummaryMovement(tx, normalizedMovement, actorUserId, now);
       stockBalances.set(this.buildSummaryScopeKey(normalizedMovement), summaryRow);
     }
     return {
@@ -426,7 +738,7 @@ export class ItemStockLedgerService {
     movement: StockMovementInput,
     actorUserId: string | null,
     now: Date,
-  ): Promise<PrismaItemStockBalance> {
+  ): Promise<StockBalanceStateRow> {
     const where = {
       isbAccYear_isbCompanyId_isbBranchId_isbGodownId_isbItemId_isbUnitId_isbStockBucket: {
         isbAccYear: movement.accYear,
@@ -438,7 +750,10 @@ export class ItemStockLedgerService {
         isbStockBucket: movement.stockBucket,
       },
     } as const;
-    const existing = await tx.itemStockBalance.findUnique({ where });
+    const existing = await tx.itemStockBalance.findUnique({
+      where,
+      select: ITEM_STOCK_BALANCE_STATE_SELECT,
+    });
     const nextState = this.applyMovementToState(
       existing ? this.toStateFromStockBalance(existing) : this.createEmptyState(),
       movement,
@@ -447,6 +762,7 @@ export class ItemStockLedgerService {
       where,
       create: this.buildStockBalanceCreateInput(movement, nextState, actorUserId, now),
       update: this.buildStockBalanceUpdateInput(movement, nextState, actorUserId, now),
+      select: ITEM_STOCK_BALANCE_STATE_SELECT,
     });
   }
   private async applyBatchMovement(
@@ -454,7 +770,7 @@ export class ItemStockLedgerService {
     movement: StockMovementInput,
     actorUserId: string | null,
     now: Date,
-  ): Promise<PrismaItemBatchStock | null> {
+  ): Promise<BatchStockStateRow | null> {
     const where = {
       ibsAccYear_ibsCompanyId_ibsBranchId_ibsGodownId_ibsItemId_ibsBatchId_ibsStockBucket: {
         ibsAccYear: movement.accYear,
@@ -466,7 +782,10 @@ export class ItemStockLedgerService {
         ibsStockBucket: movement.stockBucket,
       },
     } as const;
-    const existing = await tx.itemBatchStock.findUnique({ where });
+    const existing = await tx.itemBatchStock.findUnique({
+      where,
+      select: ITEM_BATCH_STOCK_STATE_SELECT,
+    });
     if (!existing && this.isReverseOpeningMovement(movement)) {
       return null;
     }
@@ -479,6 +798,7 @@ export class ItemStockLedgerService {
       where,
       create: this.buildBatchStockCreateInput(movement, nextState, actorUserId, now),
       update: this.buildBatchStockUpdateInput(movement, nextState, actorUserId, now),
+      select: ITEM_BATCH_STOCK_STATE_SELECT,
     });
   }
   private isReverseOpeningMovement(movement: StockMovementInput): boolean {
@@ -492,7 +812,7 @@ export class ItemStockLedgerService {
     movement: StockMovementInput,
     actorUserId: string | null,
     now: Date,
-  ): Promise<PrismaItemStockBalance | null> {
+  ): Promise<StockBalanceStateRow | null> {
     const where = {
       isbAccYear_isbCompanyId_isbBranchId_isbGodownId_isbItemId_isbUnitId_isbStockBucket: {
         isbAccYear: movement.accYear,
@@ -505,7 +825,10 @@ export class ItemStockLedgerService {
       },
     } as const;
     const [existingSummary, batchRows] = await Promise.all([
-      tx.itemStockBalance.findUnique({ where }),
+      tx.itemStockBalance.findUnique({
+        where,
+        select: ITEM_STOCK_BALANCE_STATE_SELECT,
+      }),
       tx.itemBatchStock.findMany({
         where: {
           ibsAccYear: movement.accYear,
@@ -516,6 +839,7 @@ export class ItemStockLedgerService {
           ibsUnitId: movement.unitId,
           ibsStockBucket: movement.stockBucket,
         },
+        select: ITEM_BATCH_STOCK_STATE_SELECT,
       }),
     ]);
     if (!existingSummary && batchRows.length === 0) {
@@ -529,9 +853,10 @@ export class ItemStockLedgerService {
       where,
       create: this.buildStockBalanceCreateInput(movement, nextState, actorUserId, now),
       update: this.buildStockBalanceUpdateInput(movement, nextState, actorUserId, now),
+      select: ITEM_STOCK_BALANCE_STATE_SELECT,
     });
   }
-  private aggregateBatchStates(rows: PrismaItemBatchStock[]): StockEngineState {
+  private aggregateBatchStates(rows: BatchStockStateRow[]): StockEngineState {
     const state = this.createEmptyState();
     for (const row of rows) {
       state.openingQty = this.roundQuantity(state.openingQty + this.toNumber(row.ibsOpeningQty));
@@ -542,15 +867,11 @@ export class ItemStockLedgerService {
       );
       state.freeInQty = this.roundQuantity(state.freeInQty + this.toNumber(row.ibsFreeInQty));
       state.freeOutQty = this.roundQuantity(state.freeOutQty + this.toNumber(row.ibsFreeOutQty));
-      state.reservedQty = this.roundQuantity(
-        state.reservedQty + this.toNumber(row.ibsReservedQty),
-      );
+      state.reservedQty = this.roundQuantity(state.reservedQty + this.toNumber(row.ibsReservedQty));
       state.openingValue = this.roundAmount(
         state.openingValue + this.toNumber(row.ibsOpeningValue),
       );
-      state.stockValue = this.roundAmount(
-        state.stockValue + this.toNumber(row.ibsStockValue),
-      );
+      state.stockValue = this.roundAmount(state.stockValue + this.toNumber(row.ibsStockValue));
       state.lastInDate = this.maxDate(state.lastInDate, row.ibsLastInDate);
       state.lastOutDate = this.maxDate(state.lastOutDate, row.ibsLastOutDate);
     }
@@ -585,9 +906,7 @@ export class ItemStockLedgerService {
       nextState.openingFreeQty = this.roundQuantity(nextState.openingFreeQty + freeQty);
       nextState.openingValue = this.roundAmount(nextState.openingValue + inwardValue);
       nextState.stockValue = this.roundAmount(nextState.stockValue + inwardValue);
-      nextState.openingValueWot = this.roundAmount(
-        nextState.openingValueWot + inwardValueWot,
-      );
+      nextState.openingValueWot = this.roundAmount(nextState.openingValueWot + inwardValueWot);
       nextState.stockValueWot = this.roundAmount(nextState.stockValueWot + inwardValueWot);
       nextState.lastInDate = this.maxDate(nextState.lastInDate, movement.txnDate);
       return this.recalculateState(nextState);
@@ -655,9 +974,7 @@ export class ItemStockLedgerService {
     const physicalOpeningQty = this.getPhysicalOpeningQty(nextState);
     if (physicalOpeningQty > 0) {
       nextState.openingAvgRate = this.roundRate(nextState.openingValue / physicalOpeningQty);
-      nextState.openingAvgRateWot = this.roundRate(
-        nextState.openingValueWot / physicalOpeningQty,
-      );
+      nextState.openingAvgRateWot = this.roundRate(nextState.openingValueWot / physicalOpeningQty);
     } else {
       nextState.openingAvgRate = 0;
       nextState.openingValue = 0;
@@ -676,9 +993,7 @@ export class ItemStockLedgerService {
     }
     return nextState;
   }
-  private getMovementCategory(
-    movementType: StockTxnType,
-  ): 'OPENING' | 'INWARD' | 'OUTWARD' {
+  private getMovementCategory(movementType: StockTxnType): 'OPENING' | 'INWARD' | 'OUTWARD' {
     switch (movementType) {
       case StockTxnType.OPENING:
         return 'OPENING';
@@ -752,7 +1067,7 @@ export class ItemStockLedgerService {
     }
     return fallbackToZero ? 0 : inwardValue;
   }
-  private toStateFromStockBalance(row: PrismaItemStockBalance): StockEngineState {
+  private toStateFromStockBalance(row: StockBalanceStateRow): StockEngineState {
     return {
       openingQty: this.toNumber(row.isbOpeningQty),
       inQty: this.toNumber(row.isbInQty),
@@ -777,7 +1092,7 @@ export class ItemStockLedgerService {
       lastOutDate: row.isbLastOutDate,
     };
   }
-  private toStateFromBatchStock(row: PrismaItemBatchStock): StockEngineState {
+  private toStateFromBatchStock(row: BatchStockStateRow): StockEngineState {
     return {
       openingQty: this.toNumber(row.ibsOpeningQty),
       inQty: this.toNumber(row.ibsInQty),
@@ -816,7 +1131,7 @@ export class ItemStockLedgerService {
     });
   }
   private resolveBatchSummaryWotState(
-    existingSummary: PrismaItemStockBalance | null,
+    existingSummary: StockBalanceStateRow | null,
     movement: StockMovementInput,
   ): StockEngineState {
     if (existingSummary) {
@@ -1020,10 +1335,7 @@ export class ItemStockLedgerService {
     }
     return current.getTime() >= candidate.getTime() ? current : candidate;
   }
-  private assertValidBatchStockWrite(
-    movement: StockMovementInput,
-    state: StockEngineState,
-  ): void {
+  private assertValidBatchStockWrite(movement: StockMovementInput, state: StockEngineState): void {
     this.normalizeStockBucket(movement.stockBucket, 'itemBatchStock.ibsStockBucket');
     this.assertValidBatchStockDates(movement.mfgDate ?? null, movement.expiryDate ?? null);
     this.assertNonNegativeQuantity(state.openingQty, 'itemBatchStock.ibsOpeningQty');
@@ -1062,15 +1374,8 @@ export class ItemStockLedgerService {
       );
     }
   }
-  private assertValidBatchStockDates(
-    mfgDate: Date | null,
-    expiryDate: Date | null,
-  ): void {
-    if (
-      mfgDate &&
-      expiryDate &&
-      expiryDate.getTime() < mfgDate.getTime()
-    ) {
+  private assertValidBatchStockDates(mfgDate: Date | null, expiryDate: Date | null): void {
+    if (mfgDate && expiryDate && expiryDate.getTime() < mfgDate.getTime()) {
       throw new BadRequestException(
         'itemBatchStock.ibsExpiryDate must be greater than or equal to itemBatchStock.ibsMfgDate',
       );
@@ -1110,10 +1415,7 @@ export class ItemStockLedgerService {
     }
     return candidate;
   }
-  private normalizeStockBucket(
-    value: string | null | undefined,
-    field: string,
-  ): ItemStockBucket {
+  private normalizeStockBucket(value: string | null | undefined, field: string): ItemStockBucket {
     const normalized = value?.trim().toUpperCase();
     const candidate = normalized as ItemStockBucket | undefined;
     if (!candidate || !ITEM_STOCK_BUCKET_SET.has(candidate)) {
@@ -1127,19 +1429,24 @@ export class ItemStockLedgerService {
     value: string | null | undefined,
   ): Prisma.ItemStockLedgerUncheckedCreateInput['stlTrackingType'] {
     const normalized = value?.trim().toUpperCase();
-    const trackingType: Prisma.ItemStockLedgerUncheckedCreateInput['stlTrackingType'] =
-      (normalized === 'BATCH' ? 'BATCH' : normalized === 'MRP' ? 'MRP' : 'NONE') as
-        Prisma.ItemStockLedgerUncheckedCreateInput['stlTrackingType'];
+    const trackingType: Prisma.ItemStockLedgerUncheckedCreateInput['stlTrackingType'] = (
+      normalized === 'BATCH' ? 'BATCH' : normalized === 'MRP' ? 'MRP' : 'NONE'
+    ) as Prisma.ItemStockLedgerUncheckedCreateInput['stlTrackingType'];
     return trackingType;
   }
   private toBalanceTrackingType(
     value: string | null | undefined,
   ): Prisma.ItemStockBalanceUncheckedCreateInput['isbTrackingType'] {
     const normalized = value?.trim().toUpperCase();
-    const trackingType: Prisma.ItemStockBalanceUncheckedCreateInput['isbTrackingType'] =
-      (normalized === 'BATCH' ? 'BATCH' : normalized === 'MRP' ? 'MRP' : 'NONE') as
-        Prisma.ItemStockBalanceUncheckedCreateInput['isbTrackingType'];
+    const trackingType: Prisma.ItemStockBalanceUncheckedCreateInput['isbTrackingType'] = (
+      normalized === 'BATCH' ? 'BATCH' : normalized === 'MRP' ? 'MRP' : 'NONE'
+    ) as Prisma.ItemStockBalanceUncheckedCreateInput['isbTrackingType'];
     return trackingType;
+  }
+  private isBatchManagedTrackingType(
+    trackingType: Prisma.ItemStockBalanceUncheckedCreateInput['isbTrackingType'],
+  ): boolean {
+    return trackingType === 'BATCH' || trackingType === 'MRP';
   }
   private roundQuantity(value: number): number {
     return Number(value.toFixed(6));

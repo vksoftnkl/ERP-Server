@@ -1,5 +1,9 @@
 import { ItemStockLedgerService } from './item-stock-ledger.service';
-import { OpeningStockDetailPayload, OpeningStockDocumentPayload, OpeningStockHeaderPayload } from './types/opening-stock-api.types';
+import {
+  OpeningStockDetailPayload,
+  OpeningStockDocumentPayload,
+  OpeningStockHeaderPayload,
+} from './types/opening-stock-api.types';
 
 describe('ItemStockLedgerService', () => {
   const makeHeader = (): OpeningStockHeaderPayload => ({
@@ -139,7 +143,9 @@ describe('ItemStockLedgerService', () => {
     ],
   });
 
-  const makeBatchRow = (overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> => ({
+  const makeBatchRow = (
+    overrides: Partial<Record<string, unknown>> = {},
+  ): Record<string, unknown> => ({
     ibsAccYear: '2025-2026',
     ibsCompanyId: 'company-1',
     ibsBranchId: 'branch-1',
@@ -168,7 +174,9 @@ describe('ItemStockLedgerService', () => {
     ...overrides,
   });
 
-  const makeBalanceRow = (overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> => ({
+  const makeBalanceRow = (
+    overrides: Partial<Record<string, unknown>> = {},
+  ): Record<string, unknown> => ({
     isbAccYear: '2025-2026',
     isbCompanyId: 'company-1',
     isbBranchId: 'branch-1',
@@ -204,13 +212,16 @@ describe('ItemStockLedgerService', () => {
   const createTx = ({
     initialBatchRows = [],
     initialBalanceRows = [],
+    initialBatchMasters = [],
   }: {
     initialBatchRows?: Array<Record<string, unknown>>;
     initialBalanceRows?: Array<Record<string, unknown>>;
+    initialBatchMasters?: Array<Record<string, unknown>>;
   } = {}) => {
     const batchRows = new Map<string, Record<string, unknown>>();
     const balanceRows = new Map<string, Record<string, unknown>>();
     const batchMasters = new Map<string, Record<string, unknown>>();
+    const batchMastersById = new Map<string, Record<string, unknown>>();
 
     const getBalanceKey = (where: {
       isbAccYear_isbCompanyId_isbBranchId_isbGodownId_isbItemId_isbUnitId_isbStockBucket: {
@@ -236,6 +247,7 @@ describe('ItemStockLedgerService', () => {
       ibsBranchId: string;
       ibsGodownId: string;
       ibsItemId: string;
+      ibsUnitId?: string;
       ibsBatchId: string;
       ibsStockBucket: string;
     }): string =>
@@ -245,9 +257,32 @@ describe('ItemStockLedgerService', () => {
         source.ibsBranchId,
         source.ibsGodownId,
         source.ibsItemId,
+        source.ibsUnitId ?? '',
         source.ibsBatchId,
         source.ibsStockBucket,
       ].join('|');
+
+    const findBatchRow = (source: {
+      ibsAccYear: string;
+      ibsCompanyId: string;
+      ibsBranchId: string;
+      ibsGodownId: string;
+      ibsItemId: string;
+      ibsBatchId: string;
+      ibsStockBucket: string;
+      ibsUnitId?: string;
+    }): Record<string, unknown> | undefined =>
+      Array.from(batchRows.values()).find(
+        (row) =>
+          row.ibsAccYear === source.ibsAccYear &&
+          row.ibsCompanyId === source.ibsCompanyId &&
+          row.ibsBranchId === source.ibsBranchId &&
+          row.ibsGodownId === source.ibsGodownId &&
+          row.ibsItemId === source.ibsItemId &&
+          row.ibsBatchId === source.ibsBatchId &&
+          row.ibsStockBucket === source.ibsStockBucket &&
+          (source.ibsUnitId === undefined || row.ibsUnitId === source.ibsUnitId),
+      );
 
     for (const row of initialBatchRows) {
       batchRows.set(
@@ -257,11 +292,22 @@ describe('ItemStockLedgerService', () => {
           ibsBranchId: String(row.ibsBranchId),
           ibsGodownId: String(row.ibsGodownId),
           ibsItemId: String(row.ibsItemId),
+          ibsUnitId: String(row.ibsUnitId),
           ibsBatchId: String(row.ibsBatchId),
           ibsStockBucket: String(row.ibsStockBucket),
         }),
         row,
       );
+    }
+
+    for (const row of initialBatchMasters) {
+      const key = getBatchMasterKey(
+        String(row.btmCompanyId),
+        String(row.btmItemId),
+        String(row.btmBatchNo),
+      );
+      batchMasters.set(key, row);
+      batchMastersById.set(String(row.btmId), row);
     }
 
     for (const row of initialBalanceRows) {
@@ -281,7 +327,9 @@ describe('ItemStockLedgerService', () => {
 
     return {
       openingStockDetail: {
-        update: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => data),
+        update: jest
+          .fn()
+          .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => data),
       },
       itemStockLedger: {
         deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
@@ -294,50 +342,78 @@ describe('ItemStockLedgerService', () => {
             return null;
           }
           return (
-            batchMasters.get(getBatchMasterKey(where.btmCompanyId, where.btmItemId, batchNo)) ?? null
+            batchMasters.get(getBatchMasterKey(where.btmCompanyId, where.btmItemId, batchNo)) ??
+            null
           );
         }),
-        create: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
-          const created = {
-            btmId: `batch-master-${batchMasters.size + 1}`,
-            ...data,
-          };
-          batchMasters.set(
-            getBatchMasterKey(
-              String(data.btmCompanyId),
-              String(data.btmItemId),
-              String(data.btmBatchNo),
+        findMany: jest
+          .fn()
+          .mockImplementation(async ({ where }) =>
+            Array.from(batchMasters.values()).filter(
+              (row) => row.btmCompanyId === where.btmCompanyId && row.btmItemId === where.btmItemId,
             ),
-            created,
-          );
-          return created;
-        }),
+          ),
+        findUnique: jest
+          .fn()
+          .mockImplementation(async ({ where }) => batchMastersById.get(where.btmId) ?? null),
+        create: jest
+          .fn()
+          .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+            const created = {
+              btmId: `batch-master-${batchMasters.size + 1}`,
+              ...data,
+            };
+            batchMasters.set(
+              getBatchMasterKey(
+                String(data.btmCompanyId),
+                String(data.btmItemId),
+                String(data.btmBatchNo),
+              ),
+              created,
+            );
+            batchMastersById.set(String(created.btmId), created);
+            return created;
+          }),
       },
       itemStockBalance: {
-        findUnique: jest.fn().mockImplementation(async ({ where }) => balanceRows.get(getBalanceKey(where)) ?? null),
-        upsert: jest.fn().mockImplementation(async ({ where, create }: { where: Parameters<typeof getBalanceKey>[0]; create: Record<string, unknown> }) => {
-          balanceRows.set(getBalanceKey(where), create);
-          return create;
-        }),
+        findUnique: jest
+          .fn()
+          .mockImplementation(async ({ where }) => balanceRows.get(getBalanceKey(where)) ?? null),
+        upsert: jest
+          .fn()
+          .mockImplementation(
+            async ({
+              where,
+              create,
+            }: {
+              where: Parameters<typeof getBalanceKey>[0];
+              create: Record<string, unknown>;
+            }) => {
+              balanceRows.set(getBalanceKey(where), create);
+              return create;
+            },
+          ),
       },
       itemBatchStock: {
         findUnique: jest.fn().mockImplementation(async ({ where }) => {
           const scope =
             where.ibsAccYear_ibsCompanyId_ibsBranchId_ibsGodownId_ibsItemId_ibsBatchId_ibsStockBucket;
-          return batchRows.get(getBatchKey(scope)) ?? null;
+          return findBatchRow(scope) ?? null;
         }),
-        findMany: jest.fn().mockImplementation(async ({ where }) =>
-          Array.from(batchRows.values()).filter(
-            (row) =>
-              row.ibsAccYear === where.ibsAccYear &&
-              row.ibsCompanyId === where.ibsCompanyId &&
-              row.ibsBranchId === where.ibsBranchId &&
-              row.ibsGodownId === where.ibsGodownId &&
-              row.ibsItemId === where.ibsItemId &&
-              row.ibsUnitId === where.ibsUnitId &&
-              row.ibsStockBucket === where.ibsStockBucket,
+        findMany: jest
+          .fn()
+          .mockImplementation(async ({ where }) =>
+            Array.from(batchRows.values()).filter(
+              (row) =>
+                (where.ibsAccYear === undefined || row.ibsAccYear === where.ibsAccYear) &&
+                (where.ibsCompanyId === undefined || row.ibsCompanyId === where.ibsCompanyId) &&
+                (where.ibsBranchId === undefined || row.ibsBranchId === where.ibsBranchId) &&
+                (where.ibsGodownId === undefined || row.ibsGodownId === where.ibsGodownId) &&
+                (where.ibsItemId === undefined || row.ibsItemId === where.ibsItemId) &&
+                (where.ibsUnitId === undefined || row.ibsUnitId === where.ibsUnitId) &&
+                (where.ibsStockBucket === undefined || row.ibsStockBucket === where.ibsStockBucket),
+            ),
           ),
-        ),
         upsert: jest.fn().mockImplementation(
           async ({
             where,
@@ -351,6 +427,7 @@ describe('ItemStockLedgerService', () => {
                 ibsBranchId: string;
                 ibsGodownId: string;
                 ibsItemId: string;
+                ibsUnitId?: string;
                 ibsBatchId: string;
                 ibsStockBucket: string;
               };
@@ -358,12 +435,23 @@ describe('ItemStockLedgerService', () => {
             create: Record<string, unknown>;
             update: Record<string, unknown>;
           }) => {
-            const key = getBatchKey(
-              where.ibsAccYear_ibsCompanyId_ibsBranchId_ibsGodownId_ibsItemId_ibsBatchId_ibsStockBucket,
-            );
-            const existing = batchRows.get(key);
+            const scope =
+              where.ibsAccYear_ibsCompanyId_ibsBranchId_ibsGodownId_ibsItemId_ibsBatchId_ibsStockBucket;
+            const existing = findBatchRow(scope);
             const nextRow = existing ? { ...existing, ...update } : create;
-            batchRows.set(key, nextRow);
+            batchRows.set(
+              getBatchKey({
+                ibsAccYear: String(nextRow.ibsAccYear),
+                ibsCompanyId: String(nextRow.ibsCompanyId),
+                ibsBranchId: String(nextRow.ibsBranchId),
+                ibsGodownId: String(nextRow.ibsGodownId),
+                ibsItemId: String(nextRow.ibsItemId),
+                ibsUnitId: String(nextRow.ibsUnitId),
+                ibsBatchId: String(nextRow.ibsBatchId),
+                ibsStockBucket: String(nextRow.ibsStockBucket),
+              }),
+              nextRow,
+            );
             return nextRow;
           },
         ),
@@ -482,9 +570,9 @@ describe('ItemStockLedgerService', () => {
 
     expect(tx.itemBatchStock.upsert).toHaveBeenCalledTimes(1);
     expect(tx.itemStockBalance.upsert).toHaveBeenCalledTimes(1);
-    expect(
-      tx.itemBatchStock.upsert.mock.invocationCallOrder[0],
-    ).toBeLessThan(tx.itemStockBalance.upsert.mock.invocationCallOrder[0]);
+    expect(tx.itemBatchStock.upsert.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.itemStockBalance.upsert.mock.invocationCallOrder[0],
+    );
 
     const batchWrite = tx.itemBatchStock.upsert.mock.calls[0][0];
     expect(batchWrite.create.ibsBatchId).toBe('batch-1');
@@ -501,6 +589,98 @@ describe('ItemStockLedgerService', () => {
     expect(summaryWrite.create.isbOpeningValue).toBe(500);
     expect(summaryWrite.create.isbOpeningValueWot).toBe(400);
     expect(summaryWrite.create.isbStockValueWot).toBe(400);
+  });
+
+  it('stores mrp-tracked opening stock in batch tables and auto-generates batch no when the payload omits it', async () => {
+    const tx = createTx({
+      initialBatchRows: [
+        makeBatchRow({
+          ibsBatchId: 'saved-batch-1',
+          ibsBatchNo: 'B-001',
+        }),
+        makeBatchRow({
+          ibsBatchId: 'saved-batch-2',
+          ibsBatchNo: 'B-002',
+        }),
+      ],
+      initialBatchMasters: [
+        {
+          btmId: 'saved-batch-1',
+          btmCompanyId: 'company-1',
+          btmItemId: 'item-1',
+          btmBatchNo: 'B-001',
+        },
+        {
+          btmId: 'saved-batch-2',
+          btmCompanyId: 'company-1',
+          btmItemId: 'item-1',
+          btmBatchNo: 'B-002',
+        },
+      ],
+    });
+    const document = {
+      ...makeDocument(),
+      details: [
+        makeDetail({
+          osl_line_no: 1,
+          osl_tracking_type: 'MRP',
+          osl_batch_id: null,
+          osl_batch_no: null,
+          osl_qty: 5,
+          osl_free_qty: 1,
+          osl_free_base_qty: 2,
+          osl_base_qty: 10,
+          osl_conv_factor: 2,
+          osl_stock_value: 500,
+          osl_stock_value_wot: 400,
+          osl_cost_rate_wot: 80,
+        }),
+      ],
+    } satisfies OpeningStockDocumentPayload;
+
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await service.syncFromOpeningStockDocument(tx as never, document);
+
+    expect(tx.itemBatchMaster.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          btmBatchNo: 'B-003',
+        }),
+      }),
+    );
+    expect(tx.openingStockDetail.update).toHaveBeenCalledWith({
+      where: { oslId: 'detail-1' },
+      data: expect.objectContaining({
+        oslBatchId: 'batch-master-3',
+        oslBatchNo: 'B-003',
+      }),
+    });
+    expect(tx.itemBatchStock.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.itemStockBalance.upsert).toHaveBeenCalledTimes(1);
+
+    const batchWrite = tx.itemBatchStock.upsert.mock.calls[0][0];
+    expect(batchWrite.create.ibsBatchId).toBe('batch-master-3');
+    expect(batchWrite.create.ibsOpeningQty).toBe(10);
+    expect(batchWrite.create.ibsOpeningFreeQty).toBe(2);
+
+    const summaryWrite = tx.itemStockBalance.upsert.mock.calls[0][0];
+    expect(summaryWrite.create.isbTrackingType).toBe('MRP');
+    expect(summaryWrite.create.isbOpeningQty).toBe(10);
+    expect(summaryWrite.create.isbOpeningFreeQty).toBe(2);
+
+    expect(tx.itemStockLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stlTrackingType: 'MRP',
+          stlBatchId: 'batch-master-3',
+          stlBatchNo: 'B-003',
+        }),
+      }),
+    );
   });
 
   it('falls back to legacy WOT opening value when reversing an older batch row during update', async () => {
@@ -566,11 +746,7 @@ describe('ItemStockLedgerService', () => {
       { getUserId: jest.fn().mockReturnValue('user-1') } as never,
     );
 
-    await service.syncFromOpeningStockDocument(
-      tx as never,
-      updatedDocument,
-      previousDocument,
-    );
+    await service.syncFromOpeningStockDocument(tx as never, updatedDocument, previousDocument);
 
     expect(tx.itemBatchStock.upsert).toHaveBeenCalledTimes(2);
 
@@ -634,6 +810,7 @@ describe('ItemStockLedgerService', () => {
       where: { oslId: 'detail-1' },
       data: expect.objectContaining({
         oslBatchId: 'batch-master-1',
+        oslBatchNo: 'B-NEW',
       }),
     });
     expect(tx.itemStockLedger.create).toHaveBeenCalledWith(
@@ -651,6 +828,176 @@ describe('ItemStockLedgerService', () => {
         }),
       }),
     );
+  });
+
+  it('reuses the saved scoped batch id when the batch number already exists in item batch stock', async () => {
+    const tx = createTx({
+      initialBatchRows: [
+        makeBatchRow({
+          ibsBatchId: 'saved-batch-1',
+          ibsBatchNo: 'B-007',
+        }),
+      ],
+    });
+    const document = {
+      ...makeDocument(),
+      details: [
+        makeDetail({
+          osl_line_no: 1,
+          osl_tracking_type: 'BATCH',
+          osl_batch_id: null,
+          osl_batch_no: '  b-007  ',
+          osl_qty: 5,
+          osl_free_qty: 1,
+          osl_free_base_qty: 2,
+          osl_base_qty: 10,
+          osl_conv_factor: 2,
+          osl_stock_value_wot: 400,
+          osl_cost_rate_wot: 80,
+        }),
+      ],
+    } satisfies OpeningStockDocumentPayload;
+
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await service.syncFromOpeningStockDocument(tx as never, document);
+
+    expect(tx.itemBatchMaster.create).not.toHaveBeenCalled();
+    expect(tx.openingStockDetail.update).toHaveBeenCalledWith({
+      where: { oslId: 'detail-1' },
+      data: expect.objectContaining({
+        oslBatchId: 'saved-batch-1',
+        oslBatchNo: 'B-007',
+      }),
+    });
+    expect(tx.itemStockLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stlBatchId: 'saved-batch-1',
+          stlBatchNo: 'B-007',
+        }),
+      }),
+    );
+  });
+
+  it('auto-generates the next batch number from saved batch numbers when the payload does not send one', async () => {
+    const tx = createTx({
+      initialBatchRows: [
+        makeBatchRow({
+          ibsBatchId: 'saved-batch-1',
+          ibsBatchNo: 'B-001',
+        }),
+        makeBatchRow({
+          ibsBatchId: 'saved-batch-2',
+          ibsBatchNo: 'B-002',
+        }),
+      ],
+      initialBatchMasters: [
+        {
+          btmId: 'saved-batch-1',
+          btmCompanyId: 'company-1',
+          btmItemId: 'item-1',
+          btmBatchNo: 'B-001',
+        },
+        {
+          btmId: 'saved-batch-2',
+          btmCompanyId: 'company-1',
+          btmItemId: 'item-1',
+          btmBatchNo: 'B-002',
+        },
+      ],
+    });
+    const document = {
+      ...makeDocument(),
+      details: [
+        makeDetail({
+          osl_line_no: 1,
+          osl_tracking_type: 'BATCH',
+          osl_batch_id: null,
+          osl_batch_no: null,
+          osl_qty: 5,
+          osl_free_qty: 1,
+          osl_free_base_qty: 2,
+          osl_base_qty: 10,
+          osl_conv_factor: 2,
+          osl_stock_value_wot: 400,
+          osl_cost_rate_wot: 80,
+        }),
+      ],
+    } satisfies OpeningStockDocumentPayload;
+
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await service.syncFromOpeningStockDocument(tx as never, document);
+
+    expect(tx.itemBatchMaster.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          btmBatchNo: 'B-003',
+        }),
+      }),
+    );
+    expect(tx.openingStockDetail.update).toHaveBeenCalledWith({
+      where: { oslId: 'detail-1' },
+      data: expect.objectContaining({
+        oslBatchId: 'batch-master-3',
+        oslBatchNo: 'B-003',
+      }),
+    });
+    expect(tx.itemStockLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          stlBatchId: 'batch-master-3',
+          stlBatchNo: 'B-003',
+        }),
+      }),
+    );
+  });
+
+  it('rejects a scoped duplicate batch number when a different batch id is sent', async () => {
+    const tx = createTx({
+      initialBatchRows: [
+        makeBatchRow({
+          ibsBatchId: 'saved-batch-1',
+          ibsBatchNo: 'B-007',
+        }),
+      ],
+    });
+    const document = {
+      ...makeDocument(),
+      details: [
+        makeDetail({
+          osl_line_no: 1,
+          osl_tracking_type: 'BATCH',
+          osl_batch_id: 'another-batch-id',
+          osl_batch_no: 'B-007',
+          osl_qty: 5,
+          osl_free_qty: 1,
+          osl_free_base_qty: 2,
+          osl_base_qty: 10,
+          osl_conv_factor: 2,
+          osl_stock_value_wot: 400,
+          osl_cost_rate_wot: 80,
+        }),
+      ],
+    } satisfies OpeningStockDocumentPayload;
+
+    const service = new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+    );
+
+    await expect(service.syncFromOpeningStockDocument(tx as never, document)).rejects.toThrow(
+      'Batch no "B-007" already exists for the selected company, branch, godown, item, and unit',
+    );
+    expect(tx.itemBatchMaster.create).not.toHaveBeenCalled();
+    expect(tx.openingStockDetail.update).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported batch status values before batch master insert', () => {
@@ -830,9 +1177,7 @@ describe('ItemStockLedgerService', () => {
           lastOutDate: null,
         },
       ),
-    ).toThrow(
-      'itemBatchStock.ibsClosingQty must equal ibsOpeningQty + ibsInQty - ibsOutQty',
-    );
+    ).toThrow('itemBatchStock.ibsClosingQty must equal ibsOpeningQty + ibsInQty - ibsOutQty');
   });
 
   it('reverses stock balances and recreates ledger rows as deleted when opening stock is deleted', async () => {
@@ -863,11 +1208,7 @@ describe('ItemStockLedgerService', () => {
       { getUserId: jest.fn().mockReturnValue('user-1') } as never,
     );
 
-    await service.syncFromOpeningStockDocument(
-      tx as never,
-      deletedDocument,
-      previousDocument,
-    );
+    await service.syncFromOpeningStockDocument(tx as never, deletedDocument, previousDocument);
 
     expect(tx.itemStockLedger.deleteMany).toHaveBeenCalledWith({
       where: {

@@ -3235,6 +3235,24 @@ model OpeningStockHeader {
   @@schema("inventory")
 }
 
+// ----- prisma/public/batch.prisma -----
+model BatchPrefix {
+  id           String    @id @default(uuid(7)) @db.Uuid
+
+  prefixUsed   String?   @map("prefix_used") @db.Text
+
+  syncDate     DateTime? @map("sync_date") @db.Timestamptz(0)
+
+  createdBy    String?   @map("created_by") @db.VarChar(100)
+  createdOn    DateTime? @map("created_on") @db.Timestamptz(0)
+
+  modifiedBy   String?   @map("modified_by") @db.VarChar(100)
+  modifiedOn   DateTime? @map("modified_on") @db.Timestamptz(0)
+
+  @@map("batches_prefix")
+  @@schema("public")
+}
+
 // ----- prisma/public/branchMaster.prisma -----
 model BranchMaster {
   brId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("br_id")

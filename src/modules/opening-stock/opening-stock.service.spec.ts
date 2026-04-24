@@ -1,10 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import {
-  AccVoucherHeader,
-  DeviceType,
-  Prisma,
-  VoucherStatus,
-} from '@prisma/client';
+import { AccVoucherHeader, DeviceType, Prisma, VoucherStatus } from '@prisma/client';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -147,9 +142,7 @@ const makeSaveDto = (overrides: Partial<SaveOpeningStockDto> = {}): SaveOpeningS
   ],
   ...overrides,
 });
-const makeVoucherHeaderRecord = (
-  overrides: Partial<AccVoucherHeader> = {},
-): AccVoucherHeader =>
+const makeVoucherHeaderRecord = (overrides: Partial<AccVoucherHeader> = {}): AccVoucherHeader =>
   ({
     avhVoucherId: VOUCHER_ID,
     avhAccYear: '2025-2026',
@@ -200,7 +193,10 @@ const makeVoucherHeaderRecord = (
     avhUpdatedBy: null,
     ...overrides,
   }) as AccVoucherHeader;
-const makeOpeningHeaderWithVoucher = (voucherHeader: AccVoucherHeader, overrides: Record<string, unknown> = {}) =>
+const makeOpeningHeaderWithVoucher = (
+  voucherHeader: AccVoucherHeader,
+  overrides: Record<string, unknown> = {},
+) =>
   ({
     oshId: OPENING_ID,
     oshVoucherId: voucherHeader.avhVoucherId,
@@ -428,9 +424,9 @@ describe('OpeningStockService', () => {
   });
   it('creates opening stock by creating voucher header first and linking header/detail rows', async () => {
     const voucherHeader = makeVoucherHeaderRecord();
-    (createAccountVoucherHeader as jest.MockedFunction<typeof createAccountVoucherHeader>).mockResolvedValue(
-      voucherHeader,
-    );
+    (
+      createAccountVoucherHeader as jest.MockedFunction<typeof createAccountVoucherHeader>
+    ).mockResolvedValue(voucherHeader);
     tx.openingStockHeader.create.mockResolvedValue(makeOpeningHeaderWithVoucher(voucherHeader));
     tx.openingStockHeader.findFirst.mockResolvedValue(makeOpeningHeaderWithVoucher(voucherHeader));
     tx.openingStockDetail.createMany.mockResolvedValue({ count: 1 });
@@ -499,6 +495,53 @@ describe('OpeningStockService', () => {
     expect(result.details[0].osl_free_base_qty).toBe(2);
   });
 
+  it('returns the refreshed document after stock sync so generated batch fields are included', async () => {
+    const voucherHeader = makeVoucherHeaderRecord();
+    (
+      createAccountVoucherHeader as jest.MockedFunction<typeof createAccountVoucherHeader>
+    ).mockResolvedValue(voucherHeader);
+    tx.openingStockHeader.create.mockResolvedValue(makeOpeningHeaderWithVoucher(voucherHeader));
+    tx.openingStockHeader.findFirst.mockResolvedValue(makeOpeningHeaderWithVoucher(voucherHeader));
+    tx.openingStockDetail.createMany.mockResolvedValue({ count: 1 });
+    tx.openingStockDetail.findMany
+      .mockResolvedValueOnce([
+        makeDetailRecord({
+          oslTrackingType: 'BATCH',
+          oslBatchId: null,
+          oslBatchNo: null,
+        }),
+      ])
+      .mockResolvedValueOnce([
+        makeDetailRecord({
+          oslTrackingType: 'BATCH',
+          oslBatchId: 'generated-batch-1',
+          oslBatchNo: 'B-001',
+        }),
+      ]);
+
+    const result = await service.save(
+      makeSaveDto({
+        details: [
+          {
+            ...makeSaveDto().details[0],
+            osl_tracking_type: 'BATCH' as const,
+            osl_batch_id: null,
+            osl_batch_no: null,
+          },
+        ],
+      }),
+    );
+
+    expect(itemStockLedgerService.syncFromOpeningStockDocument).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        details: [expect.objectContaining({ osl_batch_id: null, osl_batch_no: null })],
+      }),
+    );
+    expect(result.details[0].osl_batch_id).toBe('generated-batch-1');
+    expect(result.details[0].osl_batch_no).toBe('B-001');
+  });
+
   it('updates opening stock by voucher id and replaces existing detail rows', async () => {
     const existingVoucherHeader = makeVoucherHeaderRecord();
     const updatedVoucherHeader = makeVoucherHeaderRecord({
@@ -506,14 +549,17 @@ describe('OpeningStockService', () => {
       avhVoucherNo: BigInt(12),
     });
 
-    (updateAccountVoucherHeader as jest.MockedFunction<typeof updateAccountVoucherHeader>).mockResolvedValue(
-      updatedVoucherHeader,
-    );
+    (
+      updateAccountVoucherHeader as jest.MockedFunction<typeof updateAccountVoucherHeader>
+    ).mockResolvedValue(updatedVoucherHeader);
     tx.openingStockHeader.findFirst
       .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(existingVoucherHeader))
       .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(existingVoucherHeader))
+      .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(updatedVoucherHeader))
       .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(updatedVoucherHeader));
-    tx.openingStockHeader.update.mockResolvedValue(makeOpeningHeaderWithVoucher(updatedVoucherHeader));
+    tx.openingStockHeader.update.mockResolvedValue(
+      makeOpeningHeaderWithVoucher(updatedVoucherHeader),
+    );
     tx.openingStockDetail.findMany.mockResolvedValue([makeDetailRecord()]);
     tx.openingStockDetail.deleteMany.mockResolvedValue({ count: 1 });
     tx.openingStockDetail.createMany.mockResolvedValue({ count: 1 });
@@ -597,14 +643,17 @@ describe('OpeningStockService', () => {
       avhVoucherNo: BigInt(12),
     });
 
-    (updateAccountVoucherHeader as jest.MockedFunction<typeof updateAccountVoucherHeader>).mockResolvedValue(
-      updatedVoucherHeader,
-    );
+    (
+      updateAccountVoucherHeader as jest.MockedFunction<typeof updateAccountVoucherHeader>
+    ).mockResolvedValue(updatedVoucherHeader);
     tx.openingStockHeader.findFirst
       .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(existingVoucherHeader))
       .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(existingVoucherHeader))
+      .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(updatedVoucherHeader))
       .mockResolvedValueOnce(makeOpeningHeaderWithVoucher(updatedVoucherHeader));
-    tx.openingStockHeader.update.mockResolvedValue(makeOpeningHeaderWithVoucher(updatedVoucherHeader));
+    tx.openingStockHeader.update.mockResolvedValue(
+      makeOpeningHeaderWithVoucher(updatedVoucherHeader),
+    );
     tx.openingStockDetail.findMany.mockResolvedValue([makeDetailRecord()]);
     tx.openingStockDetail.deleteMany.mockResolvedValue({ count: 1 });
     tx.openingStockDetail.createMany.mockResolvedValue({ count: 1 });
@@ -629,7 +678,9 @@ describe('OpeningStockService', () => {
 
   it('soft deletes opening stock by avh_voucher_id', async () => {
     const voucherHeader = makeVoucherHeaderRecord();
-    (softDeleteAccountVoucherHeader as jest.MockedFunction<typeof softDeleteAccountVoucherHeader>).mockResolvedValue(
+    (
+      softDeleteAccountVoucherHeader as jest.MockedFunction<typeof softDeleteAccountVoucherHeader>
+    ).mockResolvedValue(
       makeVoucherHeaderRecord({
         avhIsDeleted: true,
         avhIsActive: false,
@@ -712,7 +763,9 @@ describe('OpeningStockService', () => {
 
   it('gets opening stock by voucher id with enriched detail labels', async () => {
     const voucherHeader = makeVoucherHeaderRecord();
-    prisma.openingStockHeader.findFirst.mockResolvedValue(makeOpeningHeaderWithVoucher(voucherHeader));
+    prisma.openingStockHeader.findFirst.mockResolvedValue(
+      makeOpeningHeaderWithVoucher(voucherHeader),
+    );
     prisma.openingStockDetail.findMany.mockResolvedValue([makeDetailRecord()]);
 
     const result = await service.getByVoucherId(VOUCHER_ID);
@@ -734,7 +787,9 @@ describe('OpeningStockService', () => {
 
   it('gets opening stock by voucher ref no with scoped filters', async () => {
     const voucherHeader = makeVoucherHeaderRecord();
-    prisma.openingStockHeader.findFirst.mockResolvedValue(makeOpeningHeaderWithVoucher(voucherHeader));
+    prisma.openingStockHeader.findFirst.mockResolvedValue(
+      makeOpeningHeaderWithVoucher(voucherHeader),
+    );
     prisma.openingStockDetail.findMany.mockResolvedValue([makeDetailRecord()]);
 
     const result = await service.getByVoucherRefNo({
@@ -786,7 +841,9 @@ describe('OpeningStockService', () => {
   it('lists opening stock headers with resolved user names', async () => {
     const voucherHeader = makeVoucherHeaderRecord();
     prisma.openingStockHeader.count.mockResolvedValue(1);
-    prisma.openingStockHeader.findMany.mockResolvedValue([makeOpeningHeaderWithVoucher(voucherHeader)]);
+    prisma.openingStockHeader.findMany.mockResolvedValue([
+      makeOpeningHeaderWithVoucher(voucherHeader),
+    ]);
 
     const result = await service.list({
       page: 1,
