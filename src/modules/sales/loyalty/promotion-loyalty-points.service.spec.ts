@@ -1,9 +1,8 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import type { loyaltysch_gift, loyaltysch_list, loyaltysch_points } from '@prisma/client';
-import { RequestContextService } from '../../common/request-context/request-context.service';
-import { PrismaService } from '../../database/prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { LoyaltyScheme, LoyaltySchemeGift, LoyaltySchemePoint, Prisma } from '@prisma/client';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
 import { SaveLoyaltyGiftDto } from './dto/save-loyalty-gift.dto';
 import { SaveLoyaltyPointDto } from './dto/save-loyalty-point.dto';
@@ -11,7 +10,15 @@ import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
 import { PromotionLoyaltyPointsService } from './promotion-loyalty-points.service';
 
 type PrismaMock = {
-  loyaltysch_list: {
+  loyaltyScheme: {
+    create: jest.Mock;
+    findFirst: jest.Mock;
+    findMany: jest.Mock;
+    count: jest.Mock;
+    update: jest.Mock;
+  };
+  loyaltySchemePoint: {
+    aggregate: jest.Mock;
     create: jest.Mock;
     findFirst: jest.Mock;
     findMany: jest.Mock;
@@ -19,7 +26,8 @@ type PrismaMock = {
     update: jest.Mock;
     updateMany: jest.Mock;
   };
-  loyaltysch_points: {
+  loyaltySchemeGift: {
+    aggregate: jest.Mock;
     create: jest.Mock;
     findFirst: jest.Mock;
     findMany: jest.Mock;
@@ -27,90 +35,134 @@ type PrismaMock = {
     update: jest.Mock;
     updateMany: jest.Mock;
   };
-  loyaltysch_gift: {
+  loyaltySchemeParty: {
     create: jest.Mock;
-    findFirst: jest.Mock;
     findMany: jest.Mock;
-    count: jest.Mock;
     update: jest.Mock;
     updateMany: jest.Mock;
+  };
+  itemMaster: {
+    findFirst: jest.Mock;
+  };
+  unit: {
+    findFirst: jest.Mock;
   };
   $transaction: jest.Mock;
 };
 
-type LoyaltySchemeRecord = loyaltysch_list;
-type LoyaltyPointRecord = loyaltysch_points;
-type LoyaltyGiftRecord = loyaltysch_gift;
+const SCHEME_ID = '01963d86-caf0-7b26-89f0-58ac380a2d5e';
+const POINT_ID = '01963d86-caf0-7b26-89f0-58ac380a2d5f';
+const NEXT_POINT_ID = '01963d86-caf0-7b26-89f0-58ac380a2d60';
+const GIFT_ID = '01963d86-caf0-7b26-89f0-58ac380a2d61';
+const NEXT_GIFT_ID = '01963d86-caf0-7b26-89f0-58ac380a2d62';
+const COMPANY_ID = '01963d86-caf0-7b26-89f0-58ac380a2d63';
+const ITEM_ID = '01963d86-caf0-7b26-89f0-58ac380a2d64';
+const NEXT_ITEM_ID = '01963d86-caf0-7b26-89f0-58ac380a2d65';
+const UNIT_ID = '01963d86-caf0-7b26-89f0-58ac380a2d66';
+const USER_ID = '01963d86-caf0-7b26-89f0-58ac380a2d67';
+const BASE_DATE = new Date('2026-04-06T12:00:00.000Z');
 
-const makeSchemeRecord = (overrides: Partial<LoyaltySchemeRecord> = {}): LoyaltySchemeRecord =>
+const makeSchemeRecord = (overrides: Partial<LoyaltyScheme> = {}): LoyaltyScheme =>
   ({
-    ls_id: 1,
-    ls_code: 'LS001',
-    ls_name: 'Summer Rewards',
-    ls_type: 'GENERAL',
-    ls_apply_on: 'BILL_AMOUNT',
-    ls_bill_type: 'ALL',
-    ls_cust_type: 'ALL',
-    ls_item_type: 'ALL',
-    ls_start_date: new Date('2026-04-01T00:00:00.000Z'),
-    ls_end_date: new Date('2026-04-30T00:00:00.000Z'),
-    ls_comp_id: 1,
-    ls_branch_id: null,
-    ls_points_per_inr: new Prisma.Decimal('1.5000'),
-    ls_points_per_qty: new Prisma.Decimal('0'),
-    ls_min_bill_amount: new Prisma.Decimal('100.00'),
-    ls_max_points_per_bill: new Prisma.Decimal('500.00'),
-    ls_recur_apl: false,
-    ls_bal_apl: false,
-    ls_allow_point_earn: true,
-    ls_allow_point_redeem: false,
-    ls_allow_gift_redeem: false,
-    ls_is_active: true,
-    ls_is_deleted: false,
-    created_on: new Date('2026-04-06T12:00:00.000Z'),
-    created_by: 1001,
-    modified_on: new Date('2026-04-06T12:00:00.000Z'),
-    modified_by: 1001,
+    lsId: SCHEME_ID,
+    lsCode: 'LS001',
+    lsName: 'Summer Rewards',
+    lsType: 'REDEEM',
+    lsStatus: 'DRAFT',
+    lsAutoApply: true,
+    lsApplyOn: 'BILL_AMOUNT',
+    lsCalcOnAmountType: 'NET_AMOUNT',
+    lsBillType: 'ALL',
+    lsCustType: 'ALL',
+    lsItemType: 'ALL',
+    lsStartDate: new Date('2026-04-01T00:00:00.000Z'),
+    lsEndDate: new Date('2026-04-30T00:00:00.000Z'),
+    lsValidFromTime: null,
+    lsValidToTime: null,
+    lsValidWeekdays: null,
+    lsCompId: COMPANY_ID,
+    lsBranchId: null,
+    lsIncludeTaxForPoints: false,
+    lsRoundingMethod: 'FLOOR',
+    lsRecurApl: false,
+    lsBalApl: false,
+    lsAllowPointRedeem: false,
+    lsAllowGiftRedeem: false,
+    lsRedeemValuePerPoint: new Prisma.Decimal('1.5000'),
+    lsMinRedeemPoints: new Prisma.Decimal('100.00'),
+    lsMaxRedeemPointsPerBill: new Prisma.Decimal('500.00'),
+    lsMaxRedeemPercentPerBill: new Prisma.Decimal('25.00'),
+    lsRedeemMinBillAmount: new Prisma.Decimal('100.00'),
+    lsPointsValidDays: 30,
+    lsExpiryBasis: 'EARN_DATE',
+    lsRemarks: null,
+    lsIsActive: true,
+    lsIsDeleted: false,
+    lsSyncDate: null,
+    lsCreatedOn: BASE_DATE,
+    lsCreatedBy: USER_ID,
+    lsUpdatedOn: BASE_DATE,
+    lsUpdatedBy: USER_ID,
+    lsApprovedOn: null,
+    lsApprovedBy: null,
     ...overrides,
-  }) as LoyaltySchemeRecord;
+  }) as LoyaltyScheme;
 
-const makePointRecord = (overrides: Partial<LoyaltyPointRecord> = {}): LoyaltyPointRecord =>
+const makePointRecord = (overrides: Partial<LoyaltySchemePoint> = {}): LoyaltySchemePoint =>
   ({
-    lspt_id: 11,
-    lspt_ls_id: 1,
-    lspt_slno: 1,
-    lspt_item_id: 101,
-    lspt_unit_id: 1,
-    lspt_exceeds: new Prisma.Decimal('0.000'),
-    lspt_each: new Prisma.Decimal('1.000'),
-    lspt_factor: new Prisma.Decimal('1.0000'),
-    lspt_points: new Prisma.Decimal('10.00'),
-    lspt_is_active: true,
-    lspt_is_deleted: false,
-    created_on: new Date('2026-04-06T12:00:00.000Z'),
-    created_by: 1001,
-    modified_on: new Date('2026-04-06T12:00:00.000Z'),
-    modified_by: 1001,
+    lsptId: POINT_ID,
+    lsptLsId: SCHEME_ID,
+    lsptSlno: 1,
+    lsptItemId: ITEM_ID,
+    lsptUnitId: UNIT_ID,
+    lsptExceeds: new Prisma.Decimal('0.000'),
+    lsptEach: new Prisma.Decimal('1.000'),
+    lsptFactor: new Prisma.Decimal('10.0000'),
+    lsptPoints: new Prisma.Decimal('10.00'),
+    lsptNotes: null,
+    lsptIsActive: true,
+    lsptIsDeleted: false,
+    lsptSyncDate: null,
+    lsptCreatedOn: BASE_DATE,
+    lsptCreatedBy: USER_ID,
+    lsptUpdatedOn: BASE_DATE,
+    lsptUpdatedBy: USER_ID,
     ...overrides,
-  }) as LoyaltyPointRecord;
+  }) as LoyaltySchemePoint;
 
-const makeGiftRecord = (overrides: Partial<LoyaltyGiftRecord> = {}): LoyaltyGiftRecord =>
+const makeGiftRecord = (overrides: Partial<LoyaltySchemeGift> = {}): LoyaltySchemeGift =>
   ({
-    gift_ls_id: 1,
-    gift_slno: 1,
-    gift_item_id: 101,
-    gift_unit_id: 1,
-    gift_qty: new Prisma.Decimal('1.000'),
-    gift_points: new Prisma.Decimal('100.00'),
-    gift_repeat: false,
-    gift_is_active: true,
-    gift_is_deleted: false,
-    created_on: new Date('2026-04-06T12:00:00.000Z'),
-    created_by: 1001,
-    modified_on: new Date('2026-04-06T12:00:00.000Z'),
-    modified_by: 1001,
+    lsgId: GIFT_ID,
+    lsgLsId: SCHEME_ID,
+    lsgSlno: 1,
+    lsgItemId: ITEM_ID,
+    lsgUnitId: UNIT_ID,
+    lsgItemQty: new Prisma.Decimal('1.000'),
+    lsgRedeemPoints: new Prisma.Decimal('100.00'),
+    lsgRepeat: false,
+    lsgNotes: null,
+    lsgIsActive: true,
+    lsgIsDeleted: false,
+    lsgSyncDate: null,
+    lsgCreatedOn: BASE_DATE,
+    lsgCreatedBy: USER_ID,
+    lsgUpdatedOn: BASE_DATE,
+    lsgUpdatedBy: USER_ID,
     ...overrides,
-  }) as LoyaltyGiftRecord;
+  }) as LoyaltySchemeGift;
+
+const makeSchemeWithChildren = (
+  overrides: Partial<LoyaltyScheme> = {},
+  children: {
+    points?: LoyaltySchemePoint[];
+    gifts?: LoyaltySchemeGift[];
+  } = {},
+) => ({
+  ...makeSchemeRecord(overrides),
+  parties: [],
+  points: children.points ?? [],
+  gifts: children.gifts ?? [],
+});
 
 const getFirstCreateCallData = <T>(mockFn: jest.Mock): T => {
   const [call] = mockFn.mock.calls as Array<[{ data: T }]>;
@@ -125,7 +177,15 @@ describe('PromotionLoyaltyPointsService', () => {
 
   beforeEach(() => {
     prisma = {
-      loyaltysch_list: {
+      loyaltyScheme: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
+        update: jest.fn(),
+      },
+      loyaltySchemePoint: {
+        aggregate: jest.fn(),
         create: jest.fn(),
         findFirst: jest.fn(),
         findMany: jest.fn(),
@@ -133,7 +193,8 @@ describe('PromotionLoyaltyPointsService', () => {
         update: jest.fn(),
         updateMany: jest.fn(),
       },
-      loyaltysch_points: {
+      loyaltySchemeGift: {
+        aggregate: jest.fn(),
         create: jest.fn(),
         findFirst: jest.fn(),
         findMany: jest.fn(),
@@ -141,13 +202,17 @@ describe('PromotionLoyaltyPointsService', () => {
         update: jest.fn(),
         updateMany: jest.fn(),
       },
-      loyaltysch_gift: {
+      loyaltySchemeParty: {
         create: jest.fn(),
-        findFirst: jest.fn(),
-        findMany: jest.fn(),
-        count: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
         updateMany: jest.fn(),
+      },
+      itemMaster: {
+        findFirst: jest.fn(),
+      },
+      unit: {
+        findFirst: jest.fn(),
       },
       $transaction: jest.fn(),
     };
@@ -162,7 +227,7 @@ describe('PromotionLoyaltyPointsService', () => {
     };
 
     requestContextService = {
-      getUserId: jest.fn().mockReturnValue('user-1'),
+      getUserId: jest.fn().mockReturnValue(USER_ID),
     };
 
     service = new PromotionLoyaltyPointsService(
@@ -173,49 +238,49 @@ describe('PromotionLoyaltyPointsService', () => {
   });
 
   it('creates a loyalty scheme', async () => {
-    prisma.loyaltysch_list.findFirst.mockResolvedValueOnce(null);
-    prisma.loyaltysch_list.create.mockResolvedValueOnce(makeSchemeRecord());
+    prisma.loyaltyScheme.create.mockResolvedValueOnce(makeSchemeRecord());
 
     const input: SaveLoyaltySchemeDto = {
       ls_name: 'Summer Rewards',
-      ls_type: 'GENERAL',
+      ls_type: 'REDEEM',
       ls_start_date: '2026-04-01',
       ls_end_date: '2026-04-30',
-      ls_comp_id: 1,
-      created_by: 1001,
+      ls_comp_id: COMPANY_ID,
+      ls_created_by: USER_ID,
     };
 
     const result = await service.saveScheme(input);
 
-    expect(prisma.loyaltysch_list.create).toHaveBeenCalledTimes(1);
-    const createSchemeData = getFirstCreateCallData<Prisma.loyaltysch_listUncheckedCreateInput>(
-      prisma.loyaltysch_list.create,
+    expect(prisma.loyaltyScheme.create).toHaveBeenCalledTimes(1);
+    const createSchemeData = getFirstCreateCallData<Prisma.LoyaltySchemeUncheckedCreateInput>(
+      prisma.loyaltyScheme.create,
     );
-    expect(createSchemeData.ls_name).toBe('Summer Rewards');
-    expect(result.ls_id).toBe(1);
+    expect(createSchemeData.lsName).toBe('Summer Rewards');
+    expect(createSchemeData.lsCompId).toBe(COMPANY_ID);
+    expect(result.ls_id).toBe(SCHEME_ID);
     expect(result.points).toEqual([]);
     expect(result.gifts).toEqual([]);
     expect(auditLogService.logEntityChange).toHaveBeenCalledTimes(1);
   });
 
   it('rejects duplicate scheme codes', async () => {
-    prisma.loyaltysch_list.findFirst.mockResolvedValueOnce(makeSchemeRecord());
+    prisma.loyaltyScheme.findFirst.mockResolvedValueOnce({ lsId: SCHEME_ID });
 
     const input: SaveLoyaltySchemeDto = {
       ls_code: 'LS001',
       ls_name: 'Summer Rewards',
-      ls_type: 'GENERAL',
+      ls_type: 'REDEEM',
       ls_start_date: '2026-04-01',
       ls_end_date: '2026-04-30',
-      ls_comp_id: 1,
+      ls_comp_id: COMPANY_ID,
     };
 
     await expect(service.saveScheme(input)).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('lists schemes with decimal fields mapped to numbers', async () => {
-    prisma.loyaltysch_list.count.mockResolvedValueOnce(1);
-    prisma.loyaltysch_list.findMany.mockResolvedValueOnce([makeSchemeRecord()]);
+    prisma.loyaltyScheme.count.mockResolvedValueOnce(1);
+    prisma.loyaltyScheme.findMany.mockResolvedValueOnce([makeSchemeWithChildren()]);
 
     const query: ListLoyaltySchemeQueryDto = {
       page: 1,
@@ -225,68 +290,73 @@ describe('PromotionLoyaltyPointsService', () => {
     const result = await service.listSchemes(query);
 
     expect(result.meta.total).toBe(1);
-    expect(result.items[0].ls_points_per_inr).toBe(1.5);
-    expect(result.items[0].ls_min_bill_amount).toBe(100);
+    expect(result.items[0].ls_redeem_value_per_point).toBe(1.5);
+    expect(result.items[0].ls_min_redeem_points).toBe(100);
   });
 
   it('returns a scheme with nested active points and gifts', async () => {
-    prisma.loyaltysch_list.findFirst.mockResolvedValueOnce(makeSchemeRecord());
-    prisma.loyaltysch_points.findMany.mockResolvedValueOnce([makePointRecord()]);
-    prisma.loyaltysch_gift.findMany.mockResolvedValueOnce([makeGiftRecord()]);
+    prisma.loyaltyScheme.findFirst.mockResolvedValueOnce(
+      makeSchemeWithChildren({}, { points: [makePointRecord()], gifts: [makeGiftRecord()] }),
+    );
 
-    const result = await service.getSchemeById(1);
+    const result = await service.getSchemeById(SCHEME_ID);
 
-    expect(result.ls_id).toBe(1);
+    expect(result.ls_id).toBe(SCHEME_ID);
     expect(result.points).toHaveLength(1);
     expect(result.gifts).toHaveLength(1);
     expect(result.points[0].lspt_points).toBe(10);
-    expect(result.gifts[0].gift_points).toBe(100);
+    expect(result.gifts[0].lsg_redeem_points).toBe(100);
   });
 
   it('soft deletes a scheme and cascades soft delete to points and gifts', async () => {
-    prisma.loyaltysch_list.findFirst.mockResolvedValueOnce(makeSchemeRecord());
-    prisma.loyaltysch_list.updateMany.mockResolvedValueOnce({ count: 1 });
-    prisma.loyaltysch_points.updateMany.mockResolvedValueOnce({ count: 2 });
-    prisma.loyaltysch_gift.updateMany.mockResolvedValueOnce({ count: 1 });
+    prisma.loyaltyScheme.findFirst.mockResolvedValueOnce(
+      makeSchemeWithChildren({}, { points: [makePointRecord()], gifts: [makeGiftRecord()] }),
+    );
+    prisma.loyaltyScheme.update.mockResolvedValueOnce(makeSchemeRecord({ lsIsDeleted: true }));
+    prisma.loyaltySchemePoint.updateMany.mockResolvedValueOnce({ count: 1 });
+    prisma.loyaltySchemeGift.updateMany.mockResolvedValueOnce({ count: 1 });
+    prisma.loyaltySchemeParty.updateMany.mockResolvedValueOnce({ count: 0 });
 
-    const result = await service.softDeleteScheme(1, 1002);
+    const result = await service.softDeleteScheme(SCHEME_ID, USER_ID);
 
-    expect(result).toEqual({ ls_id: 1, deleted: true });
-    expect(prisma.loyaltysch_points.updateMany).toHaveBeenCalledTimes(1);
-    expect(prisma.loyaltysch_gift.updateMany).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ls_id: SCHEME_ID, deleted: true });
+    expect(prisma.loyaltySchemePoint.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.loyaltySchemeGift.updateMany).toHaveBeenCalledTimes(1);
     expect(auditLogService.logEntityChange).toHaveBeenCalledTimes(1);
   });
 
   it('creates a loyalty point with auto-assigned sequence number', async () => {
-    prisma.loyaltysch_list.findFirst.mockResolvedValueOnce(makeSchemeRecord());
-    prisma.loyaltysch_points.findFirst
-      .mockResolvedValueOnce(makePointRecord({ lspt_slno: 2 }))
-      .mockResolvedValueOnce(null);
-    prisma.loyaltysch_points.create.mockResolvedValueOnce(
-      makePointRecord({ lspt_id: 12, lspt_slno: 3 }),
+    prisma.loyaltyScheme.findFirst.mockResolvedValueOnce({ lsId: SCHEME_ID, lsItemType: 'ALL' });
+    prisma.loyaltySchemePoint.aggregate.mockResolvedValueOnce({ _max: { lsptSlno: 2 } });
+    prisma.loyaltySchemePoint.findFirst.mockResolvedValueOnce(null);
+    prisma.loyaltySchemePoint.create.mockResolvedValueOnce(
+      makePointRecord({ lsptId: NEXT_POINT_ID, lsptSlno: 3 }),
     );
 
     const input: SaveLoyaltyPointDto = {
-      lspt_ls_id: 1,
+      lspt_ls_id: SCHEME_ID,
+      lspt_each: 1,
       lspt_points: 10,
-      created_by: 1001,
+      lspt_created_by: USER_ID,
     };
 
     const result = await service.savePoint(input);
 
-    expect(prisma.loyaltysch_points.create).toHaveBeenCalledTimes(1);
-    const createPointData = getFirstCreateCallData<Prisma.loyaltysch_pointsUncheckedCreateInput>(
-      prisma.loyaltysch_points.create,
+    expect(prisma.loyaltySchemePoint.create).toHaveBeenCalledTimes(1);
+    const createPointData = getFirstCreateCallData<Prisma.LoyaltySchemePointUncheckedCreateInput>(
+      prisma.loyaltySchemePoint.create,
     );
-    expect(createPointData.lspt_slno).toBe(3);
+    expect(createPointData.lsptSlno).toBe(3);
+    expect(createPointData.lsptFactor).toBe(10);
     expect(result.lspt_slno).toBe(3);
   });
 
   it('rejects child writes when the parent scheme is missing', async () => {
-    prisma.loyaltysch_list.findFirst.mockResolvedValueOnce(null);
+    prisma.loyaltyScheme.findFirst.mockResolvedValueOnce(null);
 
     const input: SaveLoyaltyPointDto = {
-      lspt_ls_id: 1,
+      lspt_ls_id: SCHEME_ID,
+      lspt_each: 1,
       lspt_points: 10,
     };
 
@@ -294,45 +364,51 @@ describe('PromotionLoyaltyPointsService', () => {
   });
 
   it('creates a loyalty gift with auto-assigned sequence number', async () => {
-    prisma.loyaltysch_list.findFirst.mockResolvedValueOnce(makeSchemeRecord());
-    prisma.loyaltysch_gift.findFirst.mockResolvedValueOnce(makeGiftRecord({ gift_slno: 2 }));
-    prisma.loyaltysch_gift.findFirst.mockResolvedValueOnce(null);
-    prisma.loyaltysch_gift.create.mockResolvedValueOnce(
-      makeGiftRecord({ gift_slno: 3, gift_item_id: 202 }),
+    prisma.loyaltyScheme.findFirst.mockResolvedValueOnce({ lsId: SCHEME_ID });
+    prisma.itemMaster.findFirst.mockResolvedValueOnce({ itemId: NEXT_ITEM_ID });
+    prisma.unit.findFirst.mockResolvedValueOnce({ unit_id: UNIT_ID });
+    prisma.loyaltySchemeGift.aggregate.mockResolvedValueOnce({ _max: { lsgSlno: 2 } });
+    prisma.loyaltySchemeGift.findFirst.mockResolvedValueOnce(null);
+    prisma.loyaltySchemeGift.create.mockResolvedValueOnce(
+      makeGiftRecord({ lsgId: NEXT_GIFT_ID, lsgSlno: 3, lsgItemId: NEXT_ITEM_ID }),
     );
 
     const input: SaveLoyaltyGiftDto = {
-      gift_ls_id: 1,
-      gift_item_id: 202,
-      gift_unit_id: 1,
-      gift_qty: 1,
-      gift_points: 150,
-      created_by: 1001,
+      lsg_ls_id: SCHEME_ID,
+      lsg_item_id: NEXT_ITEM_ID,
+      lsg_unit_id: UNIT_ID,
+      lsg_item_qty: 1,
+      lsg_redeem_points: 150,
+      lsg_created_by: USER_ID,
     };
 
     const result = await service.saveGift(input);
 
-    expect(prisma.loyaltysch_gift.create).toHaveBeenCalledTimes(1);
-    const createGiftData = getFirstCreateCallData<Prisma.loyaltysch_giftUncheckedCreateInput>(
-      prisma.loyaltysch_gift.create,
+    expect(prisma.loyaltySchemeGift.create).toHaveBeenCalledTimes(1);
+    const createGiftData = getFirstCreateCallData<Prisma.LoyaltySchemeGiftUncheckedCreateInput>(
+      prisma.loyaltySchemeGift.create,
     );
-    expect(createGiftData.gift_slno).toBe(3);
-    expect(result.gift_slno).toBe(3);
+    expect(createGiftData.lsgSlno).toBe(3);
+    expect(createGiftData.lsgItemId).toBe(NEXT_ITEM_ID);
+    expect(result.lsg_slno).toBe(3);
   });
 
   it('throws not found when fetching a missing point', async () => {
-    prisma.loyaltysch_points.findFirst.mockResolvedValueOnce(null);
+    prisma.loyaltySchemePoint.findFirst.mockResolvedValueOnce(null);
 
-    await expect(service.getPointById(99)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getPointById(POINT_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('soft deletes a point row', async () => {
-    prisma.loyaltysch_points.findFirst.mockResolvedValueOnce(makePointRecord());
-    prisma.loyaltysch_points.updateMany.mockResolvedValueOnce({ count: 1 });
+    prisma.loyaltySchemePoint.findFirst.mockResolvedValueOnce(makePointRecord());
+    prisma.loyaltySchemePoint.update.mockResolvedValueOnce(
+      makePointRecord({ lsptIsDeleted: true, lsptIsActive: false }),
+    );
 
-    const result = await service.softDeletePoint(11, 1002);
+    const result = await service.softDeletePoint(POINT_ID, USER_ID);
 
-    expect(result).toEqual({ lspt_id: 11, deleted: true });
-    expect(prisma.loyaltysch_points.updateMany).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ lspt_id: POINT_ID, deleted: true });
+    expect(prisma.loyaltySchemePoint.update).toHaveBeenCalledTimes(1);
+    expect(auditLogService.logEntityChange).toHaveBeenCalledTimes(1);
   });
 });

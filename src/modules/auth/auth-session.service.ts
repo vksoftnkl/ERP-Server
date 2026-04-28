@@ -9,7 +9,6 @@ type CachedAccessTokenSession = {
   user_name: string;
   token_hash: string;
   iat: number;
-  exp: number;
 };
 
 const AUTH_SESSION_KEY_PREFIX = 'auth:session';
@@ -27,21 +26,18 @@ export class AuthSessionService {
       return;
     }
 
-    const ttlSeconds = Math.max(payload.exp - Math.floor(Date.now() / 1000), 1);
     const session: CachedAccessTokenSession = {
       sid: payload.sid,
       sub: payload.sub,
       user_name: payload.user_name,
       token_hash: this.hashToken(token),
       iat: payload.iat,
-      exp: payload.exp,
     };
 
     try {
       await this.redisCacheService.set(
         this.buildSessionKey(payload.sid),
         JSON.stringify(session),
-        ttlSeconds,
       );
     } catch (error) {
       if (error instanceof ServiceUnavailableException) {
@@ -81,7 +77,6 @@ export class AuthSessionService {
       cachedSession.sid !== payload.sid ||
       cachedSession.sub !== payload.sub ||
       cachedSession.user_name !== payload.user_name ||
-      cachedSession.exp !== payload.exp ||
       cachedSession.token_hash !== this.hashToken(token)
     ) {
       throw new UnauthorizedException('Access token is no longer active');
@@ -120,8 +115,7 @@ export class AuthSessionService {
         typeof parsedValue.sub !== 'string' ||
         typeof parsedValue.user_name !== 'string' ||
         typeof parsedValue.token_hash !== 'string' ||
-        typeof parsedValue.iat !== 'number' ||
-        typeof parsedValue.exp !== 'number'
+        typeof parsedValue.iat !== 'number'
       ) {
         return null;
       }

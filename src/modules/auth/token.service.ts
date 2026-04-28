@@ -10,7 +10,6 @@ export type AccessTokenClaims = {
 
 export type AccessTokenPayload = AccessTokenClaims & {
   iat: number;
-  exp: number;
 };
 
 export type SignedAccessToken = {
@@ -21,14 +20,9 @@ export type SignedAccessToken = {
 @Injectable()
 export class TokenService {
   private readonly secret: string;
-  private readonly accessTokenTtlSeconds: number;
 
   constructor(private readonly configService: ConfigService) {
     this.secret = this.configService.get<string>('auth.jwtSecret', '');
-    this.accessTokenTtlSeconds = this.configService.get<number>(
-      'auth.accessTokenTtlSeconds',
-      3600,
-    );
   }
 
   signAccessToken(claims: AccessTokenClaims): SignedAccessToken {
@@ -40,7 +34,6 @@ export class TokenService {
     const payload: AccessTokenPayload = {
       ...claims,
       iat: now,
-      exp: now + this.accessTokenTtlSeconds,
     };
 
     const headerSegment = this.encodeBase64Url({
@@ -113,7 +106,6 @@ export class TokenService {
     const userName = payload.user_name;
     const sessionId = payload.sid;
     const issuedAt = payload.iat;
-    const expiresAt = payload.exp;
 
     if (typeof sub !== 'string' || sub.length === 0) {
       throw new UnauthorizedException('Invalid access token');
@@ -135,21 +127,11 @@ export class TokenService {
       throw new UnauthorizedException('Invalid access token');
     }
 
-    if (typeof expiresAt !== 'number' || !Number.isInteger(expiresAt) || expiresAt <= issuedAt) {
-      throw new UnauthorizedException('Invalid access token');
-    }
-
-    const now = Math.floor(Date.now() / 1000);
-    if (expiresAt <= now) {
-      throw new UnauthorizedException('Access token expired');
-    }
-
     const normalizedPayload: AccessTokenPayload = {
       sub,
       user_name: userName,
       sid: sessionId,
       iat: issuedAt,
-      exp: expiresAt,
     };
 
     return normalizedPayload;

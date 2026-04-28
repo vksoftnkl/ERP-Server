@@ -62,12 +62,16 @@ export class RedisCacheService implements OnModuleDestroy {
     }
     return response;
   }
-  async set(key: string, value: string, ttlSeconds: number): Promise<void> {
+  async set(key: string, value: string, ttlSeconds?: number | null): Promise<void> {
     if (!this.enabled) {
       return;
     }
-    const normalizedTtl = Math.max(1, Math.floor(ttlSeconds));
-    const response = await this.runCommand(['SET', key, value, 'EX', normalizedTtl.toString()]);
+    const command = ['SET', key, value];
+    if (ttlSeconds !== undefined && ttlSeconds !== null) {
+      const normalizedTtl = Math.max(1, Math.floor(ttlSeconds));
+      command.push('EX', normalizedTtl.toString());
+    }
+    const response = await this.runCommand(command);
     if (response !== 'OK') {
       throw new ServiceUnavailableException('Redis cache failed to persist the value');
     }

@@ -13,6 +13,12 @@ import {
 const DEFAULT_SEARCH_LIMIT = 20;
 const MAX_LOOKUP_LIMIT = 100;
 const LOOKUP_NAME_NOISE_TOKENS = new Set(['master', 'lookup', 'dropdown']);
+const CONFIGURED_SQL_TABLE_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\binventory\s*\.\s*units\b/gi, 'inventory.item_unit_master'],
+  [/"inventory"\s*\.\s*"units"/gi, '"inventory"."item_unit_master"'],
+  [/\baccounts\s*\.\s*branch_master\b/gi, 'public.branch_master'],
+  [/"accounts"\s*\.\s*"branch_master"/gi, '"public"."branch_master"'],
+];
 // ─── Aliases ─────────────────────────────────────────────────────────────────
 const MODULE_DROPDOWN_NAME_ALIASES: Record<LookupModuleKey, string[]> = {
   companies: ['companies', 'company'],
@@ -715,9 +721,16 @@ export class MasterLookupService {
     if (!trimmed) return undefined;
     if (!/^(select|with)\b/i.test(trimmed)) return undefined;
     if (trimmed.includes(';')) return undefined;
-    return trimmed.replace(
+    const normalized = trimmed.replace(
       /,(\s*(from|where|group\s+by|order\s+by|having|union|limit|offset)\b)/gi,
       '$1',
+    );
+    return this.normalizeConfiguredSqlTableReferences(normalized);
+  }
+  private normalizeConfiguredSqlTableReferences(sql: string): string {
+    return CONFIGURED_SQL_TABLE_REPLACEMENTS.reduce(
+      (current, [pattern, replacement]) => current.replace(pattern, replacement),
+      sql,
     );
   }
   // ─── Configured Row Mapping ───────────────────────────────────────────────────

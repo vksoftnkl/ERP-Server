@@ -43,7 +43,7 @@ Base URL:
 - Request payload limit is configurable with `REQUEST_BODY_LIMIT` (default `10mb`).
 - Bind host/IP is configurable with `HOST` (default `0.0.0.0`).
 - Access tokens can be stored and validated through Redis by enabling `REDIS_ENABLED=true`.
-- Access token lifetime is configurable with `ACCESS_TOKEN_TTL_SECONDS` (default `3600`).
+- Access tokens do not expire by time; Redis-backed sessions remain active until revoked or deleted.
 
 LAN hosting example (`.env`):
 

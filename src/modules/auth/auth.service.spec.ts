@@ -19,7 +19,7 @@ type UsersServiceMock = {
 
 type TokenServiceMock = {
   signAccessToken: jest.Mock<
-    { token: string; payload: { sub: string; user_name: string; sid: string; iat: number; exp: number } },
+    { token: string; payload: { sub: string; user_name: string; sid: string; iat: number } },
     [{ sub: string; user_name: string; sid: string }]
   >;
 };
@@ -28,7 +28,7 @@ type AuthSessionServiceMock = {
   createSessionId: jest.Mock<string, []>;
   storeAccessTokenSession: jest.Mock<
     Promise<void>,
-    [string, { sub: string; user_name: string; sid: string; iat: number; exp: number }]
+    [string, { sub: string; user_name: string; sid: string; iat: number }]
   >;
 };
 
@@ -74,7 +74,7 @@ describe('AuthService', () => {
     tokenService = {
       signAccessToken: jest
         .fn<
-          { token: string; payload: { sub: string; user_name: string; sid: string; iat: number; exp: number } },
+          { token: string; payload: { sub: string; user_name: string; sid: string; iat: number } },
           [{ sub: string; user_name: string; sid: string }]
         >()
         .mockReturnValue({
@@ -84,7 +84,6 @@ describe('AuthService', () => {
             user_name: 'john.doe',
             sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
             iat: 1_710_979_200,
-            exp: 1_710_982_800,
           },
         }),
     };
@@ -93,7 +92,7 @@ describe('AuthService', () => {
       storeAccessTokenSession: jest
         .fn<
           Promise<void>,
-          [string, { sub: string; user_name: string; sid: string; iat: number; exp: number }]
+          [string, { sub: string; user_name: string; sid: string; iat: number }]
         >()
         .mockResolvedValue(undefined),
     };
@@ -147,7 +146,6 @@ describe('AuthService', () => {
         user_name: 'john.doe',
         sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
         iat: 1_710_979_200,
-        exp: 1_710_982_800,
       },
     );
     expect(prismaService.userLoginSession.create).toHaveBeenCalledWith({

@@ -14,34 +14,57 @@ import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
 import { PromotionLoyaltyPointsController } from './promotion-loyalty-points.controller';
 import { PromotionLoyaltyPointsService } from './promotion-loyalty-points.service';
 
+const SCHEME_ID = '01963d86-caf0-7b26-89f0-58ac380a2d5e';
+const POINT_ID = '01963d86-caf0-7b26-89f0-58ac380a2d5f';
+const GIFT_ID = '01963d86-caf0-7b26-89f0-58ac380a2d61';
+const COMPANY_ID = '01963d86-caf0-7b26-89f0-58ac380a2d63';
+const ITEM_ID = '01963d86-caf0-7b26-89f0-58ac380a2d64';
+const UNIT_ID = '01963d86-caf0-7b26-89f0-58ac380a2d66';
+const USER_ID = '01963d86-caf0-7b26-89f0-58ac380a2d67';
+
 const schemePayload = {
-  ls_id: 1,
+  ls_id: SCHEME_ID,
   ls_code: 'LS001',
   ls_name: 'Summer Rewards',
-  ls_type: 'GENERAL',
+  ls_type: 'REDEEM',
+  ls_status: 'DRAFT',
+  ls_auto_apply: true,
   ls_apply_on: 'BILL_AMOUNT',
+  ls_calc_on_amount_type: 'NET_AMOUNT',
   ls_bill_type: 'ALL',
   ls_cust_type: 'ALL',
   ls_item_type: 'ALL',
   ls_start_date: '2026-04-01T00:00:00.000Z',
   ls_end_date: '2026-04-30T00:00:00.000Z',
-  ls_comp_id: 1,
+  ls_valid_from_time: null,
+  ls_valid_to_time: null,
+  ls_valid_weekdays: null,
+  ls_comp_id: COMPANY_ID,
   ls_branch_id: null,
-  ls_points_per_inr: 1.5,
-  ls_points_per_qty: 0,
-  ls_min_bill_amount: 100,
-  ls_max_points_per_bill: 500,
+  ls_include_tax_for_points: false,
+  ls_rounding_method: 'FLOOR',
   ls_recur_apl: false,
   ls_bal_apl: false,
-  ls_allow_point_earn: true,
   ls_allow_point_redeem: false,
   ls_allow_gift_redeem: false,
+  ls_redeem_value_per_point: 1.5,
+  ls_min_redeem_points: 100,
+  ls_max_redeem_points_per_bill: 500,
+  ls_max_redeem_percent_per_bill: 25,
+  ls_redeem_min_bill_amount: 100,
+  ls_points_valid_days: 30,
+  ls_expiry_basis: 'EARN_DATE',
+  ls_remarks: null,
   ls_is_active: true,
   ls_is_deleted: false,
-  created_on: '2026-04-06T12:00:00.000Z',
-  created_by: 1001,
-  modified_on: '2026-04-06T12:00:00.000Z',
-  modified_by: 1001,
+  ls_sync_date: null,
+  ls_created_on: '2026-04-06T12:00:00.000Z',
+  ls_created_by: USER_ID,
+  ls_updated_on: '2026-04-06T12:00:00.000Z',
+  ls_updated_by: USER_ID,
+  ls_approved_on: null,
+  ls_approved_by: null,
+  parties: [],
   points: [],
   gifts: [],
 };
@@ -53,37 +76,42 @@ const schemeSummaryPayload = {
 };
 
 const pointPayload = {
-  lspt_id: 11,
-  lspt_ls_id: 1,
+  lspt_id: POINT_ID,
+  lspt_ls_id: SCHEME_ID,
   lspt_slno: 1,
-  lspt_item_id: 101,
-  lspt_unit_id: 1,
+  lspt_item_id: ITEM_ID,
+  lspt_unit_id: UNIT_ID,
   lspt_exceeds: 0,
   lspt_each: 1,
-  lspt_factor: 1,
+  lspt_factor: 10,
   lspt_points: 10,
+  lspt_notes: null,
   lspt_is_active: true,
   lspt_is_deleted: false,
-  created_on: '2026-04-06T12:00:00.000Z',
-  created_by: 1001,
-  modified_on: '2026-04-06T12:00:00.000Z',
-  modified_by: 1001,
+  lspt_sync_date: null,
+  lspt_created_on: '2026-04-06T12:00:00.000Z',
+  lspt_created_by: USER_ID,
+  lspt_updated_on: '2026-04-06T12:00:00.000Z',
+  lspt_updated_by: USER_ID,
 };
 
 const giftPayload = {
-  gift_ls_id: 1,
-  gift_slno: 1,
-  gift_item_id: 101,
-  gift_unit_id: 1,
-  gift_qty: 1,
-  gift_points: 100,
-  gift_repeat: false,
-  gift_is_active: true,
-  gift_is_deleted: false,
-  created_on: '2026-04-06T12:00:00.000Z',
-  created_by: 1001,
-  modified_on: '2026-04-06T12:00:00.000Z',
-  modified_by: 1001,
+  lsg_id: GIFT_ID,
+  lsg_ls_id: SCHEME_ID,
+  lsg_slno: 1,
+  lsg_item_id: ITEM_ID,
+  lsg_unit_id: UNIT_ID,
+  lsg_item_qty: 1,
+  lsg_redeem_points: 100,
+  lsg_repeat: false,
+  lsg_notes: null,
+  lsg_is_active: true,
+  lsg_is_deleted: false,
+  lsg_sync_date: null,
+  lsg_created_on: '2026-04-06T12:00:00.000Z',
+  lsg_created_by: USER_ID,
+  lsg_updated_on: '2026-04-06T12:00:00.000Z',
+  lsg_updated_by: USER_ID,
 };
 
 describe('PromotionLoyaltyPointsController', () => {
@@ -124,10 +152,10 @@ describe('PromotionLoyaltyPointsController', () => {
 
     const payload: SaveLoyaltySchemeDto = {
       ls_name: 'Summer Rewards',
-      ls_type: 'GENERAL',
+      ls_type: 'REDEEM',
       ls_start_date: '2026-04-01',
       ls_end_date: '2026-04-30',
-      ls_comp_id: 1,
+      ls_comp_id: COMPANY_ID,
     };
 
     await expect(controller.saveScheme(payload)).resolves.toEqual({
@@ -166,7 +194,7 @@ describe('PromotionLoyaltyPointsController', () => {
   it('wraps scheme get response', async () => {
     serviceMock.getSchemeById.mockResolvedValue(schemePayload);
 
-    const query: LoyaltySchemeIdQueryDto = { ls_id: 1 };
+    const query: LoyaltySchemeIdQueryDto = { ls_id: SCHEME_ID };
 
     await expect(controller.getSchemeById(query)).resolves.toEqual({
       success: true,
@@ -176,14 +204,14 @@ describe('PromotionLoyaltyPointsController', () => {
   });
 
   it('wraps scheme delete response', async () => {
-    serviceMock.softDeleteScheme.mockResolvedValue({ ls_id: 1, deleted: true });
+    serviceMock.softDeleteScheme.mockResolvedValue({ ls_id: SCHEME_ID, deleted: true });
 
-    const query: DeleteLoyaltySchemeQueryDto = { ls_id: 1, modified_by: 1001 };
+    const query: DeleteLoyaltySchemeQueryDto = { ls_id: SCHEME_ID, ls_updated_by: USER_ID };
 
     await expect(controller.deleteScheme(query)).resolves.toEqual({
       success: true,
       message: 'Loyalty scheme deleted successfully',
-      data: { ls_id: 1, deleted: true },
+      data: { ls_id: SCHEME_ID, deleted: true },
     });
   });
 
@@ -191,7 +219,8 @@ describe('PromotionLoyaltyPointsController', () => {
     serviceMock.savePoint.mockResolvedValue(pointPayload);
 
     const payload: SaveLoyaltyPointDto = {
-      lspt_ls_id: 1,
+      lspt_ls_id: SCHEME_ID,
+      lspt_each: 1,
       lspt_points: 10,
     };
 
@@ -213,7 +242,7 @@ describe('PromotionLoyaltyPointsController', () => {
       },
     });
 
-    const query: ListLoyaltyPointQueryDto = { lspt_ls_id: 1, page: 1, limit: 20 };
+    const query: ListLoyaltyPointQueryDto = { lspt_ls_id: SCHEME_ID, page: 1, limit: 20 };
 
     await expect(controller.listPoints(query)).resolves.toEqual({
       success: true,
@@ -230,10 +259,13 @@ describe('PromotionLoyaltyPointsController', () => {
 
   it('wraps point get and delete responses', async () => {
     serviceMock.getPointById.mockResolvedValue(pointPayload);
-    serviceMock.softDeletePoint.mockResolvedValue({ lspt_id: 11, deleted: true });
+    serviceMock.softDeletePoint.mockResolvedValue({ lspt_id: POINT_ID, deleted: true });
 
-    const getQuery: LoyaltyPointIdQueryDto = { lspt_id: 11 };
-    const deleteQuery: DeleteLoyaltyPointQueryDto = { lspt_id: 11, modified_by: 1001 };
+    const getQuery: LoyaltyPointIdQueryDto = { lspt_id: POINT_ID };
+    const deleteQuery: DeleteLoyaltyPointQueryDto = {
+      lspt_id: POINT_ID,
+      lspt_updated_by: USER_ID,
+    };
 
     await expect(controller.getPointById(getQuery)).resolves.toEqual({
       success: true,
@@ -244,7 +276,7 @@ describe('PromotionLoyaltyPointsController', () => {
     await expect(controller.deletePoint(deleteQuery)).resolves.toEqual({
       success: true,
       message: 'Loyalty point deleted successfully',
-      data: { lspt_id: 11, deleted: true },
+      data: { lspt_id: POINT_ID, deleted: true },
     });
   });
 
@@ -261,13 +293,13 @@ describe('PromotionLoyaltyPointsController', () => {
     });
 
     const payload: SaveLoyaltyGiftDto = {
-      gift_ls_id: 1,
-      gift_item_id: 101,
-      gift_unit_id: 1,
-      gift_qty: 1,
-      gift_points: 100,
+      lsg_ls_id: SCHEME_ID,
+      lsg_item_id: ITEM_ID,
+      lsg_unit_id: UNIT_ID,
+      lsg_item_qty: 1,
+      lsg_redeem_points: 100,
     };
-    const query: ListLoyaltyGiftQueryDto = { gift_ls_id: 1, page: 1, limit: 20 };
+    const query: ListLoyaltyGiftQueryDto = { lsg_ls_id: SCHEME_ID, page: 1, limit: 20 };
 
     await expect(controller.saveGift(payload)).resolves.toEqual({
       success: true,
@@ -291,16 +323,14 @@ describe('PromotionLoyaltyPointsController', () => {
   it('wraps gift get and delete responses', async () => {
     serviceMock.getGiftById.mockResolvedValue(giftPayload);
     serviceMock.softDeleteGift.mockResolvedValue({
-      gift_ls_id: 1,
-      gift_slno: 1,
+      lsg_id: GIFT_ID,
       deleted: true,
     });
 
-    const getQuery: LoyaltyGiftIdQueryDto = { gift_ls_id: 1, gift_slno: 1 };
+    const getQuery: LoyaltyGiftIdQueryDto = { lsg_id: GIFT_ID };
     const deleteQuery: DeleteLoyaltyGiftQueryDto = {
-      gift_ls_id: 1,
-      gift_slno: 1,
-      modified_by: 1001,
+      lsg_id: GIFT_ID,
+      lsg_updated_by: USER_ID,
     };
 
     await expect(controller.getGiftById(getQuery)).resolves.toEqual({
@@ -313,8 +343,7 @@ describe('PromotionLoyaltyPointsController', () => {
       success: true,
       message: 'Loyalty gift deleted successfully',
       data: {
-        gift_ls_id: 1,
-        gift_slno: 1,
+        lsg_id: GIFT_ID,
         deleted: true,
       },
     });

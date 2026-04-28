@@ -59,7 +59,6 @@ export default () => ({
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET ?? '',
-    accessTokenTtlSeconds: parseNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 3600),
   },
   redis: (() => {
     const redisUrl = process.env.REDIS_URL?.trim();

@@ -310,6 +310,53 @@ describe('MasterLookupService', () => {
     expect(prisma.itemMaster.findMany).not.toHaveBeenCalled();
   });
 
+  it('rewrites stale configured table names before executing dropdown SQL', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 9,
+        dropdownName: 'Branches',
+        dropdownSql:
+          'SELECT br_id, br_name FROM accounts.branch_master UNION SELECT unit_id, unit_name FROM inventory.units',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'br_name',
+        dropdownSortOrder: 'ASC',
+        dropdownColumns: [
+          {
+            dropColumnsColumnNo: 1,
+            dropColumnsColumnName: 'br_id',
+            dropColumnsColumnAlias: null,
+            dropColumnsColumnFilter: false,
+          },
+          {
+            dropColumnsColumnNo: 2,
+            dropColumnsColumnName: 'br_name',
+            dropColumnsColumnAlias: null,
+            dropColumnsColumnFilter: true,
+          },
+        ],
+      },
+    ]);
+    prisma.$queryRawUnsafe.mockResolvedValue([
+      {
+        br_id: 'BR-1',
+        br_name: 'Main Branch',
+      },
+    ]);
+
+    const result = await service.getAllAccountsAndMasterNameIds('branches');
+
+    expect(result).toEqual({
+      scope: 'accounts',
+      module: 'branches',
+      items: [{ id: 'BR-1', name: 'Main Branch', br_id: 'BR-1', br_name: 'Main Branch' }],
+    });
+    const [sql] = prisma.$queryRawUnsafe.mock.calls[0];
+    expect(String(sql)).toContain('public.branch_master');
+    expect(String(sql)).toContain('inventory.item_unit_master');
+    expect(String(sql)).not.toContain('accounts.branch_master');
+    expect(String(sql)).not.toContain('inventory.units');
+  });
+
   it('falls back to Prisma table queries when no dropdown mapping exists for the module', async () => {
     prisma.company.findMany.mockResolvedValue([
       {
