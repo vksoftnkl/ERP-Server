@@ -71,6 +71,29 @@ describe('ConfiguredGridSqlService', () => {
     ]);
   });
 
+  it('filters schema-qualified candidates by their top-level from table', () => {
+    const result = service.filterPrimaryFromTable(
+      [
+        {
+          gridId: 1n,
+          gridSql: 'SELECT * FROM public.companys c',
+        },
+        {
+          gridId: 2n,
+          gridSql: 'SELECT * FROM accounts.account_groups',
+        },
+      ],
+      'companys',
+    );
+
+    expect(result).toEqual([
+      {
+        gridId: 1n,
+        gridSql: 'SELECT * FROM public.companys c',
+      },
+    ]);
+  });
+
   it('rejects non-select sql', () => {
     const result = service.validateBaseSql({
       sql: 'DELETE FROM units',
@@ -128,6 +151,45 @@ describe('ConfiguredGridSqlService', () => {
     expect(result).toEqual({
       isValid: false,
       message: 'Configured query must reference units table',
+    });
+  });
+
+  it('rejects configured sql with the wrong primary table schema', () => {
+    const result = service.validateBaseSql({
+      sql: 'SELECT * FROM accounts.companys',
+      tableName: 'companys',
+      primaryTableSchema: 'public',
+    });
+
+    expect(result).toEqual({
+      isValid: false,
+      message: 'Configured query must reference public.companys',
+    });
+  });
+
+  it('allows configured sql with the expected primary table schema', () => {
+    const result = service.validateBaseSql({
+      sql: 'SELECT * FROM public.companys',
+      tableName: 'companys',
+      primaryTableSchema: 'public',
+    });
+
+    expect(result).toEqual({
+      isValid: true,
+      normalizedSql: 'SELECT * FROM public.companys',
+    });
+  });
+
+  it('allows unqualified configured sql when validating the primary table schema', () => {
+    const result = service.validateBaseSql({
+      sql: 'SELECT * FROM companys',
+      tableName: 'companys',
+      primaryTableSchema: 'public',
+    });
+
+    expect(result).toEqual({
+      isValid: true,
+      normalizedSql: 'SELECT * FROM companys',
     });
   });
 

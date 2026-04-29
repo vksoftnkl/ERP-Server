@@ -54,8 +54,9 @@ export default () => ({
     logging: parseBoolean(process.env.DB_LOGGING),
   },
   throttler: {
+    enabled: parseBoolean(process.env.THROTTLE_ENABLED, true),
     ttl: parseNumber(process.env.THROTTLE_TTL, 60),
-    limit: parseNumber(process.env.THROTTLE_LIMIT, 100),
+    limit: parseNumber(process.env.THROTTLE_LIMIT, 10000),
   },
   auth: {
     jwtSecret: process.env.JWT_SECRET ?? '',

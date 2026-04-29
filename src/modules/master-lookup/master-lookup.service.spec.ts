@@ -357,6 +357,51 @@ describe('MasterLookupService', () => {
     expect(String(sql)).not.toContain('inventory.units');
   });
 
+  it('rewrites stale configured company table names before executing dropdown SQL', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 10,
+        dropdownName: 'Companies',
+        dropdownSql: 'SELECT comp_id, comp_name FROM accounts.companys',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'comp_name',
+        dropdownSortOrder: 'ASC',
+        dropdownColumns: [
+          {
+            dropColumnsColumnNo: 1,
+            dropColumnsColumnName: 'comp_id',
+            dropColumnsColumnAlias: null,
+            dropColumnsColumnFilter: false,
+          },
+          {
+            dropColumnsColumnNo: 2,
+            dropColumnsColumnName: 'comp_name',
+            dropColumnsColumnAlias: null,
+            dropColumnsColumnFilter: true,
+          },
+        ],
+      },
+    ]);
+    prisma.$queryRawUnsafe.mockResolvedValue([
+      {
+        comp_id: 'COMP-1',
+        comp_name: 'Acme Pvt Ltd',
+      },
+    ]);
+
+    const result = await service.getAllAccountsAndMasterNameIds('companies');
+
+    expect(result).toEqual({
+      scope: 'accounts',
+      module: 'companies',
+      items: [{ id: 'COMP-1', name: 'Acme Pvt Ltd', comp_id: 'COMP-1', comp_name: 'Acme Pvt Ltd' }],
+    });
+    const [sql] = prisma.$queryRawUnsafe.mock.calls[0];
+    expect(String(sql)).toContain('public.companys');
+    expect(String(sql)).not.toContain('accounts.companys');
+    expect(prisma.company.findMany).not.toHaveBeenCalled();
+  });
+
   it('falls back to Prisma table queries when no dropdown mapping exists for the module', async () => {
     prisma.company.findMany.mockResolvedValue([
       {

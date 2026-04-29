@@ -16,6 +16,12 @@ const GRID_SQL_FORBIDDEN_TOKENS =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 const POSITIONAL_PARAMETER_PATTERN = /\$[1-9][0-9]*/;
+
+interface SqlRelationReference {
+  schemaName: string | null;
+  tableName: string;
+}
+
 @Injectable()
 export class ConfiguredGridSqlService {
   constructor(private readonly prisma: PrismaService) { }
@@ -98,6 +104,19 @@ export class ConfiguredGridSqlService {
         isValid: false,
         message: `Configured query must reference ${options.tableName} table`,
       };
+    }
+    if (options.primaryTableSchema) {
+      const primaryRelation = this.extractTopLevelFromRelation(normalizedSql);
+      if (
+        primaryRelation?.tableName === options.tableName &&
+        primaryRelation.schemaName !== null &&
+        primaryRelation.schemaName !== options.primaryTableSchema.toLowerCase()
+      ) {
+        return {
+          isValid: false,
+          message: `Configured query must reference ${options.primaryTableSchema}.${options.tableName}`,
+        };
+      }
     }
     if (options.extraForbiddenPatterns) {
       for (const rule of options.extraForbiddenPatterns) {
@@ -196,6 +215,9 @@ export class ConfiguredGridSqlService {
     return sql.trim().replace(/;+\s*$/g, '');
   }
   extractTopLevelFromTableName(sql: string): string | null {
+    return this.extractTopLevelFromRelation(sql)?.tableName ?? null;
+  }
+  private extractTopLevelFromRelation(sql: string): SqlRelationReference | null {
     const trimmed = sql.trim();
     const selectMatch = trimmed.match(/^select\b/i);
     if (!selectMatch) {
@@ -253,14 +275,24 @@ export class ConfiguredGridSqlService {
         const fromClause = trimmed.slice(index + 4).trimStart();
         const identifierPattern = '(?:"(?:""|[^"])+"|[a-z_][a-z0-9_$]*)';
         const relationPattern = new RegExp(
-          `^(?:${identifierPattern}\\s*\\.\\s*)?(${identifierPattern})`,
+          `^(?:(${identifierPattern})\\s*\\.\\s*)?(${identifierPattern})`,
           'i',
         );
         const relationMatch = fromClause.match(relationPattern);
         if (!relationMatch) {
           return null;
         }
-        return this.parseSqlIdentifierToken(relationMatch[1]);
+        const schemaName = relationMatch[1]
+          ? this.parseSqlIdentifierToken(relationMatch[1])
+          : null;
+        const tableName = this.parseSqlIdentifierToken(relationMatch[2]);
+        if (!tableName) {
+          return null;
+        }
+        return {
+          schemaName,
+          tableName,
+        };
       }
     }
     return null;

@@ -80,6 +80,13 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : fallback;
 };
+const parseBoolean = (value: string | undefined, fallback = false): boolean => {
+  if (value === undefined) {
+    return fallback;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+};
+const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -165,10 +172,14 @@ const parseNumber = (value: string | undefined, fallback: number): number => {
       provide: APP_GUARD,
       useClass: AccessTokenGuard,
     },
-    {
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
-    },
+    ...(isThrottlerEnabled
+      ? [
+          {
+            provide: APP_GUARD,
+            useClass: ThrottlerGuard,
+          },
+        ]
+      : []),
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,

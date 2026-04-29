@@ -10,6 +10,7 @@ export interface LoadConfiguredGridSqlCandidatesOptions {
 export interface ValidateConfiguredGridSqlOptions {
   sql: string;
   tableName: string;
+  primaryTableSchema?: string;
   extraForbiddenPatterns?: Array<{
     pattern: RegExp;
     message: string;

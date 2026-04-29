@@ -16,6 +16,8 @@ const LOOKUP_NAME_NOISE_TOKENS = new Set(['master', 'lookup', 'dropdown']);
 const CONFIGURED_SQL_TABLE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\binventory\s*\.\s*units\b/gi, 'inventory.item_unit_master'],
   [/"inventory"\s*\.\s*"units"/gi, '"inventory"."item_unit_master"'],
+  [/\baccounts\s*\.\s*companys\b/gi, 'public.companys'],
+  [/"accounts"\s*\.\s*"companys"/gi, '"public"."companys"'],
   [/\baccounts\s*\.\s*branch_master\b/gi, 'public.branch_master'],
   [/"accounts"\s*\.\s*"branch_master"/gi, '"public"."branch_master"'],
 ];

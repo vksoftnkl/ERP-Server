@@ -22,6 +22,7 @@ const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const COMPANY_MASTER_TABLE_NAME = 'companys';
+const COMPANY_MASTER_TABLE_SCHEMA = 'public';
 const COMPANY_MASTER_AUDIT_SCREEN_NAME = 'Company Master';
 
 type CompanyWriteClient = Prisma.TransactionClient | PrismaService;
@@ -140,6 +141,7 @@ export class CompanyMasterService {
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: COMPANY_MASTER_TABLE_NAME,
+        primaryTableSchema: COMPANY_MASTER_TABLE_SCHEMA,
       });
       if (!validation.isValid) {
         continue;

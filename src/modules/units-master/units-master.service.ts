@@ -21,7 +21,7 @@ import {
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const UNIT_TABLE_NAME = 'units';
+const UNIT_TABLE_NAME = 'item_unit_master';
 const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
 const LEGACY_UNIT_UUID_NUMERIC_COMPARISON_PATTERN =
   /\b(?:[a-z_][a-z0-9_$]*\s*\.\s*)?(unit_id|unit_base_unit_id)\s*=\s*[-+]?\d+\b/i;
