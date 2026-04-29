@@ -12,6 +12,7 @@ import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { AuthService } from './auth.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -34,6 +35,18 @@ export class AuthController {
       userAgent: this.extractHeader(request.headers['user-agent']),
       appVersion: this.extractHeader(request.headers['x-app-version']),
     });
+  }
+
+  @Public()
+  @Post('refresh')
+  @Version('1')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token' })
+  @ApiOkResponse({ type: LoginResponseDto })
+  @ApiBadRequestResponse({ type: HttpErrorResponseDto })
+  @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+  async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<LoginResponseDto> {
+    return this.authService.refresh(refreshTokenDto.refresh_token);
   }
 
   private extractHeader(headerValue: string | string[] | undefined): string | null {

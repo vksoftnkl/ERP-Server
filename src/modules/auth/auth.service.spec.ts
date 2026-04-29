@@ -19,7 +19,17 @@ type UsersServiceMock = {
 
 type TokenServiceMock = {
   signAccessToken: jest.Mock<
-    { token: string; payload: { sub: string; user_name: string; sid: string; iat: number } },
+    {
+      token: string;
+      payload: { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' };
+    },
+    [{ sub: string; user_name: string; sid: string }]
+  >;
+  signRefreshToken: jest.Mock<
+    {
+      token: string;
+      payload: { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'refresh' };
+    },
     [{ sub: string; user_name: string; sid: string }]
   >;
 };
@@ -28,7 +38,15 @@ type AuthSessionServiceMock = {
   createSessionId: jest.Mock<string, []>;
   storeAccessTokenSession: jest.Mock<
     Promise<void>,
-    [string, { sub: string; user_name: string; sid: string; iat: number }]
+    [string, { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' }]
+  >;
+  storeTokenSession: jest.Mock<
+    Promise<void>,
+    [
+      string,
+      { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' },
+      string,
+    ]
   >;
 };
 
@@ -74,7 +92,17 @@ describe('AuthService', () => {
     tokenService = {
       signAccessToken: jest
         .fn<
-          { token: string; payload: { sub: string; user_name: string; sid: string; iat: number } },
+          {
+            token: string;
+            payload: {
+              sub: string;
+              user_name: string;
+              sid: string;
+              iat: number;
+              exp: number;
+              typ: 'access';
+            };
+          },
           [{ sub: string; user_name: string; sid: string }]
         >()
         .mockReturnValue({
@@ -84,6 +112,34 @@ describe('AuthService', () => {
             user_name: 'john.doe',
             sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
             iat: 1_710_979_200,
+            exp: 1_710_980_100,
+            typ: 'access',
+          },
+        }),
+      signRefreshToken: jest
+        .fn<
+          {
+            token: string;
+            payload: {
+              sub: string;
+              user_name: string;
+              sid: string;
+              iat: number;
+              exp: number;
+              typ: 'refresh';
+            };
+          },
+          [{ sub: string; user_name: string; sid: string }]
+        >()
+        .mockReturnValue({
+          token: 'signed-refresh-token',
+          payload: {
+            sub: TEST_USER_ID,
+            user_name: 'john.doe',
+            sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
+            iat: 1_710_979_200,
+            exp: 1_711_584_000,
+            typ: 'refresh',
           },
         }),
     };
@@ -92,7 +148,17 @@ describe('AuthService', () => {
       storeAccessTokenSession: jest
         .fn<
           Promise<void>,
-          [string, { sub: string; user_name: string; sid: string; iat: number }]
+          [string, { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' }]
+        >()
+        .mockResolvedValue(undefined),
+      storeTokenSession: jest
+        .fn<
+          Promise<void>,
+          [
+            string,
+            { sub: string; user_name: string; sid: string; iat: number; exp: number; typ: 'access' },
+            string,
+          ]
         >()
         .mockResolvedValue(undefined),
     };
@@ -129,6 +195,7 @@ describe('AuthService', () => {
       }),
     ).resolves.toEqual({
       access_token: 'signed-jwt-token',
+      refresh_token: 'signed-refresh-token',
       token_type: 'Bearer',
       user_id: TEST_USER_ID,
     });
@@ -139,14 +206,22 @@ describe('AuthService', () => {
       user_name: 'john.doe',
       sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
     });
-    expect(authSessionService.storeAccessTokenSession).toHaveBeenCalledWith(
+    expect(tokenService.signRefreshToken).toHaveBeenCalledWith({
+      sub: TEST_USER_ID,
+      user_name: 'john.doe',
+      sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
+    });
+    expect(authSessionService.storeTokenSession).toHaveBeenCalledWith(
       'signed-jwt-token',
       {
         sub: TEST_USER_ID,
         user_name: 'john.doe',
         sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
         iat: 1_710_979_200,
+        exp: 1_710_980_100,
+        typ: 'access',
       },
+      'signed-refresh-token',
     );
     expect(prismaService.userLoginSession.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -171,7 +246,7 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
 
     expect(tokenService.signAccessToken).not.toHaveBeenCalled();
-    expect(authSessionService.storeAccessTokenSession).not.toHaveBeenCalled();
+    expect(authSessionService.storeTokenSession).not.toHaveBeenCalled();
   });
 
   it('still returns token when login session persistence fails', async () => {
@@ -190,11 +265,12 @@ describe('AuthService', () => {
       }),
     ).resolves.toEqual({
       access_token: 'signed-jwt-token',
+      refresh_token: 'signed-refresh-token',
       token_type: 'Bearer',
       user_id: TEST_USER_ID,
     });
 
-    expect(authSessionService.storeAccessTokenSession).toHaveBeenCalled();
+    expect(authSessionService.storeTokenSession).toHaveBeenCalled();
     expect(prismaService.userLoginSession.create).toHaveBeenCalled();
   });
 
@@ -212,6 +288,6 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
 
     expect(tokenService.signAccessToken).not.toHaveBeenCalled();
-    expect(authSessionService.storeAccessTokenSession).not.toHaveBeenCalled();
+    expect(authSessionService.storeTokenSession).not.toHaveBeenCalled();
   });
 });

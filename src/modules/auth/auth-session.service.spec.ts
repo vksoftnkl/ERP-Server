@@ -17,6 +17,8 @@ const buildPayload = (): AccessTokenPayload => {
     user_name: 'john.doe',
     sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
     iat: now,
+    exp: now + 900,
+    typ: 'access',
   };
 };
 
@@ -50,8 +52,9 @@ describe('AuthSessionService', () => {
     expect(storedSession.sub).toBe(payload.sub);
     expect(storedSession.user_name).toBe(payload.user_name);
     expect(storedSession.sid).toBe(payload.sid);
-    expect(storedSession.exp).toBeUndefined();
+    expect(storedSession.exp).toBe(payload.exp);
     expect(storedSession.token_hash).toEqual(expect.any(String));
+    expect(storedSession.refresh_token_hash).toEqual(expect.any(String));
   });
 
   it('rejects access tokens that are no longer present in Redis', async () => {

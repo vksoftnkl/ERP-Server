@@ -12,6 +12,7 @@ const USER_ID = 'c31c31ce-b8d3-45f7-a9b6-b9232e56dc48';
 const TEST_TIMESTAMP = new Date('2026-03-20T00:00:00.000Z');
 type LoginResponse = {
   access_token: string;
+  refresh_token: string;
   token_type: string;
   user_id: string;
 };
@@ -101,6 +102,7 @@ describe('Auth (e2e)', () => {
     expect(response.statusCode).toBe(200);
     expect(responseBody.token_type).toBe('Bearer');
     expect(responseBody.access_token).toEqual(expect.any(String));
+    expect(responseBody.refresh_token).toEqual(expect.any(String));
     expect(responseBody.user_id).toBe(USER_ID);
     expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
       where: {

@@ -10,6 +10,14 @@ export type AccessTokenClaims = {
 
 export type AccessTokenPayload = AccessTokenClaims & {
   iat: number;
+  exp: number;
+  typ: 'access';
+};
+
+export type RefreshTokenPayload = AccessTokenClaims & {
+  iat: number;
+  exp: number;
+  typ: 'refresh';
 };
 
 export type SignedAccessToken = {
@@ -17,23 +25,49 @@ export type SignedAccessToken = {
   payload: AccessTokenPayload;
 };
 
+export type SignedRefreshToken = {
+  token: string;
+  payload: RefreshTokenPayload;
+};
+
 @Injectable()
 export class TokenService {
   private readonly secret: string;
+  private readonly accessTokenTtlSeconds: number;
+  private readonly refreshTokenTtlSeconds: number;
 
   constructor(private readonly configService: ConfigService) {
     this.secret = this.configService.get<string>('auth.jwtSecret', '');
+    this.accessTokenTtlSeconds = this.configService.get<number>('auth.accessTokenTtlSeconds', 15 * 60);
+    this.refreshTokenTtlSeconds = this.configService.get<number>(
+      'auth.refreshTokenTtlSeconds',
+      7 * 24 * 60 * 60,
+    );
   }
 
   signAccessToken(claims: AccessTokenClaims): SignedAccessToken {
+    return this.signToken(claims, 'access', this.accessTokenTtlSeconds);
+  }
+
+  signRefreshToken(claims: AccessTokenClaims): SignedRefreshToken {
+    return this.signToken(claims, 'refresh', this.refreshTokenTtlSeconds);
+  }
+
+  private signToken<TType extends 'access' | 'refresh'>(
+    claims: AccessTokenClaims,
+    tokenType: TType,
+    ttlSeconds: number,
+  ): TType extends 'access' ? SignedAccessToken : SignedRefreshToken {
     if (!this.secret) {
       throw new InternalServerErrorException('JWT secret is not configured');
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const payload: AccessTokenPayload = {
+    const payload = {
       ...claims,
       iat: now,
+      exp: now + ttlSeconds,
+      typ: tokenType,
     };
 
     const headerSegment = this.encodeBase64Url({
@@ -44,13 +78,24 @@ export class TokenService {
     const unsignedToken = `${headerSegment}.${payloadSegment}`;
     const signature = createHmac('sha256', this.secret).update(unsignedToken).digest('base64url');
 
-    return {
+    return ({
       token: `${unsignedToken}.${signature}`,
       payload,
-    };
+    } as unknown) as TType extends 'access' ? SignedAccessToken : SignedRefreshToken;
   }
 
   verifyAccessToken(token: string): AccessTokenPayload {
+    return this.verifyToken(token, 'access');
+  }
+
+  verifyRefreshToken(token: string): RefreshTokenPayload {
+    return this.verifyToken(token, 'refresh');
+  }
+
+  private verifyToken<TType extends 'access' | 'refresh'>(
+    token: string,
+    expectedType: TType,
+  ): TType extends 'access' ? AccessTokenPayload : RefreshTokenPayload {
     if (!this.secret) {
       throw new InternalServerErrorException('JWT secret is not configured');
     }
@@ -75,7 +120,9 @@ export class TokenService {
     }
 
     const payloadRecord = this.decodeSegment<Record<string, unknown>>(payloadSegment);
-    return this.validatePayload(payloadRecord);
+    return this.validatePayload(payloadRecord, expectedType) as TType extends 'access'
+      ? AccessTokenPayload
+      : RefreshTokenPayload;
   }
 
   private encodeBase64Url(data: Record<string, unknown>): string {
@@ -101,11 +148,16 @@ export class TokenService {
     return timingSafeEqual(receivedBuffer, expectedBuffer);
   }
 
-  private validatePayload(payload: Record<string, unknown>): AccessTokenPayload {
+  private validatePayload(
+    payload: Record<string, unknown>,
+    expectedType: 'access' | 'refresh',
+  ): AccessTokenPayload | RefreshTokenPayload {
     const sub = payload.sub;
     const userName = payload.user_name;
     const sessionId = payload.sid;
     const issuedAt = payload.iat;
+    const expiresAt = payload.exp;
+    const tokenType = payload.typ;
 
     if (typeof sub !== 'string' || sub.length === 0) {
       throw new UnauthorizedException('Invalid access token');
@@ -127,11 +179,26 @@ export class TokenService {
       throw new UnauthorizedException('Invalid access token');
     }
 
-    const normalizedPayload: AccessTokenPayload = {
+    if (
+      typeof expiresAt !== 'number' ||
+      !Number.isInteger(expiresAt) ||
+      expiresAt <= issuedAt ||
+      expiresAt <= Math.floor(Date.now() / 1000)
+    ) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    if (tokenType !== expectedType) {
+      throw new UnauthorizedException('Invalid access token');
+    }
+
+    const normalizedPayload = {
       sub,
       user_name: userName,
       sid: sessionId,
       iat: issuedAt,
+      exp: expiresAt,
+      typ: expectedType,
     };
 
     return normalizedPayload;

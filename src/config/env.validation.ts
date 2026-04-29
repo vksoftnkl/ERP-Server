@@ -39,6 +39,8 @@ export const envValidationSchema = Joi.object({
     then: Joi.string().min(16).default('test-jwt-secret-change-me'),
     otherwise: Joi.string().min(16).required(),
   }),
+  ACCESS_TOKEN_TTL_SECONDS: Joi.number().integer().min(60).default(15 * 60),
+  REFRESH_TOKEN_TTL_SECONDS: Joi.number().integer().min(60).default(7 * 24 * 60 * 60),
   THROTTLE_ENABLED: Joi.boolean().default(true),
   THROTTLE_TTL: Joi.number().integer().min(1).default(60),
   THROTTLE_LIMIT: Joi.number().integer().min(1).default(100),

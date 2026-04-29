@@ -8,7 +8,7 @@ import { UsersService } from '../users/users.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { AuthSessionService } from './auth-session.service';
-import { SignedAccessToken, TokenService } from './token.service';
+import { SignedAccessToken, SignedRefreshToken, TokenService } from './token.service';
 
 const scryptAsync = promisify(nodeScrypt);
 const SESSION_TOKEN_MAX_LENGTH = 200;
@@ -53,12 +53,24 @@ export class AuthService {
       user_name: user.user_name,
       sid: this.authSessionService.createSessionId(),
     });
-    await this.authSessionService.storeAccessTokenSession(
+    const issuedRefreshToken = this.tokenService.signRefreshToken({
+      sub: user.user_id,
+      user_name: user.user_name,
+      sid: issuedAccessToken.payload.sid,
+    });
+    await this.authSessionService.storeTokenSession(
       issuedAccessToken.token,
       issuedAccessToken.payload,
+      issuedRefreshToken.token,
     );
     try {
-      await this.saveUserLoginSession(user, loginAuthDto, issuedAccessToken, requestMetadata);
+      await this.saveUserLoginSession(
+        user,
+        loginAuthDto,
+        issuedAccessToken,
+        issuedRefreshToken,
+        requestMetadata,
+      );
     } catch (error: unknown) {
       this.logger.warn(
         `Skipping user login session persistence for user ${user.user_id}: ${this.describeError(
@@ -69,8 +81,32 @@ export class AuthService {
 
     return {
       access_token: issuedAccessToken.token,
+      refresh_token: issuedRefreshToken.token,
       token_type: 'Bearer',
       user_id: user.user_id,
+    };
+  }
+
+  async refresh(refreshToken: string): Promise<LoginResponseDto> {
+    const refreshPayload = this.tokenService.verifyRefreshToken(refreshToken);
+    await this.authSessionService.assertRefreshTokenIsActive(refreshToken, refreshPayload);
+
+    const issuedAccessToken = this.tokenService.signAccessToken({
+      sub: refreshPayload.sub,
+      user_name: refreshPayload.user_name,
+      sid: refreshPayload.sid,
+    });
+    await this.authSessionService.storeTokenSession(
+      issuedAccessToken.token,
+      issuedAccessToken.payload,
+      refreshToken,
+    );
+
+    return {
+      access_token: issuedAccessToken.token,
+      refresh_token: refreshToken,
+      token_type: 'Bearer',
+      user_id: refreshPayload.sub,
     };
   }
 
@@ -106,6 +142,7 @@ export class AuthService {
     user: User,
     loginAuthDto: LoginAuthDto,
     issuedAccessToken: SignedAccessToken,
+    issuedRefreshToken: SignedRefreshToken,
     requestMetadata: LoginRequestMetadata,
   ): Promise<void> {
     const loginTimestamp = new Date();
@@ -119,6 +156,7 @@ export class AuthService {
         ulsDeviceId: loginAuthDto.device_id ?? null,
         ulsSessionId: issuedAccessToken.payload.sid,
         ulsSessionToken: this.normalizeSessionToken(issuedAccessToken.token),
+        ulsRefreshTokenId: this.normalizeSessionToken(issuedRefreshToken.token),
         ulsLoginOn: loginTimestamp,
         ulsLoginStatus: 'SUCCESS',
         ulsIpAddress: this.requestContextService.getIpAddress(),
