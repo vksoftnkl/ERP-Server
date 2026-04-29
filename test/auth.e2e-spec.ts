@@ -118,6 +118,27 @@ describe('Auth (e2e)', () => {
       }),
     });
   });
+
+  it('/api/v1/auth/refresh (POST) returns a fresh access token for a valid refresh token', async () => {
+    const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
+    const loginResponse = await request(httpServer).post('/api/v1/auth/login').send({
+      user_name: 'john.doe',
+      user_password: 'StrongPassword123!',
+    });
+    const loginResponseBody = loginResponse.body as LoginResponse;
+
+    const refreshResponse = await request(httpServer).post('/api/v1/auth/refresh').send({
+      refresh_token: loginResponseBody.refresh_token,
+    });
+    const refreshResponseBody = refreshResponse.body as LoginResponse;
+
+    expect(refreshResponse.statusCode).toBe(200);
+    expect(refreshResponseBody.token_type).toBe('Bearer');
+    expect(refreshResponseBody.access_token).toEqual(expect.any(String));
+    expect(refreshResponseBody.refresh_token).toBe(loginResponseBody.refresh_token);
+    expect(refreshResponseBody.user_id).toBe(USER_ID);
+  });
+
   it('/api/v1/auth/login (POST) returns 401 for invalid password', async () => {
     const httpServer = app.getHttpServer() as Parameters<typeof request>[0];
     const response = await request(httpServer).post('/api/v1/auth/login').send({
