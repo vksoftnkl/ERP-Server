@@ -17,16 +17,13 @@ import {
   CompanyMasterListMeta,
   CompanyMasterPayload,
 } from './types/company-master-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const COMPANY_MASTER_TABLE_NAME = 'companys';
 const COMPANY_MASTER_TABLE_SCHEMA = 'public';
 const COMPANY_MASTER_AUDIT_SCREEN_NAME = 'Company Master';
-
 type CompanyWriteClient = Prisma.TransactionClient | PrismaService;
-
 @Injectable()
 export class CompanyMasterService {
   constructor(
@@ -34,51 +31,41 @@ export class CompanyMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) { }
-
   async save(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload> {
     if (saveCompanyMasterDto.compId) {
       return this.updateCompany(saveCompanyMasterDto);
     }
-
     return this.createCompany(saveCompanyMasterDto);
   }
-
   async list(
     queryDto: ListCompanyMasterQueryDto,
   ): Promise<ConfiguredGridListResult<CompanyMasterListItem, CompanyMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.compIsActive !== undefined ||
       queryDto.compDefault !== undefined ||
       queryDto.compStateCode !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.CompanyWhereInput = {
       compIsDeleted: false,
     };
-
     if (queryDto.compIsActive !== undefined) {
       where.compIsActive = queryDto.compIsActive;
     }
-
     if (queryDto.compDefault !== undefined) {
       where.compDefault = queryDto.compDefault;
     }
-
     if (queryDto.compStateCode !== undefined) {
       where.compStateCode = queryDto.compStateCode;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -94,7 +81,6 @@ export class CompanyMasterService {
         { compMail: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.company.count({ where }),
       this.prisma.company.findMany({
@@ -104,7 +90,6 @@ export class CompanyMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -115,7 +100,6 @@ export class CompanyMasterService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -131,13 +115,11 @@ export class CompanyMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: COMPANY_MASTER_TABLE_NAME,
@@ -146,7 +128,6 @@ export class CompanyMasterService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result = await this.configuredGridSqlService.runPagedQuery<CompanyMasterListItem>({
           baseSql: validation.normalizedSql,
@@ -155,7 +136,6 @@ export class CompanyMasterService {
           skip,
           gridId: configuredGrid.gridId,
         });
-
         return {
           items: result.items,
           meta: {
