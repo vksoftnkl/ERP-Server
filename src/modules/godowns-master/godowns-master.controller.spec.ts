@@ -133,6 +133,7 @@ describe('GodownsMasterController', () => {
         total: 1,
         total_pages: 1,
       },
+      styles: [],
     });
 
     const query: ListOrGetGodownQueryDto = {
@@ -150,6 +151,7 @@ describe('GodownsMasterController', () => {
         total: 1,
         total_pages: 1,
       },
+      styles: [],
     });
 
     expect(serviceMock.getById).not.toHaveBeenCalled();
@@ -188,6 +190,7 @@ describe('GodownsMasterController', () => {
         total: 1,
         total_pages: 1,
       },
+      styles: [],
     });
 
     const query: ListOrGetGodownQueryDto = {
@@ -205,6 +208,7 @@ describe('GodownsMasterController', () => {
         total: 1,
         total_pages: 1,
       },
+      styles: [],
     });
 
     expect(serviceMock.getList).toHaveBeenCalledWith(query);

@@ -1,0 +1,87 @@
+model PhysicalStockHeader {
+  pscId                   String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("psc_id")
+
+  // Multi-branch scope
+  pscAccYear              String    @db.VarChar(9)                                   @map("psc_acc_year")
+  pscCompanyId            String    @db.Uuid                                         @map("psc_company_id")
+  pscBranchId             String    @db.Uuid                                         @map("psc_branch_id")
+  pscGodownId             String    @db.Uuid                                         @map("psc_godown_id")
+
+  // Document identity
+  pscDocNo                BigInt                                                     @map("psc_doc_no")
+  pscDocRefno             String?   @db.VarChar(50)                                  @map("psc_doc_refno")
+  pscDocDate              DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date   @map("psc_doc_date")
+
+  // Count information
+  pscCountType            String    @default("FULL") @db.VarChar(20)                 @map("psc_count_type")
+  pscCountedBy            String?   @db.Uuid                                         @map("psc_counted_by")
+  pscCountStartedOn       DateTime? @db.Timestamptz                                  @map("psc_count_started_on")
+  pscCountCompletedOn     DateTime? @db.Timestamptz                                  @map("psc_count_completed_on")
+
+  // Stock cutoff
+  pscStockCutoffAt        DateTime  @default(now()) @db.Timestamptz                  @map("psc_stock_cutoff_at")
+
+  // Stock freeze
+  pscFreezeStock          Boolean   @default(true)                                   @map("psc_freeze_stock")
+  pscFreezeFrom           DateTime? @db.Timestamptz                                  @map("psc_freeze_from")
+  pscFreezeTo             DateTime? @db.Timestamptz                                  @map("psc_freeze_to")
+
+  // Posting mode
+  pscPostingMode          String    @default("ADJUST_DIFFERENCE_ONLY") @db.VarChar(30) @map("psc_posting_mode")
+
+  // Rate source
+  pscRateSource           String    @default("AVG_COST") @db.VarChar(20)             @map("psc_rate_source")
+
+  // Adjustment voucher
+  pscAdjustmentVoucherId  String?   @db.Uuid                                         @map("psc_adjustment_voucher_id")
+
+  // Summary
+  pscTotalLines           Int       @default(0)                                      @map("psc_total_lines")
+  pscTotalBookValue       Decimal   @default(0) @db.Decimal(18, 2)                   @map("psc_total_book_value")
+  pscTotalCountedValue    Decimal   @default(0) @db.Decimal(18, 2)                   @map("psc_total_counted_value")
+  pscNetVarianceValue     Decimal   @default(0) @db.Decimal(18, 2)                   @map("psc_net_variance_value")
+
+  // Workflow status
+  pscStatus               String    @default("DRAFT") @db.VarChar(20)                @map("psc_status")
+  pscApprovalRequired     Boolean   @default(true)                                   @map("psc_approval_required")
+
+  // Approval
+  pscApprovedOn           DateTime? @db.Timestamptz                                  @map("psc_approved_on")
+  pscApprovedBy           String?   @db.Uuid                                         @map("psc_approved_by")
+
+  // Posting
+  pscPostedOn             DateTime? @db.Timestamptz                                  @map("psc_posted_on")
+  pscPostedBy             String?   @db.Uuid                                         @map("psc_posted_by")
+
+  // Cancel
+  pscCancelledOn          DateTime? @db.Timestamptz                                  @map("psc_cancelled_on")
+  pscCancelledBy          String?   @db.Uuid                                         @map("psc_cancelled_by")
+  pscCancelReason         String?   @db.VarChar(250)                                 @map("psc_cancel_reason")
+
+  // Device/session info
+  pscDeviceType           String?   @db.VarChar(20)                                  @map("psc_device_type")
+  pscDeviceId             String?   @db.Uuid                                         @map("psc_device_id")
+  pscCounterId            String?   @db.VarChar(20)                                  @map("psc_counter_id")
+  pscSessionId            String?   @db.Uuid                                         @map("psc_session_id")
+
+  // Remarks
+  pscRemarks              String?                                                    @map("psc_remarks")
+
+  // Audit
+  pscIsActive             Boolean   @default(true)                                   @map("psc_is_active")
+  pscIsDeleted            Boolean   @default(false)                                  @map("psc_is_deleted")
+  pscSyncDate             DateTime? @db.Timestamptz                                  @map("psc_sync_date")
+  pscCreatedOn            DateTime  @default(now()) @db.Timestamptz                  @map("psc_created_on")
+  pscCreatedBy            String?   @db.Uuid                                         @map("psc_created_by")
+  pscModifiedOn           DateTime  @default(now()) @db.Timestamptz                  @map("psc_modified_on")
+  pscModifiedBy           String?   @db.Uuid                                         @map("psc_modified_by")
+
+  // Relations
+  company                 Company               @relation("PhysicalStockHeaderCompany", fields: [pscCompanyId], references: [compId], map: "fk_physical_stock_header_company")
+  branch                  BranchMaster          @relation("PhysicalStockHeaderBranch", fields: [pscBranchId], references: [brId], map: "fk_physical_stock_header_branch")
+  godown                  GodownLocation        @relation("PhysicalStockHeaderGodown", fields: [pscGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_physical_stock_header_godown")
+  details                 PhysicalStockDetail[]
+
+  @@map("physical_stock_header")
+  @@schema("inventory")
+}

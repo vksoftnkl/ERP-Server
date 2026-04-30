@@ -43,6 +43,10 @@ model Unit {
   ipmUnits     ItemPriceMaster[] @relation("IpmUnit")
   ipmBaseUnits ItemPriceMaster[] @relation("IpmBaseUnit")
   openingStockUnits OpeningStockDetail[] @relation("OpeningStockDetailUnit")
+  physicalStockUnits PhysicalStockDetail[] @relation("PhysicalStockDetailUnit")
+  physicalStockBaseUnits PhysicalStockDetail[] @relation("PhysicalStockDetailBaseUnit")
+  physicalStockBatchUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailUnit")
+  physicalStockBatchBaseUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBaseUnit")
 
   // Back-relations — others
   eanCodes     ItemEanCode[]

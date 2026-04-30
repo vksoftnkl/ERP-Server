@@ -83,7 +83,7 @@ export class EmployeeMasterController {
       message: 'Employees fetched successfully',
       data: result.items,
       meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
+      styles: result.styles ?? [],
     };
   }
 
@@ -97,12 +97,16 @@ export class EmployeeMasterController {
   async getById(
     @Query('empId', new ParseUUIDPipe({ version: '7' })) empId: string,
   ): Promise<EmployeeMasterSuccessResponse<EmployeeMasterPayload>> {
-    const data = await this.employeeMasterService.getById(empId);
+    const [data, styles] = await Promise.all([
+      this.employeeMasterService.getById(empId),
+      this.employeeMasterService.getStyles(),
+    ]);
 
     return {
       success: true,
       message: 'Employee fetched successfully',
       data,
+      styles,
     };
   }
 

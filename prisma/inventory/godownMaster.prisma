@@ -31,6 +31,9 @@ model GodownLocation {
   children          GodownLocation[] @relation("GodownLocationToParent")
   itemPrices        ItemPriceMaster[] @relation("GodownPrices")
   openingStockDetails OpeningStockDetail[] @relation("OpeningStockDetailGodown")
+  physicalStockHeaders PhysicalStockHeader[] @relation("PhysicalStockHeaderGodown")
+  physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailGodown")
+  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailGodown")
   @@map("godown_locations")
    @@schema("inventory")
   // Indexes

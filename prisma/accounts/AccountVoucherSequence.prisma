@@ -1,0 +1,28 @@
+model AccVoucherSeq {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid           @map("seq_id")
+  vchrTypeId    Int                                                                  @map("seq_vchr_type_id")
+  companyId     String    @db.Uuid                                                  @map("seq_company_id")
+  branchId      String    @db.Uuid                                                  @map("seq_branch_id")
+  accYear       String    @db.VarChar(9)                                            @map("seq_acc_year")
+  deviceId      String?   @db.Uuid                                                  @map("seq_device_id")
+  deviceCode    String    @default("MAIN") @db.VarChar(20)                          @map("seq_device_code")
+  periodKey     String    @db.VarChar(20)                                           @map("seq_period_key")
+  lastNo        BigInt    @default(0)                                               @map("seq_last_no")
+  voucherPrefix String?   @db.VarChar(20)                                           @map("seq_voucher_prefix")
+  companyCode   String?   @db.VarChar(20)                                           @map("seq_company_code")
+  branchCode    String?   @db.VarChar(20)                                           @map("seq_branch_code")
+  voucherSuffix String?   @db.VarChar(20)                                           @map("seq_voucher_suffix")
+  noWidth       Int       @default(5)                                               @map("seq_no_width")
+  lastRefno     String?   @db.VarChar(100)                                          @map("seq_last_refno")
+  isActive      Boolean   @default(true)                                            @map("seq_is_active")
+  isDeleted     Boolean   @default(false)                                           @map("seq_is_deleted")
+  createdOn     DateTime  @default(now()) @db.Timestamptz                           @map("seq_created_on")
+  createdBy     String?   @db.Uuid                                                  @map("seq_created_by")
+  modifiedOn    DateTime? @db.Timestamptz                                           @map("seq_modified_on")
+  modifiedBy    String?   @db.Uuid                                                  @map("seq_modified_by")
+
+  voucherType AccVoucherType @relation(fields: [vchrTypeId], references: [vchrTypeId], map: "fk_acc_voucher_seq_voucher_type")
+
+  @@map("acc_voucher_seq")
+  @@schema("accounts")
+}

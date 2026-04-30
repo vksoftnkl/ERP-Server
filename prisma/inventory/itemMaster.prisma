@@ -77,6 +77,8 @@ model ItemMaster {
   prices               ItemPriceMaster[] @relation("ItemPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")
   openingStockDetails  OpeningStockDetail[] @relation("OpeningStockDetailItem")
+  physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailItem")
+  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailItem")
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
   company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)

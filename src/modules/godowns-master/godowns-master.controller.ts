@@ -121,7 +121,7 @@ export class GodownsMasterController {
       message: 'Godown locations fetched successfully',
       data: result.items,
       meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
+      styles: result.styles ?? [],
     };
   }
 
@@ -158,6 +158,7 @@ export class GodownsMasterController {
       message: 'Godown locations fetched successfully',
       data: result.items,
       meta: result.meta,
+      styles: result.styles ?? [],
     };
   }
 

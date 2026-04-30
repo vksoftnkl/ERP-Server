@@ -459,3 +459,6 @@ Null constraint violation on the fields: (`uls_branch_id`)
     at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
     at async AuthService.saveUserLoginSession (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:104:5)
     at async AuthService.login (/home/vk/Dev/erp/ERP server/src/modules/auth/auth.service.ts:58:5)
+2026-04-30T13:09:34.364Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-04-30T13:10:12.705Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-04-30T13:12:58.665Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010

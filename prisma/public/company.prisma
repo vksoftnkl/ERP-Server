@@ -96,6 +96,9 @@ model Company {
   voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
+  physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
+  physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailCompany")
+  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
   ItemUnitConversions   ItemUnitConversion[] @relation("iucCompanyId")
   loyaltySchemes        LoyaltyScheme[]
   @@map("companys")

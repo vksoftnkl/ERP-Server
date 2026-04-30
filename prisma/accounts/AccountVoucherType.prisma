@@ -67,6 +67,7 @@ model AccVoucherType {
   voucherCheques             AccVoucherCheque[]
   voucherDocRegisters        AccVoucherDocRegister[]
   voucherHeaders             AccVoucherHeader[]
+  voucherSequences           AccVoucherSeq[]
   vouchers                   AccVoucher[]
   voucherTenders             AccVoucherTender[]
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")

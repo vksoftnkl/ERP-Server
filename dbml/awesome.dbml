@@ -622,6 +622,31 @@ Table acc_vouchers {
   user users [not null]
 }
 
+Table acc_voucher_seq {
+  id String [pk]
+  vchrTypeId Int [not null]
+  companyId String [not null]
+  branchId String [not null]
+  accYear String [not null]
+  deviceId String
+  deviceCode String [not null, default: 'MAIN']
+  periodKey String [not null]
+  lastNo BigInt [not null, default: 0]
+  voucherPrefix String
+  companyCode String
+  branchCode String
+  voucherSuffix String
+  noWidth Int [not null, default: 5]
+  lastRefno String
+  isActive Boolean [not null, default: true]
+  isDeleted Boolean [not null, default: false]
+  createdOn DateTime [default: `now()`, not null]
+  createdBy String
+  modifiedOn DateTime
+  modifiedBy String
+  voucherType acc_voucher_types [not null]
+}
+
 Table acc_voucher_tenders {
   vtdId String [pk]
   vtdVoucherId String [not null]
@@ -715,6 +740,7 @@ Table acc_voucher_types {
   voucherCheques acc_voucher_cheques [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherHeaders acc_voucher_header [not null]
+  voucherSequences acc_voucher_seq [not null]
   vouchers acc_vouchers [not null]
   voucherTenders acc_voucher_tenders [not null]
 }
@@ -1229,6 +1255,9 @@ Table godown_locations {
   children godown_locations [not null]
   itemPrices item_price_master [not null]
   openingStockDetails opening_stock_detail [not null]
+  physicalStockHeaders physical_stock_header [not null]
+  physicalStockDetails physical_stock_detail [not null]
+  physicalStockBatchDetails physical_stock_batch_detail [not null]
 
   indexes {
     (gdlGodownId, gdlParentId, gdlName) [unique]
@@ -1444,6 +1473,8 @@ Table item_master {
   prices item_price_master [not null]
   unitConversions item_unit_conversion [not null]
   openingStockDetails opening_stock_detail [not null]
+  physicalStockDetails physical_stock_detail [not null]
+  physicalStockBatchDetails physical_stock_batch_detail [not null]
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
   company companys [not null]
@@ -1787,6 +1818,10 @@ Table item_unit_master {
   ipmUnits item_price_master [not null]
   ipmBaseUnits item_price_master [not null]
   openingStockUnits opening_stock_detail [not null]
+  physicalStockUnits physical_stock_detail [not null]
+  physicalStockBaseUnits physical_stock_detail [not null]
+  physicalStockBatchUnits physical_stock_batch_detail [not null]
+  physicalStockBatchBaseUnits physical_stock_batch_detail [not null]
   eanCodes item_ean_codes [not null]
   itemMasters item_master [not null]
   itemReorders item_reorders [not null]
@@ -1901,6 +1936,187 @@ Table opening_stock_header {
   }
 }
 
+Table physical_stock_batch_detail {
+  psbId String [pk]
+  psbPsdId String [not null]
+  psbRowNo Int [not null, default: 1]
+  psbAccYear String [not null]
+  psbCompanyId String [not null]
+  psbBranchId String [not null]
+  psbGodownId String [not null]
+  psbItemId String [not null]
+  psbUnitId String [not null]
+  psbBaseUnitId String [not null]
+  psbToBaseFactor Decimal [not null, default: 1]
+  psbBatchId String
+  psbBatchNo String
+  psbMfgBatchNo String
+  psbBatchDate DateTime
+  psbMfgDate DateTime
+  psbExpiryDate DateTime
+  psbMrp Decimal [not null, default: 0]
+  psbBarcode String
+  psbSerialNo String
+  psbBookQty Decimal [not null, default: 0]
+  psbBookBaseQty Decimal [not null, default: 0]
+  psbPhysicalQty Decimal [not null, default: 0]
+  psbPhysicalBaseQty Decimal [not null, default: 0]
+  psbDiffQty Decimal
+  psbDiffBaseQty Decimal
+  psbStockRateWot Decimal [not null, default: 0]
+  psbStockRateWithTax Decimal [not null, default: 0]
+  psbBookValueWot Decimal
+  psbPhysicalValueWot Decimal
+  psbDiffValueWot Decimal
+  psbDiffValueWithTax Decimal
+  psbReasonId String
+  psbResolution String [not null, default: 'ADJUST_LOSS_GAIN']
+  psbNotes String
+  psbIsPosted Boolean [not null, default: false]
+  psbIsActive Boolean [not null, default: true]
+  psbIsDeleted Boolean [not null, default: false]
+  psbSyncDate DateTime
+  psbCreatedOn DateTime [default: `now()`, not null]
+  psbCreatedBy String
+  psbModifiedOn DateTime [default: `now()`, not null]
+  psbModifiedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  godown godown_locations [not null]
+  item item_master [not null]
+  unit item_unit_master [not null]
+  baseUnit item_unit_master [not null]
+  detail physical_stock_detail [not null]
+  reason stock_adj_reason_master
+
+  indexes {
+    (psbPsdId, psbRowNo) [unique]
+    (psbPsdId, psbBatchId, psbBatchNo, psbMrp, psbBarcode, psbSerialNo) [unique]
+  }
+}
+
+Table physical_stock_detail {
+  psdId String [pk]
+  psdPscId String [not null]
+  psdRowNo Int [not null, default: 1]
+  psdAccYear String [not null]
+  psdCompanyId String [not null]
+  psdBranchId String [not null]
+  psdGodownId String [not null]
+  psdItemId String [not null]
+  psdUnitId String [not null]
+  psdBaseUnitId String [not null]
+  psdToBaseFactor Decimal [not null, default: 1]
+  psdBarcode String
+  psdMrp Decimal [not null, default: 0]
+  psdTrackingType String [not null, default: 'NONE']
+  psdBookQty Decimal [not null, default: 0]
+  psdBookBaseQty Decimal [not null, default: 0]
+  psdPhysicalQty Decimal [not null, default: 0]
+  psdPhysicalBaseQty Decimal [not null, default: 0]
+  psdDiffQty Decimal
+  psdDiffBaseQty Decimal
+  psdStockRateWot Decimal [not null, default: 0]
+  psdStockRateWithTax Decimal [not null, default: 0]
+  psdBookValueWot Decimal
+  psdPhysicalValueWot Decimal
+  psdDiffValueWot Decimal
+  psdDiffValueWithTax Decimal
+  psdReasonId String
+  psdResolution String [not null, default: 'ADJUST_LOSS_GAIN']
+  psdNotes String
+  psdIsPosted Boolean [not null, default: false]
+  psdIsActive Boolean [not null, default: true]
+  psdIsDeleted Boolean [not null, default: false]
+  psdSyncDate DateTime
+  psdCreatedOn DateTime [default: `now()`, not null]
+  psdCreatedBy String
+  psdModifiedOn DateTime [default: `now()`, not null]
+  psdModifiedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  godown godown_locations [not null]
+  item item_master [not null]
+  unit item_unit_master [not null]
+  baseUnit item_unit_master [not null]
+  header physical_stock_header [not null]
+  reason stock_adj_reason_master
+  batchDetails physical_stock_batch_detail [not null]
+
+  indexes {
+    (psdPscId, psdRowNo) [unique]
+    (psdPscId, psdGodownId, psdItemId, psdUnitId) [unique]
+  }
+}
+
+Table physical_stock_header {
+  pscId String [pk]
+  pscAccYear String [not null]
+  pscCompanyId String [not null]
+  pscBranchId String [not null]
+  pscGodownId String [not null]
+  pscDocNo BigInt [not null]
+  pscDocRefno String
+  pscDocDate DateTime [not null]
+  pscCountType String [not null, default: 'FULL']
+  pscCountedBy String
+  pscCountStartedOn DateTime
+  pscCountCompletedOn DateTime
+  pscStockCutoffAt DateTime [default: `now()`, not null]
+  pscFreezeStock Boolean [not null, default: true]
+  pscFreezeFrom DateTime
+  pscFreezeTo DateTime
+  pscPostingMode String [not null, default: 'ADJUST_DIFFERENCE_ONLY']
+  pscRateSource String [not null, default: 'AVG_COST']
+  pscAdjustmentVoucherId String
+  pscTotalLines Int [not null, default: 0]
+  pscTotalBookValue Decimal [not null, default: 0]
+  pscTotalCountedValue Decimal [not null, default: 0]
+  pscNetVarianceValue Decimal [not null, default: 0]
+  pscStatus String [not null, default: 'DRAFT']
+  pscApprovalRequired Boolean [not null, default: true]
+  pscApprovedOn DateTime
+  pscApprovedBy String
+  pscPostedOn DateTime
+  pscPostedBy String
+  pscCancelledOn DateTime
+  pscCancelledBy String
+  pscCancelReason String
+  pscDeviceType String
+  pscDeviceId String
+  pscCounterId String
+  pscSessionId String
+  pscRemarks String
+  pscIsActive Boolean [not null, default: true]
+  pscIsDeleted Boolean [not null, default: false]
+  pscSyncDate DateTime
+  pscCreatedOn DateTime [default: `now()`, not null]
+  pscCreatedBy String
+  pscModifiedOn DateTime [default: `now()`, not null]
+  pscModifiedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  godown godown_locations [not null]
+  details physical_stock_detail [not null]
+}
+
+Table stock_adj_reason_master {
+  sarId String [pk]
+  sarCode String [unique, not null]
+  sarName String [not null]
+  sarReasonKind String [not null]
+  sarDefaultResolution String [not null]
+  sarAffectsAccounts Boolean [not null, default: true]
+  sarIsActive Boolean [not null, default: true]
+  sarIsDeleted Boolean [not null, default: false]
+  sarCreatedOn DateTime [default: `now()`, not null]
+  sarCreatedBy String
+  sarModifiedOn DateTime [default: `now()`, not null]
+  sarModifiedBy String
+  physicalStockDetails physical_stock_detail [not null]
+  physicalStockBatchDetails physical_stock_batch_detail [not null]
+}
+
 Table batches_prefix {
   id String [pk]
   prefixUsed String
@@ -1974,6 +2190,9 @@ Table branch_master {
   voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
+  physicalStockHeaders physical_stock_header [not null]
+  physicalStockDetails physical_stock_detail [not null]
+  physicalStockBatchDetails physical_stock_batch_detail [not null]
   itemPrices item_price_master [not null]
   loyaltySchemes loyalty_sch_list [not null]
 }
@@ -2065,6 +2284,9 @@ Table companys {
   voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
+  physicalStockHeaders physical_stock_header [not null]
+  physicalStockDetails physical_stock_detail [not null]
+  physicalStockBatchDetails physical_stock_batch_detail [not null]
   ItemUnitConversions item_unit_conversion [not null]
   loyaltySchemes loyalty_sch_list [not null]
 }
@@ -2833,6 +3055,8 @@ Ref: acc_vouchers.avOppLedgerId > acc_ledger_master.ledId
 
 Ref: acc_vouchers.avUserId > users.user_id
 
+Ref: acc_voucher_seq.vchrTypeId > acc_voucher_types.vchrTypeId
+
 Ref: acc_voucher_tenders.vtdCompanyId > companys.compId
 
 Ref: acc_voucher_tenders.vtdBranchId > branch_master.brId
@@ -2956,6 +3180,44 @@ Ref: opening_stock_header.oshVoucherId > acc_voucher_header.avhVoucherId [delete
 Ref: opening_stock_header.oshCompanyId > companys.compId
 
 Ref: opening_stock_header.oshBranchId > branch_master.brId
+
+Ref: physical_stock_batch_detail.psbCompanyId > companys.compId
+
+Ref: physical_stock_batch_detail.psbBranchId > branch_master.brId
+
+Ref: physical_stock_batch_detail.psbGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: physical_stock_batch_detail.psbItemId > item_master.itemId [delete: Restrict]
+
+Ref: physical_stock_batch_detail.psbUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: physical_stock_batch_detail.psbBaseUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: physical_stock_batch_detail.psbPsdId > physical_stock_detail.psdId [delete: Cascade]
+
+Ref: physical_stock_batch_detail.psbReasonId > stock_adj_reason_master.sarId
+
+Ref: physical_stock_detail.psdCompanyId > companys.compId
+
+Ref: physical_stock_detail.psdBranchId > branch_master.brId
+
+Ref: physical_stock_detail.psdGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: physical_stock_detail.psdItemId > item_master.itemId [delete: Restrict]
+
+Ref: physical_stock_detail.psdUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: physical_stock_detail.psdBaseUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: physical_stock_detail.psdPscId > physical_stock_header.pscId [delete: Cascade]
+
+Ref: physical_stock_detail.psdReasonId > stock_adj_reason_master.sarId
+
+Ref: physical_stock_header.pscCompanyId > companys.compId
+
+Ref: physical_stock_header.pscBranchId > branch_master.brId
+
+Ref: physical_stock_header.pscGodownId > godown_locations.gdlId [delete: Restrict]
 
 Ref: branch_master.compId > companys.compId
 

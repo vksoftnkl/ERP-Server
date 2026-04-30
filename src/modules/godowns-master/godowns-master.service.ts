@@ -72,6 +72,7 @@ export class GodownsMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      styles: [],
     };
   }
   private async listFromConfiguredGridSql(
@@ -133,7 +134,7 @@ export class GodownsMasterService {
           total: result.total,
           total_pages: Math.ceil(result.total / limit),
         },
-        styles: result.styles,
+        styles: result.styles ?? [],
       };
     } catch {
       this.throwBadRequest('Invalid grid_sql configuration for godown location list', [

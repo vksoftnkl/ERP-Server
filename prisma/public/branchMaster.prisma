@@ -70,6 +70,9 @@ model BranchMaster {
   voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
+  physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderBranch")
+  physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailBranch")
+  physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   loyaltySchemes        LoyaltyScheme[]
   @@index([compId],      name: "idx_branch_comp_id")

@@ -167,7 +167,13 @@ describe('GodownsMasterService', () => {
               message: 'Comments are not allowed in configured query',
             };
           }
-          if (!new RegExp(`\\b${options.tableName}\\b`, 'i').test(normalizedSql)) {
+          const tableNameTerms = Array.from(
+            new Set([options.tableName, options.tableName.replace(/[\s-]+/g, '_')]),
+          );
+          const referencesConfiguredTable = tableNameTerms.some((term) =>
+            new RegExp(`\\b${term}\\b`, 'i').test(normalizedSql),
+          );
+          if (!referencesConfiguredTable) {
             return {
               isValid: false,
               message: `Configured query must reference ${options.tableName} table`,

@@ -17,11 +17,12 @@ import {
   EmployeeMasterListMeta,
   EmployeeMasterPayload,
 } from './types/employee-master-api.types';
+import type { GridColumnItem } from '../../../common/configured-grid-sql/types/configured-grid-sql.types';
 
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const EMPLOYEE_MASTER_TABLE_NAME = 'employee master';
+const EMPLOYEE_MASTER_TABLE_NAME = 'Employee Master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -35,22 +36,18 @@ export class EmployeeMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveEmployeeMasterDto: SaveEmployeeMasterDto): Promise<EmployeeMasterPayload> {
     if (saveEmployeeMasterDto.empId) {
       return this.updateEmployee(saveEmployeeMasterDto);
     }
-
     return this.createEmployee(saveEmployeeMasterDto);
   }
-
   async list(
     queryDto: ListEmployeeMasterQueryDto,
   ): Promise<ConfiguredGridListResult<EmployeeMasterListItem, EmployeeMasterListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.empCompanyId !== undefined ||
       queryDto.empDepartmentId !== undefined ||
@@ -59,48 +56,39 @@ export class EmployeeMasterService {
       queryDto.empStatus !== undefined ||
       queryDto.empEmploymentType !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.EmpMasterWhereInput = {
       empIsDeleted: false,
     };
-
     if (queryDto.empCompanyId !== undefined) {
       where.empCompanyId = queryDto.empCompanyId as string;
     }
-
     if (queryDto.empDepartmentId !== undefined) {
       where.empDepartmentId = queryDto.empDepartmentId;
     }
-
     if (queryDto.empDesignationId !== undefined) {
       where.empDesignationId = queryDto.empDesignationId;
     }
-
     if (queryDto.empIsActive !== undefined) {
       where.empIsActive = queryDto.empIsActive;
     }
-
     if (queryDto.empStatus !== undefined) {
       where.empStatus = {
         equals: queryDto.empStatus,
         mode: 'insensitive',
       };
     }
-
     if (queryDto.empEmploymentType !== undefined) {
       where.empEmploymentType = {
         equals: queryDto.empEmploymentType,
         mode: 'insensitive',
       };
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -116,7 +104,6 @@ export class EmployeeMasterService {
         { empStatus: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.empMaster.count({ where }),
       this.prisma.empMaster.findMany({
@@ -126,7 +113,6 @@ export class EmployeeMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -135,9 +121,9 @@ export class EmployeeMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      styles: [],
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -153,6 +139,63 @@ export class EmployeeMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
+    for (const configuredGrid of primaryConfiguredGrids) {
+      const rawGridSql = configuredGrid.gridSql?.trim();
+      if (!rawGridSql) {
+        continue;
+      }
+      const validation = this.configuredGridSqlService.validateBaseSql({
+        sql: rawGridSql,
+        tableName: EMPLOYEE_MASTER_TABLE_NAME,
+      });
+      if (!validation.isValid) {
+        continue;
+      }
+      try {
+        const result = await this.configuredGridSqlService.runPagedQuery<EmployeeMasterListItem>({
+          baseSql: validation.normalizedSql,
+          alias: 'employee_master_grid',
+          limit,
+          skip,
+          gridId: configuredGrid.gridId,
+        });
+        return {
+          items: result.items,
+          meta: {
+            page,
+            limit,
+            total: result.total,
+            total_pages: Math.ceil(result.total / limit),
+          },
+          styles: result.styles ?? [],
+        };
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+  async getById(empId: string): Promise<EmployeeMasterPayload> {
+    const record = await this.prisma.empMaster.findFirst({
+      where: {
+        empId,
+        empIsDeleted: false,
+      },
+    });
+    if (!record) {
+      this.throwNotFound(empId);
+    }
+    return this.toPayload(record);
+  }
+
+  async getStyles(): Promise<GridColumnItem[]> {
+    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
+      tableName: EMPLOYEE_MASTER_TABLE_NAME,
+    });
+    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
+      configuredGrids,
+      EMPLOYEE_MASTER_TABLE_NAME,
+    );
 
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
@@ -169,45 +212,13 @@ export class EmployeeMasterService {
       }
 
       try {
-        const result = await this.configuredGridSqlService.runPagedQuery<EmployeeMasterListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'employee_master_grid',
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
+        return await this.configuredGridSqlService.loadGridColumns(configuredGrid.gridId);
       } catch {
         continue;
       }
     }
 
-    return null;
-  }
-
-  async getById(empId: string): Promise<EmployeeMasterPayload> {
-    const record = await this.prisma.empMaster.findFirst({
-      where: {
-        empId,
-        empIsDeleted: false,
-      },
-    });
-
-    if (!record) {
-      this.throwNotFound(empId);
-    }
-
-    return this.toPayload(record);
+    return [];
   }
 
   async softDelete(empId: string): Promise<{ empId: string; deleted: true }> {
@@ -218,11 +229,9 @@ export class EmployeeMasterService {
           empIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(empId);
       }
-
       const modifiedOn = new Date();
       const result = await tx.empMaster.updateMany({
         where: {
@@ -236,11 +245,9 @@ export class EmployeeMasterService {
           empModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(empId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -249,7 +256,6 @@ export class EmployeeMasterService {
         empModifiedOn: modifiedOn,
         empModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -265,14 +271,12 @@ export class EmployeeMasterService {
         },
         tx,
       );
-
       return {
         empId,
         deleted: true,
       };
     });
   }
-
   private async createEmployee(
     saveEmployeeMasterDto: SaveEmployeeMasterDto,
   ): Promise<EmployeeMasterPayload> {
@@ -283,11 +287,9 @@ export class EmployeeMasterService {
           saveEmployeeMasterDto.empSalaryType,
           'empSalaryType',
         );
-
         await this.ensureCompanyExists(saveEmployeeMasterDto.empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
-
         const now = new Date();
         const data: Prisma.EmpMasterUncheckedCreateInput = {
           empCompanyId: saveEmployeeMasterDto.empCompanyId,
@@ -298,12 +300,9 @@ export class EmployeeMasterService {
           empModifiedOn: now,
           empModifiedBy: DEFAULT_ACTOR,
         };
-
         this.applyOptionalFields(data, saveEmployeeMasterDto);
-
         const created = await tx.empMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -319,7 +318,6 @@ export class EmployeeMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -327,12 +325,10 @@ export class EmployeeMasterService {
       throw error;
     }
   }
-
   private async updateEmployee(
     saveEmployeeMasterDto: SaveEmployeeMasterDto,
   ): Promise<EmployeeMasterPayload> {
     const empId = saveEmployeeMasterDto.empId!;
-
     try {
       return this.prisma.$transaction(async (tx) => {
         const existing = await tx.empMaster.findFirst({
@@ -341,21 +337,17 @@ export class EmployeeMasterService {
             empIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(empId);
         }
-
         const empName = this.normalizeRequiredValue(saveEmployeeMasterDto.empName, 'empName');
         const empSalaryType = this.normalizeRequiredValue(
           saveEmployeeMasterDto.empSalaryType,
           'empSalaryType',
         );
-
         await this.ensureCompanyExists(saveEmployeeMasterDto.empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
-
         const data: Prisma.EmpMasterUncheckedUpdateInput = {
           empCompanyId: saveEmployeeMasterDto.empCompanyId,
           empName,
@@ -363,9 +355,7 @@ export class EmployeeMasterService {
           empModifiedOn: new Date(),
           empModifiedBy: DEFAULT_ACTOR,
         };
-
         this.applyOptionalFields(data, saveEmployeeMasterDto);
-
         const updated = await tx.empMaster.update({
           where: {
             empId,
@@ -373,7 +363,6 @@ export class EmployeeMasterService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -389,7 +378,6 @@ export class EmployeeMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -397,7 +385,6 @@ export class EmployeeMasterService {
       throw error;
     }
   }
-
   private async ensureCompanyExists(compId: string, tx: EmployeeMasterWriteClient): Promise<void> {
     const company = await tx.company.findFirst({
       where: {
@@ -408,7 +395,6 @@ export class EmployeeMasterService {
         compId: true,
       },
     });
-
     if (!company) {
       this.throwBadRequest('Company does not exist', [
         {
@@ -417,8 +403,7 @@ export class EmployeeMasterService {
         },
       ]);
     }
-  }
-
+    }
   private async ensureDesignationExists(
     empDesignationId: string | null | undefined,
     tx: EmployeeMasterWriteClient,
@@ -426,7 +411,6 @@ export class EmployeeMasterService {
     if (empDesignationId === undefined || empDesignationId === null) {
       return;
     }
-
     const designation = await tx.employeeDesignation.findFirst({
       where: {
         edId: empDesignationId,
@@ -436,7 +420,6 @@ export class EmployeeMasterService {
         edId: true,
       },
     });
-
     if (!designation) {
       this.throwBadRequest('Employee designation does not exist', [
         {
@@ -446,7 +429,6 @@ export class EmployeeMasterService {
       ]);
     }
   }
-
   private async ensureDepartmentExists(
     empDepartmentId: string | null | undefined,
     tx: EmployeeMasterWriteClient,
@@ -454,7 +436,6 @@ export class EmployeeMasterService {
     if (empDepartmentId === undefined || empDepartmentId === null) {
       return;
     }
-
     const department = await tx.employeeDepartment.findFirst({
       where: {
         edptId: empDepartmentId,
@@ -464,7 +445,6 @@ export class EmployeeMasterService {
         edptId: true,
       },
     });
-
     if (!department) {
       this.throwBadRequest('Employee department does not exist', [
         {
