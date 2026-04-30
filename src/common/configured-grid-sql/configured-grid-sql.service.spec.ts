@@ -39,10 +39,65 @@ describe('ConfiguredGridSqlService', () => {
         where: expect.objectContaining({
           gridIsDeleted: false,
           gridStatus: true,
-          gridSql: expect.objectContaining({
-            contains: 'units',
-            mode: 'insensitive',
-          }),
+          gridSql: {
+            not: null,
+          },
+          OR: [
+            {
+              gridSql: expect.objectContaining({
+                contains: 'units',
+                mode: 'insensitive',
+              }),
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('matches display-style table names to underscored configured SQL table names', async () => {
+    prisma.gridDetails.findMany.mockResolvedValue([
+      {
+        gridId: 21n,
+        gridSql: 'SELECT * FROM sales.area_master WHERE arm_is_deleted = false',
+      },
+    ]);
+
+    const candidates = await service.loadCandidates({ tableName: 'area master' });
+    const primaryCandidates = service.filterPrimaryFromTable(candidates, 'area master');
+    const validation = service.validateBaseSql({
+      sql: 'SELECT * FROM sales.area_master WHERE arm_is_deleted = false',
+      tableName: 'area master',
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(primaryCandidates).toEqual([
+      {
+        gridId: 21n,
+        gridSql: 'SELECT * FROM sales.area_master WHERE arm_is_deleted = false',
+      },
+    ]);
+    expect(validation).toEqual({
+      isValid: true,
+      normalizedSql: 'SELECT * FROM sales.area_master WHERE arm_is_deleted = false',
+    });
+    expect(prisma.gridDetails.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            {
+              gridSql: expect.objectContaining({
+                contains: 'area master',
+                mode: 'insensitive',
+              }),
+            },
+            {
+              gridSql: expect.objectContaining({
+                contains: 'area_master',
+                mode: 'insensitive',
+              }),
+            },
+          ],
         }),
       }),
     );

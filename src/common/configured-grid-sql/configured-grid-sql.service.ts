@@ -25,6 +25,17 @@ interface SqlRelationReference {
 @Injectable()
 export class ConfiguredGridSqlService {
   constructor(private readonly prisma: PrismaService) { }
+
+  private normalizeRelationName(value: string): string {
+    return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  }
+
+  private buildTableNameSearchTerms(tableName: string): string[] {
+    const trimmed = tableName.trim();
+    const normalized = this.normalizeRelationName(trimmed);
+    return Array.from(new Set([trimmed, normalized].filter(Boolean)));
+  }
+
   async loadCandidates(
     options: LoadConfiguredGridSqlCandidatesOptions,
   ): Promise<ConfiguredGridSqlCandidate[]> {
@@ -36,11 +47,13 @@ export class ConfiguredGridSqlService {
       },
     };
     if (options.applyTableNameFilter !== false) {
-      where.gridSql = {
-        not: null,
-        contains: options.tableName,
-        mode: 'insensitive',
-      };
+      const tableNameTerms = this.buildTableNameSearchTerms(options.tableName);
+      where.OR = tableNameTerms.map((term) => ({
+        gridSql: {
+          contains: term,
+          mode: 'insensitive',
+        },
+      }));
     }
     if (options.fixedGridId !== undefined) {
       where.gridId = options.fixedGridId;
@@ -58,12 +71,17 @@ export class ConfiguredGridSqlService {
     candidates: ConfiguredGridSqlCandidate[],
     tableName: string,
   ): ConfiguredGridSqlCandidate[] {
+    const normalizedTableName = this.normalizeRelationName(tableName);
     return candidates.filter((candidate) => {
       const rawSql = candidate.gridSql?.trim();
       if (!rawSql) {
         return false;
       }
-      return this.extractTopLevelFromTableName(rawSql) === tableName;
+      const extractedTableName = this.extractTopLevelFromTableName(rawSql);
+      return (
+        extractedTableName !== null &&
+        this.normalizeRelationName(extractedTableName) === normalizedTableName
+      );
     });
   }
   validateBaseSql(options: ValidateConfiguredGridSqlOptions): ConfiguredGridSqlValidationResult {
@@ -98,8 +116,12 @@ export class ConfiguredGridSqlService {
         message: 'Positional parameters are not allowed in configured query',
       };
     }
-    const tableNameRegex = new RegExp(`\\b${this.escapeRegex(options.tableName)}\\b`, 'i');
-    if (!tableNameRegex.test(normalizedSql)) {
+    const tableNameTerms = this.buildTableNameSearchTerms(options.tableName);
+    const referencesConfiguredTable = tableNameTerms.some((term) => {
+      const tableNameRegex = new RegExp(`\\b${this.escapeRegex(term)}\\b`, 'i');
+      return tableNameRegex.test(normalizedSql);
+    });
+    if (!referencesConfiguredTable) {
       return {
         isValid: false,
         message: `Configured query must reference ${options.tableName} table`,
@@ -108,7 +130,9 @@ export class ConfiguredGridSqlService {
     if (options.primaryTableSchema) {
       const primaryRelation = this.extractTopLevelFromRelation(normalizedSql);
       if (
-        primaryRelation?.tableName === options.tableName &&
+        primaryRelation !== null &&
+        this.normalizeRelationName(primaryRelation.tableName) ===
+          this.normalizeRelationName(options.tableName) &&
         primaryRelation.schemaName !== null &&
         primaryRelation.schemaName !== options.primaryTableSchema.toLowerCase()
       ) {
