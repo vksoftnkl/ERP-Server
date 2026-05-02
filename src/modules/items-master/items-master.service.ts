@@ -43,7 +43,6 @@ export class ItemsMasterService {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.item_branch_id !== undefined ||
       queryDto.item_group_id !== undefined ||
@@ -54,19 +53,15 @@ export class ItemsMasterService {
       queryDto.item_default_tax_id !== undefined ||
       queryDto.item_stock_type !== undefined ||
       queryDto.item_is_active !== undefined ||
-      queryDto.item_is_service !== undefined ||
-      Boolean(queryDto.search?.trim());
-
+      queryDto.item_is_service !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     return this.listFromPrisma(queryDto, page, limit, skip);
   }
-
   private async listFromPrisma(
     queryDto: ListItemQueryDto,
     page: number,
@@ -74,7 +69,7 @@ export class ItemsMasterService {
     skip: number,
   ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta>> {
     const where = this.buildListWhere(queryDto);
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.itemMaster.count({ where }),
       this.prisma.itemMaster.findMany({
         where,
@@ -82,8 +77,8 @@ export class ItemsMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_TABLE_NAME),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -92,9 +87,11 @@ export class ItemsMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -125,6 +122,7 @@ export class ItemsMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,
@@ -315,7 +313,6 @@ export class ItemsMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -327,47 +324,36 @@ export class ItemsMasterService {
     const where: Prisma.ItemMasterWhereInput = {
       itemIsDeleted: false,
     };
-
     if (queryDto.item_branch_id !== undefined) {
       where.itemBranchId = queryDto.item_branch_id;
     }
-
     if (queryDto.item_group_id !== undefined) {
       where.itemGroupId = queryDto.item_group_id;
     }
-
     if (queryDto.item_category_id !== undefined) {
       where.itemCategoryId = queryDto.item_category_id;
     }
-
     if (queryDto.item_brand_id !== undefined) {
       where.itemBrandId = queryDto.item_brand_id;
     }
-
     if (queryDto.item_section_id !== undefined) {
       where.itemSectionId = queryDto.item_section_id;
     }
-
     if (queryDto.item_base_unit_id !== undefined) {
       where.itemBaseUnitId = queryDto.item_base_unit_id;
     }
-
     if (queryDto.item_default_tax_id !== undefined) {
       where.itemDefaultTaxId = queryDto.item_default_tax_id;
     }
-
     if (queryDto.item_stock_type !== undefined) {
       where.itemStockType = queryDto.item_stock_type;
     }
-
     if (queryDto.item_is_active !== undefined) {
       where.itemIsActive = queryDto.item_is_active;
     }
-
     if (queryDto.item_is_service !== undefined) {
       where.itemIsService = queryDto.item_is_service;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -528,27 +514,21 @@ export class ItemsMasterService {
     if (this.hasOwnProperty(saveItemDto, 'item_random_stock')) {
       data.itemRandomStock = saveItemDto.item_random_stock;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_barcode_sticker')) {
       data.itemBarcodeSticker = saveItemDto.item_barcode_sticker;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_barcode_sticker_id')) {
       data.itemBarcodeStickerId = saveItemDto.item_barcode_sticker_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_default_tax_id')) {
       data.itemDefaultTaxId = saveItemDto.item_default_tax_id;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_hsn_code')) {
       data.itemHsnCode = saveItemDto.item_hsn_code;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_batch_config')) {
       data.itemBatchConfig = saveItemDto.item_batch_config;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_sort_order')) {
       data.itemSortOrder = saveItemDto.item_sort_order;
     }
@@ -556,44 +536,35 @@ export class ItemsMasterService {
     if (this.hasOwnProperty(saveItemDto, 'item_photo')) {
       data.itemPhoto = this.decodePhoto(saveItemDto.item_photo);
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_image_url')) {
       data.itemImageUrl = saveItemDto.item_image_url;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_notes')) {
       data.itemNotes = saveItemDto.item_notes;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_storage_location')) {
       data.itemStorageLocation = saveItemDto.item_storage_location;
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_packing_item_ids')) {
       data.itemPackingItemIds = saveItemDto.item_packing_item_ids ?? [];
     }
-
     if (this.hasOwnProperty(saveItemDto, 'item_is_active')) {
       data.itemIsActive = saveItemDto.item_is_active;
     }
   }
-
   private decodePhoto(
     value: string | null | undefined,
   ): Uint8Array<ArrayBuffer> | null | undefined {
     if (value === undefined) {
       return undefined;
     }
-
     if (value === null) {
       return null;
     }
-
     const normalized = value.replace(/\s+/g, '');
     if (!normalized) {
       return null;
     }
-
     if (normalized.length % 4 !== 0 || !BASE64_PATTERN.test(normalized)) {
       this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
         {
@@ -602,11 +573,9 @@ export class ItemsMasterService {
         },
       ]);
     }
-
     const bytes = Uint8Array.from(Buffer.from(normalized, 'base64'));
     return bytes;
   }
-
   private toPayload(record: ItemMaster): ItemPayload {
     return {
       item_id: record.itemId,
@@ -673,12 +642,10 @@ export class ItemsMasterService {
       item_modified_by: record.itemModifiedBy,
     };
   }
-
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
     const trimmed = value?.trim();
     return trimmed || fallback;
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(

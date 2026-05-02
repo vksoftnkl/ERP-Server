@@ -52,11 +52,10 @@ export class CustomerService {
       queryDto.cusCompanyId !== undefined ||
       queryDto.cusAreaId !== undefined ||
       queryDto.cusGroupId !== undefined ||
-      queryDto.cusIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.cusIsActive !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -118,6 +117,7 @@ export class CustomerService {
   }
 
   private async listFromConfiguredGridSql(
+    queryDto: ListCustomerQueryDto,
     page: number,
     limit: number,
     skip: number,
@@ -148,9 +148,23 @@ export class CustomerService {
       }
 
       try {
-        const result = await this.configuredGridSqlService.runPagedQuery<CustomerListItem>({
-          baseSql: validation.normalizedSql,
+        const baseSql = validation.normalizedSql;
+        const searchableFieldNames = queryDto.search?.trim()
+          ? await this.configuredGridSqlService.getSearchableFieldNames(
+              configuredGrid.gridId,
+              baseSql,
+            )
+          : [];
+        const { sql: filteredSql, params } = this.configuredGridSqlService.buildSearchSql({
+          baseSql,
           alias: 'customer_grid',
+          search: queryDto.search ?? '',
+          searchableFieldNames,
+        });
+        const result = await this.configuredGridSqlService.runPagedQuery<CustomerListItem>({
+          baseSql: filteredSql,
+          alias: 'customer_grid',
+          params,
           limit,
           skip,
           gridId: configuredGrid.gridId,

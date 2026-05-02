@@ -43,10 +43,9 @@ export class EmployeeDepartmentMasterService {
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
-      queryDto.edptIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.edptIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -86,6 +85,7 @@ export class EmployeeDepartmentMasterService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -118,6 +118,7 @@ export class EmployeeDepartmentMasterService {
           await this.configuredGridSqlService.runPagedQuery<EmployeeDepartmentMasterListItem>({
             baseSql: validation.normalizedSql,
             alias: 'employee_department_master_grid',
+            search,
             limit,
             skip,
           gridId: configuredGrid.gridId,

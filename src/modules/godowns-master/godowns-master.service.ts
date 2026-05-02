@@ -55,7 +55,7 @@ export class GodownsMasterService {
       return configuredList;
     }
     const where = this.buildListWhere(queryDto);
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.godownLocation.count({ where }),
       this.prisma.godownLocation.findMany({
         where,
@@ -63,6 +63,7 @@ export class GodownsMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(GODOWN_LOCATION_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -72,7 +73,7 @@ export class GodownsMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
-      styles: [],
+      styles: styles ?? [],
     };
   }
   private async listFromConfiguredGridSql(

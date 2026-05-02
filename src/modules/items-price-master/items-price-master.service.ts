@@ -141,10 +141,9 @@ export class ItemsPriceMasterService {
       queryDto.ipm_base_unit_id !== undefined ||
       queryDto.ipm_profit_type !== undefined ||
       queryDto.ipm_is_active !== undefined ||
-      queryDto.ipm_is_deleted !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.ipm_is_deleted !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -184,10 +183,10 @@ export class ItemsPriceMasterService {
       queryDto.iuc_is_base_unit !== undefined ||
       queryDto.iuc_is_big_unit !== undefined ||
       queryDto.iuc_is_active !== undefined ||
-      queryDto.iuc_is_deleted !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.iuc_is_deleted !== undefined;
     if (!hasStructuredFilters) {
       const configuredList = await this.listItemUnitConversionsFromConfiguredGridSql(
+        queryDto.search,
         page,
         limit,
         skip,
@@ -217,6 +216,7 @@ export class ItemsPriceMasterService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -247,6 +247,7 @@ export class ItemsPriceMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemPriceListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_price_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,
@@ -268,6 +269,7 @@ export class ItemsPriceMasterService {
     return null;
   }
   private async listItemUnitConversionsFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -301,6 +303,7 @@ export class ItemsPriceMasterService {
           await this.configuredGridSqlService.runPagedQuery<ItemUnitConversionListItem>({
             baseSql: validation.normalizedSql,
             alias: 'item_unit_conversion_grid',
+            search,
             limit,
             skip,
             gridId: configuredGrid.gridId,

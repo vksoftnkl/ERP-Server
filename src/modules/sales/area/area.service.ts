@@ -42,10 +42,9 @@ export class AreaService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.armCityId !== undefined ||
-      queryDto.armIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.armIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -67,7 +66,7 @@ export class AreaService {
         { armShort: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.areaMaster.count({ where }),
       this.prisma.areaMaster.findMany({
         where,
@@ -75,6 +74,7 @@ export class AreaService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(AREA_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -84,9 +84,11 @@ export class AreaService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -117,6 +119,7 @@ export class AreaService {
         const result = await this.configuredGridSqlService.runPagedQuery<AreaListItem>({
           baseSql: validation.normalizedSql,
           alias: 'area_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

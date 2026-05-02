@@ -48,10 +48,9 @@ export class UserLoginSessionsService {
       queryDto.ulsDeviceId !== undefined ||
       queryDto.ulsLoginStatus !== undefined ||
       queryDto.ulsIsActiveSession !== undefined ||
-      queryDto.ulsIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.ulsIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -115,6 +114,7 @@ export class UserLoginSessionsService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -150,6 +150,7 @@ export class UserLoginSessionsService {
       const result = await this.configuredGridSqlService.runPagedQuery<UserLoginSessionsListItem>({
         baseSql: validation.normalizedSql,
         alias: 'user_login_sessions_grid',
+        search,
         limit,
         skip,
           gridId: configuredGrid.gridId,

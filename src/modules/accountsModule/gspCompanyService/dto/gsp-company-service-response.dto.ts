@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class GspCompanyServiceErrorFieldDto {
   @ApiProperty({ example: 'csgServiceType' })
@@ -123,6 +124,9 @@ export class GspCompanyServiceSuccessListDto {
 
   @ApiProperty({ type: GspCompanyServiceListMetaDto })
   meta!: GspCompanyServiceListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
 }
 
 export class GspCompanyServiceSuccessDeleteDto {

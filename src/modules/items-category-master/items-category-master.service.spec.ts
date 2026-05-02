@@ -22,6 +22,9 @@ type PrismaMock = {
     update: jest.Mock<Promise<categoryMaster>, [Prisma.categoryMasterUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.categoryMasterUpdateManyArgs]>;
   };
+  gridColumn: {
+    findMany: jest.Mock;
+  };
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -74,6 +77,9 @@ describe('ItemsCategoryMasterService', () => {
         count: jest.fn<Promise<number>, [Prisma.categoryMasterCountArgs]>(),
         update: jest.fn<Promise<categoryMaster>, [Prisma.categoryMasterUpdateArgs]>(),
         updateMany: jest.fn<Promise<Prisma.BatchPayload>, [Prisma.categoryMasterUpdateManyArgs]>(),
+      },
+      gridColumn: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
       $transaction: jest.fn<
         Promise<unknown>,
@@ -495,8 +501,9 @@ describe('ItemsCategoryMasterService', () => {
       primaryTableSchema: 'inventory',
     });
     expect(configuredGridSqlService.runPagedQuery).toHaveBeenCalledWith({
-      baseSql: gridSql,
+      baseSql: `SELECT * FROM (${gridSql}) AS item_category_grid`,
       alias: 'item_category_grid',
+      params: [],
       limit: 20,
       skip: 0,
       gridId,
@@ -512,6 +519,70 @@ describe('ItemsCategoryMasterService', () => {
       },
       styles,
     });
+  });
+
+  it('returns configured grid styles when filters are applied', async () => {
+    const gridId = 3n;
+    const gridSql =
+      'SELECT category_id, category_name, category_is_active FROM inventory.item_category_master WHERE category_is_deleted = false';
+    const styles = [
+      {
+        grid_column_number: 1,
+        grid_column_name: 'category_name',
+        grid_column_width: 180,
+        grid_column_alignment: 'left',
+        grid_column_visibility: true,
+        grid_column_filter: true,
+        grid_column_condition: null,
+        grid_column_condition_color: null,
+        grid_column_group: false,
+        grid_column_total: false,
+        grid_column_data_type: 'text',
+        grid_column_color: null,
+        grid_column_notes: null,
+      },
+    ];
+
+    configuredGridSqlService.loadCandidates.mockResolvedValue([{ gridId, gridSql }]);
+    configuredGridSqlService.validateBaseSql.mockReturnValue({
+      isValid: true,
+      normalizedSql: gridSql,
+    });
+    configuredGridSqlService.runPagedQuery.mockResolvedValue({
+      items: [{ category_id: ITEM_CATEGORY_ID, category_name: 'Dairy' }],
+      total: 1,
+      styles,
+    });
+    prisma.gridColumn.findMany.mockResolvedValue([
+      {
+        gridColumnName: 'category_name',
+        gridColumnNumber: 2,
+      },
+    ]);
+
+    const result = await service.list({
+      category_is_active: true,
+      search: 'dairy',
+      page: 2,
+      limit: 10,
+    });
+
+    expect(configuredGridSqlService.runPagedQuery).toHaveBeenCalledWith({
+      baseSql:
+        `SELECT * FROM (${gridSql}) AS item_category_grid WHERE ` +
+        `item_category_grid.category_is_active = $1 AND ` +
+        `(` +
+        `EXISTS (SELECT 1 FROM jsonb_each_text(row_to_json(item_category_grid)::jsonb) AS grid_kv(key, value) ` +
+        `WHERE grid_kv.key = $2 AND grid_kv.value ILIKE $3)` +
+        `)`,
+      alias: 'item_category_grid',
+      params: [true, 'category_name', '%dairy%'],
+      limit: 10,
+      skip: 10,
+      gridId,
+    });
+    expect(prisma.categoryMaster.count).not.toHaveBeenCalled();
+    expect(result.styles).toEqual(styles);
   });
 
   it('applies pagination and search filters correctly', async () => {

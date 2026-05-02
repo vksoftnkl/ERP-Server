@@ -48,10 +48,9 @@ export class LedgerBankAccountService {
       queryDto.lbaCompanyId !== undefined ||
       Boolean(queryDto.lbaLedgerId?.trim()) ||
       queryDto.lbaIsActive !== undefined ||
-      queryDto.lbaIsDefault !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.lbaIsDefault !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -105,6 +104,7 @@ export class LedgerBankAccountService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -135,6 +135,7 @@ export class LedgerBankAccountService {
         const result = await this.configuredGridSqlService.runPagedQuery<LedgerBankAccountListItem>({
           baseSql: validation.normalizedSql,
           alias: 'ledger_bank_account_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

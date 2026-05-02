@@ -39,16 +39,15 @@ export class ItemsTaxMasterService {
     const hasStructuredFilters =
       queryDto.tax_is_active !== undefined ||
       queryDto.tax_taxability_type !== undefined ||
-      queryDto.tax_is_reverse_charge !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.tax_is_reverse_charge !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
     const where = this.buildListWhere(queryDto);
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.itemTaxMaster.count({ where }),
       this.prisma.itemTaxMaster.findMany({
         where,
@@ -56,6 +55,7 @@ export class ItemsTaxMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_TAX_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -65,9 +65,11 @@ export class ItemsTaxMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -98,6 +100,7 @@ export class ItemsTaxMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemTaxListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_tax_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

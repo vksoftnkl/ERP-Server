@@ -55,11 +55,10 @@ export class TenderMasterService {
     const hasStructuredFilters =
       queryDto.tndTypeId !== undefined ||
       queryDto.tndLedgerId !== undefined ||
-      queryDto.tndIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.tndIsActive !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -89,7 +88,7 @@ export class TenderMasterService {
       ];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.accountTenderMaster.count({ where }),
       this.prisma.accountTenderMaster.findMany({
         where,
@@ -97,6 +96,7 @@ export class TenderMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(TENDER_MASTER_TABLE_NAME),
     ]);
 
     return {
@@ -107,10 +107,12 @@ export class TenderMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -144,6 +146,7 @@ export class TenderMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<TenderMasterListItem>({
           baseSql: validation.normalizedSql,
           alias: 'tender_master_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

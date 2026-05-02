@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { GspCompanyService, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -22,6 +22,7 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const GSP_COMPANY_SERVICE_TABLE_NAME = 'gsp company service';
 const GSP_COMPANY_SERVICE_AUDIT_SCREEN_NAME = 'GSP Company Service';
+const GSP_COMPANY_SERVICE_GRID_ALIAS = 'gsp_company_service_grid';
 const COMPANY_ID_KEYS = ['csgCompanyId', 'csg_company_id', 'companyId', 'company_id'] as const;
 const PROVIDER_ID_KEYS = [
   'csgGspProviderId',
@@ -63,21 +64,13 @@ export class GspCompanyServiceService {
   }
   async list(
     queryDto: ListGspCompanyServiceQueryDto,
-  ): Promise<{ items: GspCompanyServiceListItem[]; meta: GspCompanyServiceListMeta }> {
+  ): Promise<ConfiguredGridListResult<GspCompanyServiceListItem, GspCompanyServiceListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-    const hasStructuredFilters =
-      queryDto.csgCompanyId !== undefined ||
-      queryDto.csgGspProviderId !== undefined ||
-      Boolean(queryDto.csgServiceType?.trim()) ||
-      queryDto.csgIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
+    const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
+    if (configuredList) {
+      return configuredList;
     }
     const where: Prisma.GspCompanyServiceWhereInput = {
       csgIsDeleted: false,
@@ -135,10 +128,11 @@ export class GspCompanyServiceService {
     };
   }
   private async listFromConfiguredGridSql(
+    queryDto: ListGspCompanyServiceQueryDto,
     page: number,
     limit: number,
     skip: number,
-  ): Promise<{ items: GspCompanyServiceListItem[]; meta: GspCompanyServiceListMeta } | null> {
+  ): Promise<ConfiguredGridListResult<GspCompanyServiceListItem, GspCompanyServiceListMeta> | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: GSP_COMPANY_SERVICE_TABLE_NAME,
     });
@@ -162,28 +156,116 @@ export class GspCompanyServiceService {
         continue;
       }
       try {
+        const { sql: filteredSql, params } = this.buildConfiguredGridListSql(
+          validation.normalizedSql,
+          queryDto,
+        );
         const result = await this.configuredGridSqlService.runPagedQuery<GspCompanyServiceListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'gsp_company_service_grid',
+          baseSql: filteredSql,
+          alias: GSP_COMPANY_SERVICE_GRID_ALIAS,
+          params,
           limit,
           skip,
           gridId: configuredGrid.gridId,
         });
-        const items = await this.attachReferenceLabels(result.items);
         return {
-          items,
+          items: result.items,
           meta: {
             page,
             limit,
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
+          styles: result.styles,
         };
       } catch {
         continue;
       }
     }
     return null;
+  }
+  private buildConfiguredGridListSql(
+    baseSql: string,
+    queryDto: ListGspCompanyServiceQueryDto,
+  ): { sql: string; params: unknown[] } {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (queryDto.csgCompanyId !== undefined) {
+      conditions.push(
+        this.buildJsonTextFilterCondition(
+          params,
+          COMPANY_ID_KEYS,
+          queryDto.csgCompanyId,
+        ),
+      );
+    }
+    if (queryDto.csgGspProviderId !== undefined) {
+      conditions.push(
+        this.buildJsonTextFilterCondition(
+          params,
+          PROVIDER_ID_KEYS,
+          queryDto.csgGspProviderId,
+        ),
+      );
+    }
+    if (queryDto.csgServiceType?.trim()) {
+      conditions.push(
+        this.buildJsonTextFilterCondition(
+          params,
+          ['csgServiceType', 'csg_service_type', 'serviceType', 'service_type'],
+          queryDto.csgServiceType.trim(),
+        ),
+      );
+    }
+    if (queryDto.csgIsActive !== undefined) {
+      conditions.push(
+        this.buildJsonTextFilterCondition(
+          params,
+          ['csgIsActive', 'csg_is_active', 'isActive', 'is_active'],
+          String(queryDto.csgIsActive),
+          true,
+        ),
+      );
+    }
+    if (queryDto.search?.trim()) {
+      params.push(`%${queryDto.search.trim()}%`);
+      const searchParamIndex = params.length;
+      conditions.push(
+        `EXISTS (` +
+          `SELECT 1 FROM jsonb_each_text(row_to_json(${GSP_COMPANY_SERVICE_GRID_ALIAS})::jsonb) AS grid_kv(key, value) ` +
+          `WHERE grid_kv.value ILIKE $${searchParamIndex}` +
+          `)`,
+      );
+    }
+
+    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    return {
+      sql: `SELECT * FROM (${baseSql}) AS ${GSP_COMPANY_SERVICE_GRID_ALIAS}${whereClause}`,
+      params,
+    };
+  }
+  private buildJsonTextFilterCondition(
+    params: unknown[],
+    keys: readonly string[],
+    value: string,
+    caseInsensitive = false,
+  ): string {
+    params.push(Array.from(keys));
+    const keysParamIndex = params.length;
+    params.push(caseInsensitive ? value.toLowerCase() : value);
+    const valueParamIndex = params.length;
+    const comparison = caseInsensitive
+      ? `LOWER(grid_kv.value) = $${valueParamIndex}`
+      : `grid_kv.value = $${valueParamIndex}`;
+
+    return (
+      `EXISTS (` +
+      `SELECT 1 FROM jsonb_each_text(row_to_json(${GSP_COMPANY_SERVICE_GRID_ALIAS})::jsonb) AS grid_kv(key, value) ` +
+      `WHERE grid_kv.key = ANY($${keysParamIndex}::text[]) ` +
+      `AND ${comparison}` +
+      `)`
+    );
   }
   async getById(csgCompanyServiceId: string): Promise<GspCompanyServicePayload> {
     const record = await this.prisma.gspCompanyService.findFirst({

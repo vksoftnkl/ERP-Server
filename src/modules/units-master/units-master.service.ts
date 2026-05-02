@@ -44,11 +44,10 @@ export class UnitsMasterService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.unit_base_unit_id !== undefined ||
-      queryDto.unit_is_active !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.unit_is_active !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -72,7 +71,7 @@ export class UnitsMasterService {
         { unit_description: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.unit.count({ where }),
       this.prisma.unit.findMany({
         where,
@@ -80,6 +79,7 @@ export class UnitsMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(UNIT_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -89,9 +89,11 @@ export class UnitsMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -129,6 +131,7 @@ export class UnitsMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<UnitListItem>({
           baseSql: validation.normalizedSql,
           alias: 'unit_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

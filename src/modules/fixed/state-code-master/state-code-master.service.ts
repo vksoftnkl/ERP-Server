@@ -60,11 +60,10 @@ export class StateCodeMasterService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.isActive !== undefined ||
-      queryDto.stateUt !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.stateUt !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -91,7 +90,7 @@ export class StateCodeMasterService {
       ];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.stateCode.count({ where }),
       this.prisma.stateCode.findMany({
         where,
@@ -99,6 +98,7 @@ export class StateCodeMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(STATE_CODE_MASTER_TABLE_NAME),
     ]);
 
     return {
@@ -109,10 +109,12 @@ export class StateCodeMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -150,6 +152,7 @@ export class StateCodeMasterService {
       const result = await this.configuredGridSqlService.runPagedQuery<StateCodeMasterListItem>({
         baseSql: validation.normalizedSql,
         alias: 'state_code_master_grid',
+        search,
         limit,
         skip,
           gridId: configuredGrid.gridId,

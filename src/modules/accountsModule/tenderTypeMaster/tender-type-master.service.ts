@@ -53,10 +53,9 @@ export class TenderTypeMasterService {
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
 
-    const hasStructuredFilters =
-      queryDto.ttmIsActive !== undefined || Boolean(queryDto.search?.trim());
+    const hasStructuredFilters = queryDto.ttmIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -100,6 +99,7 @@ export class TenderTypeMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -137,6 +137,7 @@ export class TenderTypeMasterService {
             await this.configuredGridSqlService.runPagedQuery<TenderTypeMasterListItem>({
               baseSql: validation.normalizedSql,
               alias: 'tender_type_grid',
+              search,
               limit,
               skip,
               gridId: configuredGrid.gridId,

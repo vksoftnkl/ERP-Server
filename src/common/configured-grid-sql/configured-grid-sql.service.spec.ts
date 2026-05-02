@@ -5,6 +5,9 @@ type PrismaMock = {
   gridDetails: {
     findMany: jest.Mock;
   };
+  gridColumn: {
+    findMany: jest.Mock;
+  };
   $queryRawUnsafe: jest.Mock;
 };
 
@@ -15,6 +18,9 @@ describe('ConfiguredGridSqlService', () => {
   beforeEach(() => {
     prisma = {
       gridDetails: {
+        findMany: jest.fn(),
+      },
+      gridColumn: {
         findMany: jest.fn(),
       },
       $queryRawUnsafe: jest.fn(),
@@ -322,6 +328,87 @@ ORDER BY unit_name`,
       total: 3,
     });
     expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+  });
+
+  it('maps filter-enabled grid columns to configured sql output fields', async () => {
+    prisma.gridColumn.findMany.mockResolvedValue([
+      {
+        gridColumnName: 'Customer name',
+        gridColumnNumber: 1,
+      },
+      {
+        gridColumnName: 'Mobile',
+        gridColumnNumber: 4,
+      },
+    ]);
+
+    const result = await service.getSearchableFieldNames(
+      10n,
+      'SELECT cus_name, cus_code, cus_city, cus_phone1 FROM sales.customers',
+    );
+
+    expect(result).toEqual(['cus_name', 'cus_phone1']);
+    expect(prisma.gridColumn.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          gridId: 10n,
+          gridColumnFilter: true,
+        }),
+      }),
+    );
+  });
+
+  it('builds a searchable wrapper query over configured grid sql fields', () => {
+    const result = service.buildSearchSql({
+      baseSql: 'SELECT cus_name, cus_code FROM sales.customers',
+      alias: 'customer_grid',
+      search: 'sun',
+      searchableFieldNames: ['cus_name'],
+    });
+
+    expect(result.params).toEqual(['cus_name', '%sun%']);
+    expect(result.sql).toContain('SELECT * FROM (SELECT cus_name, cus_code FROM sales.customers) AS customer_grid');
+    expect(result.sql).toContain('grid_kv.key = $1');
+    expect(result.sql).toContain('grid_kv.value ILIKE $2');
+  });
+
+  it('applies configured searchable grid columns when running a searched paged query', async () => {
+    prisma.gridColumn.findMany
+      .mockResolvedValueOnce([
+        {
+          gridColumnName: 'Customer name',
+          gridColumnNumber: 1,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    prisma.$queryRawUnsafe
+      .mockResolvedValueOnce([
+        {
+          total: '1',
+        },
+      ])
+      .mockResolvedValueOnce([{ cus_name: 'SUN ELECTRONICS G' }]);
+
+    const result = await service.runPagedQuery<{ cus_name: string }>({
+      baseSql: 'SELECT cus_name, cus_code FROM sales.customers',
+      alias: 'customer_grid',
+      search: 'sun',
+      gridId: 10n,
+      limit: 20,
+      skip: 0,
+    });
+
+    expect(result).toEqual({
+      items: [{ cus_name: 'SUN ELECTRONICS G' }],
+      total: 1,
+      styles: [],
+    });
+    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('grid_kv.value ILIKE $2'),
+      'cus_name',
+      '%sun%',
+    );
   });
 
   it('checks whether a configured query is executable', async () => {

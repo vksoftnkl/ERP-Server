@@ -54,10 +54,9 @@ export class EmployeeMasterService {
       queryDto.empDesignationId !== undefined ||
       queryDto.empIsActive !== undefined ||
       queryDto.empStatus !== undefined ||
-      queryDto.empEmploymentType !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.empEmploymentType !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -125,6 +124,7 @@ export class EmployeeMasterService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -155,6 +155,7 @@ export class EmployeeMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<EmployeeMasterListItem>({
           baseSql: validation.normalizedSql,
           alias: 'employee_master_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

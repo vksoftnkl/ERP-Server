@@ -73,11 +73,10 @@ export class ItemsEanCodeMasterService {
       queryDto.ean_unit_id !== undefined ||
       queryDto.ean_godown_id !== undefined ||
       queryDto.ean_is_active !== undefined ||
-      queryDto.ean_is_default !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.ean_is_default !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -106,6 +105,7 @@ export class ItemsEanCodeMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -139,6 +139,7 @@ export class ItemsEanCodeMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemEanCodeListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_ean_code_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

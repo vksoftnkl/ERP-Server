@@ -69,7 +69,7 @@ export class ItemsGroupMasterService {
         { itgDescription: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.itemGroupMaster.count({ where }),
       this.prisma.itemGroupMaster.findMany({
         where,
@@ -77,6 +77,7 @@ export class ItemsGroupMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_GROUP_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -86,6 +87,7 @@ export class ItemsGroupMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(

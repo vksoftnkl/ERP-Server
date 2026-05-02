@@ -47,7 +47,7 @@ export class BatchPrefixService {
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
     if (!queryDto.search?.trim()) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -81,6 +81,7 @@ export class BatchPrefixService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -111,6 +112,7 @@ export class BatchPrefixService {
         const result = await this.configuredGridSqlService.runPagedQuery<BatchPrefixListItem>({
           baseSql: validation.normalizedSql,
           alias: 'batch_prefix_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

@@ -48,11 +48,10 @@ export class CityService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.ctmStateId !== undefined ||
-      queryDto.ctmIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.ctmIsActive !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -79,7 +78,7 @@ export class CityService {
       ];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.cityMaster.count({ where }),
       this.prisma.cityMaster.findMany({
         where,
@@ -87,6 +86,7 @@ export class CityService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(CITY_TABLE_NAME),
     ]);
 
     return {
@@ -97,10 +97,12 @@ export class CityService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -134,6 +136,7 @@ export class CityService {
         const result = await this.configuredGridSqlService.runPagedQuery<CityListItem>({
           baseSql: validation.normalizedSql,
           alias: 'city_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

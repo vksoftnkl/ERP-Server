@@ -17,15 +17,12 @@ import {
   CustomerGroupListMeta,
   CustomerGroupPayload,
 } from './types/customer-group-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
-
 type CustomerGroupWriteClient = Prisma.TransactionClient | PrismaService;
-
 @Injectable()
 export class CustomerGroupService {
   constructor(
@@ -33,15 +30,12 @@ export class CustomerGroupService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveCustomerGroupDto: SaveCustomerGroupDto): Promise<CustomerGroupPayload> {
     if (saveCustomerGroupDto.cgrId) {
       return this.updateCustomerGroup(saveCustomerGroupDto);
     }
-
     return this.createCustomerGroup(saveCustomerGroupDto);
   }
-
   async list(
     queryDto: ListCustomerGroupQueryDto,
   ): Promise<ConfiguredGridListResult<CustomerGroupListItem, CustomerGroupListMeta>> {
@@ -50,28 +44,22 @@ export class CustomerGroupService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.cgrCompanyId !== undefined ||
-      queryDto.cgrIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
-
+      queryDto.cgrIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.CustGroupWhereInput = {
       cgrIsDeleted: false,
     };
-
     if (queryDto.cgrCompanyId !== undefined) {
       where.cgrCompanyId = queryDto.cgrCompanyId as string | null;
     }
-
     if (queryDto.cgrIsActive !== undefined) {
       where.cgrIsActive = queryDto.cgrIsActive;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -81,8 +69,7 @@ export class CustomerGroupService {
         { cgrNarration: { contains: search, mode: 'insensitive' } },
       ];
     }
-
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.custGroup.count({ where }),
       this.prisma.custGroup.findMany({
         where,
@@ -90,8 +77,8 @@ export class CustomerGroupService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(CUSTOMER_GROUP_TABLE_NAME),
     ]);
-
     return {
       items: records.map((record) => this.toPayload(record)),
       meta: {
@@ -100,10 +87,12 @@ export class CustomerGroupService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -141,6 +130,7 @@ export class CustomerGroupService {
       const result = await this.configuredGridSqlService.runPagedQuery<CustomerGroupListItem>({
         baseSql: validation.normalizedSql,
         alias: 'customer_group_grid',
+        search,
         limit,
         skip,
           gridId: configuredGrid.gridId,

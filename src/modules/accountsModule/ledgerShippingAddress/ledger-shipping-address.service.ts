@@ -57,11 +57,10 @@ export class LedgerShippingAddressService {
       queryDto.saaLedgerId !== undefined ||
       Boolean(queryDto.saaAddrType?.trim()) ||
       queryDto.saaIsActive !== undefined ||
-      queryDto.saaIsDefault !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.saaIsDefault !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -139,6 +138,7 @@ export class LedgerShippingAddressService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -172,6 +172,7 @@ export class LedgerShippingAddressService {
         const result = await this.configuredGridSqlService.runPagedQuery<LedgerShippingAddressListItem>({
           baseSql: validation.normalizedSql,
           alias: 'ledger_shipping_address_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

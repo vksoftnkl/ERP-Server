@@ -52,11 +52,10 @@ export class ItemsQtywiseRatesMasterService {
       queryDto.iqr_branch_id !== undefined ||
       queryDto.iqr_unit_rate_id !== undefined ||
       queryDto.iqr_price_level !== undefined ||
-      queryDto.iqr_is_active !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.iqr_is_active !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -85,6 +84,7 @@ export class ItemsQtywiseRatesMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -118,6 +118,7 @@ export class ItemsQtywiseRatesMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemQtywiseRateListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_qtywise_rate_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

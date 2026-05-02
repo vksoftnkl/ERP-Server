@@ -50,11 +50,10 @@ export class UiTableMasterService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.uiTblEditable !== undefined ||
-      queryDto.uiTblIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.uiTblIsActive !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -99,6 +98,7 @@ export class UiTableMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -137,6 +137,7 @@ export class UiTableMasterService {
       const result = await this.configuredGridSqlService.runPagedQuery<UiTableMasterListItem>({
         baseSql: validation.normalizedSql,
         alias: 'ui_table_master_grid',
+        search,
         limit,
         skip,
           gridId: configuredGrid.gridId,

@@ -55,11 +55,10 @@ export class UiTableColumnsService {
       queryDto.uiTblClmIsActive !== undefined ||
       queryDto.uiTblClmColumnVisibility !== undefined ||
       queryDto.uiTblClmColumnFocus !== undefined ||
-      queryDto.uiTblClmColumnNecessity !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.uiTblClmColumnNecessity !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -124,6 +123,7 @@ export class UiTableColumnsService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -162,6 +162,7 @@ export class UiTableColumnsService {
       const result = await this.configuredGridSqlService.runPagedQuery<UiTableColumnListItem>({
         baseSql: validation.normalizedSql,
         alias: 'ui_table_columns_grid',
+        search,
         limit,
         skip,
           gridId: configuredGrid.gridId,

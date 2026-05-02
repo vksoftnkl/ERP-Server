@@ -51,11 +51,10 @@ export class EmployeeDesignationMasterService {
 
     const hasStructuredFilters =
       queryDto.edIsActive !== undefined ||
-      queryDto.edIsDefault !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.edIsDefault !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -104,6 +103,7 @@ export class EmployeeDesignationMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -137,6 +137,7 @@ export class EmployeeDesignationMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<EmployeeDesignationMasterListItem>({
           baseSql: validation.normalizedSql,
           alias: 'employee_designation_master_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

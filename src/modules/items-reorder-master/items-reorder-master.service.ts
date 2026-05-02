@@ -75,11 +75,10 @@ export class ItemsReorderMasterService {
       queryDto.ir_unit_id !== undefined ||
       queryDto.ir_godown_id !== undefined ||
       queryDto.ir_reorder_type !== undefined ||
-      queryDto.ir_is_active !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.ir_is_active !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -108,6 +107,7 @@ export class ItemsReorderMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -141,6 +141,7 @@ export class ItemsReorderMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemReorderListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_reorder_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

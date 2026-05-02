@@ -9,11 +9,12 @@ export interface GspCompanyServiceErrorResponse {
   errors: GspCompanyServiceErrorDetail[];
 }
 
-export interface GspCompanyServiceSuccessResponse<T, TMeta = Record<string, unknown>> {
+export interface GspCompanyServiceSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
   data: T;
   meta?: TMeta;
+  styles?: TStyles;
 }
 
 export interface GspCompanyServicePayload {

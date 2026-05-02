@@ -46,10 +46,9 @@ export class CompanyMasterService {
     const hasStructuredFilters =
       queryDto.compIsActive !== undefined ||
       queryDto.compDefault !== undefined ||
-      queryDto.compStateCode !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.compStateCode !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -101,6 +100,7 @@ export class CompanyMasterService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -132,6 +132,7 @@ export class CompanyMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<CompanyMasterListItem>({
           baseSql: validation.normalizedSql,
           alias: 'company_master_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

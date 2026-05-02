@@ -46,10 +46,9 @@ export class ItemsTaxHistoryMasterService {
       queryDto.ith_item_id !== undefined ||
       queryDto.ith_tax_id !== undefined ||
       queryDto.ith_effective_from !== undefined ||
-      queryDto.ith_effective_to !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.ith_effective_to !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -75,6 +74,7 @@ export class ItemsTaxHistoryMasterService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -105,6 +105,7 @@ export class ItemsTaxHistoryMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemTaxHistoryListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_tax_history_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

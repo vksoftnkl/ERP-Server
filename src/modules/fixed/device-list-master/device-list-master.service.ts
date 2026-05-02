@@ -52,11 +52,10 @@ export class DeviceListMasterService {
       queryDto.devCompanyId !== undefined ||
       queryDto.devIsActive !== undefined ||
       queryDto.devIsAllowed !== undefined ||
-      queryDto.devIsBlocked !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.devIsBlocked !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -120,6 +119,7 @@ export class DeviceListMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -157,6 +157,7 @@ export class DeviceListMasterService {
       const result = await this.configuredGridSqlService.runPagedQuery<DeviceListMasterListItem>({
         baseSql: validation.normalizedSql,
         alias: 'device_list_master_grid',
+        search,
         limit,
         skip,
           gridId: configuredGrid.gridId,

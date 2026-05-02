@@ -51,11 +51,10 @@ export class SuppliersService {
     const hasStructuredFilters =
       queryDto.supCompanyId !== undefined ||
       queryDto.supGroupId !== undefined ||
-      queryDto.supIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.supIsActive !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -114,6 +113,7 @@ export class SuppliersService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -151,6 +151,7 @@ export class SuppliersService {
       const result = await this.configuredGridSqlService.runPagedQuery<SupplierListItem>({
         baseSql: validation.normalizedSql,
         alias: 'supplier_grid',
+        search,
         limit,
         skip,
           gridId: configuredGrid.gridId,

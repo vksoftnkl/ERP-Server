@@ -54,11 +54,10 @@ export class ItemsCustRatesMasterService {
       queryDto.csr_unit_rate_id !== undefined ||
       queryDto.csr_rate_type !== undefined ||
       queryDto.csr_price_level !== undefined ||
-      queryDto.csr_is_active !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.csr_is_active !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -87,6 +86,7 @@ export class ItemsCustRatesMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -120,6 +120,7 @@ export class ItemsCustRatesMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemCustRateListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_cust_rate_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

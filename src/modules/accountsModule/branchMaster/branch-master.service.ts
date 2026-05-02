@@ -51,10 +51,9 @@ export class BranchMasterService {
       queryDto.compId !== undefined ||
       queryDto.brStateCode !== undefined ||
       queryDto.brIsActive !== undefined ||
-      queryDto.brIsDefault !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.brIsDefault !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -109,6 +108,7 @@ export class BranchMasterService {
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -139,6 +139,7 @@ export class BranchMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<BranchMasterListItem>({
           baseSql: validation.normalizedSql,
           alias: 'branch_master_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

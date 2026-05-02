@@ -87,6 +87,7 @@ export class GspCompanyServiceController {
       message: 'GSP company services fetched successfully',
       data: result.items,
       meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

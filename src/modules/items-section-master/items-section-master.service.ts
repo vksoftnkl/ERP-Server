@@ -51,11 +51,10 @@ export class ItemsSectionMasterService {
 
     const hasStructuredFilters =
       queryDto.sec_parent_id !== undefined ||
-      queryDto.sec_is_active !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.sec_is_active !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -82,7 +81,7 @@ export class ItemsSectionMasterService {
       ];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.itemSectionMaster.count({ where }),
       this.prisma.itemSectionMaster.findMany({
         where,
@@ -90,6 +89,7 @@ export class ItemsSectionMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_SECTION_TABLE_NAME),
     ]);
 
     return {
@@ -100,10 +100,12 @@ export class ItemsSectionMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -137,6 +139,7 @@ export class ItemsSectionMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemSectionListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_section_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

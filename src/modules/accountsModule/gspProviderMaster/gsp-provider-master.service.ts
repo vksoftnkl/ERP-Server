@@ -53,11 +53,10 @@ export class GspProviderMasterService {
     const skip = (page - 1) * limit;
 
     const hasStructuredFilters =
-      queryDto.gspIsActive !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.gspIsActive !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -105,6 +104,7 @@ export class GspProviderMasterService {
   }
 
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -138,6 +138,7 @@ export class GspProviderMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<GspProviderMasterListItem>({
           baseSql: validation.normalizedSql,
           alias: 'gsp_provider_master_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

@@ -44,10 +44,9 @@ export class ItemsBrandMasterService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
       queryDto.brand_parent_id !== undefined ||
-      queryDto.brand_is_active !== undefined ||
-      Boolean(queryDto.search?.trim());
+      queryDto.brand_is_active !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
@@ -69,7 +68,7 @@ export class ItemsBrandMasterService {
         { brand_description: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.itemBrandMaster.count({ where }),
       this.prisma.itemBrandMaster.findMany({
         where,
@@ -77,6 +76,7 @@ export class ItemsBrandMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_BRAND_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -86,9 +86,11 @@ export class ItemsBrandMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(
+    search: string | undefined,
     page: number,
     limit: number,
     skip: number,
@@ -119,6 +121,7 @@ export class ItemsBrandMasterService {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemBrandListItem>({
           baseSql: validation.normalizedSql,
           alias: 'item_brand_grid',
+          search,
           limit,
           skip,
           gridId: configuredGrid.gridId,

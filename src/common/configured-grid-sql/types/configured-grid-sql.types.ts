@@ -44,6 +44,7 @@ export interface RunConfiguredGridSqlPageOptions {
   baseSql: string;
   alias: string;
   params?: unknown[];
+  search?: string;
   limit: number;
   skip: number;
   /** When provided, grid column definitions are fetched in parallel and returned as `styles`. */
@@ -58,4 +59,12 @@ export interface ConfiguredGridListResult<TItem, TMeta> {
   items: TItem[];
   meta: TMeta;
   styles?: GridColumnItem[];
+}
+export interface BuildConfiguredGridSearchSqlOptions {
+  baseSql: string;
+  alias: string;
+  search: string;
+  searchableFieldNames: string[];
+  params?: unknown[];
+  conditions?: string[];
 }
