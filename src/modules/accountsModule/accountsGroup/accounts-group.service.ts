@@ -80,7 +80,7 @@ export class AccountsGroupService {
         { accGroupNature: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.accountGroup.count({ where }),
       this.prisma.accountGroup.findMany({
         where,
@@ -88,6 +88,7 @@ export class AccountsGroupService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(ACCOUNT_GROUP_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -97,6 +98,7 @@ export class AccountsGroupService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(

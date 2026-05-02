@@ -82,7 +82,7 @@ export class GspProviderMasterService {
       ];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.gspProviderMaster.count({ where }),
       this.prisma.gspProviderMaster.findMany({
         where,
@@ -90,6 +90,7 @@ export class GspProviderMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(GSP_PROVIDER_MASTER_TABLE_NAME),
     ]);
 
     return {
@@ -100,6 +101,7 @@ export class GspProviderMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 

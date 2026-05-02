@@ -96,7 +96,7 @@ export class GspCompanyServiceService {
         { company: { compName: { contains: search, mode: 'insensitive' } } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.gspCompanyService.count({ where }),
       this.prisma.gspCompanyService.findMany({
         where,
@@ -115,6 +115,7 @@ export class GspCompanyServiceService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(GSP_COMPANY_SERVICE_TABLE_NAME),
     ]);
     const providerNameById = await this.loadProviderNameMap(records.map((record) => record.csgGspProviderId));
     return {
@@ -125,6 +126,7 @@ export class GspCompanyServiceService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(

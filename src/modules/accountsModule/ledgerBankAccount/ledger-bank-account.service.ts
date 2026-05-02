@@ -84,7 +84,7 @@ export class LedgerBankAccountService {
         { lbaChequeName: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.accLedgerBankAccount.count({ where }),
       this.prisma.accLedgerBankAccount.findMany({
         where,
@@ -92,6 +92,7 @@ export class LedgerBankAccountService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(LEDGER_BANK_ACCOUNT_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -101,6 +102,7 @@ export class LedgerBankAccountService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(

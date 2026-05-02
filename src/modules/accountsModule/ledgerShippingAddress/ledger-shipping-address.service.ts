@@ -109,7 +109,7 @@ export class LedgerShippingAddressService {
       ];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.accShipAddr.count({ where }),
       this.prisma.accShipAddr.findMany({
         where,
@@ -124,6 +124,7 @@ export class LedgerShippingAddressService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(LEDGER_SHIPPING_ADDRESS_TABLE_NAME),
     ]);
 
     return {
@@ -134,6 +135,7 @@ export class LedgerShippingAddressService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 

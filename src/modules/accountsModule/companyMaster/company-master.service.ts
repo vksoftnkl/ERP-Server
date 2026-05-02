@@ -80,7 +80,7 @@ export class CompanyMasterService {
         { compMail: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.company.count({ where }),
       this.prisma.company.findMany({
         where,
@@ -88,6 +88,7 @@ export class CompanyMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(COMPANY_MASTER_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -97,6 +98,7 @@ export class CompanyMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(

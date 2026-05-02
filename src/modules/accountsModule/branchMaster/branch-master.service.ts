@@ -88,7 +88,7 @@ export class BranchMasterService {
         { brMail: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.branchMaster.count({ where }),
       this.prisma.branchMaster.findMany({
         where,
@@ -96,6 +96,7 @@ export class BranchMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(BRANCH_MASTER_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -105,6 +106,7 @@ export class BranchMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(

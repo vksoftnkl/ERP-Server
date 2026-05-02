@@ -77,7 +77,7 @@ export class TenderTypeMasterService {
       ];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.accountTenderTypes.count({ where }),
       this.prisma.accountTenderTypes.findMany({
         where,
@@ -85,6 +85,7 @@ export class TenderTypeMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(TENDER_TYPE_MASTER_TABLE_NAME),
     ]);
 
     return {
@@ -95,6 +96,7 @@ export class TenderTypeMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 

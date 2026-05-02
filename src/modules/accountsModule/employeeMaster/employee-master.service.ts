@@ -103,7 +103,7 @@ export class EmployeeMasterService {
         { empStatus: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.empMaster.count({ where }),
       this.prisma.empMaster.findMany({
         where,
@@ -111,6 +111,7 @@ export class EmployeeMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_MASTER_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -120,7 +121,7 @@ export class EmployeeMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
-      styles: [],
+      styles: styles ?? [],
     };
   }
   private async listFromConfiguredGridSql(

@@ -74,7 +74,7 @@ export class CompanyGroupMasterService {
       where.OR = [{ cogGroupName: { contains: search, mode: 'insensitive' } }];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.companyGroupMaster.count({ where }),
       this.prisma.companyGroupMaster.findMany({
         where,
@@ -82,6 +82,7 @@ export class CompanyGroupMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(COMPANY_GROUP_MASTER_TABLE_NAME),
     ]);
 
     return {
@@ -92,6 +93,7 @@ export class CompanyGroupMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 

@@ -81,7 +81,7 @@ export class EmployeeDesignationMasterService {
       ];
     }
 
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.employeeDesignation.count({ where }),
       this.prisma.employeeDesignation.findMany({
         where,
@@ -89,6 +89,7 @@ export class EmployeeDesignationMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME),
     ]);
 
     return {
@@ -99,6 +100,7 @@ export class EmployeeDesignationMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
 

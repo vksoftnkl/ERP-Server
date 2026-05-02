@@ -17,22 +17,18 @@ import {
   AccountLedgerMasterListMeta,
   AccountLedgerMasterPayload,
 } from './types/account-ledger-master-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'Account ledger master';
+const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
-
 type AccountLedgerWriteClient = Prisma.TransactionClient | PrismaService;
-
 type SearchColumnDescriptor = {
   normalized: string;
   tokens: string[];
   lastToken: string;
 };
-
 @Injectable()
 export class AccountLedgerMastersService {
   constructor(
@@ -90,7 +86,7 @@ export class AccountLedgerMastersService {
         { ledPanNo: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.accLedgerMaster.count({ where }),
       this.prisma.accLedgerMaster.findMany({
         where,
@@ -98,6 +94,7 @@ export class AccountLedgerMastersService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(ACCOUNT_LEDGER_MASTER_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -107,6 +104,7 @@ export class AccountLedgerMastersService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(
@@ -161,6 +159,7 @@ export class AccountLedgerMastersService {
           params,
           limit,
           skip,
+          gridId: configuredGrid.gridId,
         },
       );
       return {

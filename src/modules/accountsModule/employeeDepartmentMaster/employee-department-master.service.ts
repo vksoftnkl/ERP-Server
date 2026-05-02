@@ -65,7 +65,7 @@ export class EmployeeDepartmentMasterService {
         { edptRemarks: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
+    const [total, records, styles] = await Promise.all([
       this.prisma.employeeDepartment.count({ where }),
       this.prisma.employeeDepartment.findMany({
         where,
@@ -73,6 +73,7 @@ export class EmployeeDepartmentMasterService {
         skip,
         take: limit,
       }),
+      this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME),
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
@@ -82,6 +83,7 @@ export class EmployeeDepartmentMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(
