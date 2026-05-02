@@ -17,61 +17,50 @@ import {
   ItemCategoryListMeta,
   ItemCategoryPayload,
 } from './types/item-category-api.types';
-
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ITEM_CATEGORY_TABLE_NAME = 'category master';
 const ITEM_CATEGORY_AUDIT_SCREEN_NAME = 'Category Master';
 type ItemCategoryWriteClient = Prisma.TransactionClient | PrismaService;
-
 @Injectable()
 export class ItemsCategoryMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
-  ) {}
-
+  ) { }
   async save(saveItemCategoryDto: SaveItemCategoryDto): Promise<ItemCategoryPayload> {
     if (saveItemCategoryDto.category_id) {
       return this.updateItemCategory(saveItemCategoryDto);
     }
-
     return this.createItemCategory(saveItemCategoryDto);
   }
-
   async list(
     queryDto: ListItemCategoryQueryDto,
   ): Promise<ConfiguredGridListResult<ItemCategoryListItem, ItemCategoryListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-
     const hasStructuredFilters =
       queryDto.category_parent_id !== undefined ||
       queryDto.category_is_active !== undefined ||
       Boolean(queryDto.search?.trim());
-
     if (!hasStructuredFilters) {
       const configuredList = await this.listFromConfiguredGridSql(page, limit, skip);
       if (configuredList) {
         return configuredList;
       }
     }
-
     const where: Prisma.categoryMasterWhereInput = {
       categoryIsDeleted: false,
     };
-
     if (queryDto.category_parent_id !== undefined) {
       where.categoryParentId = queryDto.category_parent_id;
     }
-
     if (queryDto.category_is_active !== undefined) {
       where.categoryIsActive = queryDto.category_is_active;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -80,7 +69,6 @@ export class ItemsCategoryMasterService {
         { categoryDescription: { contains: search, mode: 'insensitive' } },
       ];
     }
-
     const [total, records] = await Promise.all([
       this.prisma.categoryMaster.count({ where }),
       this.prisma.categoryMaster.findMany({
@@ -90,7 +78,6 @@ export class ItemsCategoryMasterService {
         take: limit,
       }),
     ]);
-
     return {
       items: records.map((record) => this.toListItem(record)),
       meta: {
@@ -101,7 +88,6 @@ export class ItemsCategoryMasterService {
       },
     };
   }
-
   private async listFromConfiguredGridSql(
     page: number,
     limit: number,
@@ -117,13 +103,11 @@ export class ItemsCategoryMasterService {
     if (primaryConfiguredGrids.length === 0) {
       return null;
     }
-
     for (const configuredGrid of primaryConfiguredGrids) {
       const rawGridSql = configuredGrid.gridSql?.trim();
       if (!rawGridSql) {
         continue;
       }
-
       const validation = this.configuredGridSqlService.validateBaseSql({
         sql: rawGridSql,
         tableName: ITEM_CATEGORY_TABLE_NAME,
@@ -131,7 +115,6 @@ export class ItemsCategoryMasterService {
       if (!validation.isValid) {
         continue;
       }
-
       try {
         const result = await this.configuredGridSqlService.runPagedQuery<ItemCategoryListItem>({
           baseSql: validation.normalizedSql,
@@ -140,7 +123,6 @@ export class ItemsCategoryMasterService {
           skip,
           gridId: configuredGrid.gridId,
         });
-
         return {
           items: result.items,
           meta: {
@@ -155,17 +137,14 @@ export class ItemsCategoryMasterService {
         continue;
       }
     }
-
     return null;
   }
-
   private toListItem(record: categoryMaster): ItemCategoryListItem {
     return {
       category_id: record.categoryId,
       category_name: record.categoryName,
     };
   }
-
   async getById(categoryId: string): Promise<ItemCategoryPayload> {
     const record = await this.prisma.categoryMaster.findFirst({
       where: {
@@ -173,14 +152,11 @@ export class ItemsCategoryMasterService {
         categoryIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(categoryId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(categoryId: string): Promise<{ category_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.categoryMaster.findFirst({
@@ -189,11 +165,9 @@ export class ItemsCategoryMasterService {
           categoryIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(categoryId);
       }
-
       const subtreeIds = await this.getActiveSubtreeIds(tx, categoryId);
       const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
       const modifiedOn = new Date();
@@ -208,13 +182,10 @@ export class ItemsCategoryMasterService {
           categoryModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(categoryId);
       }
-
       await this.removePathIds(tx, ancestorIds, subtreeIds);
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -237,14 +208,12 @@ export class ItemsCategoryMasterService {
         },
         tx,
       );
-
       return {
         category_id: categoryId,
         deleted: true,
       };
     });
   }
-
   private async createItemCategory(
     saveItemCategoryDto: SaveItemCategoryDto,
   ): Promise<ItemCategoryPayload> {
@@ -253,11 +222,9 @@ export class ItemsCategoryMasterService {
         if (saveItemCategoryDto.category_parent_id) {
           await this.ensureParentExists(saveItemCategoryDto.category_parent_id, tx);
         }
-
         const now = new Date();
         const createdBy = DEFAULT_ACTOR;
         const modifiedBy = createdBy;
-
         const data: Prisma.categoryMasterUncheckedCreateInput = {
           categoryName: saveItemCategoryDto.category_name.trim(),
           categoryCreatedOn: now,
@@ -265,16 +232,13 @@ export class ItemsCategoryMasterService {
           categoryModifiedOn: now,
           categoryModifiedBy: modifiedBy,
         };
-
         this.applyOptionalFields(data, saveItemCategoryDto);
         const created = await tx.categoryMaster.create({ data });
         await this.ensureSelfInPath(tx, created.categoryId);
-
         if (saveItemCategoryDto.category_parent_id) {
           const ancestorIds = await this.getAncestorIds(tx, saveItemCategoryDto.category_parent_id);
           await this.appendPathIds(tx, ancestorIds, [created.categoryId]);
         }
-
         const refreshed = await tx.categoryMaster.findFirst({
           where: {
             categoryId: created.categoryId,
@@ -283,11 +247,11 @@ export class ItemsCategoryMasterService {
         });
         const payload = !refreshed
           ? this.toPayload({
-              ...created,
-              categoryPathIdsCache: this.mergePathIds(created.categoryPathIdsCache, [
-                created.categoryId,
-              ]),
-            })
+            ...created,
+            categoryPathIdsCache: this.mergePathIds(created.categoryPathIdsCache, [
+              created.categoryId,
+            ]),
+          })
           : this.toPayload(refreshed);
         await this.auditLogService.logEntityChange(
           {
@@ -311,7 +275,6 @@ export class ItemsCategoryMasterService {
       throw error;
     }
   }
-
   private async updateItemCategory(
     saveItemCategoryDto: SaveItemCategoryDto,
   ): Promise<ItemCategoryPayload> {
@@ -324,11 +287,9 @@ export class ItemsCategoryMasterService {
             categoryIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(categoryId);
         }
-
         if (saveItemCategoryDto.category_parent_id === categoryId) {
           this.throwBadRequest('Item category cannot be its own parent', [
             {
@@ -337,11 +298,9 @@ export class ItemsCategoryMasterService {
             },
           ]);
         }
-
         if (saveItemCategoryDto.category_parent_id) {
           await this.ensureParentExists(saveItemCategoryDto.category_parent_id, tx);
         }
-
         const hasParentField = this.hasOwnProperty(saveItemCategoryDto, 'category_parent_id');
         const nextParentId = hasParentField
           ? (saveItemCategoryDto.category_parent_id ?? null)
@@ -351,13 +310,11 @@ export class ItemsCategoryMasterService {
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.categoryParentId)
           : [];
-
         const data: Prisma.categoryMasterUncheckedUpdateInput = {
           categoryName: saveItemCategoryDto.category_name.trim(),
           categoryModifiedOn: new Date(),
           categoryModifiedBy: DEFAULT_ACTOR,
         };
-
         this.applyOptionalFields(data, saveItemCategoryDto);
         const updated = await tx.categoryMaster.update({
           where: {
@@ -365,14 +322,12 @@ export class ItemsCategoryMasterService {
           },
           data,
         });
-
         await this.ensureSelfInPath(tx, categoryId);
         if (isParentChanged) {
           const newAncestorIds = await this.getAncestorIds(tx, nextParentId);
           await this.removePathIds(tx, oldAncestorIds, subtreeIds);
           await this.appendPathIds(tx, newAncestorIds, subtreeIds);
         }
-
         const refreshed = await tx.categoryMaster.findFirst({
           where: {
             categoryId,
@@ -402,7 +357,6 @@ export class ItemsCategoryMasterService {
       throw error;
     }
   }
-
   private async ensureParentExists(parentId: string, tx: ItemCategoryWriteClient): Promise<void> {
     const parent = await tx.categoryMaster.findFirst({
       where: {
@@ -413,7 +367,6 @@ export class ItemsCategoryMasterService {
         categoryId: true,
       },
     });
-
     if (!parent) {
       this.throwBadRequest('Parent item category does not exist', [
         {
@@ -423,7 +376,6 @@ export class ItemsCategoryMasterService {
       ]);
     }
   }
-
   private applyOptionalFields(
     data: Prisma.categoryMasterUncheckedCreateInput | Prisma.categoryMasterUncheckedUpdateInput,
     saveItemCategoryDto: SaveItemCategoryDto,
@@ -435,32 +387,25 @@ export class ItemsCategoryMasterService {
     if (this.hasOwnProperty(saveItemCategoryDto, 'category_short')) {
       data.categoryShort = saveItemCategoryDto.category_short;
     }
-
     if (this.hasOwnProperty(saveItemCategoryDto, 'category_description')) {
       data.categoryDescription = saveItemCategoryDto.category_description;
     }
-
     if (this.hasOwnProperty(saveItemCategoryDto, 'category_parent_id')) {
       data.categoryParentId = saveItemCategoryDto.category_parent_id;
     }
-
     if (this.hasOwnProperty(saveItemCategoryDto, 'category_sort')) {
       data.categorySort = saveItemCategoryDto.category_sort;
     }
-
     if (this.hasOwnProperty(saveItemCategoryDto, 'category_level')) {
       data.categoryLevel = saveItemCategoryDto.category_level;
     }
-
     if (this.hasOwnProperty(saveItemCategoryDto, 'category_photo')) {
       data.categoryPhoto = this.decodePhotoInput(saveItemCategoryDto.category_photo);
     }
-
     if (this.hasOwnProperty(saveItemCategoryDto, 'category_photo_url')) {
       data.categoryPhotoUrl = saveItemCategoryDto.category_photo_url;
     }
   }
-
   private async getAncestorIds(
     tx: ItemCategoryWriteClient,
     startParentId: string | null | undefined,
@@ -468,13 +413,11 @@ export class ItemsCategoryMasterService {
     const ancestorIds: string[] = [];
     const visited = new Set<string>();
     let currentParentId = startParentId;
-
     while (currentParentId) {
       if (visited.has(currentParentId)) {
         break;
       }
       visited.add(currentParentId);
-
       const parent = await tx.categoryMaster.findFirst({
         where: {
           categoryId: currentParentId,
@@ -488,14 +431,11 @@ export class ItemsCategoryMasterService {
       if (!parent) {
         break;
       }
-
       ancestorIds.push(parent.categoryId);
       currentParentId = parent.categoryParentId;
     }
-
     return ancestorIds;
   }
-
   private async getActiveSubtreeIds(
     tx: ItemCategoryWriteClient,
     rootId: string,
@@ -503,14 +443,12 @@ export class ItemsCategoryMasterService {
     const subtreeIds: string[] = [];
     const visited = new Set<string>();
     const queue: string[] = [rootId];
-
     while (queue.length > 0) {
       const currentId = queue.shift()!;
       if (visited.has(currentId)) {
         continue;
       }
       visited.add(currentId);
-
       const node = await tx.categoryMaster.findFirst({
         where: {
           categoryId: currentId,
@@ -524,7 +462,6 @@ export class ItemsCategoryMasterService {
         continue;
       }
       subtreeIds.push(node.categoryId);
-
       const children = await tx.categoryMaster.findMany({
         where: {
           categoryParentId: node.categoryId,
@@ -540,10 +477,8 @@ export class ItemsCategoryMasterService {
         }
       }
     }
-
     return subtreeIds;
   }
-
   private async appendPathIds(
     tx: ItemCategoryWriteClient,
     targetIds: string[],
@@ -554,7 +489,6 @@ export class ItemsCategoryMasterService {
     if (normalizedTargetIds.length === 0 || normalizedIdsToAdd.length === 0) {
       return;
     }
-
     const records = await tx.categoryMaster.findMany({
       where: {
         categoryId: {
@@ -567,7 +501,6 @@ export class ItemsCategoryMasterService {
         categoryPathIdsCache: true,
       },
     });
-
     for (const record of records) {
       const nextPathIds = this.mergePathIds(record.categoryPathIdsCache, normalizedIdsToAdd);
       if (this.areSameIds(record.categoryPathIdsCache, nextPathIds)) {
@@ -583,7 +516,6 @@ export class ItemsCategoryMasterService {
       });
     }
   }
-
   private async removePathIds(
     tx: ItemCategoryWriteClient,
     targetIds: string[],
@@ -594,7 +526,6 @@ export class ItemsCategoryMasterService {
     if (normalizedTargetIds.length === 0 || normalizedIdsToRemove.length === 0) {
       return;
     }
-
     const records = await tx.categoryMaster.findMany({
       where: {
         categoryId: {
@@ -607,7 +538,6 @@ export class ItemsCategoryMasterService {
         categoryPathIdsCache: true,
       },
     });
-
     for (const record of records) {
       const nextPathIds = this.excludePathIds(record.categoryPathIdsCache, normalizedIdsToRemove);
       if (this.areSameIds(record.categoryPathIdsCache, nextPathIds)) {
@@ -623,20 +553,16 @@ export class ItemsCategoryMasterService {
       });
     }
   }
-
   private async ensureSelfInPath(tx: ItemCategoryWriteClient, categoryId: string): Promise<void> {
     await this.appendPathIds(tx, [categoryId], [categoryId]);
   }
-
   private mergePathIds(existingIds: readonly string[], idsToAdd: readonly string[]): string[] {
     return this.toUniqueIds([...existingIds, ...idsToAdd]);
   }
-
   private excludePathIds(existingIds: readonly string[], idsToRemove: readonly string[]): string[] {
     const removeSet = new Set(idsToRemove);
     return existingIds.filter((id) => !removeSet.has(id));
   }
-
   private toUniqueIds(ids: readonly string[]): string[] {
     const uniqueIds: string[] = [];
     const seen = new Set<string>();
@@ -648,7 +574,6 @@ export class ItemsCategoryMasterService {
     }
     return uniqueIds;
   }
-
   private areSameIds(left: readonly string[], right: readonly string[]): boolean {
     if (left.length !== right.length) {
       return false;
@@ -660,7 +585,6 @@ export class ItemsCategoryMasterService {
     }
     return true;
   }
-
   private decodePhotoInput(
     photo: string | null | undefined,
   ): Uint8Array<ArrayBuffer> | null | undefined {
@@ -691,7 +615,6 @@ export class ItemsCategoryMasterService {
     }
     return new Uint8Array(Buffer.from(normalized, 'base64'));
   }
-
   private toPayload(record: categoryMaster): ItemCategoryPayload {
     return {
       category_id: record.categoryId,
@@ -720,7 +643,6 @@ export class ItemsCategoryMasterService {
       category_modified_by: record.categoryModifiedBy,
     };
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -733,15 +655,12 @@ export class ItemsCategoryMasterService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(categoryId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Item category not found', [
@@ -752,11 +671,9 @@ export class ItemsCategoryMasterService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: ItemCategoryErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: ItemCategoryErrorDetail[] = [],
@@ -767,7 +684,6 @@ export class ItemsCategoryMasterService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }

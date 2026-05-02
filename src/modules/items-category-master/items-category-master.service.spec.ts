@@ -447,6 +447,73 @@ describe('ItemsCategoryMasterService', () => {
     ]);
   });
 
+  it('returns configured grid rows with styles for the item category table', async () => {
+    const gridId = 2n;
+    const gridSql =
+      'SELECT category_id, category_name FROM inventory.item_category_master WHERE category_is_deleted = false';
+    const styles = [
+      {
+        grid_column_number: 1,
+        grid_column_name: 'category_name',
+        grid_column_width: 180,
+        grid_column_alignment: 'left',
+        grid_column_visibility: true,
+        grid_column_filter: true,
+        grid_column_condition: null,
+        grid_column_condition_color: null,
+        grid_column_group: false,
+        grid_column_total: false,
+        grid_column_data_type: 'text',
+        grid_column_color: null,
+        grid_column_notes: null,
+      },
+    ];
+
+    configuredGridSqlService.loadCandidates.mockResolvedValue([{ gridId, gridSql }]);
+    configuredGridSqlService.validateBaseSql.mockReturnValue({
+      isValid: true,
+      normalizedSql: gridSql,
+    });
+    configuredGridSqlService.runPagedQuery.mockResolvedValue({
+      items: [{ category_id: ITEM_CATEGORY_ID, category_name: 'Dairy' }],
+      total: 1,
+      styles,
+    });
+
+    const result = await service.list({});
+
+    expect(configuredGridSqlService.loadCandidates).toHaveBeenCalledWith({
+      tableName: 'item category master',
+    });
+    expect(configuredGridSqlService.filterPrimaryFromTable).toHaveBeenCalledWith(
+      [{ gridId, gridSql }],
+      'item category master',
+    );
+    expect(configuredGridSqlService.validateBaseSql).toHaveBeenCalledWith({
+      sql: gridSql,
+      tableName: 'item category master',
+      primaryTableSchema: 'inventory',
+    });
+    expect(configuredGridSqlService.runPagedQuery).toHaveBeenCalledWith({
+      baseSql: gridSql,
+      alias: 'item_category_grid',
+      limit: 20,
+      skip: 0,
+      gridId,
+    });
+    expect(prisma.categoryMaster.count).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      items: [{ category_id: ITEM_CATEGORY_ID, category_name: 'Dairy' }],
+      meta: {
+        page: 1,
+        limit: 20,
+        total: 1,
+        total_pages: 1,
+      },
+      styles,
+    });
+  });
+
   it('applies pagination and search filters correctly', async () => {
     prisma.categoryMaster.count.mockResolvedValue(35);
     prisma.categoryMaster.findMany.mockResolvedValue([makeRecord()]);

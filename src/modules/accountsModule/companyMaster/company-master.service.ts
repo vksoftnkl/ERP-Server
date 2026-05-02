@@ -150,7 +150,6 @@ export class CompanyMasterService {
         continue;
       }
     }
-
     return null;
   }
 
@@ -161,14 +160,11 @@ export class CompanyMasterService {
         compIsDeleted: false,
       },
     });
-
     if (!record) {
       this.throwNotFound(compId);
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(compId: string): Promise<{ compId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.company.findFirst({
@@ -177,11 +173,9 @@ export class CompanyMasterService {
           compIsDeleted: false,
         },
       });
-
       if (!existing) {
         this.throwNotFound(compId);
       }
-
       const modifiedOn = new Date();
       const result = await tx.company.updateMany({
         where: {
@@ -196,11 +190,9 @@ export class CompanyMasterService {
           compModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         this.throwNotFound(compId);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -210,7 +202,6 @@ export class CompanyMasterService {
         compModifiedOn: modifiedOn,
         compModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -226,14 +217,12 @@ export class CompanyMasterService {
         },
         tx,
       );
-
       return {
         compId,
         deleted: true,
       };
     });
   }
-
   private async createCompany(
     saveCompanyMasterDto: SaveCompanyMasterDto,
   ): Promise<CompanyMasterPayload> {
@@ -245,15 +234,12 @@ export class CompanyMasterService {
           2,
           'compStateCode',
         );
-
         await this.ensureNameIsUnique(tx, compName);
         await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null);
         await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null);
-
         if (saveCompanyMasterDto.compDefault === true) {
           await this.clearDefaultCompany(tx);
         }
-
         const now = new Date();
         const data: Prisma.CompanyUncheckedCreateInput = {
           compName,
@@ -264,12 +250,9 @@ export class CompanyMasterService {
           compModifiedOn: now,
           compModifiedBy: DEFAULT_ACTOR,
         };
-
         this.applyOptionalFields(data, saveCompanyMasterDto);
-
         const created = await tx.company.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -285,7 +268,6 @@ export class CompanyMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -293,12 +275,10 @@ export class CompanyMasterService {
       throw error;
     }
   }
-
   private async updateCompany(
     saveCompanyMasterDto: SaveCompanyMasterDto,
   ): Promise<CompanyMasterPayload> {
     const compId = saveCompanyMasterDto.compId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.company.findFirst({
@@ -307,26 +287,21 @@ export class CompanyMasterService {
             compIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(compId);
         }
-
         const compName = this.normalizeRequiredName(saveCompanyMasterDto.compName, 'compName');
         const compStateCode = this.normalizeLengthCode(
           saveCompanyMasterDto.compStateCode,
           2,
           'compStateCode',
         );
-
         await this.ensureNameIsUnique(tx, compName, compId);
         await this.ensureCodeIsUnique(tx, saveCompanyMasterDto.compCode ?? null, compId);
         await this.ensureGstinIsUnique(tx, saveCompanyMasterDto.compGstinNo ?? null, compId);
-
         if (saveCompanyMasterDto.compDefault === true) {
           await this.clearDefaultCompany(tx, compId);
         }
-
         const data: Prisma.CompanyUncheckedUpdateInput = {
           compName,
           compStateCode,
@@ -334,9 +309,7 @@ export class CompanyMasterService {
           compModifiedOn: new Date(),
           compModifiedBy: DEFAULT_ACTOR,
         };
-
         this.applyOptionalFields(data, saveCompanyMasterDto);
-
         const updated = await tx.company.update({
           where: {
             compId,
@@ -344,7 +317,6 @@ export class CompanyMasterService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -360,7 +332,6 @@ export class CompanyMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -368,7 +339,6 @@ export class CompanyMasterService {
       throw error;
     }
   }
-
   private async ensureNameIsUnique(
     tx: CompanyWriteClient,
     compName: string,
@@ -392,7 +362,6 @@ export class CompanyMasterService {
         compId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Company name already exists', [
@@ -404,7 +373,6 @@ export class CompanyMasterService {
       );
     }
   }
-
   private async ensureCodeIsUnique(
     tx: CompanyWriteClient,
     compCode: string | null,
@@ -413,7 +381,6 @@ export class CompanyMasterService {
     if (!compCode) {
       return;
     }
-
     const existing = await tx.company.findFirst({
       where: {
         compCode: {
@@ -432,7 +399,6 @@ export class CompanyMasterService {
         compId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Company code already exists', [
@@ -444,7 +410,6 @@ export class CompanyMasterService {
       );
     }
   }
-
   private async ensureGstinIsUnique(
     tx: CompanyWriteClient,
     compGstinNo: string | null,
@@ -453,7 +418,6 @@ export class CompanyMasterService {
     if (!compGstinNo) {
       return;
     }
-
     const existing = await tx.company.findFirst({
       where: {
         compGstinNo: {
@@ -472,7 +436,6 @@ export class CompanyMasterService {
         compId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Company GSTIN already exists', [
@@ -484,7 +447,6 @@ export class CompanyMasterService {
       );
     }
   }
-
   private async clearDefaultCompany(tx: CompanyWriteClient, excludeCompId?: string): Promise<void> {
     await tx.company.updateMany({
       where: {
@@ -505,7 +467,6 @@ export class CompanyMasterService {
       },
     });
   }
-
   private applyOptionalFields(
     data: Prisma.CompanyUncheckedCreateInput | Prisma.CompanyUncheckedUpdateInput,
     saveCompanyMasterDto: SaveCompanyMasterDto,
@@ -670,7 +631,6 @@ export class CompanyMasterService {
       data.compRemarks = saveCompanyMasterDto.compRemarks;
     }
   }
-
   private normalizeRequiredName(value: string, field: string): string {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -681,10 +641,8 @@ export class CompanyMasterService {
         },
       ]);
     }
-
     return trimmed;
   }
-
   private normalizeLengthCode(value: string, length: number, field: string): string {
     const normalized = value.trim().toUpperCase();
     if (normalized.length !== length) {
@@ -695,10 +653,8 @@ export class CompanyMasterService {
         },
       ]);
     }
-
     return normalized;
   }
-
   private toPayload(record: Company): CompanyMasterPayload {
     return {
       compId: record.compId,
@@ -769,23 +725,18 @@ export class CompanyMasterService {
       compModifiedBy: record.compModifiedBy,
     };
   }
-
   private toNumber(value: Prisma.Decimal | number): number {
     if (typeof value === 'number') {
       return value;
     }
-
     return Number(value.toString());
   }
-
   private toNullableNumber(value: Prisma.Decimal | number | null): number | null {
     if (value === null) {
       return null;
     }
-
     return this.toNumber(value);
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -798,15 +749,12 @@ export class CompanyMasterService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(compId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Company not found', [
@@ -817,11 +765,9 @@ export class CompanyMasterService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: CompanyMasterErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: CompanyMasterErrorDetail[] = [],
@@ -832,7 +778,6 @@ export class CompanyMasterService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }
