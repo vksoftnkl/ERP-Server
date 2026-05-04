@@ -613,14 +613,12 @@ export class AccountLedgerMastersService {
         },
         tx,
       );
-
       return {
         ledId,
         deleted: true,
       };
     });
   }
-
   private async createLedger(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
   ): Promise<AccountLedgerMasterPayload> {
@@ -643,10 +641,8 @@ export class AccountLedgerMastersService {
         const branchId = saveAccountLedgerMasterDto.ledBranchId;
         const groupId = saveAccountLedgerMasterDto.ledGroupId;
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
-
         const now = new Date();
         const createdBy = DEFAULT_ACTOR;
-
         const data: Prisma.AccLedgerMasterUncheckedCreateInput = {
           ledCompanyId: companyId,
           ledBranchId: branchId,
@@ -657,12 +653,9 @@ export class AccountLedgerMastersService {
           ledModifiedOn: now,
           ledModifiedBy: createdBy,
         };
-
         this.applyOptionalFields(data, saveAccountLedgerMasterDto);
-
         const created = await tx.accLedgerMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -678,7 +671,6 @@ export class AccountLedgerMastersService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -686,12 +678,10 @@ export class AccountLedgerMastersService {
       throw error;
     }
   }
-
   private async updateLedger(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
   ): Promise<AccountLedgerMasterPayload> {
     const ledId = saveAccountLedgerMasterDto.ledId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.accLedgerMaster.findFirst({
@@ -700,16 +690,12 @@ export class AccountLedgerMastersService {
             ledIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(ledId);
         }
-
         const normalizedName = this.normalizeRequiredName(saveAccountLedgerMasterDto.ledName);
-
         const nextGroupId = saveAccountLedgerMasterDto.ledGroupId;
         await this.ensureGroupExists(nextGroupId, tx);
-
         const nextCompanyId = this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')
           ? saveAccountLedgerMasterDto.ledCompanyId?.trim()
           : existing.ledCompanyId;
@@ -721,9 +707,7 @@ export class AccountLedgerMastersService {
             },
           ]);
         }
-
         await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, ledId);
-
         const data: Prisma.AccLedgerMasterUncheckedUpdateInput = {
           ledBranchId: saveAccountLedgerMasterDto.ledBranchId,
           ledGroupId: nextGroupId,
@@ -731,18 +715,14 @@ export class AccountLedgerMastersService {
           ledModifiedOn: new Date(),
           ledModifiedBy: DEFAULT_ACTOR,
         };
-
         this.applyOptionalFields(data, saveAccountLedgerMasterDto);
-
         const updated = await tx.accLedgerMaster.update({
           where: {
             ledId,
           },
           data,
         });
-
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -758,7 +738,6 @@ export class AccountLedgerMastersService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -766,7 +745,6 @@ export class AccountLedgerMastersService {
       throw error;
     }
   }
-
   private async ensureGroupExists(groupId: string, tx: AccountLedgerWriteClient): Promise<void> {
     const group = await tx.accountGroup.findFirst({
       where: {
@@ -777,7 +755,6 @@ export class AccountLedgerMastersService {
         accGroupId: true,
       },
     });
-
     if (!group) {
       this.throwBadRequest('Account group does not exist', [
         {
@@ -787,7 +764,6 @@ export class AccountLedgerMastersService {
       ]);
     }
   }
-
   private async ensureNameIsUnique(
     tx: AccountLedgerWriteClient,
     ledgerName: string,
@@ -814,7 +790,6 @@ export class AccountLedgerMastersService {
         ledId: true,
       },
     });
-
     if (existing) {
       throw new ConflictException(
         this.buildErrorResponse('Account ledger name already exists for this company', [
@@ -826,7 +801,6 @@ export class AccountLedgerMastersService {
       );
     }
   }
-
   private applyOptionalFields(
     data: Prisma.AccLedgerMasterUncheckedCreateInput | Prisma.AccLedgerMasterUncheckedUpdateInput,
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
@@ -834,236 +808,178 @@ export class AccountLedgerMastersService {
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')) {
       data.ledCompanyId = saveAccountLedgerMasterDto.ledCompanyId;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledBranchId')) {
       data.ledBranchId = saveAccountLedgerMasterDto.ledBranchId;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledAlias')) {
       data.ledAlias = saveAccountLedgerMasterDto.ledAlias;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledShort')) {
       data.ledShort = saveAccountLedgerMasterDto.ledShort;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTallyName')) {
       data.ledTallyName = saveAccountLedgerMasterDto.ledTallyName;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTallyGroupName')) {
       data.ledTallyGroupName = saveAccountLedgerMasterDto.ledTallyGroupName;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTallyGuid')) {
       data.ledTallyGuid = saveAccountLedgerMasterDto.ledTallyGuid;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledCategory')) {
       data.ledCategory = saveAccountLedgerMasterDto.ledCategory;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsBillByBill')) {
       data.ledIsBillByBill = saveAccountLedgerMasterDto.ledIsBillByBill;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsCostCenterReq')) {
       data.ledIsCostCenterReq = saveAccountLedgerMasterDto.ledIsCostCenterReq;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsInterestApplicable')) {
       data.ledIsInterestApplicable = saveAccountLedgerMasterDto.ledIsInterestApplicable;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledInterestRate')) {
       data.ledInterestRate = saveAccountLedgerMasterDto.ledInterestRate;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledContactPerson')) {
       data.ledContactPerson = saveAccountLedgerMasterDto.ledContactPerson;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledEmail')) {
       data.ledEmail = saveAccountLedgerMasterDto.ledEmail;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTel')) {
       data.ledTel = saveAccountLedgerMasterDto.ledTel;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledPhone1')) {
       data.ledPhone1 = saveAccountLedgerMasterDto.ledPhone1;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledPhone2')) {
       data.ledPhone2 = saveAccountLedgerMasterDto.ledPhone2;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledWhatsappNo')) {
       data.ledWhatsappNo = saveAccountLedgerMasterDto.ledWhatsappNo;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledAddr1')) {
       data.ledAddr1 = saveAccountLedgerMasterDto.ledAddr1;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledAddr2')) {
       data.ledAddr2 = saveAccountLedgerMasterDto.ledAddr2;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledAddr3')) {
       data.ledAddr3 = saveAccountLedgerMasterDto.ledAddr3;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledCity')) {
       data.ledCity = saveAccountLedgerMasterDto.ledCity;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledDistrict')) {
       data.ledDistrict = saveAccountLedgerMasterDto.ledDistrict;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledStateName')) {
       data.ledStateName = saveAccountLedgerMasterDto.ledStateName;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledStateCode')) {
       data.ledStateCode = saveAccountLedgerMasterDto.ledStateCode;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledPin')) {
       data.ledPin = saveAccountLedgerMasterDto.ledPin;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledCountry')) {
       data.ledCountry = saveAccountLedgerMasterDto.ledCountry;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionName')) {
       data.ledRegionName = saveAccountLedgerMasterDto.ledRegionName;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionAddr1')) {
       data.ledRegionAddr1 = saveAccountLedgerMasterDto.ledRegionAddr1;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionAddr2')) {
       data.ledRegionAddr2 = saveAccountLedgerMasterDto.ledRegionAddr2;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionAddr3')) {
       data.ledRegionAddr3 = saveAccountLedgerMasterDto.ledRegionAddr3;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionCity')) {
       data.ledRegionCity = saveAccountLedgerMasterDto.ledRegionCity;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionDistrict')) {
       data.ledRegionDistrict = saveAccountLedgerMasterDto.ledRegionDistrict;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionStateName')) {
       data.ledRegionStateName = saveAccountLedgerMasterDto.ledRegionStateName;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRegionCountry')) {
       data.ledRegionCountry = saveAccountLedgerMasterDto.ledRegionCountry;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledGstPartyRegType')) {
       data.ledGstPartyRegType = saveAccountLedgerMasterDto.ledGstPartyRegType;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledGstinNo')) {
       data.ledGstinNo = saveAccountLedgerMasterDto.ledGstinNo;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledPanNo')) {
       data.ledPanNo = saveAccountLedgerMasterDto.ledPanNo;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledAadharNo')) {
       data.ledAadharNo = saveAccountLedgerMasterDto.ledAadharNo;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledEcommerceGstin')) {
       data.ledEcommerceGstin = saveAccountLedgerMasterDto.ledEcommerceGstin;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsSez')) {
       data.ledIsSez = saveAccountLedgerMasterDto.ledIsSez;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledChequeName')) {
       data.ledHolderName = saveAccountLedgerMasterDto.ledChequeName;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankName')) {
       data.ledBankName = saveAccountLedgerMasterDto.ledBankName;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankBranch')) {
       data.ledBankBranch = saveAccountLedgerMasterDto.ledBankBranch;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankAcNo')) {
       data.ledBankAcNo = saveAccountLedgerMasterDto.ledBankAcNo;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankIfsc')) {
       data.ledBankIfsc = saveAccountLedgerMasterDto.ledBankIfsc;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledUpiId')) {
       data.ledUpiId = saveAccountLedgerMasterDto.ledUpiId;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledObAmount')) {
       data.ledObAmount = saveAccountLedgerMasterDto.ledObAmount;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledObType')) {
       data.ledObType = saveAccountLedgerMasterDto.ledObType;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledObAsOn')) {
       data.ledObAsOn = saveAccountLedgerMasterDto.ledObAsOn;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalDr')) {
       data.ledTotalDr = saveAccountLedgerMasterDto.ledTotalDr;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalCr')) {
       data.ledTotalCr = saveAccountLedgerMasterDto.ledTotalCr;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalBalance')) {
       data.ledTotalBalance = saveAccountLedgerMasterDto.ledTotalBalance;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsActive')) {
       data.ledIsActive = saveAccountLedgerMasterDto.ledIsActive;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledAllowEdit')) {
       data.ledAllowEdit = saveAccountLedgerMasterDto.ledAllowEdit;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsEntry')) {
       data.ledIsEntry = saveAccountLedgerMasterDto.ledIsEntry;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledAllowSms')) {
       data.ledAllowSms = saveAccountLedgerMasterDto.ledAllowSms;
     }
-
     if (this.hasOwnProperty(saveAccountLedgerMasterDto, 'ledRemarks')) {
       data.ledRemarks = saveAccountLedgerMasterDto.ledRemarks;
     }
   }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -1074,10 +990,8 @@ export class AccountLedgerMastersService {
         },
       ]);
     }
-
     return trimmed;
   }
-
   private toPayload(record: AccLedgerMaster): AccountLedgerMasterPayload {
     return {
       ledId: record.ledId,
@@ -1149,23 +1063,18 @@ export class AccountLedgerMastersService {
       ledModifiedBy: record.ledModifiedBy,
     };
   }
-
   private toNumber(value: Prisma.Decimal | number): number {
     if (typeof value === 'number') {
       return value;
     }
-
     return Number(value.toString());
   }
-
   private toNullableNumber(value: Prisma.Decimal | number | null): number | null {
     if (value === null) {
       return null;
     }
-
     return this.toNumber(value);
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -1178,15 +1087,12 @@ export class AccountLedgerMastersService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(ledId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('Account ledger not found', [
@@ -1197,11 +1103,9 @@ export class AccountLedgerMastersService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: AccountLedgerMasterErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(
     message: string,
     errors: AccountLedgerMasterErrorDetail[] = [],
@@ -1212,7 +1116,6 @@ export class AccountLedgerMastersService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }
