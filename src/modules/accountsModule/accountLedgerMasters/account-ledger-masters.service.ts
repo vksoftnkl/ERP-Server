@@ -637,7 +637,6 @@ export class AccountLedgerMastersService {
             },
           ]);
         }
-
         const branchId = saveAccountLedgerMasterDto.ledBranchId;
         const groupId = saveAccountLedgerMasterDto.ledGroupId;
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
