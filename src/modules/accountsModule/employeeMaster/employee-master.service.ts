@@ -22,7 +22,7 @@ import type { GridColumnItem } from '../../../common/configured-grid-sql/types/c
 const DEFAULT_ACTOR = 'system';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-const EMPLOYEE_MASTER_TABLE_NAME = 'Employee Master';
+const EMPLOYEE_MASTER_TABLE_NAME = 'emp_master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -121,7 +121,7 @@ export class EmployeeMasterService {
         total,
         total_pages: Math.ceil(total / limit),
       },
-      styles: styles ?? [],
+      ...(styles !== undefined && { styles }),
     };
   }
   private async listFromConfiguredGridSql(
@@ -169,7 +169,7 @@ export class EmployeeMasterService {
             total: result.total,
             total_pages: Math.ceil(result.total / limit),
           },
-          styles: result.styles ?? [],
+          styles: result.styles,
         };
       } catch {
         continue;
