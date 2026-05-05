@@ -1967,7 +1967,7 @@ model GridColumn {
   gridColumnNotes           String?  @db.Text @map("grid_column_notes")
 
   gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
-
+  gridColumnPosition        Decimal? @db.Decimal(12, 2) @map("gridColumn_position")
   @@map("grid_columns")
   @@schema("fixed")
 
@@ -2133,6 +2133,26 @@ model StateCode {
   @@index([isActive],  name: "idx_state_codes_active")
   @@index([stateName], name: "idx_state_codes_name")
   @@map("state_codes")
+  @@schema("fixed")
+}
+
+// ----- prisma/fixed/stockAdjReasons.prisma -----
+model StockAdjReason {
+  sarId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sar_id")
+  sarCode              String    @db.VarChar(30) @map("sar_code")
+  sarName              String    @db.VarChar(150) @map("sar_name")
+  sarReasonKind        String    @db.VarChar(30) @map("sar_reason_kind")
+  sarDefaultResolution String    @db.VarChar(30) @map("sar_default_resolution")
+  sarAffectsAccounts   Boolean   @default(true) @map("sar_affects_accounts")
+  sarIsActive          Boolean   @default(true) @map("sar_is_active")
+  sarIsDeleted         Boolean   @default(false) @map("sar_is_deleted")
+  sarCreatedOn         DateTime  @default(now()) @db.Timestamptz @map("sar_created_on")
+  sarCreatedBy         String?   @db.Uuid @map("sar_created_by")
+  sarModifiedOn        DateTime? @db.Timestamptz @map("sar_modified_on")
+  sarModifiedBy        String?   @db.Uuid @map("sar_modified_by")
+
+  @@unique([sarCode])
+  @@map("stock_adj_reasons")
   @@schema("fixed")
 }
 

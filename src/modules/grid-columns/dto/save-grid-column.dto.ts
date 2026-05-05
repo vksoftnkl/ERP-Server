@@ -137,6 +137,13 @@ export class SaveGridColumnDto {
   @IsNumber()
   grid_column_width?: number | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableNumber(value))
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsNumber()
+  grid_column_position?: number | null;
+
   @ApiPropertyOptional({ nullable: true, maxLength: 100 })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))

@@ -225,6 +225,10 @@ export class GridColumnsService {
       data.gridColumnWidth = saveGridColumnDto.grid_column_width;
     }
 
+    if (this.hasOwnProperty(saveGridColumnDto, 'grid_column_position')) {
+      data.gridColumnPosition = saveGridColumnDto.grid_column_position;
+    }
+
     if (this.hasOwnProperty(saveGridColumnDto, 'grid_column_alignment')) {
       data.gridColumnAlignment = saveGridColumnDto.grid_column_alignment;
     }
@@ -273,6 +277,7 @@ export class GridColumnsService {
       grid_column_number: record.gridColumnNumber,
       grid_column_name: record.gridColumnName,
       grid_column_width: this.toNullableNumber(record.gridColumnWidth),
+      grid_column_position: this.toNullableNumber(record.gridColumnPosition),
       grid_column_alignment: record.gridColumnAlignment,
       grid_column_visibility: record.gridColumnVisibility,
       grid_column_filter: record.gridColumnFilter,

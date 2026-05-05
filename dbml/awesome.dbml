@@ -1060,6 +1060,7 @@ Table grid_columns {
   gridColumnColor String
   gridColumnNotes String
   gridColumnIsDeleted Boolean [not null, default: false]
+  gridColumnPosition Decimal
 }
 
 Table grid_details {
@@ -1166,6 +1167,21 @@ Table state_codes {
   createdBy String
   modifiedOn DateTime [default: `now()`, not null]
   modifiedBy String
+}
+
+Table stock_adj_reasons {
+  sarId String [pk]
+  sarCode String [unique, not null]
+  sarName String [not null]
+  sarReasonKind String [not null]
+  sarDefaultResolution String [not null]
+  sarAffectsAccounts Boolean [not null, default: true]
+  sarIsActive Boolean [not null, default: true]
+  sarIsDeleted Boolean [not null, default: false]
+  sarCreatedOn DateTime [default: `now()`, not null]
+  sarCreatedBy String
+  sarModifiedOn DateTime
+  sarModifiedBy String
 }
 
 Table ui_tables {

@@ -218,6 +218,7 @@ export class ConfiguredGridSqlService {
         gridColumnNumber: true,
         gridColumnName: true,
         gridColumnWidth: true,
+        gridColumnPosition: true,
         gridColumnAlignment: true,
         gridColumnVisibility: true,
         gridColumnFilter: true,
@@ -234,6 +235,8 @@ export class ConfiguredGridSqlService {
       grid_column_number: col.gridColumnNumber,
       grid_column_name: col.gridColumnName,
       grid_column_width: col.gridColumnWidth !== null ? Number(col.gridColumnWidth) : null,
+      grid_column_position:
+        col.gridColumnPosition !== null ? Number(col.gridColumnPosition) : null,
       grid_column_alignment: col.gridColumnAlignment,
       grid_column_visibility: col.gridColumnVisibility,
       grid_column_filter: col.gridColumnFilter,

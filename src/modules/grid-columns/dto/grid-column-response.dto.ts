@@ -36,6 +36,9 @@ export class GridColumnPayloadDto {
   grid_column_width!: number | null;
 
   @ApiPropertyOptional({ nullable: true })
+  grid_column_position!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
   grid_column_alignment!: string | null;
 
   @ApiProperty()
