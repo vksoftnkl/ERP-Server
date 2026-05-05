@@ -13,21 +13,21 @@ import {
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import { validateDto } from 'src/common/utils/request-payload-validation.util';
-import { GetItemPriceDetailQueryDto } from 'src/modules/Inventory/item-price-details/dto/get-item-price-detail-query.dto';
-import { ItemPayloadDto } from 'src/modules/Inventory/items-master/dto/item-response.dto';
-import { ItemPricePayloadDto } from 'src/modules/Inventory/items-price-master/dto/item-price-response.dto';
-import { ItemTaxPayloadDto } from 'src/modules/Inventory/items-tax-master/dto/item-tax-response.dto';
+import { ItemPayloadDto } from '../items-master/dto/item-response.dto';
+import { ItemPricePayloadDto } from '../items-price-master/dto/item-price-response.dto';
+import { ItemTaxPayloadDto } from '../items-tax-master/dto/item-tax-response.dto';
+import { GetItemPriceDetailQueryDto } from './dto/get-item-price-detail-query.dto';
 import {
   ItemPriceDetailErrorResponseDto,
   ItemPriceDetailPayloadDto,
   ItemPriceDetailSuccessSingleDto,
-} from 'src/modules/Inventory/item-price-details/dto/item-price-detail-response.dto';
-import { ItemPriceDetailExceptionFilter } from 'src/modules/Inventory/item-price-details/item-price-detail-exception.filter';
+} from './dto/item-price-detail-response.dto';
+import { ItemPriceDetailExceptionFilter } from './item-price-detail-exception.filter';
 import { ItemPriceDetailsService } from './item-price-details.service';
 import {
   ItemPriceDetailPayload,
   ItemPriceDetailSuccessResponse,
-} from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
+} from './types/item-price-detail-api.types';
 
 @ApiTags('Item Price Details')
 @ApiBearerAuth('access-token')

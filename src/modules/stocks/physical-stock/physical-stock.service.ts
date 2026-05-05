@@ -3,7 +3,6 @@ import { Prisma, PhysicalStockHeader } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { CreatePhysicalStockDto } from './dto/create-physical-stock.dto';
 import { UpdatePhysicalStockDto } from './dto/update-physical-stock.dto';
-
 @Injectable()
 export class PhysicalStockService {
   constructor(private readonly prisma: PrismaService) {}
@@ -154,7 +153,6 @@ export class PhysicalStockService {
     if (value === undefined || (!allowNull && value === null)) {
       return;
     }
-
     data[field] = value;
   }
   private toBigInt(value: string | undefined, field: string): bigint {

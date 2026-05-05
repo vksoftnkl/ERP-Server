@@ -16,42 +16,30 @@ import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma/prisma.module';
 import { HealthModule } from './modules/health/health.module';
 import { UsersModule } from './modules/users/users.module';
-import { ItemsGroupMasterModule } from './modules/items-group-master/items-group-master.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { ItemsBrandMasterModule } from './modules/items-brand-master/items-brand-master.module';
-import { UnitsMasterModule } from './modules/units-master/units-master.module';
-import { ItemsSectionMasterModule } from './modules/items-section-master/items-section-master.module';
-import { ItemsCategoryMasterModule } from './modules/items-category-master/items-category-master.module';
 import { GridDetailsModule } from './modules/grid-details/grid-details.module';
 import { GridColumnsModule } from './modules/grid-columns/grid-columns.module';
 import { DropdownDetailsModule } from './modules/dropdown-details/dropdown-details.module';
 import { DropdownColumnsModule } from './modules/dropdown-columns/dropdown-columns.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
-import { GodownsMasterModule } from './modules/godowns-master/godowns-master.module';
-import { ItemsTaxMasterModule } from './modules/items-tax-master/items-tax-master.module';
-import { ItemsEanCodeMasterModule } from './modules/items-ean-code-master/items-ean-code-master.module';
 import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
-import { ItemsPriceMasterModule } from './modules/items-price-master/items-price-master.module';
-import { ItemPriceDetailsModule } from './modules/item-price-details/item-price-details.module';
-import { ItemsQtywiseRatesMasterModule } from './modules/items-qtywise-rates-master/items-qtywise-rates-master.module';
-import { ItemsReorderMasterModule } from './modules/items-reorder-master/items-reorder-master.module';
-import { ItemsTaxHistoryMasterModule } from './modules/items-tax-history-master/items-tax-history-master.module';
-import { ItemsMasterModule } from './modules/items-master/items-master.module';
+import { ItemPriceDetailsModule } from './modules/Inventory/item-price-details/item-price-details.module';
+
 import { AccountsGroupModule } from './modules/accountsModule/accountsGroup/accounts-group.module';
 import { AccountLedgerMastersModule } from './modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
 import { LedgerBankAccountModule } from './modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
-import { BranchMasterModule } from './modules/accountsModule/branchMaster/branch-master.module';
-import { CompanyMasterModule } from './modules/accountsModule/companyMaster/company-master.module';
+import { BranchMasterModule } from './modules/settings/branchMaster/branch-master.module';
+import { CompanyMasterModule } from './modules/settings/companyMaster/company-master.module';
 import { CompanyGroupMasterModule } from './modules/accountsModule/companyGroupMaster/company-group-master.module';
-import { EmployeeDepartmentMasterModule } from './modules/accountsModule/employeeDepartmentMaster/employee-department-master.module';
-import { EmployeeDesignationMasterModule } from './modules/accountsModule/employeeDesignationMaster/employee-designation-master.module';
-import { EmployeeMasterModule } from './modules/accountsModule/employeeMaster/employee-master.module';
+import { EmployeeDepartmentMasterModule } from './modules/settings/employeeDepartmentMaster/employee-department-master.module';
+import { EmployeeDesignationMasterModule } from './modules/settings/employeeDesignationMaster/employee-designation-master.module';
+import { EmployeeMasterModule } from './modules/settings/employeeMaster/employee-master.module';
 import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
-import { GspCompanyServiceModule } from './modules/accountsModule/gspCompanyService/gsp-company-service.module';
+import { GspCompanyServiceModule } from './modules/settings/gspCompanyService/gsp-company-service.module';
 import { SupplierGroupModule } from './modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from './modules/purchase/suppliers/suppliers.module';
 import { AreaModule } from './modules/sales/area/area.module';
@@ -71,8 +59,21 @@ import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/use
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
-import { OpeningStockModule } from './modules/opening-stock/opening-stock.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
+import { OpeningStockModule } from './modules/stocks/opening-stock/opening-stock.module';
+import { GodownsMasterModule } from './modules/Inventory/godowns-master/godowns-master.module';
+import { ItemsGroupMasterModule } from './modules/Inventory/items-group-master/items-group-master.module';
+import { ItemsBrandMasterModule } from './modules/Inventory/items-brand-master/items-brand-master.module';
+import { ItemsSectionMasterModule } from './modules/Inventory/items-section-master/items-section-master.module';
+import { ItemsCategoryMasterModule } from './modules/Inventory/items-category-master/items-category-master.module';
+import { UnitsMasterModule } from './modules/Inventory/units-master/units-master.module';
+import { ItemsTaxMasterModule } from './modules/Inventory/items-tax-master/items-tax-master.module';
+import { ItemsEanCodeMasterModule } from './modules/Inventory/items-ean-code-master/items-ean-code-master.module';
+import { ItemsPriceMasterModule } from './modules/Inventory/items-price-master/items-price-master.module';
+import { ItemsQtywiseRatesMasterModule } from './modules/Inventory/items-qtywise-rates-master/items-qtywise-rates-master.module';
+import { ItemsReorderMasterModule } from './modules/Inventory/items-reorder-master/items-reorder-master.module';
+import { ItemsTaxHistoryMasterModule } from './modules/Inventory/items-tax-history-master/items-tax-history-master.module';
+import { ItemsMasterModule } from './modules/Inventory/items-master/items-master.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;
@@ -174,11 +175,11 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     },
     ...(isThrottlerEnabled
       ? [
-          {
-            provide: APP_GUARD,
-            useClass: ThrottlerGuard,
-          },
-        ]
+        {
+          provide: APP_GUARD,
+          useClass: ThrottlerGuard,
+        },
+      ]
       : []),
     {
       provide: APP_FILTER,

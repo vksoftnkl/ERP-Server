@@ -1,16 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ItemMaster, ItemPriceMaster, ItemTaxMaster, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
-import { ItemPriceDetailPayloadDto } from 'src/modules/Inventory/item-price-details/dto/item-price-detail-response.dto';
-import { ItemPriceDetailErrorDetail, ItemPriceDetailErrorResponse } from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
-import { ItemPayload } from 'src/modules/Inventory/items-master/types/item-api.types';
-import { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
-import { ItemTaxPayload } from 'src/modules/Inventory/items-tax-master/types/item-tax-api.types';
-
+import { ItemPayload } from '../items-master/types/item-api.types';
+import { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
+import { ItemTaxPayload } from '../items-tax-master/types/item-tax-api.types';
+import {
+  ItemPriceDetailErrorDetail,
+  ItemPriceDetailErrorResponse,
+  ItemPriceDetailPayload,
+} from './types/item-price-detail-api.types';
 @Injectable()
 export class ItemPriceDetailsService {
-  constructor(private readonly prisma: PrismaService) {}
-  async getByItemId(itemId: string): Promise<ItemPriceDetailPayloadDto> {
+  constructor(private readonly prisma: PrismaService) { }
+  async getByItemId(itemId: string): Promise<ItemPriceDetailPayload> {
     const itemRecord = await this.prisma.itemMaster.findFirst({
       where: {
         itemId,
@@ -30,11 +32,11 @@ export class ItemPriceDetailsService {
       }),
       itemRecord.itemDefaultTaxId
         ? this.prisma.itemTaxMaster.findFirst({
-            where: {
-              taxId: itemRecord.itemDefaultTaxId,
-              taxIsDeleted: false,
-            },
-          })
+          where: {
+            taxId: itemRecord.itemDefaultTaxId,
+            taxIsDeleted: false,
+          },
+        })
         : Promise.resolve(null),
     ]);
     return {

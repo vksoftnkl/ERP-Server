@@ -31,7 +31,6 @@ export class PhysicalStockController {
   @ApiCreatedResponse({ description: 'Physical stock header saved successfully' })
   async save(@Body() createPhysicalStockDto: CreatePhysicalStockDto) {
     const data = await this.physicalStockService.save(createPhysicalStockDto);
-
     return {
       success: true,
       message: createPhysicalStockDto.pscId
@@ -40,7 +39,6 @@ export class PhysicalStockController {
       data,
     };
   }
-
   @Get()
   @Version('1')
   @ApiOperation({ summary: 'List physical stock headers' })
@@ -54,42 +52,36 @@ export class PhysicalStockController {
       data,
     };
   }
-
   @Get(':id')
   @Version('1')
   @ApiOperation({ summary: 'Get physical stock header by id' })
   @ApiOkResponse({ description: 'Physical stock header fetched successfully' })
   async findOne(@Param('id') id: string) {
     const data = await this.physicalStockService.findOne(id);
-
     return {
       success: true,
       message: 'Physical stock fetched successfully',
       data,
     };
   }
-
   @Patch(':id')
   @Version('1')
   @ApiOperation({ summary: 'Update physical stock header by id' })
   @ApiOkResponse({ description: 'Physical stock header updated successfully' })
   async update(@Param('id') id: string, @Body() updatePhysicalStockDto: UpdatePhysicalStockDto) {
     const data = await this.physicalStockService.update(id, updatePhysicalStockDto);
-
     return {
       success: true,
       message: 'Physical stock updated successfully',
       data,
     };
   }
-
   @Delete(':id')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete physical stock header by id' })
   @ApiOkResponse({ description: 'Physical stock header deleted successfully' })
   async remove(@Param('id') id: string) {
     const data = await this.physicalStockService.remove(id);
-
     return {
       success: true,
       message: 'Physical stock deleted successfully',
