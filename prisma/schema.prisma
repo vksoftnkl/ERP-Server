@@ -4326,3 +4326,15 @@ model StateMaster {
   @@schema("sales")
 }
 
+// ----- prisma/stocks/Physical_Stock/Physical_Stock_Adj_Reason.prisma -----
+
+
+// ----- prisma/stocks/Physical_Stock/Physical_Stock_Batch_Detail.prisma -----
+
+
+// ----- prisma/stocks/Physical_Stock/Physical_Stock_Detail.prisma -----
+
+
+// ----- prisma/stocks/Physical_Stock/Physical_Stock_Header.prisma -----
+
+

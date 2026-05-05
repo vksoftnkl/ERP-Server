@@ -2679,6 +2679,21 @@ Table state_master {
   cities city_master [not null]
 }
 
+Table stock_adj_reasons {
+  adjId String [pk]
+  adjCode String [unique, not null]
+  adjName String [not null]
+  adjReason String [not null]
+  adjResolution String [not null]
+  adjAffectAcc Boolean [not null, default: true]
+  adjIsActive Boolean [not null, default: true]
+  adjIsDeleted Boolean [not null, default: false]
+  adjCreatedOn DateTime [default: `now()`, not null]
+  adjCreatedBy String
+  adjModifiedOn DateTime
+  adjModifiedBy String
+}
+
 Enum LedGstPartyRegType {
   REGULAR
   COMPOSITION
