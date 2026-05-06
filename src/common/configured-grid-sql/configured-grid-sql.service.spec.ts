@@ -1,6 +1,5 @@
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { ConfiguredGridSqlService } from './configured-grid-sql.service';
-
 type PrismaMock = {
   gridDetails: {
     findMany: jest.Mock;
@@ -10,11 +9,9 @@ type PrismaMock = {
   };
   $queryRawUnsafe: jest.Mock;
 };
-
 describe('ConfiguredGridSqlService', () => {
   let service: ConfiguredGridSqlService;
   let prisma: PrismaMock;
-
   beforeEach(() => {
     prisma = {
       gridDetails: {
@@ -25,10 +22,8 @@ describe('ConfiguredGridSqlService', () => {
       },
       $queryRawUnsafe: jest.fn(),
     };
-
     service = new ConfiguredGridSqlService(prisma as unknown as PrismaService);
   });
-
   it('loads configured candidates by table name', async () => {
     prisma.gridDetails.findMany.mockResolvedValue([
       {
@@ -36,9 +31,7 @@ describe('ConfiguredGridSqlService', () => {
         gridSql: 'SELECT * FROM units',
       },
     ]);
-
     const result = await service.loadCandidates({ tableName: 'units' });
-
     expect(result).toHaveLength(1);
     expect(prisma.gridDetails.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -60,7 +53,6 @@ describe('ConfiguredGridSqlService', () => {
       }),
     );
   });
-
   it('matches display-style table names to underscored configured SQL table names', async () => {
     prisma.gridDetails.findMany.mockResolvedValue([
       {
@@ -68,14 +60,12 @@ describe('ConfiguredGridSqlService', () => {
         gridSql: 'SELECT * FROM sales.area_master WHERE arm_is_deleted = false',
       },
     ]);
-
     const candidates = await service.loadCandidates({ tableName: 'area master' });
     const primaryCandidates = service.filterPrimaryFromTable(candidates, 'area master');
     const validation = service.validateBaseSql({
       sql: 'SELECT * FROM sales.area_master WHERE arm_is_deleted = false',
       tableName: 'area master',
     });
-
     expect(candidates).toHaveLength(1);
     expect(primaryCandidates).toEqual([
       {

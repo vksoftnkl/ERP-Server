@@ -6,6 +6,8 @@ export class ConfiguredGridStyleDto {
   grid_column_name!: string;
   @ApiPropertyOptional({ nullable: true, example: 180 })
   grid_column_width!: number | null;
+  @ApiPropertyOptional({ nullable: true, example: 1 })
+  grid_column_position!: number | null;
   @ApiPropertyOptional({ nullable: true, example: 'left' })
   grid_column_alignment!: string | null;
   @ApiProperty({ example: true })
