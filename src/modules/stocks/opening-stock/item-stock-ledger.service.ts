@@ -9,7 +9,14 @@ import { ItemStockBucket, StockTxnType } from './types/item-stock.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { generateNextBatchNo } from 'src/common/utils/batch-number.util';
+import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 
+const OPENING_STOCK_AUDIT_SCREEN_NAME = 'Opening Stock';
+const OPENING_STOCK_DETAIL_TABLE_NAME = 'opening stock detail';
+const ITEM_BATCH_MASTER_TABLE_NAME = 'item_batch_master';
+const ITEM_BATCH_STOCK_TABLE_NAME = 'item_batch_stock';
+const ITEM_STOCK_BALANCE_TABLE_NAME = 'item_stock_balance';
+const ITEM_STOCK_LEDGER_TABLE_NAME = 'item_stock_ledger';
 const ITEM_BATCH_STATUS_VALUES = ['ACTIVE', 'CLOSED', 'BLOCKED'] as const;
 const ITEM_BATCH_STATUS_SET = new Set<(typeof ITEM_BATCH_STATUS_VALUES)[number]>(
   ITEM_BATCH_STATUS_VALUES,
@@ -148,6 +155,7 @@ type BatchMasterIdentity = {
   btmId: string;
   btmBatchNo: string;
 };
+type OpeningStockPostingAuditAction = 'New' | 'update' | 'cancel';
 type BatchStockStateRow = Prisma.ItemBatchStockGetPayload<{
   select: typeof ITEM_BATCH_STOCK_STATE_SELECT;
 }>;
@@ -165,6 +173,7 @@ export class ItemStockLedgerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly requestContextService: RequestContextService,
+    private readonly auditLogService: AuditLogService,
   ) {}
   async syncFromOpeningStockDocument(
     tx: Prisma.TransactionClient,
@@ -197,6 +206,12 @@ export class ItemStockLedgerService {
       const currentMovements = resolvedDocument.header.osh_is_deleted
         ? []
         : this.buildOpeningStockMovements(resolvedDocument, 1);
+      const existingLedgerRows = await tx.itemStockLedger.findMany({
+        where: {
+          stlVoucherId: document.header.avh_voucher_id,
+        },
+        orderBy: [{ stlLineNo: 'asc' }, { stlSplitNo: 'asc' }],
+      });
       await tx.itemStockLedger.deleteMany({
         where: {
           stlVoucherId: document.header.avh_voucher_id,
@@ -215,6 +230,17 @@ export class ItemStockLedgerService {
           }),
         ),
       );
+      await this.logOpeningStockPostingChange(tx, {
+        action: this.resolveLedgerAuditAction(existingLedgerRows, resolvedDocument.header),
+        tableName: ITEM_STOCK_LEDGER_TABLE_NAME,
+        pk: resolvedDocument.header.avh_voucher_id,
+        displayName: this.buildDocumentDisplayName(resolvedDocument.header),
+        originalRecord: existingLedgerRows.length > 0 ? existingLedgerRows : null,
+        modifiedRecord: itemStockLedger,
+        actorUserId,
+        branchId: resolvedDocument.header.osh_branch_id,
+        notes: 'Opening stock item stock ledger rows synchronized',
+      });
       const { itemStockBalance, itemBatchStock } = await this.applyStockMovements(
         tx,
         [...reverseMovements, ...currentMovements],
@@ -384,6 +410,13 @@ export class ItemStockLedgerService {
       const hasBatchIdChanged = detail.osl_batch_id !== resolvedBatch.batchId;
       const hasBatchNoChanged = detail.osl_batch_no !== resolvedBatch.batchNo;
       if (persistResolvedBatchIds && (hasBatchIdChanged || hasBatchNoChanged)) {
+        const modifiedDetail: OpeningStockDetailPayload = {
+          ...detail,
+          osl_batch_id: resolvedBatch.batchId,
+          osl_batch_no: resolvedBatch.batchNo,
+          osl_updated_on: now.toISOString(),
+          osl_updated_by: actorUserId,
+        };
         await tx.openingStockDetail.update({
           where: { oslId: detail.osl_id },
           data: {
@@ -392,6 +425,17 @@ export class ItemStockLedgerService {
             oslUpdatedOn: now,
             oslUpdatedBy: actorUserId,
           },
+        });
+        await this.logOpeningStockPostingChange(tx, {
+          action: 'update',
+          tableName: OPENING_STOCK_DETAIL_TABLE_NAME,
+          pk: detail.osl_id,
+          displayName: this.buildDetailDisplayName(modifiedDetail),
+          originalRecord: detail,
+          modifiedRecord: modifiedDetail,
+          actorUserId,
+          branchId: detail.osl_branch_id,
+          notes: 'Opening stock detail batch identity resolved',
         });
       }
       details.push({
@@ -545,10 +589,17 @@ export class ItemStockLedgerService {
         btmUpdatedOn: now,
         btmUpdatedBy: actorUserId,
       },
-      select: {
-        btmId: true,
-        btmBatchNo: true,
-      },
+    });
+    await this.logOpeningStockPostingChange(tx, {
+      action: 'New',
+      tableName: ITEM_BATCH_MASTER_TABLE_NAME,
+      pk: createdBatch.btmId,
+      displayName: createdBatch.btmBatchNo,
+      originalRecord: null,
+      modifiedRecord: createdBatch,
+      actorUserId,
+      branchId: detail.osl_branch_id,
+      notes: 'Item batch master created from opening stock',
     });
     resolutionContext.batchMastersById.set(createdBatch.btmId, createdBatch);
     const batchMasterNosKey = this.buildBatchMasterNosKey(
@@ -781,12 +832,24 @@ export class ItemStockLedgerService {
       existing ? this.toStateFromStockBalance(existing) : this.createEmptyState(),
       movement,
     );
-    return tx.itemStockBalance.upsert({
+    const savedRow = await tx.itemStockBalance.upsert({
       where,
       create: this.buildStockBalanceCreateInput(movement, nextState, actorUserId, now),
       update: this.buildStockBalanceUpdateInput(movement, nextState, actorUserId, now),
       select: ITEM_STOCK_BALANCE_STATE_SELECT,
     });
+    await this.logOpeningStockPostingChange(tx, {
+      action: existing ? 'update' : 'New',
+      tableName: ITEM_STOCK_BALANCE_TABLE_NAME,
+      pk: this.buildStockBalanceAuditPk(savedRow, movement),
+      displayName: this.buildMovementDisplayName(movement),
+      originalRecord: existing,
+      modifiedRecord: savedRow,
+      actorUserId,
+      branchId: movement.branchId,
+      notes: 'Item stock balance updated from opening stock',
+    });
+    return savedRow;
   }
   private async applyBatchMovement(
     tx: Prisma.TransactionClient,
@@ -817,12 +880,24 @@ export class ItemStockLedgerService {
       movement,
     );
     this.assertValidBatchStockWrite(movement, nextState);
-    return tx.itemBatchStock.upsert({
+    const savedRow = await tx.itemBatchStock.upsert({
       where,
       create: this.buildBatchStockCreateInput(movement, nextState, actorUserId, now),
       update: this.buildBatchStockUpdateInput(movement, nextState, actorUserId, now),
       select: ITEM_BATCH_STOCK_STATE_SELECT,
     });
+    await this.logOpeningStockPostingChange(tx, {
+      action: existing ? 'update' : 'New',
+      tableName: ITEM_BATCH_STOCK_TABLE_NAME,
+      pk: this.buildBatchStockAuditPk(savedRow, movement),
+      displayName: this.buildMovementDisplayName(movement),
+      originalRecord: existing,
+      modifiedRecord: savedRow,
+      actorUserId,
+      branchId: movement.branchId,
+      notes: 'Item batch stock updated from opening stock',
+    });
+    return savedRow;
   }
   private isReverseOpeningMovement(movement: StockMovementInput): boolean {
     return (
@@ -872,12 +947,24 @@ export class ItemStockLedgerService {
       this.aggregateBatchStates(batchRows),
       this.resolveBatchSummaryWotState(existingSummary, movement),
     );
-    return tx.itemStockBalance.upsert({
+    const savedRow = await tx.itemStockBalance.upsert({
       where,
       create: this.buildStockBalanceCreateInput(movement, nextState, actorUserId, now),
       update: this.buildStockBalanceUpdateInput(movement, nextState, actorUserId, now),
       select: ITEM_STOCK_BALANCE_STATE_SELECT,
     });
+    await this.logOpeningStockPostingChange(tx, {
+      action: existingSummary ? 'update' : 'New',
+      tableName: ITEM_STOCK_BALANCE_TABLE_NAME,
+      pk: this.buildStockBalanceAuditPk(savedRow, movement),
+      displayName: this.buildMovementDisplayName(movement),
+      originalRecord: existingSummary,
+      modifiedRecord: savedRow,
+      actorUserId,
+      branchId: movement.branchId,
+      notes: 'Item stock balance rolled up from opening stock batch stock',
+    });
+    return savedRow;
   }
   private aggregateBatchStates(rows: BatchStockStateRow[]): StockEngineState {
     const state = this.createEmptyState();
@@ -1319,6 +1406,92 @@ export class ItemStockLedgerService {
       ibsUpdatedOn: now,
       ibsUpdatedBy: actorUserId,
     };
+  }
+  private resolveLedgerAuditAction(
+    existingLedgerRows: PrismaItemStockLedger[],
+    header: OpeningStockHeaderPayload,
+  ): OpeningStockPostingAuditAction {
+    if (header.osh_is_deleted) {
+      return 'cancel';
+    }
+    return existingLedgerRows.length > 0 ? 'update' : 'New';
+  }
+  private async logOpeningStockPostingChange(
+    tx: Prisma.TransactionClient,
+    input: {
+      action: OpeningStockPostingAuditAction;
+      tableName: string;
+      pk: string | number | bigint | null;
+      displayName: string | null;
+      originalRecord: unknown;
+      modifiedRecord: unknown;
+      actorUserId: string | null;
+      branchId: string | null;
+      notes: string;
+    },
+  ): Promise<void> {
+    await this.auditLogService.logEntityChange(
+      {
+        action: input.action,
+        tableName: input.tableName,
+        screenName: OPENING_STOCK_AUDIT_SCREEN_NAME,
+        screenType: 'transaction',
+        pk: input.pk,
+        displayName: input.displayName,
+        originalRecord: input.originalRecord,
+        modifiedRecord: input.modifiedRecord,
+        userId: input.actorUserId,
+        branchId: input.branchId,
+        notes: input.notes,
+      },
+      tx,
+    );
+  }
+  private buildDocumentDisplayName(header: OpeningStockHeaderPayload): string {
+    return (
+      this.firstNonEmptyText(
+        header.osh_ref_no,
+        header.osh_voucher_no,
+        header.avh_voucher_refno,
+        header.avh_voucher_id,
+      ) ?? header.avh_voucher_id
+    );
+  }
+  private buildDetailDisplayName(detail: OpeningStockDetailPayload): string {
+    const parts = [
+      `Line ${detail.osl_line_no}`,
+      this.firstNonEmptyText(detail.osl_item_code, detail.osl_item_name, detail.osl_item_id),
+      this.firstNonEmptyText(detail.osl_batch_no, detail.osl_batch_id),
+    ].filter((part): part is string => Boolean(part));
+    return parts.join(' / ');
+  }
+  private buildMovementDisplayName(movement: StockMovementInput): string {
+    const parts = [
+      `item:${movement.itemId}`,
+      `godown:${movement.godownId}`,
+      `unit:${movement.unitId}`,
+      `bucket:${movement.stockBucket}`,
+      this.firstNonEmptyText(movement.batchNo, movement.batchId),
+    ].filter((part): part is string => Boolean(part));
+    return parts.join(' / ');
+  }
+  private buildStockBalanceAuditPk(
+    row: StockBalanceStateRow,
+    movement: StockMovementInput,
+  ): string {
+    return row.isbId || this.buildSummaryScopeKey(movement);
+  }
+  private buildBatchStockAuditPk(row: BatchStockStateRow, movement: StockMovementInput): string {
+    return row.ibsId || this.buildBatchScopeKey(movement);
+  }
+  private firstNonEmptyText(...values: Array<string | null | undefined>): string | null {
+    for (const value of values) {
+      const normalizedValue = value?.trim();
+      if (normalizedValue) {
+        return normalizedValue;
+      }
+    }
+    return null;
   }
   private buildSummaryScopeKey(movement: StockMovementInput): string {
     return [

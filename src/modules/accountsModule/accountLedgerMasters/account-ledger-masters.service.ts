@@ -4,7 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccLedgerMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -23,11 +26,16 @@ const DEFAULT_LIMIT = 20;
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
+const MIN_CONFIDENT_FILTER_COLUMN_MATCH_SCORE = 3;
 type AccountLedgerWriteClient = Prisma.TransactionClient | PrismaService;
 type SearchColumnDescriptor = {
   normalized: string;
   tokens: string[];
   lastToken: string;
+};
+type ConfiguredGridListSql = {
+  sql: string;
+  params: unknown[];
 };
 @Injectable()
 export class AccountLedgerMastersService {
@@ -112,9 +120,10 @@ export class AccountLedgerMastersService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<
-    ConfiguredGridListResult<AccountLedgerMasterListItem, AccountLedgerMasterListMeta> | null
-  > {
+  ): Promise<ConfiguredGridListResult<
+    AccountLedgerMasterListItem,
+    AccountLedgerMasterListMeta
+  > | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: ACCOUNT_LEDGER_MASTER_TABLE_NAME,
     });
@@ -146,11 +155,15 @@ export class AccountLedgerMastersService {
     const searchableFieldNames = queryDto.search?.trim()
       ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
       : [];
-    const { sql: filteredSql, params } = this.buildConfiguredGridListSql(
+    const configuredListSql = this.buildConfiguredGridListSql(
       baseSql,
       queryDto,
       searchableFieldNames,
     );
+    if (!configuredListSql) {
+      return null;
+    }
+    const { sql: filteredSql, params } = configuredListSql;
     try {
       const result = await this.configuredGridSqlService.runPagedQuery<AccountLedgerMasterListItem>(
         {
@@ -185,25 +198,59 @@ export class AccountLedgerMastersService {
     baseSql: string,
     queryDto: ListAccountLedgerMasterQueryDto,
     searchableFieldNames: string[],
-  ): { sql: string; params: unknown[] } {
+  ): ConfiguredGridListSql | null {
     const conditions: string[] = [];
     const params: unknown[] = [];
+    const sqlFieldNames = this.extractSelectFieldNames(baseSql);
+    const hasWildcardSelect = this.hasTopLevelWildcardSelect(baseSql);
 
     if (queryDto.ledCompanyId !== undefined) {
+      const column = this.resolveConfiguredGridFilterColumn(
+        sqlFieldNames,
+        'led_company_id',
+        hasWildcardSelect,
+      );
+      if (!column) {
+        return null;
+      }
       params.push(queryDto.ledCompanyId);
-      conditions.push(`account_ledger_grid.led_company_id = $${params.length}`);
+      conditions.push(`account_ledger_grid.${column} = $${params.length}`);
     }
     if (queryDto.ledGroupId !== undefined) {
+      const column = this.resolveConfiguredGridFilterColumn(
+        sqlFieldNames,
+        'led_group_id',
+        hasWildcardSelect,
+      );
+      if (!column) {
+        return null;
+      }
       params.push(queryDto.ledGroupId);
-      conditions.push(`account_ledger_grid.led_group_id = $${params.length}`);
+      conditions.push(`account_ledger_grid.${column} = $${params.length}`);
     }
     if (queryDto.ledCategory?.trim()) {
+      const column = this.resolveConfiguredGridFilterColumn(
+        sqlFieldNames,
+        'led_category',
+        hasWildcardSelect,
+      );
+      if (!column) {
+        return null;
+      }
       params.push(queryDto.ledCategory.trim());
-      conditions.push(`account_ledger_grid.led_category = $${params.length}`);
+      conditions.push(`account_ledger_grid.${column} = $${params.length}`);
     }
     if (queryDto.ledIsActive !== undefined) {
+      const column = this.resolveConfiguredGridFilterColumn(
+        sqlFieldNames,
+        'led_is_active',
+        hasWildcardSelect,
+      );
+      if (!column) {
+        return null;
+      }
       params.push(queryDto.ledIsActive);
-      conditions.push(`account_ledger_grid.led_is_active = $${params.length}`);
+      conditions.push(`account_ledger_grid.${column} = $${params.length}`);
     }
     if (queryDto.search?.trim()) {
       const searchText = `%${queryDto.search.trim()}%`;
@@ -232,6 +279,65 @@ export class AccountLedgerMastersService {
       sql: `SELECT * FROM (${baseSql}) AS account_ledger_grid${whereClause}`,
       params,
     };
+  }
+  private resolveConfiguredGridFilterColumn(
+    sqlFieldNames: string[],
+    sourceColumnName: string,
+    hasWildcardSelect: boolean,
+  ): string | null {
+    if (sqlFieldNames.length === 0) {
+      return hasWildcardSelect ? this.quoteSqlIdentifier(sourceColumnName) : null;
+    }
+    const sourceDescriptor = this.describeSearchColumnName(sourceColumnName);
+    let matchedSqlFieldIndex = -1;
+    let bestScore = -1;
+    let nextBestScore = -1;
+    let bestScoreIsAmbiguous = false;
+    const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
+      fieldName,
+      descriptor: this.describeSearchColumnName(fieldName),
+    }));
+    for (let index = 0; index < normalizedSqlFields.length; index += 1) {
+      const score = this.getSearchColumnMatchScore(
+        sourceDescriptor,
+        normalizedSqlFields[index].descriptor,
+      );
+      if (score > bestScore) {
+        nextBestScore = bestScore;
+        bestScore = score;
+        matchedSqlFieldIndex = index;
+        bestScoreIsAmbiguous = false;
+        continue;
+      }
+      if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
+        bestScoreIsAmbiguous = true;
+        continue;
+      }
+      if (score > nextBestScore) {
+        nextBestScore = score;
+      }
+    }
+    if (
+      bestScore < MIN_CONFIDENT_FILTER_COLUMN_MATCH_SCORE ||
+      bestScore === nextBestScore ||
+      bestScoreIsAmbiguous ||
+      matchedSqlFieldIndex === -1
+    ) {
+      return null;
+    }
+    return this.quoteSqlIdentifier(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
+  }
+  private quoteSqlIdentifier(identifier: string): string {
+    return `"${identifier.replace(/"/g, '""')}"`;
+  }
+  private hasTopLevelWildcardSelect(sql: string): boolean {
+    const selectClause = this.extractTopLevelSelectClause(sql);
+    if (!selectClause) {
+      return false;
+    }
+    return this.splitTopLevelCommaSeparated(selectClause).some(
+      (expression) => expression.trim() === '*' || /\.\*$/.test(expression.trim()),
+    );
   }
   private async getConfiguredSearchableFieldNames(
     gridId: bigint,
@@ -511,7 +617,7 @@ export class AccountLedgerMastersService {
       chunks.push(tail);
     }
     return chunks;
-    }
+  }
   private extractSqlOutputFieldName(expression: string): string | null {
     const trimmed = expression.trim();
     if (!trimmed || trimmed === '*' || /\.\*$/.test(trimmed)) {

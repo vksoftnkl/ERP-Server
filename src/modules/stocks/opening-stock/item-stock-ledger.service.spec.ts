@@ -209,6 +209,23 @@ describe('ItemStockLedgerService', () => {
     ...overrides,
   });
 
+  type AuditLogServiceMock = {
+    logEntityChange: jest.Mock;
+  };
+
+  const createAuditLogService = (): AuditLogServiceMock => ({
+    logEntityChange: jest.fn().mockResolvedValue(undefined),
+  });
+
+  const createService = (auditLogService: AuditLogServiceMock = createAuditLogService()) => ({
+    auditLogService,
+    service: new ItemStockLedgerService(
+      {} as never,
+      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
+      auditLogService as never,
+    ),
+  });
+
   const createTx = ({
     initialBatchRows = [],
     initialBalanceRows = [],
@@ -224,6 +241,7 @@ describe('ItemStockLedgerService', () => {
     const balanceRows = new Map<string, Record<string, unknown>>();
     const batchMasters = new Map<string, Record<string, unknown>>();
     const batchMastersById = new Map<string, Record<string, unknown>>();
+    const ledgerRows: Array<Record<string, unknown>> = [];
 
     const getBalanceKey = (where: {
       isbAccYear_isbCompanyId_isbBranchId_isbGodownId_isbItemId_isbUnitId_isbStockBucket: {
@@ -334,8 +352,42 @@ describe('ItemStockLedgerService', () => {
           .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => data),
       },
       itemStockLedger: {
-        deleteMany: jest.fn().mockResolvedValue({ count: 2 }),
-        create: jest.fn().mockImplementation(async ({ data }: { data: unknown }) => data),
+        findMany: jest
+          .fn()
+          .mockImplementation(async ({ where }) =>
+            ledgerRows
+              .filter(
+                (row) =>
+                  where?.stlVoucherId === undefined || row.stlVoucherId === where.stlVoucherId,
+              )
+              .sort(
+                (left, right) =>
+                  Number(left.stlLineNo ?? 0) - Number(right.stlLineNo ?? 0) ||
+                  Number(left.stlSplitNo ?? 0) - Number(right.stlSplitNo ?? 0),
+              ),
+          ),
+        deleteMany: jest.fn().mockImplementation(async ({ where }) => {
+          const initialLength = ledgerRows.length;
+          for (let index = ledgerRows.length - 1; index >= 0; index -= 1) {
+            if (
+              where?.stlVoucherId === undefined ||
+              ledgerRows[index].stlVoucherId === where.stlVoucherId
+            ) {
+              ledgerRows.splice(index, 1);
+            }
+          }
+          return { count: initialLength - ledgerRows.length };
+        }),
+        create: jest
+          .fn()
+          .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+            const created = {
+              stlId: `stock-ledger-${ledgerRows.length + 1}`,
+              ...data,
+            };
+            ledgerRows.push(created);
+            return created;
+          }),
       },
       batchPrefix: {
         findFirst: jest.fn().mockResolvedValue(
@@ -473,10 +525,7 @@ describe('ItemStockLedgerService', () => {
   it('uses the common stock engine for non-batch opening stock in base units', async () => {
     const tx = createTx();
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, makeDocument());
 
@@ -527,10 +576,7 @@ describe('ItemStockLedgerService', () => {
       ],
     } satisfies OpeningStockDocumentPayload;
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, document);
 
@@ -572,10 +618,7 @@ describe('ItemStockLedgerService', () => {
       ],
     } satisfies OpeningStockDocumentPayload;
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, document);
 
@@ -600,6 +643,99 @@ describe('ItemStockLedgerService', () => {
     expect(summaryWrite.create.isbOpeningValue).toBe(500);
     expect(summaryWrite.create.isbOpeningValueWot).toBe(400);
     expect(summaryWrite.create.isbStockValueWot).toBe(400);
+  });
+
+  it('writes audit logs for each posting table touched by generated batch opening stock', async () => {
+    const tx = createTx();
+    const auditLogService = createAuditLogService();
+    const document = {
+      ...makeDocument(),
+      details: [
+        makeDetail({
+          osl_line_no: 1,
+          osl_tracking_type: 'BATCH',
+          osl_batch_id: null,
+          osl_batch_no: 'B-AUDIT',
+          osl_qty: 5,
+          osl_free_qty: 1,
+          osl_free_base_qty: 2,
+          osl_base_qty: 10,
+          osl_conv_factor: 2,
+          osl_stock_value: 500,
+          osl_stock_value_wot: 400,
+          osl_cost_rate_wot: 80,
+        }),
+      ],
+    } satisfies OpeningStockDocumentPayload;
+
+    const { service } = createService(auditLogService);
+
+    await service.syncFromOpeningStockDocument(tx as never, document);
+
+    const auditInputs = auditLogService.logEntityChange.mock.calls.map(([input]) => input);
+    expect(auditInputs.map((input) => input.tableName)).toEqual(
+      expect.arrayContaining([
+        'item_batch_master',
+        'opening stock detail',
+        'item_stock_ledger',
+        'item_batch_stock',
+        'item_stock_balance',
+      ]),
+    );
+    expect(auditInputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: 'New',
+          tableName: 'item_batch_master',
+          screenName: 'Opening Stock',
+          screenType: 'transaction',
+          pk: 'batch-master-1',
+          userId: 'user-1',
+          branchId: 'branch-1',
+        }),
+        expect.objectContaining({
+          action: 'New',
+          tableName: 'item_stock_ledger',
+          pk: 'voucher-1',
+          userId: 'user-1',
+          branchId: 'branch-1',
+        }),
+        expect.objectContaining({
+          action: 'New',
+          tableName: 'item_batch_stock',
+          userId: 'user-1',
+          branchId: 'branch-1',
+        }),
+        expect.objectContaining({
+          action: 'New',
+          tableName: 'item_stock_balance',
+          userId: 'user-1',
+          branchId: 'branch-1',
+        }),
+      ]),
+    );
+
+    const detailAuditInput = auditInputs.find(
+      (input) => input.tableName === 'opening stock detail',
+    );
+    expect(detailAuditInput).toEqual(
+      expect.objectContaining({
+        action: 'update',
+        pk: 'detail-1',
+      }),
+    );
+    expect(detailAuditInput?.originalRecord).toEqual(
+      expect.objectContaining({
+        osl_batch_id: null,
+        osl_batch_no: 'B-AUDIT',
+      }),
+    );
+    expect(detailAuditInput?.modifiedRecord).toEqual(
+      expect.objectContaining({
+        osl_batch_id: 'batch-master-1',
+        osl_batch_no: 'B-AUDIT',
+      }),
+    );
   });
 
   it('stores mrp-tracked opening stock in batch tables and auto-generates batch no when the payload omits it', async () => {
@@ -649,10 +785,7 @@ describe('ItemStockLedgerService', () => {
       ],
     } satisfies OpeningStockDocumentPayload;
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, document);
 
@@ -752,10 +885,7 @@ describe('ItemStockLedgerService', () => {
       ],
     });
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, updatedDocument, previousDocument);
 
@@ -802,10 +932,7 @@ describe('ItemStockLedgerService', () => {
       ],
     } satisfies OpeningStockDocumentPayload;
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, document);
 
@@ -869,10 +996,7 @@ describe('ItemStockLedgerService', () => {
       ],
     } satisfies OpeningStockDocumentPayload;
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, document);
 
@@ -940,10 +1064,7 @@ describe('ItemStockLedgerService', () => {
       ],
     } satisfies OpeningStockDocumentPayload;
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, document);
 
@@ -1018,10 +1139,7 @@ describe('ItemStockLedgerService', () => {
       ],
     } satisfies OpeningStockDocumentPayload;
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, document);
 
@@ -1084,10 +1202,7 @@ describe('ItemStockLedgerService', () => {
       ],
     } satisfies OpeningStockDocumentPayload;
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await expect(service.syncFromOpeningStockDocument(tx as never, document)).rejects.toThrow(
       'Batch no "B-007" already exists for the selected company, branch, godown, item, and unit',
@@ -1097,10 +1212,7 @@ describe('ItemStockLedgerService', () => {
   });
 
   it('rejects unsupported batch status values before batch master insert', () => {
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     expect(() => (service as any).normalizeBatchStatus('archived', 'btmStatus')).toThrow(
       'btmStatus must be one of: ACTIVE, CLOSED, BLOCKED',
@@ -1109,10 +1221,7 @@ describe('ItemStockLedgerService', () => {
 
   it('rejects unsupported stock bucket values before balance writes', async () => {
     const tx = createTx();
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await expect(
       (service as any).applyStockMovements(
@@ -1147,10 +1256,7 @@ describe('ItemStockLedgerService', () => {
 
   it('rejects negative batch stock mrp before batch writes', async () => {
     const tx = createTx();
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await expect(
       (service as any).applyStockMovements(
@@ -1185,10 +1291,7 @@ describe('ItemStockLedgerService', () => {
 
   it('rejects invalid batch stock dates before batch writes', async () => {
     const tx = createTx();
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await expect(
       (service as any).applyStockMovements(
@@ -1225,10 +1328,7 @@ describe('ItemStockLedgerService', () => {
   });
 
   it('rejects invalid batch stock quantity formulas before batch writes', () => {
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     expect(() =>
       (service as any).assertValidBatchStockWrite(
@@ -1299,10 +1399,7 @@ describe('ItemStockLedgerService', () => {
       initialBalanceRows: [makeBalanceRow()],
     });
 
-    const service = new ItemStockLedgerService(
-      {} as never,
-      { getUserId: jest.fn().mockReturnValue('user-1') } as never,
-    );
+    const { service } = createService();
 
     await service.syncFromOpeningStockDocument(tx as never, deletedDocument, previousDocument);
 
