@@ -192,7 +192,6 @@ export class GspCompanyServiceService {
   ): { sql: string; params: unknown[] } {
     const conditions: string[] = [];
     const params: unknown[] = [];
-
     if (queryDto.csgCompanyId !== undefined) {
       conditions.push(
         this.buildJsonTextFilterCondition(
@@ -240,7 +239,6 @@ export class GspCompanyServiceService {
           `)`,
       );
     }
-
     const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     return {
       sql: `SELECT * FROM (${baseSql}) AS ${GSP_COMPANY_SERVICE_GRID_ALIAS}${whereClause}`,
@@ -260,7 +258,6 @@ export class GspCompanyServiceService {
     const comparison = caseInsensitive
       ? `LOWER(grid_kv.value) = $${valueParamIndex}`
       : `grid_kv.value = $${valueParamIndex}`;
-
     return (
       `EXISTS (` +
       `SELECT 1 FROM jsonb_each_text(row_to_json(${GSP_COMPANY_SERVICE_GRID_ALIAS})::jsonb) AS grid_kv(key, value) ` +

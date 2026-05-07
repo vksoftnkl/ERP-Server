@@ -1,9 +1,5 @@
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
-  IsBoolean,
-  IsDate,
-  IsEmail,
-  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -12,9 +8,15 @@ import {
   MaxLength,
   Min,
   ValidateIf,
-  isUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  NullableDate,
+  NullableEmail,
+  NullableString,
+  NullableUuid,
+  OptionalBoolean,
+} from '../../dto/dtoDecorators';
 
 const toRequiredTrimmedString = (value: unknown): string => {
   if (typeof value !== 'string') {
@@ -22,64 +24,6 @@ const toRequiredTrimmedString = (value: unknown): string => {
   }
 
   return value.trim();
-};
-
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const toNullableUuid = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return isUUID(trimmed, 'all') ? trimmed : null;
-};
-
-const toNullableDate = (value: unknown): Date | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || value === '') {
-    return null;
-  }
-
-  if (value instanceof Date) {
-    return value;
-  }
-
-  if (typeof value === 'string' || typeof value === 'number') {
-    return new Date(value);
-  }
-
-  return new Date(Number.NaN);
 };
 
 const toOptionalNumber = (value: unknown): number | undefined => {
@@ -140,24 +84,15 @@ export class SaveEmployeeMasterDto {
   empId?: string;
 
   @ApiProperty({ format: 'uuid' })
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   empCompanyId!: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   empBranchId?: string | null;
 
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(60)
+  @NullableString(60)
   empCode?: string | null;
 
   @ApiProperty({ maxLength: 200 })
@@ -168,224 +103,119 @@ export class SaveEmployeeMasterDto {
   empName!: string;
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(200)
+  @NullableString(200)
   empAlias?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   empMobile1?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   empMobile2?: string | null;
 
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsEmail()
-  @MaxLength(150)
+  @NullableEmail(150)
   empEmail?: string | null;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   empAddr1?: string | null;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   empAddr2?: string | null;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(250)
+  @NullableString(250)
   empAddr3?: string | null;
 
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(120)
+  @NullableString(120)
   empCity?: string | null;
 
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(120)
+  @NullableString(120)
   empDistrict?: string | null;
 
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(120)
+  @NullableString(120)
   empState?: string | null;
 
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @NullableString(10)
   empPincode?: string | null;
 
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @NullableString(10)
   empGender?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   empMaritalStatus?: string | null;
 
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(10)
+  @NullableString(10)
   empBloodGroup?: string | null;
 
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableDate(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @Type(() => Date)
-  @IsDate()
+  @NullableDate()
   empDob?: Date | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   empDepartmentId?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   empDesignationId?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   empEmploymentType?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   empStatus?: string | null;
 
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableDate(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @Type(() => Date)
-  @IsDate()
+  @NullableDate()
   empJoinedOn?: Date | null;
 
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableDate(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @Type(() => Date)
-  @IsDate()
+  @NullableDate()
   empProbationEndOn?: Date | null;
 
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableDate(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @Type(() => Date)
-  @IsDate()
+  @NullableDate()
   empConfirmationOn?: Date | null;
 
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableDate(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @Type(() => Date)
-  @IsDate()
+  @NullableDate()
   empLeftOn?: Date | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   empShiftId?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   empAttConstraintId?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   empHolidayGroupId?: string | null;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   empOvertimeAllowed?: boolean;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   empHasCommission?: boolean;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   empCommissionType?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
@@ -425,68 +255,38 @@ export class SaveEmployeeMasterDto {
   empKmBataAmount?: number;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   empPanNo?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(20)
+  @NullableString(20)
   empAadharNo?: string | null;
 
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(30)
+  @NullableString(30)
   empPfNo?: string | null;
 
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(30)
+  @NullableString(30)
   empEsiNo?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   empLoanLedgerId?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
+  @NullableString()
   empPhotoUrl?: string | null;
 
   @ApiPropertyOptional({ nullable: true, description: 'Base64-encoded image bytes' })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
+  @NullableString()
   empPhoto?: string | null;
 
   @ApiPropertyOptional({ maxLength: 500, nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
-  @MaxLength(500)
+  @NullableString(500)
   empRemarks?: string | null;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   empIsActive?: boolean;
 }

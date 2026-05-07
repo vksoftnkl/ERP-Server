@@ -38,7 +38,6 @@ import {
   GspCompanyServicePayload,
   GspCompanyServiceSuccessResponse,
 } from './types/gsp-company-service-api.types';
-
 @ApiTags('GSP Company Service')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -46,7 +45,6 @@ import {
 @UseFilters(GspCompanyServiceExceptionFilter)
 export class GspCompanyServiceController {
   constructor(private readonly gspCompanyServiceService: GspCompanyServiceService) {}
-
   @Post('create')
   @Version('1')
   @ApiOperation({
@@ -60,7 +58,6 @@ export class GspCompanyServiceController {
     @Body() saveGspCompanyServiceDto: SaveGspCompanyServiceDto,
   ): Promise<GspCompanyServiceSuccessResponse<GspCompanyServicePayload>> {
     const data = await this.gspCompanyServiceService.save(saveGspCompanyServiceDto);
-
     return {
       success: true,
       message: saveGspCompanyServiceDto.csgCompanyServiceId
@@ -69,7 +66,6 @@ export class GspCompanyServiceController {
       data,
     };
   }
-
   @Get('list')
   @Version('1')
   @ApiOperation({ summary: 'List GSP company services with filter/search/pagination' })
@@ -81,7 +77,6 @@ export class GspCompanyServiceController {
     GspCompanyServiceSuccessResponse<GspCompanyServiceListItem[], GspCompanyServiceListMeta>
   > {
     const result = await this.gspCompanyServiceService.list(queryDto);
-
     return {
       success: true,
       message: 'GSP company services fetched successfully',
@@ -90,7 +85,6 @@ export class GspCompanyServiceController {
       ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get GSP company service by id' })
@@ -102,14 +96,12 @@ export class GspCompanyServiceController {
     @Query('csgCompanyServiceId', new ParseUUIDPipe({ version: '7' })) csgCompanyServiceId: string,
   ): Promise<GspCompanyServiceSuccessResponse<GspCompanyServicePayload>> {
     const data = await this.gspCompanyServiceService.getById(csgCompanyServiceId);
-
     return {
       success: true,
       message: 'GSP company service fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete GSP company service by id' })
@@ -121,7 +113,6 @@ export class GspCompanyServiceController {
     @Query('csgCompanyServiceId', new ParseUUIDPipe({ version: '7' })) csgCompanyServiceId: string,
   ): Promise<GspCompanyServiceSuccessResponse<{ csgCompanyServiceId: string; deleted: true }>> {
     const data = await this.gspCompanyServiceService.softDelete(csgCompanyServiceId);
-
     return {
       success: true,
       message: 'GSP company service deleted successfully',

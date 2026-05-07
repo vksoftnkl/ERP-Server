@@ -2,13 +2,11 @@ export interface GspCompanyServiceErrorDetail {
   field: string;
   message: string;
 }
-
 export interface GspCompanyServiceErrorResponse {
   success: false;
   message: string;
   errors: GspCompanyServiceErrorDetail[];
 }
-
 export interface GspCompanyServiceSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
   success: true;
   message: string;
@@ -16,7 +14,6 @@ export interface GspCompanyServiceSuccessResponse<T, TMeta = Record<string, unkn
   meta?: TMeta;
   styles?: TStyles;
 }
-
 export interface GspCompanyServicePayload {
   csgCompanyServiceId: string;
   csgCompanyId: string;
@@ -38,9 +35,7 @@ export interface GspCompanyServicePayload {
   csgModifiedOn: string;
   csgModifiedBy: string | null;
 }
-
 export type GspCompanyServiceListItem = GspCompanyServicePayload | Record<string, unknown>;
-
 export interface GspCompanyServiceListMeta {
   page: number;
   limit: number;

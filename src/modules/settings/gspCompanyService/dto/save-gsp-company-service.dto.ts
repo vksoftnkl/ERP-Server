@@ -1,62 +1,11 @@
-import { Transform } from 'class-transformer';
-import {
-  IsBoolean,
-  IsDate,
-  IsInt,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  ValidateIf,
-} from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-
-const toNullableDate = (value: unknown): Date | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null || value === '') {
-    return null;
-  }
-
-  if (value instanceof Date) {
-    return value;
-  }
-
-  if (typeof value !== 'string' && typeof value !== 'number') {
-    return value as unknown as Date;
-  }
-
-  const parsed = new Date(value as string | number);
-  return Number.isNaN(parsed.getTime()) ? (value as unknown as Date) : parsed;
-};
-
-const toTrimmedUpper = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value;
-  }
-
-  return value.trim().toUpperCase();
-};
+import {
+  NullableDate,
+  NullableString,
+  OptionalBoolean,
+  UpperMaxString,
+} from '../../dto/dtoDecorators';
 
 export class SaveGspCompanyServiceDto {
   @ApiPropertyOptional({
@@ -68,7 +17,7 @@ export class SaveGspCompanyServiceDto {
   csgCompanyServiceId?: string;
 
   @ApiProperty({ type: String, example: 'c7f8c0c0-0000-0000-0000-000000000001' })
-  @IsString ()
+  @IsString()
   csgCompanyId!: string;
 
   @ApiProperty({ format: 'uuid' })
@@ -76,10 +25,8 @@ export class SaveGspCompanyServiceDto {
   csgGspProviderId!: string;
 
   @ApiProperty({ maxLength: 20 })
-  @Transform(({ value }) => toTrimmedUpper(value))
-  @IsString()
+  @UpperMaxString(20)
   @IsNotEmpty()
-  @MaxLength(20)
   csgServiceType!: string;
 
   @ApiProperty()
@@ -93,21 +40,14 @@ export class SaveGspCompanyServiceDto {
   csgEuserPassword!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
+  @NullableString()
   csgAuthToken?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableDate(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsDate()
+  @NullableDate()
   csgAuthTokenValidTill?: Date | null;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   csgIsActive?: boolean;
 }
