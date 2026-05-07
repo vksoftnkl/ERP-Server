@@ -8,15 +8,12 @@ import { UsersService } from '../users/users.service';
 import { AuthSessionService } from './auth-session.service';
 import { AuthService } from './auth.service';
 import { TokenService } from './token.service';
-
 const scryptAsync = promisify(nodeScrypt);
 const TEST_USER_ID = '7a9a4d16-9940-4b65-a7bc-57e83887a112';
 const TEST_TIMESTAMP = new Date('2026-03-20T00:00:00.000Z');
-
 type UsersServiceMock = {
   findByUsername: jest.Mock<Promise<User | null>, [string]>;
 };
-
 type TokenServiceMock = {
   signAccessToken: jest.Mock<
     {
@@ -33,7 +30,6 @@ type TokenServiceMock = {
     [{ sub: string; user_name: string; sid: string }]
   >;
 };
-
 type AuthSessionServiceMock = {
   createSessionId: jest.Mock<string, []>;
   storeAccessTokenSession: jest.Mock<
