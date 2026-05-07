@@ -622,12 +622,10 @@ export class OpeningStockService {
     }
     return voucherTypeId;
   }
-
   private resolveAuditNotes(notes: string | null | undefined, fallback: string): string {
     const normalizedNotes = notes?.trim();
     return normalizedNotes || fallback;
   }
-
   private async validateHeaderReferences(
     tx: Prisma.TransactionClient,
     header: OpeningStockHeaderInputDto,

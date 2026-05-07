@@ -43,7 +43,6 @@ const toNullableString = (value: unknown): string | null | undefined => {
   const trimmed = value.trim();
   return trimmed || null;
 };
-
 const toOptionalUuid = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
@@ -54,7 +53,6 @@ const toOptionalUuid = (value: unknown): string | undefined => {
   const trimmed = value.trim();
   return trimmed || undefined;
 };
-
 const toRequiredNumber = (value: unknown): number => {
   if (typeof value === 'number') {
     return value;
@@ -69,14 +67,12 @@ const toRequiredNumber = (value: unknown): number => {
   }
   return value as number;
 };
-
 const toOptionalNumber = (value: unknown): number | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
   return toRequiredNumber(value);
 };
-
 const toOptionalBoolean = (value: unknown): boolean | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
@@ -95,88 +91,73 @@ const toOptionalBoolean = (value: unknown): boolean | undefined => {
   }
   return value as boolean;
 };
-
 export class ItemStockLedgerRowDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @Transform(({ value }) => toOptionalUuid(value))
   @IsUUID('all')
   stlId?: string;
-
   @ApiProperty({ maxLength: 9 })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsString()
   @MaxLength(9)
   stlAccYear!: string;
-
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsUUID('all')
   stlCompanyId!: string;
-
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsUUID('all')
   stlBranchId!: string;
-
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsUUID('all')
   stlGodownId!: string;
-
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsUUID('all')
   stlVoucherId!: string;
-
   @ApiProperty({ type: String, format: 'date-time' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsDateString()
   stlVoucherDate!: string;
-
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsInt()
   @Min(1)
   stlLineNo?: number;
-
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsInt()
   @Min(1)
   stlSplitNo?: number;
-
   @ApiProperty()
   @Transform(({ value }) => toRequiredNumber(value))
   @IsInt()
   stlVoucherTypeId!: number;
-
   @ApiProperty({ enum: StockTxnType })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsEnum(StockTxnType)
   stlTxnType!: StockTxnType;
-
   @ApiProperty({
     description: 'Stock effect sign. Common values are 1 for inwards and -1 for outwards.',
   })
   @Transform(({ value }) => toRequiredNumber(value))
   @IsInt()
   stlStockEffect!: number;
-
   @ApiProperty({ type: String, format: 'date-time' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsDateString()
   stlDocDate!: string;
-
   @ApiPropertyOptional({ type: String, format: 'date-time' })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsDateString()
   stlPostedOn?: string | null;
-
   @ApiPropertyOptional({ nullable: true, maxLength: 50 })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -184,42 +165,35 @@ export class ItemStockLedgerRowDto {
   @IsString()
   @MaxLength(50)
   stlDocRefNo?: string | null;
-
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsUUID('all')
   stlItemId!: string;
-
   @ApiPropertyOptional({ enum: StockTrackingType, default: StockTrackingType.NONE })
   @IsOptional()
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsEnum(StockTrackingType)
   stlTrackingType?: StockTrackingType;
-
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsUUID('all')
   stlUomId!: string;
-
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsUUID('all')
   stlBaseUomId!: string;
-
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
   @IsNumber()
   @Min(0)
   stlConversionFactor?: number;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsUUID('all')
   stlBatchId?: string | null;
-
   @ApiPropertyOptional({ nullable: true, maxLength: 100 })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
@@ -227,21 +201,18 @@ export class ItemStockLedgerRowDto {
   @IsString()
   @MaxLength(100)
   stlBatchNo?: string | null;
-
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsDateString()
   stlMfgDate?: string | null;
-
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsDateString()
   stlExpiryDate?: string | null;
-
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))

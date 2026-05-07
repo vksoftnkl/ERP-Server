@@ -2173,7 +2173,6 @@ model Uitable {
   @@schema("fixed")
   @@map("ui_tables")
 }
-
 // ----- prisma/fixed/uiTableColumns.prisma -----
 model UitableColumns {
   uiTblClmId               BigInt    @id @default(autoincrement())  @map("ui_tbl_clm_id")
@@ -2198,7 +2197,6 @@ model UitableColumns {
   @@schema("fixed")
   @@map("ui_table_columns")
 }
-
 // ----- prisma/inventory/categoryMaster.prisma -----
 model categoryMaster {
   categoryId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("category_id")
@@ -2231,7 +2229,6 @@ model categoryMaster {
   @@index([categoryParentId], map: "idx_category_parent_id")
   @@index([categoryIsActive], map: "idx_category_active")
 }
-
 // ----- prisma/inventory/godownMaster.prisma -----
 model GodownLocation {
   gdlId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")  
@@ -2280,7 +2277,6 @@ model GodownLocation {
   // - Partial index (idx_gdl_active WHERE ...) is not expressible in Prisma schema.
   // - GIN index on array is also not expressible in Prisma schema.
 }
-
 // ----- prisma/inventory/ItemBatchMaster.prisma -----
 model ItemBatchMaster {
   // Primary
@@ -2316,30 +2312,25 @@ model ItemBatchMaster {
   btmUpdatedOn             DateTime?        @db.Timestamptz(6) @map("btm_updated_on")
   btmUpdatedBy             String?          @db.Uuid @map("btm_updated_by")
   batchStocks              ItemBatchStock[]
-
   // Expression/partial indexes are maintained in SQL because Prisma schema
   // cannot express `lower(trim(...))` or filtered uniqueness/indexes.
   @@index([btmCompanyId, btmItemId], map: "idx_btm_item")
   @@map("item_batch_master")
   @@schema("inventory")
 }
-
 // ----- prisma/inventory/ItemBatchStock.prisma -----
 model ItemBatchStock {
   // Primary
   ibsId               String          @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ibs_id")
-
   // Multi-branch
   ibsAccYear          String          @db.VarChar(9) @map("ibs_acc_year")
   ibsCompanyId        String          @db.Uuid @map("ibs_company_id")
   ibsBranchId         String          @db.Uuid @map("ibs_branch_id")
   ibsGodownId         String          @db.Uuid @map("ibs_godown_id")
-
   // Item / batch
   ibsItemId           String          @db.Uuid @map("ibs_item_id")
   ibsUnitId           String          @db.Uuid @map("ibs_unit_id")
   ibsBatchId          String          @db.Uuid @map("ibs_batch_id")
-
   // Optional display snapshots
   ibsBatchNo          String?         @db.VarChar(100) @map("ibs_batch_no")
   ibsSerialNo         String?         @db.VarChar(100) @map("ibs_serial_no")
@@ -2347,99 +2338,77 @@ model ItemBatchStock {
   ibsExpiryDate       DateTime?       @db.Date @map("ibs_expiry_date")
   ibsMrp              Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_mrp")
   ibsStockBucket      String          @default("SALEABLE") @db.VarChar(20) @map("ibs_stock_bucket")
-
   // Normal qty
   ibsOpeningQty       Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_opening_qty")
   ibsInQty            Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_in_qty")
   ibsOutQty           Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_out_qty")
   ibsClosingQty       Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_closing_qty")
-
   // Free qty
   ibsOpeningFreeQty   Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_opening_free_qty")
   ibsFreeInQty        Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_free_in_qty")
   ibsFreeOutQty       Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_free_out_qty")
   ibsFreeClosingQty   Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_free_closing_qty")
-
   // Allocation
   ibsReservedQty      Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_reserved_qty")
   ibsAvailableQty     Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_available_qty")
-
   // Valuation
   ibsOpeningAvgRate   Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_opening_avg_rate")
   ibsAvgStockRate     Decimal         @default(0) @db.Decimal(18, 6) @map("ibs_avg_stock_rate")
   ibsOpeningValue     Decimal         @default(0) @db.Decimal(18, 2) @map("ibs_opening_value")
   ibsStockValue       Decimal         @default(0) @db.Decimal(18, 2) @map("ibs_stock_value")
-
   // Helper dates / refs
   ibsLastInDate       DateTime?       @db.Date @map("ibs_last_in_date")
   ibsLastOutDate      DateTime?       @db.Date @map("ibs_last_out_date")
-
   // Status
   ibsIsActive         Boolean         @default(true) @map("ibs_is_active")
   ibsIsDeleted        Boolean         @default(true) @map("ibs_is_deleted")
   ibsRowVersion       BigInt          @default(1) @map("ibs_row_version")
-
   // Audit
   ibsCreatedOn        DateTime        @default(now()) @db.Timestamptz(6) @map("ibs_created_on")
   ibsCreatedBy        String?         @db.Uuid @map("ibs_created_by")
   ibsUpdatedOn        DateTime?       @db.Timestamptz(6) @map("ibs_updated_on")
   ibsUpdatedBy        String?         @db.Uuid @map("ibs_updated_by")
-
   // Relations
   batch               ItemBatchMaster @relation(fields: [ibsBatchId], references: [btmId], map: "fk_ibs_batch")
-
   @@unique([ibsAccYear, ibsCompanyId, ibsBranchId, ibsGodownId, ibsItemId, ibsBatchId, ibsStockBucket], map: "uq_ibs_scope")
-
   @@index([ibsAccYear, ibsCompanyId, ibsBranchId, ibsItemId], map: "idx_ibs_item")
   @@index([ibsAccYear, ibsCompanyId, ibsBranchId, ibsGodownId, ibsBatchId], map: "idx_ibs_batch")
   // Partial indexes `idx_ibs_expiry` and `idx_ibs_nonzero_stock` are maintained
   // in SQL because Prisma schema cannot express filtered indexes.
-
   @@map("item_batch_stock")
   @@schema("inventory")
 }
-
 // ----- prisma/inventory/itemBrandMaster.prisma -----
 model ItemBrandMaster {
   brand_id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-
   brand_name        String   @unique @db.VarChar(150)
   brand_alias       String?  @db.VarChar(150)
   brand_short       String?  @db.VarChar(50)
   brand_description String?  @db.VarChar(250)
-
   brand_photo       Bytes?
   brand_photo_url   String?
-
   brand_parent_id   String?  @db.Uuid
   brand_sort        Int?
   brand_level       Int?
   brand_path_ids    String[] @default([]) @db.Uuid
-
   brand_is_active   Boolean  @default(true)
   brand_is_deleted  Boolean  @default(false)
-
   brand_sync_date   DateTime? @db.Timestamptz(6)
   brand_created_on  DateTime  @default(now()) @db.Timestamptz(6)
   brand_created_by  String?   @db.VarChar(100)
   brand_modified_on DateTime  @default(now()) @db.Timestamptz(6)
   brand_modified_by String?   @db.VarChar(100)
-
   // self relation (parent -> children)
   parent   ItemBrandMaster?  @relation("BrandHierarchy", fields: [brand_parent_id], references: [brand_id], onUpdate: Cascade, onDelete: Restrict)
   children ItemBrandMaster[] @relation("BrandHierarchy")
-
   @@map("item_brand_master")
    @@schema("inventory")
-
   @@index([brand_parent_id], map: "idx_brand_parent_id")
   @@index([brand_is_active], map: "idx_brand_active")
 }
-
 // ----- prisma/inventory/itemEanCode.prisma -----
 model ItemEanCode {
   eanId        String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ean_id")
-
   // Link
   eanItemId    String  @db.Uuid @map("ean_item_id")
   eanUnitId    String  @db.Uuid @map("ean_unit_id")
