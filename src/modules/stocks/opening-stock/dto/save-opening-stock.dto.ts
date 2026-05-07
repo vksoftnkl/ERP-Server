@@ -141,12 +141,14 @@ export class OpeningStockHeaderInputDto {
   @IsNotEmpty()
   @MaxLength(9)
   osh_acc_year!: string;
+
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsString()
   @IsNotEmpty()
   @IsUUID('all')
   osh_company_id!: string;
+
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsString()
@@ -165,6 +167,7 @@ export class OpeningStockHeaderInputDto {
   @IsInt()
   @Min(1)
   avh_voucher_type_id?: number;
+  
   @ApiHideProperty()
   @IsOptional()
   @Transform(({ value }) => toOptionalNumber(value))
@@ -177,6 +180,7 @@ export class OpeningStockHeaderInputDto {
   @IsInt()
   @Min(1)
   voucher_type_id?: number;
+
   @ApiProperty({ type: String, format: 'date-time' })
   @Transform(({ value }) => toRequiredTrimmedString(value))
   @IsString()
@@ -245,12 +249,14 @@ export class OpeningStockHeaderInputDto {
   @IsString()
   @MaxLength(50)
   osh_ref_no?: string | null;
+  
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableString(value))
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
   osh_narration?: string | null;
+
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()
   @Type(() => Number)
