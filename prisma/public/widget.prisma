@@ -2,10 +2,8 @@ enum WidgetPlatform {
   mobile
   desktop
   web
-
   @@schema("public")
 }
-
 model Widget {
   widgetNo            Int              @id @default(autoincrement()) @map("widget_no")
   widgetGroupId       Int              @map("widget_group_id")
@@ -15,7 +13,6 @@ model Widget {
   widgetGuiName       String?          @map("widget_gui_name") @db.VarChar(255)
   widgetType          WidgetPlatform   @map("widget_type")
   widgetSecondaryText String?          @map("widget_secondary_text")
-
   @@map("widget")
   @@schema("public")
 }

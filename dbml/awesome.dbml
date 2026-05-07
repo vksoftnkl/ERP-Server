@@ -645,6 +645,12 @@ Table acc_voucher_seq {
   modifiedOn DateTime
   modifiedBy String
   voucherType acc_voucher_types [not null]
+  company companys [not null]
+  branch branch_master [not null]
+
+  indexes {
+    (vchrTypeId, companyId, branchId, accYear, deviceCode, periodKey) [unique]
+  }
 }
 
 Table acc_voucher_tenders {
@@ -2202,6 +2208,7 @@ Table branch_master {
   voucherDocDetails acc_voucher_doc_detail [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherHeaders acc_voucher_header [not null]
+  voucherSequences acc_voucher_seq [not null]
   vouchers acc_vouchers [not null]
   voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
@@ -2296,6 +2303,7 @@ Table companys {
   voucherDocDetails acc_voucher_doc_detail [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherHeaders acc_voucher_header [not null]
+  voucherSequences acc_voucher_seq [not null]
   vouchers acc_vouchers [not null]
   voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
@@ -2695,21 +2703,6 @@ Table state_master {
   cities city_master [not null]
 }
 
-Table stock_adj_reasons {
-  adjId String [pk]
-  adjCode String [unique, not null]
-  adjName String [not null]
-  adjReason String [not null]
-  adjResolution String [not null]
-  adjAffectAcc Boolean [not null, default: true]
-  adjIsActive Boolean [not null, default: true]
-  adjIsDeleted Boolean [not null, default: false]
-  adjCreatedOn DateTime [default: `now()`, not null]
-  adjCreatedBy String
-  adjModifiedOn DateTime
-  adjModifiedBy String
-}
-
 Enum LedGstPartyRegType {
   REGULAR
   COMPOSITION
@@ -3087,6 +3080,10 @@ Ref: acc_vouchers.avOppLedgerId > acc_ledger_master.ledId
 Ref: acc_vouchers.avUserId > users.user_id
 
 Ref: acc_voucher_seq.vchrTypeId > acc_voucher_types.vchrTypeId
+
+Ref: acc_voucher_seq.companyId > companys.compId
+
+Ref: acc_voucher_seq.branchId > branch_master.brId
 
 Ref: acc_voucher_tenders.vtdCompanyId > companys.compId
 

@@ -18,68 +18,52 @@ export class SaveCompanyMasterDto {
   })
   @NullableUuid()
   compId?: string | null;
-
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableString(20)
   compCode?: string | null;
-
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
   compName!: string;
-
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compShort?: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compLegalName?: string | null;
-
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
   @NullableUpperString(15)
   compGstinNo?: string | null;
-
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   @NullableString(30)
   compGstRegType?: string | null;
-
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
   @NullableUpperString(10)
   compPanNo?: string | null;
-
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableString(20)
   compFssaiNo?: string | null;
-
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableString(20)
   compDrugLicenseNo?: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compAddr1?: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compAddr2?: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compAddr3?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
-  compCity?: string | null;
-
+    compCity?: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   compDistrict?: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compState?: string | null;
-
   @ApiProperty({ maxLength: 2 })
   @UpperString(2)
   compStateCode!: string;

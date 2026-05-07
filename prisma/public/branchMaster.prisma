@@ -66,6 +66,7 @@ model BranchMaster {
   voucherDocDetails     AccVoucherDocDetail[]
   voucherDocRegisters   AccVoucherDocRegister[]
   voucherHeaders        AccVoucherHeader[]
+  voucherSequences      AccVoucherSeq[]
   vouchers              AccVoucher[]
   voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
