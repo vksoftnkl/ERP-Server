@@ -1,1 +1,1 @@
-// export class PhysicalStock {}
+export class PhysicalStock {}

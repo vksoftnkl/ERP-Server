@@ -1,4 +1,4 @@
-// import { PartialType } from '@nestjs/mapped-types';
-// import { CreatePhysicalStockDto } from './create-physical-stock.dto';
+import { PartialType } from '@nestjs/mapped-types';
+import { CreatePhysicalStockDto } from './create-physical-stock.dto';
 
-// export class UpdatePhysicalStockDto extends PartialType(CreatePhysicalStockDto) {}
+export class UpdatePhysicalStockDto extends PartialType(CreatePhysicalStockDto) {}
