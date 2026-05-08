@@ -1,4 +1,5 @@
 import { AuditLogModule } from '../modules/audit-log/audit-log.module';
+import { SequenceModule } from '../common/Sequence/sequence.module';
 import { AccountLedgerMastersModule } from '../modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
 import { AccountsGroupModule } from '../modules/accountsModule/accountsGroup/accounts-group.module';
 import { LedgerBankAccountModule } from '../modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
@@ -230,6 +231,12 @@ export const swaggerModuleDocuments = [
     title: 'Tender Type Master API',
     description: 'Tender type master module endpoints',
     include: [TenderTypeMasterModule],
+  },
+  {
+    path: 'sequences',
+    title: 'Sequence API',
+    description: 'Sequence module endpoints',
+    include: [SequenceModule],
   },
   {
     path: 'gsp-provider-masters',

@@ -11,6 +11,7 @@ import { RequestLoggerMiddleware } from './common/middleware/request-logger.midd
 import { RequestContextModule } from './common/request-context/request-context.module';
 import { RedisModule } from './common/redis/redis.module';
 import { ConfiguredGridSqlModule } from './common/configured-grid-sql/configured-grid-sql.module';
+import { SequenceModule } from './common/Sequence/sequence.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma/prisma.module';
@@ -100,6 +101,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     RequestContextModule,
     RedisModule,
     ConfiguredGridSqlModule,
+    SequenceModule,
     ThrottlerModule.forRoot([
       {
         ttl: parseNumber(process.env.THROTTLE_TTL, 60) * 1000,

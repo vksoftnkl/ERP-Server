@@ -1,21 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-
 export class BranchMasterErrorFieldDto {
   @ApiProperty({ example: 'brName' })
   field!: string;
-
   @ApiProperty({ example: 'Duplicate brName is not allowed for this company' })
   message!: string;
 }
-
 export class BranchMasterErrorResponseDto {
   @ApiProperty({ example: false })
   success!: false;
-
   @ApiProperty({ example: 'Validation failed' })
   message!: string;
-
   @ApiProperty({ type: BranchMasterErrorFieldDto, isArray: true })
   errors!: BranchMasterErrorFieldDto[];
 }
