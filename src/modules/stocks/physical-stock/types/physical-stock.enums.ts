@@ -6,21 +6,16 @@ export enum PhysicalStockCountType {
   BIN = 'BIN',
   BATCH = 'BATCH',
 }
-
 export enum PhysicalStockPostingMode {
   ADJUST_DIFFERENCE_ONLY = 'ADJUST_DIFFERENCE_ONLY',
   REPLACE_BOOK_STOCK = 'REPLACE_BOOK_STOCK',
 }
-
 export enum PhysicalStockRateSource {
   AVG_COST = 'AVG_COST',
   LAST_PURCHASE = 'LAST_PURCHASE',
   MANUAL = 'MANUAL',
   FIFO = 'FIFO',
 }
-
-
-
 // Physical Stock Detail enums 
 export enum PhysicalStockResolution {
   ADJUST_LOSS_GAIN = 'ADJUST_LOSS_GAIN',

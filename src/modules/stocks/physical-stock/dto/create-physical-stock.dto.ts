@@ -1,3 +1,6 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsArray, IsOptional, ValidateNested } from 'class-validator';
 import {
   OptionalBooleanField,
   OptionalDateField,
@@ -9,248 +12,237 @@ import {
   OptionalUuidField,
   RequiredStringField,
   RequiredUuidField,
-} from 'src/modules/utils/dto-field.decorator';
-
+} from '../../../utils/dto-field.decorator';
 import {
   PhysicalStockCountType,
   PhysicalStockPostingMode,
   PhysicalStockRateSource,
-} from '../types/physical-stock.enums';
-
-import {
-  StockTrackingType,
-} from 'src/modules/utils/transaction.enums';
-
-import {
   PhysicalStockResolution,
 } from '../types/physical-stock.enums';
-
-import { TransactionStatus } from 'src/modules/utils/transaction.enums';
-import { DeviceType } from 'src/modules/utils/enum.constants';
-import { Req } from '@nestjs/common';
-
+import { DeviceType } from '../../../utils/enum.constants';
+import { StockTrackingType, TransactionStatus } from '../../../utils/transaction.enums';
 export class CreatePhysicalStockHeaderDto {
   @OptionalUuidField({
     description: 'When provided, request updates the document by physical stock header id',
   })
   psId?: string;
-
   @RequiredStringField({
     maxLength: 9,
     example: '2026-2027',
   })
   psAccYear!: string;
-
   @RequiredUuidField()
   psCompanyId!: string;
-
   @RequiredUuidField()
   psBranchId!: string;
-
   @RequiredUuidField()
   psGodownId!: string;
-
   @OptionalIntField({
     example: 1001,
     min: 1,
   })
   psDocNo?: number;
-
   @OptionalStringField({
     maxLength: 50,
     example: 'PHY-STK-1001',
   })
   psDocRefNo?: string | null;
-
   @OptionalDateField({
     format: 'date',
     example: '2026-05-07',
   })
   psDocDate?: Date;
-
   @OptionalEnumField(PhysicalStockCountType, {
     default: PhysicalStockCountType.FULL,
     example: PhysicalStockCountType.FULL,
   })
   psCountType?: PhysicalStockCountType;
-
   @OptionalUuidField()
   psCountedBy?: string;
-
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T10:30:00.000Z',
   })
   psCountStartedOn?: Date;
-
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T12:30:00.000Z',
   })
   psCountCompletedOn?: Date;
-
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T10:30:00.000Z',
     default: 'now()',
   })
   psStockCutoffAt?: Date;
-
   @OptionalBooleanField({
     default: true,
     example: true,
   })
   psFreezeStock?: boolean;
-
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T10:30:00.000Z',
   })
   psFreezeFrom?: Date;
-
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T12:30:00.000Z',
   })
   psFreezeTo?: Date;
-
   @OptionalEnumField(PhysicalStockPostingMode, {
     default: PhysicalStockPostingMode.ADJUST_DIFFERENCE_ONLY,
     example: PhysicalStockPostingMode.ADJUST_DIFFERENCE_ONLY,
   })
   psPostingMode?: PhysicalStockPostingMode;
-
   @OptionalEnumField(PhysicalStockRateSource, {
     default: PhysicalStockRateSource.AVG_COST,
     example: PhysicalStockRateSource.AVG_COST,
   })
   psRateSource?: PhysicalStockRateSource;
-
   @OptionalUuidField()
   psAdjustmentVoucherId?: string;
-
   @OptionalIntField({
     default: 0,
     example: 10,
     min: 0,
   })
   psTotalLines?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 12500.5,
     min: 0,
   })
   psTotalBookValue?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 12300.75,
     min: 0,
   })
   psTotalCountedValue?: number;
-
   @OptionalSignedDecimalField({
     default: 0,
     example: -199.75,
   })
   psNetVarianceValue?: number;
-
   @OptionalEnumField(TransactionStatus, {
     default: TransactionStatus.DRAFT,
     example: TransactionStatus.DRAFT,
   })
   psStatus?: TransactionStatus;
-
+  @OptionalBooleanField({
+    default: true,
+    example: true,
+  })
+  psApprovalRequired?: boolean;
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T10:30:00.000Z',
   })
   psApprovedOn?: Date;
-
   @OptionalUuidField()
   psApprovedBy?: string;
-
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T11:00:00.000Z',
   })
   psPostedOn?: Date;
-
   @OptionalUuidField()
   psPostedBy?: string;
-
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T11:30:00.000Z',
+  })
+  psCancelledOn?: Date;
+  @OptionalUuidField()
+  psCancelledBy?: string;
+  @OptionalStringField({
+    maxLength: 250,
+    example: 'Cancelled due to recount mismatch',
+  })
+  psCancelReason?: string | null;
   @OptionalEnumField(DeviceType, {
     default: DeviceType.WEB,
     example: DeviceType.WEB,
   })
   psDeviceType?: DeviceType;
-
   @OptionalUuidField()
   psDeviceId?: string;
-
   @OptionalStringField({
     maxLength: 20,
     example: 'COUNTER-1',
   })
   psCounterId?: string | null;
-
   @OptionalUuidField()
   psSessionId?: string;
-
   @OptionalStringField({
     example: 'Physical stock verified and adjusted',
   })
   psRemarks?: string | null;
-
+  @OptionalBooleanField({
+    default: true,
+    example: true,
+  })
+  psIsActive?: boolean;
+  @OptionalBooleanField({
+    default: false,
+    example: false,
+  })
+  psIsDeleted?: boolean;
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T12:00:00.000Z',
+  })
+  psSyncDate?: Date;
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T10:00:00.000Z',
+  })
+  psCreatedOn?: Date;
   @RequiredUuidField()
   psCreatedBy!: string;
-
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T12:00:00.000Z',
+  })
+  psModifiedOn?: Date;
   @OptionalUuidField()
   psModifiedBy?: string;
 }
-
-
 export class CreatePhysicalStockDetailDto {
-
-  @RequiredUuidField({
+  @OptionalUuidField({
+    description: 'When provided, request updates the physical stock detail row',
+  })
+  psdId?: string;
+  @OptionalUuidField({
     description: 'Physical stock header id',
   })
-  psdPscId!: string;
-
+  psdPscId?: string;
   @OptionalIntField({
     default: 1,
     example: 1,
     min: 1,
   })
   psdRowNo?: number;
-
   // Scope
   @RequiredStringField({
     maxLength: 9,
     example: '2026-2027',
   })
   psdAccYear!: string;
-
   @RequiredUuidField()
   psdCompanyId!: string;
-
   @RequiredUuidField()
   psdBranchId!: string;
-
   @RequiredUuidField()
   psdGodownId!: string;
-
   // Item
   @RequiredUuidField()
   psdItemId!: string;
-
   @RequiredUuidField()
   psdUnitId!: string;
-
   @RequiredUuidField()
   psdBaseUnitId!: string;
-
   @OptionalDecimalField({
     default: 1,
     example: 1,
@@ -258,14 +250,12 @@ export class CreatePhysicalStockDetailDto {
     maxDecimalPlaces: 6,
   })
   psdToBaseFactor?: number;
-
   // Quick identity / scan fields
   @OptionalStringField({
     maxLength: 100,
     example: '8901234567890',
   })
   psdBarcode?: string | null;
-
   @OptionalDecimalField({
     default: 0,
     example: 120.5,
@@ -273,14 +263,12 @@ export class CreatePhysicalStockDetailDto {
     maxDecimalPlaces: 6,
   })
   psdMrp?: number;
-
   // Tracking
   @OptionalEnumField(StockTrackingType, {
     default: StockTrackingType.NONE,
     example: StockTrackingType.NONE,
   })
   psdTrackingType?: StockTrackingType;
-
   // Book stock
   @OptionalDecimalField({
     default: 0,
@@ -289,7 +277,6 @@ export class CreatePhysicalStockDetailDto {
     maxDecimalPlaces: 6,
   })
   psdBookQty?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 100,
@@ -297,7 +284,6 @@ export class CreatePhysicalStockDetailDto {
     maxDecimalPlaces: 6,
   })
   psdBookBaseQty?: number;
-
   // Physical counted stock
   @OptionalDecimalField({
     default: 0,
@@ -306,7 +292,6 @@ export class CreatePhysicalStockDetailDto {
     maxDecimalPlaces: 6,
   })
   psdPhysicalQty?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 95,
@@ -314,7 +299,19 @@ export class CreatePhysicalStockDetailDto {
     maxDecimalPlaces: 6,
   })
   psdPhysicalBaseQty?: number;
-
+  // Generated difference columns
+  @OptionalSignedDecimalField({
+    default: 0,
+    example: -5,
+    maxDecimalPlaces: 6,
+  })
+  psdDiffQty?: number;
+  @OptionalSignedDecimalField({
+    default: 0,
+    example: -5,
+    maxDecimalPlaces: 6,
+  })
+  psdDiffBaseQty?: number;
   // Valuation
   @OptionalDecimalField({
     default: 0,
@@ -323,7 +320,6 @@ export class CreatePhysicalStockDetailDto {
     maxDecimalPlaces: 6,
   })
   psdStockRateWot?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 100.89,
@@ -331,78 +327,120 @@ export class CreatePhysicalStockDetailDto {
     maxDecimalPlaces: 6,
   })
   psdStockRateWithTax?: number;
-
+  // Generated value columns
+  @OptionalDecimalField({
+    default: 0,
+    example: 8550,
+  })
+  psdBookValueWot?: number;
+  @OptionalDecimalField({
+    default: 0,
+    example: 8122.5,
+  })
+  psdPhysicalValueWot?: number;
+  @OptionalSignedDecimalField({
+    default: 0,
+    example: -427.5,
+  })
+  psdDiffValueWot?: number;
+  @OptionalSignedDecimalField({
+    default: 0,
+    example: -504.45,
+  })
+  psdDiffValueWithTax?: number;
   // Resolution
   @OptionalUuidField()
   psdReasonId?: string;
-
   @OptionalEnumField(PhysicalStockResolution, {
     default: PhysicalStockResolution.ADJUST_LOSS_GAIN,
     example: PhysicalStockResolution.ADJUST_LOSS_GAIN,
   })
   psdResolution?: PhysicalStockResolution;
-
   @OptionalStringField({
     example: 'Stock shortage adjusted after physical verification',
   })
   psdNotes?: string | null;
-
   // Posting / status
   @OptionalBooleanField({
     default: false,
     example: false,
   })
   psdIsPosted?: boolean;
-
+  @OptionalBooleanField({
+    default: true,
+    example: true,
+  })
+  psdIsActive?: boolean;
+  @OptionalBooleanField({
+    default: false,
+    example: false,
+  })
+  psdIsDeleted?: boolean;
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T12:00:00.000Z',
+  })
+  psdSyncDate?: Date;
   // Audit
-  @RequiredUuidField()
-  psdCreatedBy!: string;
-
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T10:00:00.000Z',
+  })
+  psdCreatedOn?: Date;
+  @OptionalUuidField()
+  psdCreatedBy?: string;
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T12:00:00.000Z',
+  })
+  psdModifiedOn?: Date;
   @OptionalUuidField()
   psdModifiedBy?: string;
+  @ApiPropertyOptional({
+    type: () => CreatePhysicalStockBatchDetailDto,
+    isArray: true,
+    description: 'Batch, lot, MRP, or serial-level physical stock detail rows',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePhysicalStockBatchDetailDto)
+  batchDetails?: CreatePhysicalStockBatchDetailDto[];
 }
-
-
 export class CreatePhysicalStockBatchDetailDto {
-
-  @RequiredUuidField({
+  @OptionalUuidField({
+    description: 'When provided, request updates the physical stock batch detail row',
+  })
+  psbId?: string;
+  @OptionalUuidField({
     description: 'Physical stock detail parent id',
   })
-  psbPsdId!: string;
-
+  psbPsdId?: string;
   @OptionalIntField({
     default: 1,
     example: 1,
     min: 1,
   })
   psbRowNo?: number;
-
   // Scope snapshot
   @RequiredStringField({
     maxLength: 9,
     example: '2026-2027',
   })
   psbAccYear!: string;
-
   @RequiredUuidField()
   psbCompanyId!: string;
-
   @RequiredUuidField()
   psbBranchId!: string;
-
   @RequiredUuidField()
   psbGodownId!: string;
-
   // Item snapshot
   @RequiredUuidField()
   psbItemId!: string;
-
   @RequiredUuidField()
   psbUnitId!: string;
-
   @RequiredUuidField()
   psbBaseUnitId!: string;
-
   @OptionalDecimalField({
     default: 1,
     example: 1,
@@ -410,41 +448,34 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbToBaseFactor?: number;
-
   // Batch / lot / MRP identity
   @OptionalUuidField()
   psbBatchId?: string;
-
   @OptionalStringField({
     maxLength: 100,
     example: 'BATCH-001',
   })
   psbBatchNo?: string | null;
-
   @OptionalStringField({
     maxLength: 100,
     example: 'MFG-BATCH-001',
   })
   psbMfgBatchNo?: string | null;
-
   @OptionalDateField({
     format: 'date',
     example: '2026-05-07',
   })
   psbBatchDate?: Date;
-
   @OptionalDateField({
     format: 'date',
     example: '2026-05-01',
   })
   psbMfgDate?: Date;
-
   @OptionalDateField({
     format: 'date',
     example: '2027-05-01',
   })
   psbExpiryDate?: Date;
-
   @OptionalDecimalField({
     default: 0,
     example: 120.5,
@@ -452,19 +483,16 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbMrp?: number;
-
   @OptionalStringField({
     maxLength: 100,
     example: '8901234567890',
   })
   psbBarcode?: string | null;
-
   @OptionalStringField({
     maxLength: 100,
     example: 'SN-001',
   })
   psbSerialNo?: string | null;
-
   // System/book stock for this batch
   @OptionalDecimalField({
     default: 0,
@@ -473,7 +501,6 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbBookQty?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 100,
@@ -481,7 +508,6 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbBookBaseQty?: number;
-
   // Physical counted stock for this batch
   @OptionalDecimalField({
     default: 0,
@@ -490,7 +516,6 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbPhysicalQty?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 95,
@@ -498,7 +523,19 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbPhysicalBaseQty?: number;
-
+  // Generated difference columns
+  @OptionalSignedDecimalField({
+    default: 0,
+    example: -5,
+    maxDecimalPlaces: 6,
+  })
+  psbDiffQty?: number;
+  @OptionalSignedDecimalField({
+    default: 0,
+    example: -5,
+    maxDecimalPlaces: 6,
+  })
+  psbDiffBaseQty?: number;
   // Batch valuation
   @OptionalDecimalField({
     default: 0,
@@ -507,7 +544,6 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbStockRateWot?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 100.89,
@@ -515,6 +551,31 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbStockRateWithTax?: number;
+
+  // Generated value columns
+  @OptionalDecimalField({
+    default: 0,
+    example: 8550,
+  })
+  psbBookValueWot?: number;
+
+  @OptionalDecimalField({
+    default: 0,
+    example: 8122.5,
+  })
+  psbPhysicalValueWot?: number;
+
+  @OptionalSignedDecimalField({
+    default: 0,
+    example: -427.5,
+  })
+  psbDiffValueWot?: number;
+
+  @OptionalSignedDecimalField({
+    default: 0,
+    example: -504.45,
+  })
+  psbDiffValueWithTax?: number;
 
   // Resolution
   @OptionalUuidField()
@@ -538,10 +599,53 @@ export class CreatePhysicalStockBatchDetailDto {
   })
   psbIsPosted?: boolean;
 
+  @OptionalBooleanField({
+    default: true,
+    example: true,
+  })
+  psbIsActive?: boolean;
+
+  @OptionalBooleanField({
+    default: false,
+    example: false,
+  })
+  psbIsDeleted?: boolean;
+
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T12:00:00.000Z',
+  })
+  psbSyncDate?: Date;
+
   // Audit
-  @RequiredUuidField()
-  psbCreatedBy!: string;
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T10:00:00.000Z',
+  })
+  psbCreatedOn?: Date;
+
+  @OptionalUuidField()
+  psbCreatedBy?: string;
+
+  @OptionalDateField({
+    format: 'date-time',
+    example: '2026-05-07T12:00:00.000Z',
+  })
+  psbModifiedOn?: Date;
 
   @OptionalUuidField()
   psbModifiedBy?: string;
+}
+
+export class CreatePhysicalStockDto extends CreatePhysicalStockHeaderDto {
+  @ApiPropertyOptional({
+    type: () => CreatePhysicalStockDetailDto,
+    isArray: true,
+    description: 'Item-level physical stock detail rows',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePhysicalStockDetailDto)
+  details?: CreatePhysicalStockDetailDto[];
 }

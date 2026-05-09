@@ -1,70 +1,68 @@
-import { Response } from 'express';
-import { Controller, Get, Post, Body, Patch, Param, Delete, Version, Res, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Param, Patch, Post, Version } from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiBody,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { PhysicalStockService } from './physical-stock.service';
-import { CreatePhysicalStockHeaderDto } from './dto/create-physical-stock.dto';
+import { CreatePhysicalStockDto } from './dto/create-physical-stock.dto';
 import { UpdatePhysicalStockDto } from './dto/update-physical-stock.dto';
-import { ApiCreatedResponse, ApiOperation } from '@nestjs/swagger';
 import { PhysicalStockErrorResponseDto } from './dto/physical-stock-response.dto';
-import { PhysicalStockDocumentResponse, PhysicalStockHeaderResponse, PhysicalStockSuccessResponse } from './types/physical-stock-response.types';
-
+import {
+  PhysicalStockDocumentResponse,
+  PhysicalStockSuccessSingleDto,
+  PhysicalStockSuccessResponse,
+} from './types/physical-stock-response.types';
+@ApiTags('Physical Stock')
+@ApiBearerAuth('access-token')
+@ApiUnauthorizedResponse({ type: PhysicalStockErrorResponseDto })
 @Controller('physical-stock')
 export class PhysicalStockController {
   constructor(private readonly physicalStockService: PhysicalStockService) {}
-
   @Post()
   @Version('1')
-  @ApiOperation({
-      summary: 'Create or update physical stock document by psc_id presence',
-  })
-
-  // @ApiCreatedResponse({ type: OpeningStockSuccessSingleDto })
-  // @ApiOkResponse({ type: OpeningStockSuccessSingleDto })
-  // @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
-  // @ApiConflictResponse({ type: OpeningStockErrorResponseDto })
-  // @ApiNotFoundResponse({ type: OpeningStockErrorResponseDto })
-  
-  async createOrUpdate(
-    @Body() CreatePhysicalStockHeaderDto: CreatePhysicalStockHeaderDto,
-    @Res({ passthrough: true }) response: Response,
+  @ApiOperation({ summary: 'Create physical stock document' })
+  @ApiBody({ type: CreatePhysicalStockDto })
+  @ApiCreatedResponse({ type: PhysicalStockSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })
+  async create(
+    @Body() createPhysicalStockDto: CreatePhysicalStockDto,
   ): Promise<PhysicalStockSuccessResponse<PhysicalStockDocumentResponse>> {
-    const isUpdate = Boolean(CreatePhysicalStockHeaderDto.psId);
-    response.status(isUpdate ? HttpStatus.OK : HttpStatus.CREATED);
-    let data;
-    if (isUpdate) {
-      data = await this.physicalStockService.update(CreatePhysicalStockHeaderDto.psId, CreatePhysicalStockHeaderDto);
-    } else {
-      data = await this.physicalStockService.create(CreatePhysicalStockHeaderDto);
-    }
+    const data = await this.physicalStockService.create(createPhysicalStockDto);
     return {
       success: true,
-      message: isUpdate
-        ? 'Physical stock updated successfully'
-        : 'Physical stock created successfully',
+      message: 'Physical stock created successfully',
       data,
     };
   }
-
-  create(@Body() createPhysicalStockDto: CreatePhysicalStockHeaderDto) {
-    return this.physicalStockService.create(createPhysicalStockDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.physicalStockService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.physicalStockService.findOne(+id);
-  }
-
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updatePhysicalStockDto: UpdatePhysicalStockDto) {
-    return this.physicalStockService.update(+id, updatePhysicalStockDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.physicalStockService.remove(+id);
+  @Version('1')
+  @ApiOperation({ summary: 'Update physical stock document by physical stock header id' })
+  @ApiParam({
+    name: 'id',
+    format: 'uuid',
+    description: 'Physical stock header id',
+  })
+  @ApiBody({ type: UpdatePhysicalStockDto })
+  @ApiOkResponse({ type: PhysicalStockSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })
+  @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
+  async update(
+    @Param('id') id: string,
+    @Body() updatePhysicalStockDto: UpdatePhysicalStockDto,
+  ): Promise<PhysicalStockSuccessResponse<PhysicalStockDocumentResponse>> {
+    const data = await this.physicalStockService.update(id, updatePhysicalStockDto);
+    return {
+      success: true,
+      message: 'Physical stock updated successfully',
+      data,
+    };
   }
 }

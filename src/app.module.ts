@@ -62,6 +62,7 @@ import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.mo
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
 import { OpeningStockModule } from './modules/stocks/opening-stock/opening-stock.module';
+import { PhysicalStockModule } from './modules/stocks/physical-stock/physical-stock.module';
 import { GodownsMasterModule } from './modules/Inventory/godowns-master/godowns-master.module';
 import { ItemsGroupMasterModule } from './modules/Inventory/items-group-master/items-group-master.module';
 import { ItemsBrandMasterModule } from './modules/Inventory/items-brand-master/items-brand-master.module';
@@ -160,6 +161,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     BatchPrefixModule,
     WidgetMasterModule,
     OpeningStockModule,
+    PhysicalStockModule,
     PromotionLoyaltyPointsModule,
     GodownsMasterModule,
     GridDetailsModule,
@@ -177,11 +179,11 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     },
     ...(isThrottlerEnabled
       ? [
-        {
-          provide: APP_GUARD,
-          useClass: ThrottlerGuard,
-        },
-      ]
+          {
+            provide: APP_GUARD,
+            useClass: ThrottlerGuard,
+          },
+        ]
       : []),
     {
       provide: APP_FILTER,
