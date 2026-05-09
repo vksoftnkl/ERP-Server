@@ -14,6 +14,10 @@ export interface PhysicalStockSuccessResponse<T, TMeta = Record<string, unknown>
   data: T;
   meta?: TMeta;
 }
+export interface PhysicalStockDeleteResponse {
+  ps_id: string;
+  deleted: true;
+}
 export interface PhysicalStockHeaderResponse {
   psc_id: string;
   psc_refno: string;
@@ -66,6 +70,12 @@ export class PhysicalStockDocumentResponseDto implements PhysicalStockDocumentRe
   @ApiProperty({ type: PhysicalStockDetailResponseDto, isArray: true })
   details!: PhysicalStockDetailResponse[];
 }
+export class PhysicalStockDeleteResponseDto implements PhysicalStockDeleteResponse {
+  @ApiProperty({ example: '018f6f4e-91c2-7b6a-9e7d-2f8c7f2b1a11' })
+  ps_id!: string;
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
 export class PhysicalStockSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -73,4 +83,12 @@ export class PhysicalStockSuccessSingleDto {
   message!: string;
   @ApiProperty({ type: PhysicalStockDocumentResponseDto })
   data!: PhysicalStockDocumentResponse;
+}
+export class PhysicalStockSuccessDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Physical stock deleted successfully' })
+  message!: string;
+  @ApiProperty({ type: PhysicalStockDeleteResponseDto })
+  data!: PhysicalStockDeleteResponse;
 }

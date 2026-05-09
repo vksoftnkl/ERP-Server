@@ -1,103 +1,68 @@
 model PhysicalStockDetail {
     psdId                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("psd_id")
-
     psdPscId                String   @db.Uuid @map("psd_psc_id")
     psdRowNo                Int      @default(1) @map("psd_row_no")
-
     // Scope
     psdAccYear              String   @db.VarChar(9) @map("psd_acc_year")
     psdCompanyId            String   @db.Uuid @map("psd_company_id")
     psdBranchId             String   @db.Uuid @map("psd_branch_id")
     psdGodownId             String   @db.Uuid @map("psd_godown_id")
-
     // Item
     psdItemId               String   @db.Uuid @map("psd_item_id")
     psdUnitId               String   @db.Uuid @map("psd_unit_id")
     psdBaseUnitId           String   @db.Uuid @map("psd_base_unit_id")
     psdToBaseFactor         Decimal  @default(1) @db.Decimal(18, 6) @map("psd_to_base_factor")
-
     // Quick identity / scan fields
     psdBarcode              String?  @db.VarChar(100) @map("psd_barcode")
     psdMrp                  Decimal  @default(0) @db.Decimal(18, 6) @map("psd_mrp")
-
     // Tracking
     psdTrackingType         String   @default("NONE") @db.VarChar(20) @map("psd_tracking_type")
-
     // Item-level system/book stock
     psdBookQty              Decimal  @default(0) @db.Decimal(18, 6) @map("psd_book_qty")
     psdBookBaseQty          Decimal  @default(0) @db.Decimal(18, 6) @map("psd_book_base_qty")
-
     // Item-level physical counted stock
     psdPhysicalQty          Decimal  @default(0) @db.Decimal(18, 6) @map("psd_physical_qty")
     psdPhysicalBaseQty      Decimal  @default(0) @db.Decimal(18, 6) @map("psd_physical_base_qty")
-
     // Generated difference columns
     psdDiffQty              Decimal  @default(dbgenerated()) @db.Decimal(18, 6) @map("psd_diff_qty")
     psdDiffBaseQty          Decimal  @default(dbgenerated()) @db.Decimal(18, 6) @map("psd_diff_base_qty")
-
     // Valuation
     psdStockRateWot         Decimal  @default(0) @db.Decimal(18, 6) @map("psd_stock_rate_wot")
     psdStockRateWithTax     Decimal  @default(0) @db.Decimal(18, 6) @map("psd_stock_rate_with_tax")
-
     // Generated value columns
     psdBookValueWot         Decimal  @default(dbgenerated()) @db.Decimal(18, 2) @map("psd_book_value_wot")
     psdPhysicalValueWot     Decimal  @default(dbgenerated()) @db.Decimal(18, 2) @map("psd_physical_value_wot")
     psdDiffValueWot         Decimal  @default(dbgenerated()) @db.Decimal(18, 2) @map("psd_diff_value_wot")
     psdDiffValueWithTax     Decimal  @default(dbgenerated()) @db.Decimal(18, 2) @map("psd_diff_value_with_tax")
-
     // Resolution
     psdReasonId             String?  @db.Uuid @map("psd_reason_id")
     psdResolution           String   @default("ADJUST_LOSS_GAIN") @db.VarChar(30) @map("psd_resolution")
     psdNotes                String?  @db.Text @map("psd_notes")
-
     // Posting / status
     psdIsPosted             Boolean  @default(false) @map("psd_is_posted")
     psdIsActive             Boolean  @default(true) @map("psd_is_active")
     psdIsDeleted            Boolean  @default(false) @map("psd_is_deleted")
     psdSyncDate             DateTime? @db.Timestamptz(6) @map("psd_sync_date")
-
     // Audit
     psdCreatedOn            DateTime @default(now()) @db.Timestamptz(6) @map("psd_created_on")
     psdCreatedBy            String?  @db.Uuid @map("psd_created_by")
     psdModifiedOn           DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("psd_modified_on")
     psdModifiedBy           String?  @db.Uuid @map("psd_modified_by")
-
     // Relations
-    physicalStockHeader     PhysicalStockHeader @relation(fields: [psdPscId], references: [psId], onUpdate: Cascade, onDelete: Restrict)
-
-    company                 Company             @relation(fields: [psdCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-    branch                  BranchMaster        @relation(fields: [psdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
-
-    godown                  GodownMaster        @relation(fields: [psdGodownId], references: [godownId], onUpdate: Cascade, onDelete: Restrict)
-    item                    ItemMaster          @relation(fields: [psdItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-
-    unit                    ItemPriceMaster     @relation(fields: [psdItemId, psdUnitId], references: [ipmItemId, ipmUnitId], onUpdate: Cascade, onDelete: Restrict)
-    baseUnit                ItemPriceMaster     @relation(fields: [psdItemId, psdBaseUnitId], references: [ipmItemId, ipmUnitId], onUpdate: Cascade, onDelete: Restrict)
-
-    reason                  StockAdjReason?     @relation(fields: [psdReasonId], references: [adjId], onUpdate: Cascade, onDelete: SetNull)
-
+    physicalStockHeader     PhysicalStockHeader @relation("PhysicalStockHeaderDetails", fields: [psdPscId], references: [psId], onUpdate: Cascade, onDelete: Restrict)
+    company                 Company             @relation("PhysicalStockDetailCompany", fields: [psdCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+    branch                  BranchMaster        @relation("PhysicalStockDetailBranch", fields: [psdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
+    godown                  GodownLocation      @relation("PhysicalStockDetailGodown", fields: [psdGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
+    item                    ItemMaster          @relation("PhysicalStockDetailItem", fields: [psdItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
+    unit                    Unit                @relation("PhysicalStockDetailUnit", fields: [psdUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+    baseUnit                Unit                @relation("PhysicalStockDetailBaseUnit", fields: [psdBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+    reason                  StockAdjReason?     @relation("PhysicalStockDetailReason", fields: [psdReasonId], references: [sarId], onUpdate: Cascade, onDelete: SetNull)
+    batchDetails            PhysicalStockBatchDetail[] @relation("PhysicalStockDetailBatchDetails")
     @@unique([psdPscId, psdRowNo], map: "uq_physical_stock_detail_psc_row")
-
-    @@index([psdPscId], 
-      map: "ix_physical_stock_detail_header",
-      where: { psdIsDeleted: false }
-    )
-
-    @@index([psdCompanyId, psdBranchId, psdGodownId, psdItemId], 
-      map: "ix_physical_stock_detail_item",
-      where: { psdIsDeleted: false }
-    )
-
-    @@index([psdPscId, psdDiffBaseQty], 
-      map: "ix_physical_stock_detail_diff",
-      where: { psdIsDeleted: false }
-    )
-
-    @@index([psdPscId, psdResolution], 
-      map: "ix_physical_stock_detail_resolution",
-      where: { psdIsDeleted: false }
-    )
-
+    @@index([psdPscId], map: "ix_physical_stock_detail_header")
+    @@index([psdCompanyId, psdBranchId, psdGodownId, psdItemId], map: "ix_physical_stock_detail_item")
+    @@index([psdPscId, psdDiffBaseQty], map: "ix_physical_stock_detail_diff")
+    @@index([psdPscId, psdResolution], map: "ix_physical_stock_detail_resolution")
     @@map("physical_stock_detail")
     @@schema("stock")
 }

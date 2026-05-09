@@ -7,7 +7,7 @@ datasource db {
   schemas  = ["public", "grid", "audit", "purchase", "sales", "settings", "fixed", "accounts", "inventory", "stock", "reports", "transport"]
 }
 generator dbml {
-  provider   = "prisma-dbml-generator"
+  provider   = "node node_modules/prisma-dbml-generator/dist/generator.js"
   output     = "../dbml"
   outputName = "awesome.dbml"
   projectName = "Project Name"

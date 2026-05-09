@@ -11,6 +11,7 @@ model StockAdjReason {
   sarCreatedBy         String?   @db.Uuid @map("sar_created_by")
   sarModifiedOn        DateTime? @db.Timestamptz @map("sar_modified_on")
   sarModifiedBy        String?   @db.Uuid @map("sar_modified_by")
+  physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailReason")
 
   @@unique([sarCode])
   @@map("stock_adj_reasons")

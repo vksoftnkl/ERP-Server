@@ -59,24 +59,14 @@ model PhysicalStockHeader {
   psModifiedOn            DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("psc_modified_on")
   psModifiedBy            String?   @db.Uuid                               @map("psc_modified_by")
   // Relations
-  company              Company         @relation(fields: [psCompanyId], references: [compId], onDelete: Restrict, onUpdate: NoAction)
-  branch               BranchMaster    @relation(fields: [psBranchId], references: [brId], onDelete: Restrict, onUpdate: NoAction)
-  godown               GodownLocation? @relation(fields: [psGodownId], references: [gdlId], onDelete: Restrict, onUpdate: NoAction)
-  @@unique(
-    [psAccYear, psCompanyId, psBranchId, psDocNo],
-    map: "ux_physical_stock_header_doc_no",
-    where: { psIsDeleted: false }
-  )
-  @@index(
-    [psCompanyId, psBranchId, psStatus],
-    map: "ix_physical_stock_header_status",
-    where: { psIsDeleted: false }
-  )
-  @@index(
-    [psCompanyId, psBranchId, psDocDate],
-    map: "ix_physical_stock_header_doc_date",
-    where: { psIsDeleted: false }
-  )
+  company              Company         @relation("PhysicalStockHeaderCompany", fields: [psCompanyId], references: [compId], onDelete: Restrict, onUpdate: NoAction)
+  branch               BranchMaster    @relation("PhysicalStockHeaderBranch", fields: [psBranchId], references: [brId], onDelete: Restrict, onUpdate: NoAction)
+  godown               GodownLocation  @relation("PhysicalStockHeaderGodown", fields: [psGodownId], references: [gdlId], onDelete: Restrict, onUpdate: NoAction)
+  details              PhysicalStockDetail[] @relation("PhysicalStockHeaderDetails")
+  batchDetails         PhysicalStockBatchDetail[] @relation("PhysicalStockHeaderBatchDetails")
+  // Partial unique/indexes ux_physical_stock_header_doc_no and
+  // ix_physical_stock_header_* WHERE psc_is_deleted = false are maintained in
+  // SQL migrations because Prisma schema cannot express filtered indexes.
   @@map("physical_stock_header")
   @@schema("stock")
 }

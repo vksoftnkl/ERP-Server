@@ -2,6 +2,7 @@ model PhysicalStockBatchDetail {
   psbId                   String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("psb_id")
 
   psbPsdId                String    @db.Uuid @map("psb_psd_id")
+  psbPshId                String    @db.Uuid @map("psb_psh_id")
   psbRowNo                Int       @default(1) @map("psb_row_no")
 
   // Scope snapshot
@@ -69,43 +70,22 @@ model PhysicalStockBatchDetail {
   psbModifiedBy           String?   @db.Uuid @map("psb_modified_by")
 
   // Relations
-  physicalStockDetail     PhysicalStockDetail          @relation(fields: [psbPsdId], references: [psdId])
+  physicalStockDetail     PhysicalStockDetail          @relation("PhysicalStockDetailBatchDetails", fields: [psbPsdId], references: [psdId])
+  physicalStockHeader     PhysicalStockHeader          @relation("PhysicalStockHeaderBatchDetails", fields: [psbPshId], references: [psId], onUpdate: Cascade, onDelete: Restrict)
+  company                 Company                      @relation("PhysicalStockBatchDetailCompany", fields: [psbCompanyId], references: [compId])
+  branch                  BranchMaster                 @relation("PhysicalStockBatchDetailBranch", fields: [psbBranchId], references: [brId])
+  godown                  GodownLocation               @relation("PhysicalStockBatchDetailGodown", fields: [psbGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict)
 
-  company                 Company                      @relation(fields: [psbCompanyId], references: [compId])
-  branch                  BranchMaster                 @relation(fields: [psbBranchId], references: [brId])
-  godown                  GodownMaster                 @relation(fields: [psbGodownId], references: [godownId])
+  item                    ItemMaster                   @relation("PhysicalStockBatchDetailItem", fields: [psbItemId], references: [itemId])
 
-  item                    ItemMaster                   @relation(fields: [psbItemId], references: [itemId])
+  unit                    Unit                         @relation("PhysicalStockBatchDetailUnit", fields: [psbUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  baseUnit                Unit                         @relation("PhysicalStockBatchDetailBaseUnit", fields: [psbBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
 
-  unit                    ItemPriceMaster              @relation(fields: [psbItemId, psbUnitId], references: [ipmItemId, ipmUnitId], onUpdate: Cascade, onDelete: Restrict)
-  baseUnit                ItemPriceMaster              @relation(fields: [psbItemId, psbBaseUnitId], references: [ipmItemId, ipmUnitId], onUpdate: Cascade, onDelete: Restrict)
+  batch                   ItemBatchMaster?             @relation("PhysicalStockBatchDetailBatch", fields: [psbBatchId], references: [btmId])
 
-  batch                   ItemBatchMaster?             @relation(fields: [psbBatchId], references: [btmId])
-
-  @@index([psbPsdId],
-    map: "ix_physical_stock_batch_detail_parent",
-    where: { psbIsDeleted: false }
-  )
-
-  @@index([psbCompanyId, psbBranchId, psbGodownId, psbItemId],
-    map: "ix_physical_stock_batch_detail_item",
-    where: { psbIsDeleted: false }
-  )
-
-  @@index([psbItemId, psbBatchNo, psbMrp, psbBarcode],
-    map: "ix_physical_stock_batch_detail_batch",
-    where: { psbIsDeleted: false }
-  )
-
-  @@index([psbItemId, psbExpiryDate],
-    map: "ix_physical_stock_batch_detail_expiry",
-    where: { psbIsDeleted: false }
-  )
-
-  @@index([psbPsdId, psbDiffBaseQty],
-    map: "ix_physical_stock_batch_detail_diff",
-    where: { psbIsDeleted: false }
-  )
+  // Partial indexes ix_physical_stock_batch_detail_* WHERE psb_is_deleted = false
+  // are maintained in SQL migrations because Prisma schema cannot express filtered indexes.
+  @@index([psbPshId], map: "ix_physical_stock_batch_detail_header")
 
   @@map("physical_stock_batch_detail")
   @@schema("stock")
