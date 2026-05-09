@@ -551,92 +551,76 @@ export class CreatePhysicalStockBatchDetailDto {
     maxDecimalPlaces: 6,
   })
   psbStockRateWithTax?: number;
-
   // Generated value columns
   @OptionalDecimalField({
     default: 0,
     example: 8550,
   })
   psbBookValueWot?: number;
-
   @OptionalDecimalField({
     default: 0,
     example: 8122.5,
   })
   psbPhysicalValueWot?: number;
-
   @OptionalSignedDecimalField({
     default: 0,
     example: -427.5,
   })
   psbDiffValueWot?: number;
-
   @OptionalSignedDecimalField({
     default: 0,
     example: -504.45,
   })
   psbDiffValueWithTax?: number;
-
   // Resolution
   @OptionalUuidField()
   psbReasonId?: string;
-
   @OptionalEnumField(PhysicalStockResolution, {
     default: PhysicalStockResolution.ADJUST_LOSS_GAIN,
     example: PhysicalStockResolution.ADJUST_LOSS_GAIN,
   })
   psbResolution?: PhysicalStockResolution;
-
   @OptionalStringField({
     example: 'Batch stock shortage adjusted after physical verification',
   })
   psbNotes?: string | null;
-
   // Posting
   @OptionalBooleanField({
     default: false,
     example: false,
   })
   psbIsPosted?: boolean;
-
   @OptionalBooleanField({
     default: true,
     example: true,
   })
   psbIsActive?: boolean;
-
   @OptionalBooleanField({
     default: false,
     example: false,
   })
   psbIsDeleted?: boolean;
-
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T12:00:00.000Z',
   })
   psbSyncDate?: Date;
-
   // Audit
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T10:00:00.000Z',
   })
   psbCreatedOn?: Date;
-
   @OptionalUuidField()
   psbCreatedBy?: string;
-
   @OptionalDateField({
     format: 'date-time',
     example: '2026-05-07T12:00:00.000Z',
   })
   psbModifiedOn?: Date;
-
   @OptionalUuidField()
   psbModifiedBy?: string;
 }
-
 export class CreatePhysicalStockDto extends CreatePhysicalStockHeaderDto {
   @ApiPropertyOptional({
     type: () => CreatePhysicalStockDetailDto,
