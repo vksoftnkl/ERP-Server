@@ -57,6 +57,7 @@ import { ItemsMasterModule } from 'src/modules/Inventory/items-master/items-mast
 import { ItemsEanCodeMasterModule } from 'src/modules/Inventory/items-ean-code-master/items-ean-code-master.module';
 import { GodownsMasterModule } from 'src/modules/Inventory/godowns-master/godowns-master.module';
 import { OpeningStockModule } from 'src/modules/stocks/opening-stock/opening-stock.module';
+import { ItemStockBalanceModule } from 'src/modules/stocks/itemstockbalance/itemStockBalanceModule';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -267,6 +268,12 @@ export const swaggerModuleDocuments = [
     title: 'Opening Stock API',
     description: 'Opening stock module endpoints',
     include: [OpeningStockModule],
+  },
+  {
+    path: 'item-stock-balance',
+    title: 'Item Stock Balance API',
+    description: 'Item stock balance lookup endpoints',
+    include: [ItemStockBalanceModule],
   },
   {
     path: 'promotion-loyalty-points',

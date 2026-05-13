@@ -431,20 +431,16 @@ export class CityService {
     if (this.hasOwnProperty(saveCityDto, 'ctmAlias')) {
       data.ctmAlias = saveCityDto.ctmAlias;
     }
-
     if (this.hasOwnProperty(saveCityDto, 'ctmShort')) {
       data.ctmShort = saveCityDto.ctmShort;
     }
-
     if (this.hasOwnProperty(saveCityDto, 'ctmOrder')) {
       data.ctmOrder = saveCityDto.ctmOrder;
     }
-
     if (this.hasOwnProperty(saveCityDto, 'ctmIsActive')) {
       data.ctmIsActive = saveCityDto.ctmIsActive;
     }
   }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -455,10 +451,8 @@ export class CityService {
         },
       ]);
     }
-
     return trimmed;
   }
-
   private toPayload(record: CityMaster): CityPayload {
     return {
       ctmId: record.ctmId,
@@ -476,24 +470,19 @@ export class CityService {
       ctmModifiedBy: record.ctmModifiedBy,
     };
   }
-
   private toNumber(value: Prisma.Decimal | number): number {
     if (typeof value === 'number') {
       return value;
     }
-
     return Number(value.toString());
   }
-
   private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
     if (!value) {
       return fallback;
     }
-
     const trimmed = value.trim();
     return trimmed || fallback;
   }
-
   private handleWriteError(error: unknown): void {
     if (this.isUniqueConstraintError(error)) {
       throw new ConflictException(
@@ -506,15 +495,12 @@ export class CityService {
       );
     }
   }
-
   private isUniqueConstraintError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
       return false;
     }
-
     return (error as { code?: string }).code === 'P2002';
   }
-
   private throwNotFound(ctmId: string): never {
     throw new NotFoundException(
       this.buildErrorResponse('City not found', [
@@ -525,11 +511,9 @@ export class CityService {
       ]),
     );
   }
-
   private throwBadRequest(message: string, errors: CityErrorDetail[]): never {
     throw new BadRequestException(this.buildErrorResponse(message, errors));
   }
-
   private buildErrorResponse(message: string, errors: CityErrorDetail[] = []): CityErrorResponse {
     return {
       success: false,
@@ -537,7 +521,6 @@ export class CityService {
       errors,
     };
   }
-
   private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
     return Object.prototype.hasOwnProperty.call(obj, key);
   }
