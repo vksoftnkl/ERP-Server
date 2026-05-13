@@ -55,6 +55,10 @@ export class ItemStockBalancePayloadDto {
   @ApiProperty()
   isb_available_qty!: number;
   @ApiProperty()
+  book_qty!: number;
+  @ApiProperty()
+  book_base_qty!: number;
+  @ApiProperty()
   isb_opening_avg_rate!: number;
   @ApiProperty()
   isb_avg_stock_rate!: number;

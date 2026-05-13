@@ -33,6 +33,8 @@ export interface ItemStockBalancePayload {
   isb_reserved_qty: number;
   isb_transit_qty: number;
   isb_available_qty: number;
+  book_qty: number;
+  book_base_qty: number;
   isb_opening_avg_rate: number;
   isb_avg_stock_rate: number;
   isb_opening_value: number;
