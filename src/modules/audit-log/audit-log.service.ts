@@ -1547,7 +1547,11 @@ export class AuditLogService {
     return this.normalizeJsonValue(value);
   }
   private normalizeJsonValue(value: unknown): Prisma.JsonValue {
-    return JSON.parse(JSON.stringify(value)) as Prisma.JsonValue;
+    return JSON.parse(
+      JSON.stringify(value, (_key, nestedValue) =>
+        typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue,
+      ),
+    ) as Prisma.JsonValue;
   }
   private normalizePk(value: string | number | bigint | null | undefined): string | null {
     if (value === undefined || value === null) {

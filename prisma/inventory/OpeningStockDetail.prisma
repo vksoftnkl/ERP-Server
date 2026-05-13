@@ -83,5 +83,5 @@ model OpeningStockDetail {
   @@unique([oslCompanyId, oslBranchId, oslAccYear, oslVoucherId, oslLineNo], map: "uq_opening_stock_detail_voucher_line")
   @@index([oslCompanyId, oslBranchId, oslAccYear, oslOpeningId], map: "idx_opening_stock_detail_opening")
   @@map("opening_stock_detail")
-  @@schema("inventory")
+  @@schema("stock")
 }

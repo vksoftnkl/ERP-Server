@@ -41,5 +41,5 @@ model OpeningStockHeader {
   @@unique([oshAccYear, oshCompanyId, oshBranchId, oshVoucherId], map: "uq_opening_stock_header_voucher_id")
   @@index([oshAccYear, oshCompanyId, oshBranchId, oshVoucherDate], map: "idx_opening_stock_header_date")
   @@map("opening_stock_header")
-  @@schema("inventory")
+  @@schema("stock")
 }

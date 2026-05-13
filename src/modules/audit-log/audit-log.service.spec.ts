@@ -150,6 +150,35 @@ describe('AuditLogService', () => {
     expect(createArgs.data.logChangedFields).toBeUndefined();
   });
 
+  it('logEntityChange serializes bigint values in audit payloads', async () => {
+    prisma.auditScreen.findFirst.mockResolvedValue({
+      screenId: 10,
+    });
+    prisma.auditLog.create.mockResolvedValue({
+      logId: '019c6f6c-be87-7a11-8905-36092c46fd06',
+    });
+
+    await service.logEntityChange({
+      action: 'New',
+      tableName: 'item_batch_master',
+      screenName: 'Opening Stock',
+      modifiedRecord: {
+        btm_id: '019d6f6c-be87-7a11-8905-36092c46fd06',
+        btm_batch_no: 'BATCH-1',
+        btm_row_version: BigInt(1),
+      },
+      originalRecord: null,
+      pk: '019d6f6c-be87-7a11-8905-36092c46fd06',
+    });
+
+    const createArgs = getCreateArgs(prisma);
+    expect(createArgs.data.logOriginalRecord).toEqual({
+      btm_id: '019d6f6c-be87-7a11-8905-36092c46fd06',
+      btm_batch_no: 'BATCH-1',
+      btm_row_version: '1',
+    });
+  });
+
   it('logEntityChange writes original, modified and changed fields for update', async () => {
     prisma.auditScreen.findFirst.mockResolvedValue({
       screenId: 10,

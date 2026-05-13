@@ -2069,17 +2069,13 @@ model GspProviderMaster {
 // ----- prisma/fixed/hscnCode.prisma -----
 model HsnMaster {
   hsnId Int @id @default(autoincrement()) @map("hsn_id")
-
   hsnCode        String  @db.VarChar(50)  @map("hsn_code")
   hsnName        String  @db.VarChar(200) @map("hsn_name")
   hsnDescription String? @db.Text         @map("hsn_description")
-
   hsnIsService Boolean @default(false) @map("hsn_is_service")
   hsnUqc       String? @db.VarChar(10) @map("hsn_uqc")
   hsnIsActive  Boolean @default(true)  @map("hsn_is_active")
-
- hsnRateOfTax Decimal @default(0) @db.Decimal(7, 4) @map("hsn_rate_of_tax")
-
+  hsnRateOfTax Decimal @default(0) @db.Decimal(7, 4) @map("hsn_rate_of_tax")
   @@index([hsnCode])
   @@map("hsn_master")
   @@schema("fixed")
@@ -2115,22 +2111,16 @@ model Menu {
 // ----- prisma/fixed/priceLevel.prisma -----
 model PriceLevel {
   priceLvlId        Int      @id @default(autoincrement()) @map("price_lvl_id")
-
   priceLvlName      String   @db.VarChar(200)              @map("price_lvl_name")
   priceLvlShort     String?  @db.VarChar(50)               @map("price_lvl_short")
-
   priceLvlIsActive  Boolean  @default(true)                @map("price_lvl_is_active")
   priceLvlIsAdmin   Boolean  @default(false)               @map("price_lvl_is_admin")
-
   priceLvlIsDeleted Boolean  @default(false)               @map("price_lvl_isDeleted")
   priceLvlSyncDate  DateTime? @db.Timestamptz              @map("price_lvl_SyncDate")
-
   priceLvlCreatedOn DateTime @default(now()) @db.Timestamptz @map("price_lvl_createdOn")
   priceLvlCreatedBy String?  @db.VarChar(100)              @map("price_lvl_createdBy")
-
   priceLvlModifiedOn DateTime @default(now()) @db.Timestamptz @map("price_lvl_modifiedOn")
   priceLvlModifiedBy String?  @db.VarChar(100)             @map("price_lvl_modifiedBy")
-
   @@map("price_levels")
   @@schema("fixed")
 }
@@ -3266,7 +3256,7 @@ model OpeningStockDetail {
   @@unique([oslCompanyId, oslBranchId, oslAccYear, oslVoucherId, oslLineNo], map: "uq_opening_stock_detail_voucher_line")
   @@index([oslCompanyId, oslBranchId, oslAccYear, oslOpeningId], map: "idx_opening_stock_detail_opening")
   @@map("opening_stock_detail")
-  @@schema("inventory")
+  @@schema("stock")
 }
 
 // ----- prisma/inventory/OpeningStockHeader.prisma -----
@@ -3313,7 +3303,7 @@ model OpeningStockHeader {
   @@unique([oshAccYear, oshCompanyId, oshBranchId, oshVoucherId], map: "uq_opening_stock_header_voucher_id")
   @@index([oshAccYear, oshCompanyId, oshBranchId, oshVoucherDate], map: "idx_opening_stock_header_date")
   @@map("opening_stock_header")
-  @@schema("inventory")
+  @@schema("stock")
 }
 
 // ----- prisma/public/batch.prisma -----
