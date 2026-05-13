@@ -14,13 +14,20 @@ export class ItemStockBalanceService {
   async getByScope(
     queryDto: GetItemStockBalanceQueryDto,
   ): Promise<ItemStockBalancePayload[]> {
+    const unitFactorsByUnitId = await this.getItemPriceUnitFactors(
+      queryDto.isb_item_id,
+      queryDto.isb_unit_id,
+    );
+    const stockUnitIds = Array.from(
+      new Set([queryDto.isb_unit_id, ...unitFactorsByUnitId.keys()]),
+    );
     const where: Prisma.ItemStockBalanceWhereInput = {
       isbAccYear: queryDto.isb_acc_year,
       isbCompanyId: queryDto.isb_company_id,
       isbBranchId: queryDto.isb_branch_id,
       isbGodownId: queryDto.isb_godown_id,
       isbItemId: queryDto.isb_item_id,
-      isbUnitId: queryDto.isb_unit_id,
+      isbUnitId: { in: stockUnitIds },
     };
     if (queryDto.isb_stock_bucket) {
       where.isbStockBucket = queryDto.isb_stock_bucket;
@@ -32,11 +39,12 @@ export class ItemStockBalanceService {
     if (records.length === 0) {
       this.throwItemStockBalanceNotFound(queryDto);
     }
-    const unitFactor = await this.getItemPriceUnitFactor(
-      queryDto.isb_item_id,
-      queryDto.isb_unit_id,
+    if (unitFactorsByUnitId.size === 0) {
+      this.throwItemPriceMasterNotFound(queryDto.isb_item_id, queryDto.isb_unit_id);
+    }
+    return records.map((record) =>
+      this.toPayload(record, this.getUnitFactorForStockUnit(record, queryDto, unitFactorsByUnitId)),
     );
-    return records.map((record) => this.toPayload(record, unitFactor));
   }
   async getPriceMasterByItemAndUnit(
     itemId: string,
@@ -45,8 +53,8 @@ export class ItemStockBalanceService {
     const records = await this.prisma.itemPriceMaster.findMany({
       where: {
         ipmItemId: itemId,
-        ipmUnitId: unitId,
         ipmIsDeleted: false,
+        OR: [{ ipmId: unitId }, { ipmUnitId: unitId }],
       },
       orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
     });
@@ -147,25 +155,47 @@ export class ItemStockBalanceService {
       ipm_updated_by: record.ipmUpdatedBy,
     };
   }
-  private async getItemPriceUnitFactor(
+  private async getItemPriceUnitFactors(
     itemId: string,
     unitId: string,
-  ): Promise<number> {
-    const record = await this.prisma.itemPriceMaster.findFirst({
+  ): Promise<Map<string, number>> {
+    const records = await this.prisma.itemPriceMaster.findMany({
       where: {
         ipmItemId: itemId,
-        ipmUnitId: unitId,
         ipmIsDeleted: false,
+        OR: [{ ipmId: unitId }, { ipmUnitId: unitId }],
       },
       select: {
+        ipmId: true,
+        ipmUnitId: true,
         ipmUnitFactor: true,
       },
       orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
     });
-    if (!record) {
-      this.throwItemPriceMasterNotFound(itemId, unitId);
+    const factorsByUnitId = new Map<string, number>();
+    for (const record of records) {
+      const unitFactor = this.toNumber(record.ipmUnitFactor);
+      if (!factorsByUnitId.has(record.ipmId)) {
+        factorsByUnitId.set(record.ipmId, unitFactor);
+      }
+      if (!factorsByUnitId.has(record.ipmUnitId)) {
+        factorsByUnitId.set(record.ipmUnitId, unitFactor);
+      }
     }
-    return this.toNumber(record.ipmUnitFactor);
+    return factorsByUnitId;
+  }
+  private getUnitFactorForStockUnit(
+    record: ItemStockBalance,
+    queryDto: GetItemStockBalanceQueryDto,
+    unitFactorsByUnitId: Map<string, number>,
+  ): number {
+    const unitFactor =
+      unitFactorsByUnitId.get(record.isbUnitId) ??
+      unitFactorsByUnitId.get(queryDto.isb_unit_id);
+    if (unitFactor === undefined) {
+      this.throwItemPriceMasterNotFound(record.isbItemId, record.isbUnitId);
+    }
+    return unitFactor;
   }
   private calculateBookQty(closingQty: number, unitFactor: number): number {
     return unitFactor > 0 ? closingQty / unitFactor : 0;
