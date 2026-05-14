@@ -1,10 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { EmployeeDesignation, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,14 +15,25 @@ import {
   EmployeeDesignationMasterListMeta,
   EmployeeDesignationMasterPayload,
 } from './types/employee-designation-master-api.types';
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SettingsWriteClient,
+  buildSettingsErrorResponse,
+  hasOwnProperty,
+  normalizeNullableString,
+  normalizeRequiredText,
+  throwOnUniqueConstraintError,
+  throwSettingsBadRequest,
+  throwSettingsConflict,
+  throwSettingsNotFound,
+} from '../utils/settings-service.utils';
 
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
 const EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME = 'employee designations';
 const EMPLOYEE_DESIGNATION_MASTER_AUDIT_SCREEN_NAME = 'Employee Designation Master';
 
-type EmployeeDesignationWriteClient = Prisma.TransactionClient | PrismaService;
+type EmployeeDesignationWriteClient = SettingsWriteClient;
 
 @Injectable()
 export class EmployeeDesignationMasterService {
@@ -44,17 +53,25 @@ export class EmployeeDesignationMasterService {
     return this.createDesignation(saveEmployeeDesignationMasterDto);
   }
 
-  async list(queryDto: ListEmployeeDesignationMasterQueryDto): Promise<ConfiguredGridListResult<EmployeeDesignationMasterListItem, EmployeeDesignationMasterListMeta>> {
+  async list(
+    queryDto: ListEmployeeDesignationMasterQueryDto,
+  ): Promise<
+    ConfiguredGridListResult<EmployeeDesignationMasterListItem, EmployeeDesignationMasterListMeta>
+  > {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
 
     const hasStructuredFilters =
-      queryDto.edIsActive !== undefined ||
-      queryDto.edIsDefault !== undefined;
+      queryDto.edIsActive !== undefined || queryDto.edIsDefault !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(
+        queryDto.search,
+        page,
+        limit,
+        skip,
+      );
       if (configuredList) {
         return configuredList;
       }
@@ -109,7 +126,10 @@ export class EmployeeDesignationMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<ConfiguredGridListResult<EmployeeDesignationMasterListItem, EmployeeDesignationMasterListMeta> | null> {
+  ): Promise<ConfiguredGridListResult<
+    EmployeeDesignationMasterListItem,
+    EmployeeDesignationMasterListMeta
+  > | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME,
     });
@@ -136,14 +156,15 @@ export class EmployeeDesignationMasterService {
       }
 
       try {
-        const result = await this.configuredGridSqlService.runPagedQuery<EmployeeDesignationMasterListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'employee_designation_master_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
+        const result =
+          await this.configuredGridSqlService.runPagedQuery<EmployeeDesignationMasterListItem>({
+            baseSql: validation.normalizedSql,
+            alias: 'employee_designation_master_grid',
+            search,
+            limit,
+            skip,
+            gridId: configuredGrid.gridId,
+          });
 
         return {
           items: result.items,
@@ -264,8 +285,8 @@ export class EmployeeDesignationMasterService {
     try {
       return this.prisma.$transaction(async (tx) => {
         const edName = this.normalizeRequiredName(saveEmployeeDesignationMasterDto.edName);
-        const edCode = this.normalizeNullableString(saveEmployeeDesignationMasterDto.edCode);
-        const edRemarks = this.normalizeNullableString(saveEmployeeDesignationMasterDto.edRemarks);
+        const edCode = normalizeNullableString(saveEmployeeDesignationMasterDto.edCode);
+        const edRemarks = normalizeNullableString(saveEmployeeDesignationMasterDto.edRemarks);
 
         await this.ensureNameIsUnique(tx, edName);
         await this.ensureCodeIsUnique(tx, edCode);
@@ -283,16 +304,16 @@ export class EmployeeDesignationMasterService {
           edModifiedBy: DEFAULT_ACTOR,
         };
 
-        if (this.hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {
+        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {
           data.edCode = edCode;
         }
-        if (this.hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsDefault')) {
+        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsDefault')) {
           data.edIsDefault = saveEmployeeDesignationMasterDto.edIsDefault;
         }
-        if (this.hasOwnProperty(saveEmployeeDesignationMasterDto, 'edRemarks')) {
+        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edRemarks')) {
           data.edRemarks = edRemarks;
         }
-        if (this.hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsActive')) {
+        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsActive')) {
           data.edIsActive = saveEmployeeDesignationMasterDto.edIsActive;
         }
 
@@ -342,8 +363,8 @@ export class EmployeeDesignationMasterService {
         }
 
         const edName = this.normalizeRequiredName(saveEmployeeDesignationMasterDto.edName);
-        const edCode = this.normalizeNullableString(saveEmployeeDesignationMasterDto.edCode);
-        const edRemarks = this.normalizeNullableString(saveEmployeeDesignationMasterDto.edRemarks);
+        const edCode = normalizeNullableString(saveEmployeeDesignationMasterDto.edCode);
+        const edRemarks = normalizeNullableString(saveEmployeeDesignationMasterDto.edRemarks);
 
         await this.ensureNameIsUnique(tx, edName, edId);
         await this.ensureCodeIsUnique(tx, edCode, edId);
@@ -358,16 +379,16 @@ export class EmployeeDesignationMasterService {
           edModifiedBy: DEFAULT_ACTOR,
         };
 
-        if (this.hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {
+        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {
           data.edCode = edCode;
         }
-        if (this.hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsDefault')) {
+        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsDefault')) {
           data.edIsDefault = saveEmployeeDesignationMasterDto.edIsDefault;
         }
-        if (this.hasOwnProperty(saveEmployeeDesignationMasterDto, 'edRemarks')) {
+        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edRemarks')) {
           data.edRemarks = edRemarks;
         }
-        if (this.hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsActive')) {
+        if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edIsActive')) {
           data.edIsActive = saveEmployeeDesignationMasterDto.edIsActive;
         }
 
@@ -429,13 +450,14 @@ export class EmployeeDesignationMasterService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Employee designation name already exists', [
+      throwSettingsConflict<EmployeeDesignationMasterErrorDetail>(
+        'Employee designation name already exists',
+        [
           {
             field: 'edName',
             message: 'Duplicate edName is not allowed',
           },
-        ]),
+        ],
       );
     }
   }
@@ -470,13 +492,14 @@ export class EmployeeDesignationMasterService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Employee designation code already exists', [
+      throwSettingsConflict<EmployeeDesignationMasterErrorDetail>(
+        'Employee designation code already exists',
+        [
           {
             field: 'edCode',
             message: 'Duplicate edCode is not allowed',
           },
-        ]),
+        ],
       );
     }
   }
@@ -506,30 +529,7 @@ export class EmployeeDesignationMasterService {
   }
 
   private normalizeRequiredName(value: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'edName',
-          message: 'edName must not be empty',
-        },
-      ]);
-    }
-
-    return trimmed;
-  }
-
-  private normalizeNullableString(value: string | null | undefined): string | null | undefined {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (value === null) {
-      return null;
-    }
-
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
+    return normalizeRequiredText<EmployeeDesignationMasterErrorDetail>(value, 'edName');
   }
 
   private toPayload(record: EmployeeDesignation): EmployeeDesignationMasterPayload {
@@ -550,53 +550,37 @@ export class EmployeeDesignationMasterService {
   }
 
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Employee designation already exists', [
-          {
-            field: 'edName',
-            message: 'Duplicate employee designation unique value is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
+    throwOnUniqueConstraintError<EmployeeDesignationMasterErrorDetail>(
+      error,
+      'Employee designation already exists',
+      [
+        {
+          field: 'edName',
+          message: 'Duplicate employee designation unique value is not allowed',
+        },
+      ],
+    );
   }
 
   private throwNotFound(edId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Employee designation not found', [
-        {
-          field: 'edId',
-          message: `No active employee designation found with id ${edId}`,
-        },
-      ]),
+    throwSettingsNotFound<EmployeeDesignationMasterErrorDetail>(
+      'Employee designation not found',
+      'edId',
+      `No active employee designation found with id ${edId}`,
     );
   }
 
   private throwBadRequest(message: string, errors: EmployeeDesignationMasterErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
+    throwSettingsBadRequest<EmployeeDesignationMasterErrorDetail>(message, errors);
   }
 
   private buildErrorResponse(
     message: string,
     errors: EmployeeDesignationMasterErrorDetail[] = [],
   ): EmployeeDesignationMasterErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
+    return buildSettingsErrorResponse<
+      EmployeeDesignationMasterErrorDetail,
+      EmployeeDesignationMasterErrorResponse
+    >(message, errors);
   }
 }

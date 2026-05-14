@@ -1,10 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { EmpMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -18,16 +16,74 @@ import {
   EmployeeMasterPayload,
 } from './types/employee-master-api.types';
 import type { GridColumnItem } from '../../../common/configured-grid-sql/types/configured-grid-sql.types';
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SettingsWriteClient,
+  applyPresentFields,
+  buildSettingsErrorResponse,
+  isForeignKeyConstraintError,
+  normalizeRequiredText,
+  throwOnUniqueConstraintError,
+  throwSettingsBadRequest,
+  throwSettingsNotFound,
+  toNullableNumber,
+  toNumber,
+} from '../utils/settings-service.utils';
 
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
 const EMPLOYEE_MASTER_TABLE_NAME = 'emp_master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+const EMPLOYEE_MASTER_OPTIONAL_FIELDS = [
+  'empBranchId',
+  'empCode',
+  'empAlias',
+  'empMobile1',
+  'empMobile2',
+  'empEmail',
+  'empAddr1',
+  'empAddr2',
+  'empAddr3',
+  'empCity',
+  'empDistrict',
+  'empState',
+  'empPincode',
+  'empGender',
+  'empMaritalStatus',
+  'empBloodGroup',
+  'empDob',
+  'empDepartmentId',
+  'empDesignationId',
+  'empEmploymentType',
+  'empStatus',
+  'empJoinedOn',
+  'empProbationEndOn',
+  'empConfirmationOn',
+  'empLeftOn',
+  'empShiftId',
+  'empAttConstraintId',
+  'empHolidayGroupId',
+  'empOvertimeAllowed',
+  'empHasCommission',
+  'empCommissionType',
+  'empCommissionValue',
+  'empSalaryAmount',
+  'empBataAmount',
+  'empKmBataAmount',
+  'empPanNo',
+  'empAadharNo',
+  'empPfNo',
+  'empEsiNo',
+  'empLoanLedgerId',
+  'empPhotoUrl',
+  'empPhoto',
+  'empRemarks',
+  'empIsActive',
+];
 
-type EmployeeMasterWriteClient = Prisma.TransactionClient | PrismaService;
+type EmployeeMasterWriteClient = SettingsWriteClient;
 
 @Injectable()
 export class EmployeeMasterService {
@@ -56,7 +112,12 @@ export class EmployeeMasterService {
       queryDto.empStatus !== undefined ||
       queryDto.empEmploymentType !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(
+        queryDto.search,
+        page,
+        limit,
+        skip,
+      );
       if (configuredList) {
         return configuredList;
       }
@@ -405,7 +466,7 @@ export class EmployeeMasterService {
         },
       ]);
     }
-    }
+  }
   private async ensureDesignationExists(
     empDesignationId: string | null | undefined,
     tx: EmployeeMasterWriteClient,
@@ -461,152 +522,17 @@ export class EmployeeMasterService {
     data: Prisma.EmpMasterUncheckedCreateInput | Prisma.EmpMasterUncheckedUpdateInput,
     saveEmployeeMasterDto: SaveEmployeeMasterDto,
   ): void {
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empBranchId')) {
-      data.empBranchId = saveEmployeeMasterDto.empBranchId;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empCode')) {
-      data.empCode = saveEmployeeMasterDto.empCode;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empAlias')) {
-      data.empAlias = saveEmployeeMasterDto.empAlias;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empMobile1')) {
-      data.empMobile1 = saveEmployeeMasterDto.empMobile1;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empMobile2')) {
-      data.empMobile2 = saveEmployeeMasterDto.empMobile2;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empEmail')) {
-      data.empEmail = saveEmployeeMasterDto.empEmail;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empAddr1')) {
-      data.empAddr1 = saveEmployeeMasterDto.empAddr1;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empAddr2')) {
-      data.empAddr2 = saveEmployeeMasterDto.empAddr2;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empAddr3')) {
-      data.empAddr3 = saveEmployeeMasterDto.empAddr3;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empCity')) {
-      data.empCity = saveEmployeeMasterDto.empCity;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empDistrict')) {
-      data.empDistrict = saveEmployeeMasterDto.empDistrict;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empState')) {
-      data.empState = saveEmployeeMasterDto.empState;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empPincode')) {
-      data.empPincode = saveEmployeeMasterDto.empPincode;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empGender')) {
-      data.empGender = saveEmployeeMasterDto.empGender;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empMaritalStatus')) {
-      data.empMaritalStatus = saveEmployeeMasterDto.empMaritalStatus;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empBloodGroup')) {
-      data.empBloodGroup = saveEmployeeMasterDto.empBloodGroup;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empDob')) {
-      data.empDob = saveEmployeeMasterDto.empDob;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empDepartmentId')) {
-      data.empDepartmentId = saveEmployeeMasterDto.empDepartmentId;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empDesignationId')) {
-      data.empDesignationId = saveEmployeeMasterDto.empDesignationId;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empEmploymentType')) {
-      data.empEmploymentType = saveEmployeeMasterDto.empEmploymentType;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empStatus')) {
-      data.empStatus = saveEmployeeMasterDto.empStatus;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empJoinedOn')) {
-      data.empJoinedOn = saveEmployeeMasterDto.empJoinedOn;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empProbationEndOn')) {
-      data.empProbationEndOn = saveEmployeeMasterDto.empProbationEndOn;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empConfirmationOn')) {
-      data.empConfirmationOn = saveEmployeeMasterDto.empConfirmationOn;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empLeftOn')) {
-      data.empLeftOn = saveEmployeeMasterDto.empLeftOn;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empShiftId')) {
-      data.empShiftId = saveEmployeeMasterDto.empShiftId;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empAttConstraintId')) {
-      data.empAttConstraintId = saveEmployeeMasterDto.empAttConstraintId;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empHolidayGroupId')) {
-      data.empHolidayGroupId = saveEmployeeMasterDto.empHolidayGroupId;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empOvertimeAllowed')) {
-      data.empOvertimeAllowed = saveEmployeeMasterDto.empOvertimeAllowed;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empHasCommission')) {
-      data.empHasCommission = saveEmployeeMasterDto.empHasCommission;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empCommissionType')) {
-      data.empCommissionType = saveEmployeeMasterDto.empCommissionType;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empCommissionValue')) {
-      data.empCommissionValue = saveEmployeeMasterDto.empCommissionValue;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empSalaryAmount')) {
-      data.empSalaryAmount = saveEmployeeMasterDto.empSalaryAmount;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empBataAmount')) {
-      data.empBataAmount = saveEmployeeMasterDto.empBataAmount;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empKmBataAmount')) {
-      data.empKmBataAmount = saveEmployeeMasterDto.empKmBataAmount;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empPanNo')) {
-      data.empPanNo = saveEmployeeMasterDto.empPanNo;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empAadharNo')) {
-      data.empAadharNo = saveEmployeeMasterDto.empAadharNo;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empPfNo')) {
-      data.empPfNo = saveEmployeeMasterDto.empPfNo;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empEsiNo')) {
-      data.empEsiNo = saveEmployeeMasterDto.empEsiNo;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empLoanLedgerId')) {
-      data.empLoanLedgerId = saveEmployeeMasterDto.empLoanLedgerId;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empPhotoUrl')) {
-      data.empPhotoUrl = saveEmployeeMasterDto.empPhotoUrl;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empPhoto')) {
-      data.empPhoto = this.decodePhoto(saveEmployeeMasterDto.empPhoto);
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empRemarks')) {
-      data.empRemarks = saveEmployeeMasterDto.empRemarks;
-    }
-    if (this.hasOwnProperty(saveEmployeeMasterDto, 'empIsActive')) {
-      data.empIsActive = saveEmployeeMasterDto.empIsActive;
-    }
+    applyPresentFields(data, saveEmployeeMasterDto, EMPLOYEE_MASTER_OPTIONAL_FIELDS, {
+      empPhoto: (value) => this.decodePhoto(value as string | null | undefined),
+    });
   }
 
   private normalizeRequiredValue(value: string, field: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field,
-          message: `${field} must not be empty`,
-        },
-      ]);
-    }
-
-    return trimmed;
+    return normalizeRequiredText<EmployeeMasterErrorDetail>(
+      value,
+      field,
+      `${field} must not be empty`,
+    );
   }
 
   private decodePhoto(value: string | null | undefined): Prisma.Bytes | null | undefined {
@@ -687,11 +613,11 @@ export class EmployeeMasterService {
       empOvertimeAllowed: record.empOvertimeAllowed,
       empHasCommission: record.empHasCommission,
       empCommissionType: record.empCommissionType,
-      empCommissionValue: this.toNullableNumber(record.empCommissionValue),
+      empCommissionValue: toNullableNumber(record.empCommissionValue),
       empSalaryType: record.empSalaryType,
-      empSalaryAmount: this.toNumber(record.empSalaryAmount),
-      empBataAmount: this.toNumber(record.empBataAmount),
-      empKmBataAmount: this.toNumber(record.empKmBataAmount),
+      empSalaryAmount: toNumber(record.empSalaryAmount),
+      empBataAmount: toNumber(record.empBataAmount),
+      empKmBataAmount: toNumber(record.empKmBataAmount),
       empPanNo: record.empPanNo,
       empAadharNo: record.empAadharNo,
       empPfNo: record.empPfNo,
@@ -710,93 +636,43 @@ export class EmployeeMasterService {
     };
   }
 
-  private toNullableNumber(value: Prisma.Decimal | number | null): number | null {
-    if (value === null) {
-      return null;
-    }
-
-    if (typeof value === 'number') {
-      return value;
-    }
-
-    return Number(value.toString());
-  }
-
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-
-    return Number(value.toString());
-  }
-
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Employee already exists', [
-          {
-            field: 'empCode',
-            message: 'Duplicate employee unique value is not allowed',
-          },
-        ]),
-      );
+    throwOnUniqueConstraintError<EmployeeMasterErrorDetail>(error, 'Employee already exists', [
+      {
+        field: 'empCode',
+        message: 'Duplicate employee unique value is not allowed',
+      },
+    ]);
+
+    if (isForeignKeyConstraintError(error)) {
+      throwSettingsBadRequest<EmployeeMasterErrorDetail>('Invalid relation reference', [
+        {
+          field: 'empCompanyId',
+          message: 'Referenced relation does not exist',
+        },
+      ]);
     }
-
-    if (this.isForeignKeyConstraintError(error)) {
-      throw new BadRequestException(
-        this.buildErrorResponse('Invalid relation reference', [
-          {
-            field: 'empCompanyId',
-            message: 'Referenced relation does not exist',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2003';
   }
 
   private throwNotFound(empId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Employee not found', [
-        {
-          field: 'empId',
-          message: `No active employee found with id ${empId}`,
-        },
-      ]),
+    throwSettingsNotFound<EmployeeMasterErrorDetail>(
+      'Employee not found',
+      'empId',
+      `No active employee found with id ${empId}`,
     );
   }
 
   private throwBadRequest(message: string, errors: EmployeeMasterErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
+    throwSettingsBadRequest<EmployeeMasterErrorDetail>(message, errors);
   }
 
   private buildErrorResponse(
     message: string,
     errors: EmployeeMasterErrorDetail[] = [],
   ): EmployeeMasterErrorResponse {
-    return {
-      success: false,
+    return buildSettingsErrorResponse<EmployeeMasterErrorDetail, EmployeeMasterErrorResponse>(
       message,
       errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
+    );
   }
 }

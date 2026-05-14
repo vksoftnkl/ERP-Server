@@ -1,10 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { GspCompanyService, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,9 +15,21 @@ import {
   GspCompanyServiceListMeta,
   GspCompanyServicePayload,
 } from './types/gsp-company-service-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SettingsWriteClient,
+  buildSettingsErrorResponse,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  normalizeNullableString,
+  normalizeRequiredText,
+  throwOnUniqueConstraintError,
+  throwSettingsBadRequest,
+  throwSettingsNotFound,
+} from '../utils/settings-service.utils';
+
 const GSP_COMPANY_SERVICE_TABLE_NAME = 'gsp company service';
 const GSP_COMPANY_SERVICE_AUDIT_SCREEN_NAME = 'GSP Company Service';
 const GSP_COMPANY_SERVICE_GRID_ALIAS = 'gsp_company_service_grid';
@@ -37,7 +47,7 @@ const PROVIDER_NAME_KEYS = [
   'gspProviderName',
   'gsp_provider_name',
 ] as const;
-type GspCompanyServiceWriteClient = Prisma.TransactionClient | PrismaService;
+type GspCompanyServiceWriteClient = SettingsWriteClient;
 type GspCompanyServiceRecordWithCompany = Prisma.GspCompanyServiceGetPayload<{
   include: {
     company: {
@@ -117,9 +127,13 @@ export class GspCompanyServiceService {
       }),
       this.configuredGridSqlService.loadPrimaryGridStyles(GSP_COMPANY_SERVICE_TABLE_NAME),
     ]);
-    const providerNameById = await this.loadProviderNameMap(records.map((record) => record.csgGspProviderId));
+    const providerNameById = await this.loadProviderNameMap(
+      records.map((record) => record.csgGspProviderId),
+    );
     return {
-      items: records.map((record) => this.toPayload(record, providerNameById.get(record.csgGspProviderId) ?? null)),
+      items: records.map((record) =>
+        this.toPayload(record, providerNameById.get(record.csgGspProviderId) ?? null),
+      ),
       meta: {
         page,
         limit,
@@ -134,7 +148,10 @@ export class GspCompanyServiceService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<ConfiguredGridListResult<GspCompanyServiceListItem, GspCompanyServiceListMeta> | null> {
+  ): Promise<ConfiguredGridListResult<
+    GspCompanyServiceListItem,
+    GspCompanyServiceListMeta
+  > | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: GSP_COMPANY_SERVICE_TABLE_NAME,
     });
@@ -162,14 +179,16 @@ export class GspCompanyServiceService {
           validation.normalizedSql,
           queryDto,
         );
-        const result = await this.configuredGridSqlService.runPagedQuery<GspCompanyServiceListItem>({
-          baseSql: filteredSql,
-          alias: GSP_COMPANY_SERVICE_GRID_ALIAS,
-          params,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
+        const result = await this.configuredGridSqlService.runPagedQuery<GspCompanyServiceListItem>(
+          {
+            baseSql: filteredSql,
+            alias: GSP_COMPANY_SERVICE_GRID_ALIAS,
+            params,
+            limit,
+            skip,
+            gridId: configuredGrid.gridId,
+          },
+        );
         return {
           items: result.items,
           meta: {
@@ -194,20 +213,12 @@ export class GspCompanyServiceService {
     const params: unknown[] = [];
     if (queryDto.csgCompanyId !== undefined) {
       conditions.push(
-        this.buildJsonTextFilterCondition(
-          params,
-          COMPANY_ID_KEYS,
-          queryDto.csgCompanyId,
-        ),
+        this.buildJsonTextFilterCondition(params, COMPANY_ID_KEYS, queryDto.csgCompanyId),
       );
     }
     if (queryDto.csgGspProviderId !== undefined) {
       conditions.push(
-        this.buildJsonTextFilterCondition(
-          params,
-          PROVIDER_ID_KEYS,
-          queryDto.csgGspProviderId,
-        ),
+        this.buildJsonTextFilterCondition(params, PROVIDER_ID_KEYS, queryDto.csgGspProviderId),
       );
     }
     if (queryDto.csgServiceType?.trim()) {
@@ -361,7 +372,7 @@ export class GspCompanyServiceService {
           saveGspCompanyServiceDto.csgEuserPassword,
           'csgEuserPassword',
         );
-        const csgAuthToken = this.normalizeNullableString(saveGspCompanyServiceDto.csgAuthToken);
+        const csgAuthToken = normalizeNullableString(saveGspCompanyServiceDto.csgAuthToken);
         await this.ensureCompanyExists(saveGspCompanyServiceDto.csgCompanyId, tx);
         await this.ensureGspProviderExists(saveGspCompanyServiceDto.csgGspProviderId, tx);
         const now = new Date();
@@ -376,13 +387,13 @@ export class GspCompanyServiceService {
           csgModifiedOn: now,
           csgModifiedBy: DEFAULT_ACTOR,
         };
-        if (this.hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthToken')) {
+        if (hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthToken')) {
           data.csgAuthToken = csgAuthToken;
         }
-        if (this.hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthTokenValidTill')) {
+        if (hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthTokenValidTill')) {
           data.csgAuthTokenValidTill = saveGspCompanyServiceDto.csgAuthTokenValidTill ?? null;
         }
-        if (this.hasOwnProperty(saveGspCompanyServiceDto, 'csgIsActive')) {
+        if (hasOwnProperty(saveGspCompanyServiceDto, 'csgIsActive')) {
           data.csgIsActive = saveGspCompanyServiceDto.csgIsActive;
         }
         const created = await tx.gspCompanyService.create({ data });
@@ -436,7 +447,7 @@ export class GspCompanyServiceService {
           saveGspCompanyServiceDto.csgEuserPassword,
           'csgEuserPassword',
         );
-        const csgAuthToken = this.normalizeNullableString(saveGspCompanyServiceDto.csgAuthToken);
+        const csgAuthToken = normalizeNullableString(saveGspCompanyServiceDto.csgAuthToken);
         await this.ensureCompanyExists(saveGspCompanyServiceDto.csgCompanyId, tx);
         await this.ensureGspProviderExists(saveGspCompanyServiceDto.csgGspProviderId, tx);
         const data: Prisma.GspCompanyServiceUncheckedUpdateInput = {
@@ -448,13 +459,13 @@ export class GspCompanyServiceService {
           csgModifiedOn: new Date(),
           csgModifiedBy: DEFAULT_ACTOR,
         };
-        if (this.hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthToken')) {
+        if (hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthToken')) {
           data.csgAuthToken = csgAuthToken;
         }
-        if (this.hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthTokenValidTill')) {
+        if (hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthTokenValidTill')) {
           data.csgAuthTokenValidTill = saveGspCompanyServiceDto.csgAuthTokenValidTill ?? null;
         }
-        if (this.hasOwnProperty(saveGspCompanyServiceDto, 'csgIsActive')) {
+        if (hasOwnProperty(saveGspCompanyServiceDto, 'csgIsActive')) {
           data.csgIsActive = saveGspCompanyServiceDto.csgIsActive;
         }
         const updated = await tx.gspCompanyService.update({
@@ -529,32 +540,11 @@ export class GspCompanyServiceService {
         },
       ]);
     }
-    }
+  }
   private normalizeRequiredString(value: string, field: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field,
-          message: `${field} must not be empty`,
-        },
-      ]);
-    }
-    return trimmed;
+    return normalizeRequiredText<GspCompanyServiceErrorDetail>(value, field);
   }
-  private normalizeNullableString(value: string | null | undefined): string | null | undefined {
-    if (value === undefined) {
-      return undefined;
-    }
-    if (value === null) {
-      return null;
-    }
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
-  }
-  private async loadProviderNameMap(
-    providerIds: readonly string[],
-  ): Promise<Map<string, string>> {
+  private async loadProviderNameMap(providerIds: readonly string[]): Promise<Map<string, string>> {
     const uniqueProviderIds = Array.from(
       new Set(providerIds.map((providerId) => providerId.trim()).filter(Boolean)),
     );
@@ -572,24 +562,27 @@ export class GspCompanyServiceService {
         gspProviderName: true,
       },
     });
-    return new Map(
-      providers.map((provider) => [provider.gspProviderId, provider.gspProviderName]),
-    );
+    return new Map(providers.map((provider) => [provider.gspProviderId, provider.gspProviderName]));
   }
   private async attachReferenceLabels(
     items: GspCompanyServiceListItem[],
   ): Promise<GspCompanyServiceListItem[]> {
     const rows = items.filter(
-      (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === 'object' && !Array.isArray(item),
     );
     if (rows.length === 0) {
       return items;
     }
     const companyIds = Array.from(
-      new Set(rows.map((row) => this.readStringValue(row, COMPANY_ID_KEYS)).filter(Boolean) as string[]),
+      new Set(
+        rows.map((row) => this.readStringValue(row, COMPANY_ID_KEYS)).filter(Boolean) as string[],
+      ),
     );
     const providerIds = Array.from(
-      new Set(rows.map((row) => this.readStringValue(row, PROVIDER_ID_KEYS)).filter(Boolean) as string[]),
+      new Set(
+        rows.map((row) => this.readStringValue(row, PROVIDER_ID_KEYS)).filter(Boolean) as string[],
+      ),
     );
     const [companies, providerNameById] = await Promise.all([
       companyIds.length > 0
@@ -617,10 +610,10 @@ export class GspCompanyServiceService {
       const providerId = this.readStringValue(row, PROVIDER_ID_KEYS);
       const companyName =
         this.readStringValue(row, COMPANY_NAME_KEYS) ??
-        (companyId ? companyNameById.get(companyId) ?? null : null);
+        (companyId ? (companyNameById.get(companyId) ?? null) : null);
       const providerName =
         this.readStringValue(row, PROVIDER_NAME_KEYS) ??
-        (providerId ? providerNameById.get(providerId) ?? null : null);
+        (providerId ? (providerNameById.get(providerId) ?? null) : null);
       return {
         ...row,
         companyName,
@@ -655,7 +648,7 @@ export class GspCompanyServiceService {
     record: GspCompanyService | GspCompanyServiceRecordWithCompany,
     providerName: string | null = null,
   ): GspCompanyServicePayload {
-    const companyName = 'company' in record ? record.company?.compName ?? null : null;
+    const companyName = 'company' in record ? (record.company?.compName ?? null) : null;
     return {
       csgCompanyServiceId: record.csgCompanyServiceId,
       csgCompanyId: record.csgCompanyId,
@@ -681,64 +674,49 @@ export class GspCompanyServiceService {
     };
   }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('GSP company service already exists', [
-          {
-            field: 'csgCompanyServiceId',
-            message: 'Duplicate GSP company service unique value is not allowed',
-          },
-        ]),
-      );
-    }
-    if (this.isForeignKeyConstraintError(error)) {
-      this.throwBadRequest('Invalid company or provider reference', [
-        {
-          field: 'csgCompanyId',
-          message: 'Referenced company or provider does not exist',
-        },
-      ]);
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2003';
-  }
-  private throwNotFound(csgCompanyServiceId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('GSP company service not found', [
+    throwOnUniqueConstraintError<GspCompanyServiceErrorDetail>(
+      error,
+      'GSP company service already exists',
+      [
         {
           field: 'csgCompanyServiceId',
-          message: `No active GSP company service found with id ${csgCompanyServiceId}`,
+          message: 'Duplicate GSP company service unique value is not allowed',
         },
-      ]),
+      ],
+    );
+
+    if (isForeignKeyConstraintError(error)) {
+      throwSettingsBadRequest<GspCompanyServiceErrorDetail>(
+        'Invalid company or provider reference',
+        [
+          {
+            field: 'csgCompanyId',
+            message: 'Referenced company or provider does not exist',
+          },
+        ],
+      );
+    }
+  }
+  private throwNotFound(csgCompanyServiceId: string): never {
+    throwSettingsNotFound<GspCompanyServiceErrorDetail>(
+      'GSP company service not found',
+      'csgCompanyServiceId',
+      `No active GSP company service found with id ${csgCompanyServiceId}`,
     );
   }
   private throwBadRequest(message: string, errors: GspCompanyServiceErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
+    throwSettingsBadRequest<GspCompanyServiceErrorDetail>(message, errors);
   }
   private buildErrorResponse(
     message: string,
     errors: GspCompanyServiceErrorDetail[] = [],
   ): GspCompanyServiceErrorResponse {
-    return {
-      success: false,
+    return buildSettingsErrorResponse<GspCompanyServiceErrorDetail, GspCompanyServiceErrorResponse>(
       message,
       errors,
-    };
+    );
   }
   private buildDisplayName(record: GspCompanyService): string {
     return `${record.csgServiceType} (${record.csgEuserName})`;
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

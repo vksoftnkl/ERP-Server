@@ -1,10 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Company, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,20 +15,89 @@ import {
   CompanyMasterListMeta,
   CompanyMasterPayload,
 } from './types/company-master-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SettingsWriteClient,
+  applyPresentFields,
+  buildSettingsErrorResponse,
+  normalizeRequiredText,
+  throwOnUniqueConstraintError,
+  throwSettingsBadRequest,
+  throwSettingsConflict,
+  throwSettingsNotFound,
+  toNullableNumber,
+  toNumber,
+} from '../utils/settings-service.utils';
+
 const COMPANY_MASTER_TABLE_NAME = 'companys';
 const COMPANY_MASTER_TABLE_SCHEMA = 'public';
 const COMPANY_MASTER_AUDIT_SCREEN_NAME = 'Company Master';
-type CompanyWriteClient = Prisma.TransactionClient | PrismaService;
+const COMPANY_MASTER_OPTIONAL_FIELDS = [
+  'compCode',
+  'compShort',
+  'compLegalName',
+  'compGstinNo',
+  'compGstRegType',
+  'compPanNo',
+  'compFssaiNo',
+  'compAddr1',
+  'compAddr2',
+  'compAddr3',
+  'compCity',
+  'compDistrict',
+  'compState',
+  'compPin',
+  'compCountry',
+  'compRegionAddr1',
+  'compRegionAddr2',
+  'compRegionAddr3',
+  'compRegionCity',
+  'compRegionDistrict',
+  'compRegionState',
+  'compRegionCountry',
+  'compTel',
+  'compPhone',
+  'compMail',
+  'compSupportEmail',
+  'compSupportPhone',
+  'compWebsiteName',
+  'compFinYearFrom',
+  'compFinYearTo',
+  'compBooksBeginFrom',
+  'compGstApplicable',
+  'compTcsApplicable',
+  'compSmsApplicable',
+  'compEinvoiceApplicable',
+  'compEwayApplicable',
+  'compEwayDate',
+  'compEwayInterLimit',
+  'compEwayIntraApl',
+  'compEwayIntraLimit',
+  'compEinvoiceDate',
+  'compEinvoiceInclEway',
+  'compBankId',
+  'compPriceFixing',
+  'compPrefixCode',
+  'compBillGreeting',
+  'compNegStkApl',
+  'compDefault',
+  'compIsActive',
+  'compCurrencyCode',
+  'compCurrencySymbol',
+  'compLocaleCode',
+  'compRemarks',
+];
+
+type CompanyWriteClient = SettingsWriteClient;
 @Injectable()
 export class CompanyMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
-  ) { }
+  ) {}
   async save(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload> {
     if (saveCompanyMasterDto.compId) {
       return this.updateCompany(saveCompanyMasterDto);
@@ -48,7 +115,12 @@ export class CompanyMasterService {
       queryDto.compDefault !== undefined ||
       queryDto.compStateCode !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(
+        queryDto.search,
+        page,
+        limit,
+        skip,
+      );
       if (configuredList) {
         return configuredList;
       }
@@ -355,10 +427,10 @@ export class CompanyMasterService {
         },
         ...(excludeCompId !== undefined
           ? {
-            compId: {
-              not: excludeCompId,
-            },
-          }
+              compId: {
+                not: excludeCompId,
+              },
+            }
           : {}),
       },
       select: {
@@ -366,14 +438,12 @@ export class CompanyMasterService {
       },
     });
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Company name already exists', [
-          {
-            field: 'compName',
-            message: 'Duplicate compName is not allowed',
-          },
-        ]),
-      );
+      throwSettingsConflict<CompanyMasterErrorDetail>('Company name already exists', [
+        {
+          field: 'compName',
+          message: 'Duplicate compName is not allowed',
+        },
+      ]);
     }
   }
   private async ensureCodeIsUnique(
@@ -392,10 +462,10 @@ export class CompanyMasterService {
         },
         ...(excludeCompId !== undefined
           ? {
-            compId: {
-              not: excludeCompId,
-            },
-          }
+              compId: {
+                not: excludeCompId,
+              },
+            }
           : {}),
       },
       select: {
@@ -403,14 +473,12 @@ export class CompanyMasterService {
       },
     });
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Company code already exists', [
-          {
-            field: 'compCode',
-            message: 'Duplicate compCode is not allowed',
-          },
-        ]),
-      );
+      throwSettingsConflict<CompanyMasterErrorDetail>('Company code already exists', [
+        {
+          field: 'compCode',
+          message: 'Duplicate compCode is not allowed',
+        },
+      ]);
     }
   }
   private async ensureGstinIsUnique(
@@ -429,10 +497,10 @@ export class CompanyMasterService {
         },
         ...(excludeCompId !== undefined
           ? {
-            compId: {
-              not: excludeCompId,
-            },
-          }
+              compId: {
+                not: excludeCompId,
+              },
+            }
           : {}),
       },
       select: {
@@ -440,14 +508,12 @@ export class CompanyMasterService {
       },
     });
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Company GSTIN already exists', [
-          {
-            field: 'compGstinNo',
-            message: 'Duplicate compGstinNo is not allowed',
-          },
-        ]),
-      );
+      throwSettingsConflict<CompanyMasterErrorDetail>('Company GSTIN already exists', [
+        {
+          field: 'compGstinNo',
+          message: 'Duplicate compGstinNo is not allowed',
+        },
+      ]);
     }
   }
   private async clearDefaultCompany(tx: CompanyWriteClient, excludeCompId?: string): Promise<void> {
@@ -457,10 +523,10 @@ export class CompanyMasterService {
         compDefault: true,
         ...(excludeCompId !== undefined
           ? {
-            compId: {
-              not: excludeCompId,
-            },
-          }
+              compId: {
+                not: excludeCompId,
+              },
+            }
           : {}),
       },
       data: {
@@ -474,177 +540,10 @@ export class CompanyMasterService {
     data: Prisma.CompanyUncheckedCreateInput | Prisma.CompanyUncheckedUpdateInput,
     saveCompanyMasterDto: SaveCompanyMasterDto,
   ): void {
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compCode')) {
-      data.compCode = saveCompanyMasterDto.compCode;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compShort')) {
-      data.compShort = saveCompanyMasterDto.compShort;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compLegalName')) {
-      data.compLegalName = saveCompanyMasterDto.compLegalName;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compGstinNo')) {
-      data.compGstinNo = saveCompanyMasterDto.compGstinNo;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compGstRegType')) {
-      data.compGstRegType = saveCompanyMasterDto.compGstRegType;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compPanNo')) {
-      data.compPanNo = saveCompanyMasterDto.compPanNo;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compFssaiNo')) {
-      data.compFssaiNo = saveCompanyMasterDto.compFssaiNo;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compAddr1')) {
-      data.compAddr1 = saveCompanyMasterDto.compAddr1;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compAddr2')) {
-      data.compAddr2 = saveCompanyMasterDto.compAddr2;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compAddr3')) {
-      data.compAddr3 = saveCompanyMasterDto.compAddr3;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compCity')) {
-      data.compCity = saveCompanyMasterDto.compCity;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compDistrict')) {
-      data.compDistrict = saveCompanyMasterDto.compDistrict;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compState')) {
-      data.compState = saveCompanyMasterDto.compState;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compPin')) {
-      data.compPin = saveCompanyMasterDto.compPin;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compCountry')) {
-      data.compCountry = saveCompanyMasterDto.compCountry;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compRegionAddr1')) {
-      data.compRegionAddr1 = saveCompanyMasterDto.compRegionAddr1;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compRegionAddr2')) {
-      data.compRegionAddr2 = saveCompanyMasterDto.compRegionAddr2;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compRegionAddr3')) {
-      data.compRegionAddr3 = saveCompanyMasterDto.compRegionAddr3;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compRegionCity')) {
-      data.compRegionCity = saveCompanyMasterDto.compRegionCity;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compRegionDistrict')) {
-      data.compRegionDistrict = saveCompanyMasterDto.compRegionDistrict;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compRegionState')) {
-      data.compRegionState = saveCompanyMasterDto.compRegionState;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compRegionCountry')) {
-      data.compRegionCountry = saveCompanyMasterDto.compRegionCountry;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compTel')) {
-      data.compTel = saveCompanyMasterDto.compTel;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compPhone')) {
-      data.compPhone = saveCompanyMasterDto.compPhone;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compMail')) {
-      data.compMail = saveCompanyMasterDto.compMail;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compSupportEmail')) {
-      data.compSupportEmail = saveCompanyMasterDto.compSupportEmail;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compSupportPhone')) {
-      data.compSupportPhone = saveCompanyMasterDto.compSupportPhone;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compWebsiteName')) {
-      data.compWebsiteName = saveCompanyMasterDto.compWebsiteName;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compFinYearFrom')) {
-      data.compFinYearFrom = saveCompanyMasterDto.compFinYearFrom;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compFinYearTo')) {
-      data.compFinYearTo = saveCompanyMasterDto.compFinYearTo;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compBooksBeginFrom')) {
-      data.compBooksBeginFrom = saveCompanyMasterDto.compBooksBeginFrom;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compGstApplicable')) {
-      data.compGstApplicable = saveCompanyMasterDto.compGstApplicable;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compTcsApplicable')) {
-      data.compTcsApplicable = saveCompanyMasterDto.compTcsApplicable;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compSmsApplicable')) {
-      data.compSmsApplicable = saveCompanyMasterDto.compSmsApplicable;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compEinvoiceApplicable')) {
-      data.compEinvoiceApplicable = saveCompanyMasterDto.compEinvoiceApplicable;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compEwayApplicable')) {
-      data.compEwayApplicable = saveCompanyMasterDto.compEwayApplicable;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compEwayDate')) {
-      data.compEwayDate = saveCompanyMasterDto.compEwayDate;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compEwayInterLimit')) {
-      data.compEwayInterLimit = saveCompanyMasterDto.compEwayInterLimit;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compEwayIntraApl')) {
-      data.compEwayIntraApl = saveCompanyMasterDto.compEwayIntraApl;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compEwayIntraLimit')) {
-      data.compEwayIntraLimit = saveCompanyMasterDto.compEwayIntraLimit;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compEinvoiceDate')) {
-      data.compEinvoiceDate = saveCompanyMasterDto.compEinvoiceDate;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compEinvoiceInclEway')) {
-      data.compEinvoiceInclEway = saveCompanyMasterDto.compEinvoiceInclEway;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compBankId')) {
-      data.compBankId = saveCompanyMasterDto.compBankId;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compPriceFixing')) {
-      data.compPriceFixing = saveCompanyMasterDto.compPriceFixing;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compPrefixCode')) {
-      data.compPrefixCode = saveCompanyMasterDto.compPrefixCode;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compBillGreeting')) {
-      data.compBillGreeting = saveCompanyMasterDto.compBillGreeting;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compNegStkApl')) {
-      data.compNegStkApl = saveCompanyMasterDto.compNegStkApl;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compDefault')) {
-      data.compDefault = saveCompanyMasterDto.compDefault;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compIsActive')) {
-      data.compIsActive = saveCompanyMasterDto.compIsActive;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compCurrencyCode')) {
-      data.compCurrencyCode = saveCompanyMasterDto.compCurrencyCode;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compCurrencySymbol')) {
-      data.compCurrencySymbol = saveCompanyMasterDto.compCurrencySymbol;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compLocaleCode')) {
-      data.compLocaleCode = saveCompanyMasterDto.compLocaleCode;
-    }
-    if (this.hasOwnProperty(saveCompanyMasterDto, 'compRemarks')) {
-      data.compRemarks = saveCompanyMasterDto.compRemarks;
-    }
+    applyPresentFields(data, saveCompanyMasterDto, COMPANY_MASTER_OPTIONAL_FIELDS);
   }
   private normalizeRequiredName(value: string, field: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field,
-          message: `${field} must not be empty`,
-        },
-      ]);
-    }
-    return trimmed;
+    return normalizeRequiredText<CompanyMasterErrorDetail>(value, field);
   }
   private normalizeLengthCode(value: string, length: number, field: string): string {
     const normalized = value.trim().toUpperCase();
@@ -703,9 +602,9 @@ export class CompanyMasterService {
       compEinvoiceApplicable: record.compEinvoiceApplicable,
       compEwayApplicable: record.compEwayApplicable,
       compEwayDate: record.compEwayDate ? record.compEwayDate.toISOString() : null,
-      compEwayInterLimit: this.toNullableNumber(record.compEwayInterLimit),
+      compEwayInterLimit: toNullableNumber(record.compEwayInterLimit),
       compEwayIntraApl: record.compEwayIntraApl,
-      compEwayIntraLimit: this.toNumber(record.compEwayIntraLimit),
+      compEwayIntraLimit: toNumber(record.compEwayIntraLimit),
       compEinvoiceDate: record.compEinvoiceDate ? record.compEinvoiceDate.toISOString() : null,
       compEinvoiceInclEway: record.compEinvoiceInclEway,
       compStylesheetId: record.compStylesheetId,
@@ -728,60 +627,31 @@ export class CompanyMasterService {
       compModifiedBy: record.compModifiedBy,
     };
   }
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-    return Number(value.toString());
-  }
-  private toNullableNumber(value: Prisma.Decimal | number | null): number | null {
-    if (value === null) {
-      return null;
-    }
-    return this.toNumber(value);
-  }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Company already exists', [
-          {
-            field: 'compName',
-            message: 'Duplicate company unique value is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
+    throwOnUniqueConstraintError<CompanyMasterErrorDetail>(error, 'Company already exists', [
+      {
+        field: 'compName',
+        message: 'Duplicate company unique value is not allowed',
+      },
+    ]);
   }
   private throwNotFound(compId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Company not found', [
-        {
-          field: 'compId',
-          message: `No active company found with id ${compId}`,
-        },
-      ]),
+    throwSettingsNotFound<CompanyMasterErrorDetail>(
+      'Company not found',
+      'compId',
+      `No active company found with id ${compId}`,
     );
   }
   private throwBadRequest(message: string, errors: CompanyMasterErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
+    throwSettingsBadRequest<CompanyMasterErrorDetail>(message, errors);
   }
   private buildErrorResponse(
     message: string,
     errors: CompanyMasterErrorDetail[] = [],
   ): CompanyMasterErrorResponse {
-    return {
-      success: false,
+    return buildSettingsErrorResponse<CompanyMasterErrorDetail, CompanyMasterErrorResponse>(
       message,
       errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
+    );
   }
 }

@@ -1,0 +1,25 @@
+export {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  applyPresentFields,
+  buildErrorResponse as buildSettingsErrorResponse,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  isPrismaErrorCode,
+  isUniqueConstraintError,
+  normalizeNullableString,
+  normalizeRequiredText,
+  throwBadRequest as throwSettingsBadRequest,
+  throwConflict as throwSettingsConflict,
+  throwNotFound as throwSettingsNotFound,
+  throwOnUniqueConstraintError,
+  toNullableNumber,
+  toNumber,
+} from '../../../common/utils/module-shared.utils';
+export type {
+  ModuleErrorDetail as SettingsErrorDetail,
+  ModuleErrorResponse as SettingsErrorResponse,
+  ModuleWriteClient as SettingsWriteClient,
+  PresentFieldTransform,
+} from '../../../common/utils/module-shared.utils';

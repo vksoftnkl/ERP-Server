@@ -1,11 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { EmployeeDepartment, Prisma } from '@prisma/client';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ListEmployeeDepartmentMasterQueryDto } from './dto/list-employee-department-master-query.dto';
@@ -17,12 +15,24 @@ import {
   EmployeeDepartmentMasterListMeta,
   EmployeeDepartmentMasterPayload,
 } from './types/employee-department-master-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SettingsWriteClient,
+  buildSettingsErrorResponse,
+  hasOwnProperty,
+  normalizeNullableString,
+  normalizeRequiredText,
+  throwOnUniqueConstraintError,
+  throwSettingsBadRequest,
+  throwSettingsConflict,
+  throwSettingsNotFound,
+} from '../utils/settings-service.utils';
+
 const EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME = 'employee departments';
 const EMPLOYEE_DEPARTMENT_MASTER_AUDIT_SCREEN_NAME = 'Employee Department Master';
-type EmployeeDepartmentWriteClient = Prisma.TransactionClient | PrismaService;
+type EmployeeDepartmentWriteClient = SettingsWriteClient;
 @Injectable()
 export class EmployeeDepartmentMasterService {
   constructor(
@@ -38,14 +48,22 @@ export class EmployeeDepartmentMasterService {
     }
     return this.createDepartment(saveEmployeeDepartmentMasterDto);
   }
-  async list(queryDto: ListEmployeeDepartmentMasterQueryDto): Promise<ConfiguredGridListResult<EmployeeDepartmentMasterListItem, EmployeeDepartmentMasterListMeta>> {
+  async list(
+    queryDto: ListEmployeeDepartmentMasterQueryDto,
+  ): Promise<
+    ConfiguredGridListResult<EmployeeDepartmentMasterListItem, EmployeeDepartmentMasterListMeta>
+  > {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
-    const hasStructuredFilters =
-      queryDto.edptIsActive !== undefined;
+    const hasStructuredFilters = queryDto.edptIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(
+        queryDto.search,
+        page,
+        limit,
+        skip,
+      );
       if (configuredList) {
         return configuredList;
       }
@@ -91,7 +109,10 @@ export class EmployeeDepartmentMasterService {
     page: number,
     limit: number,
     skip: number,
-  ): Promise<ConfiguredGridListResult<EmployeeDepartmentMasterListItem, EmployeeDepartmentMasterListMeta> | null> {
+  ): Promise<ConfiguredGridListResult<
+    EmployeeDepartmentMasterListItem,
+    EmployeeDepartmentMasterListMeta
+  > | null> {
     const configuredGrids = await this.configuredGridSqlService.loadCandidates({
       tableName: EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME,
     });
@@ -123,7 +144,7 @@ export class EmployeeDepartmentMasterService {
             search,
             limit,
             skip,
-          gridId: configuredGrid.gridId,
+            gridId: configuredGrid.gridId,
           });
         return {
           items: result.items,
@@ -229,11 +250,9 @@ export class EmployeeDepartmentMasterService {
     try {
       return this.prisma.$transaction(async (tx) => {
         const edptName = this.normalizeRequiredName(saveEmployeeDepartmentMasterDto.edptName);
-        const edptCode = this.normalizeNullableString(saveEmployeeDepartmentMasterDto.edptCode);
-        const edptAlias = this.normalizeNullableString(saveEmployeeDepartmentMasterDto.edptAlias);
-        const edptRemarks = this.normalizeNullableString(
-          saveEmployeeDepartmentMasterDto.edptRemarks,
-        );
+        const edptCode = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptCode);
+        const edptAlias = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptAlias);
+        const edptRemarks = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptRemarks);
         await this.ensureNameIsUnique(tx, edptName);
         await this.ensureCodeIsUnique(tx, edptCode);
         const now = new Date();
@@ -244,16 +263,16 @@ export class EmployeeDepartmentMasterService {
           edptModifiedOn: now,
           edptModifiedBy: DEFAULT_ACTOR,
         };
-        if (this.hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
+        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
           data.edptCode = edptCode;
         }
-        if (this.hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptAlias')) {
+        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptAlias')) {
           data.edptAlias = edptAlias;
         }
-        if (this.hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptRemarks')) {
+        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptRemarks')) {
           data.edptRemarks = edptRemarks;
         }
-        if (this.hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptIsActive')) {
+        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptIsActive')) {
           data.edptIsActive = saveEmployeeDepartmentMasterDto.edptIsActive;
         }
         const created = await tx.employeeDepartment.create({ data });
@@ -298,11 +317,9 @@ export class EmployeeDepartmentMasterService {
         }
 
         const edptName = this.normalizeRequiredName(saveEmployeeDepartmentMasterDto.edptName);
-        const edptCode = this.normalizeNullableString(saveEmployeeDepartmentMasterDto.edptCode);
-        const edptAlias = this.normalizeNullableString(saveEmployeeDepartmentMasterDto.edptAlias);
-        const edptRemarks = this.normalizeNullableString(
-          saveEmployeeDepartmentMasterDto.edptRemarks,
-        );
+        const edptCode = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptCode);
+        const edptAlias = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptAlias);
+        const edptRemarks = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptRemarks);
 
         await this.ensureNameIsUnique(tx, edptName, edptId);
         await this.ensureCodeIsUnique(tx, edptCode, edptId);
@@ -313,16 +330,16 @@ export class EmployeeDepartmentMasterService {
           edptModifiedBy: DEFAULT_ACTOR,
         };
 
-        if (this.hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
+        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
           data.edptCode = edptCode;
         }
-        if (this.hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptAlias')) {
+        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptAlias')) {
           data.edptAlias = edptAlias;
         }
-        if (this.hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptRemarks')) {
+        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptRemarks')) {
           data.edptRemarks = edptRemarks;
         }
-        if (this.hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptIsActive')) {
+        if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptIsActive')) {
           data.edptIsActive = saveEmployeeDepartmentMasterDto.edptIsActive;
         }
 
@@ -384,13 +401,14 @@ export class EmployeeDepartmentMasterService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Employee department name already exists', [
+      throwSettingsConflict<EmployeeDepartmentMasterErrorDetail>(
+        'Employee department name already exists',
+        [
           {
             field: 'edptName',
             message: 'Duplicate edptName is not allowed',
           },
-        ]),
+        ],
       );
     }
   }
@@ -425,42 +443,20 @@ export class EmployeeDepartmentMasterService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Employee department code already exists', [
+      throwSettingsConflict<EmployeeDepartmentMasterErrorDetail>(
+        'Employee department code already exists',
+        [
           {
             field: 'edptCode',
             message: 'Duplicate edptCode is not allowed',
           },
-        ]),
+        ],
       );
     }
   }
 
   private normalizeRequiredName(value: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'edptName',
-          message: 'edptName must not be empty',
-        },
-      ]);
-    }
-
-    return trimmed;
-  }
-
-  private normalizeNullableString(value: string | null | undefined): string | null | undefined {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (value === null) {
-      return null;
-    }
-
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
+    return normalizeRequiredText<EmployeeDepartmentMasterErrorDetail>(value, 'edptName');
   }
 
   private toPayload(record: EmployeeDepartment): EmployeeDepartmentMasterPayload {
@@ -481,53 +477,37 @@ export class EmployeeDepartmentMasterService {
   }
 
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Employee department already exists', [
-          {
-            field: 'edptName',
-            message: 'Duplicate employee department unique value is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
+    throwOnUniqueConstraintError<EmployeeDepartmentMasterErrorDetail>(
+      error,
+      'Employee department already exists',
+      [
+        {
+          field: 'edptName',
+          message: 'Duplicate employee department unique value is not allowed',
+        },
+      ],
+    );
   }
 
   private throwNotFound(edptId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Employee department not found', [
-        {
-          field: 'edptId',
-          message: `No active employee department found with id ${edptId}`,
-        },
-      ]),
+    throwSettingsNotFound<EmployeeDepartmentMasterErrorDetail>(
+      'Employee department not found',
+      'edptId',
+      `No active employee department found with id ${edptId}`,
     );
   }
 
   private throwBadRequest(message: string, errors: EmployeeDepartmentMasterErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
+    throwSettingsBadRequest<EmployeeDepartmentMasterErrorDetail>(message, errors);
   }
 
   private buildErrorResponse(
     message: string,
     errors: EmployeeDepartmentMasterErrorDetail[] = [],
   ): EmployeeDepartmentMasterErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
+    return buildSettingsErrorResponse<
+      EmployeeDepartmentMasterErrorDetail,
+      EmployeeDepartmentMasterErrorResponse
+    >(message, errors);
   }
 }
