@@ -10,14 +10,17 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { GetItemBatchStockOptionsQueryDto } from './dto/get-item-batch-stock-options-query.dto';
 import { GetItemStockBalanceQueryDto } from './dto/get-item-stock-balance-query.dto';
 import {
+  ItemBatchStockOptionSuccessListDto,
   ItemStockBalanceErrorResponseDto,
   ItemStockBalanceSuccessListDto,
 } from './dto/item-stock-balance-response.dto';
 import { ItemStockBalanceExceptionFilter } from './itemStockBalanceExceptionFilter';
 import { ItemStockBalanceService } from './itemstockBalanceService';
 import {
+  ItemBatchStockOptionPayload,
   ItemStockBalancePayload,
   ItemStockBalanceSuccessResponse,
 } from './types/item-stock-balance-api.types';
@@ -45,6 +48,25 @@ export class ItemStockBalanceController {
     return {
       success: true,
       message: 'Item stock balance fetched successfully',
+      data,
+    };
+  }
+
+  @Get('batch-options')
+  @Version('1')
+  @ApiOperation({
+    summary:
+      'Search item batch stock options by exact acc year, company, branch, godown, item, and unit scope',
+  })
+  @ApiOkResponse({ type: ItemBatchStockOptionSuccessListDto })
+  @ApiBadRequestResponse({ type: ItemStockBalanceErrorResponseDto })
+  async getBatchOptionsByScope(
+    @Query() queryDto: GetItemBatchStockOptionsQueryDto,
+  ): Promise<ItemStockBalanceSuccessResponse<ItemBatchStockOptionPayload[]>> {
+    const data = await this.itemStockBalanceService.getBatchOptionsByScope(queryDto);
+    return {
+      success: true,
+      message: 'Item batch stock options fetched successfully',
       data,
     };
   }

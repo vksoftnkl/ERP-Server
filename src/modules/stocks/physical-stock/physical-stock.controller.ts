@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   Res,
   UseFilters,
   Version,
@@ -30,10 +31,13 @@ import { PhysicalStockExceptionFilter } from './physical-stock-exception.filter'
 import {
   PhysicalStockDeleteResponse,
   PhysicalStockDocumentResponse,
+  PhysicalStockListItem,
+  PhysicalStockListMeta,
   PhysicalStockSuccessDeleteDto,
   PhysicalStockSuccessSingleDto,
   PhysicalStockSuccessResponse,
 } from './types/physical-stock-response.types';
+import { ListPhysicalStockQueryDto } from './dto/list-physical-stock-query.dto';
 @ApiTags('Physical Stock')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: PhysicalStockErrorResponseDto })
@@ -64,6 +68,74 @@ export class PhysicalStockController {
       data,
     };
   }
+  @Get()
+  @Version('1')
+  @ApiOperation({
+    summary:
+      'List physical stock documents or get a single document when ps_id or ps_doc_refno is provided',
+  })
+  @ApiOkResponse({ type: PhysicalStockSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })
+  @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
+  async listOrGet(
+    @Query() queryDto: ListPhysicalStockQueryDto,
+  ): Promise<
+    PhysicalStockSuccessResponse<
+      PhysicalStockDocumentResponse | PhysicalStockListItem[],
+      PhysicalStockListMeta
+    >
+  > {
+    const document = await this.resolveDocumentQuery(queryDto);
+    if (document) {
+      return {
+        success: true,
+        message: 'Physical stock fetched successfully',
+        data: document,
+      };
+    }
+    const result = await this.physicalStockService.list(queryDto);
+    return {
+      success: true,
+      message: 'Physical stock documents fetched successfully',
+      data: result.items,
+      meta: result.meta,
+    };
+  }
+  @Get('get')
+  @Version('1')
+  @ApiOperation({ summary: 'Get physical stock document by ps_id' })
+  @ApiOkResponse({ type: PhysicalStockSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })
+  @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
+  async getById(
+    @Query() queryDto: ListPhysicalStockQueryDto,
+  ): Promise<PhysicalStockSuccessResponse<PhysicalStockDocumentResponse>> {
+    const data = await this.physicalStockService.getById(queryDto.ps_id ?? '');
+    return {
+      success: true,
+      message: 'Physical stock fetched successfully',
+      data,
+    };
+  }
+  @Get('list')
+  @Version('1')
+  @ApiOperation({
+    summary:
+      'List physical stock documents or get a single document when ps_id or ps_doc_refno is provided',
+  })
+  @ApiOkResponse({ type: PhysicalStockSuccessSingleDto })
+  @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })
+  @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
+  async getList(
+    @Query() queryDto: ListPhysicalStockQueryDto,
+  ): Promise<
+    PhysicalStockSuccessResponse<
+      PhysicalStockDocumentResponse | PhysicalStockListItem[],
+      PhysicalStockListMeta
+    >
+  > {
+    return this.listOrGet(queryDto);
+  }
   @Get(':id')
   @Version('1')
   @ApiOperation({ summary: 'Get physical stock document by physical stock header id' })
@@ -84,6 +156,26 @@ export class PhysicalStockController {
       data,
     };
   }
+  @Delete()
+  @Version('1')
+  @ApiOperation({ summary: 'Soft delete physical stock document by ps_id' })
+  @ApiOkResponse({ type: PhysicalStockSuccessDeleteDto })
+  @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
+  async removeByQueryRoot(
+    @Query() queryDto: ListPhysicalStockQueryDto,
+  ): Promise<PhysicalStockSuccessResponse<PhysicalStockDeleteResponse>> {
+    return this.remove(queryDto.ps_id ?? '');
+  }
+  @Delete('delete')
+  @Version('1')
+  @ApiOperation({ summary: 'Soft delete physical stock document by ps_id' })
+  @ApiOkResponse({ type: PhysicalStockSuccessDeleteDto })
+  @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
+  async removeByQuery(
+    @Query() queryDto: ListPhysicalStockQueryDto,
+  ): Promise<PhysicalStockSuccessResponse<PhysicalStockDeleteResponse>> {
+    return this.remove(queryDto.ps_id ?? '');
+  }
   @Delete(':id')
   @Version('1')
   @ApiOperation({ summary: 'Soft delete physical stock document by physical stock header id' })
@@ -103,5 +195,16 @@ export class PhysicalStockController {
       message: 'Physical stock deleted successfully',
       data,
     };
+  }
+  private async resolveDocumentQuery(
+    queryDto: ListPhysicalStockQueryDto,
+  ): Promise<PhysicalStockDocumentResponse | null> {
+    if (queryDto.ps_id) {
+      return this.physicalStockService.getById(queryDto.ps_id);
+    }
+    if (queryDto.ps_doc_refno) {
+      return this.physicalStockService.getByRefNo(queryDto);
+    }
+    return null;
   }
 }

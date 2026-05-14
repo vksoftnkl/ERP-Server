@@ -51,3 +51,30 @@ export interface ItemStockBalancePayload {
   isb_updated_on: string | null;
   isb_updated_by: string | null;
 }
+export interface ItemBatchStockOptionPayload {
+  ibs_id: string;
+  ibs_acc_year: string;
+  ibs_company_id: string;
+  ibs_branch_id: string;
+  ibs_godown_id: string;
+  ibs_item_id: string;
+  ibs_unit_id: string;
+  ibs_batch_id: string;
+  ibs_batch_no: string | null;
+  ibs_mfg_batch_no: string | null;
+  ibs_batch_date: string | null;
+  ibs_mfg_date: string | null;
+  ibs_expiry_date: string | null;
+  ibs_mrp: number;
+  ibs_barcode: string | null;
+  ibs_serial_no: string | null;
+  ibs_stock_bucket: string;
+  ibs_closing_qty: number;
+  ibs_free_closing_qty: number;
+  book_qty: number;
+  book_base_qty: number;
+  book_free_qty: number;
+  book_free_base_qty: number;
+  ibs_avg_stock_rate: number;
+  ibs_avg_stock_rate_wot: number;
+}

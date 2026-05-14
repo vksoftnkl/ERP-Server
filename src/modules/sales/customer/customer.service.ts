@@ -1,10 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Customer, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,14 +15,88 @@ import {
   CustomerListMeta,
   CustomerPayload,
 } from './types/customer-api.types';
-
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SalesWriteClient,
+  applyPresentFields,
+  hasOwnProperty,
+  normalizeRequiredText,
+  resolveActor,
+  throwOnUniqueConstraintError,
+  throwSalesBadRequest,
+  throwSalesNotFound,
+  toNumber,
+} from '../utils/sales-service.utils';
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
+const CUSTOMER_OPTIONAL_FIELDS = [
+  'cusTitle',
+  'cusShort',
+  'cusCode',
+  'cusName',
+  'cusAddr1',
+  'cusAddr2',
+  'cusAddr3',
+  'cusCity',
+  'cusDistrict',
+  'cusCountry',
+  'cusLandmark',
+  'cusPin',
+  'cusTel',
+  'cusPhone1',
+  'cusPhone2',
+  'cusWhatsappNo',
+  'cusEmail',
+  'cusAadharNo',
+  'cusContactPerson',
+  'cusDistanceKm',
+  'cusCreditAllowed',
+  'cusCreditBillLimit',
+  'cusCreditAmtLimit',
+  'cusCreditDays',
+  'cusDebitBalance',
+  'cusDiscPerc',
+  'cusDebitGraceDays',
+  'cusEnableSms',
+  'cusOverdueSms',
+  'cusOverdueBilling',
+  'cusAllowPromotion',
+  'cusAllowLoyalty',
+  'cusAllowDiscount',
+  'cusSortOrder',
+  'cusRegionName',
+  'cusRegionAddr1',
+  'cusRegionAddr2',
+  'cusRegionAddr3',
+  'cusRegionCity',
+  'cusRegionDistrict',
+  'cusRegionStateName',
+  'cusRegionCountry',
+  'cusBirthDate',
+  'cusMarriageDate',
+  'cusTransportName',
+  'cusFreightCharge',
+  'cusLoadingCharge',
+  'cusUnloadingCharge',
+  'cusGstNo',
+  'cusPanNo',
+  'cusGstType',
+  'cusEcommerceGstin',
+  'cusTcsApplicable',
+  'cusItcollExempted',
+  'cusItcollType',
+  'cusGeoLocation',
+  'cusCollectionDays',
+  'cusDefaultSalesman',
+  'cusNotes',
+  'cusBranchId',
+  'cusCompanyId',
+  'cusIsActive',
+];
 
-type CustomerWriteClient = Prisma.TransactionClient | PrismaService;
+type CustomerWriteClient = SalesWriteClient;
 
 @Injectable()
 export class CustomerService {
@@ -196,7 +268,11 @@ export class CustomerService {
     });
 
     if (!record) {
-      this.throwNotFound(cusId);
+      throwSalesNotFound<CustomerErrorDetail, CustomerErrorResponse>(
+        'Customer not found',
+        'cusId',
+        `No active customer found with id ${cusId}`,
+      );
     }
 
     return this.toPayload(record);
@@ -212,7 +288,11 @@ export class CustomerService {
       });
 
       if (!existing) {
-        this.throwNotFound(cusId);
+        throwSalesNotFound<CustomerErrorDetail, CustomerErrorResponse>(
+          'Customer not found',
+          'cusId',
+          `No active customer found with id ${cusId}`,
+        );
       }
 
       const modifiedOn = new Date();
@@ -230,7 +310,11 @@ export class CustomerService {
       });
 
       if (result.count === 0) {
-        this.throwNotFound(cusId);
+        throwSalesNotFound<CustomerErrorDetail, CustomerErrorResponse>(
+          'Customer not found',
+          'cusId',
+          `No active customer found with id ${cusId}`,
+        );
       }
 
       const originalRecord = this.toPayload(existing);
@@ -266,25 +350,25 @@ export class CustomerService {
   }
 
   private async createCustomer(saveCustomerDto: SaveCustomerDto): Promise<CustomerPayload> {
-    const normalizedStateName = this.normalizeRequiredText(
+    const normalizedStateName = normalizeRequiredText<CustomerErrorDetail, CustomerErrorResponse>(
       saveCustomerDto.cusStateName,
       'cusStateName',
     );
     const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
     const now = new Date();
-    const createdBy = this.resolveActor(saveCustomerDto.cusCreatedBy);
-    const modifiedBy = this.resolveActor(saveCustomerDto.cusModifiedBy, createdBy);
+    const createdBy = resolveActor(saveCustomerDto.cusCreatedBy);
+    const modifiedBy = resolveActor(saveCustomerDto.cusModifiedBy, createdBy);
 
     const data: Prisma.CustomerUncheckedCreateInput = {
       cusStateName: normalizedStateName,
       cusStateCode: normalizedStateCode,
-      cusCompanyId: this.hasOwnProperty(saveCustomerDto, 'cusCompanyId')
+      cusCompanyId: hasOwnProperty(saveCustomerDto, 'cusCompanyId')
         ? (saveCustomerDto.cusCompanyId ?? null)
         : null,
       cusAreaId: saveCustomerDto.cusAreaId,
       cusGroupId: saveCustomerDto.cusGroupId,
       cusPriceLevelId: saveCustomerDto.cusPriceLevelId,
-      cusCollectionDays: this.hasOwnProperty(saveCustomerDto, 'cusCollectionDays')
+      cusCollectionDays: hasOwnProperty(saveCustomerDto, 'cusCollectionDays')
         ? (saveCustomerDto.cusCollectionDays ?? [])
         : [],
       cusBilledDate: now,
@@ -324,7 +408,16 @@ export class CustomerService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<CustomerErrorDetail, CustomerErrorResponse>(
+        error,
+        'Customer already exists',
+        [
+          {
+            field: 'cusName',
+            message: 'Duplicate customer details are not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -342,24 +435,28 @@ export class CustomerService {
         });
 
         if (!existing) {
-          this.throwNotFound(cusId);
+          throwSalesNotFound<CustomerErrorDetail, CustomerErrorResponse>(
+            'Customer not found',
+            'cusId',
+            `No active customer found with id ${cusId}`,
+          );
         }
 
-        const normalizedStateName = this.normalizeRequiredText(
-          saveCustomerDto.cusStateName,
-          'cusStateName',
-        );
+        const normalizedStateName = normalizeRequiredText<
+          CustomerErrorDetail,
+          CustomerErrorResponse
+        >(saveCustomerDto.cusStateName, 'cusStateName');
         const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
-        const nextAreaId = this.hasOwnProperty(saveCustomerDto, 'cusAreaId')
+        const nextAreaId = hasOwnProperty(saveCustomerDto, 'cusAreaId')
           ? saveCustomerDto.cusAreaId
           : existing.cusAreaId;
-        const nextGroupId = this.hasOwnProperty(saveCustomerDto, 'cusGroupId')
+        const nextGroupId = hasOwnProperty(saveCustomerDto, 'cusGroupId')
           ? saveCustomerDto.cusGroupId
           : existing.cusGroupId;
-        const nextCompanyId = this.hasOwnProperty(saveCustomerDto, 'cusCompanyId')
+        const nextCompanyId = hasOwnProperty(saveCustomerDto, 'cusCompanyId')
           ? (saveCustomerDto.cusCompanyId ?? null)
           : existing.cusCompanyId;
-        const nextPriceLevelId = this.hasOwnProperty(saveCustomerDto, 'cusPriceLevelId')
+        const nextPriceLevelId = hasOwnProperty(saveCustomerDto, 'cusPriceLevelId')
           ? saveCustomerDto.cusPriceLevelId
           : existing.cusPriceLevelId;
 
@@ -380,7 +477,7 @@ export class CustomerService {
             increment: 1,
           },
           cusModifiedOn: now,
-          cusModifiedBy: this.resolveActor(saveCustomerDto.cusModifiedBy),
+          cusModifiedBy: resolveActor(saveCustomerDto.cusModifiedBy),
         };
         this.applyOptionalFields(data, saveCustomerDto);
 
@@ -411,7 +508,16 @@ export class CustomerService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<CustomerErrorDetail, CustomerErrorResponse>(
+        error,
+        'Customer already exists',
+        [
+          {
+            field: 'cusName',
+            message: 'Duplicate customer details are not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -428,7 +534,7 @@ export class CustomerService {
     });
 
     if (!area) {
-      this.throwBadRequest('Area does not exist', [
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Area does not exist', [
         {
           field: 'cusAreaId',
           message: `No active area found with id ${areaId}`,
@@ -456,7 +562,7 @@ export class CustomerService {
     });
 
     if (!company) {
-      this.throwBadRequest('Company does not exist', [
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Company does not exist', [
         {
           field: 'cusCompanyId',
           message: `No active company found with id ${companyId}`,
@@ -477,12 +583,15 @@ export class CustomerService {
     });
 
     if (!group) {
-      this.throwBadRequest('Customer group does not exist', [
-        {
-          field: 'cusGroupId',
-          message: `No active customer group found with id ${groupId}`,
-        },
-      ]);
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>(
+        'Customer group does not exist',
+        [
+          {
+            field: 'cusGroupId',
+            message: `No active customer group found with id ${groupId}`,
+          },
+        ],
+      );
     }
   }
 
@@ -490,273 +599,19 @@ export class CustomerService {
     data: Prisma.CustomerUncheckedCreateInput | Prisma.CustomerUncheckedUpdateInput,
     saveCustomerDto: SaveCustomerDto,
   ): void {
-    if (this.hasOwnProperty(saveCustomerDto, 'cusTitle')) {
-      data.cusTitle = saveCustomerDto.cusTitle;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusShort')) {
-      data.cusShort = saveCustomerDto.cusShort;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCode')) {
-      data.cusCode = saveCustomerDto.cusCode;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusName')) {
-      data.cusName = saveCustomerDto.cusName;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusAddr1')) {
-      data.cusAddr1 = saveCustomerDto.cusAddr1;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusAddr2')) {
-      data.cusAddr2 = saveCustomerDto.cusAddr2;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusAddr3')) {
-      data.cusAddr3 = saveCustomerDto.cusAddr3;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCity')) {
-      data.cusCity = saveCustomerDto.cusCity;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusDistrict')) {
-      data.cusDistrict = saveCustomerDto.cusDistrict;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCountry')) {
-      data.cusCountry = saveCustomerDto.cusCountry;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusLandmark')) {
-      data.cusLandmark = saveCustomerDto.cusLandmark;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusPin')) {
-      data.cusPin = saveCustomerDto.cusPin;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusTel')) {
-      data.cusTel = saveCustomerDto.cusTel;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusPhone1')) {
-      data.cusPhone1 = saveCustomerDto.cusPhone1;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusPhone2')) {
-      data.cusPhone2 = saveCustomerDto.cusPhone2;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusWhatsappNo')) {
-      data.cusWhatsappNo = saveCustomerDto.cusWhatsappNo;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusEmail')) {
-      data.cusEmail = saveCustomerDto.cusEmail;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusAadharNo')) {
-      data.cusAadharNo = saveCustomerDto.cusAadharNo;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusContactPerson')) {
-      data.cusContactPerson = saveCustomerDto.cusContactPerson;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusDistanceKm')) {
-      data.cusDistanceKm = saveCustomerDto.cusDistanceKm;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCreditAllowed')) {
-      data.cusCreditAllowed = saveCustomerDto.cusCreditAllowed;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCreditBillLimit')) {
-      data.cusCreditBillLimit = saveCustomerDto.cusCreditBillLimit;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCreditAmtLimit')) {
-      data.cusCreditAmtLimit = saveCustomerDto.cusCreditAmtLimit;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCreditDays')) {
-      data.cusCreditDays = saveCustomerDto.cusCreditDays;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusDebitBalance')) {
-      data.cusDebitBalance = saveCustomerDto.cusDebitBalance;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusDiscPerc')) {
-      data.cusDiscPerc = saveCustomerDto.cusDiscPerc;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusDebitGraceDays')) {
-      data.cusDebitGraceDays = saveCustomerDto.cusDebitGraceDays;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusEnableSms')) {
-      data.cusEnableSms = saveCustomerDto.cusEnableSms;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusOverdueSms')) {
-      data.cusOverdueSms = saveCustomerDto.cusOverdueSms;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusOverdueBilling')) {
-      data.cusOverdueBilling = saveCustomerDto.cusOverdueBilling;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusAllowPromotion')) {
-      data.cusAllowPromotion = saveCustomerDto.cusAllowPromotion;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusAllowLoyalty')) {
-      data.cusAllowLoyalty = saveCustomerDto.cusAllowLoyalty;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusAllowDiscount')) {
-      data.cusAllowDiscount = saveCustomerDto.cusAllowDiscount;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusSortOrder')) {
-      data.cusSortOrder = saveCustomerDto.cusSortOrder;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusRegionName')) {
-      data.cusRegionName = saveCustomerDto.cusRegionName;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusRegionAddr1')) {
-      data.cusRegionAddr1 = saveCustomerDto.cusRegionAddr1;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusRegionAddr2')) {
-      data.cusRegionAddr2 = saveCustomerDto.cusRegionAddr2;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusRegionAddr3')) {
-      data.cusRegionAddr3 = saveCustomerDto.cusRegionAddr3;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusRegionCity')) {
-      data.cusRegionCity = saveCustomerDto.cusRegionCity;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusRegionDistrict')) {
-      data.cusRegionDistrict = saveCustomerDto.cusRegionDistrict;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusRegionStateName')) {
-      data.cusRegionStateName = saveCustomerDto.cusRegionStateName;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusRegionCountry')) {
-      data.cusRegionCountry = saveCustomerDto.cusRegionCountry;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusBirthDate')) {
-      data.cusBirthDate = this.toDateOrNull(saveCustomerDto.cusBirthDate, 'cusBirthDate');
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusMarriageDate')) {
-      data.cusMarriageDate = this.toDateOrNull(saveCustomerDto.cusMarriageDate, 'cusMarriageDate');
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusTransportName')) {
-      data.cusTransportName = saveCustomerDto.cusTransportName;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusFreightCharge')) {
-      data.cusFreightCharge = saveCustomerDto.cusFreightCharge;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusLoadingCharge')) {
-      data.cusLoadingCharge = saveCustomerDto.cusLoadingCharge;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusUnloadingCharge')) {
-      data.cusUnloadingCharge = saveCustomerDto.cusUnloadingCharge;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusGstNo')) {
-      data.cusGstNo = saveCustomerDto.cusGstNo;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusPanNo')) {
-      data.cusPanNo = saveCustomerDto.cusPanNo;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusGstType')) {
-      data.cusGstType = saveCustomerDto.cusGstType;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusEcommerceGstin')) {
-      data.cusEcommerceGstin = saveCustomerDto.cusEcommerceGstin;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusTcsApplicable')) {
-      data.cusTcsApplicable = saveCustomerDto.cusTcsApplicable;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusItcollExempted')) {
-      data.cusItcollExempted = saveCustomerDto.cusItcollExempted;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusItcollType')) {
-      data.cusItcollType = saveCustomerDto.cusItcollType;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusGeoLocation')) {
-      data.cusGeoLocation = saveCustomerDto.cusGeoLocation;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCollectionDays')) {
-      data.cusCollectionDays = saveCustomerDto.cusCollectionDays ?? [];
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusDefaultSalesman')) {
-      data.cusDefaultSalesman = saveCustomerDto.cusDefaultSalesman;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusNotes')) {
-      data.cusNotes = saveCustomerDto.cusNotes;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusBranchId')) {
-      data.cusBranchId = saveCustomerDto.cusBranchId;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusCompanyId')) {
-      data.cusCompanyId = saveCustomerDto.cusCompanyId;
-    }
-
-    if (this.hasOwnProperty(saveCustomerDto, 'cusIsActive')) {
-      data.cusIsActive = saveCustomerDto.cusIsActive;
-    }
-  }
-
-  private normalizeRequiredText(value: string, field: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field,
-          message: `${field} must not be empty`,
-        },
-      ]);
-    }
-
-    return trimmed;
+    applyPresentFields(data, saveCustomerDto, CUSTOMER_OPTIONAL_FIELDS, {
+      cusBirthDate: (value) =>
+        this.toDateOrNull(value as string | null | undefined, 'cusBirthDate'),
+      cusMarriageDate: (value) =>
+        this.toDateOrNull(value as string | null | undefined, 'cusMarriageDate'),
+      cusCollectionDays: (value) => value ?? [],
+    });
   }
 
   private normalizeStateCode(value: string): string {
     const normalized = value.trim().toUpperCase();
     if (normalized.length !== 2) {
-      this.throwBadRequest('Validation failed', [
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Validation failed', [
         {
           field: 'cusStateCode',
           message: 'cusStateCode must be exactly 2 characters',
@@ -778,7 +633,7 @@ export class CustomerService {
 
     const dateValue = new Date(value);
     if (Number.isNaN(dateValue.getTime())) {
-      this.throwBadRequest('Validation failed', [
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('Validation failed', [
         {
           field,
           message: `${field} must be a valid ISO date`,
@@ -816,10 +671,10 @@ export class CustomerService {
       cusDistanceKm: record.cusDistanceKm,
       cusCreditAllowed: record.cusCreditAllowed,
       cusCreditBillLimit: record.cusCreditBillLimit,
-      cusCreditAmtLimit: this.toNumber(record.cusCreditAmtLimit),
+      cusCreditAmtLimit: toNumber(record.cusCreditAmtLimit),
       cusCreditDays: record.cusCreditDays,
-      cusDebitBalance: this.toNumber(record.cusDebitBalance),
-      cusDiscPerc: this.toNumber(record.cusDiscPerc),
+      cusDebitBalance: toNumber(record.cusDebitBalance),
+      cusDiscPerc: toNumber(record.cusDiscPerc),
       cusDebitGraceDays: record.cusDebitGraceDays,
       cusEnableSms: record.cusEnableSms,
       cusOverdueSms: record.cusOverdueSms,
@@ -868,73 +723,5 @@ export class CustomerService {
       cusModifiedOn: record.cusModifiedOn.toISOString(),
       cusModifiedBy: record.cusModifiedBy,
     };
-  }
-
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-
-    return Number(value.toString());
-  }
-
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    if (!value) {
-      return fallback;
-    }
-
-    const trimmed = value.trim();
-    return trimmed || fallback;
-  }
-
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Customer already exists', [
-          {
-            field: 'cusName',
-            message: 'Duplicate customer details are not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(cusId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Customer not found', [
-        {
-          field: 'cusId',
-          message: `No active customer found with id ${cusId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: CustomerErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: CustomerErrorDetail[] = [],
-  ): CustomerErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   LoyaltyScheme,
   LoyaltySchemeGift,
@@ -34,17 +29,25 @@ import {
   PromotionLoyaltyPointsErrorResponse,
   PromotionLoyaltyPointsListMeta,
 } from './types/promotion-loyalty-points-api.types';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const DEFAULT_AUDIT_ACTOR = 'system';
+import {
+  DEFAULT_AUDIT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SalesWriteClient,
+  buildSalesErrorResponse,
+  hasOwnProperty,
+  throwSalesBadRequest,
+  throwSalesConflict,
+  throwSalesNotFound,
+  toNumber,
+} from '../utils/sales-service.utils';
 const LOYALTY_SCREEN_NAME = 'Promotion Loyalty Points';
 const LOYALTY_SCHEME_TABLE_NAME = 'loyalty scheme list';
 const LOYALTY_POINTS_TABLE_NAME = 'loyalty scheme points';
 const LOYALTY_GIFT_TABLE_NAME = 'loyalty scheme gift';
 const LOYALTY_PARTY_TABLE_NAME = 'loyalty scheme party scope';
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-type LoyaltyWriteClient = Prisma.TransactionClient | PrismaService;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+type LoyaltyWriteClient = SalesWriteClient;
 type ListResult<T> = { items: T[]; meta: PromotionLoyaltyPointsListMeta };
 type SchemeWithChildren = LoyaltyScheme & {
   parties: LoyaltySchemeParty[];
@@ -68,7 +71,7 @@ export class PromotionLoyaltyPointsService {
       this.throwBadRequest('Validation failed', [
         {
           field,
-          message: `${field} must be a valid time (HH:mm or HH:mm:ss)` ,
+          message: `${field} must be a valid time (HH:mm or HH:mm:ss)`,
         },
       ]);
     }
@@ -87,7 +90,7 @@ export class PromotionLoyaltyPointsService {
     }
     return date;
   }
- async saveScheme(dto: SaveLoyaltySchemeDto): Promise<LoyaltySchemePayload> {
+  async saveScheme(dto: SaveLoyaltySchemeDto): Promise<LoyaltySchemePayload> {
     if (dto.ls_id) {
       return this.updateScheme(dto);
     }
@@ -172,9 +175,9 @@ export class PromotionLoyaltyPointsService {
       meta: this.buildMeta(page, limit, total),
     };
   }
-private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
-  return `Scheme ${lpsLsId} / Party ${lpsSlno}`;
-}
+  private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
+    return `Scheme ${lpsLsId} / Party ${lpsSlno}`;
+  }
   async getSchemeById(lsId: string): Promise<LoyaltySchemePayload> {
     const scheme = await this.findActiveSchemeWithChildren(this.prisma, lsId);
     if (!scheme) {
@@ -184,10 +187,7 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
     return this.toSchemePayload(scheme);
   }
 
-  async softDeleteScheme(
-    lsId: string,
-    lsUpdatedBy?: string,
-  ): Promise<LoyaltySchemeDeleteResult> {
+  async softDeleteScheme(lsId: string, lsUpdatedBy?: string): Promise<LoyaltySchemeDeleteResult> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await this.findActiveSchemeWithChildren(tx, lsId);
       if (!existing) {
@@ -205,7 +205,7 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           lsUpdatedOn: updatedOn,
           lsUpdatedBy: updatedBy,
         },
-      });          
+      });
       await Promise.all([
         tx.loyaltySchemeParty.updateMany({
           where: { lpsLsId: lsId, lpsIsDeleted: false },
@@ -326,10 +326,7 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
     return this.toPointPayload(point);
   }
 
-  async softDeletePoint(
-    lsptId: string,
-    lsptUpdatedBy?: string,
-  ): Promise<LoyaltyPointDeleteResult> {
+  async softDeletePoint(lsptId: string, lsptUpdatedBy?: string): Promise<LoyaltyPointDeleteResult> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.loyaltySchemePoint.findFirst({
         where: { lsptId, lsptIsDeleted: false },
@@ -422,10 +419,7 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
     return this.toGiftPayload(gift);
   }
 
-  async softDeleteGift(
-    lsgId: string,
-    lsgUpdatedBy?: string,
-  ): Promise<LoyaltyGiftDeleteResult> {
+  async softDeleteGift(lsgId: string, lsgUpdatedBy?: string): Promise<LoyaltyGiftDeleteResult> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.loyaltySchemeGift.findFirst({
         where: { lsgId, lsgIsDeleted: false },
@@ -537,16 +531,16 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           this.throwNotFound('ls_id', lsId, 'Loyalty scheme not found');
         }
 
-        const effectiveStartDate = this.hasOwn(dto, 'ls_start_date')
+        const effectiveStartDate = hasOwnProperty(dto, 'ls_start_date')
           ? this.requireDate(dto.ls_start_date, 'ls_start_date')
           : existing.lsStartDate;
-        const effectiveEndDate = this.hasOwn(dto, 'ls_end_date')
+        const effectiveEndDate = hasOwnProperty(dto, 'ls_end_date')
           ? this.requireDate(dto.ls_end_date, 'ls_end_date')
           : existing.lsEndDate;
-        const effectiveCompId = this.hasOwn(dto, 'ls_comp_id')
+        const effectiveCompId = hasOwnProperty(dto, 'ls_comp_id')
           ? this.requireUuid(dto.ls_comp_id, 'ls_comp_id')
           : existing.lsCompId;
-        const effectiveCode = this.hasOwn(dto, 'ls_code')
+        const effectiveCode = hasOwnProperty(dto, 'ls_code')
           ? this.normalizeNullableString(dto.ls_code)
           : existing.lsCode;
 
@@ -558,22 +552,22 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           lsUpdatedBy: this.resolveActorUuid(dto.ls_updated_by, actorId),
         };
 
-        if (this.hasOwn(dto, 'ls_name')) {
+        if (hasOwnProperty(dto, 'ls_name')) {
           data.lsName = this.requireString(dto.ls_name, 'ls_name');
         }
-        if (this.hasOwn(dto, 'ls_type')) {
+        if (hasOwnProperty(dto, 'ls_type')) {
           data.lsType = this.requireString(dto.ls_type, 'ls_type');
         }
-        if (this.hasOwn(dto, 'ls_start_date')) {
+        if (hasOwnProperty(dto, 'ls_start_date')) {
           data.lsStartDate = effectiveStartDate;
         }
-        if (this.hasOwn(dto, 'ls_end_date')) {
+        if (hasOwnProperty(dto, 'ls_end_date')) {
           data.lsEndDate = effectiveEndDate;
         }
-        if (this.hasOwn(dto, 'ls_comp_id')) {
+        if (hasOwnProperty(dto, 'ls_comp_id')) {
           data.lsCompId = effectiveCompId;
         }
-        if (this.hasOwn(dto, 'ls_code')) {
+        if (hasOwnProperty(dto, 'ls_code')) {
           data.lsCode = effectiveCode;
         }
 
@@ -587,7 +581,7 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
         const parties = await this.syncSchemeParties(tx, lsId, dto.parties, actorId);
         const payload = this.toSchemePayload({
           ...updated,
-          parties: this.hasOwn(dto, 'parties') ? parties : existing.parties,
+          parties: hasOwnProperty(dto, 'parties') ? parties : existing.parties,
           points: existing.points,
           gifts: existing.gifts,
         });
@@ -709,10 +703,10 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           this.throwNotFound('lspt_id', lsptId, 'Loyalty point not found');
         }
 
-        const effectiveSchemeId = this.hasOwn(dto, 'lspt_ls_id')
+        const effectiveSchemeId = hasOwnProperty(dto, 'lspt_ls_id')
           ? this.requireUuid(dto.lspt_ls_id, 'lspt_ls_id')
           : existing.lsptLsId;
-        const effectiveSlno = this.hasOwn(dto, 'lspt_slno')
+        const effectiveSlno = hasOwnProperty(dto, 'lspt_slno')
           ? this.requireInteger(dto.lspt_slno, 'lspt_slno')
           : existing.lsptSlno;
 
@@ -720,11 +714,11 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
         await this.ensurePointReferenceRecords(tx, scheme.lsItemType, dto);
         await this.ensurePointSlnoUnique(tx, effectiveSchemeId, effectiveSlno, lsptId);
 
-        const effectivePoints = this.hasOwn(dto, 'lspt_points')
+        const effectivePoints = hasOwnProperty(dto, 'lspt_points')
           ? this.requireNumber(dto.lspt_points, 'lspt_points', 0)
           : this.requireNumber(existing.lsptPoints.toNumber(), 'lspt_points', 0);
 
-        const effectiveEach = this.hasOwn(dto, 'lspt_each')
+        const effectiveEach = hasOwnProperty(dto, 'lspt_each')
           ? this.requireNumber(dto.lspt_each, 'lspt_each', Number.EPSILON)
           : this.requireNumber(existing.lsptEach.toNumber(), 'lspt_each', Number.EPSILON);
 
@@ -735,13 +729,13 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           lsptUpdatedBy: this.resolveActorUuid(dto.lspt_updated_by, actorId),
         };
 
-        if (this.hasOwn(dto, 'lspt_ls_id')) {
+        if (hasOwnProperty(dto, 'lspt_ls_id')) {
           data.lsptLsId = effectiveSchemeId;
         }
-        if (this.hasOwn(dto, 'lspt_slno')) {
+        if (hasOwnProperty(dto, 'lspt_slno')) {
           data.lsptSlno = effectiveSlno;
         }
-        if (this.hasOwn(dto, 'lspt_points')) {
+        if (hasOwnProperty(dto, 'lspt_points')) {
           data.lsptPoints = effectivePoints;
         }
 
@@ -802,11 +796,7 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           lsgItemId: this.requireUuid(dto.lsg_item_id, 'lsg_item_id'),
           lsgUnitId: this.requireUuid(dto.lsg_unit_id, 'lsg_unit_id'),
           lsgItemQty: this.requireNumber(dto.lsg_item_qty, 'lsg_item_qty', Number.EPSILON),
-          lsgRedeemPoints: this.requireNumber(
-            dto.lsg_redeem_points,
-            'lsg_redeem_points',
-            0,
-          ),
+          lsgRedeemPoints: this.requireNumber(dto.lsg_redeem_points, 'lsg_redeem_points', 0),
           lsgCreatedOn: now,
           lsgCreatedBy,
           lsgUpdatedOn: now,
@@ -856,10 +846,10 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           this.throwNotFound('lsg_id', lsgId, 'Loyalty gift not found');
         }
 
-        const effectiveSchemeId = this.hasOwn(dto, 'lsg_ls_id')
+        const effectiveSchemeId = hasOwnProperty(dto, 'lsg_ls_id')
           ? this.requireUuid(dto.lsg_ls_id, 'lsg_ls_id')
           : existing.lsgLsId;
-        const effectiveSlno = this.hasOwn(dto, 'lsg_slno')
+        const effectiveSlno = hasOwnProperty(dto, 'lsg_slno')
           ? this.requireInteger(dto.lsg_slno, 'lsg_slno')
           : existing.lsgSlno;
 
@@ -872,27 +862,23 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
           lsgUpdatedBy: this.resolveActorUuid(dto.lsg_updated_by, actorId),
         };
 
-        if (this.hasOwn(dto, 'lsg_ls_id')) {
+        if (hasOwnProperty(dto, 'lsg_ls_id')) {
           data.lsgLsId = effectiveSchemeId;
         }
-        if (this.hasOwn(dto, 'lsg_slno')) {
+        if (hasOwnProperty(dto, 'lsg_slno')) {
           data.lsgSlno = effectiveSlno;
         }
-        if (this.hasOwn(dto, 'lsg_item_id')) {
+        if (hasOwnProperty(dto, 'lsg_item_id')) {
           data.lsgItemId = this.requireUuid(dto.lsg_item_id, 'lsg_item_id');
         }
-        if (this.hasOwn(dto, 'lsg_unit_id')) {
+        if (hasOwnProperty(dto, 'lsg_unit_id')) {
           data.lsgUnitId = this.requireUuid(dto.lsg_unit_id, 'lsg_unit_id');
         }
-        if (this.hasOwn(dto, 'lsg_item_qty')) {
+        if (hasOwnProperty(dto, 'lsg_item_qty')) {
           data.lsgItemQty = this.requireNumber(dto.lsg_item_qty, 'lsg_item_qty', Number.EPSILON);
         }
-        if (this.hasOwn(dto, 'lsg_redeem_points')) {
-          data.lsgRedeemPoints = this.requireNumber(
-            dto.lsg_redeem_points,
-            'lsg_redeem_points',
-            0,
-          );
+        if (hasOwnProperty(dto, 'lsg_redeem_points')) {
+          data.lsgRedeemPoints = this.requireNumber(dto.lsg_redeem_points, 'lsg_redeem_points', 0);
         }
 
         this.applyOptionalGiftFields(data, dto);
@@ -951,116 +937,117 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
   }
 
   private applyOptionalSchemeFields(
-    data:
-      | Prisma.LoyaltySchemeUncheckedCreateInput
-      | Prisma.LoyaltySchemeUncheckedUpdateInput,
+    data: Prisma.LoyaltySchemeUncheckedCreateInput | Prisma.LoyaltySchemeUncheckedUpdateInput,
     dto: SaveLoyaltySchemeDto,
     actorId: string | null,
   ): void {
-    if (this.hasOwn(dto, 'ls_status')) {
+    if (hasOwnProperty(dto, 'ls_status')) {
       data.lsStatus = this.requireString(dto.ls_status, 'ls_status');
     }
-    if (this.hasOwn(dto, 'ls_auto_apply')) {
+    if (hasOwnProperty(dto, 'ls_auto_apply')) {
       data.lsAutoApply = dto.ls_auto_apply ?? true;
     }
-    if (this.hasOwn(dto, 'ls_apply_on')) {
+    if (hasOwnProperty(dto, 'ls_apply_on')) {
       data.lsApplyOn = this.requireString(dto.ls_apply_on, 'ls_apply_on');
     }
-    if (this.hasOwn(dto, 'ls_calc_on_amount_type')) {
+    if (hasOwnProperty(dto, 'ls_calc_on_amount_type')) {
       data.lsCalcOnAmountType = this.requireString(
         dto.ls_calc_on_amount_type,
         'ls_calc_on_amount_type',
       );
     }
-    if (this.hasOwn(dto, 'ls_bill_type')) {
+    if (hasOwnProperty(dto, 'ls_bill_type')) {
       data.lsBillType = this.requireString(dto.ls_bill_type, 'ls_bill_type');
     }
-    if (this.hasOwn(dto, 'ls_cust_type')) {
+    if (hasOwnProperty(dto, 'ls_cust_type')) {
       data.lsCustType = this.requireString(dto.ls_cust_type, 'ls_cust_type');
     }
-    if (this.hasOwn(dto, 'ls_item_type')) {
+    if (hasOwnProperty(dto, 'ls_item_type')) {
       data.lsItemType = this.requireString(dto.ls_item_type, 'ls_item_type');
     }
-    if (this.hasOwn(dto, 'ls_valid_from_time')) {
+    if (hasOwnProperty(dto, 'ls_valid_from_time')) {
       const value = dto.ls_valid_from_time;
       data.lsValidFromTime = value ? this.parseTimeToUtcDate(value, 'ls_valid_from_time') : null;
     }
-    if (this.hasOwn(dto, 'ls_valid_to_time')) {
+    if (hasOwnProperty(dto, 'ls_valid_to_time')) {
       const value = dto.ls_valid_to_time;
       data.lsValidToTime = value ? this.parseTimeToUtcDate(value, 'ls_valid_to_time') : null;
     }
-    if (this.hasOwn(dto, 'ls_valid_weekdays')) {
+    if (hasOwnProperty(dto, 'ls_valid_weekdays')) {
       data.lsValidWeekdays = dto.ls_valid_weekdays ?? null;
     }
-    if (this.hasOwn(dto, 'ls_branch_id')) {
+    if (hasOwnProperty(dto, 'ls_branch_id')) {
       data.lsBranchId = dto.ls_branch_id ?? null;
     }
-    if (this.hasOwn(dto, 'ls_include_tax_for_points')) {
+    if (hasOwnProperty(dto, 'ls_include_tax_for_points')) {
       data.lsIncludeTaxForPoints = dto.ls_include_tax_for_points ?? false;
     }
-    if (this.hasOwn(dto, 'ls_rounding_method')) {
+    if (hasOwnProperty(dto, 'ls_rounding_method')) {
       data.lsRoundingMethod = this.requireString(dto.ls_rounding_method, 'ls_rounding_method');
     }
-    if (this.hasOwn(dto, 'ls_recur_apl')) {
+    if (hasOwnProperty(dto, 'ls_recur_apl')) {
       data.lsRecurApl = dto.ls_recur_apl ?? false;
     }
-    if (this.hasOwn(dto, 'ls_bal_apl')) {
+    if (hasOwnProperty(dto, 'ls_bal_apl')) {
       data.lsBalApl = dto.ls_bal_apl ?? false;
     }
-    if (this.hasOwn(dto, 'ls_allow_point_redeem')) {
+    if (hasOwnProperty(dto, 'ls_allow_point_redeem')) {
       data.lsAllowPointRedeem = dto.ls_allow_point_redeem ?? false;
     }
-    if (this.hasOwn(dto, 'ls_allow_gift_redeem')) {
+    if (hasOwnProperty(dto, 'ls_allow_gift_redeem')) {
       data.lsAllowGiftRedeem = dto.ls_allow_gift_redeem ?? false;
     }
-    if (this.hasOwn(dto, 'ls_redeem_value_per_point')) {
+    if (hasOwnProperty(dto, 'ls_redeem_value_per_point')) {
       data.lsRedeemValuePerPoint = this.requireNumber(
         dto.ls_redeem_value_per_point,
         'ls_redeem_value_per_point',
         0,
       );
     }
-    if (this.hasOwn(dto, 'ls_min_redeem_points')) {
+    if (hasOwnProperty(dto, 'ls_min_redeem_points')) {
       data.lsMinRedeemPoints = this.requireNumber(
         dto.ls_min_redeem_points,
         'ls_min_redeem_points',
         0,
       );
     }
-    if (this.hasOwn(dto, 'ls_max_redeem_points_per_bill')) {
+    if (hasOwnProperty(dto, 'ls_max_redeem_points_per_bill')) {
       data.lsMaxRedeemPointsPerBill = this.requireNumber(
         dto.ls_max_redeem_points_per_bill,
         'ls_max_redeem_points_per_bill',
         0,
       );
     }
-    if (this.hasOwn(dto, 'ls_max_redeem_percent_per_bill')) {
+    if (hasOwnProperty(dto, 'ls_max_redeem_percent_per_bill')) {
       data.lsMaxRedeemPercentPerBill = this.requireNumber(
         dto.ls_max_redeem_percent_per_bill,
         'ls_max_redeem_percent_per_bill',
         0,
       );
     }
-    if (this.hasOwn(dto, 'ls_redeem_min_bill_amount')) {
+    if (hasOwnProperty(dto, 'ls_redeem_min_bill_amount')) {
       data.lsRedeemMinBillAmount = this.requireNumber(
         dto.ls_redeem_min_bill_amount,
         'ls_redeem_min_bill_amount',
         0,
       );
     }
-    if (this.hasOwn(dto, 'ls_points_valid_days')) {
-      data.lsPointsValidDays = this.requireInteger(dto.ls_points_valid_days, 'ls_points_valid_days');
+    if (hasOwnProperty(dto, 'ls_points_valid_days')) {
+      data.lsPointsValidDays = this.requireInteger(
+        dto.ls_points_valid_days,
+        'ls_points_valid_days',
+      );
     }
-    if (this.hasOwn(dto, 'ls_expiry_basis')) {
+    if (hasOwnProperty(dto, 'ls_expiry_basis')) {
       data.lsExpiryBasis = this.requireString(dto.ls_expiry_basis, 'ls_expiry_basis');
     }
-    if (this.hasOwn(dto, 'ls_remarks')) {
+    if (hasOwnProperty(dto, 'ls_remarks')) {
       data.lsRemarks = dto.ls_remarks ?? null;
     }
-    if (this.hasOwn(dto, 'ls_is_active')) {
+    if (hasOwnProperty(dto, 'ls_is_active')) {
       data.lsIsActive = dto.ls_is_active ?? true;
     }
-    if (this.hasOwn(dto, 'ls_approved_on')) {
+    if (hasOwnProperty(dto, 'ls_approved_on')) {
       const approvedOn = (dto as { ls_approved_on?: unknown }).ls_approved_on;
       if (approvedOn === null || approvedOn === undefined || approvedOn === '') {
         data.lsApprovedOn = null;
@@ -1068,7 +1055,7 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
         data.lsApprovedOn = this.requireDateTime(String(approvedOn), 'ls_approved_on');
       }
     }
-    if (this.hasOwn(dto, 'ls_approved_by')) {
+    if (hasOwnProperty(dto, 'ls_approved_by')) {
       data.lsApprovedBy = this.resolveActorUuid(dto.ls_approved_by, actorId);
     }
   }
@@ -1079,22 +1066,22 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
       | Prisma.LoyaltySchemePointUncheckedUpdateInput,
     dto: SaveLoyaltyPointDto,
   ): void {
-    if (this.hasOwn(dto, 'lspt_item_id')) {
+    if (hasOwnProperty(dto, 'lspt_item_id')) {
       data.lsptItemId = dto.lspt_item_id ?? null;
     }
-    if (this.hasOwn(dto, 'lspt_unit_id')) {
+    if (hasOwnProperty(dto, 'lspt_unit_id')) {
       data.lsptUnitId = dto.lspt_unit_id ?? null;
     }
-    if (this.hasOwn(dto, 'lspt_exceeds')) {
+    if (hasOwnProperty(dto, 'lspt_exceeds')) {
       data.lsptExceeds = this.requireNumber(dto.lspt_exceeds, 'lspt_exceeds', 0);
     }
-    if (this.hasOwn(dto, 'lspt_each')) {
+    if (hasOwnProperty(dto, 'lspt_each')) {
       data.lsptEach = this.requireNumber(dto.lspt_each, 'lspt_each', Number.EPSILON);
     }
-    if (this.hasOwn(dto, 'lspt_notes')) {
+    if (hasOwnProperty(dto, 'lspt_notes')) {
       data.lsptNotes = dto.lspt_notes ?? null;
     }
-    if (this.hasOwn(dto, 'lspt_is_active')) {
+    if (hasOwnProperty(dto, 'lspt_is_active')) {
       data.lsptIsActive = dto.lspt_is_active ?? true;
     }
   }
@@ -1105,169 +1092,169 @@ private buildPartyDisplayName(lpsLsId: string, lpsSlno: number): string {
       | Prisma.LoyaltySchemeGiftUncheckedUpdateInput,
     dto: SaveLoyaltyGiftDto,
   ): void {
-    if (this.hasOwn(dto, 'lsg_repeat')) {
+    if (hasOwnProperty(dto, 'lsg_repeat')) {
       data.lsgRepeat = dto.lsg_repeat ?? false;
     }
-    if (this.hasOwn(dto, 'lsg_notes')) {
+    if (hasOwnProperty(dto, 'lsg_notes')) {
       data.lsgNotes = dto.lsg_notes ?? null;
     }
-    if (this.hasOwn(dto, 'lsg_is_active')) {
+    if (hasOwnProperty(dto, 'lsg_is_active')) {
       data.lsgIsActive = dto.lsg_is_active ?? true;
     }
   }
 
-private async syncSchemeParties(
-  client: LoyaltyWriteClient,
-  lsId: string,
-  inputParties: SaveLoyaltyPartyDto[] | undefined,
-  actorId: string | null,
-): Promise<LoyaltySchemeParty[]> {
-  const existing = await client.loyaltySchemeParty.findMany({
-    where: { lpsLsId: lsId, lpsIsDeleted: false },
-    orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }],
-  });
+  private async syncSchemeParties(
+    client: LoyaltyWriteClient,
+    lsId: string,
+    inputParties: SaveLoyaltyPartyDto[] | undefined,
+    actorId: string | null,
+  ): Promise<LoyaltySchemeParty[]> {
+    const existing = await client.loyaltySchemeParty.findMany({
+      where: { lpsLsId: lsId, lpsIsDeleted: false },
+      orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }],
+    });
 
-  if (inputParties === undefined) {
-    return existing;
-  }
-
-  const existingMap = new Map(existing.map((party) => [party.lpsId, party]));
-  const keptIds = new Set<string>();
-  const seenSlnos = new Set<number>();
-  const now = new Date();
-  const persisted: LoyaltySchemeParty[] = [];
-
-  for (const [index, inputParty] of inputParties.entries()) {
-    const lpsSlno = inputParty.lps_slno ?? index + 1;
-
-    if (seenSlnos.has(lpsSlno)) {
-      this.throwConflict('Duplicate loyalty party serial number is not allowed', [
-        {
-          field: 'lps_slno',
-          message: `A loyalty party scope row already exists with serial number ${lpsSlno}`,
-        },
-      ]);
+    if (inputParties === undefined) {
+      return existing;
     }
 
-    seenSlnos.add(lpsSlno);
+    const existingMap = new Map(existing.map((party) => [party.lpsId, party]));
+    const keptIds = new Set<string>();
+    const seenSlnos = new Set<number>();
+    const now = new Date();
+    const persisted: LoyaltySchemeParty[] = [];
 
-    if (inputParty.lps_id) {
-      const existingParty = existingMap.get(inputParty.lps_id);
-      if (!existingParty) {
-        this.throwNotFound('lps_id', inputParty.lps_id, 'Loyalty party scope row not found');
+    for (const [index, inputParty] of inputParties.entries()) {
+      const lpsSlno = inputParty.lps_slno ?? index + 1;
+
+      if (seenSlnos.has(lpsSlno)) {
+        this.throwConflict('Duplicate loyalty party serial number is not allowed', [
+          {
+            field: 'lps_slno',
+            message: `A loyalty party scope row already exists with serial number ${lpsSlno}`,
+          },
+        ]);
       }
 
-      const updated = await client.loyaltySchemeParty.update({
-        where: { lpsId: inputParty.lps_id },
+      seenSlnos.add(lpsSlno);
+
+      if (inputParty.lps_id) {
+        const existingParty = existingMap.get(inputParty.lps_id);
+        if (!existingParty) {
+          this.throwNotFound('lps_id', inputParty.lps_id, 'Loyalty party scope row not found');
+        }
+
+        const updated = await client.loyaltySchemeParty.update({
+          where: { lpsId: inputParty.lps_id },
+          data: {
+            lpsSlno,
+            lpsScopeType: this.requireString(inputParty.lps_scope_type, 'lps_scope_type'),
+            lpsScopeId: this.requireUuid(inputParty.lps_scope_id, 'lps_scope_id'),
+            lpsIsExclude: inputParty.lps_is_exclude ?? false,
+            lpsNotes: inputParty.lps_notes ?? null,
+            lpsIsActive: inputParty.lps_is_active ?? true,
+            lpsUpdatedOn: now,
+            lpsUpdatedBy: this.resolveActorUuid(inputParty.lps_updated_by, actorId),
+          },
+        });
+
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: LOYALTY_PARTY_TABLE_NAME,
+            screenName: LOYALTY_SCREEN_NAME,
+            screenType: 'master',
+            pk: updated.lpsId,
+            displayName: this.buildPartyDisplayName(updated.lpsLsId, updated.lpsSlno),
+            originalRecord: this.toPartyPayload(existingParty),
+            modifiedRecord: this.toPartyPayload(updated),
+            userId: this.resolveAuditActor(),
+            notes: 'Loyalty party scope updated',
+          },
+          client,
+        );
+
+        keptIds.add(updated.lpsId);
+        persisted.push(updated);
+        continue;
+      }
+
+      const createdBy = this.resolveActorUuid(inputParty.lps_created_by, actorId);
+      const updatedBy = this.resolveActorUuid(inputParty.lps_updated_by, createdBy, actorId);
+
+      const created = await client.loyaltySchemeParty.create({
         data: {
+          lpsLsId: lsId,
           lpsSlno,
           lpsScopeType: this.requireString(inputParty.lps_scope_type, 'lps_scope_type'),
           lpsScopeId: this.requireUuid(inputParty.lps_scope_id, 'lps_scope_id'),
           lpsIsExclude: inputParty.lps_is_exclude ?? false,
           lpsNotes: inputParty.lps_notes ?? null,
           lpsIsActive: inputParty.lps_is_active ?? true,
+          lpsCreatedOn: now,
+          lpsCreatedBy: createdBy,
           lpsUpdatedOn: now,
-          lpsUpdatedBy: this.resolveActorUuid(inputParty.lps_updated_by, actorId),
+          lpsUpdatedBy: updatedBy,
         },
       });
 
       await this.auditLogService.logEntityChange(
         {
-          action: 'update',
+          action: 'insert',
           tableName: LOYALTY_PARTY_TABLE_NAME,
           screenName: LOYALTY_SCREEN_NAME,
           screenType: 'master',
-          pk: updated.lpsId,
-          displayName: this.buildPartyDisplayName(updated.lpsLsId, updated.lpsSlno),
-          originalRecord: this.toPartyPayload(existingParty),
-          modifiedRecord: this.toPartyPayload(updated),
+          pk: created.lpsId,
+          displayName: this.buildPartyDisplayName(created.lpsLsId, created.lpsSlno),
+          originalRecord: null,
+          modifiedRecord: this.toPartyPayload(created),
           userId: this.resolveAuditActor(),
-          notes: 'Loyalty party scope updated',
+          notes: 'Loyalty party scope created',
         },
         client,
       );
 
-      keptIds.add(updated.lpsId);
-      persisted.push(updated);
-      continue;
+      keptIds.add(created.lpsId);
+      persisted.push(created);
     }
 
-    const createdBy = this.resolveActorUuid(inputParty.lps_created_by, actorId);
-    const updatedBy = this.resolveActorUuid(inputParty.lps_updated_by, createdBy, actorId);
+    const removedParties = existing.filter((party) => !keptIds.has(party.lpsId));
 
-    const created = await client.loyaltySchemeParty.create({
-      data: {
-        lpsLsId: lsId,
-        lpsSlno,
-        lpsScopeType: this.requireString(inputParty.lps_scope_type, 'lps_scope_type'),
-        lpsScopeId: this.requireUuid(inputParty.lps_scope_id, 'lps_scope_id'),
-        lpsIsExclude: inputParty.lps_is_exclude ?? false,
-        lpsNotes: inputParty.lps_notes ?? null,
-        lpsIsActive: inputParty.lps_is_active ?? true,
-        lpsCreatedOn: now,
-        lpsCreatedBy: createdBy,
-        lpsUpdatedOn: now,
-        lpsUpdatedBy: updatedBy,
-      },
-    });
+    for (const removedParty of removedParties) {
+      const deleted = await client.loyaltySchemeParty.update({
+        where: { lpsId: removedParty.lpsId },
+        data: {
+          lpsIsDeleted: true,
+          lpsIsActive: false,
+          lpsUpdatedOn: now,
+          lpsUpdatedBy: this.resolveActorUuid(actorId),
+        },
+      });
 
-    await this.auditLogService.logEntityChange(
-      {
-        action: 'insert',
-        tableName: LOYALTY_PARTY_TABLE_NAME,
-        screenName: LOYALTY_SCREEN_NAME,
-        screenType: 'master',
-        pk: created.lpsId,
-        displayName: this.buildPartyDisplayName(created.lpsLsId, created.lpsSlno),
-        originalRecord: null,
-        modifiedRecord: this.toPartyPayload(created),
-        userId: this.resolveAuditActor(),
-        notes: 'Loyalty party scope created',
-      },
-      client,
-    );
-
-    keptIds.add(created.lpsId);
-    persisted.push(created);
-  }
-
-  const removedParties = existing.filter((party) => !keptIds.has(party.lpsId));
-
-  for (const removedParty of removedParties) {
-    const deleted = await client.loyaltySchemeParty.update({
-      where: { lpsId: removedParty.lpsId },
-      data: {
-        lpsIsDeleted: true,
-        lpsIsActive: false,
-        lpsUpdatedOn: now,
-        lpsUpdatedBy: this.resolveActorUuid(actorId),
-      },
-    });
-
-    await this.auditLogService.logEntityChange(
-      {
-        action: 'cancel',
-        tableName: LOYALTY_PARTY_TABLE_NAME,
-        screenName: LOYALTY_SCREEN_NAME,
-        screenType: 'master',
-        pk: deleted.lpsId,
-        displayName: this.buildPartyDisplayName(deleted.lpsLsId, deleted.lpsSlno),
-        originalRecord: this.toPartyPayload(removedParty),
-        modifiedRecord: this.toPartyPayload(deleted),
-        userId: this.resolveAuditActor(),
-        notes: 'Loyalty party scope soft deleted',
-      },
-      client,
-    );
-  }
-
-  return persisted.sort((left, right) => {
-    if (left.lpsSlno === right.lpsSlno) {
-      return left.lpsId.localeCompare(right.lpsId);
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: LOYALTY_PARTY_TABLE_NAME,
+          screenName: LOYALTY_SCREEN_NAME,
+          screenType: 'master',
+          pk: deleted.lpsId,
+          displayName: this.buildPartyDisplayName(deleted.lpsLsId, deleted.lpsSlno),
+          originalRecord: this.toPartyPayload(removedParty),
+          modifiedRecord: this.toPartyPayload(deleted),
+          userId: this.resolveAuditActor(),
+          notes: 'Loyalty party scope soft deleted',
+        },
+        client,
+      );
     }
-    return left.lpsSlno - right.lpsSlno;
-  });
-}
+
+    return persisted.sort((left, right) => {
+      if (left.lpsSlno === right.lpsSlno) {
+        return left.lpsId.localeCompare(right.lpsId);
+      }
+      return left.lpsSlno - right.lpsSlno;
+    });
+  }
 
   private buildDateRangeFilter(
     fromValue: string | undefined,
@@ -1384,7 +1371,12 @@ private async syncSchemeParties(
     dto: SaveLoyaltyPointDto,
   ): Promise<void> {
     if (dto.lspt_item_id) {
-      await this.ensurePointScopeReference(client, schemeItemType, dto.lspt_item_id, 'lspt_item_id');
+      await this.ensurePointScopeReference(
+        client,
+        schemeItemType,
+        dto.lspt_item_id,
+        'lspt_item_id',
+      );
     }
 
     if (dto.lspt_unit_id) {
@@ -1396,8 +1388,16 @@ private async syncSchemeParties(
     client: LoyaltyWriteClient,
     dto: SaveLoyaltyGiftDto,
   ): Promise<void> {
-    await this.ensureItemExists(client, this.requireUuid(dto.lsg_item_id, 'lsg_item_id'), 'lsg_item_id');
-    await this.ensureUnitExists(client, this.requireUuid(dto.lsg_unit_id, 'lsg_unit_id'), 'lsg_unit_id');
+    await this.ensureItemExists(
+      client,
+      this.requireUuid(dto.lsg_item_id, 'lsg_item_id'),
+      'lsg_item_id',
+    );
+    await this.ensureUnitExists(
+      client,
+      this.requireUuid(dto.lsg_unit_id, 'lsg_unit_id'),
+      'lsg_unit_id',
+    );
   }
 
   private async ensurePointScopeReference(
@@ -1638,11 +1638,11 @@ private async syncSchemeParties(
       ls_bal_apl: scheme.lsBalApl,
       ls_allow_point_redeem: scheme.lsAllowPointRedeem,
       ls_allow_gift_redeem: scheme.lsAllowGiftRedeem,
-      ls_redeem_value_per_point: this.toNumber(scheme.lsRedeemValuePerPoint),
-      ls_min_redeem_points: this.toNumber(scheme.lsMinRedeemPoints),
-      ls_max_redeem_points_per_bill: this.toNumber(scheme.lsMaxRedeemPointsPerBill),
-      ls_max_redeem_percent_per_bill: this.toNumber(scheme.lsMaxRedeemPercentPerBill),
-      ls_redeem_min_bill_amount: this.toNumber(scheme.lsRedeemMinBillAmount),
+      ls_redeem_value_per_point: toNumber(scheme.lsRedeemValuePerPoint),
+      ls_min_redeem_points: toNumber(scheme.lsMinRedeemPoints),
+      ls_max_redeem_points_per_bill: toNumber(scheme.lsMaxRedeemPointsPerBill),
+      ls_max_redeem_percent_per_bill: toNumber(scheme.lsMaxRedeemPercentPerBill),
+      ls_redeem_min_bill_amount: toNumber(scheme.lsRedeemMinBillAmount),
       ls_points_valid_days: scheme.lsPointsValidDays,
       ls_expiry_basis: scheme.lsExpiryBasis,
       ls_remarks: scheme.lsRemarks,
@@ -1684,10 +1684,10 @@ private async syncSchemeParties(
       lspt_slno: point.lsptSlno,
       lspt_item_id: point.lsptItemId,
       lspt_unit_id: point.lsptUnitId,
-      lspt_exceeds: this.toNumber(point.lsptExceeds),
-      lspt_each: this.toNumber(point.lsptEach),
-      lspt_factor: this.toNumber(point.lsptFactor),
-      lspt_points: this.toNumber(point.lsptPoints),
+      lspt_exceeds: toNumber(point.lsptExceeds),
+      lspt_each: toNumber(point.lsptEach),
+      lspt_factor: toNumber(point.lsptFactor),
+      lspt_points: toNumber(point.lsptPoints),
       lspt_notes: point.lsptNotes,
       lspt_is_active: point.lsptIsActive,
       lspt_is_deleted: point.lsptIsDeleted,
@@ -1706,8 +1706,8 @@ private async syncSchemeParties(
       lsg_slno: gift.lsgSlno,
       lsg_item_id: gift.lsgItemId,
       lsg_unit_id: gift.lsgUnitId,
-      lsg_item_qty: this.toNumber(gift.lsgItemQty),
-      lsg_redeem_points: this.toNumber(gift.lsgRedeemPoints),
+      lsg_item_qty: toNumber(gift.lsgItemQty),
+      lsg_redeem_points: toNumber(gift.lsgRedeemPoints),
       lsg_repeat: gift.lsgRepeat,
       lsg_notes: gift.lsgNotes,
       lsg_is_active: gift.lsgIsActive,
@@ -1740,10 +1740,6 @@ private async syncSchemeParties(
 
     const fraction = String(milliseconds).padStart(3, '0').replace(/0+$/, '');
     return `${hours}:${minutes}:${seconds}.${fraction}`;
-  }
-
-  private toNumber(value: Prisma.Decimal | number): number {
-    return Number(value);
   }
 
   private ensureDateRange(startDate: Date, endDate: Date): void {
@@ -1874,10 +1870,6 @@ private async syncSchemeParties(
     return `Scheme ${lsgLsId} / Gift ${lsgSlno}`;
   }
 
-  private hasOwn<T extends object>(value: T, key: keyof T): boolean {
-    return Object.prototype.hasOwnProperty.call(value, key);
-  }
-
   private handleWriteError(error: unknown): void {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
       return;
@@ -1918,30 +1910,36 @@ private async syncSchemeParties(
     if (normalized.includes('lsg_item')) return 'lsg_item_id';
     if (normalized.includes('lsg_unit')) return 'lsg_unit_id';
     if (normalized.includes('lps_scope')) return 'lps_scope_id';
-    if (normalized.includes('lspt_ls') || normalized.includes('lsg_ls') || normalized.includes('lps_ls')) {
+    if (
+      normalized.includes('lspt_ls') ||
+      normalized.includes('lsg_ls') ||
+      normalized.includes('lps_ls')
+    ) {
       return 'ls_id';
     }
 
     return 'request';
   }
 
-  private throwBadRequest(
-    message: string,
-    errors: PromotionLoyaltyPointsErrorDetail[],
-  ): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
+  private throwBadRequest(message: string, errors: PromotionLoyaltyPointsErrorDetail[]): never {
+    throwSalesBadRequest<PromotionLoyaltyPointsErrorDetail, PromotionLoyaltyPointsErrorResponse>(
+      message,
+      errors,
+    );
   }
 
-  private throwConflict(
-    message: string,
-    errors: PromotionLoyaltyPointsErrorDetail[],
-  ): never {
-    throw new ConflictException(this.buildErrorResponse(message, errors));
+  private throwConflict(message: string, errors: PromotionLoyaltyPointsErrorDetail[]): never {
+    throwSalesConflict<PromotionLoyaltyPointsErrorDetail, PromotionLoyaltyPointsErrorResponse>(
+      message,
+      errors,
+    );
   }
 
   private throwNotFound(field: string, value: string, message: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse(message, [{ field, message: `${field} ${value} was not found` }]),
+    throwSalesNotFound<PromotionLoyaltyPointsErrorDetail, PromotionLoyaltyPointsErrorResponse>(
+      message,
+      field,
+      `${field} ${value} was not found`,
     );
   }
 
@@ -1949,10 +1947,9 @@ private async syncSchemeParties(
     message: string,
     errors: PromotionLoyaltyPointsErrorDetail[],
   ): PromotionLoyaltyPointsErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
+    return buildSalesErrorResponse<
+      PromotionLoyaltyPointsErrorDetail,
+      PromotionLoyaltyPointsErrorResponse
+    >(message, errors);
   }
 }

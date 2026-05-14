@@ -97,3 +97,65 @@ export class ItemStockBalanceSuccessListDto {
   @ApiProperty({ type: ItemStockBalancePayloadDto, isArray: true })
   data!: ItemStockBalancePayloadDto[];
 }
+
+export class ItemBatchStockOptionPayloadDto {
+  @ApiProperty({ format: 'uuid' })
+  ibs_id!: string;
+  @ApiProperty()
+  ibs_acc_year!: string;
+  @ApiProperty({ format: 'uuid' })
+  ibs_company_id!: string;
+  @ApiProperty({ format: 'uuid' })
+  ibs_branch_id!: string;
+  @ApiProperty({ format: 'uuid' })
+  ibs_godown_id!: string;
+  @ApiProperty({ format: 'uuid' })
+  ibs_item_id!: string;
+  @ApiProperty({ format: 'uuid' })
+  ibs_unit_id!: string;
+  @ApiProperty({ format: 'uuid' })
+  ibs_batch_id!: string;
+  @ApiPropertyOptional({ nullable: true })
+  ibs_batch_no!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  ibs_mfg_batch_no!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  ibs_batch_date!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  ibs_mfg_date!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  ibs_expiry_date!: string | null;
+  @ApiProperty()
+  ibs_mrp!: number;
+  @ApiPropertyOptional({ nullable: true })
+  ibs_barcode!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  ibs_serial_no!: string | null;
+  @ApiProperty()
+  ibs_stock_bucket!: string;
+  @ApiProperty()
+  ibs_closing_qty!: number;
+  @ApiProperty()
+  ibs_free_closing_qty!: number;
+  @ApiProperty()
+  book_qty!: number;
+  @ApiProperty()
+  book_base_qty!: number;
+  @ApiProperty()
+  book_free_qty!: number;
+  @ApiProperty()
+  book_free_base_qty!: number;
+  @ApiProperty()
+  ibs_avg_stock_rate!: number;
+  @ApiProperty()
+  ibs_avg_stock_rate_wot!: number;
+}
+
+export class ItemBatchStockOptionSuccessListDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Item batch stock options fetched successfully' })
+  message!: string;
+  @ApiProperty({ type: ItemBatchStockOptionPayloadDto, isArray: true })
+  data!: ItemBatchStockOptionPayloadDto[];
+}

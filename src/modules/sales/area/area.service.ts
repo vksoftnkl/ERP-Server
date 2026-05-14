@@ -1,10 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AreaMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,12 +15,32 @@ import {
   AreaListMeta,
   AreaPayload,
 } from './types/area-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SalesWriteClient,
+  applyPresentFields,
+  hasOwnProperty,
+  normalizeRequiredText,
+  resolveActor,
+  throwOnUniqueConstraintError,
+  throwSalesBadRequest,
+  throwSalesConflict,
+  throwSalesNotFound,
+  toNumber,
+} from '../utils/sales-service.utils';
 const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
-type AreaWriteClient = Prisma.TransactionClient | PrismaService;
+const AREA_OPTIONAL_FIELDS = [
+  'armAlias',
+  'armShort',
+  'armSort',
+  'armDistanceKm',
+  'armCollectionDays',
+  'armIsActive',
+];
+type AreaWriteClient = SalesWriteClient;
 @Injectable()
 export class AreaService {
   constructor(
@@ -36,15 +54,21 @@ export class AreaService {
     }
     return this.createArea(saveAreaDto);
   }
-  async list(queryDto: ListAreaQueryDto): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta>> {
+  async list(
+    queryDto: ListAreaQueryDto,
+  ): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
-      queryDto.armCityId !== undefined ||
-      queryDto.armIsActive !== undefined;
+      queryDto.armCityId !== undefined || queryDto.armIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(
+        queryDto.search,
+        page,
+        limit,
+        skip,
+      );
       if (configuredList) {
         return configuredList;
       }
@@ -148,7 +172,11 @@ export class AreaService {
       },
     });
     if (!record) {
-      this.throwNotFound(armId);
+      throwSalesNotFound<AreaErrorDetail, AreaErrorResponse>(
+        'Area not found',
+        'armId',
+        `No active area found with id ${armId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -161,7 +189,11 @@ export class AreaService {
         },
       });
       if (!existing) {
-        this.throwNotFound(armId);
+        throwSalesNotFound<AreaErrorDetail, AreaErrorResponse>(
+          'Area not found',
+          'armId',
+          `No active area found with id ${armId}`,
+        );
       }
       const customerCount = await tx.customer.count({
         where: {
@@ -170,12 +202,15 @@ export class AreaService {
         },
       });
       if (customerCount > 0) {
-        this.throwBadRequest('Cannot delete area with active customers', [
-          {
-            field: 'armId',
-            message: `Area ${armId} is used by ${customerCount} customer(s).`,
-          },
-        ]);
+        throwSalesBadRequest<AreaErrorDetail, AreaErrorResponse>(
+          'Cannot delete area with active customers',
+          [
+            {
+              field: 'armId',
+              message: `Area ${armId} is used by ${customerCount} customer(s).`,
+            },
+          ],
+        );
       }
       const modifiedOn = new Date();
       const result = await tx.areaMaster.updateMany({
@@ -191,7 +226,11 @@ export class AreaService {
         },
       });
       if (result.count === 0) {
-        this.throwNotFound(armId);
+        throwSalesNotFound<AreaErrorDetail, AreaErrorResponse>(
+          'Area not found',
+          'armId',
+          `No active area found with id ${armId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -223,14 +262,17 @@ export class AreaService {
     });
   }
   private async createArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
-    const normalizedName = this.normalizeRequiredName(saveAreaDto.armName);
+    const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
+      saveAreaDto.armName,
+      'armName',
+    );
     const now = new Date();
-    const createdBy = this.resolveActor(saveAreaDto.armCreatedBy);
-    const modifiedBy = this.resolveActor(saveAreaDto.armModifiedBy, createdBy);
+    const createdBy = resolveActor(saveAreaDto.armCreatedBy);
+    const modifiedBy = resolveActor(saveAreaDto.armModifiedBy, createdBy);
     const data: Prisma.AreaMasterUncheckedCreateInput = {
       armName: normalizedName,
       armCityId: saveAreaDto.armCityId,
-      armCollectionDays: this.hasOwnProperty(saveAreaDto, 'armCollectionDays')
+      armCollectionDays: hasOwnProperty(saveAreaDto, 'armCollectionDays')
         ? (saveAreaDto.armCollectionDays ?? [])
         : [],
       armCreatedOn: now,
@@ -263,7 +305,16 @@ export class AreaService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<AreaErrorDetail, AreaErrorResponse>(
+        error,
+        'Area already exists',
+        [
+          {
+            field: 'armName',
+            message: 'Duplicate armName is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -278,10 +329,17 @@ export class AreaService {
           },
         });
         if (!existing) {
-          this.throwNotFound(armId);
+          throwSalesNotFound<AreaErrorDetail, AreaErrorResponse>(
+            'Area not found',
+            'armId',
+            `No active area found with id ${armId}`,
+          );
         }
-        const normalizedName = this.normalizeRequiredName(saveAreaDto.armName);
-        const nextCityId = this.hasOwnProperty(saveAreaDto, 'armCityId')
+        const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
+          saveAreaDto.armName,
+          'armName',
+        );
+        const nextCityId = hasOwnProperty(saveAreaDto, 'armCityId')
           ? saveAreaDto.armCityId
           : existing.armCityId;
         await this.ensureCityExists(tx, nextCityId);
@@ -290,7 +348,7 @@ export class AreaService {
           armName: normalizedName,
           armCityId: nextCityId,
           armModifiedOn: new Date(),
-          armModifiedBy: this.resolveActor(saveAreaDto.armModifiedBy),
+          armModifiedBy: resolveActor(saveAreaDto.armModifiedBy),
         };
         this.applyOptionalFields(data, saveAreaDto);
         const updated = await tx.areaMaster.update({
@@ -318,7 +376,16 @@ export class AreaService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<AreaErrorDetail, AreaErrorResponse>(
+        error,
+        'Area already exists',
+        [
+          {
+            field: 'armName',
+            message: 'Duplicate armName is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -333,7 +400,7 @@ export class AreaService {
       },
     });
     if (!city) {
-      this.throwBadRequest('City does not exist', [
+      throwSalesBadRequest<AreaErrorDetail, AreaErrorResponse>('City does not exist', [
         {
           field: 'armCityId',
           message: `No active city found with id ${cityId}`,
@@ -368,13 +435,14 @@ export class AreaService {
       },
     });
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Area name already exists for this city', [
+      throwSalesConflict<AreaErrorDetail, AreaErrorResponse>(
+        'Area name already exists for this city',
+        [
           {
             field: 'armName',
             message: 'Duplicate area name is not allowed for this city',
           },
-        ]),
+        ],
       );
     }
   }
@@ -382,36 +450,7 @@ export class AreaService {
     data: Prisma.AreaMasterUncheckedCreateInput | Prisma.AreaMasterUncheckedUpdateInput,
     saveAreaDto: SaveAreaDto,
   ): void {
-    if (this.hasOwnProperty(saveAreaDto, 'armAlias')) {
-      data.armAlias = saveAreaDto.armAlias;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armShort')) {
-      data.armShort = saveAreaDto.armShort;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armSort')) {
-      data.armSort = saveAreaDto.armSort;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armDistanceKm')) {
-      data.armDistanceKm = saveAreaDto.armDistanceKm;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armCollectionDays')) {
-      data.armCollectionDays = saveAreaDto.armCollectionDays;
-    }
-    if (this.hasOwnProperty(saveAreaDto, 'armIsActive')) {
-      data.armIsActive = saveAreaDto.armIsActive;
-    }
-  }
-  private normalizeRequiredName(name: string): string {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'armName',
-          message: 'armName must not be empty',
-        },
-      ]);
-    }
-    return trimmed;
+    applyPresentFields(data, saveAreaDto, AREA_OPTIONAL_FIELDS);
   }
   private toPayload(record: AreaMaster): AreaPayload {
     return {
@@ -420,7 +459,7 @@ export class AreaService {
       armAlias: record.armAlias,
       armShort: record.armShort,
       armCityId: record.armCityId,
-      armSort: this.toNumber(record.armSort),
+      armSort: toNumber(record.armSort),
       armDistanceKm: record.armDistanceKm,
       armCollectionDays: record.armCollectionDays,
       armIsActive: record.armIsActive,
@@ -431,59 +470,5 @@ export class AreaService {
       armModifiedOn: record.armModifiedOn.toISOString(),
       armModifiedBy: record.armModifiedBy,
     };
-  }
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-    return Number(value.toString());
-  }
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    if (!value) {
-      return fallback;
-    }
-    const trimmed = value.trim();
-    return trimmed || fallback;
-  }
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Area already exists', [
-          {
-            field: 'armName',
-            message: 'Duplicate armName is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private throwNotFound(armId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Area not found', [
-        {
-          field: 'armId',
-          message: `No active area found with id ${armId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: AreaErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(message: string, errors: AreaErrorDetail[] = []): AreaErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

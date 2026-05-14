@@ -41,7 +41,6 @@ import { StateCodeMasterModule } from '../modules/fixed/state-code-master/state-
 import { UiTableColumnsModule } from '../modules/fixed/ui-table-columns/ui-table-columns.module';
 import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
-
 import { PromotionLoyaltyPointsModule } from '../modules/sales/loyalty/promotion-loyalty-points.module';
 import { ItemsGroupMasterModule } from 'src/modules/Inventory/items-group-master/items-group-master.module';
 import { ItemsBrandMasterModule } from 'src/modules/Inventory/items-brand-master/items-brand-master.module';
@@ -58,6 +57,7 @@ import { ItemsEanCodeMasterModule } from 'src/modules/Inventory/items-ean-code-m
 import { GodownsMasterModule } from 'src/modules/Inventory/godowns-master/godowns-master.module';
 import { OpeningStockModule } from 'src/modules/stocks/opening-stock/opening-stock.module';
 import { ItemStockBalanceModule } from 'src/modules/stocks/itemstockbalance/itemStockBalanceModule';
+import { ItemBatchStockModule } from 'src/modules/stocks/itembatchstock/itemBatchStockModule';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -274,6 +274,12 @@ export const swaggerModuleDocuments = [
     title: 'Item Stock Balance API',
     description: 'Item stock balance lookup endpoints',
     include: [ItemStockBalanceModule],
+  },
+  {
+    path: 'item-batch-stock',
+    title: 'Item Batch Stock API',
+    description: 'Item batch stock lookup endpoints',
+    include: [ItemBatchStockModule],
   },
   {
     path: 'promotion-loyalty-points',

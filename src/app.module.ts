@@ -26,7 +26,6 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
 import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemPriceDetailsModule } from './modules/Inventory/item-price-details/item-price-details.module';
-
 import { AccountsGroupModule } from './modules/accountsModule/accountsGroup/accounts-group.module';
 import { AccountLedgerMastersModule } from './modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
 import { LedgerBankAccountModule } from './modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
@@ -64,6 +63,7 @@ import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-
 import { OpeningStockModule } from './modules/stocks/opening-stock/opening-stock.module';
 import { PhysicalStockModule } from './modules/stocks/physical-stock/physical-stock.module';
 import { ItemStockBalanceModule } from './modules/stocks/itemstockbalance/itemStockBalanceModule';
+import { ItemBatchStockModule } from './modules/stocks/itembatchstock/itemBatchStockModule';
 import { GodownsMasterModule } from './modules/Inventory/godowns-master/godowns-master.module';
 import { ItemsGroupMasterModule } from './modules/Inventory/items-group-master/items-group-master.module';
 import { ItemsBrandMasterModule } from './modules/Inventory/items-brand-master/items-brand-master.module';
@@ -164,6 +164,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     OpeningStockModule,
     PhysicalStockModule,
     ItemStockBalanceModule,
+    ItemBatchStockModule,
     PromotionLoyaltyPointsModule,
     GodownsMasterModule,
     GridDetailsModule,

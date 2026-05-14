@@ -2,15 +2,25 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ItemPriceMaster, ItemStockBalance, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import type { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
+import { GetItemBatchStockOptionsQueryDto } from './dto/get-item-batch-stock-options-query.dto';
 import { GetItemStockBalanceQueryDto } from './dto/get-item-stock-balance-query.dto';
 import {
+  ItemBatchStockOptionPayload,
   ItemStockBalanceErrorDetail,
   ItemStockBalanceErrorResponse,
   ItemStockBalancePayload,
 } from './types/item-stock-balance-api.types';
+
+type ItemBatchStockWithBatchMaster = Prisma.ItemBatchStockGetPayload<{
+  include: { batch: true };
+}>;
+
+const DEFAULT_BATCH_OPTION_LIMIT = 50;
+const MAX_BATCH_OPTION_LIMIT = 100;
 @Injectable()
 export class ItemStockBalanceService {
   constructor(private readonly prisma: PrismaService) {}
+
   async getByScope(
     queryDto: GetItemStockBalanceQueryDto,
   ): Promise<ItemStockBalancePayload[]> {
@@ -44,6 +54,54 @@ export class ItemStockBalanceService {
     }
     return records.map((record) =>
       this.toPayload(record, this.getUnitFactorForStockUnit(record, queryDto, unitFactorsByUnitId)),
+    );
+  }
+  async getBatchOptionsByScope(
+    queryDto: GetItemBatchStockOptionsQueryDto,
+  ): Promise<ItemBatchStockOptionPayload[]> {
+    const unitFactorsByUnitId = await this.getItemPriceUnitFactors(
+      queryDto.ibs_item_id,
+      queryDto.ibs_unit_id,
+    );
+    const stockUnitIds = Array.from(
+      new Set([queryDto.ibs_unit_id, ...unitFactorsByUnitId.keys()]),
+    );
+    const where: Prisma.ItemBatchStockWhereInput = {
+      ibsAccYear: queryDto.ibs_acc_year,
+      ibsCompanyId: queryDto.ibs_company_id,
+      ibsBranchId: queryDto.ibs_branch_id,
+      ibsGodownId: queryDto.ibs_godown_id,
+      ibsItemId: queryDto.ibs_item_id,
+      ibsUnitId: { in: stockUnitIds },
+      ibsIsActive: true,
+      ibsIsDeleted: false,
+    };
+    if (queryDto.ibs_stock_bucket) {
+      where.ibsStockBucket = queryDto.ibs_stock_bucket;
+    }
+    const normalizedSearch = queryDto.search?.trim();
+    if (normalizedSearch) {
+      const contains = { contains: normalizedSearch, mode: 'insensitive' as const };
+      where.OR = [
+        { ibsBatchNo: contains },
+        { ibsSerialNo: contains },
+        { batch: { is: { btmBatchNo: contains } } },
+        { batch: { is: { btmMfgBatchNo: contains } } },
+        { batch: { is: { btmBarcode: contains } } },
+      ];
+    }
+    const records = await this.prisma.itemBatchStock.findMany({
+      where,
+      include: { batch: true },
+      orderBy: [{ ibsBatchNo: 'asc' }, { ibsBatchId: 'asc' }],
+      take: this.resolveBatchOptionLimit(queryDto.limit),
+    });
+    const fallbackUnitFactor = unitFactorsByUnitId.get(queryDto.ibs_unit_id) ?? 1;
+    return records.map((record) =>
+      this.toBatchOptionPayload(
+        record,
+        unitFactorsByUnitId.get(record.ibsUnitId) ?? fallbackUnitFactor,
+      ),
     );
   }
   async getPriceMasterByItemAndUnit(
@@ -103,6 +161,42 @@ export class ItemStockBalanceService {
       isb_created_by: record.isbCreatedBy,
       isb_updated_on: record.isbUpdatedOn ? record.isbUpdatedOn.toISOString() : null,
       isb_updated_by: record.isbUpdatedBy,
+    };
+  }
+  private toBatchOptionPayload(
+    record: ItemBatchStockWithBatchMaster,
+    unitFactor = 1,
+  ): ItemBatchStockOptionPayload {
+    const closingQty = this.toNumber(record.ibsClosingQty);
+    const freeClosingQty = this.toNumber(record.ibsFreeClosingQty);
+    const mfgDate = record.ibsMfgDate ?? record.batch.btmMfgDate;
+    const expiryDate = record.ibsExpiryDate ?? record.batch.btmExpiryDate;
+    return {
+      ibs_id: record.ibsId,
+      ibs_acc_year: record.ibsAccYear,
+      ibs_company_id: record.ibsCompanyId,
+      ibs_branch_id: record.ibsBranchId,
+      ibs_godown_id: record.ibsGodownId,
+      ibs_item_id: record.ibsItemId,
+      ibs_unit_id: record.ibsUnitId,
+      ibs_batch_id: record.ibsBatchId,
+      ibs_batch_no: record.ibsBatchNo ?? record.batch.btmBatchNo ?? null,
+      ibs_mfg_batch_no: record.batch.btmMfgBatchNo ?? null,
+      ibs_batch_date: this.toIsoStringOrNull(record.batch.btmBatchDate),
+      ibs_mfg_date: this.toIsoStringOrNull(mfgDate),
+      ibs_expiry_date: this.toIsoStringOrNull(expiryDate),
+      ibs_mrp: this.toNumber(record.ibsMrp),
+      ibs_barcode: record.batch.btmBarcode ?? null,
+      ibs_serial_no: record.ibsSerialNo ?? null,
+      ibs_stock_bucket: record.ibsStockBucket,
+      ibs_closing_qty: closingQty,
+      ibs_free_closing_qty: freeClosingQty,
+      book_qty: this.calculateBookQty(closingQty, unitFactor),
+      book_base_qty: closingQty,
+      book_free_qty: this.calculateBookQty(freeClosingQty, unitFactor),
+      book_free_base_qty: freeClosingQty,
+      ibs_avg_stock_rate: this.toNumber(record.ibsAvgStockRate),
+      ibs_avg_stock_rate_wot: this.toNumber(record.ibsAvgStockRate),
     };
   }
   private toItemPricePayload(record: ItemPriceMaster): ItemPricePayload {
@@ -199,6 +293,16 @@ export class ItemStockBalanceService {
   }
   private calculateBookQty(closingQty: number, unitFactor: number): number {
     return unitFactor > 0 ? closingQty / unitFactor : 0;
+  }
+  private resolveBatchOptionLimit(value: string | undefined): number {
+    const parsed = Number.parseInt(value ?? '', 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return DEFAULT_BATCH_OPTION_LIMIT;
+    }
+    return Math.min(parsed, MAX_BATCH_OPTION_LIMIT);
+  }
+  private toIsoStringOrNull(value: Date | null | undefined): string | null {
+    return value ? value.toISOString() : null;
   }
   private toNumber(value: Prisma.Decimal | number): number {
     const parsed = Number(value);

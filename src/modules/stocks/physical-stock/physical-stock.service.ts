@@ -11,19 +11,50 @@ import {
   CreatePhysicalStockDetailDto,
   CreatePhysicalStockDto,
 } from './dto/create-physical-stock.dto';
+import { ListPhysicalStockQueryDto } from './dto/list-physical-stock-query.dto';
 import { UpdatePhysicalStockDto } from './dto/update-physical-stock.dto';
 import type {
   PhysicalStockDeleteResponse,
   PhysicalStockDocumentResponse,
   PhysicalStockErrorDetail,
+  PhysicalStockHeaderResponse,
+  PhysicalStockListItem,
+  PhysicalStockListMeta,
 } from './types/physical-stock-response.types';
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 20;
 const PHYSICAL_STOCK_DOCUMENT_INCLUDE = {
   details: {
     where: {
       psdIsDeleted: false,
     },
     include: {
+      item: {
+        select: {
+          itemId: true,
+          itemCode: true,
+          itemNameEn: true,
+        },
+      },
+      unit: {
+        select: {
+          unit_id: true,
+          unit_name: true,
+        },
+      },
+      baseUnit: {
+        select: {
+          unit_id: true,
+          unit_name: true,
+        },
+      },
+      godown: {
+        select: {
+          gdlId: true,
+          gdlName: true,
+        },
+      },
       batchDetails: {
         where: {
           psbIsDeleted: false,
@@ -38,8 +69,19 @@ const PHYSICAL_STOCK_DOCUMENT_INCLUDE = {
     },
   },
 } satisfies Prisma.PhysicalStockHeaderInclude;
+const PHYSICAL_STOCK_HEADER_INCLUDE = {
+  godown: {
+    select: {
+      gdlId: true,
+      gdlName: true,
+    },
+  },
+} satisfies Prisma.PhysicalStockHeaderInclude;
 type PhysicalStockDocumentRecord = Prisma.PhysicalStockHeaderGetPayload<{
   include: typeof PHYSICAL_STOCK_DOCUMENT_INCLUDE;
+}>;
+type PhysicalStockListRecord = Prisma.PhysicalStockHeaderGetPayload<{
+  include: typeof PHYSICAL_STOCK_HEADER_INCLUDE;
 }>;
 type PhysicalStockHeaderRecord = Prisma.PhysicalStockHeaderGetPayload<{}>;
 type PhysicalStockBatchDetailCreateInputWithHeader =
@@ -57,6 +99,56 @@ export class PhysicalStockService {
       return this.update(savePhysicalStockDto.psId, savePhysicalStockDto);
     }
     return this.create(savePhysicalStockDto);
+  }
+  async getList(
+    queryDto: ListPhysicalStockQueryDto,
+  ): Promise<{ items: PhysicalStockListItem[]; meta: PhysicalStockListMeta }> {
+    return this.list(queryDto);
+  }
+  async list(
+    queryDto: ListPhysicalStockQueryDto,
+  ): Promise<{ items: PhysicalStockListItem[]; meta: PhysicalStockListMeta }> {
+    const page = queryDto.page ?? DEFAULT_PAGE;
+    const limit = queryDto.limit ?? DEFAULT_LIMIT;
+    const skip = (page - 1) * limit;
+    const where = this.buildListWhere(queryDto);
+    const [total, records] = await Promise.all([
+      this.prisma.physicalStockHeader.count({ where }),
+      this.prisma.physicalStockHeader.findMany({
+        where,
+        include: PHYSICAL_STOCK_HEADER_INCLUDE,
+        orderBy: [{ psDocDate: 'desc' }, { psDocNo: 'desc' }, { psId: 'desc' }],
+        skip,
+        take: limit,
+      }),
+    ]);
+    return {
+      items: records.map((record) => this.toHeaderResponse(record)),
+      meta: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit),
+      },
+    };
+  }
+  async getById(psId: string): Promise<PhysicalStockDocumentResponse> {
+    return this.buildDocumentPayload(this.prisma, psId);
+  }
+  async getByRefNo(
+    queryDto: Pick<
+      ListPhysicalStockQueryDto,
+      | 'ps_doc_refno'
+      | 'ps_acc_year'
+      | 'ps_company_id'
+      | 'ps_branch_id'
+      | 'ps_status'
+      | 'date_from'
+      | 'date_to'
+    >,
+  ): Promise<PhysicalStockDocumentResponse> {
+    const header = await this.getActiveHeaderByRefNoOrThrow(this.prisma, queryDto);
+    return this.buildDocumentPayload(this.prisma, header.psId);
   }
   async create(
     createPhysicalStockDto: CreatePhysicalStockDto,
@@ -239,7 +331,7 @@ export class PhysicalStockService {
     return `This action returns all physicalStock`;
   }
   findOne(id: string | number): Promise<PhysicalStockDocumentResponse> {
-    return this.buildDocumentPayload(this.prisma, String(id));
+    return this.getById(String(id));
   }
   async update(
     id: string | number,
@@ -430,6 +522,107 @@ export class PhysicalStockService {
       message,
       errors,
     };
+  }
+  private buildScopedListWhere(
+    queryDto: Pick<
+      ListPhysicalStockQueryDto,
+      | 'ps_acc_year'
+      | 'ps_company_id'
+      | 'ps_branch_id'
+      | 'ps_status'
+      | 'date_from'
+      | 'date_to'
+    >,
+  ): Prisma.PhysicalStockHeaderWhereInput {
+    const where: Prisma.PhysicalStockHeaderWhereInput = {
+      psIsDeleted: false,
+    };
+    if (queryDto.ps_acc_year) {
+      where.psAccYear = queryDto.ps_acc_year;
+    }
+    if (queryDto.ps_company_id) {
+      where.psCompanyId = queryDto.ps_company_id;
+    }
+    if (queryDto.ps_branch_id) {
+      where.psBranchId = queryDto.ps_branch_id;
+    }
+    if (queryDto.ps_status) {
+      where.psStatus = queryDto.ps_status;
+    }
+    if (queryDto.date_from || queryDto.date_to) {
+      where.psDocDate = {
+        ...(queryDto.date_from ? { gte: new Date(queryDto.date_from) } : {}),
+        ...(queryDto.date_to ? { lte: new Date(queryDto.date_to) } : {}),
+      };
+    }
+    return where;
+  }
+  private buildListWhere(queryDto: ListPhysicalStockQueryDto): Prisma.PhysicalStockHeaderWhereInput {
+    const where = this.buildScopedListWhere(queryDto);
+    const search = queryDto.search?.trim();
+    if (!search) {
+      return where;
+    }
+    const numericSearch = Number.parseInt(search.replace(/\D/g, ''), 10);
+    where.OR = [
+      {
+        psDocRefNo: {
+          contains: search,
+          mode: 'insensitive',
+        },
+      },
+      ...(Number.isInteger(numericSearch) && numericSearch > 0
+        ? [
+            {
+              psDocNo: BigInt(numericSearch),
+            },
+          ]
+        : []),
+    ];
+    return where;
+  }
+  private async getActiveHeaderByRefNoOrThrow(
+    client: PhysicalStockWriteClient,
+    queryDto: Pick<
+      ListPhysicalStockQueryDto,
+      | 'ps_doc_refno'
+      | 'ps_acc_year'
+      | 'ps_company_id'
+      | 'ps_branch_id'
+      | 'ps_status'
+      | 'date_from'
+      | 'date_to'
+    >,
+  ): Promise<PhysicalStockHeaderRecord> {
+    const refNo = queryDto.ps_doc_refno?.trim() ?? '';
+    if (!refNo) {
+      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        {
+          field: 'ps_doc_refno',
+          message: 'ps_doc_refno is required',
+        },
+      ]);
+    }
+    const where = this.buildScopedListWhere(queryDto);
+    where.psDocRefNo = {
+      equals: refNo,
+      mode: 'insensitive',
+    };
+    const header = await client.physicalStockHeader.findFirst({
+      where,
+      orderBy: [{ psDocDate: 'desc' }, { psDocNo: 'desc' }, { psId: 'desc' }],
+    });
+    if (!header) {
+      throw new NotFoundException(
+        this.buildErrorResponse('Physical stock document not found', [
+          {
+            field: 'ps_doc_refno',
+            message: `No active physical stock document found with ref no ${refNo}`,
+          },
+        ]),
+      );
+    }
+    return header;
   }
   private buildHeaderCreateInput(
     dto: CreatePhysicalStockDto,
@@ -804,21 +997,105 @@ export class PhysicalStockService {
   }
   private toDocumentResponse(document: PhysicalStockDocumentRecord): PhysicalStockDocumentResponse {
     return {
-      header: {
-        psc_id: document.psId,
-        psc_refno: document.psDocRefNo ?? document.psDocNo.toString(),
-        psc_date: this.formatDate(document.psDocDate),
-      },
+      header: this.toHeaderResponse(document),
       details: document.details.map((detail) => ({
         psd_id: detail.psdId,
         psd_psc_id: detail.psdPscId,
         psd_row_no: detail.psdRowNo,
+        psd_acc_year: detail.psdAccYear,
+        psd_company_id: detail.psdCompanyId,
+        psd_branch_id: detail.psdBranchId,
+        psd_godown_id: detail.psdGodownId,
+        psd_godown_name: detail.godown?.gdlName ?? null,
+        psd_item_id: detail.psdItemId,
+        psd_item_code: detail.item?.itemCode ?? null,
+        psd_item_name: detail.item?.itemNameEn ?? null,
+        psd_unit_id: detail.psdUnitId,
+        psd_unit_name: detail.unit?.unit_name ?? null,
+        psd_base_unit_id: detail.psdBaseUnitId,
+        psd_base_unit_name: detail.baseUnit?.unit_name ?? null,
+        psd_to_base_factor: this.toNumber(detail.psdToBaseFactor),
+        psd_barcode: detail.psdBarcode,
+        psd_mrp: this.toNumber(detail.psdMrp),
+        psd_tracking_type: detail.psdTrackingType,
+        psd_book_qty: this.toNumber(detail.psdBookQty),
+        psd_book_base_qty: this.toNumber(detail.psdBookBaseQty),
+        psd_physical_qty: this.toNumber(detail.psdPhysicalQty),
+        psd_physical_base_qty: this.toNumber(detail.psdPhysicalBaseQty),
+        psd_diff_qty: this.toNumber(detail.psdDiffQty),
+        psd_diff_base_qty: this.toNumber(detail.psdDiffBaseQty),
+        psd_stock_rate_wot: this.toNumber(detail.psdStockRateWot),
+        psd_stock_rate_with_tax: this.toNumber(detail.psdStockRateWithTax),
+        psd_reason_id: detail.psdReasonId,
+        psd_resolution: detail.psdResolution,
+        psd_notes: detail.psdNotes,
         batch_details: detail.batchDetails.map((batch) => ({
           psb_id: batch.psbId,
           psb_psd_id: batch.psbPsdId,
           psb_row_no: batch.psbRowNo,
+          psb_psh_id: batch.psbPshId,
+          psb_acc_year: batch.psbAccYear,
+          psb_company_id: batch.psbCompanyId,
+          psb_branch_id: batch.psbBranchId,
+          psb_godown_id: batch.psbGodownId,
+          psb_item_id: batch.psbItemId,
+          psb_unit_id: batch.psbUnitId,
+          psb_base_unit_id: batch.psbBaseUnitId,
+          psb_to_base_factor: this.toNumber(batch.psbToBaseFactor),
+          psb_batch_id: batch.psbBatchId,
+          psb_batch_no: batch.psbBatchNo,
+          psb_mfg_batch_no: batch.psbMfgBatchNo,
+          psb_batch_date: this.toNullableIsoString(batch.psbBatchDate),
+          psb_mfg_date: this.toNullableIsoString(batch.psbMfgDate),
+          psb_expiry_date: this.toNullableIsoString(batch.psbExpiryDate),
+          psb_mrp: this.toNumber(batch.psbMrp),
+          psb_barcode: batch.psbBarcode,
+          psb_serial_no: batch.psbSerialNo,
+          psb_book_qty: this.toNumber(batch.psbBookQty),
+          psb_book_base_qty: this.toNumber(batch.psbBookBaseQty),
+          psb_physical_qty: this.toNumber(batch.psbPhysicalQty),
+          psb_physical_base_qty: this.toNumber(batch.psbPhysicalBaseQty),
+          psb_diff_qty: this.toNumber(batch.psbDiffQty),
+          psb_diff_base_qty: this.toNumber(batch.psbDiffBaseQty),
+          psb_stock_rate_wot: this.toNumber(batch.psbStockRateWot),
+          psb_stock_rate_with_tax: this.toNumber(batch.psbStockRateWithTax),
+          psb_reason_id: batch.psbReasonId,
+          psb_resolution: batch.psbResolution,
+          psb_notes: batch.psbNotes,
         })),
       })),
+    };
+  }
+  private toHeaderResponse(
+    record: PhysicalStockDocumentRecord | PhysicalStockListRecord | PhysicalStockHeaderRecord,
+  ): PhysicalStockHeaderResponse {
+    const godown = 'godown' in record ? record.godown : null;
+    return {
+      psc_id: record.psId,
+      psc_refno: record.psDocRefNo ?? record.psDocNo.toString(),
+      psc_date: this.formatDate(record.psDocDate),
+      psc_acc_year: record.psAccYear,
+      psc_company_id: record.psCompanyId,
+      psc_branch_id: record.psBranchId,
+      psc_godown_id: record.psGodownId,
+      psc_godown_name: godown?.gdlName ?? null,
+      psc_doc_no: record.psDocNo.toString(),
+      psc_status: record.psStatus,
+      psc_total_lines: record.psTotalLines,
+      psc_total_book_value: this.toNumber(record.psTotalBookValue),
+      psc_total_counted_value: this.toNumber(record.psTotalCountedValue),
+      psc_net_variance_value: this.toNumber(record.psNetVarianceValue),
+      psc_device_type: record.psDeviceType,
+      psc_device_id: record.psDeviceId,
+      psc_counter_id: record.psCounterId,
+      psc_session_id: record.psSessionId,
+      psc_remarks: record.psRemarks,
+      psc_is_active: record.psIsActive,
+      psc_is_deleted: record.psIsDeleted,
+      psc_created_on: record.psCreatedOn.toISOString(),
+      psc_created_by: record.psCreatedBy,
+      psc_modified_on: this.toNullableIsoString(record.psModifiedOn),
+      psc_modified_by: record.psModifiedBy,
     };
   }
   private toRequiredBigInt(value: number | undefined, field: string): bigint {
@@ -838,5 +1115,15 @@ export class PhysicalStockService {
   }
   private formatDate(value: Date): string {
     return value.toISOString().slice(0, 10);
+  }
+  private toNullableIsoString(value: Date | null | undefined): string | null {
+    return value ? value.toISOString() : null;
+  }
+  private toNumber(value: Prisma.Decimal | number | string | null | undefined): number {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 }

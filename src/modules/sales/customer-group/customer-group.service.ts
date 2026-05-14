@@ -1,10 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { CustGroup, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,12 +15,39 @@ import {
   CustomerGroupListMeta,
   CustomerGroupPayload,
 } from './types/customer-group-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SalesWriteClient,
+  applyPresentFields,
+  hasOwnProperty,
+  normalizeRequiredText,
+  throwOnUniqueConstraintError,
+  throwSalesBadRequest,
+  throwSalesConflict,
+  throwSalesNotFound,
+  toNumber,
+} from '../utils/sales-service.utils';
 const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
-type CustomerGroupWriteClient = Prisma.TransactionClient | PrismaService;
+const CUSTOMER_GROUP_OPTIONAL_FIELDS = [
+  'cgrCompanyId',
+  'cgrBranchId',
+  'cgrAlias',
+  'cgrShort',
+  'cgrNarration',
+  'cgrOrder',
+  'cgrDiscPerc',
+  'cgrCollectionDays',
+  'cgrDebitAllowed',
+  'cgrDebitDays',
+  'cgrDebitLimit',
+  'cgrBillsLimit',
+  'cgrOverdueBilling',
+  'cgrIsActive',
+];
+type CustomerGroupWriteClient = SalesWriteClient;
 @Injectable()
 export class CustomerGroupService {
   constructor(
@@ -43,10 +68,14 @@ export class CustomerGroupService {
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
-      queryDto.cgrCompanyId !== undefined ||
-      queryDto.cgrIsActive !== undefined;
+      queryDto.cgrCompanyId !== undefined || queryDto.cgrIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(
+        queryDto.search,
+        page,
+        limit,
+        skip,
+      );
       if (configuredList) {
         return configuredList;
       }
@@ -118,12 +147,15 @@ export class CustomerGroupService {
       tableName: CUSTOMER_GROUP_TABLE_NAME,
     });
     if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for customer group list', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
+      throwSalesBadRequest<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+        'Invalid grid_sql configuration for customer group list',
+        [
+          {
+            field: 'grid_sql',
+            message: validation.message,
+          },
+        ],
+      );
     }
 
     try {
@@ -133,7 +165,7 @@ export class CustomerGroupService {
         search,
         limit,
         skip,
-          gridId: configuredGrid.gridId,
+        gridId: configuredGrid.gridId,
       });
 
       return {
@@ -147,12 +179,15 @@ export class CustomerGroupService {
         styles: result.styles,
       };
     } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for customer group list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for cust_groups',
-        },
-      ]);
+      throwSalesBadRequest<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+        'Invalid grid_sql configuration for customer group list',
+        [
+          {
+            field: 'grid_sql',
+            message: 'Configured query could not be executed for cust_groups',
+          },
+        ],
+      );
     }
   }
 
@@ -165,7 +200,11 @@ export class CustomerGroupService {
     });
 
     if (!record) {
-      this.throwNotFound(cgrId);
+      throwSalesNotFound<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+        'Customer group not found',
+        'cgrId',
+        `No active customer group found with id ${cgrId}`,
+      );
     }
 
     return this.toPayload(record);
@@ -181,7 +220,11 @@ export class CustomerGroupService {
       });
 
       if (!existing) {
-        this.throwNotFound(cgrId);
+        throwSalesNotFound<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+          'Customer group not found',
+          'cgrId',
+          `No active customer group found with id ${cgrId}`,
+        );
       }
 
       const customerCount = await tx.customer.count({
@@ -192,12 +235,15 @@ export class CustomerGroupService {
       });
 
       if (customerCount > 0) {
-        this.throwBadRequest('Cannot delete customer group with active customers', [
-          {
-            field: 'cgrId',
-            message: `Customer group ${cgrId} is used by ${customerCount} customer(s).`,
-          },
-        ]);
+        throwSalesBadRequest<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+          'Cannot delete customer group with active customers',
+          [
+            {
+              field: 'cgrId',
+              message: `Customer group ${cgrId} is used by ${customerCount} customer(s).`,
+            },
+          ],
+        );
       }
 
       const modifiedOn = new Date();
@@ -214,7 +260,11 @@ export class CustomerGroupService {
       });
 
       if (result.count === 0) {
-        this.throwNotFound(cgrId);
+        throwSalesNotFound<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+          'Customer group not found',
+          'cgrId',
+          `No active customer group found with id ${cgrId}`,
+        );
       }
 
       const originalRecord = this.toPayload(existing);
@@ -252,15 +302,18 @@ export class CustomerGroupService {
     saveCustomerGroupDto: SaveCustomerGroupDto,
   ): Promise<CustomerGroupPayload> {
     const now = new Date();
-    const normalizedName = this.normalizeRequiredName(saveCustomerGroupDto.cgrName);
-    const companyId = this.hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')
+    const normalizedName = normalizeRequiredText<
+      CustomerGroupErrorDetail,
+      CustomerGroupErrorResponse
+    >(saveCustomerGroupDto.cgrName, 'cgrName');
+    const companyId = hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')
       ? (saveCustomerGroupDto.cgrCompanyId ?? null)
       : null;
 
     const data: Prisma.CustGroupUncheckedCreateInput = {
       cgrName: normalizedName,
       cgrCompanyId: companyId,
-      cgrCollectionDays: this.hasOwnProperty(saveCustomerGroupDto, 'cgrCollectionDays')
+      cgrCollectionDays: hasOwnProperty(saveCustomerGroupDto, 'cgrCollectionDays')
         ? (saveCustomerGroupDto.cgrCollectionDays ?? [])
         : [],
       cgrCreatedOn: now,
@@ -295,7 +348,16 @@ export class CustomerGroupService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+        error,
+        'Customer group name already exists',
+        [
+          {
+            field: 'cgrName',
+            message: 'Duplicate customer group name is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -315,11 +377,18 @@ export class CustomerGroupService {
         });
 
         if (!existing) {
-          this.throwNotFound(cgrId);
+          throwSalesNotFound<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+            'Customer group not found',
+            'cgrId',
+            `No active customer group found with id ${cgrId}`,
+          );
         }
 
-        const normalizedName = this.normalizeRequiredName(saveCustomerGroupDto.cgrName);
-        const nextCompanyId = this.hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')
+        const normalizedName = normalizeRequiredText<
+          CustomerGroupErrorDetail,
+          CustomerGroupErrorResponse
+        >(saveCustomerGroupDto.cgrName, 'cgrName');
+        const nextCompanyId = hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')
           ? (saveCustomerGroupDto.cgrCompanyId ?? null)
           : existing.cgrCompanyId;
 
@@ -360,7 +429,16 @@ export class CustomerGroupService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+        error,
+        'Customer group name already exists',
+        [
+          {
+            field: 'cgrName',
+            message: 'Duplicate customer group name is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -384,12 +462,15 @@ export class CustomerGroupService {
     });
 
     if (!company) {
-      this.throwBadRequest('Company does not exist', [
-        {
-          field: 'cgrCompanyId',
-          message: `No active company found with id ${companyId}`,
-        },
-      ]);
+      throwSalesBadRequest<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+        'Company does not exist',
+        [
+          {
+            field: 'cgrCompanyId',
+            message: `No active company found with id ${companyId}`,
+          },
+        ],
+      );
     }
   }
 
@@ -421,13 +502,14 @@ export class CustomerGroupService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Customer group name already exists for this company', [
+      throwSalesConflict<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
+        'Customer group name already exists for this company',
+        [
           {
             field: 'cgrName',
             message: 'Duplicate customer group name is not allowed for this company',
           },
-        ]),
+        ],
       );
     }
   }
@@ -436,75 +518,9 @@ export class CustomerGroupService {
     data: Prisma.CustGroupUncheckedCreateInput | Prisma.CustGroupUncheckedUpdateInput,
     saveCustomerGroupDto: SaveCustomerGroupDto,
   ): void {
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrCompanyId')) {
-      data.cgrCompanyId = saveCustomerGroupDto.cgrCompanyId;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrBranchId')) {
-      data.cgrBranchId = saveCustomerGroupDto.cgrBranchId;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrAlias')) {
-      data.cgrAlias = saveCustomerGroupDto.cgrAlias;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrShort')) {
-      data.cgrShort = saveCustomerGroupDto.cgrShort;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrNarration')) {
-      data.cgrNarration = saveCustomerGroupDto.cgrNarration;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrOrder')) {
-      data.cgrOrder = saveCustomerGroupDto.cgrOrder;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrDiscPerc')) {
-      data.cgrDiscPerc = saveCustomerGroupDto.cgrDiscPerc;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrCollectionDays')) {
-      data.cgrCollectionDays = saveCustomerGroupDto.cgrCollectionDays ?? [];
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrDebitAllowed')) {
-      data.cgrDebitAllowed = saveCustomerGroupDto.cgrDebitAllowed;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrDebitDays')) {
-      data.cgrDebitDays = saveCustomerGroupDto.cgrDebitDays;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrDebitLimit')) {
-      data.cgrDebitLimit = saveCustomerGroupDto.cgrDebitLimit;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrBillsLimit')) {
-      data.cgrBillsLimit = saveCustomerGroupDto.cgrBillsLimit;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrOverdueBilling')) {
-      data.cgrOverdueBilling = saveCustomerGroupDto.cgrOverdueBilling;
-    }
-
-    if (this.hasOwnProperty(saveCustomerGroupDto, 'cgrIsActive')) {
-      data.cgrIsActive = saveCustomerGroupDto.cgrIsActive;
-    }
-  }
-
-  private normalizeRequiredName(name: string): string {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'cgrName',
-          message: 'cgrName must not be empty',
-        },
-      ]);
-    }
-
-    return trimmed;
+    applyPresentFields(data, saveCustomerGroupDto, CUSTOMER_GROUP_OPTIONAL_FIELDS, {
+      cgrCollectionDays: (value) => value ?? [],
+    });
   }
 
   private toPayload(record: CustGroup): CustomerGroupPayload {
@@ -516,12 +532,12 @@ export class CustomerGroupService {
       cgrAlias: record.cgrAlias,
       cgrShort: record.cgrShort,
       cgrNarration: record.cgrNarration,
-      cgrOrder: this.toNumber(record.cgrOrder),
-      cgrDiscPerc: this.toNumber(record.cgrDiscPerc),
+      cgrOrder: toNumber(record.cgrOrder),
+      cgrDiscPerc: toNumber(record.cgrDiscPerc),
       cgrCollectionDays: record.cgrCollectionDays,
       cgrDebitAllowed: record.cgrDebitAllowed,
       cgrDebitDays: record.cgrDebitDays,
-      cgrDebitLimit: this.toNumber(record.cgrDebitLimit),
+      cgrDebitLimit: toNumber(record.cgrDebitLimit),
       cgrBillsLimit: record.cgrBillsLimit,
       cgrOverdueBilling: record.cgrOverdueBilling,
       cgrIsActive: record.cgrIsActive,
@@ -529,64 +545,5 @@ export class CustomerGroupService {
       cgrCreatedOn: record.cgrCreatedOn.toISOString(),
       cgrModifiedOn: record.cgrModifiedOn.toISOString(),
     };
-  }
-
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-
-    return Number(value.toString());
-  }
-
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Customer group name already exists', [
-          {
-            field: 'cgrName',
-            message: 'Duplicate customer group name is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(cgrId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Customer group not found', [
-        {
-          field: 'cgrId',
-          message: `No active customer group found with id ${cgrId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: CustomerGroupErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: CustomerGroupErrorDetail[] = [],
-  ): CustomerGroupErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

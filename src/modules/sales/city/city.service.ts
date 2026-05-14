@@ -1,10 +1,8 @@
+import { Injectable } from '@nestjs/common';
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { CityMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,14 +15,26 @@ import {
   CityListMeta,
   CityPayload,
 } from './types/city-api.types';
-
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  SalesWriteClient,
+  applyPresentFields,
+  hasOwnProperty,
+  normalizeRequiredText,
+  resolveActor,
+  throwOnUniqueConstraintError,
+  throwSalesBadRequest,
+  throwSalesConflict,
+  throwSalesNotFound,
+  toNumber,
+} from '../utils/sales-service.utils';
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
+const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];
 
-type CityWriteClient = Prisma.TransactionClient | PrismaService;
+type CityWriteClient = SalesWriteClient;
 
 @Injectable()
 export class CityService {
@@ -42,16 +52,22 @@ export class CityService {
     return this.createCity(saveCityDto);
   }
 
-  async list(queryDto: ListCityQueryDto): Promise<ConfiguredGridListResult<CityListItem, CityListMeta>> {
+  async list(
+    queryDto: ListCityQueryDto,
+  ): Promise<ConfiguredGridListResult<CityListItem, CityListMeta>> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
     const skip = (page - 1) * limit;
     const hasStructuredFilters =
-      queryDto.ctmStateId !== undefined ||
-      queryDto.ctmIsActive !== undefined;
+      queryDto.ctmStateId !== undefined || queryDto.ctmIsActive !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
+      const configuredList = await this.listFromConfiguredGridSql(
+        queryDto.search,
+        page,
+        limit,
+        skip,
+      );
       if (configuredList) {
         return configuredList;
       }
@@ -168,7 +184,11 @@ export class CityService {
     });
 
     if (!record) {
-      this.throwNotFound(ctmId);
+      throwSalesNotFound<CityErrorDetail, CityErrorResponse>(
+        'City not found',
+        'ctmId',
+        `No active city found with id ${ctmId}`,
+      );
     }
 
     return this.toPayload(record);
@@ -184,7 +204,11 @@ export class CityService {
       });
 
       if (!existing) {
-        this.throwNotFound(ctmId);
+        throwSalesNotFound<CityErrorDetail, CityErrorResponse>(
+          'City not found',
+          'ctmId',
+          `No active city found with id ${ctmId}`,
+        );
       }
 
       const areaCount = await tx.areaMaster.count({
@@ -195,12 +219,15 @@ export class CityService {
       });
 
       if (areaCount > 0) {
-        this.throwBadRequest('Cannot delete city with active areas', [
-          {
-            field: 'ctmId',
-            message: `City ${ctmId} is used by ${areaCount} area(s).`,
-          },
-        ]);
+        throwSalesBadRequest<CityErrorDetail, CityErrorResponse>(
+          'Cannot delete city with active areas',
+          [
+            {
+              field: 'ctmId',
+              message: `City ${ctmId} is used by ${areaCount} area(s).`,
+            },
+          ],
+        );
       }
 
       const modifiedOn = new Date();
@@ -218,7 +245,11 @@ export class CityService {
       });
 
       if (result.count === 0) {
-        this.throwNotFound(ctmId);
+        throwSalesNotFound<CityErrorDetail, CityErrorResponse>(
+          'City not found',
+          'ctmId',
+          `No active city found with id ${ctmId}`,
+        );
       }
 
       const originalRecord = this.toPayload(existing);
@@ -254,10 +285,13 @@ export class CityService {
   }
 
   private async createCity(saveCityDto: SaveCityDto): Promise<CityPayload> {
-    const normalizedName = this.normalizeRequiredName(saveCityDto.ctmName);
+    const normalizedName = normalizeRequiredText<CityErrorDetail, CityErrorResponse>(
+      saveCityDto.ctmName,
+      'ctmName',
+    );
     const now = new Date();
-    const createdBy = this.resolveActor(saveCityDto.ctmCreatedBy);
-    const modifiedBy = this.resolveActor(saveCityDto.ctmModifiedBy, createdBy);
+    const createdBy = resolveActor(saveCityDto.ctmCreatedBy);
+    const modifiedBy = resolveActor(saveCityDto.ctmModifiedBy, createdBy);
     const data: Prisma.CityMasterUncheckedCreateInput = {
       ctmName: normalizedName,
       ctmStateId: saveCityDto.ctmStateId,
@@ -295,7 +329,16 @@ export class CityService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<CityErrorDetail, CityErrorResponse>(
+        error,
+        'City already exists',
+        [
+          {
+            field: 'ctmName',
+            message: 'Duplicate ctmName is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -313,11 +356,18 @@ export class CityService {
         });
 
         if (!existing) {
-          this.throwNotFound(ctmId);
+          throwSalesNotFound<CityErrorDetail, CityErrorResponse>(
+            'City not found',
+            'ctmId',
+            `No active city found with id ${ctmId}`,
+          );
         }
 
-        const normalizedName = this.normalizeRequiredName(saveCityDto.ctmName);
-        const nextStateId = this.hasOwnProperty(saveCityDto, 'ctmStateId')
+        const normalizedName = normalizeRequiredText<CityErrorDetail, CityErrorResponse>(
+          saveCityDto.ctmName,
+          'ctmName',
+        );
+        const nextStateId = hasOwnProperty(saveCityDto, 'ctmStateId')
           ? saveCityDto.ctmStateId
           : existing.ctmStateId;
 
@@ -328,7 +378,7 @@ export class CityService {
           ctmName: normalizedName,
           ctmStateId: nextStateId,
           ctmModifiedOn: new Date(),
-          ctmModifiedBy: this.resolveActor(saveCityDto.ctmModifiedBy),
+          ctmModifiedBy: resolveActor(saveCityDto.ctmModifiedBy),
         };
         this.applyOptionalFields(data, saveCityDto);
 
@@ -359,7 +409,16 @@ export class CityService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<CityErrorDetail, CityErrorResponse>(
+        error,
+        'City already exists',
+        [
+          {
+            field: 'ctmName',
+            message: 'Duplicate ctmName is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -376,7 +435,7 @@ export class CityService {
     });
 
     if (!state) {
-      this.throwBadRequest('State does not exist', [
+      throwSalesBadRequest<CityErrorDetail, CityErrorResponse>('State does not exist', [
         {
           field: 'ctmStateId',
           message: `No active state found with id ${stateId}`,
@@ -413,13 +472,14 @@ export class CityService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('City name already exists for this state', [
+      throwSalesConflict<CityErrorDetail, CityErrorResponse>(
+        'City name already exists for this state',
+        [
           {
             field: 'ctmName',
             message: 'Duplicate city name is not allowed for this state',
           },
-        ]),
+        ],
       );
     }
   }
@@ -428,30 +488,7 @@ export class CityService {
     data: Prisma.CityMasterUncheckedCreateInput | Prisma.CityMasterUncheckedUpdateInput,
     saveCityDto: SaveCityDto,
   ): void {
-    if (this.hasOwnProperty(saveCityDto, 'ctmAlias')) {
-      data.ctmAlias = saveCityDto.ctmAlias;
-    }
-    if (this.hasOwnProperty(saveCityDto, 'ctmShort')) {
-      data.ctmShort = saveCityDto.ctmShort;
-    }
-    if (this.hasOwnProperty(saveCityDto, 'ctmOrder')) {
-      data.ctmOrder = saveCityDto.ctmOrder;
-    }
-    if (this.hasOwnProperty(saveCityDto, 'ctmIsActive')) {
-      data.ctmIsActive = saveCityDto.ctmIsActive;
-    }
-  }
-  private normalizeRequiredName(name: string): string {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'ctmName',
-          message: 'ctmName must not be empty',
-        },
-      ]);
-    }
-    return trimmed;
+    applyPresentFields(data, saveCityDto, CITY_OPTIONAL_FIELDS);
   }
   private toPayload(record: CityMaster): CityPayload {
     return {
@@ -460,7 +497,7 @@ export class CityService {
       ctmAlias: record.ctmAlias,
       ctmShort: record.ctmShort,
       ctmStateId: record.ctmStateId,
-      ctmOrder: this.toNumber(record.ctmOrder),
+      ctmOrder: toNumber(record.ctmOrder),
       ctmIsActive: record.ctmIsActive,
       ctmIsDeleted: record.ctmIsDeleted,
       ctmSyncDate: record.ctmSyncDate ? record.ctmSyncDate.toISOString() : null,
@@ -469,59 +506,5 @@ export class CityService {
       ctmModifiedOn: record.ctmModifiedOn.toISOString(),
       ctmModifiedBy: record.ctmModifiedBy,
     };
-  }
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-    return Number(value.toString());
-  }
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    if (!value) {
-      return fallback;
-    }
-    const trimmed = value.trim();
-    return trimmed || fallback;
-  }
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('City already exists', [
-          {
-            field: 'ctmName',
-            message: 'Duplicate ctmName is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private throwNotFound(ctmId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('City not found', [
-        {
-          field: 'ctmId',
-          message: `No active city found with id ${ctmId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: CityErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(message: string, errors: CityErrorDetail[] = []): CityErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

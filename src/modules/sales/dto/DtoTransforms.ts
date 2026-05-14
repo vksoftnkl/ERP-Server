@@ -49,15 +49,12 @@ export const toOptionalUuid = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
-
   if (typeof value !== 'string') {
     return value as string;
   }
-
   const trimmed = value.trim();
   return trimmed || undefined;
 };
-
 export const toNullableUuid = (value: unknown): string | null | undefined => {
   if (value === undefined) {
     return undefined;
@@ -270,19 +267,15 @@ export const toOptionalTimeString = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
-
   if (typeof value !== 'string') {
     return value as string;
   }
-
   const trimmed = value.trim();
   return trimmed || undefined;
 };
-
 export const toUpperTrimmed = (value: unknown): unknown => {
   if (typeof value !== 'string') {
     return value;
   }
-
   return value.trim().toUpperCase();
 };
