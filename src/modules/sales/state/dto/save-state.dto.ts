@@ -1,20 +1,24 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
-import { NullableString, OptionalBoolean, OptionalNumber } from '../../dto/dtoDecorators';
+import { IsNotEmpty } from 'class-validator';
+import {
+  NullableString,
+  OptionalBoolean,
+  OptionalNumber,
+  OptionalUuid,
+  TrimmedString,
+} from '../../dto/dtoDecorators';
 
 export class SaveStateDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing state',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   stmId?: string;
 
   @ApiProperty({ maxLength: 150 })
-  @IsString()
+  @TrimmedString(150)
   @IsNotEmpty()
-  @MaxLength(150)
   stmName!: string;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })

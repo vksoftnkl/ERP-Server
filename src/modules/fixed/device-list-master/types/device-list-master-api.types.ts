@@ -1,19 +1,8 @@
-export interface DeviceListMasterErrorDetail {
-  field: string;
-  message: string;
-}
-export interface DeviceListMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: DeviceListMasterErrorDetail[];
-}
-export interface DeviceListMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { FixedErrorDetail as DeviceListMasterErrorDetail } from '../../utils/fixed-api.types';
+export type { FixedErrorResponse as DeviceListMasterErrorResponse } from '../../utils/fixed-api.types';
+export type { FixedSuccessResponse as DeviceListMasterSuccessResponse } from '../../utils/fixed-api.types';
+export type { FixedListMeta as DeviceListMasterListMeta } from '../../utils/fixed-list.utils';
+
 export interface DeviceListMasterPayload {
   devId: string;
   devCompanyId: string | null;
@@ -44,10 +33,5 @@ export interface DeviceListMasterPayload {
   devModifiedOn: string;
   devModifiedBy: string | null;
 }
+
 export type DeviceListMasterListItem = DeviceListMasterPayload | Record<string, unknown>;
-export interface DeviceListMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

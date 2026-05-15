@@ -197,7 +197,7 @@ export class AuditLogService {
   ): Promise<{ items: AuditLogListItem[]; meta: AuditLogListMeta }> {
     const page = queryDto.page ?? DEFAULT_PAGE;
     const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const cursor = queryDto.cursor?.trim() || undefined;
     const where: Prisma.AuditLogWhereInput = {};
     if (queryDto.action?.trim()) {
       where.logAction = this.normalizeAction(queryDto.action) as
@@ -251,37 +251,55 @@ export class AuditLogService {
         },
       ];
     }
-    const [total, records] = await Promise.all([
-      this.prisma.auditLog.count({ where }),
-      this.prisma.auditLog.findMany({
+    const auditScreenInclude = { auditScreen: { select: { screenName: true } } };
+    const auditOrderBy: Prisma.AuditLogOrderByWithRelationInput[] = [
+      { logDate: 'desc' },
+      { logId: 'desc' },
+    ];
+    let records: AuditLogListRecord[];
+    let total: number | null = null;
+    if (cursor) {
+      records = await this.prisma.auditLog.findMany({
         where,
-        include: {
-          auditScreen: {
-            select: {
-              screenName: true,
-            },
-          },
-        },
-        orderBy: [{ logDate: 'desc' }, { logId: 'desc' }],
-        skip,
+        include: auditScreenInclude,
+        orderBy: auditOrderBy,
+        cursor: { logId: cursor },
+        skip: 1,
         take: limit,
-      }),
-    ]);
-    const [userNameById, branchNameById] = await Promise.all([
+      });
+    } else {
+      const skip = (page - 1) * limit;
+      const [count, rows] = await Promise.all([
+        this.prisma.auditLog.count({ where }),
+        this.prisma.auditLog.findMany({
+          where,
+          include: auditScreenInclude,
+          orderBy: auditOrderBy,
+          skip,
+          take: limit,
+        }),
+      ]);
+      total = count;
+      records = rows;
+    }
+    const preparedRecords = records.map((record) => this.prepareAuditLogListRecord(record));
+    const [userNameById, branchNameById, auditReferenceNameLookup] = await Promise.all([
       this.getUserNameById(records),
       this.getBranchNameById(records),
+      this.getAuditReferenceNameLookup(preparedRecords),
     ]);
-    const preparedRecords = records.map((record) => this.prepareAuditLogListRecord(record));
-    const auditReferenceNameLookup = await this.getAuditReferenceNameLookup(preparedRecords);
+    const nextCursor =
+      records.length === limit ? (records[records.length - 1]?.logId ?? null) : null;
     return {
       items: preparedRecords.map((preparedRecord) =>
         this.toListItem(preparedRecord, userNameById, branchNameById, auditReferenceNameLookup),
       ),
       meta: {
-        page,
+        page: cursor ? null : page,
         limit,
         total,
-        total_pages: Math.ceil(total / limit),
+        total_pages: total !== null ? Math.ceil(total / limit) : null,
+        next_cursor: nextCursor,
       },
     };
   }

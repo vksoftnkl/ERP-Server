@@ -54,6 +54,7 @@
     "outputPath": "release"
   },
   "dependencies": {
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.2.3",
@@ -64,6 +65,7 @@
     "@nestjs/swagger": "^7.4.2",
     "@nestjs/throttler": "^6.3.0",
     "@prisma/client": "6.19.2",
+    "bullmq": "^5.76.8",
     "cache-manager": "^7.2.8",
     "cache-manager-redis-store": "^3.0.1",
     "class-transformer": "^0.5.1",

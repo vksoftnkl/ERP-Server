@@ -1,21 +1,7 @@
-export interface UiTableColumnErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface UiTableColumnErrorResponse {
-  success: false;
-  message: string;
-  errors: UiTableColumnErrorDetail[];
-}
-
-export interface UiTableColumnSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { FixedErrorDetail as UiTableColumnErrorDetail } from '../../utils/fixed-api.types';
+export type { FixedErrorResponse as UiTableColumnErrorResponse } from '../../utils/fixed-api.types';
+export type { FixedSuccessResponse as UiTableColumnSuccessResponse } from '../../utils/fixed-api.types';
+export type { FixedListMeta as UiTableColumnListMeta } from '../../utils/fixed-list.utils';
 
 export interface UiTableColumnPayload {
   uiTblClmId: string;
@@ -39,10 +25,3 @@ export interface UiTableColumnPayload {
 }
 
 export type UiTableColumnListItem = UiTableColumnPayload | Record<string, unknown>;
-
-export interface UiTableColumnListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

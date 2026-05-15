@@ -1,20 +1,6 @@
-export interface MenuMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface MenuMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: MenuMasterErrorDetail[];
-}
-
-export interface MenuMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
+export type { FixedErrorDetail as MenuMasterErrorDetail } from '../../utils/fixed-api.types';
+export type { FixedErrorResponse as MenuMasterErrorResponse } from '../../utils/fixed-api.types';
+export type { FixedSuccessResponse as MenuMasterSuccessResponse } from '../../utils/fixed-api.types';
 
 export interface MenuMasterPayload {
   menuId: number;
@@ -39,4 +25,3 @@ export interface MenuMasterGetMeta {
   visibleOnly: boolean;
   count: number;
 }
-

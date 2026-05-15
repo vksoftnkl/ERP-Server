@@ -10,6 +10,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { RequestContextModule } from './common/request-context/request-context.module';
 import { RedisModule } from './common/redis/redis.module';
+import { QueueModule } from './common/queue/queue.module';
 import { ConfiguredGridSqlModule } from './common/configured-grid-sql/configured-grid-sql.module';
 import { SequenceModule } from './common/Sequence/sequence.module';
 import configuration from './config/configuration';
@@ -102,6 +103,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     }),
     RequestContextModule,
     RedisModule,
+    QueueModule,
     ConfiguredGridSqlModule,
     SequenceModule,
     ThrottlerModule.forRoot([

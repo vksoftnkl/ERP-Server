@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsNotEmpty } from 'class-validator';
 import {
   NullableInteger,
   NullableNumber,
@@ -7,6 +7,8 @@ import {
   NullableUuid,
   OptionalBoolean,
   OptionalIntegerArray,
+  OptionalUuid,
+  TrimmedString,
 } from '../../dto/dtoDecorators';
 
 export class SaveCustomerGroupDto {
@@ -14,8 +16,7 @@ export class SaveCustomerGroupDto {
     format: 'uuid',
     description: 'When provided, request updates the existing customer group',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   cgrId?: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
@@ -27,9 +28,8 @@ export class SaveCustomerGroupDto {
   cgrBranchId?: string | null;
 
   @ApiProperty({ maxLength: 200 })
-  @IsString()
+  @TrimmedString(200)
   @IsNotEmpty()
-  @MaxLength(200)
   cgrName!: string;
 
   @ApiPropertyOptional({ maxLength: 150, nullable: true })

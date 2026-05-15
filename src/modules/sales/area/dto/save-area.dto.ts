@@ -1,18 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsArray,
-  IsInt,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-} from 'class-validator';
+import { IsNotEmpty } from 'class-validator';
 import {
   NullableIntegerNaN,
   NullableString,
   OptionalBoolean,
+  OptionalIntegerArray,
   OptionalNumber,
+  OptionalUuid,
+  RequiredUuid,
+  TrimmedString,
 } from '../../dto/dtoDecorators';
 
 export class SaveAreaDto {
@@ -20,14 +16,14 @@ export class SaveAreaDto {
     format: 'uuid',
     description: 'When provided, request updates the existing area',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   armId?: string;
+
   @ApiProperty({ maxLength: 150 })
-  @IsString()
+  @TrimmedString(150)
   @IsNotEmpty()
-  @MaxLength(150)
   armName!: string;
+
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   armAlias?: string | null;
@@ -37,7 +33,7 @@ export class SaveAreaDto {
   armShort?: string | null;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   armCityId!: string;
 
   @ApiPropertyOptional({ default: 0 })
@@ -49,9 +45,7 @@ export class SaveAreaDto {
   armDistanceKm?: number | null;
 
   @ApiPropertyOptional({ type: [Number], description: 'Collection days as integer array' })
-  @IsOptional()
-  @IsArray()
-  @IsInt({ each: true })
+  @OptionalIntegerArray()
   armCollectionDays?: number[];
 
   @ApiPropertyOptional({ default: true })

@@ -1,21 +1,7 @@
-export interface StateCodeMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface StateCodeMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: StateCodeMasterErrorDetail[];
-}
-
-export interface StateCodeMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { FixedErrorDetail as StateCodeMasterErrorDetail } from '../../utils/fixed-api.types';
+export type { FixedErrorResponse as StateCodeMasterErrorResponse } from '../../utils/fixed-api.types';
+export type { FixedSuccessResponse as StateCodeMasterSuccessResponse } from '../../utils/fixed-api.types';
+export type { FixedListMeta as StateCodeMasterListMeta } from '../../utils/fixed-list.utils';
 
 export interface StateCodeMasterPayload {
   stateCode: string;
@@ -32,10 +18,3 @@ export interface StateCodeMasterPayload {
 }
 
 export type StateCodeMasterListItem = StateCodeMasterPayload | Record<string, unknown>;
-
-export interface StateCodeMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

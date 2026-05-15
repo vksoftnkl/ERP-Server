@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { ErpDeviceMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -17,14 +12,43 @@ import {
   DeviceListMasterListMeta,
   DeviceListMasterPayload,
 } from './types/device-list-master-api.types';
+import {
+  DEFAULT_ACTOR,
+  FixedWriteClient,
+  applyPresentFields,
+  hasOwnProperty,
+  normalizeRequiredText,
+  resolveActor,
+  throwFixedBadRequest,
+  throwFixedConflict,
+  throwFixedNotFound,
+  throwOnUniqueConstraintError,
+} from '../utils/fixed-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from '../utils/fixed-list.utils';
 
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
 const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
-
-type DeviceListMasterWriteClient = Prisma.TransactionClient | PrismaService;
+const DEVICE_LIST_MASTER_OPTIONAL_FIELDS = [
+  'devCompanyId',
+  'devBranchId',
+  'devUserId',
+  'devDeviceName',
+  'devPlatform',
+  'devOsVersion',
+  'devAppVersion',
+  'devSerialNo',
+  'devImei',
+  'devMacAddress',
+  'devProductKey',
+  'devIsAllowed',
+  'devIsBlocked',
+  'devAllowReason',
+  'devBlockReason',
+  'devLastSeenOn',
+  'devLastIp',
+  'devLastLoginOn',
+  'devIsActive',
+];
 
 @Injectable()
 export class DeviceListMasterService {
@@ -38,49 +62,23 @@ export class DeviceListMasterService {
     if (saveDeviceListMasterDto.devId) {
       return this.updateDevice(saveDeviceListMasterDto);
     }
-
     return this.createDevice(saveDeviceListMasterDto);
   }
 
   async list(
     queryDto: ListDeviceListMasterQueryDto,
   ): Promise<ConfiguredGridListResult<DeviceListMasterListItem, DeviceListMasterListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.devCompanyId !== undefined ||
       queryDto.devIsActive !== undefined ||
       queryDto.devIsAllowed !== undefined ||
       queryDto.devIsBlocked !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
-    const where: Prisma.ErpDeviceMasterWhereInput = {
-      devIsDeleted: false,
-    };
-
-    if (queryDto.devCompanyId !== undefined) {
-      where.devCompanyId = queryDto.devCompanyId;
-    }
-
-    if (queryDto.devIsActive !== undefined) {
-      where.devIsActive = queryDto.devIsActive;
-    }
-
-    if (queryDto.devIsAllowed !== undefined) {
-      where.devIsAllowed = queryDto.devIsAllowed;
-    }
-
-    if (queryDto.devIsBlocked !== undefined) {
-      where.devIsBlocked = queryDto.devIsBlocked;
-    }
-
+    const where: Prisma.ErpDeviceMasterWhereInput = { devIsDeleted: false };
+    if (queryDto.devCompanyId !== undefined) where.devCompanyId = queryDto.devCompanyId;
+    if (queryDto.devIsActive !== undefined) where.devIsActive = queryDto.devIsActive;
+    if (queryDto.devIsAllowed !== undefined) where.devIsAllowed = queryDto.devIsAllowed;
+    if (queryDto.devIsBlocked !== undefined) where.devIsBlocked = queryDto.devIsBlocked;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -96,143 +94,61 @@ export class DeviceListMasterService {
         { devLastIp: { contains: search, mode: 'insensitive' } },
       ];
     }
-
-    const [total, records] = await Promise.all([
-      this.prisma.erpDeviceMaster.count({ where }),
-      this.prisma.erpDeviceMaster.findMany({
+    return runFixedListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<DeviceListMasterListItem>(
+        this.configuredGridSqlService,
+        { tableName: DEVICE_LIST_MASTER_TABLE_NAME, alias: 'device_list_master_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.erpDeviceMaster.count({ where }),
+      findManyFn: () => this.prisma.erpDeviceMaster.findMany({
         where,
         orderBy: [{ devCreatedOn: 'desc' }, { devId: 'desc' }],
         skip,
         take: limit,
       }),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<DeviceListMasterListItem, DeviceListMasterListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: DEVICE_LIST_MASTER_TABLE_NAME,
+      toItemFn: (record) => this.toPayload(record),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      DEVICE_LIST_MASTER_TABLE_NAME,
-    );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
-      return null;
-    }
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
-      return null;
-    }
-
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: DEVICE_LIST_MASTER_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for device list master', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
-    }
-
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<DeviceListMasterListItem>({
-        baseSql: validation.normalizedSql,
-        alias: 'device_list_master_grid',
-        search,
-        limit,
-        skip,
-          gridId: configuredGrid.gridId,
-      });
-
-      return {
-        items: result.items,
-        meta: {
-          page,
-          limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
-        styles: result.styles,
-      };
-    } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for device list master', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for erp_device_master',
-        },
-      ]);
-    }
   }
 
   async getById(devId: string): Promise<DeviceListMasterPayload> {
     const record = await this.prisma.erpDeviceMaster.findFirst({
-      where: {
-        devId,
-        devIsDeleted: false,
-      },
+      where: { devId, devIsDeleted: false },
     });
-
     if (!record) {
-      this.throwNotFound(devId);
+      throwFixedNotFound<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+        'Device not found',
+        'devId',
+        `No active device found with id ${devId}`,
+      );
     }
-
     return this.toPayload(record);
   }
 
   async softDelete(devId: string): Promise<{ devId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.erpDeviceMaster.findFirst({
-        where: {
-          devId,
-          devIsDeleted: false,
-        },
+        where: { devId, devIsDeleted: false },
       });
-
       if (!existing) {
-        this.throwNotFound(devId);
+        throwFixedNotFound<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+          'Device not found',
+          'devId',
+          `No active device found with id ${devId}`,
+        );
       }
-
       const sessionCount = await tx.userLoginSession.count({
-        where: {
-          ulsDeviceId: devId,
-          ulsIsDeleted: false,
-        },
+        where: { ulsDeviceId: devId, ulsIsDeleted: false },
       });
-
       if (sessionCount > 0) {
-        this.throwBadRequest('Cannot delete device with active login sessions', [
-          {
-            field: 'devId',
-            message: `Device ${devId} is used in ${sessionCount} login session(s).`,
-          },
-        ]);
+        throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+          'Cannot delete device with active login sessions',
+          [{ field: 'devId', message: `Device ${devId} is used in ${sessionCount} login session(s).` }],
+        );
       }
-
       const modifiedOn = new Date();
       const result = await tx.erpDeviceMaster.updateMany({
-        where: {
-          devId,
-          devIsDeleted: false,
-        },
+        where: { devId, devIsDeleted: false },
         data: {
           devIsDeleted: true,
           devIsActive: false,
@@ -240,11 +156,13 @@ export class DeviceListMasterService {
           devModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
-        this.throwNotFound(devId);
+        throwFixedNotFound<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+          'Device not found',
+          'devId',
+          `No active device found with id ${devId}`,
+        );
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -253,7 +171,6 @@ export class DeviceListMasterService {
         devModifiedOn: modifiedOn,
         devModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -269,31 +186,27 @@ export class DeviceListMasterService {
         },
         tx,
       );
-
-      return {
-        devId,
-        deleted: true,
-      };
+      return { devId, deleted: true };
     });
   }
 
   private async createDevice(
     saveDeviceListMasterDto: SaveDeviceListMasterDto,
   ): Promise<DeviceListMasterPayload> {
-    const normalizedDeviceUid = this.normalizeRequiredText(
+    const normalizedDeviceUid = normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
       saveDeviceListMasterDto.devDeviceUid,
       'devDeviceUid',
     );
-    const normalizedDeviceType = this.normalizeRequiredText(
+    const normalizedDeviceType = normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
       saveDeviceListMasterDto.devDeviceType,
       'devDeviceType',
     );
-    const companyId = this.hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
+    const companyId = hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
       ? (saveDeviceListMasterDto.devCompanyId ?? null)
       : null;
     const now = new Date();
-    const createdBy = this.resolveActor(saveDeviceListMasterDto.devCreatedBy);
-    const modifiedBy = this.resolveActor(saveDeviceListMasterDto.devModifiedBy, createdBy);
+    const createdBy = resolveActor(saveDeviceListMasterDto.devCreatedBy);
+    const modifiedBy = resolveActor(saveDeviceListMasterDto.devModifiedBy, createdBy);
     const data: Prisma.ErpDeviceMasterUncheckedCreateInput = {
       devDeviceUid: normalizedDeviceUid,
       devDeviceType: normalizedDeviceType,
@@ -302,15 +215,12 @@ export class DeviceListMasterService {
       devModifiedOn: now,
       devModifiedBy: modifiedBy,
     };
-    this.applyOptionalFields(data, saveDeviceListMasterDto);
-
+    applyPresentFields(data, saveDeviceListMasterDto, DEVICE_LIST_MASTER_OPTIONAL_FIELDS);
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureDeviceUidIsUnique(tx, normalizedDeviceUid, companyId);
-
         const created = await tx.erpDeviceMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -326,11 +236,14 @@ export class DeviceListMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+        error,
+        'Device already exists',
+        [{ field: 'devDeviceUid', message: 'Duplicate devDeviceUid is not allowed' }],
+      );
       throw error;
     }
   }
@@ -339,50 +252,39 @@ export class DeviceListMasterService {
     saveDeviceListMasterDto: SaveDeviceListMasterDto,
   ): Promise<DeviceListMasterPayload> {
     const devId = saveDeviceListMasterDto.devId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.erpDeviceMaster.findFirst({
-          where: {
-            devId,
-            devIsDeleted: false,
-          },
+          where: { devId, devIsDeleted: false },
         });
-
         if (!existing) {
-          this.throwNotFound(devId);
+          throwFixedNotFound<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+            'Device not found',
+            'devId',
+            `No active device found with id ${devId}`,
+          );
         }
-
-        const normalizedDeviceUid = this.normalizeRequiredText(
+        const normalizedDeviceUid = normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
           saveDeviceListMasterDto.devDeviceUid,
           'devDeviceUid',
         );
-        const normalizedDeviceType = this.normalizeRequiredText(
+        const normalizedDeviceType = normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
           saveDeviceListMasterDto.devDeviceType,
           'devDeviceType',
         );
-        const nextCompanyId = this.hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
+        const nextCompanyId = hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
           ? (saveDeviceListMasterDto.devCompanyId ?? null)
           : existing.devCompanyId;
-
         await this.ensureDeviceUidIsUnique(tx, normalizedDeviceUid, nextCompanyId, devId);
-
         const data: Prisma.ErpDeviceMasterUncheckedUpdateInput = {
           devDeviceUid: normalizedDeviceUid,
           devDeviceType: normalizedDeviceType,
           devModifiedOn: new Date(),
-          devModifiedBy: this.resolveActor(saveDeviceListMasterDto.devModifiedBy),
+          devModifiedBy: resolveActor(saveDeviceListMasterDto.devModifiedBy),
         };
-        this.applyOptionalFields(data, saveDeviceListMasterDto);
-
-        const updated = await tx.erpDeviceMaster.update({
-          where: {
-            devId,
-          },
-          data,
-        });
+        applyPresentFields(data, saveDeviceListMasterDto, DEVICE_LIST_MASTER_OPTIONAL_FIELDS);
+        const updated = await tx.erpDeviceMaster.update({ where: { devId }, data });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -393,22 +295,25 @@ export class DeviceListMasterService {
             displayName: payload.devDeviceUid,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: this.resolveActor(saveDeviceListMasterDto.devModifiedBy),
+            userId: resolveActor(saveDeviceListMasterDto.devModifiedBy),
             notes: 'Device updated',
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+        error,
+        'Device already exists',
+        [{ field: 'devDeviceUid', message: 'Duplicate devDeviceUid is not allowed' }],
+      );
       throw error;
     }
   }
 
   private async ensureDeviceUidIsUnique(
-    tx: DeviceListMasterWriteClient,
+    tx: FixedWriteClient,
     deviceUid: string,
     companyId: string | null,
     excludeId?: string,
@@ -417,128 +322,17 @@ export class DeviceListMasterService {
       where: {
         devIsDeleted: false,
         devCompanyId: companyId,
-        devDeviceUid: {
-          equals: deviceUid,
-          mode: 'insensitive',
-        },
-        ...(excludeId
-          ? {
-              devId: {
-                not: excludeId,
-              },
-            }
-          : {}),
+        devDeviceUid: { equals: deviceUid, mode: 'insensitive' },
+        ...(excludeId ? { devId: { not: excludeId } } : {}),
       },
-      select: {
-        devId: true,
-      },
+      select: { devId: true },
     });
-
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Device UID already exists', [
-          {
-            field: 'devDeviceUid',
-            message: 'Duplicate devDeviceUid is not allowed',
-          },
-        ]),
+      throwFixedConflict<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+        'Device UID already exists',
+        [{ field: 'devDeviceUid', message: 'Duplicate devDeviceUid is not allowed' }],
       );
     }
-  }
-
-  private applyOptionalFields(
-    data: Prisma.ErpDeviceMasterUncheckedCreateInput | Prisma.ErpDeviceMasterUncheckedUpdateInput,
-    saveDeviceListMasterDto: SaveDeviceListMasterDto,
-  ): void {
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')) {
-      data.devCompanyId = saveDeviceListMasterDto.devCompanyId;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devBranchId')) {
-      data.devBranchId = saveDeviceListMasterDto.devBranchId;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devUserId')) {
-      data.devUserId = saveDeviceListMasterDto.devUserId;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devDeviceName')) {
-      data.devDeviceName = saveDeviceListMasterDto.devDeviceName;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devPlatform')) {
-      data.devPlatform = saveDeviceListMasterDto.devPlatform;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devOsVersion')) {
-      data.devOsVersion = saveDeviceListMasterDto.devOsVersion;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devAppVersion')) {
-      data.devAppVersion = saveDeviceListMasterDto.devAppVersion;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devSerialNo')) {
-      data.devSerialNo = saveDeviceListMasterDto.devSerialNo;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devImei')) {
-      data.devImei = saveDeviceListMasterDto.devImei;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devMacAddress')) {
-      data.devMacAddress = saveDeviceListMasterDto.devMacAddress;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devProductKey')) {
-      data.devProductKey = saveDeviceListMasterDto.devProductKey;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devIsAllowed')) {
-      data.devIsAllowed = saveDeviceListMasterDto.devIsAllowed;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devIsBlocked')) {
-      data.devIsBlocked = saveDeviceListMasterDto.devIsBlocked;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devAllowReason')) {
-      data.devAllowReason = saveDeviceListMasterDto.devAllowReason;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devBlockReason')) {
-      data.devBlockReason = saveDeviceListMasterDto.devBlockReason;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devLastSeenOn')) {
-      data.devLastSeenOn = saveDeviceListMasterDto.devLastSeenOn;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devLastIp')) {
-      data.devLastIp = saveDeviceListMasterDto.devLastIp;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devLastLoginOn')) {
-      data.devLastLoginOn = saveDeviceListMasterDto.devLastLoginOn;
-    }
-
-    if (this.hasOwnProperty(saveDeviceListMasterDto, 'devIsActive')) {
-      data.devIsActive = saveDeviceListMasterDto.devIsActive;
-    }
-  }
-
-  private normalizeRequiredText(value: string, fieldName: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: fieldName,
-          message: `${fieldName} must not be empty`,
-        },
-      ]);
-    }
-
-    return trimmed;
   }
 
   private toPayload(record: ErpDeviceMaster): DeviceListMasterPayload {
@@ -572,65 +366,5 @@ export class DeviceListMasterService {
       devModifiedOn: record.devModifiedOn.toISOString(),
       devModifiedBy: record.devModifiedBy,
     };
-  }
-
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    if (!value) {
-      return fallback;
-    }
-
-    const trimmed = value.trim();
-    return trimmed || fallback;
-  }
-
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Device already exists', [
-          {
-            field: 'devDeviceUid',
-            message: 'Duplicate devDeviceUid is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(devId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Device not found', [
-        {
-          field: 'devId',
-          message: `No active device found with id ${devId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: DeviceListMasterErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: DeviceListMasterErrorDetail[] = [],
-  ): DeviceListMasterErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

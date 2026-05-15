@@ -1,24 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
+import {
+  FixedErrorFieldDto,
+  FixedErrorResponseDto,
+  FixedListMetaDto,
+} from '../../utils/fixed-response.dto';
 
-export class BankListErrorFieldDto {
-  @ApiProperty({ example: 'bnkName' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate bank name is not allowed' })
-  message!: string;
-}
-
-export class BankListErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: BankListErrorFieldDto, isArray: true })
-  errors!: BankListErrorFieldDto[];
-}
+export { FixedErrorFieldDto as BankListErrorFieldDto };
+export { FixedErrorResponseDto as BankListErrorResponseDto };
+export { FixedListMetaDto as BankListMetaDto };
 
 export class BankListPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -61,20 +51,6 @@ export class BankListPayloadDto {
   bnkModifiedBy!: string | null;
 }
 
-export class BankListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class BankListDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   bnkId!: string;
@@ -104,8 +80,8 @@ export class BankListSuccessListDto {
   @ApiProperty({ type: BankListPayloadDto, isArray: true })
   data!: BankListPayloadDto[];
 
-  @ApiProperty({ type: BankListMetaDto })
-  meta!: BankListMetaDto;
+  @ApiProperty({ type: FixedListMetaDto })
+  meta!: FixedListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

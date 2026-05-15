@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 const toOptionalNumber = (value: unknown): number | undefined => {
@@ -74,4 +74,13 @@ export class ListAuditLogQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  @ApiPropertyOptional({
+    description: 'UUID v7 cursor from previous page next_cursor. Skips page/total when provided.',
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsString()
+  @IsUUID()
+  cursor?: string;
 }

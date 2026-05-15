@@ -1,0 +1,25 @@
+export {
+  DEFAULT_ACTOR,
+  DEFAULT_ACTOR as DEFAULT_AUDIT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  applyPresentFields,
+  buildErrorResponse as buildFixedErrorResponse,
+  hasOwnProperty,
+  isUniqueConstraintError,
+  isForeignKeyConstraintError,
+  normalizeRequiredText,
+  resolveActor,
+  throwBadRequest as throwFixedBadRequest,
+  throwConflict as throwFixedConflict,
+  throwNotFound as throwFixedNotFound,
+  throwOnUniqueConstraintError,
+  toNumber,
+  toNullableNumber,
+} from '../../../common/utils/module-shared.utils';
+export type {
+  ModuleErrorDetail as FixedErrorDetail,
+  ModuleErrorResponse as FixedErrorResponse,
+  ModuleWriteClient as FixedWriteClient,
+  PresentFieldTransform,
+} from '../../../common/utils/module-shared.utils';

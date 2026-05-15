@@ -3,9 +3,11 @@ import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsDate,
   IsDateString,
   IsInt,
   IsNumber,
+  IsNumberString,
   IsOptional,
   IsString,
   Length,
@@ -17,14 +19,19 @@ import {
 } from 'class-validator';
 import {
   toInteger,
+  toNullableDate,
+  toNullableIdString,
   toNullableInteger,
   toNullableIntegerStrict,
   toNullableNumberStrict,
   toNullableString,
   toNullableStringStrict,
+  toNullableUpperString,
   toNullableUuid,
   toOptionalBoolean,
+  toOptionalDate,
   toOptionalDateString,
+  toOptionalIdString,
   toOptionalInteger,
   toOptionalIntegerArray,
   toOptionalNumber,
@@ -55,6 +62,15 @@ export const NullableStringStrict = (maxLength?: number) =>
     SkipOnNullish(),
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
+  );
+
+export const NullableUpperString = (exactLength?: number) =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toNullableUpperString(value)),
+    SkipOnNullish(),
+    IsString(),
+    ...(exactLength !== undefined ? [Length(exactLength, exactLength)] : []),
   );
 
 export const NullableDateString = () =>
@@ -91,6 +107,21 @@ export const OptionalDateString = () =>
     IsOptional(),
     Transform(({ value }) => toOptionalDateString(value)),
     IsDateString(),
+  );
+
+export const OptionalDate = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toOptionalDate(value)),
+    IsDate(),
+  );
+
+export const NullableDate = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toNullableDate(value)),
+    SkipOnNullish(),
+    IsDate(),
   );
 
 export const OptionalTimeString = () =>
@@ -157,6 +188,21 @@ export const OptionalInteger = (min?: number, max?: number) =>
     IsInt(),
     ...(min !== undefined ? [Min(min)] : []),
     ...(max !== undefined ? [Max(max)] : []),
+  );
+
+export const OptionalNumberString = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toOptionalIdString(value)),
+    IsNumberString({ no_symbols: true }),
+  );
+
+export const NullableNumberString = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toNullableIdString(value)),
+    SkipOnNullish(),
+    IsNumberString({ no_symbols: true }),
   );
 
 export const OptionalIntegerArray = () =>

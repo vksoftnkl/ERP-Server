@@ -4,15 +4,18 @@ import {
 } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { GridColumnItem } from '../../../common/configured-grid-sql/types/configured-grid-sql.types';
 import { DEFAULT_LIMIT, DEFAULT_PAGE } from '../../../common/utils/module-shared.utils';
-export interface SalesListMeta {
+
+export interface FixedListMeta {
   page: number;
   limit: number;
   total: number;
   total_pages: number;
 }
-export function buildListMeta(page: number, limit: number, total: number): SalesListMeta {
+
+export function buildListMeta(page: number, limit: number, total: number): FixedListMeta {
   return { page, limit, total, total_pages: Math.ceil(total / limit) };
 }
+
 export function resolvePagination(queryDto: { page?: number; limit?: number }): {
   page: number;
   limit: number;
@@ -22,36 +25,42 @@ export function resolvePagination(queryDto: { page?: number; limit?: number }): 
   const limit = queryDto.limit ?? DEFAULT_LIMIT;
   return { page, limit, skip: (page - 1) * limit };
 }
-export interface SalesListQueryOptions<TRecord, TItem> {
+
+export interface FixedListQueryOptions<TRecord, TItem> {
   hasStructuredFilters?: boolean;
-  configuredGridFn?: () => Promise<ConfiguredGridListResult<TItem, SalesListMeta> | null>;
+  configuredGridFn?: () => Promise<ConfiguredGridListResult<TItem, FixedListMeta> | null>;
   countFn: () => Promise<number>;
   findManyFn: () => Promise<TRecord[]>;
   toItemFn: (record: TRecord) => TItem;
   loadStylesFn?: () => Promise<GridColumnItem[] | undefined>;
 }
-export async function runSalesListQuery<TRecord, TItem>(
+
+export async function runFixedListQuery<TRecord, TItem>(
   pagination: { page: number; limit: number },
-  options: SalesListQueryOptions<TRecord, TItem>,
-): Promise<ConfiguredGridListResult<TItem, SalesListMeta>> {
+  options: FixedListQueryOptions<TRecord, TItem>,
+): Promise<ConfiguredGridListResult<TItem, FixedListMeta>> {
   const { hasStructuredFilters = false, configuredGridFn, countFn, findManyFn, toItemFn, loadStylesFn } =
     options;
   const { page, limit } = pagination;
+
   if (!hasStructuredFilters && configuredGridFn) {
     const configuredList = await configuredGridFn();
     if (configuredList) return configuredList;
   }
+
   const [total, records, styles] = await Promise.all([
     countFn(),
     findManyFn(),
     loadStylesFn ? loadStylesFn() : Promise.resolve(undefined),
   ]);
+
   return {
     items: records.map(toItemFn),
     meta: buildListMeta(page, limit, total),
     ...(styles !== undefined && { styles }),
   };
 }
+
 export async function runConfiguredGridQuery<TItem>(
   configuredGridSqlService: ConfiguredGridSqlService,
   options: {
@@ -62,25 +71,30 @@ export async function runConfiguredGridQuery<TItem>(
     limit: number;
     skip: number;
   },
-): Promise<ConfiguredGridListResult<TItem, SalesListMeta> | null> {
+): Promise<ConfiguredGridListResult<TItem, FixedListMeta> | null> {
   const { tableName, alias, search, page, limit, skip } = options;
+
   const configuredGrids = await configuredGridSqlService.loadCandidates({ tableName });
   const primaryConfiguredGrids = configuredGridSqlService.filterPrimaryFromTable(
     configuredGrids,
     tableName,
   );
+
   if (primaryConfiguredGrids.length === 0) {
     return null;
   }
+
   for (const configuredGrid of primaryConfiguredGrids) {
     const rawGridSql = configuredGrid.gridSql?.trim();
     if (!rawGridSql) {
       continue;
     }
+
     const validation = configuredGridSqlService.validateBaseSql({ sql: rawGridSql, tableName });
     if (!validation.isValid) {
       continue;
     }
+
     try {
       const result = await configuredGridSqlService.runPagedQuery<TItem>({
         baseSql: validation.normalizedSql,
@@ -99,5 +113,6 @@ export async function runConfiguredGridQuery<TItem>(
       continue;
     }
   }
+
   return null;
 }

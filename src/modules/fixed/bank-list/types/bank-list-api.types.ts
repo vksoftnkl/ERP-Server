@@ -1,19 +1,8 @@
-export interface BankListErrorDetail {
-  field: string;
-  message: string;
-}
-export interface BankListErrorResponse {
-  success: false;
-  message: string;
-  errors: BankListErrorDetail[];
-}
-export interface BankListSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { FixedErrorDetail as BankListErrorDetail } from '../../utils/fixed-api.types';
+export type { FixedErrorResponse as BankListErrorResponse } from '../../utils/fixed-api.types';
+export type { FixedSuccessResponse as BankListSuccessResponse } from '../../utils/fixed-api.types';
+export type { FixedListMeta as BankListMeta } from '../../utils/fixed-list.utils';
+
 export interface BankListPayload {
   bnkId: string;
   bnkName: string;
@@ -29,10 +18,5 @@ export interface BankListPayload {
   bnkModifiedOn: string;
   bnkModifiedBy: string | null;
 }
+
 export type BankListItem = BankListPayload | Record<string, unknown>;
-export interface BankListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

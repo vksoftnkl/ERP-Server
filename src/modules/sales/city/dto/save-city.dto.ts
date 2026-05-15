@@ -1,20 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
-import { NullableString, OptionalBoolean, OptionalNumber } from '../../dto/dtoDecorators';
+import { IsNotEmpty } from 'class-validator';
+import {
+  NullableString,
+  OptionalBoolean,
+  OptionalNumber,
+  OptionalUuid,
+  RequiredUuid,
+  TrimmedString,
+} from '../../dto/dtoDecorators';
 
 export class SaveCityDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing city',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   ctmId?: string;
 
   @ApiProperty({ maxLength: 150 })
-  @IsString()
+  @TrimmedString(150)
   @IsNotEmpty()
-  @MaxLength(150)
   ctmName!: string;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
@@ -26,7 +31,7 @@ export class SaveCityDto {
   ctmShort?: string | null;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   ctmStateId!: string;
 
   @ApiPropertyOptional({ default: 0 })

@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { BankMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -17,12 +12,23 @@ import {
   BankListMeta,
   BankListPayload,
 } from './types/bank-list-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  FixedWriteClient,
+  applyPresentFields,
+  normalizeRequiredText,
+  resolveActor,
+  throwFixedBadRequest,
+  throwFixedConflict,
+  throwFixedNotFound,
+  throwOnUniqueConstraintError,
+} from '../utils/fixed-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from '../utils/fixed-list.utils';
+
 const BANK_LIST_TABLE_NAME = 'bank master';
 const BANK_LIST_AUDIT_SCREEN_NAME = 'Bank List Master';
-type BankListWriteClient = Prisma.TransactionClient | PrismaService;
+const BANK_LIST_OPTIONAL_FIELDS = ['bnkShortName', 'bnkAlias', 'bnkRbiCode', 'bnkIbanSupported', 'bnkIsActive'];
+
 @Injectable()
 export class BankListService {
   constructor(
@@ -30,31 +36,21 @@ export class BankListService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
+
   async save(saveBankListDto: SaveBankListDto): Promise<BankListPayload> {
     if (saveBankListDto.bnkId) {
       return this.updateBank(saveBankListDto);
     }
     return this.createBank(saveBankListDto);
   }
+
   async list(
     queryDto: ListBankListQueryDto,
   ): Promise<ConfiguredGridListResult<BankListItem, BankListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters = queryDto.bnkIsActive !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-    const where: Prisma.BankMasterWhereInput = {
-      bnkIsDeleted: false,
-    };
-    if (queryDto.bnkIsActive !== undefined) {
-      where.bnkIsActive = queryDto.bnkIsActive;
-    }
+    const where: Prisma.BankMasterWhereInput = { bnkIsDeleted: false };
+    if (queryDto.bnkIsActive !== undefined) where.bnkIsActive = queryDto.bnkIsActive;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -64,129 +60,61 @@ export class BankListService {
         { bnkRbiCode: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records] = await Promise.all([
-      this.prisma.bankMaster.count({ where }),
-      this.prisma.bankMaster.findMany({
+    return runFixedListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<BankListItem>(
+        this.configuredGridSqlService,
+        { tableName: BANK_LIST_TABLE_NAME, alias: 'bank_list_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.bankMaster.count({ where }),
+      findManyFn: () => this.prisma.bankMaster.findMany({
         where,
         orderBy: [{ bnkName: 'asc' }, { bnkId: 'asc' }],
         skip,
         take: limit,
       }),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<BankListItem, BankListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: BANK_LIST_TABLE_NAME,
+      toItemFn: (record) => this.toPayload(record),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      BANK_LIST_TABLE_NAME,
-    );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
-      return null;
-    }
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
-      return null;
-    }
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: BANK_LIST_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for bank list', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
-    }
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<BankListItem>({
-        baseSql: validation.normalizedSql,
-        alias: 'bank_list_grid',
-        search,
-        limit,
-        skip,
-          gridId: configuredGrid.gridId,
-      });
-      return {
-        items: result.items,
-        meta: {
-          page,
-          limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
-        styles: result.styles,
-      };
-    } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for bank list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for bank_master',
-        },
-      ]);
-    }
   }
+
   async getById(bnkId: string): Promise<BankListPayload> {
     const record = await this.prisma.bankMaster.findFirst({
-      where: {
-        bnkId,
-        bnkIsDeleted: false,
-      },
+      where: { bnkId, bnkIsDeleted: false },
     });
     if (!record) {
-      this.throwNotFound(bnkId);
+      throwFixedNotFound<BankListErrorDetail, BankListErrorResponse>(
+        'Bank not found',
+        'bnkId',
+        `No active bank found with id ${bnkId}`,
+      );
     }
     return this.toPayload(record);
   }
+
   async softDelete(bnkId: string): Promise<{ bnkId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.bankMaster.findFirst({
-        where: {
-          bnkId,
-          bnkIsDeleted: false,
-        },
+        where: { bnkId, bnkIsDeleted: false },
       });
       if (!existing) {
-        this.throwNotFound(bnkId);
+        throwFixedNotFound<BankListErrorDetail, BankListErrorResponse>(
+          'Bank not found',
+          'bnkId',
+          `No active bank found with id ${bnkId}`,
+        );
       }
       const bankUsageCount = await tx.accLedgerBankAccount.count({
-        where: {
-          lbaBankName: existing.bnkName,
-          lbaIsDeleted: false,
-        },
+        where: { lbaBankName: existing.bnkName, lbaIsDeleted: false },
       });
       if (bankUsageCount > 0) {
-        this.throwBadRequest('Cannot delete bank with active bank-account mappings', [
-          {
-            field: 'bnkId',
-            message: `Bank ${bnkId} is used in ${bankUsageCount} ledger bank account(s).`,
-          },
-        ]);
+        throwFixedBadRequest<BankListErrorDetail, BankListErrorResponse>(
+          'Cannot delete bank with active bank-account mappings',
+          [{ field: 'bnkId', message: `Bank ${bnkId} is used in ${bankUsageCount} ledger bank account(s).` }],
+        );
       }
       const modifiedOn = new Date();
       const result = await tx.bankMaster.updateMany({
-        where: {
-          bnkId,
-          bnkIsDeleted: false,
-        },
+        where: { bnkId, bnkIsDeleted: false },
         data: {
           bnkIsDeleted: true,
           bnkIsActive: false,
@@ -195,7 +123,11 @@ export class BankListService {
         },
       });
       if (result.count === 0) {
-        this.throwNotFound(bnkId);
+        throwFixedNotFound<BankListErrorDetail, BankListErrorResponse>(
+          'Bank not found',
+          'bnkId',
+          `No active bank found with id ${bnkId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -220,17 +152,18 @@ export class BankListService {
         },
         tx,
       );
-      return {
-        bnkId,
-        deleted: true,
-      };
+      return { bnkId, deleted: true };
     });
   }
+
   private async createBank(saveBankListDto: SaveBankListDto): Promise<BankListPayload> {
-    const normalizedName = this.normalizeRequiredName(saveBankListDto.bnkName);
+    const normalizedName = normalizeRequiredText<BankListErrorDetail, BankListErrorResponse>(
+      saveBankListDto.bnkName,
+      'bnkName',
+    );
     const now = new Date();
-    const createdBy = this.resolveActor(saveBankListDto.bnkCreatedBy);
-    const modifiedBy = this.resolveActor(saveBankListDto.bnkModifiedBy, createdBy);
+    const createdBy = resolveActor(saveBankListDto.bnkCreatedBy);
+    const modifiedBy = resolveActor(saveBankListDto.bnkModifiedBy, createdBy);
     const data: Prisma.BankMasterUncheckedCreateInput = {
       bnkName: normalizedName,
       bnkCreatedOn: now,
@@ -238,7 +171,7 @@ export class BankListService {
       bnkModifiedOn: now,
       bnkModifiedBy: modifiedBy,
     };
-    this.applyOptionalFields(data, saveBankListDto);
+    applyPresentFields(data, saveBankListDto, BANK_LIST_OPTIONAL_FIELDS);
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureNameIsUnique(tx, normalizedName);
@@ -262,37 +195,41 @@ export class BankListService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<BankListErrorDetail, BankListErrorResponse>(
+        error,
+        'Bank already exists',
+        [{ field: 'bnkName', message: 'Duplicate bnkName is not allowed' }],
+      );
       throw error;
     }
   }
+
   private async updateBank(saveBankListDto: SaveBankListDto): Promise<BankListPayload> {
     const bnkId = saveBankListDto.bnkId!;
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.bankMaster.findFirst({
-          where: {
-            bnkId,
-            bnkIsDeleted: false,
-          },
+          where: { bnkId, bnkIsDeleted: false },
         });
         if (!existing) {
-          this.throwNotFound(bnkId);
+          throwFixedNotFound<BankListErrorDetail, BankListErrorResponse>(
+            'Bank not found',
+            'bnkId',
+            `No active bank found with id ${bnkId}`,
+          );
         }
-        const normalizedName = this.normalizeRequiredName(saveBankListDto.bnkName);
+        const normalizedName = normalizeRequiredText<BankListErrorDetail, BankListErrorResponse>(
+          saveBankListDto.bnkName,
+          'bnkName',
+        );
         await this.ensureNameIsUnique(tx, normalizedName, bnkId);
         const data: Prisma.BankMasterUncheckedUpdateInput = {
           bnkName: normalizedName,
           bnkModifiedOn: new Date(),
-          bnkModifiedBy: this.resolveActor(saveBankListDto.bnkModifiedBy),
+          bnkModifiedBy: resolveActor(saveBankListDto.bnkModifiedBy),
         };
-        this.applyOptionalFields(data, saveBankListDto);
-        const updated = await tx.bankMaster.update({
-          where: {
-            bnkId,
-          },
-          data,
-        });
+        applyPresentFields(data, saveBankListDto, BANK_LIST_OPTIONAL_FIELDS);
+        const updated = await tx.bankMaster.update({ where: { bnkId }, data });
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
           {
@@ -304,7 +241,7 @@ export class BankListService {
             displayName: payload.bnkName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: this.resolveActor(saveBankListDto.bnkModifiedBy),
+            userId: resolveActor(saveBankListDto.bnkModifiedBy),
             notes: 'Bank updated',
           },
           tx,
@@ -312,77 +249,36 @@ export class BankListService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<BankListErrorDetail, BankListErrorResponse>(
+        error,
+        'Bank already exists',
+        [{ field: 'bnkName', message: 'Duplicate bnkName is not allowed' }],
+      );
       throw error;
     }
   }
+
   private async ensureNameIsUnique(
-    tx: BankListWriteClient,
+    tx: FixedWriteClient,
     bankName: string,
     excludeId?: string,
   ): Promise<void> {
     const existing = await tx.bankMaster.findFirst({
       where: {
         bnkIsDeleted: false,
-        bnkName: {
-          equals: bankName,
-          mode: 'insensitive',
-        },
-        ...(excludeId
-          ? {
-              bnkId: {
-                not: excludeId,
-              },
-            }
-          : {}),
+        bnkName: { equals: bankName, mode: 'insensitive' },
+        ...(excludeId ? { bnkId: { not: excludeId } } : {}),
       },
-      select: {
-        bnkId: true,
-      },
+      select: { bnkId: true },
     });
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Bank name already exists', [
-          {
-            field: 'bnkName',
-            message: 'Duplicate bank name is not allowed',
-          },
-        ]),
+      throwFixedConflict<BankListErrorDetail, BankListErrorResponse>(
+        'Bank name already exists',
+        [{ field: 'bnkName', message: 'Duplicate bank name is not allowed' }],
       );
     }
   }
-  private applyOptionalFields(
-    data: Prisma.BankMasterUncheckedCreateInput | Prisma.BankMasterUncheckedUpdateInput,
-    saveBankListDto: SaveBankListDto,
-  ): void {
-    if (this.hasOwnProperty(saveBankListDto, 'bnkShortName')) {
-      data.bnkShortName = saveBankListDto.bnkShortName;
-    }
-    if (this.hasOwnProperty(saveBankListDto, 'bnkAlias')) {
-      data.bnkAlias = saveBankListDto.bnkAlias;
-    }
-    if (this.hasOwnProperty(saveBankListDto, 'bnkRbiCode')) {
-      data.bnkRbiCode = saveBankListDto.bnkRbiCode;
-    }
-    if (this.hasOwnProperty(saveBankListDto, 'bnkIbanSupported')) {
-      data.bnkIbanSupported = saveBankListDto.bnkIbanSupported;
-    }
-    if (this.hasOwnProperty(saveBankListDto, 'bnkIsActive')) {
-      data.bnkIsActive = saveBankListDto.bnkIsActive;
-    }
-  }
-  private normalizeRequiredName(name: string): string {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'bnkName',
-          message: 'bnkName must not be empty',
-        },
-      ]);
-    }
-    return trimmed;
-  }
+
   private toPayload(record: BankMaster): BankListPayload {
     return {
       bnkId: record.bnkId,
@@ -399,56 +295,5 @@ export class BankListService {
       bnkModifiedOn: record.bnkModifiedOn.toISOString(),
       bnkModifiedBy: record.bnkModifiedBy,
     };
-  }
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    if (!value) {
-      return fallback;
-    }
-    const trimmed = value.trim();
-    return trimmed || fallback;
-  }
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Bank already exists', [
-          {
-            field: 'bnkName',
-            message: 'Duplicate bnkName is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private throwNotFound(bnkId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Bank not found', [
-        {
-          field: 'bnkId',
-          message: `No active bank found with id ${bnkId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: BankListErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: BankListErrorDetail[] = [],
-  ): BankListErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

@@ -36,8 +36,9 @@ export interface AuditLogListItem {
 }
 
 export interface AuditLogListMeta {
-  page: number;
+  page: number | null;
   limit: number;
-  total: number;
-  total_pages: number;
+  total: number | null;
+  total_pages: number | null;
+  next_cursor: string | null;
 }

@@ -1,24 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-
-export class UiTableColumnErrorFieldDto {
-  @ApiProperty({ example: 'uiTblClmName' })
-  field!: string;
-
-  @ApiProperty({ example: 'uiTblClmName must not be empty' })
-  message!: string;
-}
-
-export class UiTableColumnErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: UiTableColumnErrorFieldDto, isArray: true })
-  errors!: UiTableColumnErrorFieldDto[];
-}
+import {
+  FixedErrorFieldDto,
+  FixedErrorResponseDto,
+  FixedListMetaDto,
+} from '../../utils/fixed-response.dto';
+export { FixedErrorFieldDto as UiTableColumnErrorFieldDto };
+export { FixedErrorResponseDto as UiTableColumnErrorResponseDto };
+export { FixedListMetaDto as UiTableColumnListMetaDto };
 
 export class UiTableColumnPayloadDto {
   @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
@@ -85,20 +74,6 @@ export class UiTableColumnPayloadDto {
   uiTblClmModifiedBy!: string | null;
 }
 
-export class UiTableColumnListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class UiTableColumnDeleteResultDto {
   @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
   uiTblClmId!: string;
@@ -128,8 +103,8 @@ export class UiTableColumnSuccessListDto {
   @ApiProperty({ type: UiTableColumnPayloadDto, isArray: true })
   data!: UiTableColumnPayloadDto[];
 
-  @ApiProperty({ type: UiTableColumnListMetaDto })
-  meta!: UiTableColumnListMetaDto;
+  @ApiProperty({ type: FixedListMetaDto })
+  meta!: FixedListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

@@ -70,17 +70,20 @@ export class AuditLogListItemDto {
 }
 
 export class AuditLogListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
+  @ApiPropertyOptional({ example: 1, nullable: true })
+  page!: number | null;
 
   @ApiProperty({ example: 20 })
   limit!: number;
 
-  @ApiProperty({ example: 100 })
-  total!: number;
+  @ApiPropertyOptional({ example: 100, nullable: true })
+  total!: number | null;
 
-  @ApiProperty({ example: 5 })
-  total_pages!: number;
+  @ApiPropertyOptional({ example: 5, nullable: true })
+  total_pages!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, format: 'uuid', description: 'Pass as cursor for next page' })
+  next_cursor!: string | null;
 }
 
 export class AuditLogSuccessListDto {

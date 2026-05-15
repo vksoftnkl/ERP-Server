@@ -1,24 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
+import {
+  FixedErrorFieldDto,
+  FixedErrorResponseDto,
+  FixedListMetaDto,
+} from '../../utils/fixed-response.dto';
 
-export class DeviceListMasterErrorFieldDto {
-  @ApiProperty({ example: 'devDeviceUid' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate device uid is not allowed' })
-  message!: string;
-}
-
-export class DeviceListMasterErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: DeviceListMasterErrorFieldDto, isArray: true })
-  errors!: DeviceListMasterErrorFieldDto[];
-}
+export { FixedErrorFieldDto as DeviceListMasterErrorFieldDto };
+export { FixedErrorResponseDto as DeviceListMasterErrorResponseDto };
+export { FixedListMetaDto as DeviceListMasterListMetaDto };
 
 export class DeviceListMasterPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -106,20 +96,6 @@ export class DeviceListMasterPayloadDto {
   devModifiedBy!: string | null;
 }
 
-export class DeviceListMasterListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class DeviceListMasterDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   devId!: string;
@@ -149,8 +125,8 @@ export class DeviceListMasterSuccessListDto {
   @ApiProperty({ type: DeviceListMasterPayloadDto, isArray: true })
   data!: DeviceListMasterPayloadDto[];
 
-  @ApiProperty({ type: DeviceListMasterListMetaDto })
-  meta!: DeviceListMasterListMetaDto;
+  @ApiProperty({ type: FixedListMetaDto })
+  meta!: FixedListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

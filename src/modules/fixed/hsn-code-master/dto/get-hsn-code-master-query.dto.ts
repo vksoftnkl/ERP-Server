@@ -1,47 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
-
-const toOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : (value as number);
-};
-
-const toOptionalBoolean = (value: unknown): boolean | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-      return true;
-    }
-
-    if (['0', 'false', 'no', 'off'].includes(normalized)) {
-      return false;
-    }
-  }
-
-  return value as boolean;
-};
-
-const toOptionalTrimmedString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return value as string | undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed || undefined;
-};
+import {
+  OptionalInteger,
+  OptionalQueryBoolean,
+  OptionalTrimmedString,
+} from '../../../sales/dto/dtoDecorators';
 
 export class GetHsnCodeMasterQueryDto {
   @ApiPropertyOptional({
@@ -49,10 +11,7 @@ export class GetHsnCodeMasterQueryDto {
     minimum: 1,
     example: 1,
   })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalNumber(value))
-  @IsInt()
-  @Min(1)
+  @OptionalInteger(1)
   hsnId?: number;
 
   @ApiPropertyOptional({
@@ -60,10 +19,7 @@ export class GetHsnCodeMasterQueryDto {
     maxLength: 50,
     example: '3004',
   })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalTrimmedString(value))
-  @IsString()
-  @MaxLength(50)
+  @OptionalTrimmedString(50)
   hsnCode?: string;
 
   @ApiPropertyOptional({
@@ -71,8 +27,6 @@ export class GetHsnCodeMasterQueryDto {
     default: true,
     description: 'Return only active HSN records',
   })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalBoolean(value))
-  @IsBoolean()
+  @OptionalQueryBoolean()
   activeOnly?: boolean;
 }

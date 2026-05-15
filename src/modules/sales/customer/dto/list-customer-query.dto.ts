@@ -1,21 +1,22 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
-import { OptionalQueryBoolean, OptionalQueryInt } from '../../dto/dtoDecorators';
+import {
+  OptionalQueryBoolean,
+  OptionalQueryInt,
+  OptionalTrimmedString,
+  OptionalUuid,
+} from '../../dto/dtoDecorators';
 
 export class ListCustomerQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   cusCompanyId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   cusAreaId?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   cusGroupId?: string;
 
   @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })
@@ -23,9 +24,7 @@ export class ListCustomerQueryDto {
   cusIsActive?: boolean;
 
   @ApiPropertyOptional({ maxLength: 200 })
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
+  @OptionalTrimmedString(200)
   search?: string;
 
   @ApiPropertyOptional({ minimum: 1, default: 1 })

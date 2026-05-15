@@ -279,3 +279,88 @@ export const toUpperTrimmed = (value: unknown): unknown => {
   }
   return value.trim().toUpperCase();
 };
+
+export const toNullableUpperString = (value: unknown): string | null | undefined => {
+  const normalized = toNullableString(value);
+  if (normalized === undefined || normalized === null) {
+    return normalized;
+  }
+
+  return normalized.toUpperCase();
+};
+
+export const toOptionalIdString = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    return String(value);
+  }
+
+  return value as string;
+};
+
+export const toNullableIdString = (value: unknown): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    return String(value);
+  }
+
+  return value as string;
+};
+
+export const toOptionalDate = (value: unknown): Date | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return value as Date;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? (value as unknown as Date) : parsed;
+};
+
+export const toNullableDate = (value: unknown): Date | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return value as Date;
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? (value as unknown as Date) : parsed;
+};

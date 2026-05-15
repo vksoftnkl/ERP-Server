@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsNotEmpty } from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -8,7 +8,10 @@ import {
   NullableUuid,
   OptionalBoolean,
   OptionalIntegerArray,
+  OptionalUuid,
   RequiredInteger,
+  RequiredUuid,
+  TrimmedString,
   UpperString,
 } from '../../dto/dtoDecorators';
 
@@ -17,8 +20,7 @@ export class SaveCustomerDto {
     format: 'uuid',
     description: 'When provided, request updates the existing customer',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   cusId?: string;
 
   @ApiPropertyOptional({ maxLength: 5, nullable: true })
@@ -58,9 +60,8 @@ export class SaveCustomerDto {
   cusDistrict?: string | null;
 
   @ApiProperty({ maxLength: 100 })
-  @IsString()
+  @TrimmedString(100)
   @IsNotEmpty()
-  @MaxLength(100)
   cusStateName!: string;
 
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
@@ -291,11 +292,11 @@ export class SaveCustomerDto {
   cusBranchId?: string | null;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   cusAreaId!: string;
 
   @ApiProperty({ format: 'uuid' })
-  @IsUUID('all')
+  @RequiredUuid()
   cusGroupId!: string;
 
   @ApiPropertyOptional({ default: true })

@@ -1,21 +1,7 @@
-export interface UiTableMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface UiTableMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: UiTableMasterErrorDetail[];
-}
-
-export interface UiTableMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { FixedErrorDetail as UiTableMasterErrorDetail } from '../../utils/fixed-api.types';
+export type { FixedErrorResponse as UiTableMasterErrorResponse } from '../../utils/fixed-api.types';
+export type { FixedSuccessResponse as UiTableMasterSuccessResponse } from '../../utils/fixed-api.types';
+export type { FixedListMeta as UiTableMasterListMeta } from '../../utils/fixed-list.utils';
 
 export interface UiTableMasterPayload {
   uiTblId: string;
@@ -31,10 +17,3 @@ export interface UiTableMasterPayload {
 }
 
 export type UiTableMasterListItem = UiTableMasterPayload | Record<string, unknown>;
-
-export interface UiTableMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

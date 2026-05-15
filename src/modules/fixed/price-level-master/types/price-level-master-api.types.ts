@@ -1,20 +1,6 @@
-export interface PriceLevelMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface PriceLevelMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: PriceLevelMasterErrorDetail[];
-}
-
-export interface PriceLevelMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
+export type { FixedErrorDetail as PriceLevelMasterErrorDetail } from '../../utils/fixed-api.types';
+export type { FixedErrorResponse as PriceLevelMasterErrorResponse } from '../../utils/fixed-api.types';
+export type { FixedSuccessResponse as PriceLevelMasterSuccessResponse } from '../../utils/fixed-api.types';
 
 export interface PriceLevelMasterPayload {
   priceLvlId: number;
