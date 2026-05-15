@@ -2,6 +2,8 @@ import {
   ConfiguredGridListResult,
   ConfiguredGridSqlService,
 } from '../../../common/configured-grid-sql/configured-grid-sql.service';
+import { GridColumnItem } from '../../../common/configured-grid-sql/types/configured-grid-sql.types';
+import { DEFAULT_LIMIT, DEFAULT_PAGE } from '../../../common/utils/module-shared.utils';
 
 export interface SalesListMeta {
   page: number;
@@ -12,6 +14,51 @@ export interface SalesListMeta {
 
 export function buildListMeta(page: number, limit: number, total: number): SalesListMeta {
   return { page, limit, total, total_pages: Math.ceil(total / limit) };
+}
+
+export function resolvePagination(queryDto: { page?: number; limit?: number }): {
+  page: number;
+  limit: number;
+  skip: number;
+} {
+  const page = queryDto.page ?? DEFAULT_PAGE;
+  const limit = queryDto.limit ?? DEFAULT_LIMIT;
+  return { page, limit, skip: (page - 1) * limit };
+}
+
+export interface SalesListQueryOptions<TRecord, TItem> {
+  hasStructuredFilters?: boolean;
+  configuredGridFn?: () => Promise<ConfiguredGridListResult<TItem, SalesListMeta> | null>;
+  countFn: () => Promise<number>;
+  findManyFn: () => Promise<TRecord[]>;
+  toItemFn: (record: TRecord) => TItem;
+  loadStylesFn?: () => Promise<GridColumnItem[] | undefined>;
+}
+
+export async function runSalesListQuery<TRecord, TItem>(
+  pagination: { page: number; limit: number },
+  options: SalesListQueryOptions<TRecord, TItem>,
+): Promise<ConfiguredGridListResult<TItem, SalesListMeta>> {
+  const { hasStructuredFilters = false, configuredGridFn, countFn, findManyFn, toItemFn, loadStylesFn } =
+    options;
+  const { page, limit } = pagination;
+
+  if (!hasStructuredFilters && configuredGridFn) {
+    const configuredList = await configuredGridFn();
+    if (configuredList) return configuredList;
+  }
+
+  const [total, records, styles] = await Promise.all([
+    countFn(),
+    findManyFn(),
+    loadStylesFn ? loadStylesFn() : Promise.resolve(undefined),
+  ]);
+
+  return {
+    items: records.map(toItemFn),
+    meta: buildListMeta(page, limit, total),
+    ...(styles !== undefined && { styles }),
+  };
 }
 
 export async function runConfiguredGridQuery<TItem>(

@@ -17,8 +17,6 @@ import {
 } from './types/city-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   SalesWriteClient,
   applyPresentFields,
   hasOwnProperty,
@@ -30,7 +28,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from '../utils/sales-service.utils';
-import { buildListMeta, runConfiguredGridQuery } from '../utils/sales-list.utils';
+import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from '../utils/sales-list.utils';
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
 const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];
@@ -56,34 +54,12 @@ export class CityService {
   async list(
     queryDto: ListCityQueryDto,
   ): Promise<ConfiguredGridListResult<CityListItem, CityListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.ctmStateId !== undefined || queryDto.ctmIsActive !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await runConfiguredGridQuery<CityListItem>(
-        this.configuredGridSqlService,
-        { tableName: CITY_TABLE_NAME, alias: 'city_grid', search: queryDto.search, page, limit, skip },
-      );
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
-    const where: Prisma.CityMasterWhereInput = {
-      ctmIsDeleted: false,
-    };
-
-    if (queryDto.ctmStateId !== undefined) {
-      where.ctmStateId = queryDto.ctmStateId;
-    }
-
-    if (queryDto.ctmIsActive !== undefined) {
-      where.ctmIsActive = queryDto.ctmIsActive;
-    }
-
+    const where: Prisma.CityMasterWhereInput = { ctmIsDeleted: false };
+    if (queryDto.ctmStateId !== undefined) where.ctmStateId = queryDto.ctmStateId;
+    if (queryDto.ctmIsActive !== undefined) where.ctmIsActive = queryDto.ctmIsActive;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -92,23 +68,17 @@ export class CityService {
         { ctmShort: { contains: search, mode: 'insensitive' } },
       ];
     }
-
-    const [total, records, styles] = await Promise.all([
-      this.prisma.cityMaster.count({ where }),
-      this.prisma.cityMaster.findMany({
-        where,
-        orderBy: [{ ctmName: 'asc' }, { ctmId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(CITY_TABLE_NAME),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: buildListMeta(page, limit, total),
-      ...(styles !== undefined && { styles }),
-    };
+    return runSalesListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<CityListItem>(
+        this.configuredGridSqlService,
+        { tableName: CITY_TABLE_NAME, alias: 'city_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.cityMaster.count({ where }),
+      findManyFn: () => this.prisma.cityMaster.findMany({ where, orderBy: [{ ctmName: 'asc' }, { ctmId: 'asc' }], skip, take: limit }),
+      toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(CITY_TABLE_NAME),
+    });
   }
 
   async getById(ctmId: string): Promise<CityPayload> {

@@ -17,8 +17,6 @@ import {
 } from './types/area-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   SalesWriteClient,
   applyPresentFields,
   hasOwnProperty,
@@ -30,7 +28,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from '../utils/sales-service.utils';
-import { buildListMeta, runConfiguredGridQuery } from '../utils/sales-list.utils';
+import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from '../utils/sales-list.utils';
 const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
 const AREA_OPTIONAL_FIELDS = [
@@ -58,29 +56,12 @@ export class AreaService {
   async list(
     queryDto: ListAreaQueryDto,
   ): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.armCityId !== undefined || queryDto.armIsActive !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await runConfiguredGridQuery<AreaListItem>(
-        this.configuredGridSqlService,
-        { tableName: AREA_TABLE_NAME, alias: 'area_grid', search: queryDto.search, page, limit, skip },
-      );
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-    const where: Prisma.AreaMasterWhereInput = {
-      armIsDeleted: false,
-    };
-    if (queryDto.armCityId !== undefined) {
-      where.armCityId = queryDto.armCityId;
-    }
-    if (queryDto.armIsActive !== undefined) {
-      where.armIsActive = queryDto.armIsActive;
-    }
+    const where: Prisma.AreaMasterWhereInput = { armIsDeleted: false };
+    if (queryDto.armCityId !== undefined) where.armCityId = queryDto.armCityId;
+    if (queryDto.armIsActive !== undefined) where.armIsActive = queryDto.armIsActive;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -89,21 +70,17 @@ export class AreaService {
         { armShort: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.areaMaster.count({ where }),
-      this.prisma.areaMaster.findMany({
-        where,
-        orderBy: [{ armName: 'asc' }, { armId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(AREA_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: buildListMeta(page, limit, total),
-      ...(styles !== undefined && { styles }),
-    };
+    return runSalesListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<AreaListItem>(
+        this.configuredGridSqlService,
+        { tableName: AREA_TABLE_NAME, alias: 'area_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.areaMaster.count({ where }),
+      findManyFn: () => this.prisma.areaMaster.findMany({ where, orderBy: [{ armName: 'asc' }, { armId: 'asc' }], skip, take: limit }),
+      toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(AREA_TABLE_NAME),
+    });
   }
   async getById(armId: string): Promise<AreaPayload> {
     const record = await this.prisma.areaMaster.findFirst({

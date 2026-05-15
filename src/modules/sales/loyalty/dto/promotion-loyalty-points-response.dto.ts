@@ -1,37 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  SalesErrorFieldDto,
+  SalesErrorResponseDto,
+  SalesListMetaDto,
+} from '../../utils/sales-response.dto';
 
-export class PromotionLoyaltyPointsErrorFieldDto {
-  @ApiProperty({ example: 'ls_name' })
-  field!: string;
-
-  @ApiProperty({ example: 'ls_name is required' })
-  message!: string;
-}
-
-export class PromotionLoyaltyPointsErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: PromotionLoyaltyPointsErrorFieldDto, isArray: true })
-  errors!: PromotionLoyaltyPointsErrorFieldDto[];
-}
-
-export class PromotionLoyaltyPointsListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 1 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
+export { SalesErrorFieldDto as PromotionLoyaltyPointsErrorFieldDto };
+export { SalesErrorResponseDto as PromotionLoyaltyPointsErrorResponseDto };
+export { SalesListMetaDto as PromotionLoyaltyPointsListMetaDto };
 
 export class LoyaltyPointPayloadDto {
   @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
@@ -361,8 +337,8 @@ export class LoyaltySchemeSuccessListDto {
   @ApiProperty({ type: LoyaltySchemePayloadDto, isArray: true })
   data!: LoyaltySchemePayloadDto[];
 
-  @ApiProperty({ type: PromotionLoyaltyPointsListMetaDto })
-  meta!: PromotionLoyaltyPointsListMetaDto;
+  @ApiProperty({ type: SalesListMetaDto })
+  meta!: SalesListMetaDto;
 }
 
 export class LoyaltySchemeSuccessDeleteDto {
@@ -397,8 +373,8 @@ export class LoyaltyPointSuccessListDto {
   @ApiProperty({ type: LoyaltyPointPayloadDto, isArray: true })
   data!: LoyaltyPointPayloadDto[];
 
-  @ApiProperty({ type: PromotionLoyaltyPointsListMetaDto })
-  meta!: PromotionLoyaltyPointsListMetaDto;
+  @ApiProperty({ type: SalesListMetaDto })
+  meta!: SalesListMetaDto;
 }
 
 export class LoyaltyPointSuccessDeleteDto {
@@ -433,8 +409,8 @@ export class LoyaltyGiftSuccessListDto {
   @ApiProperty({ type: LoyaltyGiftPayloadDto, isArray: true })
   data!: LoyaltyGiftPayloadDto[];
 
-  @ApiProperty({ type: PromotionLoyaltyPointsListMetaDto })
-  meta!: PromotionLoyaltyPointsListMetaDto;
+  @ApiProperty({ type: SalesListMetaDto })
+  meta!: SalesListMetaDto;
 }
 
 export class LoyaltyGiftSuccessDeleteDto {

@@ -17,8 +17,6 @@ import {
 } from './types/customer-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   SalesWriteClient,
   applyPresentFields,
   hasOwnProperty,
@@ -29,6 +27,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from '../utils/sales-service.utils';
+import { buildListMeta, resolvePagination, runSalesListQuery } from '../utils/sales-list.utils';
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
 const CUSTOMER_OPTIONAL_FIELDS = [
@@ -117,42 +116,17 @@ export class CustomerService {
   async list(
     queryDto: ListCustomerQueryDto,
   ): Promise<ConfiguredGridListResult<CustomerListItem, CustomerListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.cusCompanyId !== undefined ||
       queryDto.cusAreaId !== undefined ||
       queryDto.cusGroupId !== undefined ||
       queryDto.cusIsActive !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
-    const where: Prisma.CustomerWhereInput = {
-      cusIsDeleted: false,
-    };
-
-    if (queryDto.cusCompanyId !== undefined) {
-      where.cusCompanyId = queryDto.cusCompanyId;
-    }
-
-    if (queryDto.cusAreaId !== undefined) {
-      where.cusAreaId = queryDto.cusAreaId;
-    }
-
-    if (queryDto.cusGroupId !== undefined) {
-      where.cusGroupId = queryDto.cusGroupId;
-    }
-
-    if (queryDto.cusIsActive !== undefined) {
-      where.cusIsActive = queryDto.cusIsActive;
-    }
-
+    const where: Prisma.CustomerWhereInput = { cusIsDeleted: false };
+    if (queryDto.cusCompanyId !== undefined) where.cusCompanyId = queryDto.cusCompanyId;
+    if (queryDto.cusAreaId !== undefined) where.cusAreaId = queryDto.cusAreaId;
+    if (queryDto.cusGroupId !== undefined) where.cusGroupId = queryDto.cusGroupId;
+    if (queryDto.cusIsActive !== undefined) where.cusIsActive = queryDto.cusIsActive;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -166,26 +140,13 @@ export class CustomerService {
         { cusGstNo: { contains: search, mode: 'insensitive' } },
       ];
     }
-
-    const [total, records] = await Promise.all([
-      this.prisma.customer.count({ where }),
-      this.prisma.customer.findMany({
-        where,
-        orderBy: [{ cusName: 'asc' }, { cusId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
+    return runSalesListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => this.listFromConfiguredGridSql(queryDto, page, limit, skip),
+      countFn: () => this.prisma.customer.count({ where }),
+      findManyFn: () => this.prisma.customer.findMany({ where, orderBy: [{ cusName: 'asc' }, { cusId: 'asc' }], skip, take: limit }),
+      toItemFn: (record) => this.toPayload(record),
+    });
   }
 
   private async listFromConfiguredGridSql(
@@ -243,12 +204,7 @@ export class CustomerService {
         });
         return {
           items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
+          meta: buildListMeta(page, limit, result.total),
           styles: result.styles,
         };
       } catch {

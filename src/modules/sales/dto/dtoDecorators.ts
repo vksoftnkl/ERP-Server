@@ -8,8 +8,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   Length,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -24,10 +24,17 @@ import {
   toNullableStringStrict,
   toNullableUuid,
   toOptionalBoolean,
+  toOptionalDateString,
   toOptionalInteger,
   toOptionalIntegerArray,
   toOptionalNumber,
+  toOptionalTimeString,
+  toOptionalUuid,
+  toRequiredUuid,
+  toTrimmedString,
   toUpperTrimmed,
+  TIME_PATTERN,
+  UUID_PATTERN,
 } from './DtoTransforms';
 
 export const SkipOnNullish = () => ValidateIf((_, value) => value !== null && value !== undefined);
@@ -63,7 +70,35 @@ export const NullableUuid = () =>
     IsOptional(),
     Transform(({ value }) => toNullableUuid(value)),
     SkipOnNullish(),
-    IsUUID('all'),
+    Matches(UUID_PATTERN),
+  );
+
+export const OptionalUuid = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toOptionalUuid(value)),
+    Matches(UUID_PATTERN),
+  );
+
+export const RequiredUuid = () =>
+  applyDecorators(
+    Transform(({ value }) => toRequiredUuid(value)),
+    Matches(UUID_PATTERN),
+  );
+
+export const OptionalDateString = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toOptionalDateString(value)),
+    IsDateString(),
+  );
+
+export const OptionalTimeString = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toOptionalTimeString(value)),
+    IsString(),
+    Matches(TIME_PATTERN),
   );
 
 export const NullableInteger = (min?: number) =>
@@ -101,11 +136,27 @@ export const OptionalNumber = (min?: number) =>
     ...(min !== undefined ? [Min(min)] : []),
   );
 
+export const RequiredNumber = (min?: number) =>
+  applyDecorators(
+    Transform(({ value }) => toOptionalNumber(value)),
+    IsNumber(),
+    ...(min !== undefined ? [Min(min)] : []),
+  );
+
 export const RequiredInteger = (min?: number) =>
   applyDecorators(
     Transform(({ value }) => toInteger(value)),
     IsInt(),
     ...(min !== undefined ? [Min(min)] : []),
+  );
+
+export const OptionalInteger = (min?: number, max?: number) =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toOptionalInteger(value)),
+    IsInt(),
+    ...(min !== undefined ? [Min(min)] : []),
+    ...(max !== undefined ? [Max(max)] : []),
   );
 
 export const OptionalIntegerArray = () =>
@@ -125,13 +176,21 @@ export const OptionalQueryBoolean = () =>
     IsBoolean(),
   );
 
-export const OptionalQueryInt = (min?: number, max?: number) =>
+export const OptionalQueryInt = (min?: number, max?: number) => OptionalInteger(min, max);
+
+export const TrimmedString = (maxLength?: number) =>
+  applyDecorators(
+    Transform(({ value }) => toTrimmedString(value)),
+    IsString(),
+    ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
+  );
+
+export const OptionalTrimmedString = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
-    Transform(({ value }) => toOptionalInteger(value)),
-    IsInt(),
-    ...(min !== undefined ? [Min(min)] : []),
-    ...(max !== undefined ? [Max(max)] : []),
+    Transform(({ value }) => toTrimmedString(value)),
+    IsString(),
+    ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
 
 export const UpperString = (exactLength: number) =>

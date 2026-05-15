@@ -12,8 +12,6 @@ import { StateListItem, StateListMeta, StatePayload } from './types/state-api.ty
 import {
   applyStateOptionalFields,
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   ensureStateNameIsUnique,
   handleStateWriteError,
   normalizeRequiredStateName,
@@ -24,7 +22,7 @@ import {
   throwStateNotFound,
   toStatePayload,
 } from './utils/state.utils';
-import { buildListMeta, runConfiguredGridQuery } from '../utils/sales-list.utils';
+import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from '../utils/sales-list.utils';
 @Injectable()
 export class StateService {
   constructor(
@@ -41,25 +39,10 @@ export class StateService {
   async list(
     queryDto: ListStateQueryDto,
   ): Promise<ConfiguredGridListResult<StateListItem, StateListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters = queryDto.stmIsActive !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await runConfiguredGridQuery<StateListItem>(
-        this.configuredGridSqlService,
-        { tableName: STATE_TABLE_NAME, alias: 'state_grid', search: queryDto.search, page, limit, skip },
-      );
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-    const where: Prisma.StateMasterWhereInput = {
-      stmIsDeleted: false,
-    };
-    if (queryDto.stmIsActive !== undefined) {
-      where.stmIsActive = queryDto.stmIsActive;
-    }
+    const where: Prisma.StateMasterWhereInput = { stmIsDeleted: false };
+    if (queryDto.stmIsActive !== undefined) where.stmIsActive = queryDto.stmIsActive;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -68,21 +51,17 @@ export class StateService {
         { stmShort: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.stateMaster.count({ where }),
-      this.prisma.stateMaster.findMany({
-        where,
-        orderBy: [{ stmName: 'asc' }, { stmId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(STATE_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => toStatePayload(record)),
-      meta: buildListMeta(page, limit, total),
-      ...(styles !== undefined && { styles }),
-    };
+    return runSalesListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<StateListItem>(
+        this.configuredGridSqlService,
+        { tableName: STATE_TABLE_NAME, alias: 'state_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.stateMaster.count({ where }),
+      findManyFn: () => this.prisma.stateMaster.findMany({ where, orderBy: [{ stmName: 'asc' }, { stmId: 'asc' }], skip, take: limit }),
+      toItemFn: (record) => toStatePayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(STATE_TABLE_NAME),
+    });
   }
   async getById(stmId: string): Promise<StatePayload> {
     const record = await this.prisma.stateMaster.findFirst({
