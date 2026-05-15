@@ -243,36 +243,29 @@ export abstract class ModuleExceptionFilter<
       : payload.message
         ? [payload.message]
         : ['Validation failed'];
-
     const errors = messages.map((message) => ({
       field: this.inferFieldName(message),
       message,
     })) as TErrorDetail[];
-
     return buildErrorResponse<TErrorDetail, TErrorResponse>('Validation failed', errors);
   }
-
   private resolveErrorMessage(rawResponse: unknown, fallback: string): string {
     if (typeof rawResponse === 'string') {
       return rawResponse;
     }
-
     if (typeof rawResponse === 'object' && rawResponse !== null && 'message' in rawResponse) {
       const message = (rawResponse as { message?: unknown }).message;
       if (typeof message === 'string') {
         return message;
       }
     }
-
     return fallback || 'Request failed';
   }
-
   private inferFieldName(message: string): string {
     const fieldMatch = message.match(this.fieldNamePattern);
     if (fieldMatch) {
       return fieldMatch[1];
     }
-
     return 'request';
   }
 }

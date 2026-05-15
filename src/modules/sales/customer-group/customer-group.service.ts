@@ -29,6 +29,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from '../utils/sales-service.utils';
+import { buildListMeta } from '../utils/sales-list.utils';
 const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
 const CUSTOMER_GROUP_OPTIONAL_FIELDS = [
@@ -110,12 +111,7 @@ export class CustomerGroupService {
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
+      meta: buildListMeta(page, limit, total),
       ...(styles !== undefined && { styles }),
     };
   }
@@ -170,12 +166,7 @@ export class CustomerGroupService {
 
       return {
         items: result.items,
-        meta: {
-          page,
-          limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
+        meta: buildListMeta(page, limit, result.total),
         styles: result.styles,
       };
     } catch {

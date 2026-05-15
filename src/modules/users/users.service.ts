@@ -134,10 +134,8 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-
     return user;
   }
-
   private async hashPassword(plainPassword: string): Promise<string> {
     const salt = randomBytes(PASSWORD_SALT_BYTES).toString('hex');
     const derivedKey = (await scryptAsync(plainPassword, salt, PASSWORD_KEY_LENGTH)) as Buffer;

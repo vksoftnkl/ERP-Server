@@ -1,7 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-
 const prisma = new PrismaClient();
-
 async function main() {
   const StockAdjList = [
     {
@@ -68,7 +66,6 @@ async function main() {
       sarAffectsAccounts: false,
     },
   ];
-
   for (const reason of StockAdjList) {
     await prisma.stockAdjReason.upsert({
       where: {
@@ -92,10 +89,8 @@ async function main() {
       },
     });
   }
-
   console.log('Stock adjustment reasons seeded successfully');
 }
-
 main()
   .catch((error) => {
     console.error('Seed failed:', error);

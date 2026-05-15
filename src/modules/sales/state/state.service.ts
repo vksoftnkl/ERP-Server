@@ -24,6 +24,7 @@ import {
   throwStateNotFound,
   toStatePayload,
 } from './utils/state.utils';
+import { buildListMeta, runConfiguredGridQuery } from '../utils/sales-list.utils';
 @Injectable()
 export class StateService {
   constructor(
@@ -45,11 +46,9 @@ export class StateService {
     const skip = (page - 1) * limit;
     const hasStructuredFilters = queryDto.stmIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(
-        queryDto.search,
-        page,
-        limit,
-        skip,
+      const configuredList = await runConfiguredGridQuery<StateListItem>(
+        this.configuredGridSqlService,
+        { tableName: STATE_TABLE_NAME, alias: 'state_grid', search: queryDto.search, page, limit, skip },
       );
       if (configuredList) {
         return configuredList;
@@ -81,67 +80,9 @@ export class StateService {
     ]);
     return {
       items: records.map((record) => toStatePayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
+      meta: buildListMeta(page, limit, total),
       ...(styles !== undefined && { styles }),
     };
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<StateListItem, StateListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: STATE_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      STATE_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: STATE_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<StateListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'state_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
   }
   async getById(stmId: string): Promise<StatePayload> {
     const record = await this.prisma.stateMaster.findFirst({

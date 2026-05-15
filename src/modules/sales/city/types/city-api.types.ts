@@ -1,21 +1,7 @@
-export interface CityErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface CityErrorResponse {
-  success: false;
-  message: string;
-  errors: CityErrorDetail[];
-}
-
-export interface CitySuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { SalesErrorDetail as CityErrorDetail } from '../../utils/sales-api.types';
+export type { SalesErrorResponse as CityErrorResponse } from '../../utils/sales-api.types';
+export type { SalesSuccessResponse as CitySuccessResponse } from '../../utils/sales-api.types';
+export type { SalesListMeta as CityListMeta } from '../../utils/sales-list.utils';
 
 export interface CityPayload {
   ctmId: string;
@@ -34,10 +20,3 @@ export interface CityPayload {
 }
 
 export type CityListItem = CityPayload | Record<string, unknown>;
-
-export interface CityListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

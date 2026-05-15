@@ -30,6 +30,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from '../utils/sales-service.utils';
+import { buildListMeta, runConfiguredGridQuery } from '../utils/sales-list.utils';
 const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
 const AREA_OPTIONAL_FIELDS = [
@@ -63,11 +64,9 @@ export class AreaService {
     const hasStructuredFilters =
       queryDto.armCityId !== undefined || queryDto.armIsActive !== undefined;
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(
-        queryDto.search,
-        page,
-        limit,
-        skip,
+      const configuredList = await runConfiguredGridQuery<AreaListItem>(
+        this.configuredGridSqlService,
+        { tableName: AREA_TABLE_NAME, alias: 'area_grid', search: queryDto.search, page, limit, skip },
       );
       if (configuredList) {
         return configuredList;
@@ -102,67 +101,9 @@ export class AreaService {
     ]);
     return {
       items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
+      meta: buildListMeta(page, limit, total),
       ...(styles !== undefined && { styles }),
     };
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: AREA_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      AREA_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: AREA_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<AreaListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'area_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
   }
   async getById(armId: string): Promise<AreaPayload> {
     const record = await this.prisma.areaMaster.findFirst({

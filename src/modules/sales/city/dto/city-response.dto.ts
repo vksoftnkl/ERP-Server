@@ -1,19 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-export class CityErrorFieldDto {
-  @ApiProperty({ example: 'ctmName' })
-  field!: string;
-  @ApiProperty({ example: 'Duplicate city name is not allowed for this state' })
-  message!: string;
-}
-export class CityErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-  @ApiProperty({ type: CityErrorFieldDto, isArray: true })
-  errors!: CityErrorFieldDto[];
-}
+import {
+  SalesErrorFieldDto,
+  SalesErrorResponseDto,
+  SalesListMetaDto,
+} from '../../utils/sales-response.dto';
+
+export { SalesErrorFieldDto as CityErrorFieldDto };
+export { SalesErrorResponseDto as CityErrorResponseDto };
+export { SalesListMetaDto as CityListMetaDto };
+
 export class CityPayloadDto {
   @ApiProperty({ format: 'uuid' })
   ctmId!: string;
@@ -42,22 +38,14 @@ export class CityPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   ctmModifiedBy!: string | null;
 }
-export class CityListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-  @ApiProperty({ example: 20 })
-  limit!: number;
-  @ApiProperty({ example: 3 })
-  total!: number;
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
+
 export class CityDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   ctmId!: string;
   @ApiProperty({ example: true })
   deleted!: true;
 }
+
 export class CitySuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -66,6 +54,7 @@ export class CitySuccessSingleDto {
   @ApiProperty({ type: CityPayloadDto })
   data!: CityPayloadDto;
 }
+
 export class CitySuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -73,11 +62,12 @@ export class CitySuccessListDto {
   message!: string;
   @ApiProperty({ type: CityPayloadDto, isArray: true })
   data!: CityPayloadDto[];
-  @ApiProperty({ type: CityListMetaDto })
-  meta!: CityListMetaDto;
+  @ApiProperty({ type: SalesListMetaDto })
+  meta!: SalesListMetaDto;
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];
 }
+
 export class CitySuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

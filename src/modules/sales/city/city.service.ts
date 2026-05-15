@@ -30,6 +30,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from '../utils/sales-service.utils';
+import { buildListMeta, runConfiguredGridQuery } from '../utils/sales-list.utils';
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
 const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];
@@ -62,11 +63,9 @@ export class CityService {
       queryDto.ctmStateId !== undefined || queryDto.ctmIsActive !== undefined;
 
     if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(
-        queryDto.search,
-        page,
-        limit,
-        skip,
+      const configuredList = await runConfiguredGridQuery<CityListItem>(
+        this.configuredGridSqlService,
+        { tableName: CITY_TABLE_NAME, alias: 'city_grid', search: queryDto.search, page, limit, skip },
       );
       if (configuredList) {
         return configuredList;
@@ -107,72 +106,9 @@ export class CityService {
 
     return {
       items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
+      meta: buildListMeta(page, limit, total),
       ...(styles !== undefined && { styles }),
     };
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<CityListItem, CityListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: CITY_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      CITY_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: CITY_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<CityListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'city_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   async getById(ctmId: string): Promise<CityPayload> {

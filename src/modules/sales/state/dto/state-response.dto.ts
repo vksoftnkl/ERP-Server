@@ -1,24 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
+import {
+  SalesErrorFieldDto,
+  SalesErrorResponseDto,
+  SalesListMetaDto,
+} from '../../utils/sales-response.dto';
 
-export class StateErrorFieldDto {
-  @ApiProperty({ example: 'stmName' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate state name is not allowed' })
-  message!: string;
-}
-
-export class StateErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: StateErrorFieldDto, isArray: true })
-  errors!: StateErrorFieldDto[];
-}
+export { SalesErrorFieldDto as StateErrorFieldDto };
+export { SalesErrorResponseDto as StateErrorResponseDto };
+export { SalesListMetaDto as StateListMetaDto };
 
 export class StatePayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -58,20 +48,6 @@ export class StatePayloadDto {
   stmModifiedBy!: string | null;
 }
 
-export class StateListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class StateDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   stmId!: string;
@@ -101,8 +77,8 @@ export class StateSuccessListDto {
   @ApiProperty({ type: StatePayloadDto, isArray: true })
   data!: StatePayloadDto[];
 
-  @ApiProperty({ type: StateListMetaDto })
-  meta!: StateListMetaDto;
+  @ApiProperty({ type: SalesListMetaDto })
+  meta!: SalesListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

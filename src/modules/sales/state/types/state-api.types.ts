@@ -1,21 +1,7 @@
-export interface StateErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface StateErrorResponse {
-  success: false;
-  message: string;
-  errors: StateErrorDetail[];
-}
-
-export interface StateSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { SalesErrorDetail as StateErrorDetail } from '../../utils/sales-api.types';
+export type { SalesErrorResponse as StateErrorResponse } from '../../utils/sales-api.types';
+export type { SalesSuccessResponse as StateSuccessResponse } from '../../utils/sales-api.types';
+export type { SalesListMeta as StateListMeta } from '../../utils/sales-list.utils';
 
 export interface StatePayload {
   stmId: string;
@@ -33,10 +19,3 @@ export interface StatePayload {
 }
 
 export type StateListItem = StatePayload | Record<string, unknown>;
-
-export interface StateListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}
