@@ -1,24 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
 
-export class ItemSectionErrorFieldDto {
-  @ApiProperty({ example: 'sec_name' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate sec_name is not allowed' })
-  message!: string;
-}
-
-export class ItemSectionErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: ItemSectionErrorFieldDto, isArray: true })
-  errors!: ItemSectionErrorFieldDto[];
-}
+export { InventoryErrorFieldDto as ItemSectionErrorFieldDto };
+export { InventoryErrorResponseDto as ItemSectionErrorResponseDto };
+export { InventoryListMetaDto as ItemSectionListMetaDto };
 
 export class ItemSectionPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -93,20 +79,6 @@ export class ItemSectionListItemDto {
   sec_name!: string;
 }
 
-export class ItemSectionListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class ItemSectionDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   sec_id!: string;
@@ -136,8 +108,8 @@ export class ItemSectionSuccessListDto {
   @ApiProperty({ type: ItemSectionListItemDto, isArray: true })
   data!: ItemSectionListItemDto[];
 
-  @ApiProperty({ type: ItemSectionListMetaDto })
-  meta!: ItemSectionListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

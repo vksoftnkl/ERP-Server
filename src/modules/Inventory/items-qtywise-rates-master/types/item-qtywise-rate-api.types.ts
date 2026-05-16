@@ -1,22 +1,7 @@
-export interface ItemQtywiseRateErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface ItemQtywiseRateErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemQtywiseRateErrorDetail[];
-}
-
-export interface ItemQtywiseRateSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type { InventoryErrorDetail as ItemQtywiseRateErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as ItemQtywiseRateErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as ItemQtywiseRateSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as ItemQtywiseRateListMeta } from '../../utils/inventory-list.utils';
 export interface ItemQtywiseRatePayload {
   iqr_id: string;
   iqr_branch_id: string | null;
@@ -43,10 +28,3 @@ export interface ItemQtywiseRatePayload {
 }
 
 export type ItemQtywiseRateListItem = ItemQtywiseRatePayload | Record<string, unknown>;
-
-export interface ItemQtywiseRateListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

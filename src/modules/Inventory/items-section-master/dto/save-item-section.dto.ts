@@ -1,4 +1,3 @@
-import { Transform } from 'class-transformer';
 import {
   IsInt,
   IsNotEmpty,
@@ -6,48 +5,9 @@ import {
   IsString,
   IsUUID,
   MaxLength,
-  ValidateIf,
-  isUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
-const toNullableUuid = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return isUUID(trimmed, 'all') ? trimmed : null;
-};
-
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
+import { NullableString, NullableUuid } from '../../utils/inventory-dto.decorators';
 
 export class SaveItemSectionDto {
   @ApiPropertyOptional({
@@ -83,10 +43,7 @@ export class SaveItemSectionDto {
   sec_description?: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   sec_parent_id?: string | null;
 
   @ApiPropertyOptional()
@@ -121,10 +78,7 @@ export class SaveItemSectionDto {
     description:
       'Base64 string or data URL (data:*;base64,...). For multipart/form-data, upload a file using the same field name to send raw bytes.',
   })
-  @IsOptional()
-  @Transform(({ value }) => toNullableString(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsString()
+  @NullableString()
   sec_photo?: string | Buffer | Uint8Array | null;
 
   @ApiPropertyOptional()

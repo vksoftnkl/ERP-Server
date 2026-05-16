@@ -16,35 +16,7 @@ import {
   ValidateIf,
   isUUID,
 } from 'class-validator';
-const toNullableString = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return value;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
-const toNullableUuid = (value: unknown): unknown => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null || value === '') {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return value;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return isUUID(trimmed, 'all') ? trimmed : value;
-};
+import { toNullableUuid, toNullableString } from 'src/common/dto/dto-transforms';
 const toNullableInteger = (value: unknown): unknown => {
   if (value === undefined) {
     return undefined;

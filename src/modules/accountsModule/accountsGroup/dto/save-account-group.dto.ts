@@ -13,44 +13,9 @@ import {
   isUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { toNullableUuid, toNullableString } from 'src/common/dto/dto-transforms';
 
-const toNullableUuid = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
 
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return isUUID(trimmed, 'all') ? trimmed : null;
-};
-
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
 
 const toOptionalTypeCode = (value: unknown): unknown => {
   if (typeof value !== 'string') {

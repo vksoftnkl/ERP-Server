@@ -22,6 +22,7 @@ import {
   StockTrackingType,
   StockTxnType,
 } from '../types/item-stock.types';
+import { toOptionalUuid, toNullableString, toOptionalNumber, toOptionalBoolean } from 'src/common/dto/dto-transforms';
 
 const toRequiredTrimmedString = (value: unknown): string => {
   if (typeof value !== 'string') {
@@ -30,29 +31,6 @@ const toRequiredTrimmedString = (value: unknown): string => {
   return value.trim();
 };
 
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return value as string;
-  }
-  const trimmed = value.trim();
-  return trimmed || null;
-};
-const toOptionalUuid = (value: unknown): string | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-  if (typeof value !== 'string') {
-    return value as string;
-  }
-  const trimmed = value.trim();
-  return trimmed || undefined;
-};
 const toRequiredNumber = (value: unknown): number => {
   if (typeof value === 'number') {
     return value;
@@ -66,30 +44,6 @@ const toRequiredNumber = (value: unknown): number => {
     return Number.isFinite(parsed) ? parsed : (value as unknown as number);
   }
   return value as number;
-};
-const toOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-  return toRequiredNumber(value);
-};
-const toOptionalBoolean = (value: unknown): boolean | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true' || normalized === '1') {
-      return true;
-    }
-    if (normalized === 'false' || normalized === '0') {
-      return false;
-    }
-  }
-  return value as boolean;
 };
 export class ItemStockLedgerRowDto {
   @ApiPropertyOptional({ format: 'uuid' })

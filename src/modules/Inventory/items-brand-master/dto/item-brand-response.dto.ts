@@ -1,24 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
 
-export class ItemBrandErrorFieldDto {
-  @ApiProperty({ example: 'brand_name' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate brand_name is not allowed' })
-  message!: string;
-}
-
-export class ItemBrandErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: ItemBrandErrorFieldDto, isArray: true })
-  errors!: ItemBrandErrorFieldDto[];
-}
+export { InventoryErrorFieldDto as ItemBrandErrorFieldDto };
+export { InventoryErrorResponseDto as ItemBrandErrorResponseDto };
+export { InventoryListMetaDto as ItemBrandListMetaDto };
 
 export class ItemBrandPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -76,20 +62,6 @@ export class ItemBrandPayloadDto {
   brand_modified_by!: string | null;
 }
 
-export class ItemBrandListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class ItemBrandDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   brand_id!: string;
@@ -119,8 +91,8 @@ export class ItemBrandSuccessListDto {
   @ApiProperty({ type: ItemBrandPayloadDto, isArray: true })
   data!: ItemBrandPayloadDto[];
 
-  @ApiProperty({ type: ItemBrandListMetaDto })
-  meta!: ItemBrandListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

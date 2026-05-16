@@ -1,19 +1,11 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-export class ItemPriceErrorFieldDto {
-  @ApiProperty({ example: 'ipm_item_id' })
-  field!: string;
-  @ApiProperty({ example: 'ipm_item_id is required' })
-  message!: string;
-}
-export class ItemPriceErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-  @ApiProperty({ type: ItemPriceErrorFieldDto, isArray: true })
-  errors!: ItemPriceErrorFieldDto[];
-}
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
+
+export { InventoryErrorFieldDto as ItemPriceErrorFieldDto };
+export { InventoryErrorResponseDto as ItemPriceErrorResponseDto };
+export { InventoryListMetaDto as ItemPriceListMetaDto };
+
 export class ItemPricePayloadDto {
   @ApiProperty({ format: 'uuid' })
   ipm_id!: string;
@@ -107,16 +99,6 @@ export class ItemPricePayloadDto {
   ipm_updated_on!: string | null;
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   ipm_updated_by!: string | null;
-}
-export class ItemPriceListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-  @ApiProperty({ example: 20 })
-  limit!: number;
-  @ApiProperty({ example: 3 })
-  total!: number;
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
 }
 export class ItemPriceDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
@@ -231,8 +213,8 @@ export class ItemPriceSuccessListDto {
     },
   })
   data!: Array<ItemPricePayloadDto | ItemUnitConversionPayloadDto>;
-  @ApiProperty({ type: ItemPriceListMetaDto })
-  meta!: ItemPriceListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];
 }

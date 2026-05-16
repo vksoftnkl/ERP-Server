@@ -1,19 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-export class ItemTaxHistoryErrorFieldDto {
-  @ApiProperty({ example: 'ith_item_id' })
-  field!: string;
-  @ApiProperty({ example: 'ith_item_id is required' })
-  message!: string;
-}
-export class ItemTaxHistoryErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-  @ApiProperty({ type: ItemTaxHistoryErrorFieldDto, isArray: true })
-  errors!: ItemTaxHistoryErrorFieldDto[];
-}
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
+
+export { InventoryErrorFieldDto as ItemTaxHistoryErrorFieldDto };
+export { InventoryErrorResponseDto as ItemTaxHistoryErrorResponseDto };
+export { InventoryListMetaDto as ItemTaxHistoryListMetaDto };
+
 export class ItemTaxHistoryPayloadDto {
   @ApiProperty({ format: 'uuid' })
   ith_id!: string;
@@ -32,22 +24,14 @@ export class ItemTaxHistoryPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   ith_created_by!: string | null;
 }
-export class ItemTaxHistoryListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-  @ApiProperty({ example: 20 })
-  limit!: number;
-  @ApiProperty({ example: 3 })
-  total!: number;
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
+
 export class ItemTaxHistoryDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   ith_id!: string;
   @ApiProperty({ example: true })
   deleted!: true;
 }
+
 export class ItemTaxHistorySuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -56,6 +40,7 @@ export class ItemTaxHistorySuccessSingleDto {
   @ApiProperty({ type: ItemTaxHistoryPayloadDto })
   data!: ItemTaxHistoryPayloadDto;
 }
+
 export class ItemTaxHistorySuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -63,12 +48,13 @@ export class ItemTaxHistorySuccessListDto {
   message!: string;
   @ApiProperty({ type: ItemTaxHistoryPayloadDto, isArray: true })
   data!: ItemTaxHistoryPayloadDto[];
-  @ApiProperty({ type: ItemTaxHistoryListMetaDto })
-  meta!: ItemTaxHistoryListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];
 }
+
 export class ItemTaxHistorySuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

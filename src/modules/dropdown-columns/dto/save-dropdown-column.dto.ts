@@ -12,19 +12,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return value as string;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
+import { toNullableString } from 'src/common/dto/dto-transforms';
 const toNullableNumber = (value: unknown): number | null | undefined => {
   if (value === undefined) {
     return undefined;

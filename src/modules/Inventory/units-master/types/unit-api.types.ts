@@ -1,24 +1,12 @@
-import { GridColumnItem } from "src/common/configured-grid-sql/types/configured-grid-sql.types";
+import type { ConfiguredGridListResult } from 'src/common/configured-grid-sql/configured-grid-sql.service';
+import type { InventoryListMeta } from '../../utils/inventory-list.utils';
 
+export type { InventoryErrorDetail as UnitErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as UnitErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as UnitSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as UnitListMeta } from '../../utils/inventory-list.utils';
+export type { UnitGridStyleDto as UnitGridStyle } from '../dto/unit-response.dto';
 
-export interface UnitErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface UnitErrorResponse {
-  success: false;
-  message: string;
-  errors: UnitErrorDetail[];
-}
-
-export interface UnitSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
 export interface UnitPayload {
   unit_id: string;
   unit_name: string;
@@ -43,18 +31,4 @@ export interface UnitPayload {
 }
 
 export type UnitListItem = UnitPayload | Record<string, unknown>;
-
-export interface UnitListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}
-
-export type UnitGridStyle = GridColumnItem;
-
-export interface UnitListResult {
-  items: UnitListItem[];
-  meta: UnitListMeta;
-  styles?: UnitGridStyle[];
-}
+export type UnitListResult = ConfiguredGridListResult<UnitListItem, InventoryListMeta>;

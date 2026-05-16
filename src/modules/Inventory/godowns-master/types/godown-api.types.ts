@@ -1,19 +1,7 @@
-export interface GodownErrorDetail {
-  field: string;
-  message: string;
-}
-export interface GodownErrorResponse {
-  success: false;
-  message: string;
-  errors: GodownErrorDetail[];
-}
-export interface GodownSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { InventoryErrorDetail as GodownErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as GodownErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as GodownSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as GodownListMeta } from '../../utils/inventory-list.utils';
 export interface GodownPayload {
   gdl_id: string;
   gdl_godown_id: string;
@@ -39,9 +27,3 @@ export interface GodownPayload {
   gdl_remarks: string | null;
 }
 export type GodownListItem = GodownPayload | Record<string, unknown>;
-export interface GodownListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

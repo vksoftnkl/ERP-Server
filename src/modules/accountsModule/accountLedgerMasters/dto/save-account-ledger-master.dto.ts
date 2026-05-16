@@ -15,24 +15,12 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { toNullableString } from 'src/common/dto/dto-transforms';
 const toOptionalTrimmedString = (value: unknown): unknown => {
   if (typeof value !== 'string') {
     return value;
   }
   return value.trim();
-};
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
 };
 const toNullableDate = (value: unknown): Date | null | undefined => {
   if (value === undefined) {

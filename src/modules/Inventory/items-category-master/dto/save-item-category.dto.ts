@@ -7,31 +7,10 @@ import {
   IsUUID,
   MaxLength,
   ValidateIf,
-  isUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-
-const toNullableUuid = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  return isUUID(trimmed, 'all') ? trimmed : null;
-};
+import { NullableUuid } from '../../utils/inventory-dto.decorators';
 
 const toNullablePhotoString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
@@ -107,10 +86,7 @@ export class SaveItemCategoryDto {
   category_description?: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   category_parent_id?: string | null;
 
   @ApiPropertyOptional()
@@ -129,10 +105,7 @@ export class SaveItemCategoryDto {
   category_tax_claim?: boolean;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   category_default_tax_id?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20 })
@@ -142,10 +115,7 @@ export class SaveItemCategoryDto {
   category_default_hsn?: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @IsOptional()
-  @Transform(({ value }) => toNullableUuid(value))
-  @ValidateIf((_, value) => value !== null && value !== undefined)
-  @IsUUID('all')
+  @NullableUuid()
   category_default_uom_id?: string | null;
 
   @ApiPropertyOptional({

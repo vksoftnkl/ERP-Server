@@ -12,28 +12,8 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+import { toNullableString, toOptionalInteger } from 'src/common/dto/dto-transforms';
 
-const toOptionalInteger = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? value : (value as number);
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return undefined;
-    }
-
-    const parsed = Number(trimmed);
-    return Number.isInteger(parsed) ? parsed : (value as unknown as number);
-  }
-
-  return value as number;
-};
 
 const toRequiredTrimmedString = (value: unknown): string => {
   if (typeof value !== 'string') {
@@ -43,22 +23,6 @@ const toRequiredTrimmedString = (value: unknown): string => {
   return value.trim();
 };
 
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return value as string;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
 
 export class SaveWidgetDto {
   @ApiPropertyOptional({

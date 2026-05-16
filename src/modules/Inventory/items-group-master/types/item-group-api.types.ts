@@ -1,22 +1,7 @@
-export interface ItemGroupErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface ItemGroupErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemGroupErrorDetail[];
-}
-
-export interface ItemGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type { InventoryErrorDetail as ItemGroupErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as ItemGroupErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as ItemGroupSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as ItemGroupListMeta } from '../../utils/inventory-list.utils';
 export interface ItemGroupPayload {
   itg_id: string;
   itg_name: string;
@@ -43,10 +28,3 @@ export interface ItemGroupPayload {
 }
 
 export type ItemGroupListItem = ItemGroupPayload | Record<string, unknown>;
-
-export interface ItemGroupListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

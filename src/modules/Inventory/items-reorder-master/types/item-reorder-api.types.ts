@@ -1,22 +1,7 @@
-export interface ItemReorderErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface ItemReorderErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemReorderErrorDetail[];
-}
-
-export interface ItemReorderSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type { InventoryErrorDetail as ItemReorderErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as ItemReorderErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as ItemReorderSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as ItemReorderListMeta } from '../../utils/inventory-list.utils';
 export interface ItemReorderDeleteResult {
   ir_id: string;
   deleted: true;
@@ -47,10 +32,3 @@ export interface ItemReorderPayload {
 }
 
 export type ItemReorderListItem = ItemReorderPayload | Record<string, unknown>;
-
-export interface ItemReorderListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

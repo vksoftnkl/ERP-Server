@@ -1,24 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
 
-export class GodownErrorFieldDto {
-  @ApiProperty({ example: 'gdl_name' })
-  field!: string;
-
-  @ApiProperty({ example: 'gdl_name is required' })
-  message!: string;
-}
-
-export class GodownErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: GodownErrorFieldDto, isArray: true })
-  errors!: GodownErrorFieldDto[];
-}
+export { InventoryErrorFieldDto as GodownErrorFieldDto };
+export { InventoryErrorResponseDto as GodownErrorResponseDto };
+export { InventoryListMetaDto as GodownListMetaDto };
 
 export class GodownPayloadDto {
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
@@ -88,20 +74,6 @@ export class GodownPayloadDto {
   gdl_remarks!: string | null;
 }
 
-export class GodownListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class GodownDeleteResultDto {
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
   gdl_id!: string;
@@ -131,8 +103,8 @@ export class GodownSuccessListDto {
   @ApiProperty({ type: GodownPayloadDto, isArray: true })
   data!: GodownPayloadDto[];
 
-  @ApiProperty({ type: GodownListMetaDto })
-  meta!: GodownListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

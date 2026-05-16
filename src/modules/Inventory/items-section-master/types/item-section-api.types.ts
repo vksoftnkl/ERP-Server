@@ -1,22 +1,7 @@
-export interface ItemSectionErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface ItemSectionErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemSectionErrorDetail[];
-}
-
-export interface ItemSectionSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type { InventoryErrorDetail as ItemSectionErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as ItemSectionErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as ItemSectionSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as ItemSectionListMeta } from '../../utils/inventory-list.utils';
 export interface ItemSectionPayload {
   sec_id: string;
   sec_name: string;
@@ -47,10 +32,3 @@ export interface ItemSectionDefaultListItem {
 }
 
 export type ItemSectionListItem = ItemSectionDefaultListItem | Record<string, unknown>;
-
-export interface ItemSectionListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

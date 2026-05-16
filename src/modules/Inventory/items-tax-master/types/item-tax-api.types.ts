@@ -1,19 +1,7 @@
-export interface ItemTaxErrorDetail {
-  field: string;
-  message: string;
-}
-export interface ItemTaxErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemTaxErrorDetail[];
-}
-export interface ItemTaxSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { InventoryErrorDetail as ItemTaxErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as ItemTaxErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as ItemTaxSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as ItemTaxListMeta } from '../../utils/inventory-list.utils';
 export interface ItemTaxPayload {
   tax_id: string;
   tax_name: string;
@@ -53,9 +41,3 @@ export interface ItemTaxPayload {
   tax_modified_by: string | null;
 }
 export type ItemTaxListItem = ItemTaxPayload | Record<string, unknown>;
-export interface ItemTaxListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

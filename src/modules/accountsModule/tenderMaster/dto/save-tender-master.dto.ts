@@ -12,23 +12,8 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { toNullableString, toOptionalNumber } from 'src/common/dto/dto-transforms';
 
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-};
 
 const toNullableNumber = (value: unknown): number | null | undefined => {
   if (value === undefined) {
@@ -43,14 +28,6 @@ const toNullableNumber = (value: unknown): number | null | undefined => {
   return Number.isFinite(parsed) ? parsed : (value as number);
 };
 
-const toOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : (value as number);
-};
 
 const toNumericString = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {

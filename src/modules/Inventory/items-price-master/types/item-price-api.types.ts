@@ -1,21 +1,8 @@
-export interface ItemPriceErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface ItemPriceErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemPriceErrorDetail[];
-}
-
-export interface ItemPriceSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { InventoryErrorDetail as ItemPriceErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as ItemPriceErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as ItemPriceSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as ItemPriceListMeta } from '../../utils/inventory-list.utils';
+export type { InventoryListMeta as ItemUnitConversionListMeta } from '../../utils/inventory-list.utils';
 
 export interface ItemPriceDeleteResult {
   ipm_id: string;
@@ -78,13 +65,6 @@ export interface ItemPricePayload {
 
 export type ItemPriceListItem = ItemPricePayload | Record<string, unknown>;
 
-export interface ItemPriceListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}
-
 export interface ItemUnitConversionPayload {
   iuc_id: string;
   iuc_company_id: string;
@@ -111,10 +91,3 @@ export interface ItemUnitConversionPayload {
 export type ItemUnitConversionListItem =
   | ItemUnitConversionPayload
   | Record<string, unknown>;
-
-export interface ItemUnitConversionListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

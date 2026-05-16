@@ -1,23 +1,10 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-export class ItemEanCodeErrorFieldDto {
-  @ApiProperty({ example: 'ean_code' })
-  field!: string;
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
 
-  @ApiProperty({ example: 'Duplicate ean_code is not allowed' })
-  message!: string;
-}
-
-export class ItemEanCodeErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: ItemEanCodeErrorFieldDto, isArray: true })
-  errors!: ItemEanCodeErrorFieldDto[];
-}
+export { InventoryErrorFieldDto as ItemEanCodeErrorFieldDto };
+export { InventoryErrorResponseDto as ItemEanCodeErrorResponseDto };
+export { InventoryListMetaDto as ItemEanCodeListMetaDto };
 
 export class ItemEanCodePayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -58,20 +45,6 @@ export class ItemEanCodePayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   ean_remarks!: string | null;
-}
-
-export class ItemEanCodeListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
 }
 
 export class ItemEanCodeDeleteResultDto {
@@ -123,8 +96,8 @@ export class ItemEanCodeSuccessListDto {
   @ApiProperty({ type: ItemEanCodePayloadDto, isArray: true })
   data!: ItemEanCodePayloadDto[];
 
-  @ApiProperty({ type: ItemEanCodeListMetaDto })
-  meta!: ItemEanCodeListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

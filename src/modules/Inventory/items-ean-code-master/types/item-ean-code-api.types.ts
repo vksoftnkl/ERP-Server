@@ -1,22 +1,7 @@
-export interface ItemEanCodeErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface ItemEanCodeErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemEanCodeErrorDetail[];
-}
-
-export interface ItemEanCodeSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type { InventoryErrorDetail as ItemEanCodeErrorDetail } from '../../utils/inventory-api.types';
+export type { InventoryErrorResponse as ItemEanCodeErrorResponse } from '../../utils/inventory-api.types';
+export type { InventorySuccessResponse as ItemEanCodeSuccessResponse } from '../../utils/inventory-api.types';
+export type { InventoryListMeta as ItemEanCodeListMeta } from '../../utils/inventory-list.utils';
 export interface ItemEanCodeDeleteResult {
   ean_id: string;
   deleted: true;
@@ -39,10 +24,3 @@ export interface ItemEanCodePayload {
 }
 
 export type ItemEanCodeListItem = ItemEanCodePayload | Record<string, unknown>;
-
-export interface ItemEanCodeListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

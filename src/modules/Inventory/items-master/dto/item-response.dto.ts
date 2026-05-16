@@ -1,19 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-export class ItemErrorFieldDto {
-  @ApiProperty({ example: 'item_name_en' })
-  field!: string;
-  @ApiProperty({ example: 'item_name_en is required' })
-  message!: string;
-}
-export class ItemErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-  @ApiProperty({ type: ItemErrorFieldDto, isArray: true })
-  errors!: ItemErrorFieldDto[];
-}
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
+
+export { InventoryErrorFieldDto as ItemErrorFieldDto };
+export { InventoryErrorResponseDto as ItemErrorResponseDto };
+export { InventoryListMetaDto as ItemListMetaDto };
+
 export class ItemPayloadDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;
@@ -140,16 +132,7 @@ export class ItemPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   item_modified_by!: string | null;
 }
-export class ItemListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-  @ApiProperty({ example: 20 })
-  limit!: number;
-  @ApiProperty({ example: 3 })
-  total!: number;
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
+
 export class ItemDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;
@@ -171,8 +154,8 @@ export class ItemSuccessListDto {
   message!: string;
   @ApiProperty({ type: ItemPayloadDto, isArray: true })
   data!: ItemPayloadDto[];
-  @ApiProperty({ type: ItemListMetaDto })
-  meta!: ItemListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];
 }

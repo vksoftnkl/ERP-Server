@@ -1,23 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-export class ItemGroupErrorFieldDto {
-  @ApiProperty({ example: 'itg_name' })
-  field!: string;
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
 
-  @ApiProperty({ example: 'Duplicate itg_name is not allowed' })
-  message!: string;
-}
-
-export class ItemGroupErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: ItemGroupErrorFieldDto, isArray: true })
-  errors!: ItemGroupErrorFieldDto[];
-}
+export { InventoryErrorFieldDto as ItemGroupErrorFieldDto };
+export { InventoryErrorResponseDto as ItemGroupErrorResponseDto };
+export { InventoryListMetaDto as ItemGroupListMetaDto };
 
 export class ItemGroupPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -87,20 +74,6 @@ export class ItemGroupPayloadDto {
   itg_modified_by!: string | null;
 }
 
-export class ItemGroupListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class ItemGroupDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   itg_id!: string;
@@ -130,8 +103,8 @@ export class ItemGroupSuccessListDto {
   @ApiProperty({ type: ItemGroupPayloadDto, isArray: true })
   data!: ItemGroupPayloadDto[];
 
-  @ApiProperty({ type: ItemGroupListMetaDto })
-  meta!: ItemGroupListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

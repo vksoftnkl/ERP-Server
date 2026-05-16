@@ -22,41 +22,12 @@ import {
   OpeningStockDetailTrackingType,
   OpeningStockStatus,
 } from '../opening-stock.enums';
-const toOptionalUuid = (value: unknown): string | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed || undefined;
-  }
-  return value as string;
-};
+import { toOptionalUuid, toNullableString, toOptionalNumber, resolveAliasValue } from 'src/common/dto/dto-transforms';
 const toRequiredTrimmedString = (value: unknown): string => {
   if (typeof value !== 'string') {
     return value as string;
   }
   return value.trim();
-};
-const toNullableString = (value: unknown): string | null | undefined => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null) {
-    return null;
-  }
-  if (typeof value !== 'string') {
-    return value as string;
-  }
-  const trimmed = value.trim();
-  return trimmed || null;
-};
-const toOptionalNumber = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : (value as number);
 };
 const toOptionalUuidArray = (value: unknown): string[] | undefined => {
   if (value === undefined || value === null || value === '') {
@@ -90,25 +61,6 @@ const toOptionalUuidArray = (value: unknown): string[] | undefined => {
   return value as string[];
 };
 
-const resolveAliasValue = (value: unknown, obj: unknown, aliases: string[]): unknown => {
-  if (value !== undefined) {
-    return value;
-  }
-
-  if (typeof obj !== 'object' || obj === null) {
-    return undefined;
-  }
-
-  const source = obj as Record<string, unknown>;
-  for (const alias of aliases) {
-    const aliasValue = source[alias];
-    if (aliasValue !== undefined) {
-      return aliasValue;
-    }
-  }
-
-  return undefined;
-};
 
 const normalizeOpeningStockHeaderAliases = (value: unknown): unknown => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {

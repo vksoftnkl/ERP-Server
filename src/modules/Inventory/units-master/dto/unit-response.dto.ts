@@ -1,23 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
 
-export class UnitErrorFieldDto {
-  @ApiProperty({ example: 'unit_name' })
-  field!: string;
-
-  @ApiProperty({ example: 'Duplicate unit_name is not allowed' })
-  message!: string;
-}
-
-export class UnitErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: UnitErrorFieldDto, isArray: true })
-  errors!: UnitErrorFieldDto[];
-}
+export { InventoryErrorFieldDto as UnitErrorFieldDto };
+export { InventoryErrorResponseDto as UnitErrorResponseDto };
+export { InventoryListMetaDto as UnitListMetaDto };
 
 export class UnitPayloadDto {
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
@@ -83,20 +69,6 @@ export class UnitPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   unit_modified_by!: string | null;
-}
-
-export class UnitListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
 }
 
 export class UnitGridStyleDto {
@@ -169,8 +141,8 @@ export class UnitSuccessListDto {
   @ApiProperty({ type: UnitPayloadDto, isArray: true })
   data!: UnitPayloadDto[];
 
-  @ApiProperty({ type: UnitListMetaDto })
-  meta!: UnitListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
 
   @ApiPropertyOptional({ type: UnitGridStyleDto, isArray: true })
   styles?: UnitGridStyleDto[];

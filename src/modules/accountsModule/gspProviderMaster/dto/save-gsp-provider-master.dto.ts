@@ -9,14 +9,8 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { toTrimmedString } from 'src/common/dto/dto-transforms';
 
-const toTrimmedString = (value: unknown): unknown => {
-  if (typeof value !== 'string') {
-    return value;
-  }
-
-  return value.trim();
-};
 
 export class SaveGspProviderMasterDto {
   @ApiPropertyOptional({

@@ -1,24 +1,10 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
+import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from '../../utils/inventory-response.dto';
 
-export class ItemReorderErrorFieldDto {
-  @ApiProperty({ example: 'ir_item_id' })
-  field!: string;
-
-  @ApiProperty({ example: 'ir_item_id is required' })
-  message!: string;
-}
-
-export class ItemReorderErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: ItemReorderErrorFieldDto, isArray: true })
-  errors!: ItemReorderErrorFieldDto[];
-}
+export { InventoryErrorFieldDto as ItemReorderErrorFieldDto };
+export { InventoryErrorResponseDto as ItemReorderErrorResponseDto };
+export { InventoryListMetaDto as ItemReorderListMetaDto };
 
 export class ItemReorderPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -85,20 +71,6 @@ export class ItemReorderPayloadDto {
   ir_modified_by!: string | null;
 }
 
-export class ItemReorderListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class ItemReorderDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   ir_id!: string;
@@ -148,8 +120,8 @@ export class ItemReorderSuccessListDto {
   @ApiProperty({ type: ItemReorderPayloadDto, isArray: true })
   data!: ItemReorderPayloadDto[];
 
-  @ApiProperty({ type: ItemReorderListMetaDto })
-  meta!: ItemReorderListMetaDto;
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];
