@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Controller, Get, Query, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -24,6 +25,7 @@ import {
 @ApiTags('HSN Code Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(86400)
 @Controller('hsn-code-masters')
 export class HsnCodeMasterController {
   constructor(private readonly hsnCodeMasterService: HsnCodeMasterService) {}

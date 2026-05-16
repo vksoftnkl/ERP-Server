@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -44,6 +45,7 @@ import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 @ApiTags('Godowns')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(3600)
 @Controller('godowns')
 @UseFilters(GodownExceptionFilter)
 export class GodownsMasterController {

@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -42,6 +43,7 @@ import {
 @ApiTags('Bank List')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(86400)
 @Controller('bank-lists')
 @UseFilters(BankListExceptionFilter)
 export class BankListController {

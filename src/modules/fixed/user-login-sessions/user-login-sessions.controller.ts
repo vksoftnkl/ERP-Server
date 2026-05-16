@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -42,6 +43,7 @@ import {
 @ApiTags('User Login Sessions')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(60)
 @Controller('user-login-sessions')
 @UseFilters(UserLoginSessionsExceptionFilter)
 export class UserLoginSessionsController {

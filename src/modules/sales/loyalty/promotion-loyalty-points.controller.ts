@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -51,6 +52,7 @@ import {
 @ApiTags('Promotion Loyalty Points')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(3600)
 @Controller('promotion-loyalty-points')
 @UseFilters(PromotionLoyaltyPointsExceptionFilter)
 export class PromotionLoyaltyPointsController {

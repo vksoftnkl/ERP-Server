@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   BadRequestException,
   Body,
@@ -59,6 +60,7 @@ import { hasRequestPayload, validateDto, validateSingleOrArrayDto } from 'src/co
   ItemEanCodePayloadDto,
   ItemEanCodeDeleteResultDto,
 )
+@CacheTTL(3600)
 @Controller('item-ean-codes')
 @UseFilters(ItemEanCodeExceptionFilter)
 export class ItemsEanCodeMasterController {

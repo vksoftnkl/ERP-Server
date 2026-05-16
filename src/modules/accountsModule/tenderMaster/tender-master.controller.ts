@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -42,6 +43,7 @@ import {
 @ApiTags('Tender Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(3600)
 @Controller('tender-masters')
 @UseFilters(TenderMasterExceptionFilter)
 export class TenderMasterController {

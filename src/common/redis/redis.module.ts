@@ -56,6 +56,7 @@ const parseNumber = (value: string | number | undefined, fallback: number): numb
           const redisUrl = process.env.REDIS_URL?.trim();
           const socketOptions = {
             connectTimeout,
+            reconnectStrategy: (retries: number) => Math.min(retries * 500, 5000),
             ...(host ? { host } : {}),
             ...(port ? { port } : {}),
             ...(tls ? { tls: true } : {}),
@@ -68,6 +69,7 @@ const parseNumber = (value: string | number | undefined, fallback: number): numb
                   url: redisUrl,
                   socket: {
                     connectTimeout,
+                    reconnectStrategy: (retries: number) => Math.min(retries * 500, 5000),
                   },
                 }
               : {

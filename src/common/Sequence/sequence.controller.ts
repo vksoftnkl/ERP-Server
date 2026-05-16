@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Body, Controller, Delete, Get, ParseUUIDPipe, Post, Query, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -30,6 +31,7 @@ import {
 @ApiTags('Sequence')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(60)
 @Controller('sequences')
 export class SequenceController {
   constructor(private readonly sequenceService: SequenceService) {}

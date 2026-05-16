@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -41,6 +42,7 @@ import { ListPhysicalStockQueryDto } from './dto/list-physical-stock-query.dto';
 @ApiTags('Physical Stock')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: PhysicalStockErrorResponseDto })
+@CacheTTL(60)
 @Controller('physical-stock')
 @UseFilters(PhysicalStockExceptionFilter)
 export class PhysicalStockController {

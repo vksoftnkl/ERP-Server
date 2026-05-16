@@ -1,7 +1,11 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PrismaModule } from '../../database/prisma/prisma.module';
+import { AuditLogArchivalProcessor } from './processors/audit-log-archival.processor';
+import { StockReconciliationProcessor } from './processors/stock-reconciliation.processor';
 import { QUEUE_NAMES } from './queue.constants';
+import { QueueService } from './queue.service';
 
 @Module({
   imports: [
@@ -27,7 +31,9 @@ import { QUEUE_NAMES } from './queue.constants';
       { name: QUEUE_NAMES.AUDIT_LOG_ARCHIVAL },
       { name: QUEUE_NAMES.STOCK_RECONCILIATION },
     ),
+    PrismaModule,
   ],
-  exports: [BullModule],
+  providers: [QueueService, AuditLogArchivalProcessor, StockReconciliationProcessor],
+  exports: [BullModule, QueueService],
 })
 export class QueueModule {}

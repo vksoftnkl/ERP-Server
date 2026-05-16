@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -41,6 +42,7 @@ import {
 @ApiTags('Employee Department Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(3600)
 @Controller('employee-department-masters')
 @UseFilters(EmployeeDepartmentMasterExceptionFilter)
 export class EmployeeDepartmentMasterController {

@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -32,6 +33,7 @@ import {
 @ApiTags('State Code Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(86400)
 @Controller('state-code-masters')
 @UseFilters(StateCodeMasterExceptionFilter)
 export class StateCodeMasterController {

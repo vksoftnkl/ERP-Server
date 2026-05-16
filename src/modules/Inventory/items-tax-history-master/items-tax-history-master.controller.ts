@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -41,6 +42,7 @@ import {
 @ApiTags('Item Tax History')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(3600)
 @Controller('item-tax-histories')
 @UseFilters(ItemTaxHistoryExceptionFilter)
 export class ItemsTaxHistoryMasterController {

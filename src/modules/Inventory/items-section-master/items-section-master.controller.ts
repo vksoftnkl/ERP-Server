@@ -1,3 +1,4 @@
+import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -51,6 +52,7 @@ type UploadedPhotoFile = {
 @ApiTags('Item Sections')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
+@CacheTTL(3600)
 @Controller('item-sections')
 @UseFilters(ItemSectionExceptionFilter)
 export class ItemsSectionMasterController {
