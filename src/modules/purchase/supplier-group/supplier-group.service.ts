@@ -80,6 +80,7 @@ export class SupplierGroupService {
         take: limit,
       }),
       toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(SUPPLIER_GROUP_TABLE_NAME),
     });
   }
 

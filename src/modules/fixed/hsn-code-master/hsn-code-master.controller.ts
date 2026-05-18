@@ -25,7 +25,7 @@ import {
 @ApiTags('HSN Code Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(86400)
+@CacheTTL(300)
 @Controller('hsn-code-masters')
 export class HsnCodeMasterController {
   constructor(private readonly hsnCodeMasterService: HsnCodeMasterService) {}

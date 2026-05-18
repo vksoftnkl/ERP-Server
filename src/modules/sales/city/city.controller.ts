@@ -43,7 +43,7 @@ import {
 @ApiTags('Cities')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('cities')
 @UseFilters(CityExceptionFilter)
 export class CityController {

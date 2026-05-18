@@ -42,7 +42,7 @@ import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 @ApiTags('Items')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('items')
 @UseFilters(ItemExceptionFilter)
 export class ItemsMasterController {

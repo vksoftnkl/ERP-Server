@@ -42,7 +42,7 @@ import {
 @ApiTags('Areas')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('areas')
 @UseFilters(AreaExceptionFilter)
 export class AreaController {

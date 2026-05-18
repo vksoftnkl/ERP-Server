@@ -45,9 +45,7 @@ import {
   TIME_PATTERN,
   UUID_PATTERN,
 } from './DtoTransforms';
-
 export const SkipOnNullish = () => ValidateIf((_, value) => value !== null && value !== undefined);
-
 export const NullableString = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
@@ -56,7 +54,6 @@ export const NullableString = (maxLength?: number) =>
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
-
 export const NullableStringStrict = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
@@ -65,7 +62,6 @@ export const NullableStringStrict = (maxLength?: number) =>
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
-
 export const NullableUpperString = (exactLength?: number) =>
   applyDecorators(
     IsOptional(),
@@ -74,7 +70,6 @@ export const NullableUpperString = (exactLength?: number) =>
     IsString(),
     ...(exactLength !== undefined ? [Length(exactLength, exactLength)] : []),
   );
-
 export const NullableEmail = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
@@ -83,7 +78,6 @@ export const NullableEmail = (maxLength?: number) =>
     IsEmail(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
-
 export const NullableDateString = () =>
   applyDecorators(
     IsOptional(),
@@ -91,7 +85,6 @@ export const NullableDateString = () =>
     SkipOnNullish(),
     IsDateString(),
   );
-
 export const NullableUuid = () =>
   applyDecorators(
     IsOptional(),
@@ -99,34 +92,29 @@ export const NullableUuid = () =>
     SkipOnNullish(),
     Matches(UUID_PATTERN),
   );
-
 export const OptionalUuid = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toOptionalUuid(value)),
     Matches(UUID_PATTERN),
   );
-
 export const RequiredUuid = () =>
   applyDecorators(
     Transform(({ value }) => toRequiredUuid(value)),
     Matches(UUID_PATTERN),
   );
-
 export const OptionalDateString = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toOptionalDateString(value)),
     IsDateString(),
   );
-
 export const OptionalDate = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toOptionalDate(value)),
     IsDate(),
   );
-
 export const NullableDate = () =>
   applyDecorators(
     IsOptional(),
@@ -134,7 +122,6 @@ export const NullableDate = () =>
     SkipOnNullish(),
     IsDate(),
   );
-
 export const OptionalTimeString = () =>
   applyDecorators(
     IsOptional(),
@@ -142,7 +129,6 @@ export const OptionalTimeString = () =>
     IsString(),
     Matches(TIME_PATTERN),
   );
-
 export const NullableInteger = (min?: number) =>
   applyDecorators(
     IsOptional(),
@@ -151,7 +137,6 @@ export const NullableInteger = (min?: number) =>
     IsInt(),
     ...(min !== undefined ? [Min(min)] : []),
   );
-
 export const NullableIntegerNaN = (min?: number) =>
   applyDecorators(
     IsOptional(),
@@ -160,7 +145,6 @@ export const NullableIntegerNaN = (min?: number) =>
     IsInt(),
     ...(min !== undefined ? [Min(min)] : []),
   );
-
 export const NullableNumber = (min?: number) =>
   applyDecorators(
     IsOptional(),
@@ -169,7 +153,6 @@ export const NullableNumber = (min?: number) =>
     IsNumber(),
     ...(min !== undefined ? [Min(min)] : []),
   );
-
 export const OptionalNumber = (min?: number) =>
   applyDecorators(
     IsOptional(),
@@ -177,21 +160,18 @@ export const OptionalNumber = (min?: number) =>
     IsNumber(),
     ...(min !== undefined ? [Min(min)] : []),
   );
-
 export const RequiredNumber = (min?: number) =>
   applyDecorators(
     Transform(({ value }) => toOptionalNumber(value)),
     IsNumber(),
     ...(min !== undefined ? [Min(min)] : []),
   );
-
 export const RequiredInteger = (min?: number) =>
   applyDecorators(
     Transform(({ value }) => toInteger(value)),
     IsInt(),
     ...(min !== undefined ? [Min(min)] : []),
   );
-
 export const OptionalInteger = (min?: number, max?: number) =>
   applyDecorators(
     IsOptional(),
@@ -200,14 +180,12 @@ export const OptionalInteger = (min?: number, max?: number) =>
     ...(min !== undefined ? [Min(min)] : []),
     ...(max !== undefined ? [Max(max)] : []),
   );
-
 export const OptionalNumberString = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toOptionalIdString(value)),
     IsNumberString({ no_symbols: true }),
   );
-
 export const NullableNumberString = () =>
   applyDecorators(
     IsOptional(),
@@ -215,7 +193,6 @@ export const NullableNumberString = () =>
     SkipOnNullish(),
     IsNumberString({ no_symbols: true }),
   );
-
 export const OptionalIntegerArray = () =>
   applyDecorators(
     IsOptional(),
@@ -223,25 +200,20 @@ export const OptionalIntegerArray = () =>
     IsArray(),
     IsInt({ each: true }),
   );
-
 export const OptionalBoolean = () => applyDecorators(IsOptional(), IsBoolean());
-
 export const OptionalQueryBoolean = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toOptionalBoolean(value)),
     IsBoolean(),
   );
-
 export const OptionalQueryInt = (min?: number, max?: number) => OptionalInteger(min, max);
-
 export const TrimmedString = (maxLength?: number) =>
   applyDecorators(
     Transform(({ value }) => toTrimmedString(value)),
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
-
 export const OptionalTrimmedString = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
@@ -249,21 +221,18 @@ export const OptionalTrimmedString = (maxLength?: number) =>
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
-
 export const UpperString = (exactLength: number) =>
   applyDecorators(
     Transform(({ value }) => toUpperTrimmed(value)),
     IsString(),
     Length(exactLength, exactLength),
   );
-
 export const UpperMaxString = (maxLength?: number) =>
   applyDecorators(
     Transform(({ value }) => toUpperTrimmed(value)),
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
-
 export const OptionalUpperString = (exactLength: number) =>
   applyDecorators(
     IsOptional(),
@@ -271,7 +240,6 @@ export const OptionalUpperString = (exactLength: number) =>
     IsString(),
     Length(exactLength, exactLength),
   );
-
 export const OptionalUpperMaxString = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
@@ -279,5 +247,4 @@ export const OptionalUpperMaxString = (maxLength?: number) =>
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
-
 export * from './DtoTransforms';

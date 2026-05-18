@@ -60,7 +60,7 @@ import { hasRequestPayload, validateDto, validateSingleOrArrayDto } from 'src/co
   ItemEanCodePayloadDto,
   ItemEanCodeDeleteResultDto,
 )
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('item-ean-codes')
 @UseFilters(ItemEanCodeExceptionFilter)
 export class ItemsEanCodeMasterController {

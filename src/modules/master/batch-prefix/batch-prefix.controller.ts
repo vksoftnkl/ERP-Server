@@ -43,7 +43,7 @@ import {
 @ApiTags('Batch Prefix')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('batch-prefixes')
 @UseFilters(BatchPrefixExceptionFilter)
 export class BatchPrefixController {

@@ -5,11 +5,9 @@ import {
 import { GridColumnItem } from '../configured-grid-sql/types/configured-grid-sql.types';
 import type { ModuleListMeta } from '../types/module-list.types';
 import { DEFAULT_LIMIT, DEFAULT_PAGE } from './module-shared.utils';
-
 export function buildListMeta(page: number, limit: number, total: number): ModuleListMeta {
   return { page, limit, total, total_pages: Math.ceil(total / limit) };
 }
-
 export function resolvePagination(queryDto: { page?: number; limit?: number }): {
   page: number;
   limit: number;
@@ -19,7 +17,6 @@ export function resolvePagination(queryDto: { page?: number; limit?: number }): 
   const limit = queryDto.limit ?? DEFAULT_LIMIT;
   return { page, limit, skip: (page - 1) * limit };
 }
-
 export interface ModuleListQueryOptions<TRecord, TItem> {
   hasStructuredFilters?: boolean;
   configuredGridFn?: () => Promise<ConfiguredGridListResult<TItem, ModuleListMeta> | null>;
@@ -28,7 +25,6 @@ export interface ModuleListQueryOptions<TRecord, TItem> {
   toItemFn: (record: TRecord) => TItem;
   loadStylesFn?: () => Promise<GridColumnItem[] | undefined>;
 }
-
 export async function runModuleListQuery<TRecord, TItem>(
   pagination: { page: number; limit: number },
   options: ModuleListQueryOptions<TRecord, TItem>,
@@ -100,7 +96,6 @@ export async function runConfiguredGridQuery<TItem>(
   }
   return null;
 }
-
 export type {
   AccountsListMeta,
   FixedListMeta,
@@ -110,13 +105,11 @@ export type {
   SalesListMeta,
   SettingsListMeta,
 } from '../types/module-list.types';
-
 export type AccountsListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export type FixedListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export type InventoryListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export type PurchaseListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export type SalesListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
-
 export {
   runModuleListQuery as runAccountsListQuery,
   runModuleListQuery as runFixedListQuery,

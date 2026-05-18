@@ -43,7 +43,7 @@ import {
 @ApiTags('Ledger Shipping Address')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('ledger-shipping-addresses')
 @UseFilters(LedgerShippingAddressExceptionFilter)
 export class LedgerShippingAddressController {

@@ -516,3 +516,13 @@ Foreign key constraint violated on the constraint: `fk_physical_stock_header_com
 2026-05-09T06:13:19.432Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
 2026-05-09T06:21:48.511Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
 2026-05-09T06:22:53.196Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-18T11:06:39.089Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-05-18T11:07:16.059Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-18T11:08:55.342Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-18T11:11:46.993Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-05-18T11:11:47.018Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-18T11:15:45.642Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-05-18T12:51:45.348Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-05-18T12:52:15.384Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-05-18T12:52:41.496Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010
+2026-05-18T12:52:57.520Z ERROR [NestApplication] Error: listen EPERM: operation not permitted 0.0.0.0:3010

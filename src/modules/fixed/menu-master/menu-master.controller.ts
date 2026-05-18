@@ -25,7 +25,7 @@ import {
 @ApiTags('Menu Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(86400)
+@CacheTTL(300)
 @Controller('menu-masters')
 export class MenuMasterController {
   constructor(private readonly menuMasterService: MenuMasterService) {}

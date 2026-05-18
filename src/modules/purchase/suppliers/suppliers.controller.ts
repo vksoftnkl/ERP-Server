@@ -43,7 +43,7 @@ import {
 @ApiTags('Suppliers')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('suppliers')
 @UseFilters(SupplierExceptionFilter)
 export class SuppliersController {

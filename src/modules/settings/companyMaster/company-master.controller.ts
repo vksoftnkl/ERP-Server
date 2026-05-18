@@ -43,7 +43,7 @@ import {
 @ApiTags('Company Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('company-masters')
 @UseFilters(CompanyMasterExceptionFilter)
 export class CompanyMasterController {

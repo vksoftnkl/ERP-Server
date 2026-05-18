@@ -94,6 +94,7 @@ export class SuppliersService {
         take: limit,
       }),
       toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(SUPPLIER_TABLE_NAME),
     });
   }
 

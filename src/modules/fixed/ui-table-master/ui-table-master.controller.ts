@@ -33,7 +33,7 @@ import {
 @ApiTags('UI Table Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('ui-table-masters')
 @UseFilters(UiTableMasterExceptionFilter)
 export class UiTableMasterController {

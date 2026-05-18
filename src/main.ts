@@ -112,7 +112,22 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
   app.use(json({ limit: requestBodyLimit }));
   app.use(urlencoded({ extended: true, limit: requestBodyLimit }));
-  app.use(helmet());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: [`'self'`],
+          styleSrc: [`'self'`, `'unsafe-inline'`],
+          scriptSrc: [`'self'`, `'unsafe-inline'`],
+          imgSrc: [`'self'`, 'data:', 'validator.swagger.io'],
+          workerSrc: [`'self'`, 'blob:'],
+          // Disable upgrade-insecure-requests: this directive causes browsers to
+          // upgrade HTTP sub-resource URLs to HTTPS, breaking Swagger UI on HTTP servers.
+          upgradeInsecureRequests: null,
+        },
+      },
+    }),
+  );
   app.use(compression());
   const configuredCorsOrigins = parseCsv(process.env.CORS_ORIGINS);
   const corsOrigins =

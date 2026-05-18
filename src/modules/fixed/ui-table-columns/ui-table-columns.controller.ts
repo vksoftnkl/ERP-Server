@@ -33,7 +33,7 @@ import {
 @ApiTags('UI Table Columns')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('ui-table-columns')
 @UseFilters(UiTableColumnExceptionFilter)
 export class UiTableColumnsController {

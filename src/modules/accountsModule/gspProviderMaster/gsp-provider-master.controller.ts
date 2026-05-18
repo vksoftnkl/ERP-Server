@@ -43,7 +43,7 @@ import {
 @ApiTags('GSP Provider Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('gsp-provider-masters')
 @UseFilters(GspProviderMasterExceptionFilter)
 export class GspProviderMasterController {

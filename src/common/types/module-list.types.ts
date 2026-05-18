@@ -4,7 +4,6 @@ export interface ModuleListMeta {
   total: number;
   total_pages: number;
 }
-
 export type AccountsListMeta = ModuleListMeta;
 export type SalesListMeta = ModuleListMeta;
 export type PurchaseListMeta = ModuleListMeta;

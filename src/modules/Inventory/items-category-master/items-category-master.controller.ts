@@ -52,7 +52,7 @@ type UploadedPhotoFile = {
 @ApiTags('Item Categories')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(86400)
+@CacheTTL(300)
 @Controller('item-categories')
 @UseFilters(ItemCategoryExceptionFilter)
 export class ItemsCategoryMasterController {

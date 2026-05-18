@@ -43,7 +43,7 @@ import {
 @ApiTags('Device List Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(86400)
+@CacheTTL(300)
 @Controller('device-list-masters')
 @UseFilters(DeviceListMasterExceptionFilter)
 export class DeviceListMasterController {

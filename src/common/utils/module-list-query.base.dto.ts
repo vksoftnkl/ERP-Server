@@ -1,6 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OptionalQueryInt, OptionalTrimmedString } from '../dto/dtoDecorators';
-
 export abstract class ModuleListQueryBaseDto {
   @ApiPropertyOptional({ maxLength: 200 })
   @OptionalTrimmedString(200)
@@ -12,7 +11,6 @@ export abstract class ModuleListQueryBaseDto {
   @OptionalQueryInt(1, 100)
   limit?: number;
 }
-
 export {
   ModuleListQueryBaseDto as AccountsListQueryBaseDto,
   ModuleListQueryBaseDto as FixedListQueryBaseDto,

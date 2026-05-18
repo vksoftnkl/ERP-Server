@@ -44,7 +44,7 @@ import { UnitsMasterService } from './units-master.service';
 @ApiTags('Units')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(86400)
+@CacheTTL(300)
 @Controller('units')
 @UseFilters(UnitExceptionFilter)
 export class UnitsMasterController {

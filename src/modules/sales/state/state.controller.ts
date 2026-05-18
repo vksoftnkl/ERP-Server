@@ -43,7 +43,7 @@ import {
 @ApiTags('States')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('states')
 @UseFilters(StateExceptionFilter)
 export class StateController {

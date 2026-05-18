@@ -52,7 +52,7 @@ import {
 @ApiTags('Promotion Loyalty Points')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('promotion-loyalty-points')
 @UseFilters(PromotionLoyaltyPointsExceptionFilter)
 export class PromotionLoyaltyPointsController {

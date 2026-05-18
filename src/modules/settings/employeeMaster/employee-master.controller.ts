@@ -43,7 +43,7 @@ import {
 @ApiTags('Employee Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('employee-masters')
 @UseFilters(EmployeeMasterExceptionFilter)
 export class EmployeeMasterController {

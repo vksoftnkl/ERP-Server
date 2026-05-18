@@ -34,6 +34,28 @@ export class CacheInvalidationService {
       this.logger.warn(`Failed to invalidate cache pattern "${pattern}": ${message}`);
     }
   }
+
+  async invalidatePatterns(patterns: string[]): Promise<void> {
+    if (!this.redisCacheService.isEnabled() || patterns.length === 0) {
+      return;
+    }
+    try {
+      const keyArrays = await Promise.all(
+        patterns.map((pattern) => this.redisCacheService.keys(buildHttpCacheStoragePattern(pattern))),
+      );
+      const keys = [...new Set(keyArrays.flat())];
+      if (keys.length === 0) {
+        return;
+      }
+      await this.redisCacheService.delMany(keys);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown cache pattern invalidation error';
+      this.logger.warn(
+        `Failed to invalidate cache patterns "${patterns.join(', ')}": ${message}`,
+      );
+    }
+  }
   async clearAll(): Promise<void> {
     if (!this.redisCacheService.isEnabled()) {
       try {

@@ -43,7 +43,7 @@ import {
 @ApiTags('Branch Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('branch-masters')
 @UseFilters(BranchMasterExceptionFilter)
 export class BranchMasterController {

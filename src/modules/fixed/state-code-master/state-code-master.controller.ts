@@ -33,7 +33,7 @@ import {
 @ApiTags('State Code Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(86400)
+@CacheTTL(300)
 @Controller('state-code-masters')
 @UseFilters(StateCodeMasterExceptionFilter)
 export class StateCodeMasterController {

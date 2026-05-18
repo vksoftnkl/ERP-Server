@@ -43,7 +43,7 @@ import {
 @ApiTags('Account Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('account-groups')
 @UseFilters(AccountGroupExceptionFilter)
 export class AccountsGroupController {

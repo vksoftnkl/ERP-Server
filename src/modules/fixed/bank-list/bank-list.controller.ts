@@ -43,7 +43,7 @@ import {
 @ApiTags('Bank List')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(86400)
+@CacheTTL(300)
 @Controller('bank-lists')
 @UseFilters(BankListExceptionFilter)
 export class BankListController {

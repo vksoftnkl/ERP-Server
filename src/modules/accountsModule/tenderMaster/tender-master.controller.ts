@@ -43,7 +43,7 @@ import {
 @ApiTags('Tender Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('tender-masters')
 @UseFilters(TenderMasterExceptionFilter)
 export class TenderMasterController {

@@ -42,7 +42,7 @@ import {
 @ApiTags('Item Taxes')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('item-taxes')
 @UseFilters(ItemTaxExceptionFilter)
 export class ItemsTaxMasterController {

@@ -8,7 +8,6 @@ export const toOptionalUuid = (value: unknown): string | undefined => {
   }
   return value as string;
 };
-
 export const toTrimmedString = (value: unknown): string | undefined => {
   if (value === undefined || value === null) {
     return undefined;
@@ -18,7 +17,6 @@ export const toTrimmedString = (value: unknown): string | undefined => {
   }
   return value.trim();
 };
-
 export const toNullableUuid = (value: unknown): string | null | undefined => {
   if (value === undefined || value === '') {
     return undefined;
@@ -32,7 +30,6 @@ export const toNullableUuid = (value: unknown): string | null | undefined => {
   }
   return value as string;
 };
-
 export const toNullableString = (value: unknown): string | null | undefined => {
   if (value === undefined) {
     return undefined;
@@ -46,7 +43,6 @@ export const toNullableString = (value: unknown): string | null | undefined => {
   const trimmed = value.trim();
   return trimmed || null;
 };
-
 export const toOptionalInteger = (value: unknown): number | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
@@ -54,7 +50,6 @@ export const toOptionalInteger = (value: unknown): number | undefined => {
   const parsed = Number(value);
   return Number.isInteger(parsed) ? parsed : (value as number);
 };
-
 export const toOptionalNumber = (value: unknown): number | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
@@ -62,7 +57,6 @@ export const toOptionalNumber = (value: unknown): number | undefined => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : (value as number);
 };
-
 export const toOptionalBoolean = (value: unknown): boolean | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;
@@ -81,7 +75,6 @@ export const toOptionalBoolean = (value: unknown): boolean | undefined => {
   }
   return value as boolean;
 };
-
 export const resolveAliasValue = (
   value: unknown,
   obj: unknown,

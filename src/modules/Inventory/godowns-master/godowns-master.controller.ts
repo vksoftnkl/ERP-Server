@@ -45,7 +45,7 @@ import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 @ApiTags('Godowns')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('godowns')
 @UseFilters(GodownExceptionFilter)
 export class GodownsMasterController {

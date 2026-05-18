@@ -43,7 +43,7 @@ import {
 @ApiTags('Account Ledger Masters')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(3600)
+@CacheTTL(300)
 @Controller('account-ledger-masters')
 @UseFilters(AccountLedgerMasterExceptionFilter)
 export class AccountLedgerMastersController {
