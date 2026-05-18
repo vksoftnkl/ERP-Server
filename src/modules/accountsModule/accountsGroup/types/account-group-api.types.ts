@@ -1,21 +1,7 @@
-export interface AccountGroupErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface AccountGroupErrorResponse {
-  success: false;
-  message: string;
-  errors: AccountGroupErrorDetail[];
-}
-
-export interface AccountGroupSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { AccountsErrorDetail as AccountGroupErrorDetail } from '../../utils/accounts-api.types';
+export type { AccountsErrorResponse as AccountGroupErrorResponse } from '../../utils/accounts-api.types';
+export type { AccountsSuccessResponse as AccountGroupSuccessResponse } from '../../utils/accounts-api.types';
+export type { AccountsListMeta as AccountGroupListMeta } from '../../utils/accounts-list.utils';
 
 export interface AccountGroupPayload {
   accGroupId: string;
@@ -46,10 +32,3 @@ export interface AccountGroupPayload {
 }
 
 export type AccountGroupListItem = AccountGroupPayload | Record<string, unknown>;
-
-export interface AccountGroupListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

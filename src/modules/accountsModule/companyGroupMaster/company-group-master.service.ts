@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { CompanyGroupMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -12,19 +7,24 @@ import { ListCompanyGroupMasterQueryDto } from './dto/list-company-group-master-
 import { SaveCompanyGroupMasterDto } from './dto/save-company-group-master.dto';
 import {
   CompanyGroupMasterErrorDetail,
-  CompanyGroupMasterErrorResponse,
   CompanyGroupMasterListItem,
   CompanyGroupMasterListMeta,
   CompanyGroupMasterPayload,
 } from './types/company-group-master-api.types';
-
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  hasOwnProperty,
+  normalizeRequiredText,
+  throwAccountsConflict,
+  throwAccountsNotFound,
+  throwOnUniqueConstraintError,
+} from '../utils/accounts-service.utils';
+import type { AccountsWriteClient } from '../utils/accounts-service.utils';
 const COMPANY_GROUP_MASTER_TABLE_NAME = 'company group master';
 const COMPANY_GROUP_MASTER_AUDIT_SCREEN_NAME = 'Company Group Master';
-
-type CompanyGroupWriteClient = Prisma.TransactionClient | PrismaService;
+type CompanyGroupWriteClient = AccountsWriteClient;
 
 @Injectable()
 export class CompanyGroupMasterService {
@@ -165,7 +165,7 @@ export class CompanyGroupMasterService {
     });
 
     if (!record) {
-      this.throwNotFound(cogGroupId);
+      throwAccountsNotFound<CompanyGroupMasterErrorDetail>('Company group not found', 'cogGroupId', `No active company group found with id ${cogGroupId}`);
     }
 
     return this.toPayload(record);
@@ -181,7 +181,7 @@ export class CompanyGroupMasterService {
       });
 
       if (!existing) {
-        this.throwNotFound(cogGroupId);
+        throwAccountsNotFound<CompanyGroupMasterErrorDetail>('Company group not found', 'cogGroupId', `No active company group found with id ${cogGroupId}`);
       }
 
       const modifiedOn = new Date();
@@ -199,7 +199,7 @@ export class CompanyGroupMasterService {
       });
 
       if (result.count === 0) {
-        this.throwNotFound(cogGroupId);
+        throwAccountsNotFound<CompanyGroupMasterErrorDetail>('Company group not found', 'cogGroupId', `No active company group found with id ${cogGroupId}`);
       }
 
       const originalRecord = this.toPayload(existing);
@@ -239,7 +239,7 @@ export class CompanyGroupMasterService {
   ): Promise<CompanyGroupMasterPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const groupName = this.normalizeRequiredName(saveCompanyGroupMasterDto.cogGroupName);
+        const groupName = normalizeRequiredText<CompanyGroupMasterErrorDetail>(saveCompanyGroupMasterDto.cogGroupName, 'cogGroupName');
         const companyIds = this.toUniqueIds(saveCompanyGroupMasterDto.cogCompanyIds);
 
         await this.ensureGroupNameIsUnique(tx, groupName);
@@ -254,7 +254,7 @@ export class CompanyGroupMasterService {
           cogModifiedBy: DEFAULT_ACTOR,
         };
 
-        if (this.hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
+        if (hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
           data.cogIsActive = saveCompanyGroupMasterDto.cogIsActive;
         }
 
@@ -280,7 +280,7 @@ export class CompanyGroupMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<CompanyGroupMasterErrorDetail>(error, 'Company group already exists', [{ field: 'cogGroupName', message: 'Duplicate company group unique value is not allowed' }]);
       throw error;
     }
   }
@@ -300,10 +300,10 @@ export class CompanyGroupMasterService {
         });
 
         if (!existing) {
-          this.throwNotFound(cogGroupId);
+          throwAccountsNotFound<CompanyGroupMasterErrorDetail>('Company group not found', 'cogGroupId', `No active company group found with id ${cogGroupId}`);
         }
 
-        const groupName = this.normalizeRequiredName(saveCompanyGroupMasterDto.cogGroupName);
+        const groupName = normalizeRequiredText<CompanyGroupMasterErrorDetail>(saveCompanyGroupMasterDto.cogGroupName, 'cogGroupName');
         const companyIds = this.toUniqueIds(saveCompanyGroupMasterDto.cogCompanyIds);
 
         await this.ensureGroupNameIsUnique(tx, groupName, cogGroupId);
@@ -315,7 +315,7 @@ export class CompanyGroupMasterService {
           cogModifiedBy: DEFAULT_ACTOR,
         };
 
-        if (this.hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
+        if (hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
           data.cogIsActive = saveCompanyGroupMasterDto.cogIsActive;
         }
 
@@ -346,7 +346,7 @@ export class CompanyGroupMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<CompanyGroupMasterErrorDetail>(error, 'Company group already exists', [{ field: 'cogGroupName', message: 'Duplicate company group unique value is not allowed' }]);
       throw error;
     }
   }
@@ -377,29 +377,10 @@ export class CompanyGroupMasterService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Company group name already exists', [
-          {
-            field: 'cogGroupName',
-            message: 'Duplicate cogGroupName is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private normalizeRequiredName(value: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'cogGroupName',
-          message: 'cogGroupName must not be empty',
-        },
+      throwAccountsConflict<CompanyGroupMasterErrorDetail>('Company group name already exists', [
+        { field: 'cogGroupName', message: 'Duplicate cogGroupName is not allowed' },
       ]);
     }
-
-    return trimmed;
   }
 
   private toUniqueIds(ids: readonly string[]): string[] {
@@ -429,54 +410,4 @@ export class CompanyGroupMasterService {
     };
   }
 
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Company group already exists', [
-          {
-            field: 'cogGroupName',
-            message: 'Duplicate company group unique value is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(cogGroupId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Company group not found', [
-        {
-          field: 'cogGroupId',
-          message: `No active company group found with id ${cogGroupId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: CompanyGroupMasterErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: CompanyGroupMasterErrorDetail[] = [],
-  ): CompanyGroupMasterErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
-  }
 }

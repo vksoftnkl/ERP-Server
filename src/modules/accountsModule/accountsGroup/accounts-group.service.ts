@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccountGroup, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -12,18 +7,27 @@ import { ListAccountGroupQueryDto } from './dto/list-account-group-query.dto';
 import { SaveAccountGroupDto } from './dto/save-account-group.dto';
 import {
   AccountGroupErrorDetail,
-  AccountGroupErrorResponse,
   AccountGroupListItem,
   AccountGroupListMeta,
   AccountGroupPayload,
 } from './types/account-group-api.types';
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  normalizeRequiredText,
+  throwAccountsBadRequest,
+  throwAccountsConflict,
+  throwAccountsNotFound,
+  throwOnUniqueConstraintError,
+} from '../utils/accounts-service.utils';
+import type { AccountsWriteClient } from '../utils/accounts-service.utils';
 const ACCOUNT_GROUP_TABLE_NAME = 'account groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
-type AccountGroupWriteClient = Prisma.TransactionClient | PrismaService;
+type AccountGroupWriteClient = AccountsWriteClient;
 type SearchColumnDescriptor = {
   normalized: string;
   tokens: string[];
@@ -536,7 +540,7 @@ export class AccountsGroupService {
       },
     });
     if (!record) {
-      this.throwNotFound(accGroupId);
+      throwAccountsNotFound<AccountGroupErrorDetail>('Account group not found', 'accGroupId', `No active account group found with id ${accGroupId}`);
     }
     return this.toPayload(record);
   }
@@ -549,7 +553,7 @@ export class AccountsGroupService {
         },
       });
       if (!existing) {
-        this.throwNotFound(accGroupId);
+        throwAccountsNotFound<AccountGroupErrorDetail>('Account group not found', 'accGroupId', `No active account group found with id ${accGroupId}`);
       }
       const hasChildren = await tx.accountGroup.count({
         where: {
@@ -558,7 +562,7 @@ export class AccountsGroupService {
         },
       });
       if (hasChildren > 0) {
-        this.throwBadRequest('Cannot delete account group with active children', [
+        throwAccountsBadRequest<AccountGroupErrorDetail>('Cannot delete account group with active children', [
           {
             field: 'accGroupId',
             message: `Account group ${accGroupId} has child groups. Reassign or delete them first.`,
@@ -572,7 +576,7 @@ export class AccountsGroupService {
         },
       });
       if (ledgerCount > 0) {
-        this.throwBadRequest('Cannot delete account group with active ledgers', [
+        throwAccountsBadRequest<AccountGroupErrorDetail>('Cannot delete account group with active ledgers', [
           {
             field: 'accGroupId',
             message: `Account group ${accGroupId} is used by ${ledgerCount} ledger(s).`,
@@ -594,7 +598,7 @@ export class AccountsGroupService {
         },
       });
       if (result.count === 0) {
-        this.throwNotFound(accGroupId);
+        throwAccountsNotFound<AccountGroupErrorDetail>('Account group not found', 'accGroupId', `No active account group found with id ${accGroupId}`);
       }
       await this.removeChildIds(tx, ancestorIds, [accGroupId]);
       const originalRecord = this.toPayload(existing);
@@ -631,12 +635,12 @@ export class AccountsGroupService {
   ): Promise<AccountGroupPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const normalizedName = this.normalizeRequiredName(saveAccountGroupDto.accGroupName);
+        const normalizedName = normalizeRequiredText<AccountGroupErrorDetail>(saveAccountGroupDto.accGroupName, 'accGroupName');
         const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
         const parent = saveAccountGroupDto.accGroupParentId
           ? await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx)
           : null;
-        const requestedCompanyId = this.hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
+        const requestedCompanyId = hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
           ? (saveAccountGroupDto.accGroupCompanyId ?? null)
           : undefined;
         const companyId = await this.resolveCompanyId(
@@ -697,7 +701,10 @@ export class AccountsGroupService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<AccountGroupErrorDetail>(error, 'Account group already exists', [{ field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' }]);
+      if (isForeignKeyConstraintError(error)) {
+        throwAccountsBadRequest<AccountGroupErrorDetail>('Invalid reference value provided', [{ field: 'accGroupCompanyId', message: 'Referenced company or parent account group does not exist' }]);
+      }
       throw error;
     }
   }
@@ -714,26 +721,26 @@ export class AccountsGroupService {
           },
         });
         if (!existing) {
-          this.throwNotFound(accGroupId);
+          throwAccountsNotFound<AccountGroupErrorDetail>('Account group not found', 'accGroupId', `No active account group found with id ${accGroupId}`);
         }
-        const normalizedName = this.normalizeRequiredName(saveAccountGroupDto.accGroupName);
+        const normalizedName = normalizeRequiredText<AccountGroupErrorDetail>(saveAccountGroupDto.accGroupName, 'accGroupName');
         const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
         if (saveAccountGroupDto.accGroupParentId === accGroupId) {
-          this.throwBadRequest('Account group cannot be its own parent', [
+          throwAccountsBadRequest<AccountGroupErrorDetail>('Account group cannot be its own parent', [
             {
               field: 'accGroupParentId',
               message: 'accGroupParentId cannot be same as accGroupId',
             },
           ]);
         }
-        const hasParentField = this.hasOwnProperty(saveAccountGroupDto, 'accGroupParentId');
+        const hasParentField = hasOwnProperty(saveAccountGroupDto, 'accGroupParentId');
         const nextParentId = hasParentField
           ? (saveAccountGroupDto.accGroupParentId ?? null)
           : existing.accGroupParentId;
         const isParentChanged = hasParentField && nextParentId !== existing.accGroupParentId;
         const subtreeIds = isParentChanged ? await this.getActiveSubtreeIds(tx, accGroupId) : [];
         if (isParentChanged && nextParentId && subtreeIds.includes(nextParentId)) {
-          this.throwBadRequest('Circular hierarchy is not allowed', [
+          throwAccountsBadRequest<AccountGroupErrorDetail>('Circular hierarchy is not allowed', [
             {
               field: 'accGroupParentId',
               message: 'Parent cannot be a child of the same account group',
@@ -741,7 +748,7 @@ export class AccountsGroupService {
           ]);
         }
         const parent = nextParentId ? await this.ensureParentExists(nextParentId, tx) : null;
-        const requestedCompanyId = this.hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
+        const requestedCompanyId = hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
           ? (saveAccountGroupDto.accGroupCompanyId ?? null)
           : undefined;
         const nextCompanyId = await this.resolveCompanyId(
@@ -799,7 +806,10 @@ export class AccountsGroupService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<AccountGroupErrorDetail>(error, 'Account group already exists', [{ field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' }]);
+      if (isForeignKeyConstraintError(error)) {
+        throwAccountsBadRequest<AccountGroupErrorDetail>('Invalid reference value provided', [{ field: 'accGroupCompanyId', message: 'Referenced company or parent account group does not exist' }]);
+      }
       throw error;
     }
   }
@@ -818,7 +828,7 @@ export class AccountsGroupService {
       },
     });
     if (!parent) {
-      this.throwBadRequest('Parent account group does not exist', [
+      throwAccountsBadRequest<AccountGroupErrorDetail>('Parent account group does not exist', [
         {
           field: 'accGroupParentId',
           message: `No active account group found with id ${parentId}`,
@@ -838,7 +848,7 @@ export class AccountsGroupService {
       },
     });
     if (!company) {
-      this.throwBadRequest('Company does not exist', [
+      throwAccountsBadRequest<AccountGroupErrorDetail>('Company does not exist', [
         {
           field: 'accGroupCompanyId',
           message: `No active company found with id ${compId}`,
@@ -857,7 +867,7 @@ export class AccountsGroupService {
       if (companyId === null) {
         companyId = parentCompanyId;
       } else if (companyId !== parentCompanyId) {
-        this.throwBadRequest('Parent/company mismatch', [
+        throwAccountsBadRequest<AccountGroupErrorDetail>('Parent/company mismatch', [
           {
             field: 'accGroupCompanyId',
             message: `accGroupCompanyId ${companyId} must match parent company id ${parentCompanyId}`,
@@ -897,63 +907,58 @@ export class AccountsGroupService {
       },
     });
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Account group name already exists for this company', [
-          {
-            field: 'accGroupName',
-            message: 'Duplicate accGroupName is not allowed for this company',
-          },
-        ]),
-      );
+      throwAccountsConflict<AccountGroupErrorDetail>('Account group name already exists for this company', [
+        { field: 'accGroupName', message: 'Duplicate accGroupName is not allowed for this company' },
+      ]);
     }
   }
   private applyOptionalFields(
     data: Prisma.AccountGroupUncheckedCreateInput | Prisma.AccountGroupUncheckedUpdateInput,
     saveAccountGroupDto: SaveAccountGroupDto,
   ): void {
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupAlias')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupAlias')) {
       data.accGroupAlias = saveAccountGroupDto.accGroupAlias;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupShort')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupShort')) {
       data.accGroupShort = saveAccountGroupDto.accGroupShort;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupDescription')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupDescription')) {
       data.accGroupDescription = saveAccountGroupDto.accGroupDescription;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupTallyName')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupTallyName')) {
       data.accGroupTallyName = saveAccountGroupDto.accGroupTallyName;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupPrimaryName')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupPrimaryName')) {
       data.accGroupPrimaryName = saveAccountGroupDto.accGroupPrimaryName;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupNature')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupNature')) {
       data.accGroupNature = saveAccountGroupDto.accGroupNature;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupParentId')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupParentId')) {
       data.accGroupParentId = saveAccountGroupDto.accGroupParentId;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupSort')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupSort')) {
       data.accGroupSort = saveAccountGroupDto.accGroupSort;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupIsDefault')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupIsDefault')) {
       data.accGroupIsDefault = saveAccountGroupDto.accGroupIsDefault;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupBehaveAsSubledger')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupBehaveAsSubledger')) {
       data.accGroupBehaveAsSubledger = saveAccountGroupDto.accGroupBehaveAsSubledger;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupNetDebitCredit')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupNetDebitCredit')) {
       data.accGroupNetDebitCredit = saveAccountGroupDto.accGroupNetDebitCredit;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupUsedForCalculation')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupUsedForCalculation')) {
       data.accGroupUsedForCalculation = saveAccountGroupDto.accGroupUsedForCalculation;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupAffectsGrossProfit')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupAffectsGrossProfit')) {
       data.accGroupAffectsGrossProfit = saveAccountGroupDto.accGroupAffectsGrossProfit;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupIsActive')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupIsActive')) {
       data.accGroupIsActive = saveAccountGroupDto.accGroupIsActive;
     }
-    if (this.hasOwnProperty(saveAccountGroupDto, 'accGroupSyncDate')) {
+    if (hasOwnProperty(saveAccountGroupDto, 'accGroupSyncDate')) {
       data.accGroupSyncDate = saveAccountGroupDto.accGroupSyncDate;
     }
   }
@@ -1142,22 +1147,10 @@ export class AccountsGroupService {
     }
     return true;
   }
-  private normalizeRequiredName(name: string): string {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'accGroupName',
-          message: 'accGroupName must not be empty',
-        },
-      ]);
-    }
-    return trimmed;
-  }
   private normalizeTypeCode(typeCode: string): string {
     const normalized = typeCode.trim().toUpperCase();
     if (normalized.length !== 2) {
-      this.throwBadRequest('Validation failed', [
+      throwAccountsBadRequest<AccountGroupErrorDetail>('Validation failed', [
         {
           field: 'accGroupTypeCode',
           message: 'accGroupTypeCode must be exactly 2 characters',
@@ -1194,71 +1187,5 @@ export class AccountsGroupService {
       accGroupModifiedOn: record.accGroupModifiedOn.toISOString(),
       accGroupModifiedBy: record.accGroupModifiedBy,
     };
-  }
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Account group already exists', [
-          {
-            field: 'accGroupName',
-            message: 'Duplicate accGroupName is not allowed',
-          },
-        ]),
-      );
-    }
-    if (this.isForeignKeyConstraintError(error)) {
-      this.throwBadRequest('Invalid reference value provided', [
-        {
-          field: 'accGroupCompanyId',
-          message: 'Referenced company or parent account group does not exist',
-        },
-      ]);
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2003';
-  }
-
-  private throwNotFound(accGroupId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Account group not found', [
-        {
-          field: 'accGroupId',
-          message: `No active account group found with id ${accGroupId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: AccountGroupErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: AccountGroupErrorDetail[] = [],
-  ): AccountGroupErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

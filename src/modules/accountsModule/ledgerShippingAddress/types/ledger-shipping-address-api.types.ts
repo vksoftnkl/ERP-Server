@@ -1,21 +1,7 @@
-export interface LedgerShippingAddressErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface LedgerShippingAddressErrorResponse {
-  success: false;
-  message: string;
-  errors: LedgerShippingAddressErrorDetail[];
-}
-
-export interface LedgerShippingAddressSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { AccountsErrorDetail as LedgerShippingAddressErrorDetail } from '../../utils/accounts-api.types';
+export type { AccountsErrorResponse as LedgerShippingAddressErrorResponse } from '../../utils/accounts-api.types';
+export type { AccountsSuccessResponse as LedgerShippingAddressSuccessResponse } from '../../utils/accounts-api.types';
+export type { AccountsListMeta as LedgerShippingAddressListMeta } from '../../utils/accounts-list.utils';
 
 export interface LedgerShippingAddressPayload {
   saaId: string;
@@ -49,10 +35,3 @@ export interface LedgerShippingAddressPayload {
 }
 
 export type LedgerShippingAddressListItem = LedgerShippingAddressPayload | Record<string, unknown>;
-
-export interface LedgerShippingAddressListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

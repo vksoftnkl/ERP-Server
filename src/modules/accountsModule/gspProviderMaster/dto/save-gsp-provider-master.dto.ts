@@ -1,73 +1,52 @@
-import { Transform } from 'class-transformer';
-import {
-  IsBoolean,
-  IsIP,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-} from 'class-validator';
+import { IsIP, IsNotEmpty } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { toTrimmedString } from 'src/common/dto/dto-transforms';
-
+import { OptionalBoolean, OptionalUuid, TrimmedString } from '../../dto/dtoDecorators';
 
 export class SaveGspProviderMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing GSP provider',
   })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   gspProviderId?: string;
 
   @ApiProperty({ maxLength: 50 })
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
+  @TrimmedString(50)
   @IsNotEmpty()
-  @MaxLength(50)
   gspProviderCode!: string;
 
   @ApiProperty({ maxLength: 150 })
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
+  @TrimmedString(150)
   @IsNotEmpty()
-  @MaxLength(150)
   gspProviderName!: string;
 
   @ApiProperty({ description: 'Base URL for provider API' })
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
+  @TrimmedString()
   @IsNotEmpty()
   gspBaseUrl!: string;
 
   @ApiProperty({ description: 'Route path for provider API' })
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
+  @TrimmedString()
   @IsNotEmpty()
   gspRoute!: string;
 
   @ApiProperty({ description: 'Provider server IP address' })
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
+  @TrimmedString()
   @IsNotEmpty()
   @IsIP()
   gspIpAddress!: string;
 
   @ApiProperty()
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
+  @TrimmedString()
   @IsNotEmpty()
   gspUserName!: string;
 
   @ApiProperty()
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
+  @TrimmedString()
   @IsNotEmpty()
   gspUserPassword!: string;
 
   @ApiPropertyOptional()
-  @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   gspIsActive?: boolean;
 }

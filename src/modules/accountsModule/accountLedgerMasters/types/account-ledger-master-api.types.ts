@@ -1,23 +1,8 @@
 import type { LedGstPartyRegType, LedObType } from '@prisma/client';
-
-export interface AccountLedgerMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface AccountLedgerMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: AccountLedgerMasterErrorDetail[];
-}
-
-export interface AccountLedgerMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { AccountsErrorDetail as AccountLedgerMasterErrorDetail } from '../../utils/accounts-api.types';
+export type { AccountsErrorResponse as AccountLedgerMasterErrorResponse } from '../../utils/accounts-api.types';
+export type { AccountsSuccessResponse as AccountLedgerMasterSuccessResponse } from '../../utils/accounts-api.types';
+export type { AccountsListMeta as AccountLedgerMasterListMeta } from '../../utils/accounts-list.utils';
 
 export interface AccountLedgerMasterPayload {
   ledId: string;
@@ -90,10 +75,3 @@ export interface AccountLedgerMasterPayload {
 }
 
 export type AccountLedgerMasterListItem = AccountLedgerMasterPayload | Record<string, unknown>;
-
-export interface AccountLedgerMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

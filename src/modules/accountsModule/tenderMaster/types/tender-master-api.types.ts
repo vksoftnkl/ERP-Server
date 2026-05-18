@@ -1,22 +1,7 @@
-export interface TenderMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface TenderMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: TenderMasterErrorDetail[];
-}
-
-export interface TenderMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
-
+export type { AccountsErrorDetail as TenderMasterErrorDetail } from '../../utils/accounts-api.types';
+export type { AccountsErrorResponse as TenderMasterErrorResponse } from '../../utils/accounts-api.types';
+export type { AccountsSuccessResponse as TenderMasterSuccessResponse } from '../../utils/accounts-api.types';
+export type { AccountsListMeta as TenderMasterListMeta } from '../../utils/accounts-list.utils';
 export interface TenderMasterPayload {
   tndId: string;
   tndTypeId: string;
@@ -37,12 +22,4 @@ export interface TenderMasterPayload {
   tndModifiedOn: string;
   tndModifiedBy: string | null;
 }
-
 export type TenderMasterListItem = TenderMasterPayload | Record<string, unknown>;
-
-export interface TenderMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

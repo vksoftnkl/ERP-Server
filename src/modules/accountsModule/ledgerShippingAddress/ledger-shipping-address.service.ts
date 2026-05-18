@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccShipAddr, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -12,20 +7,25 @@ import { ListLedgerShippingAddressQueryDto } from './dto/list-ledger-shipping-ad
 import { SaveLedgerShippingAddressDto } from './dto/save-ledger-shipping-address.dto';
 import {
   LedgerShippingAddressErrorDetail,
-  LedgerShippingAddressErrorResponse,
   LedgerShippingAddressListItem,
   LedgerShippingAddressListMeta,
   LedgerShippingAddressPayload,
 } from './types/ledger-shipping-address-api.types';
-
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  hasOwnProperty,
+  throwAccountsBadRequest,
+  throwAccountsConflict,
+  throwAccountsNotFound,
+  throwOnUniqueConstraintError,
+} from '../utils/accounts-service.utils';
+import type { AccountsWriteClient } from '../utils/accounts-service.utils';
 const LEDGER_SHIPPING_ADDRESS_TABLE_NAME = 'acc ship addrs';
 const LEDGER_SHIPPING_ADDRESS_AUDIT_SCREEN_NAME = 'Ledger Shipping Address';
 const DEFAULT_ADDR_TYPE = 'SHIP_TO';
-
-type LedgerShippingAddressWriteClient = Prisma.TransactionClient | PrismaService;
+type LedgerShippingAddressWriteClient = AccountsWriteClient;
 
 @Injectable()
 export class LedgerShippingAddressService {
@@ -207,7 +207,7 @@ export class LedgerShippingAddressService {
     });
 
     if (!record) {
-      this.throwNotFound(saaId);
+      throwAccountsNotFound<LedgerShippingAddressErrorDetail>('Ledger shipping address not found', 'saaId', `No active ledger shipping address found with id ${saaId}`);
     }
 
     return this.toPayload(record);
@@ -223,7 +223,7 @@ export class LedgerShippingAddressService {
       });
 
       if (!existing) {
-        this.throwNotFound(saaId);
+        throwAccountsNotFound<LedgerShippingAddressErrorDetail>('Ledger shipping address not found', 'saaId', `No active ledger shipping address found with id ${saaId}`);
       }
 
       const modifiedOn = new Date();
@@ -241,7 +241,7 @@ export class LedgerShippingAddressService {
       });
 
       if (result.count === 0) {
-        this.throwNotFound(saaId);
+        throwAccountsNotFound<LedgerShippingAddressErrorDetail>('Ledger shipping address not found', 'saaId', `No active ledger shipping address found with id ${saaId}`);
       }
 
       const originalRecord = this.toPayload(existing);
@@ -288,7 +288,7 @@ export class LedgerShippingAddressService {
         await this.ensureLedgerExists(saveLedgerShippingAddressDto.saaLedgerId, tx);
 
         if (
-          this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId') &&
+          hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId') &&
           saveLedgerShippingAddressDto.saaCompanyId !== null &&
           saveLedgerShippingAddressDto.saaCompanyId !== undefined
         ) {
@@ -333,7 +333,7 @@ export class LedgerShippingAddressService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<LedgerShippingAddressErrorDetail>(error, 'Ledger shipping address already exists', [{ field: 'saaId', message: 'Duplicate ledger shipping address unique value is not allowed' }]);
       throw error;
     }
   }
@@ -353,17 +353,17 @@ export class LedgerShippingAddressService {
         });
 
         if (!existing) {
-          this.throwNotFound(saaId);
+          throwAccountsNotFound<LedgerShippingAddressErrorDetail>('Ledger shipping address not found', 'saaId', `No active ledger shipping address found with id ${saaId}`);
         }
 
         const nextAddrType = this.normalizeAddressType(
           saveLedgerShippingAddressDto.saaAddrType ?? existing.saaAddrType,
         );
         const nextLedgerId = saveLedgerShippingAddressDto.saaLedgerId;
-        const nextCompanyId = this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId')
+        const nextCompanyId = hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId')
           ? (saveLedgerShippingAddressDto.saaCompanyId ?? null)
           : existing.saaCompanyId;
-        const nextIsDefault = this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsDefault')
+        const nextIsDefault = hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsDefault')
           ? (saveLedgerShippingAddressDto.saaIsDefault ?? false)
           : existing.saaIsDefault;
 
@@ -413,7 +413,7 @@ export class LedgerShippingAddressService {
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError<LedgerShippingAddressErrorDetail>(error, 'Ledger shipping address already exists', [{ field: 'saaId', message: 'Duplicate ledger shipping address unique value is not allowed' }]);
       throw error;
     }
   }
@@ -433,7 +433,7 @@ export class LedgerShippingAddressService {
     });
 
     if (!ledger) {
-      this.throwBadRequest('Ledger does not exist', [
+      throwAccountsBadRequest<LedgerShippingAddressErrorDetail>('Ledger does not exist', [
         {
           field: 'saaLedgerId',
           message: `No active ledger found with id ${ledgerId}`,
@@ -457,7 +457,7 @@ export class LedgerShippingAddressService {
     });
 
     if (!company) {
-      this.throwBadRequest('Company does not exist', [
+      throwAccountsBadRequest<LedgerShippingAddressErrorDetail>('Company does not exist', [
         {
           field: 'saaCompanyId',
           message: `No active company found with id ${companyId}`,
@@ -498,83 +498,83 @@ export class LedgerShippingAddressService {
     data: Prisma.AccShipAddrUncheckedCreateInput | Prisma.AccShipAddrUncheckedUpdateInput,
     saveLedgerShippingAddressDto: SaveLedgerShippingAddressDto,
   ): void {
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId')) {
       data.saaCompanyId = saveLedgerShippingAddressDto.saaCompanyId;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsDefault')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsDefault')) {
       data.saaIsDefault = saveLedgerShippingAddressDto.saaIsDefault;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaSort')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaSort')) {
       data.saaSort = saveLedgerShippingAddressDto.saaSort;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaTrdnm')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaTrdnm')) {
       data.saaTrdnm = saveLedgerShippingAddressDto.saaTrdnm;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaContactName')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaContactName')) {
       data.saaContactName = saveLedgerShippingAddressDto.saaContactName;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr1')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr1')) {
       data.saaAddr1 = saveLedgerShippingAddressDto.saaAddr1;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr2')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr2')) {
       data.saaAddr2 = saveLedgerShippingAddressDto.saaAddr2;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr3')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaAddr3')) {
       data.saaAddr3 = saveLedgerShippingAddressDto.saaAddr3;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaLoc')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaLoc')) {
       data.saaLoc = saveLedgerShippingAddressDto.saaLoc;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaPin')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaPin')) {
       data.saaPin = saveLedgerShippingAddressDto.saaPin;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaStateCode')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaStateCode')) {
       data.saaStateCode = saveLedgerShippingAddressDto.saaStateCode;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaStateName')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaStateName')) {
       data.saaStateName = saveLedgerShippingAddressDto.saaStateName;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaDistanceKm')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaDistanceKm')) {
       data.saaDistanceKm = saveLedgerShippingAddressDto.saaDistanceKm;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaPhone')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaPhone')) {
       data.saaPhone = saveLedgerShippingAddressDto.saaPhone;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaEmail')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaEmail')) {
       data.saaEmail = saveLedgerShippingAddressDto.saaEmail;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaGstin')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaGstin')) {
       data.saaGstin = saveLedgerShippingAddressDto.saaGstin;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaPan')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaPan')) {
       data.saaPan = saveLedgerShippingAddressDto.saaPan;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaSyncDate')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaSyncDate')) {
       data.saaSyncDate = saveLedgerShippingAddressDto.saaSyncDate;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsActive')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsActive')) {
       data.saaIsActive = saveLedgerShippingAddressDto.saaIsActive;
     }
 
-    if (this.hasOwnProperty(saveLedgerShippingAddressDto, 'saaRemarks')) {
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaRemarks')) {
       data.saaRemarks = saveLedgerShippingAddressDto.saaRemarks;
     }
   }
@@ -582,7 +582,7 @@ export class LedgerShippingAddressService {
   private normalizeAddressType(value: string): string {
     const normalized = value.trim().toUpperCase();
     if (!normalized) {
-      this.throwBadRequest('Validation failed', [
+      throwAccountsBadRequest<LedgerShippingAddressErrorDetail>('Validation failed', [
         {
           field: 'saaAddrType',
           message: 'saaAddrType must not be empty',
@@ -634,54 +634,4 @@ export class LedgerShippingAddressService {
     };
   }
 
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Ledger shipping address already exists', [
-          {
-            field: 'saaId',
-            message: 'Duplicate ledger shipping address unique value is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(saaId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Ledger shipping address not found', [
-        {
-          field: 'saaId',
-          message: `No active ledger shipping address found with id ${saaId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: LedgerShippingAddressErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: LedgerShippingAddressErrorDetail[] = [],
-  ): LedgerShippingAddressErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
-  }
 }

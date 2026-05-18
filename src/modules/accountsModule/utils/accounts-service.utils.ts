@@ -1,0 +1,25 @@
+export {
+  DEFAULT_ACTOR,
+  DEFAULT_ACTOR as DEFAULT_AUDIT_ACTOR,
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  applyPresentFields,
+  buildErrorResponse as buildAccountsErrorResponse,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  isUniqueConstraintError,
+  normalizeRequiredText,
+  resolveActor,
+  throwBadRequest as throwAccountsBadRequest,
+  throwConflict as throwAccountsConflict,
+  throwNotFound as throwAccountsNotFound,
+  throwOnUniqueConstraintError,
+  toNullableNumber,
+  toNumber,
+} from '../../../common/utils/module-shared.utils';
+export type {
+  ModuleErrorDetail as AccountsErrorDetail,
+  ModuleErrorResponse as AccountsErrorResponse,
+  ModuleWriteClient as AccountsWriteClient,
+  PresentFieldTransform,
+} from '../../../common/utils/module-shared.utils';

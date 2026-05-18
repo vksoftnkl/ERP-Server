@@ -1,15 +1,7 @@
 import { Transform } from 'class-transformer';
-import {
-  ArrayUnique,
-  IsArray,
-  IsBoolean,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-} from 'class-validator';
+import { ArrayUnique, IsArray, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OptionalBoolean, OptionalUuid, TrimmedString } from '../../dto/dtoDecorators';
 
 const toUniqueStringArray = (value: unknown): string[] => {
   const toDistinct = (input: string[]): string[] => {
@@ -64,14 +56,12 @@ const toUniqueStringArray = (value: unknown): string[] => {
 
 export class SaveCompanyGroupMasterDto {
   @ApiPropertyOptional({ format: 'uuid', description: 'When provided, request updates the group' })
-  @IsOptional()
-  @IsUUID('all')
+  @OptionalUuid()
   cogGroupId?: string;
 
   @ApiProperty({ maxLength: 80 })
-  @IsString()
+  @TrimmedString(80)
   @IsNotEmpty()
-  @MaxLength(80)
   cogGroupName!: string;
 
   @ApiProperty({ type: [String], description: 'UUID list of company ids mapped to group' })
@@ -83,6 +73,6 @@ export class SaveCompanyGroupMasterDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsBoolean()
+  @OptionalBoolean()
   cogIsActive?: boolean;
 }
