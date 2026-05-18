@@ -1,7 +1,7 @@
-export type { PurchaseErrorDetail as SupplierGroupErrorDetail } from 'src/common/utils/module-api.types';
-export type { PurchaseErrorResponse as SupplierGroupErrorResponse } from 'src/common/utils/module-api.types';
-export type { PurchaseSuccessResponse as SupplierGroupSuccessResponse } from 'src/common/utils/module-api.types';
-export type { PurchaseListMeta as SupplierGroupListMeta } from 'src/common/utils/module-list.utils';
+export type { PurchaseErrorDetail as SupplierGroupErrorDetail } from 'src/common/types/module-api.types';
+export type { PurchaseErrorResponse as SupplierGroupErrorResponse } from 'src/common/types/module-api.types';
+export type { PurchaseSuccessResponse as SupplierGroupSuccessResponse } from 'src/common/types/module-api.types';
+export type { PurchaseListMeta as SupplierGroupListMeta } from 'src/common/types/module-list.types';
 
 export interface SupplierGroupPayload {
   spgId: string;

@@ -1,19 +1,7 @@
-export interface ItemBatchStockErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface ItemBatchStockErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemBatchStockErrorDetail[];
-}
-
-export interface ItemBatchStockSuccessResponse<T> {
-  success: true;
-  message: string;
-  data: T;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+export type ItemBatchStockErrorDetail = ModuleApiErrorDetail;
+export type ItemBatchStockErrorResponse = ModuleApiErrorResponse<ItemBatchStockErrorDetail>;
+export type ItemBatchStockSuccessResponse<T> = ModuleApiSuccessResponse<T, never, never>;
 
 export interface ItemBatchStockPayload {
   ibs_id: string;

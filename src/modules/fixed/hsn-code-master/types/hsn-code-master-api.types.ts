@@ -1,6 +1,6 @@
-export type { FixedErrorDetail as HsnCodeMasterErrorDetail } from 'src/common/utils/module-api.types';
-export type { FixedErrorResponse as HsnCodeMasterErrorResponse } from 'src/common/utils/module-api.types';
-export type { FixedSuccessResponse as HsnCodeMasterSuccessResponse } from 'src/common/utils/module-api.types';
+export type { FixedErrorDetail as HsnCodeMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as HsnCodeMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as HsnCodeMasterSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface HsnCodeMasterPayload {
   hsnId: number;

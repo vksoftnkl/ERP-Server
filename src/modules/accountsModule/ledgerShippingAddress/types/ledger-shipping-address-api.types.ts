@@ -1,7 +1,7 @@
-export type { AccountsErrorDetail as LedgerShippingAddressErrorDetail } from 'src/common/utils/module-api.types';
-export type { AccountsErrorResponse as LedgerShippingAddressErrorResponse } from 'src/common/utils/module-api.types';
-export type { AccountsSuccessResponse as LedgerShippingAddressSuccessResponse } from 'src/common/utils/module-api.types';
-export type { AccountsListMeta as LedgerShippingAddressListMeta } from 'src/common/utils/module-list.utils';
+export type { AccountsErrorDetail as LedgerShippingAddressErrorDetail } from 'src/common/types/module-api.types';
+export type { AccountsErrorResponse as LedgerShippingAddressErrorResponse } from 'src/common/types/module-api.types';
+export type { AccountsSuccessResponse as LedgerShippingAddressSuccessResponse } from 'src/common/types/module-api.types';
+export type { AccountsListMeta as LedgerShippingAddressListMeta } from 'src/common/types/module-list.types';
 
 export interface LedgerShippingAddressPayload {
   saaId: string;

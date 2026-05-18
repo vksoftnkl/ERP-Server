@@ -1,7 +1,7 @@
-export type { FixedErrorDetail as StateCodeMasterErrorDetail } from 'src/common/utils/module-api.types';
-export type { FixedErrorResponse as StateCodeMasterErrorResponse } from 'src/common/utils/module-api.types';
-export type { FixedSuccessResponse as StateCodeMasterSuccessResponse } from 'src/common/utils/module-api.types';
-export type { FixedListMeta as StateCodeMasterListMeta } from 'src/common/utils/module-list.utils';
+export type { FixedErrorDetail as StateCodeMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as StateCodeMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as StateCodeMasterSuccessResponse } from 'src/common/types/module-api.types';
+export type { FixedListMeta as StateCodeMasterListMeta } from 'src/common/types/module-list.types';
 
 export interface StateCodeMasterPayload {
   stateCode: string;

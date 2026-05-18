@@ -1,6 +1,6 @@
-export type { FixedErrorDetail as PriceLevelMasterErrorDetail } from 'src/common/utils/module-api.types';
-export type { FixedErrorResponse as PriceLevelMasterErrorResponse } from 'src/common/utils/module-api.types';
-export type { FixedSuccessResponse as PriceLevelMasterSuccessResponse } from 'src/common/utils/module-api.types';
+export type { FixedErrorDetail as PriceLevelMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as PriceLevelMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as PriceLevelMasterSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface PriceLevelMasterPayload {
   priceLvlId: number;

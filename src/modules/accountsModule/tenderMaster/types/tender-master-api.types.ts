@@ -1,7 +1,7 @@
-export type { AccountsErrorDetail as TenderMasterErrorDetail } from 'src/common/utils/module-api.types';
-export type { AccountsErrorResponse as TenderMasterErrorResponse } from 'src/common/utils/module-api.types';
-export type { AccountsSuccessResponse as TenderMasterSuccessResponse } from 'src/common/utils/module-api.types';
-export type { AccountsListMeta as TenderMasterListMeta } from 'src/common/utils/module-list.utils';
+export type { AccountsErrorDetail as TenderMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { AccountsErrorResponse as TenderMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { AccountsSuccessResponse as TenderMasterSuccessResponse } from 'src/common/types/module-api.types';
+export type { AccountsListMeta as TenderMasterListMeta } from 'src/common/types/module-list.types';
 export interface TenderMasterPayload {
   tndId: string;
   tndTypeId: string;

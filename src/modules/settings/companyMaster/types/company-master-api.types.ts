@@ -1,21 +1,9 @@
-export interface CompanyMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface CompanyMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: CompanyMasterErrorDetail[];
-}
-
-export interface CompanyMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type CompanyMasterErrorDetail = ModuleApiErrorDetail;
+export type CompanyMasterErrorResponse = ModuleApiErrorResponse<CompanyMasterErrorDetail>;
+export type CompanyMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export type CompanyMasterListMeta = ModuleListMeta;
 
 export interface CompanyMasterPayload {
   compId: string;
@@ -86,9 +74,3 @@ export interface CompanyMasterPayload {
 
 export type CompanyMasterListItem = CompanyMasterPayload | Record<string, unknown>;
 
-export interface CompanyMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

@@ -1,7 +1,7 @@
-export type { FixedErrorDetail as UiTableColumnErrorDetail } from 'src/common/utils/module-api.types';
-export type { FixedErrorResponse as UiTableColumnErrorResponse } from 'src/common/utils/module-api.types';
-export type { FixedSuccessResponse as UiTableColumnSuccessResponse } from 'src/common/utils/module-api.types';
-export type { FixedListMeta as UiTableColumnListMeta } from 'src/common/utils/module-list.utils';
+export type { FixedErrorDetail as UiTableColumnErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as UiTableColumnErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as UiTableColumnSuccessResponse } from 'src/common/types/module-api.types';
+export type { FixedListMeta as UiTableColumnListMeta } from 'src/common/types/module-list.types';
 
 export interface UiTableColumnPayload {
   uiTblClmId: string;

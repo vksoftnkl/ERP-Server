@@ -3,14 +3,8 @@ import {
   ConfiguredGridSqlService,
 } from '../configured-grid-sql/configured-grid-sql.service';
 import { GridColumnItem } from '../configured-grid-sql/types/configured-grid-sql.types';
+import type { ModuleListMeta } from '../types/module-list.types';
 import { DEFAULT_LIMIT, DEFAULT_PAGE } from './module-shared.utils';
-
-export interface ModuleListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}
 
 export function buildListMeta(page: number, limit: number, total: number): ModuleListMeta {
   return { page, limit, total, total_pages: Math.ceil(total / limit) };
@@ -107,15 +101,20 @@ export async function runConfiguredGridQuery<TItem>(
   return null;
 }
 
-export type AccountsListMeta = ModuleListMeta;
+export type {
+  AccountsListMeta,
+  FixedListMeta,
+  InventoryListMeta,
+  ModuleListMeta,
+  PurchaseListMeta,
+  SalesListMeta,
+  SettingsListMeta,
+} from '../types/module-list.types';
+
 export type AccountsListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
-export type FixedListMeta = ModuleListMeta;
 export type FixedListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
-export type InventoryListMeta = ModuleListMeta;
 export type InventoryListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
-export type PurchaseListMeta = ModuleListMeta;
 export type PurchaseListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
-export type SalesListMeta = ModuleListMeta;
 export type SalesListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 
 export {

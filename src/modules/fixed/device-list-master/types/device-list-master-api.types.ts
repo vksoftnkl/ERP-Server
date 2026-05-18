@@ -1,7 +1,7 @@
-export type { FixedErrorDetail as DeviceListMasterErrorDetail } from 'src/common/utils/module-api.types';
-export type { FixedErrorResponse as DeviceListMasterErrorResponse } from 'src/common/utils/module-api.types';
-export type { FixedSuccessResponse as DeviceListMasterSuccessResponse } from 'src/common/utils/module-api.types';
-export type { FixedListMeta as DeviceListMasterListMeta } from 'src/common/utils/module-list.utils';
+export type { FixedErrorDetail as DeviceListMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as DeviceListMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as DeviceListMasterSuccessResponse } from 'src/common/types/module-api.types';
+export type { FixedListMeta as DeviceListMasterListMeta } from 'src/common/types/module-list.types';
 
 export interface DeviceListMasterPayload {
   devId: string;

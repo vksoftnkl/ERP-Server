@@ -1,19 +1,11 @@
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type PhysicalStockErrorDetail = ModuleApiErrorDetail;
+export type PhysicalStockErrorResponse = ModuleApiErrorResponse<PhysicalStockErrorDetail>;
+export type PhysicalStockSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type PhysicalStockListMeta = ModuleListMeta;
+
 import { ApiProperty } from '@nestjs/swagger';
-export interface PhysicalStockErrorDetail {
-  field: string;
-  message: string;
-}
-export interface PhysicalStockErrorResponse {
-  success: false;
-  message: string;
-  errors: PhysicalStockErrorDetail[];
-}
-export interface PhysicalStockSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
 export interface PhysicalStockDeleteResponse {
   ps_id: string;
   deleted: true;
@@ -117,12 +109,6 @@ export interface PhysicalStockDocumentResponse {
   details: PhysicalStockDetailResponse[];
 }
 export type PhysicalStockListItem = PhysicalStockHeaderResponse;
-export interface PhysicalStockListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}
 export class PhysicalStockHeaderResponseDto implements PhysicalStockHeaderResponse {
   @ApiProperty({ example: '018f6f4e-91c2-7b6a-9e7d-2f8c7f2b1a11' })
   psc_id!: string;

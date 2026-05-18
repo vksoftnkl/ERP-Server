@@ -1,21 +1,9 @@
-export interface CustomerErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface CustomerErrorResponse {
-  success: false;
-  message: string;
-  errors: CustomerErrorDetail[];
-}
-
-export interface CustomerSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type CustomerErrorDetail = ModuleApiErrorDetail;
+export type CustomerErrorResponse = ModuleApiErrorResponse<CustomerErrorDetail>;
+export type CustomerSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export type CustomerListMeta = ModuleListMeta;
 
 export interface CustomerPayload {
   cusId: string;
@@ -98,9 +86,3 @@ export interface CustomerPayload {
 
 export type CustomerListItem = CustomerPayload | Record<string, unknown>;
 
-export interface CustomerListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

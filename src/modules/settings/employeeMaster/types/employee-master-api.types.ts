@@ -1,19 +1,10 @@
-export interface EmployeeMasterErrorDetail {
-  field: string;
-  message: string;
-}
-export interface EmployeeMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: EmployeeMasterErrorDetail[];
-}
-export interface EmployeeMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type EmployeeMasterErrorDetail = ModuleApiErrorDetail;
+export type EmployeeMasterErrorResponse = ModuleApiErrorResponse<EmployeeMasterErrorDetail>;
+export type EmployeeMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export type EmployeeMasterListMeta = ModuleListMeta;
+
 export interface EmployeeMasterPayload {
   empId: string;
   empCompanyId: string;
@@ -71,9 +62,3 @@ export interface EmployeeMasterPayload {
   empModifiedBy: string | null;
 }
 export type EmployeeMasterListItem = EmployeeMasterPayload | Record<string, unknown>;
-export interface EmployeeMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

@@ -1,6 +1,6 @@
-export type { FixedErrorDetail as MenuMasterErrorDetail } from 'src/common/utils/module-api.types';
-export type { FixedErrorResponse as MenuMasterErrorResponse } from 'src/common/utils/module-api.types';
-export type { FixedSuccessResponse as MenuMasterSuccessResponse } from 'src/common/utils/module-api.types';
+export type { FixedErrorDetail as MenuMasterErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as MenuMasterErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as MenuMasterSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface MenuMasterPayload {
   menuId: number;

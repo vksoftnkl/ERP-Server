@@ -1,18 +1,10 @@
-export interface GridDetailErrorDetail {
-  field: string;
-  message: string;
-}
-export interface GridDetailErrorResponse {
-  success: false;
-  message: string;
-  errors: GridDetailErrorDetail[];
-}
-export interface GridDetailSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type GridDetailErrorDetail = ModuleApiErrorDetail;
+export type GridDetailErrorResponse = ModuleApiErrorResponse<GridDetailErrorDetail>;
+export type GridDetailSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type GridDetailListMeta = ModuleListMeta;
+
 export interface GridDetailPayload {
   grid_id: string;
   grid_name: string;
@@ -22,10 +14,4 @@ export interface GridDetailPayload {
   grid_sql: string | null;
   grid_status: boolean;
   grid_is_deleted: boolean;
-}
-export interface GridDetailListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

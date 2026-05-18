@@ -29,7 +29,6 @@ import {
   throwSettingsConflict,
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
-
 const EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME = 'employee departments';
 const EMPLOYEE_DEPARTMENT_MASTER_AUDIT_SCREEN_NAME = 'Employee Department Master';
 type EmployeeDepartmentWriteClient = SettingsWriteClient;
@@ -311,25 +310,20 @@ export class EmployeeDepartmentMasterService {
             edptIsDeleted: false,
           },
         });
-
         if (!existing) {
           this.throwNotFound(edptId);
         }
-
         const edptName = this.normalizeRequiredName(saveEmployeeDepartmentMasterDto.edptName);
         const edptCode = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptCode);
         const edptAlias = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptAlias);
         const edptRemarks = normalizeNullableString(saveEmployeeDepartmentMasterDto.edptRemarks);
-
         await this.ensureNameIsUnique(tx, edptName, edptId);
         await this.ensureCodeIsUnique(tx, edptCode, edptId);
-
         const data: Prisma.EmployeeDepartmentUncheckedUpdateInput = {
           edptName,
           edptModifiedOn: new Date(),
           edptModifiedBy: DEFAULT_ACTOR,
         };
-
         if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
           data.edptCode = edptCode;
         }
@@ -342,7 +336,6 @@ export class EmployeeDepartmentMasterService {
         if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptIsActive')) {
           data.edptIsActive = saveEmployeeDepartmentMasterDto.edptIsActive;
         }
-
         const updated = await tx.employeeDepartment.update({
           where: {
             edptId,
@@ -350,7 +343,6 @@ export class EmployeeDepartmentMasterService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -366,7 +358,6 @@ export class EmployeeDepartmentMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -374,7 +365,6 @@ export class EmployeeDepartmentMasterService {
       throw error;
     }
   }
-
   private async ensureNameIsUnique(
     tx: EmployeeDepartmentWriteClient,
     edptName: string,
@@ -399,7 +389,6 @@ export class EmployeeDepartmentMasterService {
         edptId: true,
       },
     });
-
     if (existing) {
       throwSettingsConflict<EmployeeDepartmentMasterErrorDetail>(
         'Employee department name already exists',
@@ -412,7 +401,6 @@ export class EmployeeDepartmentMasterService {
       );
     }
   }
-
   private async ensureCodeIsUnique(
     tx: EmployeeDepartmentWriteClient,
     edptCode: string | null | undefined,
@@ -421,7 +409,6 @@ export class EmployeeDepartmentMasterService {
     if (!edptCode) {
       return;
     }
-
     const existing = await tx.employeeDepartment.findFirst({
       where: {
         edptIsDeleted: false,
@@ -441,7 +428,6 @@ export class EmployeeDepartmentMasterService {
         edptId: true,
       },
     });
-
     if (existing) {
       throwSettingsConflict<EmployeeDepartmentMasterErrorDetail>(
         'Employee department code already exists',
@@ -454,11 +440,9 @@ export class EmployeeDepartmentMasterService {
       );
     }
   }
-
   private normalizeRequiredName(value: string): string {
     return normalizeRequiredText<EmployeeDepartmentMasterErrorDetail>(value, 'edptName');
   }
-
   private toPayload(record: EmployeeDepartment): EmployeeDepartmentMasterPayload {
     return {
       edptId: record.edptId,
@@ -475,7 +459,6 @@ export class EmployeeDepartmentMasterService {
       edptModifiedBy: record.edptModifiedBy,
     };
   }
-
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<EmployeeDepartmentMasterErrorDetail>(
       error,
@@ -488,7 +471,6 @@ export class EmployeeDepartmentMasterService {
       ],
     );
   }
-
   private throwNotFound(edptId: string): never {
     throwSettingsNotFound<EmployeeDepartmentMasterErrorDetail>(
       'Employee department not found',
@@ -496,11 +478,9 @@ export class EmployeeDepartmentMasterService {
       `No active employee department found with id ${edptId}`,
     );
   }
-
   private throwBadRequest(message: string, errors: EmployeeDepartmentMasterErrorDetail[]): never {
     throwSettingsBadRequest<EmployeeDepartmentMasterErrorDetail>(message, errors);
   }
-
   private buildErrorResponse(
     message: string,
     errors: EmployeeDepartmentMasterErrorDetail[] = [],

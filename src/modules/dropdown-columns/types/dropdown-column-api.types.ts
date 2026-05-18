@@ -1,18 +1,10 @@
-export interface DropdownColumnErrorDetail {
-  field: string;
-  message: string;
-}
-export interface DropdownColumnErrorResponse {
-  success: false;
-  message: string;
-  errors: DropdownColumnErrorDetail[];
-}
-export interface DropdownColumnSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type DropdownColumnErrorDetail = ModuleApiErrorDetail;
+export type DropdownColumnErrorResponse = ModuleApiErrorResponse<DropdownColumnErrorDetail>;
+export type DropdownColumnSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type DropdownColumnListMeta = ModuleListMeta;
+
 export interface DropdownColumnPayload {
   drop_columns_serial_id: string;
   dropdown_id: string;
@@ -26,10 +18,4 @@ export interface DropdownColumnPayload {
   drop_columns_column_filter: boolean;
   drop_columns_created_on: string;
   drop_columns_modified_on: string | null;
-}
-export interface DropdownColumnListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
 }

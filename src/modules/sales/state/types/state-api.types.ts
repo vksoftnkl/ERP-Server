@@ -1,7 +1,7 @@
-export type { SalesErrorDetail as StateErrorDetail } from 'src/common/utils/module-api.types';
-export type { SalesErrorResponse as StateErrorResponse } from 'src/common/utils/module-api.types';
-export type { SalesSuccessResponse as StateSuccessResponse } from 'src/common/utils/module-api.types';
-export type { SalesListMeta as StateListMeta } from 'src/common/utils/module-list.utils';
+export type { SalesErrorDetail as StateErrorDetail } from 'src/common/types/module-api.types';
+export type { SalesErrorResponse as StateErrorResponse } from 'src/common/types/module-api.types';
+export type { SalesSuccessResponse as StateSuccessResponse } from 'src/common/types/module-api.types';
+export type { SalesListMeta as StateListMeta } from 'src/common/types/module-list.types';
 
 export interface StatePayload {
   stmId: string;

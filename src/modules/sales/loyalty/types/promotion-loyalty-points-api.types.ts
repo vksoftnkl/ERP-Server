@@ -1,27 +1,9 @@
-export interface PromotionLoyaltyPointsErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface PromotionLoyaltyPointsErrorResponse {
-  success: false;
-  message: string;
-  errors: PromotionLoyaltyPointsErrorDetail[];
-}
-
-export interface PromotionLoyaltyPointsSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
-
-export interface PromotionLoyaltyPointsListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type PromotionLoyaltyPointsErrorDetail = ModuleApiErrorDetail;
+export type PromotionLoyaltyPointsErrorResponse = ModuleApiErrorResponse<PromotionLoyaltyPointsErrorDetail>;
+export type PromotionLoyaltyPointsSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type PromotionLoyaltyPointsListMeta = ModuleListMeta;
 
 export interface LoyaltyPointPayload {
   lspt_id: string;

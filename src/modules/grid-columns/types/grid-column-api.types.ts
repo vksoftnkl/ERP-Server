@@ -1,20 +1,9 @@
-export interface GridColumnErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface GridColumnErrorResponse {
-  success: false;
-  message: string;
-  errors: GridColumnErrorDetail[];
-}
-
-export interface GridColumnSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type GridColumnErrorDetail = ModuleApiErrorDetail;
+export type GridColumnErrorResponse = ModuleApiErrorResponse<GridColumnErrorDetail>;
+export type GridColumnSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type GridColumnListMeta = ModuleListMeta;
 
 export interface GridColumnPayload {
   grid_serialid: string;
@@ -36,9 +25,3 @@ export interface GridColumnPayload {
   grid_column_is_deleted: boolean;
 }
 
-export interface GridColumnListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

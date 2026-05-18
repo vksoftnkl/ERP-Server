@@ -1,7 +1,7 @@
-export type { SalesErrorDetail as CityErrorDetail } from 'src/common/utils/module-api.types';
-export type { SalesErrorResponse as CityErrorResponse } from 'src/common/utils/module-api.types';
-export type { SalesSuccessResponse as CitySuccessResponse } from 'src/common/utils/module-api.types';
-export type { SalesListMeta as CityListMeta } from 'src/common/utils/module-list.utils';
+export type { SalesErrorDetail as CityErrorDetail } from 'src/common/types/module-api.types';
+export type { SalesErrorResponse as CityErrorResponse } from 'src/common/types/module-api.types';
+export type { SalesSuccessResponse as CitySuccessResponse } from 'src/common/types/module-api.types';
+export type { SalesListMeta as CityListMeta } from 'src/common/types/module-list.types';
 
 export interface CityPayload {
   ctmId: string;

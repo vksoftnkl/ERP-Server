@@ -1,18 +1,10 @@
-export interface OpeningStockErrorDetail {
-  field: string;
-  message: string;
-}
-export interface OpeningStockErrorResponse {
-  success: false;
-  message: string;
-  errors: OpeningStockErrorDetail[];
-}
-export interface OpeningStockSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type OpeningStockErrorDetail = ModuleApiErrorDetail;
+export type OpeningStockErrorResponse = ModuleApiErrorResponse<OpeningStockErrorDetail>;
+export type OpeningStockSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type OpeningStockListMeta = ModuleListMeta;
+
 export interface OpeningStockHeaderPayload {
   avh_voucher_id: string;
   avh_voucher_refno: string;
@@ -124,9 +116,3 @@ export interface OpeningStockDocumentPayload {
   details: OpeningStockDetailPayload[];
 }
 export type OpeningStockListItem = OpeningStockHeaderPayload;
-export interface OpeningStockListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

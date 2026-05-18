@@ -1,20 +1,7 @@
-export interface AuditLogErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface AuditLogErrorResponse {
-  success: false;
-  message: string;
-  errors: AuditLogErrorDetail[];
-}
-
-export interface AuditLogSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+export type AuditLogErrorDetail = ModuleApiErrorDetail;
+export type AuditLogErrorResponse = ModuleApiErrorResponse<AuditLogErrorDetail>;
+export type AuditLogSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
 
 export interface AuditLogListItem {
   log_id: string;

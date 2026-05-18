@@ -1,10 +1,10 @@
 import type { ConfiguredGridListResult } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import type { InventoryListMeta } from 'src/common/utils/module-list.utils';
+import type { InventoryListMeta } from 'src/common/types/module-list.types';
 
-export type { InventoryErrorDetail as UnitErrorDetail } from 'src/common/utils/module-api.types';
-export type { InventoryErrorResponse as UnitErrorResponse } from 'src/common/utils/module-api.types';
-export type { InventorySuccessResponse as UnitSuccessResponse } from 'src/common/utils/module-api.types';
-export type { InventoryListMeta as UnitListMeta } from 'src/common/utils/module-list.utils';
+export type { InventoryErrorDetail as UnitErrorDetail } from 'src/common/types/module-api.types';
+export type { InventoryErrorResponse as UnitErrorResponse } from 'src/common/types/module-api.types';
+export type { InventorySuccessResponse as UnitSuccessResponse } from 'src/common/types/module-api.types';
+export type { InventoryListMeta as UnitListMeta } from 'src/common/types/module-list.types';
 export type { UnitGridStyleDto as UnitGridStyle } from '../dto/unit-response.dto';
 
 export interface UnitPayload {

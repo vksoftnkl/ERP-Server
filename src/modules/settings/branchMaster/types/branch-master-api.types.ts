@@ -1,21 +1,9 @@
-export interface BranchMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface BranchMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: BranchMasterErrorDetail[];
-}
-
-export interface BranchMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type BranchMasterErrorDetail = ModuleApiErrorDetail;
+export type BranchMasterErrorResponse = ModuleApiErrorResponse<BranchMasterErrorDetail>;
+export type BranchMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export type BranchMasterListMeta = ModuleListMeta;
 
 export interface BranchMasterPayload {
   brId: string;
@@ -73,9 +61,3 @@ export interface BranchMasterPayload {
 
 export type BranchMasterListItem = BranchMasterPayload | Record<string, unknown>;
 
-export interface BranchMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

@@ -1,22 +1,11 @@
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type WidgetMasterErrorDetail = ModuleApiErrorDetail;
+export type WidgetMasterErrorResponse = ModuleApiErrorResponse<WidgetMasterErrorDetail>;
+export type WidgetMasterSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
+export type WidgetMasterListMeta = ModuleListMeta;
+
 import { WidgetPlatform } from '@prisma/client';
-
-export interface WidgetMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface WidgetMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: WidgetMasterErrorDetail[];
-}
-
-export interface WidgetMasterSuccessResponse<T, TMeta = Record<string, unknown>> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-}
 
 export interface WidgetMasterPayload {
   widgetNo: number;
@@ -29,9 +18,3 @@ export interface WidgetMasterPayload {
   widgetSecondaryText: string | null;
 }
 
-export interface WidgetMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

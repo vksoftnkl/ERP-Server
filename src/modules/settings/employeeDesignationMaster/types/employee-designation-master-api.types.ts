@@ -1,21 +1,9 @@
-export interface EmployeeDesignationMasterErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface EmployeeDesignationMasterErrorResponse {
-  success: false;
-  message: string;
-  errors: EmployeeDesignationMasterErrorDetail[];
-}
-
-export interface EmployeeDesignationMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type EmployeeDesignationMasterErrorDetail = ModuleApiErrorDetail;
+export type EmployeeDesignationMasterErrorResponse = ModuleApiErrorResponse<EmployeeDesignationMasterErrorDetail>;
+export type EmployeeDesignationMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export type EmployeeDesignationMasterListMeta = ModuleListMeta;
 
 export interface EmployeeDesignationMasterPayload {
   edId: string;
@@ -36,9 +24,3 @@ export type EmployeeDesignationMasterListItem =
   | EmployeeDesignationMasterPayload
   | Record<string, unknown>;
 
-export interface EmployeeDesignationMasterListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

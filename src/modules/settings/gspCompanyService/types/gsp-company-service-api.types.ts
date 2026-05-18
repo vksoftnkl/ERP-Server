@@ -1,19 +1,10 @@
-export interface GspCompanyServiceErrorDetail {
-  field: string;
-  message: string;
-}
-export interface GspCompanyServiceErrorResponse {
-  success: false;
-  message: string;
-  errors: GspCompanyServiceErrorDetail[];
-}
-export interface GspCompanyServiceSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+import type { ModuleListMeta } from 'src/common/types/module-list.types';
+export type GspCompanyServiceErrorDetail = ModuleApiErrorDetail;
+export type GspCompanyServiceErrorResponse = ModuleApiErrorResponse<GspCompanyServiceErrorDetail>;
+export type GspCompanyServiceSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
+export type GspCompanyServiceListMeta = ModuleListMeta;
+
 export interface GspCompanyServicePayload {
   csgCompanyServiceId: string;
   csgCompanyId: string;
@@ -36,9 +27,3 @@ export interface GspCompanyServicePayload {
   csgModifiedBy: string | null;
 }
 export type GspCompanyServiceListItem = GspCompanyServicePayload | Record<string, unknown>;
-export interface GspCompanyServiceListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}

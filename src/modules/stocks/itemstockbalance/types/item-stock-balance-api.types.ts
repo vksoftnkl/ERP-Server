@@ -1,17 +1,8 @@
-export interface ItemStockBalanceErrorDetail {
-  field: string;
-  message: string;
-}
-export interface ItemStockBalanceErrorResponse {
-  success: false;
-  message: string;
-  errors: ItemStockBalanceErrorDetail[];
-}
-export interface ItemStockBalanceSuccessResponse<T> {
-  success: true;
-  message: string;
-  data: T;
-}
+import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+export type ItemStockBalanceErrorDetail = ModuleApiErrorDetail;
+export type ItemStockBalanceErrorResponse = ModuleApiErrorResponse<ItemStockBalanceErrorDetail>;
+export type ItemStockBalanceSuccessResponse<T> = ModuleApiSuccessResponse<T, never, never>;
+
 export interface ItemStockBalancePayload {
   isb_id: string;
   isb_acc_year: string;

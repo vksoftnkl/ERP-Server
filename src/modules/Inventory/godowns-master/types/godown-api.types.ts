@@ -1,7 +1,7 @@
-export type { InventoryErrorDetail as GodownErrorDetail } from 'src/common/utils/module-api.types';
-export type { InventoryErrorResponse as GodownErrorResponse } from 'src/common/utils/module-api.types';
-export type { InventorySuccessResponse as GodownSuccessResponse } from 'src/common/utils/module-api.types';
-export type { InventoryListMeta as GodownListMeta } from 'src/common/utils/module-list.utils';
+export type { InventoryErrorDetail as GodownErrorDetail } from 'src/common/types/module-api.types';
+export type { InventoryErrorResponse as GodownErrorResponse } from 'src/common/types/module-api.types';
+export type { InventorySuccessResponse as GodownSuccessResponse } from 'src/common/types/module-api.types';
+export type { InventoryListMeta as GodownListMeta } from 'src/common/types/module-list.types';
 export interface GodownPayload {
   gdl_id: string;
   gdl_godown_id: string;

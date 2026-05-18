@@ -1,3 +1,6 @@
+import type { ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+export type MasterLookupSuccessResponse<TData> = ModuleApiSuccessResponse<TData, never, never>;
+
 export interface NameIdOption {
   id: string;
   name: string;
@@ -92,8 +95,3 @@ export interface SingleModuleLookupPayload {
   items: NameIdOption[];
 }
 export type MasterLookupDataPayload = MasterLookupPayload | SingleModuleLookupPayload;
-export interface MasterLookupSuccessResponse<TData> {
-  success: true;
-  message: string;
-  data: TData;
-}
