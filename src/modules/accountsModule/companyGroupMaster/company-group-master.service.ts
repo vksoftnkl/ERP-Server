@@ -20,8 +20,8 @@ import {
   throwAccountsConflict,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/accounts-service.utils';
-import type { AccountsWriteClient } from '../utils/accounts-service.utils';
+} from 'src/common/utils/module-service.utils';
+import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 const COMPANY_GROUP_MASTER_TABLE_NAME = 'company group master';
 const COMPANY_GROUP_MASTER_AUDIT_SCREEN_NAME = 'Company Group Master';
 type CompanyGroupWriteClient = AccountsWriteClient;

@@ -10,10 +10,10 @@ import {
   OptionalUuid,
   RequiredUuid,
   SkipOnNullish,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 import { Transform } from 'class-transformer';
 import { IsString } from 'class-validator';
-import { toUpperTrimmed } from '../../dto/DtoTransforms';
+import { toUpperTrimmed } from 'src/common/dto/DtoTransforms';
 
 export class SaveLedgerShippingAddressDto {
   @ApiPropertyOptional({

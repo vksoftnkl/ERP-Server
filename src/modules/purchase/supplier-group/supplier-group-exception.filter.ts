@@ -1,5 +1,5 @@
 import { Catch } from '@nestjs/common';
-import { PurchaseExceptionFilter } from '../utils/purchase-exception-filter.utils';
+import { PurchaseExceptionFilter } from 'src/common/utils/module-exception-filter.utils';
 import { SupplierGroupErrorDetail, SupplierGroupErrorResponse } from './types/supplier-group-api.types';
 
 @Catch()

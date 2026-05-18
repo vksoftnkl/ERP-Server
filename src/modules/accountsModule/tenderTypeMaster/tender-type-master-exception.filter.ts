@@ -1,5 +1,5 @@
 import { Catch } from '@nestjs/common';
-import { AccountsExceptionFilter } from '../utils/accounts-exception-filter.utils';
+import { AccountsExceptionFilter } from 'src/common/utils/module-exception-filter.utils';
 import { TenderTypeMasterErrorDetail, TenderTypeMasterErrorResponse } from './types/tender-type-master-api.types';
 @Catch()
 export class TenderTypeMasterExceptionFilter extends AccountsExceptionFilter<

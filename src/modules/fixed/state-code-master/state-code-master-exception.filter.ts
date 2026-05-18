@@ -1,5 +1,5 @@
 import { Catch } from '@nestjs/common';
-import { FixedExceptionFilter } from '../utils/fixed-exception-filter.utils';
+import { FixedExceptionFilter } from 'src/common/utils/module-exception-filter.utils';
 import {
   StateCodeMasterErrorDetail,
   StateCodeMasterErrorResponse,

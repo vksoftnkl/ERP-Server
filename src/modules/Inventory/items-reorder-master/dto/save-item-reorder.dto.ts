@@ -15,7 +15,7 @@ import {
   OptionalTrimmedString,
   OptionalUuid,
   toTrimmedString,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveItemReorderDto {
   @ApiPropertyOptional({

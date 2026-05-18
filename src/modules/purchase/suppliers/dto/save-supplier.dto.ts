@@ -12,7 +12,7 @@ import {
   RequiredUuid,
   TrimmedString,
   UpperString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveSupplierDto {
   @ApiPropertyOptional({

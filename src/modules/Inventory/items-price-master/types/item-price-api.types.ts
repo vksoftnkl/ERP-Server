@@ -1,8 +1,8 @@
-export type { InventoryErrorDetail as ItemPriceErrorDetail } from '../../utils/inventory-api.types';
-export type { InventoryErrorResponse as ItemPriceErrorResponse } from '../../utils/inventory-api.types';
-export type { InventorySuccessResponse as ItemPriceSuccessResponse } from '../../utils/inventory-api.types';
-export type { InventoryListMeta as ItemPriceListMeta } from '../../utils/inventory-list.utils';
-export type { InventoryListMeta as ItemUnitConversionListMeta } from '../../utils/inventory-list.utils';
+export type { InventoryErrorDetail as ItemPriceErrorDetail } from 'src/common/utils/module-api.types';
+export type { InventoryErrorResponse as ItemPriceErrorResponse } from 'src/common/utils/module-api.types';
+export type { InventorySuccessResponse as ItemPriceSuccessResponse } from 'src/common/utils/module-api.types';
+export type { InventoryListMeta as ItemPriceListMeta } from 'src/common/utils/module-list.utils';
+export type { InventoryListMeta as ItemUnitConversionListMeta } from 'src/common/utils/module-list.utils';
 
 export interface ItemPriceDeleteResult {
   ipm_id: string;

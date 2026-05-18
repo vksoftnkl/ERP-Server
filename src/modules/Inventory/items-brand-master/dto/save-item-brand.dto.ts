@@ -7,7 +7,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { NullableString, NullableUuid } from '../../utils/inventory-dto.decorators';
+import { NullableString, NullableUuid } from 'src/common/dto/dtoDecorators';
 export class SaveItemBrandDto {
   @ApiPropertyOptional({
     format: 'uuid',

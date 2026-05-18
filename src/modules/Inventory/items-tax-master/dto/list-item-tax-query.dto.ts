@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { InventoryListQueryBaseDto } from '../../utils/inventory-list-query.base.dto';
-import { OptionalQueryBoolean, OptionalTrimmedString } from '../../utils/inventory-dto.decorators';
+import { InventoryListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
+import { OptionalQueryBoolean, OptionalTrimmedString } from 'src/common/dto/dtoDecorators';
 
 export class ListItemTaxQueryDto extends InventoryListQueryBaseDto {
   @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })

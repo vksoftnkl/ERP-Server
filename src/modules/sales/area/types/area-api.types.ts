@@ -1,7 +1,7 @@
-export type { SalesErrorDetail as AreaErrorDetail } from '../../utils/sales-api.types';
-export type { SalesErrorResponse as AreaErrorResponse } from '../../utils/sales-api.types';
-export type { SalesSuccessResponse as AreaSuccessResponse } from '../../utils/sales-api.types';
-export type { SalesListMeta as AreaListMeta } from '../../utils/sales-list.utils';
+export type { SalesErrorDetail as AreaErrorDetail } from 'src/common/utils/module-api.types';
+export type { SalesErrorResponse as AreaErrorResponse } from 'src/common/utils/module-api.types';
+export type { SalesSuccessResponse as AreaSuccessResponse } from 'src/common/utils/module-api.types';
+export type { SalesListMeta as AreaListMeta } from 'src/common/utils/module-list.utils';
 
 export interface AreaPayload {
   armId: string;

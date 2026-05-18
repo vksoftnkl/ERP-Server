@@ -4,7 +4,7 @@ import {
   OptionalQueryBoolean,
   OptionalQueryInt,
   OptionalUpperMaxString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class ListGspCompanyServiceQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })

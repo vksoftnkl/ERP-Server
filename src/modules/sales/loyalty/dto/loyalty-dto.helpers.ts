@@ -1,2 +1,2 @@
-export * from '../../dto/DtoTransforms';
-export * from '../../dto/dtoDecorators';
+export * from 'src/common/dto/DtoTransforms';
+export * from 'src/common/dto/dtoDecorators';

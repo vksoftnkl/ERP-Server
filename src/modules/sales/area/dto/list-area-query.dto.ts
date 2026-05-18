@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalQueryBoolean, OptionalUuid } from '../../dto/dtoDecorators';
-import { SalesListQueryBaseDto } from '../../utils/sales-list-query.base.dto';
+import { OptionalQueryBoolean, OptionalUuid } from 'src/common/dto/dtoDecorators';
+import { SalesListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
 
 export class ListAreaQueryDto extends SalesListQueryBaseDto {
   @ApiPropertyOptional({ format: 'uuid' })

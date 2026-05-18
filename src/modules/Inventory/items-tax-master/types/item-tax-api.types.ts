@@ -1,7 +1,7 @@
-export type { InventoryErrorDetail as ItemTaxErrorDetail } from '../../utils/inventory-api.types';
-export type { InventoryErrorResponse as ItemTaxErrorResponse } from '../../utils/inventory-api.types';
-export type { InventorySuccessResponse as ItemTaxSuccessResponse } from '../../utils/inventory-api.types';
-export type { InventoryListMeta as ItemTaxListMeta } from '../../utils/inventory-list.utils';
+export type { InventoryErrorDetail as ItemTaxErrorDetail } from 'src/common/utils/module-api.types';
+export type { InventoryErrorResponse as ItemTaxErrorResponse } from 'src/common/utils/module-api.types';
+export type { InventorySuccessResponse as ItemTaxSuccessResponse } from 'src/common/utils/module-api.types';
+export type { InventoryListMeta as ItemTaxListMeta } from 'src/common/utils/module-list.utils';
 export interface ItemTaxPayload {
   tax_id: string;
   tax_name: string;

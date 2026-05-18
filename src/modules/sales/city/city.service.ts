@@ -27,8 +27,8 @@ import {
   throwSalesConflict,
   throwSalesNotFound,
   toNumber,
-} from '../utils/sales-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from '../utils/sales-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
 const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];

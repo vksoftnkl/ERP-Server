@@ -1,7 +1,7 @@
-export type { PurchaseErrorDetail as SupplierErrorDetail } from '../../utils/purchase-api.types';
-export type { PurchaseErrorResponse as SupplierErrorResponse } from '../../utils/purchase-api.types';
-export type { PurchaseSuccessResponse as SupplierSuccessResponse } from '../../utils/purchase-api.types';
-export type { PurchaseListMeta as SupplierListMeta } from '../../utils/purchase-list.utils';
+export type { PurchaseErrorDetail as SupplierErrorDetail } from 'src/common/utils/module-api.types';
+export type { PurchaseErrorResponse as SupplierErrorResponse } from 'src/common/utils/module-api.types';
+export type { PurchaseSuccessResponse as SupplierSuccessResponse } from 'src/common/utils/module-api.types';
+export type { PurchaseListMeta as SupplierListMeta } from 'src/common/utils/module-list.utils';
 
 export interface SupplierPayload {
   supId: string;

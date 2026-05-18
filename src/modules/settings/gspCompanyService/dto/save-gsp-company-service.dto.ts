@@ -5,7 +5,7 @@ import {
   NullableString,
   OptionalBoolean,
   UpperMaxString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveGspCompanyServiceDto {
   @ApiPropertyOptional({

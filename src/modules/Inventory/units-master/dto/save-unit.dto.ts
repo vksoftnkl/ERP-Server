@@ -14,7 +14,7 @@ import {
   NullableNumber,
   NullableString,
   NullableUuid,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveUnitDto {
   @ApiPropertyOptional({

@@ -22,8 +22,8 @@ import {
   throwFixedConflict,
   throwFixedNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/fixed-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from '../utils/fixed-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
 
 const STATE_CODE_MASTER_TABLE_NAME = 'state codes';
 const STATE_CODE_MASTER_AUDIT_SCREEN_NAME = 'State Code Master';

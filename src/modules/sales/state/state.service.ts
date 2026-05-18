@@ -22,7 +22,7 @@ import {
   throwStateNotFound,
   toStatePayload,
 } from './utils/state.utils';
-import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from '../utils/sales-list.utils';
+import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
 @Injectable()
 export class StateService {
   constructor(

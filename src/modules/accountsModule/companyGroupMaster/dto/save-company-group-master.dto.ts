@@ -1,7 +1,7 @@
 import { Transform } from 'class-transformer';
 import { ArrayUnique, IsArray, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalBoolean, OptionalUuid, TrimmedString } from '../../dto/dtoDecorators';
+import { OptionalBoolean, OptionalUuid, TrimmedString } from 'src/common/dto/dtoDecorators';
 
 const toUniqueStringArray = (value: unknown): string[] => {
   const toDistinct = (input: string[]): string[] => {

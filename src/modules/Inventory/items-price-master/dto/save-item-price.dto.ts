@@ -18,7 +18,7 @@ import {
   OptionalUuid,
   toNullableString,
   toTrimmedString,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 
 const ITEM_PRICE_PROFIT_TYPES = ['BY_PERCENT', 'BY_AMOUNT', 'MANUAL'] as const;
 

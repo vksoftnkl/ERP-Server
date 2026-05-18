@@ -1,7 +1,7 @@
-export type { FixedErrorDetail as BankListErrorDetail } from '../../utils/fixed-api.types';
-export type { FixedErrorResponse as BankListErrorResponse } from '../../utils/fixed-api.types';
-export type { FixedSuccessResponse as BankListSuccessResponse } from '../../utils/fixed-api.types';
-export type { FixedListMeta as BankListMeta } from '../../utils/fixed-list.utils';
+export type { FixedErrorDetail as BankListErrorDetail } from 'src/common/utils/module-api.types';
+export type { FixedErrorResponse as BankListErrorResponse } from 'src/common/utils/module-api.types';
+export type { FixedSuccessResponse as BankListSuccessResponse } from 'src/common/utils/module-api.types';
+export type { FixedListMeta as BankListMeta } from 'src/common/utils/module-list.utils';
 
 export interface BankListPayload {
   bnkId: string;

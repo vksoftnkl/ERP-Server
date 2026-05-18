@@ -9,7 +9,7 @@ import {
   OptionalTrimmedString,
   OptionalUuid,
   RequiredUuid,
-} from '../../../sales/dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveUserLoginSessionDto {
   @ApiPropertyOptional({

@@ -4,7 +4,7 @@ import {
   SalesErrorFieldDto,
   SalesErrorResponseDto,
   SalesListMetaDto,
-} from '../../utils/sales-response.dto';
+} from 'src/common/utils/module-response.dto';
 
 export { SalesErrorFieldDto as CityErrorFieldDto };
 export { SalesErrorResponseDto as CityErrorResponseDto };

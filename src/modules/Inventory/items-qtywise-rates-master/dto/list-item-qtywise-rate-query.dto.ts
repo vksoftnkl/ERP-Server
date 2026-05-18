@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { InventoryListQueryBaseDto } from '../../utils/inventory-list-query.base.dto';
-import { OptionalInteger, OptionalQueryBoolean, OptionalUuid } from '../../utils/inventory-dto.decorators';
+import { InventoryListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
+import { OptionalInteger, OptionalQueryBoolean, OptionalUuid } from 'src/common/dto/dtoDecorators';
 
 export class ListItemQtywiseRateQueryDto extends InventoryListQueryBaseDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })

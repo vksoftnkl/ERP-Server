@@ -1,6 +1,6 @@
 import { IsIP, IsNotEmpty } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalBoolean, OptionalUuid, TrimmedString } from '../../dto/dtoDecorators';
+import { OptionalBoolean, OptionalUuid, TrimmedString } from 'src/common/dto/dtoDecorators';
 
 export class SaveGspProviderMasterDto {
   @ApiPropertyOptional({

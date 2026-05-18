@@ -22,7 +22,7 @@ import {
   toOptionalInteger,
   toOptionalUuid,
   toTrimmedString,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 import { resolveAliasValue } from 'src/common/dto/dto-transforms';
 
 export class SaveGodownDto {

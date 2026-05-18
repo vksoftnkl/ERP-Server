@@ -10,7 +10,7 @@ import {
   OptionalBoolean,
   OptionalUpperString,
   UpperString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 export class SaveCompanyMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',

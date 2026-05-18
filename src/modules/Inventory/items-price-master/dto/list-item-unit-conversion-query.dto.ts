@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { InventoryListQueryBaseDto } from '../../utils/inventory-list-query.base.dto';
-import { OptionalQueryBoolean, OptionalUuid } from '../../utils/inventory-dto.decorators';
+import { InventoryListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
+import { OptionalQueryBoolean, OptionalUuid } from 'src/common/dto/dtoDecorators';
 
 export class ListItemUnitConversionQueryDto extends InventoryListQueryBaseDto {
   @ApiPropertyOptional({ format: 'uuid' })

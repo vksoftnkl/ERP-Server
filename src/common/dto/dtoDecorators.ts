@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsDate,
   IsDateString,
+  IsEmail,
   IsInt,
   IsNumber,
   IsNumberString,
@@ -36,6 +37,7 @@ import {
   toOptionalIntegerArray,
   toOptionalNumber,
   toOptionalTimeString,
+  toOptionalTrimmedString,
   toOptionalUuid,
   toRequiredUuid,
   toTrimmedString,
@@ -71,6 +73,15 @@ export const NullableUpperString = (exactLength?: number) =>
     SkipOnNullish(),
     IsString(),
     ...(exactLength !== undefined ? [Length(exactLength, exactLength)] : []),
+  );
+
+export const NullableEmail = (maxLength?: number) =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toNullableString(value)),
+    SkipOnNullish(),
+    IsEmail(),
+    ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
 
 export const NullableDateString = () =>
@@ -234,7 +245,7 @@ export const TrimmedString = (maxLength?: number) =>
 export const OptionalTrimmedString = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
-    Transform(({ value }) => toTrimmedString(value)),
+    Transform(({ value }) => toOptionalTrimmedString(value)),
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );
@@ -245,3 +256,28 @@ export const UpperString = (exactLength: number) =>
     IsString(),
     Length(exactLength, exactLength),
   );
+
+export const UpperMaxString = (maxLength?: number) =>
+  applyDecorators(
+    Transform(({ value }) => toUpperTrimmed(value)),
+    IsString(),
+    ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
+  );
+
+export const OptionalUpperString = (exactLength: number) =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toUpperTrimmed(value)),
+    IsString(),
+    Length(exactLength, exactLength),
+  );
+
+export const OptionalUpperMaxString = (maxLength?: number) =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toUpperTrimmed(value)),
+    IsString(),
+    ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
+  );
+
+export * from './DtoTransforms';

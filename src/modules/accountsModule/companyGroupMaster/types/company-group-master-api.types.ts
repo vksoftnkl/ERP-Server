@@ -1,7 +1,7 @@
-export type { AccountsErrorDetail as CompanyGroupMasterErrorDetail } from '../../utils/accounts-api.types';
-export type { AccountsErrorResponse as CompanyGroupMasterErrorResponse } from '../../utils/accounts-api.types';
-export type { AccountsSuccessResponse as CompanyGroupMasterSuccessResponse } from '../../utils/accounts-api.types';
-export type { AccountsListMeta as CompanyGroupMasterListMeta } from '../../utils/accounts-list.utils';
+export type { AccountsErrorDetail as CompanyGroupMasterErrorDetail } from 'src/common/utils/module-api.types';
+export type { AccountsErrorResponse as CompanyGroupMasterErrorResponse } from 'src/common/utils/module-api.types';
+export type { AccountsSuccessResponse as CompanyGroupMasterSuccessResponse } from 'src/common/utils/module-api.types';
+export type { AccountsListMeta as CompanyGroupMasterListMeta } from 'src/common/utils/module-list.utils';
 
 export interface CompanyGroupMasterPayload {
   cogGroupId: string;

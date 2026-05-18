@@ -3,7 +3,7 @@ import {
   OptionalInteger,
   OptionalQueryBoolean,
   OptionalTrimmedString,
-} from '../../../sales/dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class GetHsnCodeMasterQueryDto {
   @ApiPropertyOptional({

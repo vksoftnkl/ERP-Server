@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalNumberString, OptionalQueryBoolean } from '../../../sales/dto/dtoDecorators';
-import { FixedListQueryBaseDto } from '../../utils/fixed-list-query.base.dto';
+import { OptionalNumberString, OptionalQueryBoolean } from 'src/common/dto/dtoDecorators';
+import { FixedListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
 
 export class ListUiTableColumnQueryDto extends FixedListQueryBaseDto {
   @ApiPropertyOptional({ description: 'Numeric UI table column id' })

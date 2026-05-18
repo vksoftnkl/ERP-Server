@@ -28,7 +28,7 @@ import {
   throwSettingsBadRequest,
   throwSettingsConflict,
   throwSettingsNotFound,
-} from '../utils/settings-service.utils';
+} from 'src/common/utils/module-service.utils';
 
 const EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME = 'employee departments';
 const EMPLOYEE_DEPARTMENT_MASTER_AUDIT_SCREEN_NAME = 'Employee Department Master';

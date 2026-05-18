@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalInteger, OptionalQueryBoolean } from '../../../sales/dto/dtoDecorators';
+import { OptionalInteger, OptionalQueryBoolean } from 'src/common/dto/dtoDecorators';
 
 export class GetPriceLevelMasterQueryDto {
   @ApiPropertyOptional({

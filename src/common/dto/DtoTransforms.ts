@@ -364,3 +364,39 @@ export const toNullableDate = (value: unknown): Date | null | undefined => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? (value as unknown as Date) : parsed;
 };
+
+export const toOptionalTrimmedString = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    return value as string;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || undefined;
+};
+
+export const toUpper = toUpperTrimmed;
+
+export const resolveAliasValue = (
+  value: unknown,
+  obj: unknown,
+  aliases: string[],
+): unknown => {
+  if (value !== undefined) {
+    return value;
+  }
+  if (typeof obj !== 'object' || obj === null) {
+    return undefined;
+  }
+  const source = obj as Record<string, unknown>;
+  for (const alias of aliases) {
+    const aliasValue = source[alias];
+    if (aliasValue !== undefined) {
+      return aliasValue;
+    }
+  }
+  return undefined;
+};

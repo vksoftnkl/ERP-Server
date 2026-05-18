@@ -18,8 +18,8 @@ import {
   resolveActor,
   throwFixedNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/fixed-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from '../utils/fixed-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
 
 const USER_LOGIN_SESSIONS_TABLE_NAME = 'user login sessions';
 const USER_LOGIN_SESSIONS_AUDIT_SCREEN_NAME = 'User Login Sessions';

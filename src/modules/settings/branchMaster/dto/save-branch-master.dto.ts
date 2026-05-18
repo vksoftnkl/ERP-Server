@@ -8,7 +8,7 @@ import {
   NullableUuid,
   OptionalBoolean,
   UpperString,
-} from './dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 export class SaveBranchMasterDto {
   @ApiPropertyOptional({
     type: String,

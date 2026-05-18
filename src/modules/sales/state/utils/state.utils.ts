@@ -15,7 +15,7 @@ import {
   throwSalesConflict,
   throwSalesNotFound,
   toNumber,
-} from '../../utils/sales-service.utils';
+} from 'src/common/utils/module-service.utils';
 
 export { DEFAULT_ACTOR, DEFAULT_LIMIT, DEFAULT_PAGE };
 export const STATE_TABLE_NAME = 'state master';

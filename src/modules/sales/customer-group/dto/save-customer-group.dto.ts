@@ -9,7 +9,7 @@ import {
   OptionalIntegerArray,
   OptionalUuid,
   TrimmedString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveCustomerGroupDto {
   @ApiPropertyOptional({

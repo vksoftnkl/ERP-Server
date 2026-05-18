@@ -30,7 +30,7 @@ import {
   throwSettingsNotFound,
   toNullableNumber,
   toNumber,
-} from '../utils/settings-service.utils';
+} from 'src/common/utils/module-service.utils';
 
 const EMPLOYEE_MASTER_TABLE_NAME = 'emp_master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';

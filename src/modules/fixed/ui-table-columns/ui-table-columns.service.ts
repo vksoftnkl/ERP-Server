@@ -21,8 +21,8 @@ import {
   throwFixedBadRequest,
   throwFixedNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/fixed-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from '../utils/fixed-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
 
 const UI_TABLE_COLUMNS_TABLE_NAME = 'ui table columns';
 const UI_TABLE_COLUMNS_AUDIT_SCREEN_NAME = 'UI Table Columns';

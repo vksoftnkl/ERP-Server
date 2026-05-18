@@ -23,8 +23,8 @@ import {
   throwFixedConflict,
   throwFixedNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/fixed-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from '../utils/fixed-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
 
 const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';

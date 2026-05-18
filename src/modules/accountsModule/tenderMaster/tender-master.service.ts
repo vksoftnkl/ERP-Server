@@ -24,8 +24,8 @@ import {
   throwAccountsConflict,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/accounts-service.utils';
-import type { AccountsWriteClient } from '../utils/accounts-service.utils';
+} from 'src/common/utils/module-service.utils';
+import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 const TENDER_MASTER_TABLE_NAME = 'account tender master';
 const TENDER_MASTER_AUDIT_SCREEN_NAME = 'Tender Master';
 type TenderMasterWriteClient = AccountsWriteClient;

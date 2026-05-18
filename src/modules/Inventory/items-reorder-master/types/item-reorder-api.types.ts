@@ -1,7 +1,7 @@
-export type { InventoryErrorDetail as ItemReorderErrorDetail } from '../../utils/inventory-api.types';
-export type { InventoryErrorResponse as ItemReorderErrorResponse } from '../../utils/inventory-api.types';
-export type { InventorySuccessResponse as ItemReorderSuccessResponse } from '../../utils/inventory-api.types';
-export type { InventoryListMeta as ItemReorderListMeta } from '../../utils/inventory-list.utils';
+export type { InventoryErrorDetail as ItemReorderErrorDetail } from 'src/common/utils/module-api.types';
+export type { InventoryErrorResponse as ItemReorderErrorResponse } from 'src/common/utils/module-api.types';
+export type { InventorySuccessResponse as ItemReorderSuccessResponse } from 'src/common/utils/module-api.types';
+export type { InventoryListMeta as ItemReorderListMeta } from 'src/common/utils/module-list.utils';
 export interface ItemReorderDeleteResult {
   ir_id: string;
   deleted: true;

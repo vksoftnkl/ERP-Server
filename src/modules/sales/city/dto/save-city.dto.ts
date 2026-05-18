@@ -7,7 +7,7 @@ import {
   OptionalUuid,
   RequiredUuid,
   TrimmedString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveCityDto {
   @ApiPropertyOptional({

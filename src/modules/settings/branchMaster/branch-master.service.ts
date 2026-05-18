@@ -28,7 +28,7 @@ import {
   throwSettingsConflict,
   throwSettingsNotFound,
   toNullableNumber,
-} from '../utils/settings-service.utils';
+} from 'src/common/utils/module-service.utils';
 
 const BRANCH_MASTER_TABLE_NAME = 'branch master';
 const BRANCH_MASTER_AUDIT_SCREEN_NAME = 'Branch Master';

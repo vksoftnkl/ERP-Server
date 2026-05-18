@@ -3,8 +3,8 @@ import {
   OptionalQueryBoolean,
   OptionalTrimmedString,
   OptionalUuid,
-} from '../../../sales/dto/dtoDecorators';
-import { FixedListQueryBaseDto } from '../../utils/fixed-list-query.base.dto';
+} from 'src/common/dto/dtoDecorators';
+import { FixedListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
 
 export class ListUserLoginSessionsQueryDto extends FixedListQueryBaseDto {
   @ApiPropertyOptional({ format: 'uuid' })

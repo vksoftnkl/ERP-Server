@@ -1,7 +1,7 @@
-export type { InventoryErrorDetail as ItemEanCodeErrorDetail } from '../../utils/inventory-api.types';
-export type { InventoryErrorResponse as ItemEanCodeErrorResponse } from '../../utils/inventory-api.types';
-export type { InventorySuccessResponse as ItemEanCodeSuccessResponse } from '../../utils/inventory-api.types';
-export type { InventoryListMeta as ItemEanCodeListMeta } from '../../utils/inventory-list.utils';
+export type { InventoryErrorDetail as ItemEanCodeErrorDetail } from 'src/common/utils/module-api.types';
+export type { InventoryErrorResponse as ItemEanCodeErrorResponse } from 'src/common/utils/module-api.types';
+export type { InventorySuccessResponse as ItemEanCodeSuccessResponse } from 'src/common/utils/module-api.types';
+export type { InventoryListMeta as ItemEanCodeListMeta } from 'src/common/utils/module-list.utils';
 export interface ItemEanCodeDeleteResult {
   ean_id: string;
   deleted: true;

@@ -1,5 +1,5 @@
 import { Catch } from '@nestjs/common';
-import { SalesExceptionFilter } from '../utils/sales-exception-filter.utils';
+import { SalesExceptionFilter } from 'src/common/utils/module-exception-filter.utils';
 import { StateErrorDetail, StateErrorResponse } from './types/state-api.types';
 
 @Catch()

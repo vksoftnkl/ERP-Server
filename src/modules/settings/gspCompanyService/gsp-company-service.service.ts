@@ -28,7 +28,7 @@ import {
   throwOnUniqueConstraintError,
   throwSettingsBadRequest,
   throwSettingsNotFound,
-} from '../utils/settings-service.utils';
+} from 'src/common/utils/module-service.utils';
 
 const GSP_COMPANY_SERVICE_TABLE_NAME = 'gsp company service';
 const GSP_COMPANY_SERVICE_AUDIT_SCREEN_NAME = 'GSP Company Service';

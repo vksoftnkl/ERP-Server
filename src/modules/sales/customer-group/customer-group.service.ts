@@ -26,8 +26,8 @@ import {
   throwSalesConflict,
   throwSalesNotFound,
   toNumber,
-} from '../utils/sales-service.utils';
-import { buildListMeta, resolvePagination, runSalesListQuery } from '../utils/sales-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { buildListMeta, resolvePagination, runSalesListQuery } from 'src/common/utils/module-list.utils';
 const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
 const CUSTOMER_GROUP_OPTIONAL_FIELDS = [

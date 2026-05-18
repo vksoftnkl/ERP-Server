@@ -26,8 +26,8 @@ import {
   throwOnUniqueConstraintError,
   toNullableNumber,
   toNumber,
-} from '../utils/accounts-service.utils';
-import type { AccountsWriteClient } from '../utils/accounts-service.utils';
+} from 'src/common/utils/module-service.utils';
+import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;

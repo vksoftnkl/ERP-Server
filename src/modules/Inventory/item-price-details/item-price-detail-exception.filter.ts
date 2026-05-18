@@ -1,5 +1,5 @@
 import { Catch } from '@nestjs/common';
-import { InventoryExceptionFilter } from '../utils/inventory-exception-filter.utils';
+import { InventoryExceptionFilter } from 'src/common/utils/module-exception-filter.utils';
 import { ItemPriceDetailErrorDetail, ItemPriceDetailErrorResponse } from './types/item-price-detail-api.types';
 
 @Catch()

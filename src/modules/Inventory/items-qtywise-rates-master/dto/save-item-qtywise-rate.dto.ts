@@ -19,7 +19,7 @@ import {
   OptionalUuid,
   toOptionalNumber,
   toTrimmedString,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveItemQtywiseRateDto {
   @ApiPropertyOptional({

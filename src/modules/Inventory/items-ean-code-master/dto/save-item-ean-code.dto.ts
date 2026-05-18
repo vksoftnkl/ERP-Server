@@ -13,7 +13,7 @@ import {
   NullableUuid,
   OptionalUuid,
   toTrimmedString,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveItemEanCodeDto {
   @ApiPropertyOptional({

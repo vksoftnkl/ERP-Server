@@ -15,7 +15,7 @@ import {
   OptionalTrimmedString,
   OptionalUuid,
   toTrimmedString,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 
 const toUuidArray = (value: unknown): string[] | undefined => {
   if (value === undefined) {

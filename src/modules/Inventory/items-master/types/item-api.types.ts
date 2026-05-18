@@ -1,7 +1,7 @@
-export type { InventoryErrorDetail as ItemErrorDetail } from '../../utils/inventory-api.types';
-export type { InventoryErrorResponse as ItemErrorResponse } from '../../utils/inventory-api.types';
-export type { InventorySuccessResponse as ItemSuccessResponse } from '../../utils/inventory-api.types';
-export type { InventoryListMeta as ItemListMeta } from '../../utils/inventory-list.utils';
+export type { InventoryErrorDetail as ItemErrorDetail } from 'src/common/utils/module-api.types';
+export type { InventoryErrorResponse as ItemErrorResponse } from 'src/common/utils/module-api.types';
+export type { InventorySuccessResponse as ItemSuccessResponse } from 'src/common/utils/module-api.types';
+export type { InventoryListMeta as ItemListMeta } from 'src/common/utils/module-list.utils';
 export interface ItemPayload {
   item_id: string;
   item_company_id: string;

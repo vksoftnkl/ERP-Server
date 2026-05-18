@@ -1,7 +1,7 @@
-export type { FixedErrorDetail as UiTableMasterErrorDetail } from '../../utils/fixed-api.types';
-export type { FixedErrorResponse as UiTableMasterErrorResponse } from '../../utils/fixed-api.types';
-export type { FixedSuccessResponse as UiTableMasterSuccessResponse } from '../../utils/fixed-api.types';
-export type { FixedListMeta as UiTableMasterListMeta } from '../../utils/fixed-list.utils';
+export type { FixedErrorDetail as UiTableMasterErrorDetail } from 'src/common/utils/module-api.types';
+export type { FixedErrorResponse as UiTableMasterErrorResponse } from 'src/common/utils/module-api.types';
+export type { FixedSuccessResponse as UiTableMasterSuccessResponse } from 'src/common/utils/module-api.types';
+export type { FixedListMeta as UiTableMasterListMeta } from 'src/common/utils/module-list.utils';
 
 export interface UiTableMasterPayload {
   uiTblId: string;

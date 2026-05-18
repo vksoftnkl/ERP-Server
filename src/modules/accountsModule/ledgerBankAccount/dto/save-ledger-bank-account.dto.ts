@@ -7,10 +7,10 @@ import {
   OptionalUuid,
   RequiredUuid,
   TrimmedString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 import { Transform } from 'class-transformer';
-import { toNullableUpperString } from '../../dto/DtoTransforms';
-import { SkipOnNullish } from '../../dto/dtoDecorators';
+import { toNullableUpperString } from 'src/common/dto/DtoTransforms';
+import { SkipOnNullish } from 'src/common/dto/dtoDecorators';
 import { IsOptional, IsString } from 'class-validator';
 
 export class SaveLedgerBankAccountDto {

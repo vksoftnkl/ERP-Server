@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalQueryBoolean, OptionalTrimmedString, OptionalUuid } from '../../dto/dtoDecorators';
-import { AccountsListQueryBaseDto } from '../../utils/accounts-list-query.base.dto';
+import { OptionalQueryBoolean, OptionalTrimmedString, OptionalUuid } from 'src/common/dto/dtoDecorators';
+import { AccountsListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
 
 export class ListAccountLedgerMasterQueryDto extends AccountsListQueryBaseDto {
   @ApiPropertyOptional({ format: 'uuid' })

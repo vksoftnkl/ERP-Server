@@ -22,8 +22,8 @@ import {
   throwAccountsConflict,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/accounts-service.utils';
-import type { AccountsWriteClient } from '../utils/accounts-service.utils';
+} from 'src/common/utils/module-service.utils';
+import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 const LEDGER_BANK_ACCOUNT_TABLE_NAME = 'acc ledger bank accounts';
 const LEDGER_BANK_ACCOUNT_AUDIT_SCREEN_NAME = 'Ledger Bank Account';
 type LedgerBankAccountWriteClient = AccountsWriteClient;

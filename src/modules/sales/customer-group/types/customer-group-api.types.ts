@@ -1,7 +1,7 @@
-export type { SalesErrorDetail as CustomerGroupErrorDetail } from '../../utils/sales-api.types';
-export type { SalesErrorResponse as CustomerGroupErrorResponse } from '../../utils/sales-api.types';
-export type { SalesSuccessResponse as CustomerGroupSuccessResponse } from '../../utils/sales-api.types';
-export type { SalesListMeta as CustomerGroupListMeta } from '../../utils/sales-list.utils';
+export type { SalesErrorDetail as CustomerGroupErrorDetail } from 'src/common/utils/module-api.types';
+export type { SalesErrorResponse as CustomerGroupErrorResponse } from 'src/common/utils/module-api.types';
+export type { SalesSuccessResponse as CustomerGroupSuccessResponse } from 'src/common/utils/module-api.types';
+export type { SalesListMeta as CustomerGroupListMeta } from 'src/common/utils/module-list.utils';
 
 export interface CustomerGroupPayload {
   cgrId: string;

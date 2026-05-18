@@ -21,8 +21,8 @@ import {
   throwPurchaseConflict,
   throwPurchaseNotFound,
   toNumber,
-} from '../utils/purchase-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runPurchaseListQuery } from '../utils/purchase-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runPurchaseListQuery } from 'src/common/utils/module-list.utils';
 
 const SUPPLIER_TABLE_NAME = 'suppliers';
 const SUPPLIER_AUDIT_SCREEN_NAME = 'Supplier Master';

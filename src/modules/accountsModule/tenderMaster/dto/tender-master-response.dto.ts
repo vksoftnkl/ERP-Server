@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-import { AccountsListMetaDto } from '../../utils/accounts-response.dto';
+import { AccountsListMetaDto } from 'src/common/utils/module-response.dto';
 
 export class TenderMasterErrorFieldDto {
   @ApiProperty({ example: 'tndName' })

@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalQueryBoolean, OptionalUuid } from '../../../sales/dto/dtoDecorators';
-import { FixedListQueryBaseDto } from '../../utils/fixed-list-query.base.dto';
+import { OptionalQueryBoolean, OptionalUuid } from 'src/common/dto/dtoDecorators';
+import { FixedListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
 
 export class ListDeviceListMasterQueryDto extends FixedListQueryBaseDto {
   @ApiPropertyOptional({ format: 'uuid' })

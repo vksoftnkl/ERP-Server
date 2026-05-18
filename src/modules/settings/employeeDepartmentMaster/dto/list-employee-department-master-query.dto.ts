@@ -1,6 +1,6 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalQueryBoolean, OptionalQueryInt } from '../../dto/dtoDecorators';
+import { OptionalQueryBoolean, OptionalQueryInt } from 'src/common/dto/dtoDecorators';
 
 export class ListEmployeeDepartmentMasterQueryDto {
   @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })

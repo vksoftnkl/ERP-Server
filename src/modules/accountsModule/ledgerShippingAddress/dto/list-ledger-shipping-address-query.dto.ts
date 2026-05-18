@@ -1,9 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
-import { OptionalQueryBoolean, OptionalQueryInt, OptionalUuid } from '../../dto/dtoDecorators';
-import { toUpperTrimmed } from '../../dto/DtoTransforms';
-import { AccountsListQueryBaseDto } from '../../utils/accounts-list-query.base.dto';
+import { OptionalQueryBoolean, OptionalQueryInt, OptionalUuid } from 'src/common/dto/dtoDecorators';
+import { toUpperTrimmed } from 'src/common/dto/DtoTransforms';
+import { AccountsListQueryBaseDto } from 'src/common/utils/module-list-query.base.dto';
 
 export class ListLedgerShippingAddressQueryDto extends AccountsListQueryBaseDto {
   @ApiPropertyOptional({ type: Number })

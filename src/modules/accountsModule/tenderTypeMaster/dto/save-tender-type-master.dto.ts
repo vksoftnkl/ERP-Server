@@ -1,8 +1,8 @@
 import { IsNotEmpty, IsOptional, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalBoolean, TrimmedString } from '../../dto/dtoDecorators';
-import { toOptionalIdString } from '../../dto/DtoTransforms';
+import { OptionalBoolean, TrimmedString } from 'src/common/dto/dtoDecorators';
+import { toOptionalIdString } from 'src/common/dto/DtoTransforms';
 export class SaveTenderTypeMasterDto {
   @ApiPropertyOptional({
     example: '1',

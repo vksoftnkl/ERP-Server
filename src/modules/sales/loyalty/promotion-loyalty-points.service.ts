@@ -38,8 +38,8 @@ import {
   throwSalesConflict,
   throwSalesNotFound,
   toNumber,
-} from '../utils/sales-service.utils';
-import { resolvePagination, runSalesListQuery } from '../utils/sales-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runSalesListQuery } from 'src/common/utils/module-list.utils';
 import {
   SchemeWithChildren,
   applyOptionalGiftFields,

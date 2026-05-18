@@ -1,7 +1,7 @@
-export type { AccountsErrorDetail as AccountGroupErrorDetail } from '../../utils/accounts-api.types';
-export type { AccountsErrorResponse as AccountGroupErrorResponse } from '../../utils/accounts-api.types';
-export type { AccountsSuccessResponse as AccountGroupSuccessResponse } from '../../utils/accounts-api.types';
-export type { AccountsListMeta as AccountGroupListMeta } from '../../utils/accounts-list.utils';
+export type { AccountsErrorDetail as AccountGroupErrorDetail } from 'src/common/utils/module-api.types';
+export type { AccountsErrorResponse as AccountGroupErrorResponse } from 'src/common/utils/module-api.types';
+export type { AccountsSuccessResponse as AccountGroupSuccessResponse } from 'src/common/utils/module-api.types';
+export type { AccountsListMeta as AccountGroupListMeta } from 'src/common/utils/module-list.utils';
 
 export interface AccountGroupPayload {
   accGroupId: string;

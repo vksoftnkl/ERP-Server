@@ -22,8 +22,8 @@ import {
   throwFixedConflict,
   throwFixedNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/fixed-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from '../utils/fixed-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
 
 const BANK_LIST_TABLE_NAME = 'bank master';
 const BANK_LIST_AUDIT_SCREEN_NAME = 'Bank List Master';

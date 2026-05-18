@@ -22,8 +22,8 @@ import {
   throwAccountsConflict,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/accounts-service.utils';
-import type { AccountsWriteClient } from '../utils/accounts-service.utils';
+} from 'src/common/utils/module-service.utils';
+import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 const ACCOUNT_GROUP_TABLE_NAME = 'account groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;

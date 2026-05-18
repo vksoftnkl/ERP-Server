@@ -11,8 +11,8 @@ import {
   RequiredUuid,
   SkipOnNullish,
   TrimmedString,
-} from '../../dto/dtoDecorators';
-import { toNullableUpperString, toUpperTrimmed } from '../../dto/DtoTransforms';
+} from 'src/common/dto/dtoDecorators';
+import { toNullableUpperString, toUpperTrimmed } from 'src/common/dto/DtoTransforms';
 
 export class SaveAccountLedgerMasterDto {
   @ApiPropertyOptional({

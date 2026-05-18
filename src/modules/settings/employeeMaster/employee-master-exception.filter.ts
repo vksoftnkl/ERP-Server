@@ -1,5 +1,5 @@
 import { Catch } from '@nestjs/common';
-import { SettingsExceptionFilter } from '../utils/settings-exception-filter.utils';
+import { SettingsExceptionFilter } from 'src/common/utils/module-exception-filter.utils';
 import {
   EmployeeMasterErrorDetail,
   EmployeeMasterErrorResponse,

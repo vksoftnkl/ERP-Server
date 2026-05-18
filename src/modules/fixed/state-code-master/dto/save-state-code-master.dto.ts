@@ -6,7 +6,7 @@ import {
   OptionalBoolean,
   TrimmedString,
   UpperString,
-} from '../../../sales/dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveStateCodeMasterDto {
   @ApiProperty({ minLength: 2, maxLength: 2, description: '2-character state code' })

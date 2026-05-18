@@ -5,7 +5,7 @@ import {
   OptionalQueryInt,
   OptionalTrimmedString,
   OptionalUpperString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class ListBranchMasterQueryDto {
   @ApiPropertyOptional({

@@ -4,7 +4,7 @@ import {
   OptionalQueryBoolean,
   OptionalQueryInt,
   OptionalUpperString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class ListCompanyMasterQueryDto {
   @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })

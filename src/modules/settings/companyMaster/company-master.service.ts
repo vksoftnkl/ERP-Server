@@ -29,7 +29,7 @@ import {
   throwSettingsNotFound,
   toNullableNumber,
   toNumber,
-} from '../utils/settings-service.utils';
+} from 'src/common/utils/module-service.utils';
 
 const COMPANY_MASTER_TABLE_NAME = 'companys';
 const COMPANY_MASTER_TABLE_SCHEMA = 'public';

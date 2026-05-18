@@ -27,8 +27,8 @@ import {
   throwSalesConflict,
   throwSalesNotFound,
   toNumber,
-} from '../utils/sales-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from '../utils/sales-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
 const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
 const AREA_OPTIONAL_FIELDS = [

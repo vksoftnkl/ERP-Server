@@ -7,7 +7,7 @@ import {
   OptionalBoolean,
   OptionalNumberString,
   TrimmedString,
-} from '../../../sales/dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 const toNullableNumber = (value: unknown): number | null | undefined => {
   if (value === undefined) {

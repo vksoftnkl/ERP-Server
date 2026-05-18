@@ -10,7 +10,7 @@ import {
   NullableString,
   OptionalUuid,
   toTrimmedString,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveItemTaxHistoryDto {
   @ApiPropertyOptional({

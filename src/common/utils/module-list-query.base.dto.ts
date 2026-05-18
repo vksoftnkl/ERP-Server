@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OptionalQueryInt, OptionalTrimmedString } from '../dto/dtoDecorators';
-export abstract class PurchaseListQueryBaseDto {
+
+export abstract class ModuleListQueryBaseDto {
   @ApiPropertyOptional({ maxLength: 200 })
   @OptionalTrimmedString(200)
   search?: string;
@@ -11,3 +12,11 @@ export abstract class PurchaseListQueryBaseDto {
   @OptionalQueryInt(1, 100)
   limit?: number;
 }
+
+export {
+  ModuleListQueryBaseDto as AccountsListQueryBaseDto,
+  ModuleListQueryBaseDto as FixedListQueryBaseDto,
+  ModuleListQueryBaseDto as InventoryListQueryBaseDto,
+  ModuleListQueryBaseDto as PurchaseListQueryBaseDto,
+  ModuleListQueryBaseDto as SalesListQueryBaseDto,
+};

@@ -26,8 +26,8 @@ import {
   throwSalesBadRequest,
   throwSalesNotFound,
   toNumber,
-} from '../utils/sales-service.utils';
-import { buildListMeta, resolvePagination, runSalesListQuery } from '../utils/sales-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { buildListMeta, resolvePagination, runSalesListQuery } from 'src/common/utils/module-list.utils';
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
 const CUSTOMER_OPTIONAL_FIELDS = [

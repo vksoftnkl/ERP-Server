@@ -1,6 +1,6 @@
 import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { NullableString, OptionalBoolean } from '../../dto/dtoDecorators';
+import { NullableString, OptionalBoolean } from 'src/common/dto/dtoDecorators';
 
 export class SaveEmployeeDesignationMasterDto {
   @ApiPropertyOptional({

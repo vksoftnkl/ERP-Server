@@ -4,7 +4,7 @@ import {
   FixedErrorFieldDto,
   FixedErrorResponseDto,
   FixedListMetaDto,
-} from '../../utils/fixed-response.dto';
+} from 'src/common/utils/module-response.dto';
 export { FixedErrorFieldDto as UiTableColumnErrorFieldDto };
 export { FixedErrorResponseDto as UiTableColumnErrorResponseDto };
 export { FixedListMetaDto as UiTableColumnListMetaDto };

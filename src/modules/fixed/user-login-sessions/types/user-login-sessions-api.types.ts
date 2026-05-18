@@ -1,7 +1,7 @@
-export type { FixedErrorDetail as UserLoginSessionsErrorDetail } from '../../utils/fixed-api.types';
-export type { FixedErrorResponse as UserLoginSessionsErrorResponse } from '../../utils/fixed-api.types';
-export type { FixedSuccessResponse as UserLoginSessionsSuccessResponse } from '../../utils/fixed-api.types';
-export type { FixedListMeta as UserLoginSessionsListMeta } from '../../utils/fixed-list.utils';
+export type { FixedErrorDetail as UserLoginSessionsErrorDetail } from 'src/common/utils/module-api.types';
+export type { FixedErrorResponse as UserLoginSessionsErrorResponse } from 'src/common/utils/module-api.types';
+export type { FixedSuccessResponse as UserLoginSessionsSuccessResponse } from 'src/common/utils/module-api.types';
+export type { FixedListMeta as UserLoginSessionsListMeta } from 'src/common/utils/module-list.utils';
 
 export interface UserLoginSessionsPayload {
   ulsId: string;

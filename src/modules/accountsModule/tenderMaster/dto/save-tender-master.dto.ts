@@ -9,10 +9,10 @@ import {
   OptionalUuid,
   RequiredUuid,
   TrimmedString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 import { Transform } from 'class-transformer';
-import { toOptionalIdString, toNullableNumberStrict } from '../../dto/DtoTransforms';
-import { SkipOnNullish } from '../../dto/dtoDecorators';
+import { toOptionalIdString, toNullableNumberStrict } from 'src/common/dto/DtoTransforms';
+import { SkipOnNullish } from 'src/common/dto/dtoDecorators';
 export class SaveTenderMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',

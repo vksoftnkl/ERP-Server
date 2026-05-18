@@ -4,7 +4,7 @@ import {
   OptionalQueryBoolean,
   OptionalQueryInt,
   OptionalTrimmedString,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class ListEmployeeMasterQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })

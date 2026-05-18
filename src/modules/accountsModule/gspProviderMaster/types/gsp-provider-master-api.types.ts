@@ -1,7 +1,7 @@
-export type { AccountsErrorDetail as GspProviderMasterErrorDetail } from '../../utils/accounts-api.types';
-export type { AccountsErrorResponse as GspProviderMasterErrorResponse } from '../../utils/accounts-api.types';
-export type { AccountsSuccessResponse as GspProviderMasterSuccessResponse } from '../../utils/accounts-api.types';
-export type { AccountsListMeta as GspProviderMasterListMeta } from '../../utils/accounts-list.utils';
+export type { AccountsErrorDetail as GspProviderMasterErrorDetail } from 'src/common/utils/module-api.types';
+export type { AccountsErrorResponse as GspProviderMasterErrorResponse } from 'src/common/utils/module-api.types';
+export type { AccountsSuccessResponse as GspProviderMasterSuccessResponse } from 'src/common/utils/module-api.types';
+export type { AccountsListMeta as GspProviderMasterListMeta } from 'src/common/utils/module-list.utils';
 
 export interface GspProviderMasterPayload {
   gspProviderId: string;

@@ -22,8 +22,8 @@ import {
   throwAccountsConflict,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,
-} from '../utils/accounts-service.utils';
-import type { AccountsWriteClient } from '../utils/accounts-service.utils';
+} from 'src/common/utils/module-service.utils';
+import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 const GSP_PROVIDER_MASTER_TABLE_NAME = 'gsp provider master';
 const GSP_PROVIDER_MASTER_AUDIT_SCREEN_NAME = 'GSP Provider Master';
 type GspProviderMasterWriteClient = AccountsWriteClient;

@@ -20,8 +20,8 @@ import {
   throwPurchaseBadRequest,
   throwPurchaseConflict,
   throwPurchaseNotFound,
-} from '../utils/purchase-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runPurchaseListQuery } from '../utils/purchase-list.utils';
+} from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runPurchaseListQuery } from 'src/common/utils/module-list.utils';
 
 const SUPPLIER_GROUP_TABLE_NAME = 'supplier groups';
 const SUPPLIER_GROUP_AUDIT_SCREEN_NAME = 'Supplier Group Master';

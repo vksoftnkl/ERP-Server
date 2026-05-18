@@ -16,7 +16,7 @@ import {
   NullableString,
   NullableUuid,
   OptionalBoolean,
-} from '../../dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 const toRequiredTrimmedString = (value: unknown): string => {
   if (typeof value !== 'string') {

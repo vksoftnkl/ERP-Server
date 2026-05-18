@@ -4,7 +4,7 @@ import {
   FixedErrorFieldDto,
   FixedErrorResponseDto,
   FixedListMetaDto,
-} from '../../utils/fixed-response.dto';
+} from 'src/common/utils/module-response.dto';
 export { FixedErrorFieldDto as UserLoginSessionsErrorFieldDto };
 export { FixedErrorResponseDto as UserLoginSessionsErrorResponseDto };
 export { FixedListMetaDto as UserLoginSessionsListMetaDto };

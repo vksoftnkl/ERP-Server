@@ -1,18 +1,21 @@
 import {
   ConfiguredGridListResult,
   ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
-import { GridColumnItem } from '../../../common/configured-grid-sql/types/configured-grid-sql.types';
-import { DEFAULT_LIMIT, DEFAULT_PAGE } from '../../../common/utils/module-shared.utils';
-export interface AccountsListMeta {
+} from '../configured-grid-sql/configured-grid-sql.service';
+import { GridColumnItem } from '../configured-grid-sql/types/configured-grid-sql.types';
+import { DEFAULT_LIMIT, DEFAULT_PAGE } from './module-shared.utils';
+
+export interface ModuleListMeta {
   page: number;
   limit: number;
   total: number;
   total_pages: number;
 }
-export function buildListMeta(page: number, limit: number, total: number): AccountsListMeta {
+
+export function buildListMeta(page: number, limit: number, total: number): ModuleListMeta {
   return { page, limit, total, total_pages: Math.ceil(total / limit) };
 }
+
 export function resolvePagination(queryDto: { page?: number; limit?: number }): {
   page: number;
   limit: number;
@@ -22,18 +25,20 @@ export function resolvePagination(queryDto: { page?: number; limit?: number }): 
   const limit = queryDto.limit ?? DEFAULT_LIMIT;
   return { page, limit, skip: (page - 1) * limit };
 }
-export interface AccountsListQueryOptions<TRecord, TItem> {
+
+export interface ModuleListQueryOptions<TRecord, TItem> {
   hasStructuredFilters?: boolean;
-  configuredGridFn?: () => Promise<ConfiguredGridListResult<TItem, AccountsListMeta> | null>;
+  configuredGridFn?: () => Promise<ConfiguredGridListResult<TItem, ModuleListMeta> | null>;
   countFn: () => Promise<number>;
   findManyFn: () => Promise<TRecord[]>;
   toItemFn: (record: TRecord) => TItem;
   loadStylesFn?: () => Promise<GridColumnItem[] | undefined>;
 }
-export async function runAccountsListQuery<TRecord, TItem>(
+
+export async function runModuleListQuery<TRecord, TItem>(
   pagination: { page: number; limit: number },
-  options: AccountsListQueryOptions<TRecord, TItem>,
-): Promise<ConfiguredGridListResult<TItem, AccountsListMeta>> {
+  options: ModuleListQueryOptions<TRecord, TItem>,
+): Promise<ConfiguredGridListResult<TItem, ModuleListMeta>> {
   const { hasStructuredFilters = false, configuredGridFn, countFn, findManyFn, toItemFn, loadStylesFn } =
     options;
   const { page, limit } = pagination;
@@ -62,7 +67,7 @@ export async function runConfiguredGridQuery<TItem>(
     limit: number;
     skip: number;
   },
-): Promise<ConfiguredGridListResult<TItem, AccountsListMeta> | null> {
+): Promise<ConfiguredGridListResult<TItem, ModuleListMeta> | null> {
   const { tableName, alias, search, page, limit, skip } = options;
   const configuredGrids = await configuredGridSqlService.loadCandidates({ tableName });
   const primaryConfiguredGrids = configuredGridSqlService.filterPrimaryFromTable(
@@ -101,3 +106,22 @@ export async function runConfiguredGridQuery<TItem>(
   }
   return null;
 }
+
+export type AccountsListMeta = ModuleListMeta;
+export type AccountsListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
+export type FixedListMeta = ModuleListMeta;
+export type FixedListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
+export type InventoryListMeta = ModuleListMeta;
+export type InventoryListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
+export type PurchaseListMeta = ModuleListMeta;
+export type PurchaseListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
+export type SalesListMeta = ModuleListMeta;
+export type SalesListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
+
+export {
+  runModuleListQuery as runAccountsListQuery,
+  runModuleListQuery as runFixedListQuery,
+  runModuleListQuery as runInventoryListQuery,
+  runModuleListQuery as runPurchaseListQuery,
+  runModuleListQuery as runSalesListQuery,
+};

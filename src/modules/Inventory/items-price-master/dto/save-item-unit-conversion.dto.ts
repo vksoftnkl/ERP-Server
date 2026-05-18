@@ -16,7 +16,7 @@ import {
   OptionalNumber,
   OptionalUuid,
   toTrimmedString,
-} from '../../utils/inventory-dto.decorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveItemUnitConversionDto {
   @ApiPropertyOptional({

@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { NullableUuid } from '../../utils/inventory-dto.decorators';
+import { NullableUuid } from 'src/common/dto/dtoDecorators';
 
 const toNullablePhotoString = (value: unknown): string | null | undefined => {
   if (value === undefined) {

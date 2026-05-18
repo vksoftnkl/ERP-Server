@@ -5,7 +5,7 @@ import {
   OptionalBoolean,
   OptionalUuid,
   TrimmedString,
-} from '../../../sales/dto/dtoDecorators';
+} from 'src/common/dto/dtoDecorators';
 
 export class SaveBankListDto {
   @ApiPropertyOptional({
