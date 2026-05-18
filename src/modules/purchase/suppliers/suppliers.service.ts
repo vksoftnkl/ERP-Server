@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, Supplier } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -11,20 +6,28 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ListSupplierQueryDto } from './dto/list-supplier-query.dto';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
 import {
-  SupplierErrorDetail,
-  SupplierErrorResponse,
   SupplierListItem,
   SupplierListMeta,
   SupplierPayload,
 } from './types/supplier-api.types';
+import {
+  DEFAULT_ACTOR,
+  PurchaseWriteClient,
+  hasOwnProperty,
+  normalizeRequiredText,
+  resolveActor,
+  throwOnUniqueConstraintError,
+  throwPurchaseBadRequest,
+  throwPurchaseConflict,
+  throwPurchaseNotFound,
+  toNumber,
+} from '../utils/purchase-service.utils';
+import { resolvePagination, runConfiguredGridQuery, runPurchaseListQuery } from '../utils/purchase-list.utils';
 
-const DEFAULT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
 const SUPPLIER_TABLE_NAME = 'suppliers';
 const SUPPLIER_AUDIT_SCREEN_NAME = 'Supplier Master';
 
-type SupplierWriteClient = Prisma.TransactionClient | PrismaService;
+type SupplierWriteClient = PurchaseWriteClient;
 
 @Injectable()
 export class SuppliersService {
@@ -38,44 +41,27 @@ export class SuppliersService {
     if (saveSupplierDto.supId) {
       return this.updateSupplier(saveSupplierDto);
     }
-
     return this.createSupplier(saveSupplierDto);
   }
 
   async list(
     queryDto: ListSupplierQueryDto,
   ): Promise<ConfiguredGridListResult<SupplierListItem, SupplierListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.supCompanyId !== undefined ||
       queryDto.supGroupId !== undefined ||
       queryDto.supIsActive !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
-    const where: Prisma.SupplierWhereInput = {
-      supIsDeleted: false,
-    };
-
+    const where: Prisma.SupplierWhereInput = { supIsDeleted: false };
     if (queryDto.supCompanyId !== undefined) {
       where.supCompanyId = queryDto.supCompanyId;
     }
-
     if (queryDto.supGroupId !== undefined) {
       where.supGroupId = queryDto.supGroupId;
     }
-
     if (queryDto.supIsActive !== undefined) {
       where.supIsActive = queryDto.supIsActive;
     }
-
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -90,139 +76,53 @@ export class SuppliersService {
         { supPanNo: { contains: search, mode: 'insensitive' } },
       ];
     }
-
-    const [total, records] = await Promise.all([
-      this.prisma.supplier.count({ where }),
-      this.prisma.supplier.findMany({
+    return runPurchaseListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery(this.configuredGridSqlService, {
+        tableName: SUPPLIER_TABLE_NAME,
+        alias: 'supplier_grid',
+        search: queryDto.search,
+        page,
+        limit,
+        skip,
+      }),
+      countFn: () => this.prisma.supplier.count({ where }),
+      findManyFn: () => this.prisma.supplier.findMany({
         where,
         orderBy: [{ supName: 'asc' }, { supId: 'asc' }],
         skip,
         take: limit,
       }),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<SupplierListItem, SupplierListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: SUPPLIER_TABLE_NAME,
+      toItemFn: (record) => this.toPayload(record),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      SUPPLIER_TABLE_NAME,
-    );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
-      return null;
-    }
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
-      return null;
-    }
-
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: SUPPLIER_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for supplier list', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
-    }
-
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<SupplierListItem>({
-        baseSql: validation.normalizedSql,
-        alias: 'supplier_grid',
-        search,
-        limit,
-        skip,
-          gridId: configuredGrid.gridId,
-      });
-
-      return {
-        items: result.items,
-        meta: {
-          page,
-          limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
-        styles: result.styles,
-      };
-    } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for supplier list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for suppliers',
-        },
-      ]);
-    }
   }
 
   async getById(supId: string): Promise<SupplierPayload> {
     const record = await this.prisma.supplier.findFirst({
-      where: {
-        supId,
-        supIsDeleted: false,
-      },
+      where: { supId, supIsDeleted: false },
     });
-
     if (!record) {
-      this.throwNotFound(supId);
+      throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
     }
-
     return this.toPayload(record);
   }
 
   async softDelete(supId: string): Promise<{ supId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.supplier.findFirst({
-        where: {
-          supId,
-          supIsDeleted: false,
-        },
+        where: { supId, supIsDeleted: false },
       });
-
       if (!existing) {
-        this.throwNotFound(supId);
+        throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
       }
-
       const modifiedOn = new Date();
       const result = await tx.supplier.updateMany({
-        where: {
-          supId,
-          supIsDeleted: false,
-        },
-        data: {
-          supIsDeleted: true,
-          supIsActive: false,
-          supModifiedOn: modifiedOn,
-          supModifiedBy: DEFAULT_ACTOR,
-        },
+        where: { supId, supIsDeleted: false },
+        data: { supIsDeleted: true, supIsActive: false, supModifiedOn: modifiedOn, supModifiedBy: DEFAULT_ACTOR },
       });
-
       if (result.count === 0) {
-        this.throwNotFound(supId);
+        throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -231,7 +131,6 @@ export class SuppliersService {
         supModifiedOn: modifiedOn,
         supModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -247,29 +146,19 @@ export class SuppliersService {
         },
         tx,
       );
-
-      return {
-        supId,
-        deleted: true,
-      };
+      return { supId, deleted: true };
     });
   }
 
   private async createSupplier(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
-    const normalizedName = this.normalizeRequiredText(saveSupplierDto.supName, 'supName');
-    const normalizedPurchaseType = this.normalizeRequiredText(
-      saveSupplierDto.supPurchaseType,
-      'supPurchaseType',
-    );
-    const normalizedStateName = this.normalizeRequiredText(
-      saveSupplierDto.supStateName,
-      'supStateName',
-    );
+    const normalizedName = normalizeRequiredText(saveSupplierDto.supName, 'supName');
+    const normalizedPurchaseType = normalizeRequiredText(saveSupplierDto.supPurchaseType, 'supPurchaseType');
+    const normalizedStateName = normalizeRequiredText(saveSupplierDto.supStateName, 'supStateName');
     const normalizedStateCode = this.normalizeStateCode(saveSupplierDto.supStateCode);
-    const normalizedGstType = this.normalizeRequiredText(saveSupplierDto.supGstType, 'supGstType');
+    const normalizedGstType = normalizeRequiredText(saveSupplierDto.supGstType, 'supGstType');
     const now = new Date();
-    const createdBy = this.resolveActor(saveSupplierDto.supCreatedBy);
-    const modifiedBy = this.resolveActor(saveSupplierDto.supModifiedBy, createdBy);
+    const createdBy = resolveActor(saveSupplierDto.supCreatedBy);
+    const modifiedBy = resolveActor(saveSupplierDto.supModifiedBy, createdBy);
     const data: Prisma.SupplierUncheckedCreateInput = {
       supGroupId: saveSupplierDto.supGroupId,
       supPurchaseType: normalizedPurchaseType,
@@ -284,19 +173,15 @@ export class SuppliersService {
       supModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveSupplierDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureSupplierGroupExists(tx, data.supGroupId);
-
-        const companyId = this.hasOwnProperty(saveSupplierDto, 'supCompanyId')
+        const companyId = hasOwnProperty(saveSupplierDto, 'supCompanyId')
           ? (saveSupplierDto.supCompanyId ?? null)
           : null;
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
-
         const created = await tx.supplier.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -312,54 +197,37 @@ export class SuppliersService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError(error, 'Supplier already exists', [
+        { field: 'supName', message: 'Duplicate supplier name is not allowed' },
+      ]);
       throw error;
     }
   }
 
   private async updateSupplier(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
     const supId = saveSupplierDto.supId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.supplier.findFirst({
-          where: {
-            supId,
-            supIsDeleted: false,
-          },
+          where: { supId, supIsDeleted: false },
         });
-
         if (!existing) {
-          this.throwNotFound(supId);
+          throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
         }
-
-        const normalizedName = this.normalizeRequiredText(saveSupplierDto.supName, 'supName');
-        const normalizedPurchaseType = this.normalizeRequiredText(
-          saveSupplierDto.supPurchaseType,
-          'supPurchaseType',
-        );
-        const normalizedStateName = this.normalizeRequiredText(
-          saveSupplierDto.supStateName,
-          'supStateName',
-        );
+        const normalizedName = normalizeRequiredText(saveSupplierDto.supName, 'supName');
+        const normalizedPurchaseType = normalizeRequiredText(saveSupplierDto.supPurchaseType, 'supPurchaseType');
+        const normalizedStateName = normalizeRequiredText(saveSupplierDto.supStateName, 'supStateName');
         const normalizedStateCode = this.normalizeStateCode(saveSupplierDto.supStateCode);
-        const normalizedGstType = this.normalizeRequiredText(
-          saveSupplierDto.supGstType,
-          'supGstType',
-        );
-
+        const normalizedGstType = normalizeRequiredText(saveSupplierDto.supGstType, 'supGstType');
         await this.ensureSupplierGroupExists(tx, saveSupplierDto.supGroupId);
-
-        const nextCompanyId = this.hasOwnProperty(saveSupplierDto, 'supCompanyId')
+        const nextCompanyId = hasOwnProperty(saveSupplierDto, 'supCompanyId')
           ? (saveSupplierDto.supCompanyId ?? null)
           : existing.supCompanyId;
         await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, supId);
         const now = new Date();
-
         const data: Prisma.SupplierUncheckedUpdateInput = {
           supGroupId: saveSupplierDto.supGroupId,
           supPurchaseType: normalizedPurchaseType,
@@ -369,18 +237,11 @@ export class SuppliersService {
           supGstType: normalizedGstType,
           supBilledDate: now,
           supModifiedOn: now,
-          supModifiedBy: this.resolveActor(saveSupplierDto.supModifiedBy),
+          supModifiedBy: resolveActor(saveSupplierDto.supModifiedBy),
         };
         this.applyOptionalFields(data, saveSupplierDto);
-
-        const updated = await tx.supplier.update({
-          where: {
-            supId,
-          },
-          data,
-        });
+        const updated = await tx.supplier.update({ where: { supId }, data });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -396,35 +257,24 @@ export class SuppliersService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
-      this.handleWriteError(error);
+      throwOnUniqueConstraintError(error, 'Supplier already exists', [
+        { field: 'supName', message: 'Duplicate supplier name is not allowed' },
+      ]);
       throw error;
     }
   }
 
-  private async ensureSupplierGroupExists(
-    tx: SupplierWriteClient,
-    supGroupId: string,
-  ): Promise<void> {
+  private async ensureSupplierGroupExists(tx: SupplierWriteClient, supGroupId: string): Promise<void> {
     const record = await tx.supplierGroup.findFirst({
-      where: {
-        spgId: supGroupId,
-        spgIsDeleted: false,
-      },
-      select: {
-        spgId: true,
-      },
+      where: { spgId: supGroupId, spgIsDeleted: false },
+      select: { spgId: true },
     });
-
     if (!record) {
-      this.throwBadRequest('Supplier group does not exist', [
-        {
-          field: 'supGroupId',
-          message: `No active supplier group found with id ${supGroupId}`,
-        },
+      throwPurchaseBadRequest('Supplier group does not exist', [
+        { field: 'supGroupId', message: `No active supplier group found with id ${supGroupId}` },
       ]);
     }
   }
@@ -439,32 +289,15 @@ export class SuppliersService {
       where: {
         supIsDeleted: false,
         supCompanyId: companyId,
-        supName: {
-          equals: supName,
-          mode: 'insensitive',
-        },
-        ...(excludeId
-          ? {
-              supId: {
-                not: excludeId,
-              },
-            }
-          : {}),
+        supName: { equals: supName, mode: 'insensitive' },
+        ...(excludeId ? { supId: { not: excludeId } } : {}),
       },
-      select: {
-        supId: true,
-      },
+      select: { supId: true },
     });
-
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Supplier name already exists for this company', [
-          {
-            field: 'supName',
-            message: 'Duplicate supplier name is not allowed for this company',
-          },
-        ]),
-      );
+      throwPurchaseConflict('Supplier name already exists for this company', [
+        { field: 'supName', message: 'Duplicate supplier name is not allowed for this company' },
+      ]);
     }
   }
 
@@ -472,172 +305,32 @@ export class SuppliersService {
     data: Prisma.SupplierUncheckedCreateInput | Prisma.SupplierUncheckedUpdateInput,
     saveSupplierDto: SaveSupplierDto,
   ): void {
-    if (this.hasOwnProperty(saveSupplierDto, 'supCompanyId')) {
-      data.supCompanyId = saveSupplierDto.supCompanyId;
+    const optionalFields = [
+      'supCompanyId', 'supBranchId', 'supShort', 'supAddr1', 'supAddr2', 'supAddr3',
+      'supCity', 'supDistrict', 'supCountry', 'supPincode', 'supTel', 'supPhone',
+      'supMailId', 'supWhatsappNo', 'supWebsiteAddress', 'supChequePreName', 'supNotes',
+      'supCreditDays', 'supCashDiscPerc', 'supGstNo', 'supPanNo', 'supSupCst',
+      'supDrugLiscenceNo', 'supRegionName', 'supRegionAddr1', 'supRegionAddr2',
+      'supRegionAddr3', 'supRegionCity', 'supRegionDistrict', 'supRegionStateName',
+      'supRegionCountry', 'supSortOrder', 'supIsActive', 'supStateId',
+    ];
+    for (const field of optionalFields) {
+      if (hasOwnProperty(saveSupplierDto, field)) {
+        (data as Record<string, unknown>)[field] = (saveSupplierDto as unknown as Record<string, unknown>)[field];
+      }
     }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supBranchId')) {
-      data.supBranchId = saveSupplierDto.supBranchId;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supShort')) {
-      data.supShort = saveSupplierDto.supShort;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supAddr1')) {
-      data.supAddr1 = saveSupplierDto.supAddr1;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supAddr2')) {
-      data.supAddr2 = saveSupplierDto.supAddr2;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supAddr3')) {
-      data.supAddr3 = saveSupplierDto.supAddr3;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supCity')) {
-      data.supCity = saveSupplierDto.supCity;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supDistrict')) {
-      data.supDistrict = saveSupplierDto.supDistrict;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supCountry')) {
-      data.supCountry = saveSupplierDto.supCountry;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supPincode')) {
-      data.supPincode = saveSupplierDto.supPincode;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supTel')) {
-      data.supTel = saveSupplierDto.supTel;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supPhone')) {
-      data.supPhone = saveSupplierDto.supPhone;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supMailId')) {
-      data.supMailId = saveSupplierDto.supMailId;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supWhatsappNo')) {
-      data.supWhatsappNo = saveSupplierDto.supWhatsappNo;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supWebsiteAddress')) {
-      data.supWebsiteAddress = saveSupplierDto.supWebsiteAddress;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supChequePreName')) {
-      data.supChequePreName = saveSupplierDto.supChequePreName;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supNotes')) {
-      data.supNotes = saveSupplierDto.supNotes;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supCreditDays')) {
-      data.supCreditDays = saveSupplierDto.supCreditDays;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supCashDiscPerc')) {
-      data.supCashDiscPerc = saveSupplierDto.supCashDiscPerc;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supCollectionDays')) {
+    if (hasOwnProperty(saveSupplierDto, 'supCollectionDays')) {
       data.supCollectionDays = saveSupplierDto.supCollectionDays ?? [];
     }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supGstNo')) {
-      data.supGstNo = saveSupplierDto.supGstNo;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supPanNo')) {
-      data.supPanNo = saveSupplierDto.supPanNo;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supSupCst')) {
-      data.supSupCst = saveSupplierDto.supSupCst;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supDrugLiscenceNo')) {
-      data.supDrugLiscenceNo = saveSupplierDto.supDrugLiscenceNo;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supRegionName')) {
-      data.supRegionName = saveSupplierDto.supRegionName;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supRegionAddr1')) {
-      data.supRegionAddr1 = saveSupplierDto.supRegionAddr1;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supRegionAddr2')) {
-      data.supRegionAddr2 = saveSupplierDto.supRegionAddr2;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supRegionAddr3')) {
-      data.supRegionAddr3 = saveSupplierDto.supRegionAddr3;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supRegionCity')) {
-      data.supRegionCity = saveSupplierDto.supRegionCity;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supRegionDistrict')) {
-      data.supRegionDistrict = saveSupplierDto.supRegionDistrict;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supRegionStateName')) {
-      data.supRegionStateName = saveSupplierDto.supRegionStateName;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supRegionCountry')) {
-      data.supRegionCountry = saveSupplierDto.supRegionCountry;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supSortOrder')) {
-      data.supSortOrder = saveSupplierDto.supSortOrder;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supIsActive')) {
-      data.supIsActive = saveSupplierDto.supIsActive;
-    }
-
-    if (this.hasOwnProperty(saveSupplierDto, 'supStateId')) {
-      data.supStateId = saveSupplierDto.supStateId;
-    }
-  }
-
-  private normalizeRequiredText(value: string, field: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field,
-          message: `${field} must not be empty`,
-        },
-      ]);
-    }
-
-    return trimmed;
   }
 
   private normalizeStateCode(value: string): string {
     const normalized = value.trim().toUpperCase();
     if (normalized.length !== 2) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'supStateCode',
-          message: 'supStateCode must be exactly 2 characters',
-        },
+      throwPurchaseBadRequest('Validation failed', [
+        { field: 'supStateCode', message: 'supStateCode must be exactly 2 characters' },
       ]);
     }
-
     return normalized;
   }
 
@@ -666,7 +359,7 @@ export class SuppliersService {
       supChequePreName: record.supChequePreName,
       supNotes: record.supNotes,
       supCreditDays: record.supCreditDays,
-      supCashDiscPerc: this.toNumber(record.supCashDiscPerc),
+      supCashDiscPerc: toNumber(record.supCashDiscPerc),
       supCollectionDays: record.supCollectionDays,
       supGstNo: record.supGstNo,
       supStateCode: record.supStateCode,
@@ -693,73 +386,5 @@ export class SuppliersService {
       supModifiedBy: record.supModifiedBy,
       supStateId: record.supStateId,
     };
-  }
-
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-
-    return Number(value.toString());
-  }
-
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    if (!value) {
-      return fallback;
-    }
-
-    const trimmed = value.trim();
-    return trimmed || fallback;
-  }
-
-  private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Supplier already exists', [
-          {
-            field: 'supName',
-            message: 'Duplicate supplier name is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(supId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Supplier not found', [
-        {
-          field: 'supId',
-          message: `No active supplier found with id ${supId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: SupplierErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: SupplierErrorDetail[] = [],
-  ): SupplierErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

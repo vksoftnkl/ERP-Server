@@ -1,21 +1,7 @@
-export interface SupplierErrorDetail {
-  field: string;
-  message: string;
-}
-
-export interface SupplierErrorResponse {
-  success: false;
-  message: string;
-  errors: SupplierErrorDetail[];
-}
-
-export interface SupplierSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> {
-  success: true;
-  message: string;
-  data: T;
-  meta?: TMeta;
-  styles?: TStyles;
-}
+export type { PurchaseErrorDetail as SupplierErrorDetail } from '../../utils/purchase-api.types';
+export type { PurchaseErrorResponse as SupplierErrorResponse } from '../../utils/purchase-api.types';
+export type { PurchaseSuccessResponse as SupplierSuccessResponse } from '../../utils/purchase-api.types';
+export type { PurchaseListMeta as SupplierListMeta } from '../../utils/purchase-list.utils';
 
 export interface SupplierPayload {
   supId: string;
@@ -68,12 +54,4 @@ export interface SupplierPayload {
   supModifiedBy: string | null;
   supStateId: string | null;
 }
-
 export type SupplierListItem = SupplierPayload | Record<string, unknown>;
-
-export interface SupplierListMeta {
-  page: number;
-  limit: number;
-  total: number;
-  total_pages: number;
-}
