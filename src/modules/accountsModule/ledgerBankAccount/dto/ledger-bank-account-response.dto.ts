@@ -26,7 +26,7 @@ export class LedgerBankAccountPayloadDto {
   lbaId!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  lbaCompanyId!: number | null;
+  lbaCompanyId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   lbaLedgerId!: string;

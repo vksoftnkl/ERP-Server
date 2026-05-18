@@ -551,4 +551,90 @@ export class TenderMasterService {
     }
   }
 
+  private parseTenderTypeId(value: string, field: string): bigint {
+    const normalized = value.trim();
+    if (!/^\d+$/.test(normalized)) {
+      throwAccountsBadRequest<TenderMasterErrorDetail>('Validation failed', [
+        {
+          field,
+          message: `${field} must be a valid numeric identifier`,
+        },
+      ]);
+    }
+
+    return BigInt(normalized);
+  }
+
+  private normalizeNullableString(value: string | null | undefined): string | null | undefined {
+    if (value === undefined || value === null) {
+      return value;
+    }
+
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+
+  private toInputNumber(value: number, field: string): number {
+    if (!Number.isFinite(value)) {
+      throwAccountsBadRequest<TenderMasterErrorDetail>('Validation failed', [
+        {
+          field,
+          message: `${field} must be a finite number`,
+        },
+      ]);
+    }
+
+    return value;
+  }
+
+  private toInputNullableNumber(
+    value: number | null | undefined,
+    field: string,
+  ): number | null | undefined {
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    return this.toInputNumber(value, field);
+  }
+
+  private buildShortName(value: string): string {
+    return value;
+  }
+
+  private toOutputNumber(value: Prisma.Decimal | number): number {
+    if (typeof value === 'number') {
+      return value;
+    }
+
+    return Number(value.toString());
+  }
+
+  private toOutputNullableNumber(value: Prisma.Decimal | number | null): number | null {
+    return value === null ? null : this.toOutputNumber(value);
+  }
+
+  private toPayload(record: AccountTenderMaster): TenderMasterPayload {
+    return {
+      tndId: record.acctndId,
+      tndTypeId: record.acctndTypeId.toString(),
+      tndName: record.acctndName,
+      tndLedgerId: record.acctndLedgerId,
+      tndMinAmount: this.toOutputNumber(record.acctndMinAmount),
+      tndMaxAmount: this.toOutputNullableNumber(record.acctndMaxAmount),
+      tndDisplayPosition: record.acctndDisplayPosition,
+      tndSurchargePerc: this.toOutputNumber(record.acctndSurchargePerc),
+      tndIsActive: record.acctndIsActive,
+      tndIsDeleted: record.acctndIsDeleted,
+      tndRemarks: record.acctndRemarks,
+      tndEditSurcharge: record.acctndEditSurcharge,
+      tndEditLedger: record.acctndEditLedger,
+      tndSyncDate: record.acctndSyncDate ? record.acctndSyncDate.toISOString() : null,
+      tndCreatedOn: record.acctndCreatedOn.toISOString(),
+      tndCreatedBy: record.acctndCreatedBy,
+      tndModifiedOn: record.acctndModifiedOn.toISOString(),
+      tndModifiedBy: record.acctndModifiedBy,
+    };
+  }
+
 }

@@ -26,7 +26,7 @@ export class LedgerShippingAddressPayloadDto {
   saaId!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  saaCompanyId!: number | null;
+  saaCompanyId!: string | null;
 
   @ApiProperty({ format: 'uuid' })
   saaLedgerId!: string;

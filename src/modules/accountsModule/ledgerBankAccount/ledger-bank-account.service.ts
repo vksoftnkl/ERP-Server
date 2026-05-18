@@ -561,4 +561,30 @@ export class LedgerBankAccountService {
     }
   }
 
+  private toPayload(record: AccLedgerBankAccount): LedgerBankAccountPayload {
+    return {
+      lbaId: record.lbaId,
+      lbaCompanyId: record.lbaCompanyId,
+      lbaLedgerId: record.lbaLedgerId,
+      lbaAccountHolder: record.lbaAccountHolder,
+      lbaBankName: record.lbaBankName,
+      lbaBranchName: record.lbaBranchName,
+      lbaAccountNo: record.lbaAccountNo,
+      lbaIfscCode: record.lbaIfscCode,
+      lbaMicrCode: record.lbaMicrCode,
+      lbaAccountType: record.lbaAccountType,
+      lbaUpiId: record.lbaUpiId,
+      lbaChequeName: record.lbaChequeName,
+      lbaIsDefault: record.lbaIsDefault,
+      lbaIsActive: record.lbaIsActive,
+      lbaIsDeleted: record.lbaIsDeleted,
+      lbaSyncDate: record.lbaSyncDate ? record.lbaSyncDate.toISOString() : null,
+      lbaCreatedOn: record.lbaCreatedOn.toISOString(),
+      lbaCreatedBy: record.lbaCreatedBy,
+      lbaModifiedOn: record.lbaModifiedOn.toISOString(),
+      lbaModifiedBy: record.lbaModifiedBy,
+      lbaRemarks: record.lbaRemarks,
+    };
+  }
+
 }

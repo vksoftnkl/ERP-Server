@@ -5,6 +5,7 @@ import {
   NullableInteger,
   NullableString,
   NullableUpperString,
+  NullableUuid,
   OptionalBoolean,
   OptionalInteger,
   OptionalUuid,
@@ -23,9 +24,9 @@ export class SaveLedgerShippingAddressDto {
   @OptionalUuid()
   saaId?: string;
 
-  @ApiPropertyOptional({ type: Number, nullable: true })
-  @NullableInteger()
-  saaCompanyId?: number | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  saaCompanyId?: string | null;
 
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
