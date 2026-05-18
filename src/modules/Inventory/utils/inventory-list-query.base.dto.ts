@@ -1,6 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OptionalQueryInt, OptionalTrimmedString } from './inventory-dto.decorators';
-
 export abstract class InventoryListQueryBaseDto {
   @ApiPropertyOptional({ maxLength: 200 })
   @OptionalTrimmedString(200)
