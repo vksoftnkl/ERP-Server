@@ -1,0 +1,20 @@
+model SaleAgentGroup {
+  saGrpId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sa_grp_id")
+  saGrpName       String    @db.VarChar(150) @map("sa_grp_name")
+  saGrpCode       String    @db.VarChar(50) @map("sa_grp_code")
+  saGrpPos        Int?      @default(0) @map("sa_grp_pos")
+  saGrpDesc       String?   @db.VarChar(250) @map("sa_grp_desc")
+  saGrpIsActive   Boolean   @default(true) @map("sa_grp_is_active")
+  saGrpIsDeleted  Boolean   @default(false) @map("sa_grp_is_deleted")
+  saGrpSyncDate   DateTime? @db.Timestamptz @map("sa_grp_sync_date")
+  saGrpCreatedOn  DateTime  @default(now()) @db.Timestamptz @map("sa_grp_created_on")
+  saGrpCreatedBy  String    @db.Uuid @map("sa_grp_created_by")
+  saGrpModifiedOn DateTime? @db.Timestamptz @map("sa_grp_modified_on")
+  saGrpModifiedBy String?   @db.Uuid @map("sa_grp_modified_by")
+
+  @@index([saGrpId], map: "idx_sale_agent_groups_id")
+  @@index([saGrpName], map: "idx_sale_agent_groups_name")
+  @@index([saGrpIsActive, saGrpIsDeleted], map: "idx_sale_agent_groups_active_deleted")
+  @@map("sale_agent_groups")
+  @@schema("sales")
+}

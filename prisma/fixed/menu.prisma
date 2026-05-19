@@ -17,7 +17,7 @@ model Menu {
   menuCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("menu_created_on")
   menuModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("menu_modified_on")
   menuSyncDate   DateTime?               @db.Timestamptz(6) @map("menu_sync_date")
-
+  userMenus              UserMenus[]
   @@index([menuParentId])
   @@index([menuPosition])
   @@map("menu_master")

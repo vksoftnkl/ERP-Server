@@ -4,7 +4,6 @@ export type DropdownDetailErrorDetail = ModuleApiErrorDetail;
 export type DropdownDetailErrorResponse = ModuleApiErrorResponse<DropdownDetailErrorDetail>;
 export type DropdownDetailSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
 export type DropdownDetailListMeta = ModuleListMeta;
-
 export interface DropdownDetailPayload {
   dropdown_id: string;
   dropdown_name: string;

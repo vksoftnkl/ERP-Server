@@ -3,24 +3,19 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { CacheInvalidationService } from '../redis/cache-invalidation.service';
 import { RELATED_RESOURCE_INVALIDATIONS } from '../redis/http-cache.constants';
-
 type CacheableRequest = {
   method?: string;
   originalUrl?: string;
 };
-
 type ResolvedResource = {
   apiBase: string;
   resource: string;
 };
-
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const CACHE_SKIP_PATH_SEGMENTS = new Set(['auth', 'profile', 'health']);
-
 @Injectable()
 export class HttpCacheInvalidationInterceptor implements NestInterceptor {
   constructor(private readonly cacheInvalidationService: CacheInvalidationService) {}
-
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType<'http'>() !== 'http') {
       return next.handle();
@@ -40,7 +35,6 @@ export class HttpCacheInvalidationInterceptor implements NestInterceptor {
       }),
     );
   }
-
   private resolveResource(originalUrl: string): ResolvedResource | undefined {
     const url = new URL(originalUrl, 'http://localhost');
     const segments = url.pathname.split('/').filter(Boolean);
@@ -53,10 +47,8 @@ export class HttpCacheInvalidationInterceptor implements NestInterceptor {
     }
     return { apiBase: `/${apiPrefix}/${version}`, resource };
   }
-
   private buildInvalidationPatterns({ apiBase, resource }: ResolvedResource): string[] {
     const patterns = new Set<string>([`${apiBase}/${resource}`]);
-
     // Bust explicitly related resources (e.g. ui-table-masters → ui-table-columns)
     const related = RELATED_RESOURCE_INVALIDATIONS[resource];
     if (related) {
@@ -64,7 +56,6 @@ export class HttpCacheInvalidationInterceptor implements NestInterceptor {
         patterns.add(`${apiBase}/${relatedResource}`);
       }
     }
-
     return [...patterns];
   }
 }

@@ -1,0 +1,81 @@
+model UserMaster {
+  // ── Primary key ────────────────────────────────────────────────────────────
+  usrId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  // ── Multi-company ──────────────────────────────────────────────────────────
+  usrCompanyId           String?   @db.Uuid
+  usrBranchId            String?   @db.Uuid
+  usrEmployeeId          String?   @db.Uuid
+
+  // ── Identity ───────────────────────────────────────────────────────────────
+  usrLoginName           String    @db.VarChar(50)
+  usrDisplayName         String    @db.VarChar(100)
+  usrFullName            String?   @db.VarChar(150)
+
+  // ── Contact ────────────────────────────────────────────────────────────────
+  usrMobileNo            String?   @db.VarChar(20)
+  usrEmail               String?   @db.VarChar(150)
+
+  // ── Profile ────────────────────────────────────────────────────────────────
+  usrAvatarUrl           String?   @db.VarChar(500)
+  usrTimezone            String    @default("UTC") @db.VarChar(60)
+  usrLanguage            String    @default("en") @db.VarChar(10)
+
+  // ── Security ───────────────────────────────────────────────────────────────
+  usrPasswordHash        String
+  usrPinHash             String?
+  usrMustChangePassword  Boolean   @default(false)
+  usrPasswordExpiresOn   DateTime? @db.Timestamptz()
+  usrPasswordChangedOn   DateTime? @db.Timestamptz()
+
+  // ── User type ──────────────────────────────────────────────────────────────
+  usrType                String?  @default("USER")
+
+  // ── Legacy permission flags ────────────────────────────────────────────────
+  usrEditDate            Boolean   @default(false)
+  usrEditEntry           Boolean   @default(false)
+  usrEditRate            Boolean   @default(false)
+
+  // ── Login channels ─────────────────────────────────────────────────────────
+  usrDesktopLogin        Boolean   @default(true)
+  usrWebLogin            Boolean   @default(true)
+  usrMobileLogin         Boolean   @default(false)
+
+  // ── Status & lockout ───────────────────────────────────────────────────────
+  usrIsActive            Boolean   @default(true)
+  usrIsLocked            Boolean   @default(false)
+  usrFailedLoginCount    Int       @default(0)
+  usrLastFailedLoginOn   DateTime? @db.Timestamptz()
+  usrLockedOn            DateTime? @db.Timestamptz()
+  usrLockedBy            String?   @db.Uuid
+  usrLastLoginOn         DateTime? @db.Timestamptz()
+
+  // ── Soft delete ────────────────────────────────────────────────────────────
+  usrIsDeleted           Boolean   @default(false)
+
+  // ── Admin notes ────────────────────────────────────────────────────────────
+  usrNotes               String?
+
+  // ── Audit ──────────────────────────────────────────────────────────────────
+  usrSyncDate            DateTime? @db.Timestamptz()
+  usrCreatedOn           DateTime  @default(now()) @db.Timestamptz()
+  usrCreatedBy           String?   @db.Uuid
+  usrModifiedOn          DateTime? @db.Timestamptz()
+  usrModifiedBy          String?   @db.Uuid
+  userMenus              UserMenus[]
+  // ── Indexes ────────────────────────────────────────────────────────────────
+  // Partial unique index on login name for non-deleted users.
+  // Prisma does not support partial indexes natively; define them via a
+  // raw migration SQL file (see note below).
+  //
+  //   CREATE UNIQUE INDEX uix_user_login_name
+  //       ON public.user_master (usr_login_name)
+  //       WHERE usr_is_deleted = false;
+  //
+  //   CREATE INDEX ix_user_is_active
+  //       ON public.user_master (usr_is_active)
+  //       WHERE usr_is_deleted = false;
+
+   @@map("user_master")
+   @@schema("public")
+}

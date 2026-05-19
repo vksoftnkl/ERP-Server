@@ -11,39 +11,32 @@ import {
   RunConfiguredGridSqlPageResult,
   ValidateConfiguredGridSqlOptions,
 } from './types/configured-grid-sql.types';
-
 export type { ConfiguredGridListResult } from './types/configured-grid-sql.types';
 const GRID_SQL_FORBIDDEN_TOKENS =
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const GRID_SQL_COMMENT_PATTERN = /(--|\/\*)/;
 const POSITIONAL_PARAMETER_PATTERN = /\$[1-9][0-9]*/;
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
-
 interface SqlRelationReference {
   schemaName: string | null;
   tableName: string;
 }
-
 type SearchColumnDescriptor = {
   normalized: string;
   tokens: string[];
   lastToken: string;
 };
-
 @Injectable()
 export class ConfiguredGridSqlService {
   constructor(private readonly prisma: PrismaService) { }
-
   private normalizeRelationName(value: string): string {
     return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
   }
-
   private buildTableNameSearchTerms(tableName: string): string[] {
     const trimmed = tableName.trim();
     const normalized = this.normalizeRelationName(trimmed);
     return Array.from(new Set([trimmed, normalized].filter(Boolean)));
   }
-
   async loadCandidates(
     options: LoadConfiguredGridSqlCandidatesOptions,
   ): Promise<ConfiguredGridSqlCandidate[]> {

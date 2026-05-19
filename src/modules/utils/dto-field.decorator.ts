@@ -22,11 +22,8 @@ import {
   StringUtil,
   UuidUtil,
 } from './constants';
-
 const UUID_EXAMPLE = '018f6f4e-91c2-7b6a-9e7d-2f8c7f2b1a11';
-
 type EnumLike = Record<string, string | number>;
-
 export function OptionalUuidField(options?: {
   description?: string;
   example?: string;

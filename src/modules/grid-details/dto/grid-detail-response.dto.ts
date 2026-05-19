@@ -1,23 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ModuleErrorFieldDto,
+  ModuleErrorResponseDto,
+  ModuleListMetaDto,
+} from '../../../common/utils/module-response.dto';
 
-export class GridDetailErrorFieldDto {
-  @ApiProperty({ example: 'grid_name' })
-  field!: string;
-
-  @ApiProperty({ example: 'grid_name is required' })
-  message!: string;
-}
-
-export class GridDetailErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: GridDetailErrorFieldDto, isArray: true })
-  errors!: GridDetailErrorFieldDto[];
-}
+export {
+  ModuleErrorFieldDto as GridDetailErrorFieldDto,
+  ModuleErrorResponseDto as GridDetailErrorResponseDto,
+  ModuleListMetaDto as GridDetailListMetaDto,
+};
 
 export class GridDetailPayloadDto {
   @ApiProperty({ example: '1' })
@@ -43,20 +35,6 @@ export class GridDetailPayloadDto {
 
   @ApiProperty()
   grid_is_deleted!: boolean;
-}
-
-export class GridDetailListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
 }
 
 export class GridDetailDeleteResultDto {
@@ -88,8 +66,8 @@ export class GridDetailSuccessListDto {
   @ApiProperty({ type: GridDetailPayloadDto, isArray: true })
   data!: GridDetailPayloadDto[];
 
-  @ApiProperty({ type: GridDetailListMetaDto })
-  meta!: GridDetailListMetaDto;
+  @ApiProperty({ type: ModuleListMetaDto })
+  meta!: ModuleListMetaDto;
 }
 
 export class GridDetailSuccessDeleteDto {

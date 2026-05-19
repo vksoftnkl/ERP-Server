@@ -1145,6 +1145,7 @@ Table menu_master {
   menuCreatedOn DateTime [default: `now()`, not null]
   menuModifiedOn DateTime
   menuSyncDate DateTime
+  userMenus user_menus [not null]
 }
 
 Table price_levels {
@@ -2173,6 +2174,76 @@ Table cust_item_rates {
   csrRemarks String
 }
 
+Table user_master {
+  usrId String [pk]
+  usrCompanyId String
+  usrBranchId String
+  usrEmployeeId String
+  usrLoginName String [not null]
+  usrDisplayName String [not null]
+  usrFullName String
+  usrMobileNo String
+  usrEmail String
+  usrAvatarUrl String
+  usrTimezone String [not null, default: 'UTC']
+  usrLanguage String [not null, default: 'en']
+  usrPasswordHash String [not null]
+  usrPinHash String
+  usrMustChangePassword Boolean [not null, default: false]
+  usrPasswordExpiresOn DateTime
+  usrPasswordChangedOn DateTime
+  usrType String [default: 'USER']
+  usrEditDate Boolean [not null, default: false]
+  usrEditEntry Boolean [not null, default: false]
+  usrEditRate Boolean [not null, default: false]
+  usrDesktopLogin Boolean [not null, default: true]
+  usrWebLogin Boolean [not null, default: true]
+  usrMobileLogin Boolean [not null, default: false]
+  usrIsActive Boolean [not null, default: true]
+  usrIsLocked Boolean [not null, default: false]
+  usrFailedLoginCount Int [not null, default: 0]
+  usrLastFailedLoginOn DateTime
+  usrLockedOn DateTime
+  usrLockedBy String
+  usrLastLoginOn DateTime
+  usrIsDeleted Boolean [not null, default: false]
+  usrNotes String
+  usrSyncDate DateTime
+  usrCreatedOn DateTime [default: `now()`, not null]
+  usrCreatedBy String
+  usrModifiedOn DateTime
+  usrModifiedBy String
+  userMenus user_menus [not null]
+}
+
+Table user_menus {
+  umId String [pk]
+  umUserId String [not null]
+  umMenuId Int [not null]
+  umCanView Boolean [not null, default: true]
+  umCanCreate Boolean [not null, default: false]
+  umCanEdit Boolean [not null, default: false]
+  umCanDelete Boolean [not null, default: false]
+  umCanPrint Boolean [not null, default: false]
+  umCanExport Boolean [not null, default: false]
+  umVisibility Boolean [not null, default: true]
+  umIsFavourite Boolean [not null, default: false]
+  umIsPinned Boolean [not null, default: false]
+  umSortOrder Int [not null, default: 0]
+  umIsDeleted Boolean [not null, default: false]
+  umSyncDate DateTime
+  umCreatedOn DateTime [default: `now()`, not null]
+  umCreatedBy String [not null]
+  umModifiedOn DateTime
+  umModifiedBy String
+  user user_master [not null]
+  menu menu_master [not null]
+
+  indexes {
+    (umUserId, umMenuId) [unique]
+  }
+}
+
 Table widget {
   widgetNo Int [pk, increment]
   widgetGroupId Int [not null]
@@ -2506,6 +2577,21 @@ Table loyalty_sch_points {
   lsptUpdatedBy String
   scheme loyalty_sch_list [not null]
   unit item_unit_master
+}
+
+Table sale_agent_groups {
+  saGrpId String [pk]
+  saGrpName String [not null]
+  saGrpCode String [not null]
+  saGrpPos Int [default: 0]
+  saGrpDesc String
+  saGrpIsActive Boolean [not null, default: true]
+  saGrpIsDeleted Boolean [not null, default: false]
+  saGrpSyncDate DateTime
+  saGrpCreatedOn DateTime [default: `now()`, not null]
+  saGrpCreatedBy String [not null]
+  saGrpModifiedOn DateTime
+  saGrpModifiedBy String
 }
 
 Table state_master {
@@ -3192,6 +3278,10 @@ Ref: opening_stock_header.oshCompanyId > companys.compId
 Ref: opening_stock_header.oshBranchId > branch_master.brId
 
 Ref: branch_master.compId > companys.compId
+
+Ref: user_menus.umUserId > user_master.usrId
+
+Ref: user_menus.umMenuId > menu_master.menuId
 
 Ref: suppliers.supGroupId > supplier_groups.spgId [delete: Restrict]
 

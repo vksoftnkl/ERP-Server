@@ -1,18 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-export class DropdownDetailErrorFieldDto {
-  @ApiProperty({ example: 'dropdown_name' })
-  field!: string;
-  @ApiProperty({ example: 'dropdown_name is required' })
-  message!: string;
-}
-export class DropdownDetailErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-  @ApiProperty({ type: DropdownDetailErrorFieldDto, isArray: true })
-  errors!: DropdownDetailErrorFieldDto[];
-}
+import {
+  ModuleErrorFieldDto,
+  ModuleErrorResponseDto,
+  ModuleListMetaDto,
+} from '../../../common/utils/module-response.dto';
+export {
+  ModuleErrorFieldDto as DropdownDetailErrorFieldDto,
+  ModuleErrorResponseDto as DropdownDetailErrorResponseDto,
+  ModuleListMetaDto as DropdownDetailListMetaDto,
+};
 export class DropdownDetailPayloadDto {
   @ApiProperty({ example: '1' })
   dropdown_id!: string;
@@ -37,16 +33,6 @@ export class DropdownDetailPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   dropdown_width!: number | null;
 }
-export class DropdownDetailListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-  @ApiProperty({ example: 20 })
-  limit!: number;
-  @ApiProperty({ example: 3 })
-  total!: number;
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
 export class DropdownDetailDeleteResultDto {
   @ApiProperty({ example: '1' })
   dropdown_id!: string;
@@ -68,8 +54,8 @@ export class DropdownDetailSuccessListDto {
   message!: string;
   @ApiProperty({ type: DropdownDetailPayloadDto, isArray: true })
   data!: DropdownDetailPayloadDto[];
-  @ApiProperty({ type: DropdownDetailListMetaDto })
-  meta!: DropdownDetailListMetaDto;
+  @ApiProperty({ type: ModuleListMetaDto })
+  meta!: ModuleListMetaDto;
 }
 export class DropdownDetailSuccessDeleteDto {
   @ApiProperty({ example: true })

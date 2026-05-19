@@ -1,4 +1,6 @@
+import type { Prisma } from '@prisma/client';
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
+
 export type AuditLogErrorDetail = ModuleApiErrorDetail;
 export type AuditLogErrorResponse = ModuleApiErrorResponse<AuditLogErrorDetail>;
 export type AuditLogSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
@@ -12,9 +14,9 @@ export interface AuditLogListItem {
   log_table_name: string;
   log_pk: string | null;
   log_display_name: string | null;
-  log_original_record: unknown;
-  log_modified_record: unknown;
-  log_changed_fields: unknown;
+  log_original_record: Prisma.JsonValue | null;
+  log_modified_record: Prisma.JsonValue | null;
+  log_changed_fields: Prisma.JsonValue | null;
   log_user_id: string | null;
   log_user_name: string | null;
   log_branch_id: string | null;

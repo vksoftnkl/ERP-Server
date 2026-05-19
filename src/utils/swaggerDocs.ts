@@ -9,6 +9,7 @@ import { CompanyMasterModule } from '../modules/settings/companyMaster/company-m
 import { EmployeeDepartmentMasterModule } from '../modules/settings/employeeDepartmentMaster/employee-department-master.module';
 import { EmployeeDesignationMasterModule } from '../modules/settings/employeeDesignationMaster/employee-designation-master.module';
 import { EmployeeMasterModule } from '../modules/settings/employeeMaster/employee-master.module';
+import { UserAdministrationModule } from '../modules/settings/userAdministration/user-administration.module';
 import { GspCompanyServiceModule } from '../modules/settings/gspCompanyService/gsp-company-service.module';
 import { GspProviderMasterModule } from '../modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { LedgerShippingAddressModule } from '../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -220,6 +221,12 @@ export const swaggerModuleDocuments = [
     title: 'Employee Master API',
     description: 'Employee master module endpoints',
     include: [EmployeeMasterModule],
+  },
+  {
+    path: 'user-administration',
+    title: 'User Administration API',
+    description: 'User administration module endpoints — manages UserMaster and UserMenus in a single call',
+    include: [UserAdministrationModule],
   },
   {
     path: 'tender-master',

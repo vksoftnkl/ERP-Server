@@ -1,0 +1,62 @@
+
+model UserMenus {
+  // ── Primary key ────────────────────────────────────────────────────────────
+  umId            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  // ── References ─────────────────────────────────────────────────────────────
+  umUserId        String    @db.Uuid
+  umMenuId        Int
+
+  // ── CRUD permissions (admin-assigned) ──────────────────────────────────────
+  umCanView       Boolean   @default(true)
+  umCanCreate     Boolean   @default(false)
+  umCanEdit       Boolean   @default(false)
+  umCanDelete     Boolean   @default(false)
+  umCanPrint      Boolean   @default(false)
+  umCanExport     Boolean   @default(false)
+
+  // ── User preferences (user-controlled) ─────────────────────────────────────
+  umVisibility    Boolean   @default(true)
+  umIsFavourite   Boolean   @default(false)
+  umIsPinned      Boolean   @default(false)
+  umSortOrder     Int       @default(0)
+
+  // ── Soft delete ────────────────────────────────────────────────────────────
+  umIsDeleted     Boolean   @default(false)
+
+  // ── Audit ──────────────────────────────────────────────────────────────────
+  umSyncDate      DateTime? @db.Timestamptz()
+  umCreatedOn     DateTime  @default(now()) @db.Timestamptz()
+  umCreatedBy     String    @db.Uuid
+  umModifiedOn    DateTime? @db.Timestamptz()
+  umModifiedBy    String?   @db.Uuid
+
+  // ── Relations ──────────────────────────────────────────────────────────────
+  user            UserMaster  @relation(fields: [umUserId], references: [usrId])
+  menu            Menu        @relation(fields: [umMenuId], references: [menuId])
+
+  // ── Constraints & indexes ──────────────────────────────────────────────────
+  // Composite unique: one row per (user, menu)
+  @@unique([umUserId, umMenuId], name: "uq_user_menus_user_menu")
+
+  // Standard indexes (non-partial) — for the partial equivalents,
+  // add the WHERE clauses in a raw migration SQL file:
+  //
+  //   CREATE INDEX ix_user_menus_user_id
+  //       ON public.user_menus (um_user_id)
+  //       WHERE um_is_deleted = false;
+  //
+  //   CREATE INDEX ix_user_menus_user_accessible
+  //       ON public.user_menus (um_user_id, um_can_view, um_visibility)
+  //       WHERE um_is_deleted = false;
+  //
+  //   CREATE INDEX ix_user_menus_favourites
+  //       ON public.user_menus (um_user_id, um_is_favourite, um_is_pinned)
+  //       WHERE um_is_deleted = false;
+  @@index([umUserId])
+  @@index([umUserId, umCanView, umVisibility])
+  @@index([umUserId, umIsFavourite, umIsPinned])
+
+  @@map("user_menus")
+  @@schema("public")
+}

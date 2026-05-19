@@ -1,23 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ModuleErrorFieldDto, ModuleErrorResponseDto } from '../../../common/utils/module-response.dto';
 
-export class AuditLogErrorFieldDto {
-  @ApiProperty({ example: 'date_from' })
-  field!: string;
-
-  @ApiProperty({ example: 'date_from must be less than or equal to date_to' })
-  message!: string;
-}
-
-export class AuditLogErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation error' })
-  message!: string;
-
-  @ApiProperty({ type: AuditLogErrorFieldDto, isArray: true })
-  errors!: AuditLogErrorFieldDto[];
-}
+export { ModuleErrorFieldDto as AuditLogErrorFieldDto, ModuleErrorResponseDto as AuditLogErrorResponseDto };
 
 export class AuditLogListItemDto {
   @ApiProperty({ format: 'uuid' })

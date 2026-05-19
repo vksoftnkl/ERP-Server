@@ -1,24 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ModuleErrorFieldDto,
+  ModuleErrorResponseDto,
+  ModuleListMetaDto,
+} from '../../../common/utils/module-response.dto';
 import { ConfiguredGridStyleDto } from '../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
-export class ItemCustRateErrorFieldDto {
-  @ApiProperty({ example: 'csr_customer_id' })
-  field!: string;
-
-  @ApiProperty({ example: 'csr_customer_id is required' })
-  message!: string;
-}
-
-export class ItemCustRateErrorResponseDto {
-  @ApiProperty({ example: false })
-  success!: false;
-
-  @ApiProperty({ example: 'Validation failed' })
-  message!: string;
-
-  @ApiProperty({ type: ItemCustRateErrorFieldDto, isArray: true })
-  errors!: ItemCustRateErrorFieldDto[];
-}
+export {
+  ModuleErrorFieldDto as ItemCustRateErrorFieldDto,
+  ModuleErrorResponseDto as ItemCustRateErrorResponseDto,
+  ModuleListMetaDto as ItemCustRateListMetaDto,
+};
 
 export class ItemCustRatePayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -85,20 +77,6 @@ export class ItemCustRatePayloadDto {
   csr_remarks!: string | null;
 }
 
-export class ItemCustRateListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class ItemCustRateDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   csr_id!: string;
@@ -128,8 +106,8 @@ export class ItemCustRateSuccessListDto {
   @ApiProperty({ type: ItemCustRatePayloadDto, isArray: true })
   data!: ItemCustRatePayloadDto[];
 
-  @ApiProperty({ type: ItemCustRateListMetaDto })
-  meta!: ItemCustRateListMetaDto;
+  @ApiProperty({ type: ModuleListMetaDto })
+  meta!: ModuleListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];
