@@ -13,12 +13,10 @@ import { AuthService } from './auth.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-
   @Public()
   @Post('login')
   @Version('1')
@@ -36,7 +34,6 @@ export class AuthController {
       appVersion: this.extractHeader(request.headers['x-app-version']),
     });
   }
-
   @Public()
   @Post('refresh')
   @Version('1')
@@ -48,20 +45,17 @@ export class AuthController {
   async refresh(@Body() refreshTokenDto: RefreshTokenDto): Promise<LoginResponseDto> {
     return this.authService.refresh(refreshTokenDto.refresh_token);
   }
-
   private extractHeader(headerValue: string | string[] | undefined): string | null {
     if (typeof headerValue === 'string') {
       const trimmed = headerValue.trim();
       return trimmed.length > 0 ? trimmed : null;
     }
-
     if (Array.isArray(headerValue)) {
       const firstValue = headerValue.find(
         (value) => typeof value === 'string' && value.trim().length > 0,
       );
       return typeof firstValue === 'string' ? firstValue.trim() : null;
     }
-
     return null;
   }
 }

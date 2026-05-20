@@ -10,7 +10,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { Response } from 'express';
 import { PrismaService } from '../../database/prisma/prisma.service';
-export const DEFAULT_ACTOR = 'system';
+export const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_LIMIT = 20;
 const BAD_REQUEST_STATUS_CODE = 400;

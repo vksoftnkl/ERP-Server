@@ -17,7 +17,7 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-const DEFAULT_ACTOR = 'system';
+const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const ITEM_BRAND_TABLE_NAME = 'item brand master';

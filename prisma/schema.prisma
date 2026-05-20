@@ -1888,75 +1888,33 @@ model BankMaster {
 }
 
 // ----- prisma/fixed/deviceListMaster.prisma -----
-model ErpDeviceMaster {
-  // =========================================================
-  // 1) Identity / Scope
-  // =========================================================
-  devId         String  @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("dev_id")
+model DeviceMaster {
+  devId           String    @id @default(dbgenerated("uuidv7()")) @map("dev_id")         @db.Uuid
+  devCompanyId    String?   @map("dev_company_id")   @db.Uuid
+  company         Company?  @relation(fields: [devCompanyId], references: [compId])
+  devBranchId     String?   @map("dev_branch_id")    @db.Uuid
+  branch          BranchMaster? @relation(fields: [devBranchId], references: [brId])
+  devUserId       String?   @map("dev_user_id")      @db.Uuid
+  user            UserMaster?   @relation(fields: [devUserId], references: [usrId])
+  devDeviceUid    String    @unique @map("dev_device_uid")  @db.VarChar(120)
+  devDeviceName   String?   @map("dev_device_name")  @db.VarChar(120)
+  devDeviceType   String    @default("Desktop") @map("dev_device_type") @db.VarChar(30)
+  devPlatform     String?   @map("dev_platform")     @db.VarChar(30)
+  devMacAddress   String?   @map("dev_mac_address")  @db.VarChar(50)
+  devIsBlocked    Boolean   @default(false) @map("dev_is_blocked")
+  devBlockReason  String?   @map("dev_block_reason") @db.VarChar(250)
+  devLastIp       String?   @map("dev_last_ip")      /// inet — store as text; cast in app layer
+  devLastLogin    DateTime? @map("dev_last_login")   @db.Timestamptz(6)
+  devIsActive     Boolean   @default(true)  @map("dev_is_active")
+  devIsDeleted    Boolean   @default(false) @map("dev_is_deleted")
+  devSyncDate     DateTime? @map("dev_sync_date")    @db.Timestamptz(6)
+  devCreatedOn    DateTime  @default(now()) @map("dev_created_on")  @db.Timestamptz(6)
+  devCreatedBy    String?   @map("dev_created_by")   @db.Uuid
+  devModifiedOn   DateTime? @map("dev_modified_on")  @db.Timestamptz(6)
+  devModifiedBy   String?   @map("dev_modified_by")  @db.Uuid
 
-  devCompanyId  String? @db.Uuid @map("dev_company_id")
-  devBranchId   String? @db.Uuid @map("dev_branch_id")
-  devUserId     String? @db.Uuid @map("dev_user_id")
-
-  // =========================================================
-  // 2) Device Identity
-  // =========================================================
-  devDeviceUid   String  @db.VarChar(120) @map("dev_device_uid")
-  devDeviceName  String? @db.VarChar(120) @map("dev_device_name")
-  devDeviceType  String  @db.VarChar(30)  @map("dev_device_type")
-  devPlatform    String? @db.VarChar(30)  @map("dev_platform")
-  devOsVersion   String? @db.VarChar(40)  @map("dev_os_version")
-  devAppVersion  String? @db.VarChar(40)  @map("dev_app_version")
-
-  devSerialNo    String? @db.VarChar(120) @map("dev_serial_no")
-  devImei        String? @db.VarChar(30)  @map("dev_imei")
-  devMacAddress  String? @db.VarChar(50)  @map("dev_mac_address")
-  devProductKey  String? @db.Text         @map("dev_product_key")
-
-  // =========================================================
-  // 3) Access Control
-  // =========================================================
-  devIsAllowed    Boolean @default(false) @map("dev_is_allowed")
-  devIsBlocked    Boolean @default(false) @map("dev_is_blocked")
-  devAllowReason  String? @db.VarChar(250) @map("dev_allow_reason")
-  devBlockReason  String? @db.VarChar(250) @map("dev_block_reason")
-
-  // =========================================================
-  // 4) Tracking
-  // =========================================================
-  devLastSeenOn   DateTime? @db.Timestamptz(6) @map("dev_last_seen_on")
-  devLastIp       String?   @db.Inet          @map("dev_last_ip")
-  devLastLoginOn  DateTime? @db.Timestamptz(6) @map("dev_last_login_on")
-
-  // =========================================================
-  // 5) Status (Soft delete)
-  // =========================================================
-  devIsActive     Boolean @default(true)  @map("dev_is_active")
-  devIsDeleted    Boolean @default(false) @map("dev_is_deleted")
-
-  // =========================================================
-  // 6) Audit / Sync
-  // =========================================================
-  devSyncDate     DateTime? @db.Timestamptz(6) @map("dev_sync_date")
-  devCreatedOn    DateTime  @default(now())    @db.Timestamptz(6) @map("dev_created_on")
-  devCreatedBy    String?   @db.VarChar(100)   @map("dev_created_by")
-  devModifiedOn   DateTime  @default(now())    @db.Timestamptz(6) @map("dev_modified_on")
-  devModifiedBy   String?   @db.VarChar(100)   @map("dev_modified_by")
-
-  // =========================================================
-  // 7) Relations
-  // =========================================================
-  company         Company?  @relation(fields: [devCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-
-  // =========================================================
-  // 8) Constraints / Indexes
-  // =========================================================
-  @@unique([devCompanyId, devDeviceUid], map: "uq_erp_device_company_uid")
-
-  // Partial indexes `idx_dev_login_check` and `idx_dev_allowed` are maintained
-  // in SQL because Prisma schema cannot express filtered indexes.
-
-  @@map("erp_device_master")
+  @@index([devDeviceUid], name: "idx_device_uid")
+  @@map("device_master")
   @@schema("fixed")
 }
 
@@ -3398,6 +3356,7 @@ model BranchMaster {
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   loyaltySchemes        LoyaltyScheme[]
+  deviceMasters         DeviceMaster[]
   @@index([compId],      name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
@@ -3491,7 +3450,7 @@ model Company {
   custGroup             CustGroup[]
   itemMaster            ItemMaster[]
   itemPrices            ItemPriceMaster[] @relation("CompanyItemPrices")
-  ErpDeviceMaster       ErpDeviceMaster[]
+  deviceMasters         DeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]
   voucherBills          AccVoucherBill[]
@@ -3632,6 +3591,7 @@ model UserMaster {
   usrModifiedOn          DateTime? @db.Timestamptz()
   usrModifiedBy          String?   @db.Uuid
   userMenus              UserMenus[]
+  deviceMasters          DeviceMaster[]
   // ── Indexes ────────────────────────────────────────────────────────────────
   // Partial unique index on login name for non-deleted users.
   // Prisma does not support partial indexes natively; define them via a

@@ -11,7 +11,7 @@ import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
 import {  ItemTaxErrorDetail,  ItemTaxErrorResponse,  ItemTaxListItem,  ItemTaxListMeta,  ItemTaxPayload,} from './types/item-tax-api.types';
-const DEFAULT_ACTOR = 'system';
+const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';

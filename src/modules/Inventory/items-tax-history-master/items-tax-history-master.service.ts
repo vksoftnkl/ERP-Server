@@ -17,7 +17,7 @@ import {
   ItemTaxHistoryListMeta,
   ItemTaxHistoryPayload,
 } from './types/item-tax-history-api.types';
-const DEFAULT_ACTOR = 'system';
+const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';

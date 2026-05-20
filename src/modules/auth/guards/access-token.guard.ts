@@ -5,7 +5,6 @@ import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuthSessionService } from '../auth-session.service';
 import { AccessTokenPayload, TokenService } from '../token.service';
-
 type RequestWithUser = Request & {
   user?: AccessTokenPayload;
 };

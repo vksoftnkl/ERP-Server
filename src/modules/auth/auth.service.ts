@@ -1,10 +1,9 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { User } from '@prisma/client';
+import { UserMaster } from '@prisma/client';
 import { createHash, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
-import { UsersService } from '../users/users.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { AuthSessionService } from './auth-session.service';
@@ -19,7 +18,6 @@ type LoginRequestMetadata = {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   constructor(
-    private readonly usersService: UsersService,
     private readonly tokenService: TokenService,
     private readonly authSessionService: AuthSessionService,
     private readonly prisma: PrismaService,
@@ -29,25 +27,25 @@ export class AuthService {
     loginAuthDto: LoginAuthDto,
     requestMetadata: LoginRequestMetadata = { userAgent: null, appVersion: null },
   ): Promise<LoginResponseDto> {
-    const user = await this.usersService.findByUsername(loginAuthDto.user_name);
+    const user = await this.findLoginUser(loginAuthDto.usrLoginName);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
     const isPasswordValid = await this.verifyPassword(
-      loginAuthDto.user_password,
-      user.user_password,
+      loginAuthDto.usrPassword,
+      user.usrPasswordHash,
     );
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
     }
     const issuedAccessToken = this.tokenService.signAccessToken({
-      sub: user.user_id,
-      user_name: user.user_name,
+      sub: user.usrId,
+      user_name: user.usrLoginName,
       sid: this.authSessionService.createSessionId(),
     });
     const issuedRefreshToken = this.tokenService.signRefreshToken({
-      sub: user.user_id,
-      user_name: user.user_name,
+      sub: user.usrId,
+      user_name: user.usrLoginName,
       sid: issuedAccessToken.payload.sid,
     });
     await this.authSessionService.storeTokenSession(
@@ -65,7 +63,7 @@ export class AuthService {
       );
     } catch (error: unknown) {
       this.logger.warn(
-        `Skipping user login session persistence for user ${user.user_id}: ${this.describeError(
+        `Skipping user login session persistence for user ${user.usrId}: ${this.describeError(
           error,
         )}`,
       );
@@ -74,7 +72,7 @@ export class AuthService {
       access_token: issuedAccessToken.token,
       refresh_token: issuedRefreshToken.token,
       token_type: 'Bearer',
-      user_id: user.user_id,
+      usrId: user.usrId,
     };
   }
   async refresh(refreshToken: string): Promise<LoginResponseDto> {
@@ -94,8 +92,23 @@ export class AuthService {
       access_token: issuedAccessToken.token,
       refresh_token: refreshToken,
       token_type: 'Bearer',
-      user_id: refreshPayload.sub,
+      usrId: refreshPayload.sub,
     };
+  }
+  private async findLoginUser(userName: string): Promise<UserMaster | null> {
+    const normalizedUserName = userName.trim();
+    if (!normalizedUserName) {
+      return null;
+    }
+    return this.prisma.userMaster.findFirst({
+      where: {
+        usrLoginName: { equals: normalizedUserName, mode: 'insensitive' },
+        usrIsDeleted: false,
+        usrIsActive: true,
+        usrIsLocked: false,
+        usrWebLogin: true,
+      },
+    });
   }
   private async verifyPassword(plainPassword: string, storedPassword: string): Promise<boolean> {
     try {
@@ -121,7 +134,7 @@ export class AuthService {
     }
   }
   private async saveUserLoginSession(
-    user: User,
+    user: UserMaster,
     loginAuthDto: LoginAuthDto,
     issuedAccessToken: SignedAccessToken,
     issuedRefreshToken: SignedRefreshToken,
@@ -131,9 +144,9 @@ export class AuthService {
     const resolvedAppVersion = loginAuthDto.app_version ?? requestMetadata.appVersion ?? null;
     await this.prisma.userLoginSession.create({
       data: {
-        ulsCompanyId: null,
-        ulsBranchId: null,
-        ulsUserId: user.user_id,
+        ulsCompanyId: user.usrCompanyId,
+        ulsBranchId: user.usrBranchId,
+        ulsUserId: user.usrId,
         ulsDeviceId: loginAuthDto.device_id ?? null,
         ulsSessionId: issuedAccessToken.payload.sid,
         ulsSessionToken: this.normalizeSessionToken(issuedAccessToken.token),
@@ -146,9 +159,9 @@ export class AuthService {
         ulsIsActiveSession: true,
         ulsIsActive: true,
         ulsCreatedOn: loginTimestamp,
-        ulsCreatedBy: user.user_id,
+        ulsCreatedBy: user.usrId,
         ulsModifiedOn: loginTimestamp,
-        ulsModifiedBy: user.user_id,
+        ulsModifiedBy: user.usrId,
       },
     });
   }

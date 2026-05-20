@@ -63,6 +63,7 @@ model UserMaster {
   usrModifiedOn          DateTime? @db.Timestamptz()
   usrModifiedBy          String?   @db.Uuid
   userMenus              UserMenus[]
+  deviceMasters          DeviceMaster[]
   // ── Indexes ────────────────────────────────────────────────────────────────
   // Partial unique index on login name for non-deleted users.
   // Prisma does not support partial indexes natively; define them via a

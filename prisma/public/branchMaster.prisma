@@ -76,6 +76,7 @@ model BranchMaster {
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   loyaltySchemes        LoyaltyScheme[]
+  deviceMasters         DeviceMaster[]
   @@index([compId],      name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")

@@ -45,7 +45,7 @@ export interface UserAdminPayload {
   usrMustChangePassword: boolean;
   usrPasswordExpiresOn: string | null;
   usrPasswordChangedOn: string | null;
-  usrType: string | null;
+  usrType: UserType | null;
   usrEditDate: boolean;
   usrEditEntry: boolean;
   usrEditRate: boolean;

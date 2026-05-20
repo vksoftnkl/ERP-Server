@@ -1012,40 +1012,30 @@ Table bank_master {
   bnkModifiedBy String
 }
 
-Table erp_device_master {
+Table device_master {
   devId String [pk]
   devCompanyId String
+  company companys
   devBranchId String
+  branch branch_master
   devUserId String
-  devDeviceUid String [not null]
+  user user_master
+  devDeviceUid String [unique, not null]
   devDeviceName String
-  devDeviceType String [not null]
+  devDeviceType String [not null, default: 'Desktop']
   devPlatform String
-  devOsVersion String
-  devAppVersion String
-  devSerialNo String
-  devImei String
   devMacAddress String
-  devProductKey String
-  devIsAllowed Boolean [not null, default: false]
   devIsBlocked Boolean [not null, default: false]
-  devAllowReason String
   devBlockReason String
-  devLastSeenOn DateTime
-  devLastIp String
-  devLastLoginOn DateTime
+  devLastIp String [note: 'inet — store as text; cast in app layer']
+  devLastLogin DateTime
   devIsActive Boolean [not null, default: true]
   devIsDeleted Boolean [not null, default: false]
   devSyncDate DateTime
   devCreatedOn DateTime [default: `now()`, not null]
   devCreatedBy String
-  devModifiedOn DateTime [default: `now()`, not null]
+  devModifiedOn DateTime
   devModifiedBy String
-  company companys
-
-  indexes {
-    (devCompanyId, devDeviceUid) [unique]
-  }
 }
 
 Table grid_columns {
@@ -2040,6 +2030,7 @@ Table branch_master {
   physicalStockBatchDetails physical_stock_batch_detail [not null]
   itemPrices item_price_master [not null]
   loyaltySchemes loyalty_sch_list [not null]
+  deviceMasters device_master [not null]
 }
 
 Table companys {
@@ -2117,7 +2108,7 @@ Table companys {
   custGroup cust_groups [not null]
   itemMaster item_master [not null]
   itemPrices item_price_master [not null]
-  ErpDeviceMaster erp_device_master [not null]
+  deviceMasters device_master [not null]
   UserLoginSession user_login_sessions [not null]
   customers customers [not null]
   voucherBills acc_voucher_bills [not null]
@@ -2214,6 +2205,7 @@ Table user_master {
   usrModifiedOn DateTime
   usrModifiedBy String
   userMenus user_menus [not null]
+  deviceMasters device_master [not null]
 }
 
 Table user_menus {
@@ -3189,7 +3181,11 @@ Ref: user_login_sessions.ulsCompanyId > companys.compId [delete: Restrict]
 
 Ref: dropdown_columns.dropColumnsDropdownId > dropdown_details.dropdownId [delete: Cascade]
 
-Ref: erp_device_master.devCompanyId > companys.compId [delete: Restrict]
+Ref: device_master.devCompanyId > companys.compId
+
+Ref: device_master.devBranchId > branch_master.brId
+
+Ref: device_master.devUserId > user_master.usrId
 
 Ref: grid_columns.gridId > grid_details.gridId [delete: Cascade]
 

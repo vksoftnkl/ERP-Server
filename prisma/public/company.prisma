@@ -84,7 +84,7 @@ model Company {
   custGroup             CustGroup[]
   itemMaster            ItemMaster[]
   itemPrices            ItemPriceMaster[] @relation("CompanyItemPrices")
-  ErpDeviceMaster       ErpDeviceMaster[]
+  deviceMasters         DeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]
   voucherBills          AccVoucherBill[]
