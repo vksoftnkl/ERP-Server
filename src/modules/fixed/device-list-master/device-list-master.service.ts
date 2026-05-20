@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
-import { ErpDeviceMaster, Prisma } from '@prisma/client';
+import { DeviceMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ListDeviceListMasterQueryDto } from './dto/list-device-list-master-query.dto';
@@ -34,19 +34,10 @@ const DEVICE_LIST_MASTER_OPTIONAL_FIELDS = [
   'devUserId',
   'devDeviceName',
   'devPlatform',
-  'devOsVersion',
-  'devAppVersion',
-  'devSerialNo',
-  'devImei',
   'devMacAddress',
-  'devProductKey',
-  'devIsAllowed',
   'devIsBlocked',
-  'devAllowReason',
   'devBlockReason',
-  'devLastSeenOn',
   'devLastIp',
-  'devLastLoginOn',
   'devIsActive',
 ];
 
@@ -72,12 +63,10 @@ export class DeviceListMasterService {
     const hasStructuredFilters =
       queryDto.devCompanyId !== undefined ||
       queryDto.devIsActive !== undefined ||
-      queryDto.devIsAllowed !== undefined ||
       queryDto.devIsBlocked !== undefined;
-    const where: Prisma.ErpDeviceMasterWhereInput = { devIsDeleted: false };
+    const where: Prisma.DeviceMasterWhereInput = { devIsDeleted: false };
     if (queryDto.devCompanyId !== undefined) where.devCompanyId = queryDto.devCompanyId;
     if (queryDto.devIsActive !== undefined) where.devIsActive = queryDto.devIsActive;
-    if (queryDto.devIsAllowed !== undefined) where.devIsAllowed = queryDto.devIsAllowed;
     if (queryDto.devIsBlocked !== undefined) where.devIsBlocked = queryDto.devIsBlocked;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
@@ -86,10 +75,6 @@ export class DeviceListMasterService {
         { devDeviceName: { contains: search, mode: 'insensitive' } },
         { devDeviceType: { contains: search, mode: 'insensitive' } },
         { devPlatform: { contains: search, mode: 'insensitive' } },
-        { devOsVersion: { contains: search, mode: 'insensitive' } },
-        { devAppVersion: { contains: search, mode: 'insensitive' } },
-        { devSerialNo: { contains: search, mode: 'insensitive' } },
-        { devImei: { contains: search, mode: 'insensitive' } },
         { devMacAddress: { contains: search, mode: 'insensitive' } },
         { devLastIp: { contains: search, mode: 'insensitive' } },
       ];
@@ -100,19 +85,18 @@ export class DeviceListMasterService {
         this.configuredGridSqlService,
         { tableName: DEVICE_LIST_MASTER_TABLE_NAME, alias: 'device_list_master_grid', search: queryDto.search, page, limit, skip },
       ),
-      countFn: () => this.prisma.erpDeviceMaster.count({ where }),
-      findManyFn: () => this.prisma.erpDeviceMaster.findMany({
+      countFn: () => this.prisma.deviceMaster.count({ where }),
+      findManyFn: () => this.prisma.deviceMaster.findMany({
         where,
         orderBy: [{ devCreatedOn: 'desc' }, { devId: 'desc' }],
         skip,
         take: limit,
       }),
-      toItemFn: (record) => this.toPayload(record),
+      toItemFn: (record) => this.toPayload(record as DeviceMaster),
     });
   }
-
   async getById(devId: string): Promise<DeviceListMasterPayload> {
-    const record = await this.prisma.erpDeviceMaster.findFirst({
+    const record = await this.prisma.deviceMaster.findFirst({
       where: { devId, devIsDeleted: false },
     });
     if (!record) {
@@ -124,10 +108,9 @@ export class DeviceListMasterService {
     }
     return this.toPayload(record);
   }
-
   async softDelete(devId: string): Promise<{ devId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.erpDeviceMaster.findFirst({
+      const existing = await tx.deviceMaster.findFirst({
         where: { devId, devIsDeleted: false },
       });
       if (!existing) {
@@ -147,7 +130,7 @@ export class DeviceListMasterService {
         );
       }
       const modifiedOn = new Date();
-      const result = await tx.erpDeviceMaster.updateMany({
+      const result = await tx.deviceMaster.updateMany({
         where: { devId, devIsDeleted: false },
         data: {
           devIsDeleted: true,
@@ -189,7 +172,6 @@ export class DeviceListMasterService {
       return { devId, deleted: true };
     });
   }
-
   private async createDevice(
     saveDeviceListMasterDto: SaveDeviceListMasterDto,
   ): Promise<DeviceListMasterPayload> {
@@ -207,7 +189,7 @@ export class DeviceListMasterService {
     const now = new Date();
     const createdBy = resolveActor(saveDeviceListMasterDto.devCreatedBy);
     const modifiedBy = resolveActor(saveDeviceListMasterDto.devModifiedBy, createdBy);
-    const data: Prisma.ErpDeviceMasterUncheckedCreateInput = {
+    const data: Prisma.DeviceMasterUncheckedCreateInput = {
       devDeviceUid: normalizedDeviceUid,
       devDeviceType: normalizedDeviceType,
       devCreatedOn: now,
@@ -219,7 +201,7 @@ export class DeviceListMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureDeviceUidIsUnique(tx, normalizedDeviceUid, companyId);
-        const created = await tx.erpDeviceMaster.create({ data });
+        const created = await tx.deviceMaster.create({ data });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
           {
@@ -247,14 +229,13 @@ export class DeviceListMasterService {
       throw error;
     }
   }
-
   private async updateDevice(
     saveDeviceListMasterDto: SaveDeviceListMasterDto,
   ): Promise<DeviceListMasterPayload> {
     const devId = saveDeviceListMasterDto.devId!;
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.erpDeviceMaster.findFirst({
+        const existing = await tx.deviceMaster.findFirst({
           where: { devId, devIsDeleted: false },
         });
         if (!existing) {
@@ -276,14 +257,14 @@ export class DeviceListMasterService {
           ? (saveDeviceListMasterDto.devCompanyId ?? null)
           : existing.devCompanyId;
         await this.ensureDeviceUidIsUnique(tx, normalizedDeviceUid, nextCompanyId, devId);
-        const data: Prisma.ErpDeviceMasterUncheckedUpdateInput = {
+        const data: Prisma.DeviceMasterUncheckedUpdateInput = {
           devDeviceUid: normalizedDeviceUid,
           devDeviceType: normalizedDeviceType,
           devModifiedOn: new Date(),
           devModifiedBy: resolveActor(saveDeviceListMasterDto.devModifiedBy),
         };
         applyPresentFields(data, saveDeviceListMasterDto, DEVICE_LIST_MASTER_OPTIONAL_FIELDS);
-        const updated = await tx.erpDeviceMaster.update({ where: { devId }, data });
+        const updated = await tx.deviceMaster.update({ where: { devId }, data });
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
           {
@@ -311,14 +292,13 @@ export class DeviceListMasterService {
       throw error;
     }
   }
-
   private async ensureDeviceUidIsUnique(
     tx: FixedWriteClient,
     deviceUid: string,
     companyId: string | null,
     excludeId?: string,
   ): Promise<void> {
-    const existing = await tx.erpDeviceMaster.findFirst({
+    const existing = await tx.deviceMaster.findFirst({
       where: {
         devIsDeleted: false,
         devCompanyId: companyId,
@@ -334,8 +314,7 @@ export class DeviceListMasterService {
       );
     }
   }
-
-  private toPayload(record: ErpDeviceMaster): DeviceListMasterPayload {
+  private toPayload(record: DeviceMaster): DeviceListMasterPayload {
     return {
       devId: record.devId,
       devCompanyId: record.devCompanyId,
@@ -345,25 +324,16 @@ export class DeviceListMasterService {
       devDeviceName: record.devDeviceName,
       devDeviceType: record.devDeviceType,
       devPlatform: record.devPlatform,
-      devOsVersion: record.devOsVersion,
-      devAppVersion: record.devAppVersion,
-      devSerialNo: record.devSerialNo,
-      devImei: record.devImei,
       devMacAddress: record.devMacAddress,
-      devProductKey: record.devProductKey,
-      devIsAllowed: record.devIsAllowed,
       devIsBlocked: record.devIsBlocked,
-      devAllowReason: record.devAllowReason,
       devBlockReason: record.devBlockReason,
-      devLastSeenOn: record.devLastSeenOn ? record.devLastSeenOn.toISOString() : null,
       devLastIp: record.devLastIp,
-      devLastLoginOn: record.devLastLoginOn ? record.devLastLoginOn.toISOString() : null,
       devIsActive: record.devIsActive,
       devIsDeleted: record.devIsDeleted,
       devSyncDate: record.devSyncDate ? record.devSyncDate.toISOString() : null,
       devCreatedOn: record.devCreatedOn.toISOString(),
       devCreatedBy: record.devCreatedBy,
-      devModifiedOn: record.devModifiedOn.toISOString(),
+      devModifiedOn: record.devModifiedOn ? record.devModifiedOn.toISOString() : null,
       devModifiedBy: record.devModifiedBy,
     };
   }

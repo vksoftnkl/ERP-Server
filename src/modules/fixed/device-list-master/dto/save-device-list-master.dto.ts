@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIP, IsNotEmpty } from 'class-validator';
+
 import {
-  NullableDate,
   NullableString,
   NullableUuid,
   OptionalBoolean,
@@ -47,33 +47,9 @@ export class SaveDeviceListMasterDto {
   @NullableString(30)
   devPlatform?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 40, nullable: true })
-  @NullableString(40)
-  devOsVersion?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 40, nullable: true })
-  @NullableString(40)
-  devAppVersion?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @NullableString(120)
-  devSerialNo?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  @NullableString(30)
-  devImei?: string | null;
-
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   @NullableString(50)
   devMacAddress?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  @NullableString()
-  devProductKey?: string | null;
-
-  @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
-  devIsAllowed?: boolean;
 
   @ApiPropertyOptional({ default: false })
   @OptionalBoolean()
@@ -81,24 +57,12 @@ export class SaveDeviceListMasterDto {
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableString(250)
-  devAllowReason?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  @NullableString(250)
   devBlockReason?: string | null;
-
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  @NullableDate()
-  devLastSeenOn?: Date | null;
 
   @ApiPropertyOptional({ nullable: true, description: 'IPv4 or IPv6 address' })
   @NullableString()
   @IsIP()
   devLastIp?: string | null;
-
-  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
-  @NullableDate()
-  devLastLoginOn?: Date | null;
 
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
