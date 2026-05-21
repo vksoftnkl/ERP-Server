@@ -82,18 +82,20 @@ export class AuthService {
         )}`,
       );
     }
-    const device = loginAuthDto.device_id
-      ? await this.upsertDeviceOnLogin(loginAuthDto.device_id, user, {
-          deviceType: loginAuthDto.device_type,
-          deviceName: loginAuthDto.device_name,
-          platform: loginAuthDto.platform,
-        }).catch((error: unknown) => {
-          this.logger.warn(
-            `Skipping device upsert on login for device ${loginAuthDto.device_id}: ${this.describeError(error)}`,
-          );
-          return null;
-        })
-      : null;
+    const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
+    const device =
+      loginAuthDto.device_id || isWebDevice
+        ? await this.upsertDeviceOnLogin(loginAuthDto.device_id, user, {
+            deviceType: loginAuthDto.device_type,
+            deviceName: loginAuthDto.device_name,
+            platform: loginAuthDto.platform,
+          }).catch((error: unknown) => {
+            this.logger.warn(
+              `Skipping device upsert on login for user ${user.usrId}: ${this.describeError(error)}`,
+            );
+            return null;
+          })
+        : null;
     return {
       access_token: issuedAccessToken.token,
       refresh_token: issuedRefreshToken.token,
@@ -153,23 +155,57 @@ export class AuthService {
     });
   }
   private async upsertDeviceOnLogin(
-    devId: string,
+    deviceUid: string | undefined,
     user: UserMaster,
     opts: { deviceType?: string; deviceName?: string; platform?: string } = {},
-  ): Promise<DeviceMaster> {
+  ): Promise<DeviceMaster | null> {
     const now = new Date();
     const ip = this.requestContextService.getIpAddress();
+    const resolvedType = opts.deviceType ?? 'Desktop';
+    const commonUpdate = {
+      devUserId: user.usrId,
+      devCompanyId: user.usrCompanyId,
+      devBranchId: user.usrBranchId,
+      devLastIp: ip,
+      devLastLogin: now,
+      devModifiedOn: now,
+      devModifiedBy: user.usrId,
+      ...(opts.deviceName !== undefined && { devDeviceName: opts.deviceName }),
+    };
+    if (resolvedType.toLowerCase() === 'web') {
+      const webDeviceUid = `web:${user.usrId}`;
+      return this.prisma.deviceMaster.upsert({
+        where: { devDeviceUid: webDeviceUid },
+        create: {
+          devDeviceUid: webDeviceUid,
+          devDeviceType: 'web',
+          devDeviceName: opts.deviceName ?? null,
+          devUserId: user.usrId,
+          devCompanyId: user.usrCompanyId,
+          devBranchId: user.usrBranchId,
+          devLastIp: ip,
+          devLastLogin: now,
+          devIsActive: true,
+          devIsDeleted: false,
+          devCreatedOn: now,
+          devCreatedBy: user.usrId,
+          devModifiedOn: now,
+          devModifiedBy: user.usrId,
+        },
+        update: commonUpdate,
+      });
+    }
+    if (!deviceUid) return null;
     return this.prisma.deviceMaster.upsert({
-      where: { devId },
+      where: { devDeviceUid: deviceUid },
       create: {
-        devId,
-        devDeviceUid: devId,
+        devDeviceUid: deviceUid,
+        devDeviceType: resolvedType,
+        devDeviceName: opts.deviceName ?? null,
+        devPlatform: opts.platform ?? null,
         devUserId: user.usrId,
         devCompanyId: user.usrCompanyId,
         devBranchId: user.usrBranchId,
-        devDeviceName: opts.deviceName ?? null,
-        devDeviceType: opts.deviceType ?? 'Desktop',
-        devPlatform: opts.platform ?? null,
         devLastIp: ip,
         devLastLogin: now,
         devIsActive: true,
@@ -180,15 +216,8 @@ export class AuthService {
         devModifiedBy: user.usrId,
       },
       update: {
-        devUserId: user.usrId,
-        devCompanyId: user.usrCompanyId,
-        devBranchId: user.usrBranchId,
-        devLastIp: ip,
-        devLastLogin: now,
-        devModifiedOn: now,
-        devModifiedBy: user.usrId,
+        ...commonUpdate,
         ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
-        ...(opts.deviceName !== undefined && { devDeviceName: opts.deviceName }),
         ...(opts.platform !== undefined && { devPlatform: opts.platform }),
       },
     });
