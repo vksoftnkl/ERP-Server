@@ -21,20 +21,17 @@ import {
   MenuMasterPayload,
   MenuMasterSuccessResponse,
 } from './types/menu-master-api.types';
-
 @ApiTags('Menu Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('menu-masters')
 export class MenuMasterController {
   constructor(private readonly menuMasterService: MenuMasterService) {}
-
   @Get('get')
   @Version('1')
   @ApiOperation({
-    summary:
-      'Get menu records from fixed.menu_master by menuId or parentId. Defaults to top-level modules.',
+    summary: 'Get menus for the authenticated user (filtered by UserMenus permissions).',
   })
   @ApiOkResponse({ type: MenuMasterSuccessGetDto })
   @ApiBadRequestResponse({ type: MenuMasterErrorResponseDto })
@@ -43,6 +40,27 @@ export class MenuMasterController {
     @Query() queryDto: GetMenuQueryDto,
   ): Promise<MenuMasterSuccessResponse<MenuMasterPayload[], MenuMasterGetMeta>> {
     const result = await this.menuMasterService.get(queryDto);
+
+    return {
+      success: true,
+      message:
+        queryDto.menuId !== undefined ? 'Menu fetched successfully' : 'Menus fetched successfully',
+      data: result.items,
+      meta: result.meta,
+    };
+  }
+  @Get('all')
+  @Version('1')
+  @ApiOperation({
+    summary: 'Get all menus without user interaction (no UserMenus filtering, permissions: null).',
+  })
+  @ApiOkResponse({ type: MenuMasterSuccessGetDto })
+  @ApiBadRequestResponse({ type: MenuMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: MenuMasterErrorResponseDto })
+  async getAll(
+    @Query() queryDto: GetMenuQueryDto,
+  ): Promise<MenuMasterSuccessResponse<MenuMasterPayload[], MenuMasterGetMeta>> {
+    const result = await this.menuMasterService.getAll(queryDto);
 
     return {
       success: true,

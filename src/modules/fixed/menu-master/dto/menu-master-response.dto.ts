@@ -19,6 +19,35 @@ export class MenuMasterErrorResponseDto {
   errors!: MenuMasterErrorFieldDto[];
 }
 
+export class MenuMasterUserPermissionsDto {
+  @ApiProperty({ example: false })
+  canCreate!: boolean;
+
+  @ApiProperty({ example: false })
+  canEdit!: boolean;
+
+  @ApiProperty({ example: false })
+  canDelete!: boolean;
+
+  @ApiProperty({ example: false })
+  canPrint!: boolean;
+
+  @ApiProperty({ example: false })
+  canExport!: boolean;
+
+  @ApiProperty({ example: true })
+  isVisible!: boolean;
+
+  @ApiProperty({ example: false })
+  isFavourite!: boolean;
+
+  @ApiProperty({ example: false })
+  isPinned!: boolean;
+
+  @ApiProperty({ example: 0 })
+  sortOrder!: number;
+}
+
 export class MenuMasterPayloadDto {
   @ApiProperty({ example: 1 })
   menuId!: number;
@@ -52,6 +81,9 @@ export class MenuMasterPayloadDto {
 
   @ApiProperty({ example: true })
   menuIsActive!: boolean;
+
+  @ApiPropertyOptional({ type: MenuMasterUserPermissionsDto, nullable: true })
+  permissions!: MenuMasterUserPermissionsDto | null;
 
   @ApiPropertyOptional({ type: () => [MenuMasterPayloadDto] })
   children?: MenuMasterPayloadDto[];

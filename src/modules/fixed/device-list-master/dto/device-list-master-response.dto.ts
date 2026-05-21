@@ -5,6 +5,7 @@ import {
   FixedErrorResponseDto,
   FixedListMetaDto,
 } from 'src/common/utils/module-response.dto';
+import { DevicePlatform, DeviceType } from '../types/device-list-master-enum';
 export { FixedErrorFieldDto as DeviceListMasterErrorFieldDto };
 export { FixedErrorResponseDto as DeviceListMasterErrorResponseDto };
 export { FixedListMetaDto as DeviceListMasterListMetaDto };
@@ -21,10 +22,15 @@ export class DeviceListMasterPayloadDto {
   devDeviceUid!: string;
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
   devDeviceName!: string | null;
-  @ApiProperty({ maxLength: 30 })
-  devDeviceType!: string;
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  devPlatform!: string | null;
+  @ApiProperty({ enum: DeviceType, enumName: 'DeviceListMasterDeviceType', maxLength: 30 })
+  devDeviceType!: DeviceType;
+  @ApiPropertyOptional({
+    enum: DevicePlatform,
+    enumName: 'DeviceListMasterDevicePlatform',
+    maxLength: 30,
+    nullable: true,
+  })
+  devPlatform!: DevicePlatform | null;
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   devMacAddress!: string | null;
   @ApiProperty({ example: false })

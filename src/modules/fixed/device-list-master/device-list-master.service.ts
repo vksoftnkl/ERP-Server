@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { DeviceMaster, Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ListDeviceListMasterQueryDto } from './dto/list-device-list-master-query.dto';
@@ -12,6 +13,7 @@ import {
   DeviceListMasterListMeta,
   DeviceListMasterPayload,
 } from './types/device-list-master-api.types';
+import { DevicePlatform, DeviceType } from './types/device-list-master-enum';
 import {
   DEFAULT_ACTOR,
   FixedWriteClient,
@@ -28,11 +30,14 @@ import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'sr
 
 const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
+const DEVICE_TYPE_VALUES = Object.values(DeviceType);
+const DEVICE_PLATFORM_VALUES = Object.values(DevicePlatform);
 const DEVICE_LIST_MASTER_OPTIONAL_FIELDS = [
   'devCompanyId',
   'devBranchId',
   'devUserId',
   'devDeviceName',
+  'devDeviceType',
   'devPlatform',
   'devMacAddress',
   'devIsBlocked',
@@ -40,6 +45,97 @@ const DEVICE_LIST_MASTER_OPTIONAL_FIELDS = [
   'devLastIp',
   'devIsActive',
 ];
+const DEVICE_LIST_MASTER_OPTIONAL_FIELD_TRANSFORMS = {
+  devDeviceType: normalizeDeviceType,
+  devPlatform: normalizeDevicePlatform,
+};
+
+function isDeviceUidRequired(deviceType: DeviceType): boolean {
+  return deviceType === DeviceType.DESKTOP || deviceType === DeviceType.MOBILE;
+}
+
+function normalizeDeviceType(value: unknown): DeviceType | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+      'Validation failed',
+      [{ field: 'devDeviceType', message: 'devDeviceType must be a string' }],
+    );
+  }
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (!DEVICE_TYPE_VALUES.includes(normalized as DeviceType)) {
+    throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+      'Validation failed',
+      [
+        {
+          field: 'devDeviceType',
+          message: `devDeviceType must be one of: ${DEVICE_TYPE_VALUES.join(', ')}`,
+        },
+      ],
+    );
+  }
+  return normalized as DeviceType;
+}
+
+function buildGeneratedDeviceUid(deviceType: DeviceType): string {
+  return `${deviceType.toUpperCase()}-${randomUUID()}`;
+}
+
+function normalizeDeviceUid(value: string | undefined, deviceType: DeviceType): string | undefined {
+  if (isDeviceUidRequired(deviceType)) {
+    return normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+      value ?? '',
+      'devDeviceUid',
+      'devDeviceUid is required when devDeviceType is Desktop or Mobile',
+    );
+  }
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function normalizeDevicePlatform(value: unknown): DevicePlatform | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+      'Validation failed',
+      [{ field: 'devPlatform', message: 'devPlatform must be a string' }],
+    );
+  }
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+  if (!DEVICE_PLATFORM_VALUES.includes(normalized as DevicePlatform)) {
+    throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
+      'Validation failed',
+      [
+        {
+          field: 'devPlatform',
+          message: `devPlatform must be one of: ${DEVICE_PLATFORM_VALUES.join(', ')}`,
+        },
+      ],
+    );
+  }
+  return normalized as DevicePlatform;
+}
+
+function toDeviceType(value: string): DeviceType {
+  return value as DeviceType;
+}
+
+function toDevicePlatform(value: string | null): DevicePlatform | null {
+  return value === null ? null : (value as DevicePlatform);
+}
 
 @Injectable()
 export class DeviceListMasterService {
@@ -175,14 +271,10 @@ export class DeviceListMasterService {
   private async createDevice(
     saveDeviceListMasterDto: SaveDeviceListMasterDto,
   ): Promise<DeviceListMasterPayload> {
-    const normalizedDeviceUid = normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
-      saveDeviceListMasterDto.devDeviceUid,
-      'devDeviceUid',
-    );
-    const normalizedDeviceType = normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
-      saveDeviceListMasterDto.devDeviceType,
-      'devDeviceType',
-    );
+    const normalizedDeviceType = normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ?? DeviceType.DESKTOP;
+    const normalizedDeviceUid =
+      normalizeDeviceUid(saveDeviceListMasterDto.devDeviceUid, normalizedDeviceType) ??
+      buildGeneratedDeviceUid(normalizedDeviceType);
     const companyId = hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
       ? (saveDeviceListMasterDto.devCompanyId ?? null)
       : null;
@@ -191,13 +283,17 @@ export class DeviceListMasterService {
     const modifiedBy = resolveActor(saveDeviceListMasterDto.devModifiedBy, createdBy);
     const data: Prisma.DeviceMasterUncheckedCreateInput = {
       devDeviceUid: normalizedDeviceUid,
-      devDeviceType: normalizedDeviceType,
       devCreatedOn: now,
       devCreatedBy: createdBy,
       devModifiedOn: now,
       devModifiedBy: modifiedBy,
     };
-    applyPresentFields(data, saveDeviceListMasterDto, DEVICE_LIST_MASTER_OPTIONAL_FIELDS);
+    applyPresentFields(
+      data,
+      saveDeviceListMasterDto,
+      DEVICE_LIST_MASTER_OPTIONAL_FIELDS,
+      DEVICE_LIST_MASTER_OPTIONAL_FIELD_TRANSFORMS,
+    );
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureDeviceUidIsUnique(tx, normalizedDeviceUid, companyId);
@@ -245,25 +341,26 @@ export class DeviceListMasterService {
             `No active device found with id ${devId}`,
           );
         }
-        const normalizedDeviceUid = normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
-          saveDeviceListMasterDto.devDeviceUid,
-          'devDeviceUid',
-        );
-        const normalizedDeviceType = normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
-          saveDeviceListMasterDto.devDeviceType,
-          'devDeviceType',
-        );
+        const normalizedDeviceType = normalizeDeviceType(saveDeviceListMasterDto.devDeviceType) ?? toDeviceType(existing.devDeviceType);
+        const normalizedDeviceUid = normalizeDeviceUid(saveDeviceListMasterDto.devDeviceUid, normalizedDeviceType);
+        const nextDeviceUid = normalizedDeviceUid ?? existing.devDeviceUid;
         const nextCompanyId = hasOwnProperty(saveDeviceListMasterDto, 'devCompanyId')
           ? (saveDeviceListMasterDto.devCompanyId ?? null)
           : existing.devCompanyId;
-        await this.ensureDeviceUidIsUnique(tx, normalizedDeviceUid, nextCompanyId, devId);
+        await this.ensureDeviceUidIsUnique(tx, nextDeviceUid, nextCompanyId, devId);
         const data: Prisma.DeviceMasterUncheckedUpdateInput = {
-          devDeviceUid: normalizedDeviceUid,
-          devDeviceType: normalizedDeviceType,
           devModifiedOn: new Date(),
           devModifiedBy: resolveActor(saveDeviceListMasterDto.devModifiedBy),
         };
-        applyPresentFields(data, saveDeviceListMasterDto, DEVICE_LIST_MASTER_OPTIONAL_FIELDS);
+        if (normalizedDeviceUid !== undefined) {
+          data.devDeviceUid = normalizedDeviceUid;
+        }
+        applyPresentFields(
+          data,
+          saveDeviceListMasterDto,
+          DEVICE_LIST_MASTER_OPTIONAL_FIELDS,
+          DEVICE_LIST_MASTER_OPTIONAL_FIELD_TRANSFORMS,
+        );
         const updated = await tx.deviceMaster.update({ where: { devId }, data });
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
@@ -322,8 +419,8 @@ export class DeviceListMasterService {
       devUserId: record.devUserId,
       devDeviceUid: record.devDeviceUid,
       devDeviceName: record.devDeviceName,
-      devDeviceType: record.devDeviceType,
-      devPlatform: record.devPlatform,
+      devDeviceType: toDeviceType(record.devDeviceType),
+      devPlatform: toDevicePlatform(record.devPlatform),
       devMacAddress: record.devMacAddress,
       devIsBlocked: record.devIsBlocked,
       devBlockReason: record.devBlockReason,

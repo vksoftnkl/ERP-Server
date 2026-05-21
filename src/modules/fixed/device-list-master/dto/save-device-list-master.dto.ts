@@ -1,13 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIP, IsNotEmpty } from 'class-validator';
+import { IsEnum, IsIP, IsNotEmpty, ValidateIf } from 'class-validator';
 
 import {
   NullableString,
   NullableUuid,
   OptionalBoolean,
+  OptionalTrimmedString,
   OptionalUuid,
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
+import { DevicePlatform, DeviceType } from '../types/device-list-master-enum';
+
+const isDeviceUidRequired = (deviceType?: DeviceType): boolean =>
+  deviceType === DeviceType.DESKTOP || deviceType === DeviceType.MOBILE;
 
 export class SaveDeviceListMasterDto {
   @ApiPropertyOptional({
@@ -29,23 +34,33 @@ export class SaveDeviceListMasterDto {
   @NullableUuid()
   devUserId?: string | null;
 
-  @ApiProperty({ maxLength: 120 })
+  @ApiPropertyOptional({
+    maxLength: 120,
+    description: 'Required when devDeviceType is Desktop or Mobile',
+  })
+  @ValidateIf((dto: SaveDeviceListMasterDto) => isDeviceUidRequired(dto.devDeviceType ?? DeviceType.DESKTOP))
   @TrimmedString(120)
-  @IsNotEmpty()
-  devDeviceUid!: string;
+  @IsNotEmpty({ message: 'devDeviceUid is required when devDeviceType is Desktop or Mobile' })
+  devDeviceUid?: string;
 
   @ApiPropertyOptional({ maxLength: 120, nullable: true })
   @NullableString(120)
   devDeviceName?: string | null;
 
-  @ApiProperty({ maxLength: 30 })
-  @TrimmedString(30)
-  @IsNotEmpty()
-  devDeviceType!: string;
+  @ApiPropertyOptional({ enum: DeviceType, enumName: 'DeviceListMasterDeviceType', maxLength: 30 })
+  @OptionalTrimmedString(30)
+  @IsEnum(DeviceType)
+  devDeviceType?: DeviceType;
 
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  @ApiPropertyOptional({
+    enum: DevicePlatform,
+    enumName: 'DeviceListMasterDevicePlatform',
+    maxLength: 30,
+    nullable: true,
+  })
   @NullableString(30)
-  devPlatform?: string | null;
+  @IsEnum(DevicePlatform)
+  devPlatform?: DevicePlatform | null;
 
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   @NullableString(50)
@@ -63,15 +78,12 @@ export class SaveDeviceListMasterDto {
   @NullableString()
   @IsIP()
   devLastIp?: string | null;
-
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
   devIsActive?: boolean;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   devCreatedBy?: string | null;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   devModifiedBy?: string | null;

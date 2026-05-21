@@ -2,6 +2,18 @@ export type { FixedErrorDetail as MenuMasterErrorDetail } from 'src/common/types
 export type { FixedErrorResponse as MenuMasterErrorResponse } from 'src/common/types/module-api.types';
 export type { FixedSuccessResponse as MenuMasterSuccessResponse } from 'src/common/types/module-api.types';
 
+export interface MenuMasterUserPermissions {
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canPrint: boolean;
+  canExport: boolean;
+  isVisible: boolean;
+  isFavourite: boolean;
+  isPinned: boolean;
+  sortOrder: number;
+}
+
 export interface MenuMasterPayload {
   menuId: number;
   menuParentId: number | null;
@@ -14,6 +26,7 @@ export interface MenuMasterPayload {
   menuIconLocationMobile: string | null;
   menuSeparator: boolean;
   menuIsActive: boolean;
+  permissions: MenuMasterUserPermissions | null;
   children?: MenuMasterPayload[];
 }
 

@@ -331,8 +331,9 @@ export class UserAdministrationService {
 
     const created = await Promise.all(
       menus.map((m) =>
-        tx.userMenus.create({
-          data: {
+        tx.userMenus.upsert({
+          where: { uq_user_menus_user_menu: { umUserId: usrId, umMenuId: m.umMenuId } },
+          create: {
             umUserId: usrId,
             umMenuId: m.umMenuId,
             umCanView: m.umCanView ?? true,
@@ -347,6 +348,21 @@ export class UserAdministrationService {
             umSortOrder: m.umSortOrder ?? 0,
             umCreatedOn: now,
             umCreatedBy: actor,
+          },
+          update: {
+            umCanView: m.umCanView ?? true,
+            umCanCreate: m.umCanCreate ?? false,
+            umCanEdit: m.umCanEdit ?? false,
+            umCanDelete: m.umCanDelete ?? false,
+            umCanPrint: m.umCanPrint ?? false,
+            umCanExport: m.umCanExport ?? false,
+            umVisibility: m.umVisibility ?? true,
+            umIsFavourite: m.umIsFavourite ?? false,
+            umIsPinned: m.umIsPinned ?? false,
+            umSortOrder: m.umSortOrder ?? 0,
+            umIsDeleted: false,
+            umModifiedOn: now,
+            umModifiedBy: actor,
           },
         }),
       ),

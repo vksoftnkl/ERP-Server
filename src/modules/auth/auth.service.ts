@@ -1,5 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { UserMaster } from '@prisma/client';
+import { DeviceMaster, UserMaster } from '@prisma/client';
 import { createHash, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { RequestContextService } from '../../common/request-context/request-context.service';
@@ -36,6 +36,13 @@ export class AuthService {
       user.usrPasswordHash,
     );
     if (!isPasswordValid) {
+      try {
+        await this.incrementFailedLogin(user.usrId);
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Skipping failed login count update for user ${user.usrId}: ${this.describeError(error)}`,
+        );
+      }
       throw new UnauthorizedException('Invalid credentials');
     }
     const issuedAccessToken = this.tokenService.signAccessToken({
@@ -54,6 +61,13 @@ export class AuthService {
       issuedRefreshToken.token,
     );
     try {
+      await this.updateUserOnLogin(user.usrId);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Skipping user login timestamp update for user ${user.usrId}: ${this.describeError(error)}`,
+      );
+    }
+    try {
       await this.saveUserLoginSession(
         user,
         loginAuthDto,
@@ -68,11 +82,31 @@ export class AuthService {
         )}`,
       );
     }
+    const device = loginAuthDto.device_id
+      ? await this.upsertDeviceOnLogin(loginAuthDto.device_id, user, {
+          deviceType: loginAuthDto.device_type,
+          deviceName: loginAuthDto.device_name,
+          platform: loginAuthDto.platform,
+        }).catch((error: unknown) => {
+          this.logger.warn(
+            `Skipping device upsert on login for device ${loginAuthDto.device_id}: ${this.describeError(error)}`,
+          );
+          return null;
+        })
+      : null;
     return {
       access_token: issuedAccessToken.token,
       refresh_token: issuedRefreshToken.token,
       token_type: 'Bearer',
       usrId: user.usrId,
+      user_type: user.usrType ?? null,
+      user_name: user.usrDisplayName,
+      device_id: device?.devId ?? null,
+      device_name: device?.devDeviceName ?? null,
+      dev_company_id: device?.devCompanyId ?? null,
+      dev_branch_id: device?.devBranchId ?? null,
+      dev_user_id: device?.devUserId ?? null,
+      device_type: device?.devDeviceType ?? null,
     };
   }
   async refresh(refreshToken: string): Promise<LoginResponseDto> {
@@ -93,6 +127,14 @@ export class AuthService {
       refresh_token: refreshToken,
       token_type: 'Bearer',
       usrId: refreshPayload.sub,
+      user_type: null,
+      user_name: refreshPayload.user_name,
+      device_id: null,
+      device_name: null,
+      dev_company_id: null,
+      dev_branch_id: null,
+      dev_user_id: null,
+      device_type: null,
     };
   }
   private async findLoginUser(userName: string): Promise<UserMaster | null> {
@@ -107,6 +149,65 @@ export class AuthService {
         usrIsActive: true,
         usrIsLocked: false,
         usrWebLogin: true,
+      },
+    });
+  }
+  private async upsertDeviceOnLogin(
+    devId: string,
+    user: UserMaster,
+    opts: { deviceType?: string; deviceName?: string; platform?: string } = {},
+  ): Promise<DeviceMaster> {
+    const now = new Date();
+    const ip = this.requestContextService.getIpAddress();
+    return this.prisma.deviceMaster.upsert({
+      where: { devId },
+      create: {
+        devId,
+        devDeviceUid: devId,
+        devUserId: user.usrId,
+        devCompanyId: user.usrCompanyId,
+        devBranchId: user.usrBranchId,
+        devDeviceName: opts.deviceName ?? null,
+        devDeviceType: opts.deviceType ?? 'Desktop',
+        devPlatform: opts.platform ?? null,
+        devLastIp: ip,
+        devLastLogin: now,
+        devIsActive: true,
+        devIsDeleted: false,
+        devCreatedOn: now,
+        devCreatedBy: user.usrId,
+        devModifiedOn: now,
+        devModifiedBy: user.usrId,
+      },
+      update: {
+        devUserId: user.usrId,
+        devCompanyId: user.usrCompanyId,
+        devBranchId: user.usrBranchId,
+        devLastIp: ip,
+        devLastLogin: now,
+        devModifiedOn: now,
+        devModifiedBy: user.usrId,
+        ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
+        ...(opts.deviceName !== undefined && { devDeviceName: opts.deviceName }),
+        ...(opts.platform !== undefined && { devPlatform: opts.platform }),
+      },
+    });
+  }
+  private async updateUserOnLogin(usrId: string): Promise<void> {
+    await this.prisma.userMaster.update({
+      where: { usrId },
+      data: {
+        usrLastLoginOn: new Date(),
+        usrFailedLoginCount: 0,
+      },
+    });
+  }
+  private async incrementFailedLogin(usrId: string): Promise<void> {
+    await this.prisma.userMaster.update({
+      where: { usrId },
+      data: {
+        usrFailedLoginCount: { increment: 1 },
+        usrLastFailedLoginOn: new Date(),
       },
     });
   }
@@ -153,7 +254,7 @@ export class AuthService {
         ulsRefreshTokenId: this.normalizeSessionToken(issuedRefreshToken.token),
         ulsLoginOn: loginTimestamp,
         ulsLoginStatus: 'SUCCESS',
-        ulsIpAddress: this.requestContextService.getIpAddress(),
+        ulsIpAddress: loginAuthDto.ip_address ?? this.requestContextService.getIpAddress(),
         ulsUserAgent: requestMetadata.userAgent,
         ulsAppVersion: resolvedAppVersion,
         ulsIsActiveSession: true,
