@@ -129,6 +129,42 @@ export class MenuMasterService {
     );
   }
 
+  async updateVisibility(
+    items: { menuId: number; menuVisibility: boolean }[],
+  ): Promise<{ menuId: number; menuVisibility: boolean }[]> {
+    const menuIds = items.map((i) => i.menuId);
+
+    const existing = await this.prisma.menu.findMany({
+      where: { menuId: { in: menuIds } },
+      select: { menuId: true, menuIsActive: true },
+    });
+
+    const foundIds = new Set(existing.map((r) => r.menuId));
+    const missing = menuIds.filter((id) => !foundIds.has(id));
+    if (missing.length > 0) {
+      throw new NotFoundException(`Menu(s) not found for menuId(s): ${missing.join(', ')}`);
+    }
+
+    // Pin menuIsActive to its current value so any DB trigger cannot flip it
+    // when menuVisibility is set to false.
+    const activeById = new Map(existing.map((r) => [r.menuId, r.menuIsActive]));
+
+    const updated = await this.prisma.$transaction(
+      items.map((item) =>
+        this.prisma.menu.update({
+          where: { menuId: item.menuId },
+          data: {
+            menuVisibility: item.menuVisibility,
+            menuIsActive: activeById.get(item.menuId),
+          },
+          select: { menuId: true, menuVisibility: true },
+        }),
+      ),
+    );
+
+    return updated.map((r) => ({ menuId: r.menuId, menuVisibility: r.menuVisibility }));
+  }
+
   async getAll(
     queryDto: GetMenuQueryDto,
   ): Promise<{ items: MenuMasterPayload[]; meta: MenuMasterGetMeta }> {

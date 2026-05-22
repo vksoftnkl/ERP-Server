@@ -45,6 +45,13 @@ export class AuthService {
       }
       throw new UnauthorizedException('Invalid credentials');
     }
+    const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
+    const device =
+      loginAuthDto.device_id || isWebDevice
+        ? await this.findAndUpdateDeviceOnLogin(loginAuthDto.device_id, user, {
+            deviceType: loginAuthDto.device_type,
+          })
+        : null;
     const issuedAccessToken = this.tokenService.signAccessToken({
       sub: user.usrId,
       user_name: user.usrLoginName,
@@ -82,18 +89,6 @@ export class AuthService {
         )}`,
       );
     }
-    const isWebDevice = loginAuthDto.device_type?.toLowerCase() === 'web';
-    const device =
-      loginAuthDto.device_id || isWebDevice
-        ? await this.upsertDeviceOnLogin(loginAuthDto.device_id, user, {
-            deviceType: loginAuthDto.device_type,
-          }).catch((error: unknown) => {
-            this.logger.warn(
-              `Skipping device upsert on login for user ${user.usrId}: ${this.describeError(error)}`,
-            );
-            return null;
-          })
-        : null;
     return {
       access_token: issuedAccessToken.token,
       refresh_token: issuedRefreshToken.token,
@@ -152,66 +147,37 @@ export class AuthService {
       },
     });
   }
-  private async upsertDeviceOnLogin(
+  private async findAndUpdateDeviceOnLogin(
     deviceUid: string | undefined,
     user: UserMaster,
     opts: { deviceType?: string } = {},
-  ): Promise<DeviceMaster | null> {
+  ): Promise<DeviceMaster> {
     const now = new Date();
     const ip = this.requestContextService.getIpAddress();
     const resolvedType = opts.deviceType ?? 'Desktop';
-    const commonUpdate = {
-      devUserId: user.usrId,
-      devCompanyId: user.usrCompanyId,
-      devBranchId: user.usrBranchId,
-      devLastIp: ip,
-      devLastLogin: now,
-      devModifiedOn: now,
-      devModifiedBy: user.usrId,
-    };
-    if (resolvedType.toLowerCase() === 'web') {
-      const webDeviceUid = `web:${user.usrId}`;
-      return this.prisma.deviceMaster.upsert({
-        where: { devDeviceUid: webDeviceUid },
-        create: {
-          devDeviceUid: webDeviceUid,
-          devDeviceType: 'web',
-          devUserId: user.usrId,
-          devCompanyId: user.usrCompanyId,
-          devBranchId: user.usrBranchId,
-          devLastIp: ip,
-          devLastLogin: now,
-          devIsActive: true,
-          devIsDeleted: false,
-          devCreatedOn: now,
-          devCreatedBy: user.usrId,
-          devModifiedOn: now,
-          devModifiedBy: user.usrId,
-        },
-        update: commonUpdate,
-      });
+    const lookupUid =
+      resolvedType.toLowerCase() === 'web' ? `web:${user.usrId}` : deviceUid;
+    if (!lookupUid) {
+      throw new UnauthorizedException('Device not registered');
     }
-    if (!deviceUid) return null;
-    return this.prisma.deviceMaster.upsert({
-      where: { devDeviceUid: deviceUid },
-      create: {
-        devDeviceUid: deviceUid,
-        devDeviceType: resolvedType,
+    const existing = await this.prisma.deviceMaster.findUnique({
+      where: { devDeviceUid: lookupUid },
+    });
+    if (!existing) {
+      throw new UnauthorizedException('Device not registered. Please contact administrator.');
+    }
+    return this.prisma.deviceMaster.update({
+      where: { devDeviceUid: lookupUid },
+      data: {
         devUserId: user.usrId,
         devCompanyId: user.usrCompanyId,
         devBranchId: user.usrBranchId,
         devLastIp: ip,
         devLastLogin: now,
-        devIsActive: true,
-        devIsDeleted: false,
-        devCreatedOn: now,
-        devCreatedBy: user.usrId,
         devModifiedOn: now,
         devModifiedBy: user.usrId,
-      },
-      update: {
-        ...commonUpdate,
-        ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
+        ...(opts.deviceType !== undefined &&
+          resolvedType.toLowerCase() !== 'web' && { devDeviceType: opts.deviceType }),
       },
     });
   }

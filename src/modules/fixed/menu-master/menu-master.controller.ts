@@ -1,5 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import { Controller, Get, Query, Version } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -14,7 +14,9 @@ import { GetMenuQueryDto } from './dto/get-menu-query.dto';
 import {
   MenuMasterErrorResponseDto,
   MenuMasterSuccessGetDto,
+  MenuMasterSuccessUpdateVisibilityDto,
 } from './dto/menu-master-response.dto';
+import { UpdateMenuVisibilityDto } from './dto/update-menu-visibility.dto';
 import { MenuMasterService } from './menu-master.service';
 import {
   MenuMasterGetMeta,
@@ -49,6 +51,23 @@ export class MenuMasterController {
       meta: result.meta,
     };
   }
+  @Patch('visibility')
+  @Version('1')
+  @ApiOperation({ summary: 'Update menu_visibility for one or more menus.' })
+  @ApiOkResponse({ type: MenuMasterSuccessUpdateVisibilityDto })
+  @ApiBadRequestResponse({ type: MenuMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: MenuMasterErrorResponseDto })
+  async updateVisibility(
+    @Body() body: UpdateMenuVisibilityDto,
+  ): Promise<MenuMasterSuccessUpdateVisibilityDto> {
+    const data = await this.menuMasterService.updateVisibility(body.menus);
+    return {
+      success: true,
+      message: 'Menu visibility updated successfully',
+      data,
+    };
+  }
+
   @Get('all')
   @Version('1')
   @ApiOperation({

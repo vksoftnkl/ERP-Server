@@ -22,13 +22,13 @@ export class LoginAuthDto {
   @IsNotEmpty()
   usrPassword!: string;
   @ApiPropertyOptional({
-    format: 'uuid',
+    format: 'string',
     description: 'Stable client device identifier for the login session row',
   })
   @IsOptional()
   @Transform(({ value }) => toOptionalTrimmedString(value))
   @ValidateIf((_, value) => value !== undefined)
-  @IsUUID('all')
+  @IsString()
   device_id?: string;
   @ApiPropertyOptional({
     maxLength: 40,

@@ -123,3 +123,22 @@ export class MenuMasterSuccessGetDto {
   meta!: MenuMasterGetMetaDto;
 }
 
+export class MenuMasterUpdateVisibilityDataDto {
+  @ApiProperty({ example: 1 })
+  menuId!: number;
+
+  @ApiProperty({ example: true })
+  menuVisibility!: boolean;
+}
+
+export class MenuMasterSuccessUpdateVisibilityDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Menu visibility updated successfully' })
+  message!: string;
+
+  @ApiProperty({ type: [MenuMasterUpdateVisibilityDataDto] })
+  data!: MenuMasterUpdateVisibilityDataDto[];
+}
+
