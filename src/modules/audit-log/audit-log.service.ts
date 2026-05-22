@@ -16,10 +16,27 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 const NUMERIC_ID_PATTERN = /^\d+$/;
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 200;
 const DISPLAY_FIELD_PATTERN = /\b(name|title)\b/i;
+const AUDIT_LOG_SELECT = {
+  logId: true,
+  logDate: true,
+  logAction: true,
+  logScreenId: true,
+  logTableName: true,
+  logPk: true,
+  logDisplayName: true,
+  logOriginalRecord: true,
+  logModifiedRecord: true,
+  logChangedFields: true,
+  logNotes: true,
+  logUserId: true,
+  logBranchId: true,
+  auditScreen: { select: { screenName: true } },
+} satisfies Prisma.AuditLogSelect;
 type AuditWriteClient = Prisma.TransactionClient | PrismaService;
 type AuditLogListRecord = Prisma.AuditLogGetPayload<{
-  include: { auditScreen: { select: { screenName: true } } };
+  select: typeof AUDIT_LOG_SELECT;
 }>;
 type AuditFieldDefinition = {
   sourceFieldName: string | null;
@@ -193,116 +210,131 @@ export class AuditLogService {
     return null;
   }
   async list(
-    queryDto: ListAuditLogQueryDto,
-  ): Promise<{ items: AuditLogListItem[]; meta: AuditLogListMeta }> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const cursor = queryDto.cursor?.trim() || undefined;
-    const where: Prisma.AuditLogWhereInput = {};
-    if (queryDto.action?.trim()) {
-      where.logAction = this.normalizeAction(queryDto.action) as
-        | 'insert'
-        | 'update'
-        | 'approve'
-        | 'cancel';
-    }
-    if (queryDto.screen_id !== undefined) {
-      where.logScreenId = queryDto.screen_id;
-    }
-    if (queryDto.screen_name?.trim()) {
-      where.auditScreen = {
-        is: {
-          screenName: queryDto.screen_name.trim(),
-        },
-      };
-    }
-    if (queryDto.record_pk?.trim()) {
-      where.logPk = queryDto.record_pk.trim();
-    }
-    const dateFrom = queryDto.date_from
-      ? this.parseDateBoundary(queryDto.date_from, 'start')
-      : undefined;
-    const dateTo = queryDto.date_to ? this.parseDateBoundary(queryDto.date_to, 'end') : undefined;
-    if (dateFrom && dateTo && dateFrom.getTime() > dateTo.getTime()) {
-      throw new BadRequestException('date_from must be less than or equal to date_to');
-    }
-    if (dateFrom || dateTo) {
-      where.logDate = {};
-      if (dateFrom) {
-        where.logDate.gte = dateFrom;
-      }
-      if (dateTo) {
-        where.logDate.lte = dateTo;
-      }
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { logTableName: { contains: search, mode: 'insensitive' } },
-        { logPk: { contains: search, mode: 'insensitive' } },
-        { logDisplayName: { contains: search, mode: 'insensitive' } },
-        { logNotes: { contains: search, mode: 'insensitive' } },
-        {
-          auditScreen: {
-            is: {
-              screenName: { contains: search, mode: 'insensitive' },
-            },
-          },
-        },
-      ];
-    }
-    const auditScreenInclude = { auditScreen: { select: { screenName: true } } };
-    const auditOrderBy: Prisma.AuditLogOrderByWithRelationInput[] = [
-      { logDate: 'desc' },
-      { logId: 'desc' },
-    ];
-    let records: AuditLogListRecord[];
-    let total: number | null = null;
-    if (cursor) {
-      records = await this.prisma.auditLog.findMany({
-        where,
-        include: auditScreenInclude,
-        orderBy: auditOrderBy,
-        cursor: { logId: cursor },
-        skip: 1,
-        take: limit,
-      });
-    } else {
-      const skip = (page - 1) * limit;
-      const [count, rows] = await Promise.all([
-        this.prisma.auditLog.count({ where }),
-        this.prisma.auditLog.findMany({
-          where,
-          include: auditScreenInclude,
-          orderBy: auditOrderBy,
-          skip,
-          take: limit,
-        }),
-      ]);
-      total = count;
-      records = rows;
-    }
-    const preparedRecords = records.map((record) => this.prepareAuditLogListRecord(record));
-    const [userNameById, branchNameById, auditReferenceNameLookup] = await Promise.all([
-      this.getUserNameById(records),
-      this.getBranchNameById(records),
-      this.getAuditReferenceNameLookup(preparedRecords),
-    ]);
-    const nextCursor =
-      records.length === limit ? (records[records.length - 1]?.logId ?? null) : null;
-    return {
-      items: preparedRecords.map((preparedRecord) =>
-        this.toListItem(preparedRecord, userNameById, branchNameById, auditReferenceNameLookup),
-      ),
-      meta: {
-        page: cursor ? null : page,
-        limit,
-        total,
-        total_pages: total !== null ? Math.ceil(total / limit) : null,
-        next_cursor: nextCursor,
-      },
+  queryDto: ListAuditLogQueryDto,
+): Promise<{ items: AuditLogListItem[]; meta: AuditLogListMeta }> {
+
+  // ── 1. Sanitize pagination params ──────────────────────────────────────────
+  const limit        = Math.min(queryDto.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+  const page         = queryDto.page ?? DEFAULT_PAGE;
+  const cursor       = queryDto.cursor?.trim() || undefined;
+  const includeTotal = queryDto.include_total === true; // opt-in to avoid COUNT(*)
+
+  // ── 2. Build WHERE clause ──────────────────────────────────────────────────
+  const where = this.buildWhereClause(queryDto);
+
+  // ── 3. Consistent ORDER BY (must match the composite index) ───────────────
+  const orderBy: Prisma.AuditLogOrderByWithRelationInput[] = [
+    { logDate: 'desc' },
+    { logId:   'desc' },
+  ];
+
+  // ── 4. Single DB round-trip: data  +  optional COUNT  ─────────────────────
+  const findArgs: Prisma.AuditLogFindManyArgs = {
+    where,
+    select:  AUDIT_LOG_SELECT,
+    orderBy,
+    take:    limit,
+    ...(cursor
+      ? { cursor: { logId: cursor }, skip: 1 }          // cursor path
+      : { skip: (page - 1) * limit }),                  // offset path
+  };
+
+  const [records, total] = await Promise.all([
+    this.prisma.auditLog.findMany(findArgs) as unknown as AuditLogListRecord[],
+    includeTotal
+      ? this.prisma.auditLog.count({ where })
+      : Promise.resolve(null),
+  ]);
+
+  // ── 5. Prepare records once; derive lookup keys in the same pass ───────────
+  const preparedRecords  = records.map((r) => this.prepareAuditLogListRecord(r));
+
+  // Extract unique IDs in one pass — avoids iterating arrays multiple times
+  const userIds   = [...new Set(records.map((r) => r.logUserId).filter((id): id is string => id !== null))];
+  const branchIds = [...new Set(records.map((r) => r.logBranchId).filter((id): id is string => id !== null))];
+
+  // ── 6. All secondary lookups fire in parallel ──────────────────────────────
+  const [userNameById, branchNameById, auditReferenceNameLookup] = await Promise.all([
+    this.getUserNameByIds(userIds),                     // pass pre-extracted IDs
+    this.getBranchNameByIds(branchIds),
+    this.getAuditReferenceNameLookup(preparedRecords),
+  ]);
+
+  // ── 7. Assemble response ───────────────────────────────────────────────────
+  const nextCursor =
+    records.length === limit
+      ? (records[records.length - 1]?.logId ?? null)
+      : null;
+
+  return {
+    items: preparedRecords.map((r) =>
+      this.toListItem(r, userNameById, branchNameById, auditReferenceNameLookup),
+    ),
+    meta: {
+      page:        cursor ? null : page,
+      limit,
+      total,
+      total_pages: total !== null ? Math.ceil(total / limit) : null,
+      next_cursor: nextCursor,
+    },
+  };
+}
+
+// ─── Extracted: WHERE builder ─────────────────────────────────────────────────
+
+private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereInput {
+  const where: Prisma.AuditLogWhereInput = {};
+
+  if (queryDto.action?.trim()) {
+    where.logAction = this.normalizeAction(queryDto.action) as
+      | 'insert' | 'update' | 'approve' | 'cancel';
+  }
+
+  if (queryDto.screen_id !== undefined) {
+    where.logScreenId = queryDto.screen_id;
+  }
+
+  if (queryDto.screen_name?.trim()) {
+    where.auditScreen = { is: { screenName: queryDto.screen_name.trim() } };
+  }
+
+  if (queryDto.record_pk?.trim()) {
+    where.logPk = queryDto.record_pk.trim();
+  }
+
+  // ── Date range ──────────────────────────────────────────────────────────────
+  const dateFrom = queryDto.date_from
+    ? this.parseDateBoundary(queryDto.date_from, 'start')
+    : undefined;
+  const dateTo = queryDto.date_to
+    ? this.parseDateBoundary(queryDto.date_to, 'end')
+    : undefined;
+
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    throw new BadRequestException('date_from must be less than or equal to date_to');
+  }
+
+  if (dateFrom || dateTo) {
+    where.logDate = {
+      ...(dateFrom && { gte: dateFrom }),
+      ...(dateTo   && { lte: dateTo }),
     };
   }
+
+  // ── Full-text search ────────────────────────────────────────────────────────
+  if (queryDto.search?.trim()) {
+    const search = queryDto.search.trim();
+    where.OR = [
+      { logTableName:   { contains: search, mode: 'insensitive' } },
+      { logPk:          { contains: search, mode: 'insensitive' } },
+      { logDisplayName: { contains: search, mode: 'insensitive' } },
+      { logNotes:       { contains: search, mode: 'insensitive' } },
+      { auditScreen: { is: { screenName: { contains: search, mode: 'insensitive' } } } },
+    ];
+  }
+
+  return where;
+}
   async createAuditLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma;
     const action = this.normalizeAction(input.action);
@@ -881,7 +913,7 @@ export class AuditLogService {
         return new Map(areas.map((area) => [area.armId, area.armName]));
       }
       case 'branch':
-        return this.getBranchNameLookupByIds(ids);
+        return this.getBranchNameByIds(ids);
       case 'category': {
         const categories = await this.prisma.categoryMaster.findMany({
           where: {
@@ -1227,20 +1259,7 @@ export class AuditLogService {
       }
     }
   }
-  private async getUserNameById(records: AuditLogListRecord[]): Promise<Map<string, string>> {
-    const userIds = Array.from(
-      new Set(
-        records
-          .map((record) => record.logUserId)
-          .filter((userId): userId is string => Boolean(userId)),
-      ),
-    );
-    if (userIds.length === 0) {
-      return new Map<string, string>();
-    }
-    return this.getUserNameLookupByIds(userIds);
-  }
-  private async getUserNameLookupByIds(userIds: readonly string[]): Promise<Map<string, string>> {
+  private async getUserNameByIds(userIds: readonly string[]): Promise<Map<string, string>> {
     const users = await this.prisma.user.findMany({
       where: {
         user_id: {
@@ -1254,20 +1273,7 @@ export class AuditLogService {
     });
     return new Map(users.map((user) => [user.user_id, user.user_name]));
   }
-  private async getBranchNameById(records: AuditLogListRecord[]): Promise<Map<string, string>> {
-    const branchIds = Array.from(
-      new Set(
-        records
-          .map((record) => record.logBranchId)
-          .filter((branchId): branchId is string => Boolean(branchId)),
-      ),
-    );
-    if (branchIds.length === 0) {
-      return new Map<string, string>();
-    }
-    return this.getBranchNameLookupByIds(branchIds);
-  }
-  private async getBranchNameLookupByIds(branchIds: readonly string[]): Promise<Map<string, string>> {
+  private async getBranchNameByIds(branchIds: readonly string[]): Promise<Map<string, string>> {
     const branches = await this.prisma.branchMaster.findMany({
       where: {
         brId: {

@@ -639,3 +639,710 @@
 2026-03-07T06:40:41.333Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
 2026-03-07T06:40:41.337Z LOG [NestApplication] Nest application successfully started
 2026-03-07T06:40:41.338Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-21T13:58:30.299Z LOG [NestFactory] Starting Nest application...
+2026-05-21T13:58:30.319Z LOG [InstanceLoader] RequestContextModule dependencies initialized
+2026-05-21T13:58:30.319Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T13:58:30.320Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T13:58:30.320Z LOG [InstanceLoader] DiscoveryModule dependencies initialized
+2026-05-21T13:58:30.320Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T13:58:30.320Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T13:58:30.326Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:30.326Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:30.326Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T13:58:30.327Z LOG [InstanceLoader] ConfiguredGridSqlModule dependencies initialized
+2026-05-21T13:58:30.329Z LOG [InstanceLoader] SequenceModule dependencies initialized
+2026-05-21T13:58:30.329Z LOG [InstanceLoader] AuditLogModule dependencies initialized
+2026-05-21T13:58:30.329Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T13:58:30.329Z LOG [InstanceLoader] MenuMasterModule dependencies initialized
+2026-05-21T13:58:30.329Z LOG [InstanceLoader] PriceLevelMasterModule dependencies initialized
+2026-05-21T13:58:30.329Z LOG [InstanceLoader] HsnCodeMasterModule dependencies initialized
+2026-05-21T13:58:30.329Z LOG [InstanceLoader] MasterLookupModule dependencies initialized
+2026-05-21T13:58:30.329Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] ItemPriceDetailsModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] PhysicalStockModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] ItemStockBalanceModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] ItemBatchStockModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] GridColumnsModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] DropdownDetailsModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] DropdownColumnsModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] QueueModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] WidgetMasterModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] GridDetailsModule dependencies initialized
+2026-05-21T13:58:30.332Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsTaxMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsEanCodeMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsCustRatesMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsPriceMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsQtywiseRatesMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsReorderMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsTaxHistoryMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] AccountsGroupModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] AccountLedgerMastersModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] LedgerBankAccountModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] LedgerShippingAddressModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] CompanyGroupMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] EmployeeDepartmentMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] EmployeeDesignationMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] EmployeeMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] UserAdministrationModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] TenderMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] TenderTypeMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] GspProviderMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] GspCompanyServiceModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] SupplierGroupModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] SuppliersModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] StateModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] CityModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] AreaModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] CustomerModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] CustomerGroupModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] BankListModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] DeviceListMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] StateCodeMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] UiTableColumnsModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] UiTableMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] UserLoginSessionsModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] BatchPrefixModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] PromotionLoyaltyPointsModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] GodownsMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] OpeningStockModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] ItemsCategoryMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] BranchMasterModule dependencies initialized
+2026-05-21T13:58:30.333Z LOG [InstanceLoader] CompanyMasterModule dependencies initialized
+2026-05-21T13:58:30.338Z LOG [InstanceLoader] CacheModule dependencies initialized
+2026-05-21T13:58:43.413Z LOG [NestFactory] Starting Nest application...
+2026-05-21T13:58:43.433Z LOG [InstanceLoader] RequestContextModule dependencies initialized
+2026-05-21T13:58:43.433Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T13:58:43.433Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T13:58:43.433Z LOG [InstanceLoader] DiscoveryModule dependencies initialized
+2026-05-21T13:58:43.433Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T13:58:43.433Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T13:58:43.439Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:43.439Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:43.439Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T13:58:43.440Z LOG [InstanceLoader] ConfiguredGridSqlModule dependencies initialized
+2026-05-21T13:58:43.442Z LOG [InstanceLoader] SequenceModule dependencies initialized
+2026-05-21T13:58:43.442Z LOG [InstanceLoader] AuditLogModule dependencies initialized
+2026-05-21T13:58:43.442Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T13:58:43.442Z LOG [InstanceLoader] MenuMasterModule dependencies initialized
+2026-05-21T13:58:43.442Z LOG [InstanceLoader] PriceLevelMasterModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] HsnCodeMasterModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] MasterLookupModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] ItemPriceDetailsModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] PhysicalStockModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] ItemStockBalanceModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] ItemBatchStockModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] GridColumnsModule dependencies initialized
+2026-05-21T13:58:43.443Z LOG [InstanceLoader] DropdownDetailsModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] DropdownColumnsModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] QueueModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] WidgetMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] GridDetailsModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] ItemsTaxMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] ItemsEanCodeMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] ItemsCustRatesMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] ItemsPriceMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] ItemsQtywiseRatesMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] ItemsReorderMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] ItemsTaxHistoryMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] ItemsMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] AccountsGroupModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] AccountLedgerMastersModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] LedgerBankAccountModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] LedgerShippingAddressModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] CompanyGroupMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] EmployeeDepartmentMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] EmployeeDesignationMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] EmployeeMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] UserAdministrationModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] TenderMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] TenderTypeMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] GspProviderMasterModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] GspCompanyServiceModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] SupplierGroupModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] SuppliersModule dependencies initialized
+2026-05-21T13:58:43.444Z LOG [InstanceLoader] StateModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] CityModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] AreaModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] CustomerModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] CustomerGroupModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] BankListModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] DeviceListMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] StateCodeMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] UiTableColumnsModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] UiTableMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] UserLoginSessionsModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] BatchPrefixModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] PromotionLoyaltyPointsModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] GodownsMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] OpeningStockModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] ItemsCategoryMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] BranchMasterModule dependencies initialized
+2026-05-21T13:58:43.445Z LOG [InstanceLoader] CompanyMasterModule dependencies initialized
+2026-05-21T13:58:43.451Z LOG [InstanceLoader] CacheModule dependencies initialized
+2026-05-21T13:58:45.168Z LOG [NestFactory] Starting Nest application...
+2026-05-21T13:58:45.188Z LOG [InstanceLoader] RequestContextModule dependencies initialized
+2026-05-21T13:58:45.189Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T13:58:45.189Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T13:58:45.189Z LOG [InstanceLoader] DiscoveryModule dependencies initialized
+2026-05-21T13:58:45.189Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T13:58:45.189Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T13:58:45.195Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:45.195Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:45.196Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T13:58:45.197Z LOG [InstanceLoader] ConfiguredGridSqlModule dependencies initialized
+2026-05-21T13:58:45.199Z LOG [InstanceLoader] SequenceModule dependencies initialized
+2026-05-21T13:58:45.199Z LOG [InstanceLoader] AuditLogModule dependencies initialized
+2026-05-21T13:58:45.199Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T13:58:45.199Z LOG [InstanceLoader] MenuMasterModule dependencies initialized
+2026-05-21T13:58:45.199Z LOG [InstanceLoader] PriceLevelMasterModule dependencies initialized
+2026-05-21T13:58:45.199Z LOG [InstanceLoader] HsnCodeMasterModule dependencies initialized
+2026-05-21T13:58:45.199Z LOG [InstanceLoader] MasterLookupModule dependencies initialized
+2026-05-21T13:58:45.199Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] ItemPriceDetailsModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] PhysicalStockModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] ItemStockBalanceModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] ItemBatchStockModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] GridColumnsModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] DropdownDetailsModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] DropdownColumnsModule dependencies initialized
+2026-05-21T13:58:45.200Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] QueueModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] WidgetMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] GridDetailsModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] ItemsTaxMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] ItemsEanCodeMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] ItemsCustRatesMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] ItemsPriceMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] ItemsQtywiseRatesMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] ItemsReorderMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] ItemsTaxHistoryMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] ItemsMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] AccountsGroupModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] AccountLedgerMastersModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] LedgerBankAccountModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] LedgerShippingAddressModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] CompanyGroupMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] EmployeeDepartmentMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] EmployeeDesignationMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] EmployeeMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] UserAdministrationModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] TenderMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] TenderTypeMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] GspProviderMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] GspCompanyServiceModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] SupplierGroupModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] SuppliersModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] StateModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] CityModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] AreaModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] CustomerModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] CustomerGroupModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] BankListModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] DeviceListMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] StateCodeMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] UiTableColumnsModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] UiTableMasterModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] UserLoginSessionsModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] BatchPrefixModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] PromotionLoyaltyPointsModule dependencies initialized
+2026-05-21T13:58:45.201Z LOG [InstanceLoader] GodownsMasterModule dependencies initialized
+2026-05-21T13:58:45.202Z LOG [InstanceLoader] OpeningStockModule dependencies initialized
+2026-05-21T13:58:45.202Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T13:58:45.202Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T13:58:45.202Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T13:58:45.202Z LOG [InstanceLoader] ItemsCategoryMasterModule dependencies initialized
+2026-05-21T13:58:45.202Z LOG [InstanceLoader] BranchMasterModule dependencies initialized
+2026-05-21T13:58:45.202Z LOG [InstanceLoader] CompanyMasterModule dependencies initialized
+2026-05-21T13:58:45.208Z LOG [InstanceLoader] CacheModule dependencies initialized
+2026-05-21T13:58:45.461Z LOG [NestFactory] Starting Nest application...
+2026-05-21T13:58:45.482Z LOG [InstanceLoader] RequestContextModule dependencies initialized
+2026-05-21T13:58:45.482Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T13:58:45.482Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T13:58:45.482Z LOG [InstanceLoader] DiscoveryModule dependencies initialized
+2026-05-21T13:58:45.483Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T13:58:45.483Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T13:58:45.488Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:45.489Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:45.489Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T13:58:45.490Z LOG [InstanceLoader] ConfiguredGridSqlModule dependencies initialized
+2026-05-21T13:58:45.494Z LOG [InstanceLoader] SequenceModule dependencies initialized
+2026-05-21T13:58:45.494Z LOG [InstanceLoader] AuditLogModule dependencies initialized
+2026-05-21T13:58:45.494Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T13:58:45.494Z LOG [InstanceLoader] MenuMasterModule dependencies initialized
+2026-05-21T13:58:45.494Z LOG [InstanceLoader] PriceLevelMasterModule dependencies initialized
+2026-05-21T13:58:45.494Z LOG [InstanceLoader] HsnCodeMasterModule dependencies initialized
+2026-05-21T13:58:45.494Z LOG [InstanceLoader] MasterLookupModule dependencies initialized
+2026-05-21T13:58:45.494Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T13:58:45.495Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T13:58:45.495Z LOG [InstanceLoader] ItemPriceDetailsModule dependencies initialized
+2026-05-21T13:58:45.495Z LOG [InstanceLoader] PhysicalStockModule dependencies initialized
+2026-05-21T13:58:45.495Z LOG [InstanceLoader] ItemStockBalanceModule dependencies initialized
+2026-05-21T13:58:45.496Z LOG [InstanceLoader] ItemBatchStockModule dependencies initialized
+2026-05-21T13:58:45.496Z LOG [InstanceLoader] GridColumnsModule dependencies initialized
+2026-05-21T13:58:45.496Z LOG [InstanceLoader] DropdownDetailsModule dependencies initialized
+2026-05-21T13:58:45.496Z LOG [InstanceLoader] DropdownColumnsModule dependencies initialized
+2026-05-21T13:58:45.496Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T13:58:45.496Z LOG [InstanceLoader] QueueModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] WidgetMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] GridDetailsModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] ItemsTaxMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] ItemsEanCodeMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] ItemsCustRatesMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] ItemsPriceMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] ItemsQtywiseRatesMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] ItemsReorderMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] ItemsTaxHistoryMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] ItemsMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] AccountsGroupModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] AccountLedgerMastersModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] LedgerBankAccountModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] LedgerShippingAddressModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] CompanyGroupMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] EmployeeDepartmentMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] EmployeeDesignationMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] EmployeeMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] UserAdministrationModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] TenderMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] TenderTypeMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] GspProviderMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] GspCompanyServiceModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] SupplierGroupModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] SuppliersModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] StateModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] CityModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] AreaModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] CustomerModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] CustomerGroupModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] BankListModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] DeviceListMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] StateCodeMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] UiTableColumnsModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] UiTableMasterModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] UserLoginSessionsModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] BatchPrefixModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] PromotionLoyaltyPointsModule dependencies initialized
+2026-05-21T13:58:45.497Z LOG [InstanceLoader] GodownsMasterModule dependencies initialized
+2026-05-21T13:58:45.498Z LOG [InstanceLoader] OpeningStockModule dependencies initialized
+2026-05-21T13:58:45.498Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T13:58:45.498Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T13:58:45.498Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T13:58:45.498Z LOG [InstanceLoader] ItemsCategoryMasterModule dependencies initialized
+2026-05-21T13:58:45.498Z LOG [InstanceLoader] BranchMasterModule dependencies initialized
+2026-05-21T13:58:45.498Z LOG [InstanceLoader] CompanyMasterModule dependencies initialized
+2026-05-21T13:58:45.502Z LOG [InstanceLoader] CacheModule dependencies initialized
+2026-05-21T14:09:13.026Z LOG [NestFactory] Starting Nest application...
+2026-05-21T14:09:13.048Z LOG [InstanceLoader] RequestContextModule dependencies initialized
+2026-05-21T14:09:13.048Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T14:09:13.048Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T14:09:13.048Z LOG [InstanceLoader] DiscoveryModule dependencies initialized
+2026-05-21T14:09:13.049Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:09:13.049Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:09:13.054Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T14:09:13.054Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T14:09:13.055Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T14:09:13.056Z LOG [InstanceLoader] ConfiguredGridSqlModule dependencies initialized
+2026-05-21T14:09:13.058Z LOG [InstanceLoader] SequenceModule dependencies initialized
+2026-05-21T14:09:13.058Z LOG [InstanceLoader] AuditLogModule dependencies initialized
+2026-05-21T14:09:13.058Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T14:09:13.058Z LOG [InstanceLoader] MenuMasterModule dependencies initialized
+2026-05-21T14:09:13.058Z LOG [InstanceLoader] PriceLevelMasterModule dependencies initialized
+2026-05-21T14:09:13.058Z LOG [InstanceLoader] HsnCodeMasterModule dependencies initialized
+2026-05-21T14:09:13.058Z LOG [InstanceLoader] MasterLookupModule dependencies initialized
+2026-05-21T14:09:13.058Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] ItemPriceDetailsModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] PhysicalStockModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] ItemStockBalanceModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] ItemBatchStockModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] GridColumnsModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] DropdownDetailsModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] DropdownColumnsModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] QueueModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] WidgetMasterModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] GridDetailsModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T14:09:13.059Z LOG [InstanceLoader] ItemsTaxMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsEanCodeMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsCustRatesMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsPriceMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsQtywiseRatesMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsReorderMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsTaxHistoryMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] AccountsGroupModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] AccountLedgerMastersModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] LedgerBankAccountModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] LedgerShippingAddressModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] CompanyGroupMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] EmployeeDepartmentMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] EmployeeDesignationMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] EmployeeMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] UserAdministrationModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] TenderMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] TenderTypeMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] GspProviderMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] GspCompanyServiceModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] SupplierGroupModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] SuppliersModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] StateModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] CityModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] AreaModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] CustomerModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] CustomerGroupModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] BankListModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] DeviceListMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] StateCodeMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] UiTableColumnsModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] UiTableMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] UserLoginSessionsModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] BatchPrefixModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] PromotionLoyaltyPointsModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] GodownsMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] OpeningStockModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] ItemsCategoryMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] BranchMasterModule dependencies initialized
+2026-05-21T14:09:13.060Z LOG [InstanceLoader] CompanyMasterModule dependencies initialized
+2026-05-21T14:09:13.066Z LOG [InstanceLoader] CacheModule dependencies initialized
+2026-05-21T14:10:59.555Z LOG [NestFactory] Starting Nest application...
+2026-05-21T14:10:59.564Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T14:10:59.564Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T14:10:59.564Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-05-21T14:10:59.564Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:10:59.564Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:10:59.568Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T14:10:59.568Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T14:10:59.568Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T14:10:59.569Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T14:10:59.569Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T14:10:59.569Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T14:10:59.569Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T14:10:59.569Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T14:10:59.616Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-05-21T14:10:59.616Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-05-21T14:10:59.616Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-05-21T14:10:59.616Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-05-21T14:10:59.617Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-05-21T14:10:59.617Z LOG [RouterExplorer] Mapped {/api/users/:id, GET} (version: 1) route
+2026-05-21T14:10:59.617Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-05-21T14:10:59.617Z LOG [RouterExplorer] Mapped {/api/users/:id, DELETE} (version: 1) route
+2026-05-21T14:10:59.617Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-05-21T14:10:59.618Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-05-21T14:10:59.618Z LOG [RouterExplorer] Mapped {/api/item-groups/list, GET} (version: 1) route
+2026-05-21T14:10:59.618Z LOG [RouterExplorer] Mapped {/api/item-groups/get/:itg_id, GET} (version: 1) route
+2026-05-21T14:10:59.618Z LOG [RouterExplorer] Mapped {/api/item-groups/delete/:itg_id, DELETE} (version: 1) route
+2026-05-21T14:10:59.618Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-05-21T14:10:59.619Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-05-21T14:10:59.619Z LOG [RouterExplorer] Mapped {/api/item-brands/list, GET} (version: 1) route
+2026-05-21T14:10:59.619Z LOG [RouterExplorer] Mapped {/api/item-brands/get/:brand_id, GET} (version: 1) route
+2026-05-21T14:10:59.619Z LOG [RouterExplorer] Mapped {/api/item-brands/delete/:brand_id, DELETE} (version: 1) route
+2026-05-21T14:10:59.619Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-05-21T14:10:59.619Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-05-21T14:10:59.620Z LOG [RouterExplorer] Mapped {/api/item-sections/list, GET} (version: 1) route
+2026-05-21T14:10:59.620Z LOG [RouterExplorer] Mapped {/api/item-sections/get/:sec_id, GET} (version: 1) route
+2026-05-21T14:10:59.620Z LOG [RouterExplorer] Mapped {/api/item-sections/delete/:sec_id, DELETE} (version: 1) route
+2026-05-21T14:10:59.620Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-05-21T14:10:59.620Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-05-21T14:10:59.620Z LOG [RouterExplorer] Mapped {/api/units/list, GET} (version: 1) route
+2026-05-21T14:10:59.620Z LOG [RouterExplorer] Mapped {/api/units/get/:unit_id, GET} (version: 1) route
+2026-05-21T14:10:59.620Z LOG [RouterExplorer] Mapped {/api/units/delete/:unit_id, DELETE} (version: 1) route
+2026-05-21T14:10:59.621Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-05-21T14:10:59.621Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-05-21T14:10:59.622Z LOG [NestApplication] Nest application successfully started
+2026-05-21T14:10:59.623Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:00.372Z LOG [NestFactory] Starting Nest application...
+2026-05-21T14:11:00.378Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T14:11:00.378Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T14:11:00.378Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-05-21T14:11:00.378Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:00.378Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:00.382Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T14:11:00.383Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T14:11:00.383Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T14:11:00.383Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T14:11:00.383Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T14:11:00.383Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T14:11:00.383Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T14:11:00.383Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T14:11:00.416Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-05-21T14:11:00.416Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-05-21T14:11:00.416Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-05-21T14:11:00.416Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-05-21T14:11:00.417Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-05-21T14:11:00.417Z LOG [RouterExplorer] Mapped {/api/users/:id, GET} (version: 1) route
+2026-05-21T14:11:00.417Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-05-21T14:11:00.417Z LOG [RouterExplorer] Mapped {/api/users/:id, DELETE} (version: 1) route
+2026-05-21T14:11:00.418Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-05-21T14:11:00.418Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-05-21T14:11:00.418Z LOG [RouterExplorer] Mapped {/api/item-groups/list, GET} (version: 1) route
+2026-05-21T14:11:00.418Z LOG [RouterExplorer] Mapped {/api/item-groups/get/:itg_id, GET} (version: 1) route
+2026-05-21T14:11:00.418Z LOG [RouterExplorer] Mapped {/api/item-groups/delete/:itg_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.419Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-05-21T14:11:00.419Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-05-21T14:11:00.419Z LOG [RouterExplorer] Mapped {/api/item-brands/list, GET} (version: 1) route
+2026-05-21T14:11:00.419Z LOG [RouterExplorer] Mapped {/api/item-brands/get/:brand_id, GET} (version: 1) route
+2026-05-21T14:11:00.419Z LOG [RouterExplorer] Mapped {/api/item-brands/delete/:brand_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.419Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-05-21T14:11:00.420Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-05-21T14:11:00.420Z LOG [RouterExplorer] Mapped {/api/item-sections/list, GET} (version: 1) route
+2026-05-21T14:11:00.420Z LOG [RouterExplorer] Mapped {/api/item-sections/get/:sec_id, GET} (version: 1) route
+2026-05-21T14:11:00.420Z LOG [RouterExplorer] Mapped {/api/item-sections/delete/:sec_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.420Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-05-21T14:11:00.420Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-05-21T14:11:00.420Z LOG [RouterExplorer] Mapped {/api/units/list, GET} (version: 1) route
+2026-05-21T14:11:00.421Z LOG [RouterExplorer] Mapped {/api/units/get/:unit_id, GET} (version: 1) route
+2026-05-21T14:11:00.421Z LOG [RouterExplorer] Mapped {/api/units/delete/:unit_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.421Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-05-21T14:11:00.421Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-05-21T14:11:00.422Z LOG [NestApplication] Nest application successfully started
+2026-05-21T14:11:00.423Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:00.536Z LOG [NestFactory] Starting Nest application...
+2026-05-21T14:11:00.542Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T14:11:00.543Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T14:11:00.543Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-05-21T14:11:00.543Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:00.543Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:00.547Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T14:11:00.547Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T14:11:00.548Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T14:11:00.548Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T14:11:00.548Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T14:11:00.548Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T14:11:00.548Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T14:11:00.548Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T14:11:00.578Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-05-21T14:11:00.578Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-05-21T14:11:00.578Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-05-21T14:11:00.579Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-05-21T14:11:00.579Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-05-21T14:11:00.579Z LOG [RouterExplorer] Mapped {/api/users/:id, GET} (version: 1) route
+2026-05-21T14:11:00.579Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-05-21T14:11:00.579Z LOG [RouterExplorer] Mapped {/api/users/:id, DELETE} (version: 1) route
+2026-05-21T14:11:00.580Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-05-21T14:11:00.580Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-05-21T14:11:00.580Z LOG [RouterExplorer] Mapped {/api/item-groups/list, GET} (version: 1) route
+2026-05-21T14:11:00.580Z LOG [RouterExplorer] Mapped {/api/item-groups/get/:itg_id, GET} (version: 1) route
+2026-05-21T14:11:00.580Z LOG [RouterExplorer] Mapped {/api/item-groups/delete/:itg_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.581Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-05-21T14:11:00.581Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-05-21T14:11:00.581Z LOG [RouterExplorer] Mapped {/api/item-brands/list, GET} (version: 1) route
+2026-05-21T14:11:00.581Z LOG [RouterExplorer] Mapped {/api/item-brands/get/:brand_id, GET} (version: 1) route
+2026-05-21T14:11:00.581Z LOG [RouterExplorer] Mapped {/api/item-brands/delete/:brand_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.581Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-05-21T14:11:00.581Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-05-21T14:11:00.582Z LOG [RouterExplorer] Mapped {/api/item-sections/list, GET} (version: 1) route
+2026-05-21T14:11:00.582Z LOG [RouterExplorer] Mapped {/api/item-sections/get/:sec_id, GET} (version: 1) route
+2026-05-21T14:11:00.582Z LOG [RouterExplorer] Mapped {/api/item-sections/delete/:sec_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.582Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-05-21T14:11:00.582Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-05-21T14:11:00.582Z LOG [RouterExplorer] Mapped {/api/units/list, GET} (version: 1) route
+2026-05-21T14:11:00.582Z LOG [RouterExplorer] Mapped {/api/units/get/:unit_id, GET} (version: 1) route
+2026-05-21T14:11:00.582Z LOG [RouterExplorer] Mapped {/api/units/delete/:unit_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.582Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-05-21T14:11:00.583Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-05-21T14:11:00.584Z LOG [NestApplication] Nest application successfully started
+2026-05-21T14:11:00.585Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:00.872Z LOG [NestFactory] Starting Nest application...
+2026-05-21T14:11:00.880Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T14:11:00.880Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T14:11:00.881Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-05-21T14:11:00.881Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:00.881Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:00.885Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T14:11:00.886Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T14:11:00.886Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T14:11:00.887Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T14:11:00.887Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T14:11:00.887Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T14:11:00.887Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T14:11:00.887Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T14:11:00.923Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-05-21T14:11:00.923Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-05-21T14:11:00.923Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-05-21T14:11:00.924Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-05-21T14:11:00.924Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-05-21T14:11:00.924Z LOG [RouterExplorer] Mapped {/api/users/:id, GET} (version: 1) route
+2026-05-21T14:11:00.924Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-05-21T14:11:00.925Z LOG [RouterExplorer] Mapped {/api/users/:id, DELETE} (version: 1) route
+2026-05-21T14:11:00.925Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-05-21T14:11:00.925Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-05-21T14:11:00.925Z LOG [RouterExplorer] Mapped {/api/item-groups/list, GET} (version: 1) route
+2026-05-21T14:11:00.926Z LOG [RouterExplorer] Mapped {/api/item-groups/get/:itg_id, GET} (version: 1) route
+2026-05-21T14:11:00.926Z LOG [RouterExplorer] Mapped {/api/item-groups/delete/:itg_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.926Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-05-21T14:11:00.926Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-05-21T14:11:00.926Z LOG [RouterExplorer] Mapped {/api/item-brands/list, GET} (version: 1) route
+2026-05-21T14:11:00.926Z LOG [RouterExplorer] Mapped {/api/item-brands/get/:brand_id, GET} (version: 1) route
+2026-05-21T14:11:00.927Z LOG [RouterExplorer] Mapped {/api/item-brands/delete/:brand_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.927Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-05-21T14:11:00.927Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-05-21T14:11:00.927Z LOG [RouterExplorer] Mapped {/api/item-sections/list, GET} (version: 1) route
+2026-05-21T14:11:00.927Z LOG [RouterExplorer] Mapped {/api/item-sections/get/:sec_id, GET} (version: 1) route
+2026-05-21T14:11:00.927Z LOG [RouterExplorer] Mapped {/api/item-sections/delete/:sec_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.927Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-05-21T14:11:00.927Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-05-21T14:11:00.928Z LOG [RouterExplorer] Mapped {/api/units/list, GET} (version: 1) route
+2026-05-21T14:11:00.928Z LOG [RouterExplorer] Mapped {/api/units/get/:unit_id, GET} (version: 1) route
+2026-05-21T14:11:00.928Z LOG [RouterExplorer] Mapped {/api/units/delete/:unit_id, DELETE} (version: 1) route
+2026-05-21T14:11:00.928Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-05-21T14:11:00.928Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-05-21T14:11:00.930Z LOG [NestApplication] Nest application successfully started
+2026-05-21T14:11:00.931Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:02.175Z LOG [NestFactory] Starting Nest application...
+2026-05-21T14:11:02.182Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T14:11:02.182Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T14:11:02.182Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-05-21T14:11:02.182Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:02.182Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:02.184Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T14:11:02.185Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T14:11:02.185Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T14:11:02.185Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T14:11:02.185Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T14:11:02.185Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T14:11:02.186Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T14:11:02.186Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T14:11:02.217Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-05-21T14:11:02.218Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-05-21T14:11:02.218Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-05-21T14:11:02.218Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-05-21T14:11:02.218Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-05-21T14:11:02.218Z LOG [RouterExplorer] Mapped {/api/users/:id, GET} (version: 1) route
+2026-05-21T14:11:02.219Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-05-21T14:11:02.219Z LOG [RouterExplorer] Mapped {/api/users/:id, DELETE} (version: 1) route
+2026-05-21T14:11:02.219Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-05-21T14:11:02.219Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-05-21T14:11:02.219Z LOG [RouterExplorer] Mapped {/api/item-groups/list, GET} (version: 1) route
+2026-05-21T14:11:02.220Z LOG [RouterExplorer] Mapped {/api/item-groups/get/:itg_id, GET} (version: 1) route
+2026-05-21T14:11:02.220Z LOG [RouterExplorer] Mapped {/api/item-groups/delete/:itg_id, DELETE} (version: 1) route
+2026-05-21T14:11:02.220Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-05-21T14:11:02.220Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-05-21T14:11:02.220Z LOG [RouterExplorer] Mapped {/api/item-brands/list, GET} (version: 1) route
+2026-05-21T14:11:02.221Z LOG [RouterExplorer] Mapped {/api/item-brands/get/:brand_id, GET} (version: 1) route
+2026-05-21T14:11:02.221Z LOG [RouterExplorer] Mapped {/api/item-brands/delete/:brand_id, DELETE} (version: 1) route
+2026-05-21T14:11:02.221Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-05-21T14:11:02.221Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-05-21T14:11:02.221Z LOG [RouterExplorer] Mapped {/api/item-sections/list, GET} (version: 1) route
+2026-05-21T14:11:02.221Z LOG [RouterExplorer] Mapped {/api/item-sections/get/:sec_id, GET} (version: 1) route
+2026-05-21T14:11:02.221Z LOG [RouterExplorer] Mapped {/api/item-sections/delete/:sec_id, DELETE} (version: 1) route
+2026-05-21T14:11:02.221Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-05-21T14:11:02.221Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-05-21T14:11:02.222Z LOG [RouterExplorer] Mapped {/api/units/list, GET} (version: 1) route
+2026-05-21T14:11:02.222Z LOG [RouterExplorer] Mapped {/api/units/get/:unit_id, GET} (version: 1) route
+2026-05-21T14:11:02.222Z LOG [RouterExplorer] Mapped {/api/units/delete/:unit_id, DELETE} (version: 1) route
+2026-05-21T14:11:02.222Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-05-21T14:11:02.222Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-05-21T14:11:02.223Z LOG [NestApplication] Nest application successfully started
+2026-05-21T14:11:02.224Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:09.230Z LOG [NestFactory] Starting Nest application...
+2026-05-21T14:11:09.236Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T14:11:09.236Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T14:11:09.237Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-05-21T14:11:09.237Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:09.237Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:09.240Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T14:11:09.241Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T14:11:09.241Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T14:11:09.241Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T14:11:09.241Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T14:11:09.241Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T14:11:09.241Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T14:11:09.241Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T14:11:09.269Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-05-21T14:11:09.270Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-05-21T14:11:09.270Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-05-21T14:11:09.270Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-05-21T14:11:09.270Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-05-21T14:11:09.271Z LOG [RouterExplorer] Mapped {/api/users/:id, GET} (version: 1) route
+2026-05-21T14:11:09.271Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-05-21T14:11:09.271Z LOG [RouterExplorer] Mapped {/api/users/:id, DELETE} (version: 1) route
+2026-05-21T14:11:09.271Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-05-21T14:11:09.271Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-05-21T14:11:09.272Z LOG [RouterExplorer] Mapped {/api/item-groups/list, GET} (version: 1) route
+2026-05-21T14:11:09.272Z LOG [RouterExplorer] Mapped {/api/item-groups/get/:itg_id, GET} (version: 1) route
+2026-05-21T14:11:09.272Z LOG [RouterExplorer] Mapped {/api/item-groups/delete/:itg_id, DELETE} (version: 1) route
+2026-05-21T14:11:09.272Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-05-21T14:11:09.272Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-05-21T14:11:09.273Z LOG [RouterExplorer] Mapped {/api/item-brands/list, GET} (version: 1) route
+2026-05-21T14:11:09.273Z LOG [RouterExplorer] Mapped {/api/item-brands/get/:brand_id, GET} (version: 1) route
+2026-05-21T14:11:09.273Z LOG [RouterExplorer] Mapped {/api/item-brands/delete/:brand_id, DELETE} (version: 1) route
+2026-05-21T14:11:09.273Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-05-21T14:11:09.273Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-05-21T14:11:09.273Z LOG [RouterExplorer] Mapped {/api/item-sections/list, GET} (version: 1) route
+2026-05-21T14:11:09.274Z LOG [RouterExplorer] Mapped {/api/item-sections/get/:sec_id, GET} (version: 1) route
+2026-05-21T14:11:09.274Z LOG [RouterExplorer] Mapped {/api/item-sections/delete/:sec_id, DELETE} (version: 1) route
+2026-05-21T14:11:09.274Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-05-21T14:11:09.274Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-05-21T14:11:09.274Z LOG [RouterExplorer] Mapped {/api/units/list, GET} (version: 1) route
+2026-05-21T14:11:09.274Z LOG [RouterExplorer] Mapped {/api/units/get/:unit_id, GET} (version: 1) route
+2026-05-21T14:11:09.274Z LOG [RouterExplorer] Mapped {/api/units/delete/:unit_id, DELETE} (version: 1) route
+2026-05-21T14:11:09.274Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-05-21T14:11:09.275Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-05-21T14:11:09.276Z LOG [NestApplication] Nest application successfully started
+2026-05-21T14:11:09.277Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:12.107Z LOG [NestFactory] Starting Nest application...
+2026-05-21T14:11:12.114Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-05-21T14:11:12.114Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-05-21T14:11:12.114Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-05-21T14:11:12.114Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:12.114Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-05-21T14:11:12.116Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-05-21T14:11:12.117Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-05-21T14:11:12.117Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-05-21T14:11:12.118Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-05-21T14:11:12.118Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-05-21T14:11:12.118Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-05-21T14:11:12.118Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-05-21T14:11:12.118Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-05-21T14:11:12.152Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-05-21T14:11:12.152Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-05-21T14:11:12.152Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-05-21T14:11:12.153Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-05-21T14:11:12.153Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-05-21T14:11:12.153Z LOG [RouterExplorer] Mapped {/api/users/:id, GET} (version: 1) route
+2026-05-21T14:11:12.153Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-05-21T14:11:12.154Z LOG [RouterExplorer] Mapped {/api/users/:id, DELETE} (version: 1) route
+2026-05-21T14:11:12.154Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-05-21T14:11:12.154Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-05-21T14:11:12.154Z LOG [RouterExplorer] Mapped {/api/item-groups/list, GET} (version: 1) route
+2026-05-21T14:11:12.155Z LOG [RouterExplorer] Mapped {/api/item-groups/get/:itg_id, GET} (version: 1) route
+2026-05-21T14:11:12.155Z LOG [RouterExplorer] Mapped {/api/item-groups/delete/:itg_id, DELETE} (version: 1) route
+2026-05-21T14:11:12.155Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-05-21T14:11:12.155Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-05-21T14:11:12.155Z LOG [RouterExplorer] Mapped {/api/item-brands/list, GET} (version: 1) route
+2026-05-21T14:11:12.156Z LOG [RouterExplorer] Mapped {/api/item-brands/get/:brand_id, GET} (version: 1) route
+2026-05-21T14:11:12.156Z LOG [RouterExplorer] Mapped {/api/item-brands/delete/:brand_id, DELETE} (version: 1) route
+2026-05-21T14:11:12.156Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-05-21T14:11:12.156Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-05-21T14:11:12.156Z LOG [RouterExplorer] Mapped {/api/item-sections/list, GET} (version: 1) route
+2026-05-21T14:11:12.156Z LOG [RouterExplorer] Mapped {/api/item-sections/get/:sec_id, GET} (version: 1) route
+2026-05-21T14:11:12.156Z LOG [RouterExplorer] Mapped {/api/item-sections/delete/:sec_id, DELETE} (version: 1) route
+2026-05-21T14:11:12.156Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-05-21T14:11:12.157Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-05-21T14:11:12.157Z LOG [RouterExplorer] Mapped {/api/units/list, GET} (version: 1) route
+2026-05-21T14:11:12.157Z LOG [RouterExplorer] Mapped {/api/units/get/:unit_id, GET} (version: 1) route
+2026-05-21T14:11:12.157Z LOG [RouterExplorer] Mapped {/api/units/delete/:unit_id, DELETE} (version: 1) route
+2026-05-21T14:11:12.157Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-05-21T14:11:12.157Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-05-21T14:11:12.158Z LOG [NestApplication] Nest application successfully started
+2026-05-21T14:11:12.160Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010

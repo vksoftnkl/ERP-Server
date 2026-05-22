@@ -169,7 +169,53 @@ async function bootstrap(): Promise<void> {
     app,
     buildSwaggerConfig('ERP Server API', 'API documentation for ERP Server'),
   );
-  SwaggerModule.setup(allDocsPath, app, allSwaggerDocument);
+  const moduleNavList = swaggerModuleDocs.map((d) => ({
+    label: d.title.replace(/ API$/, ''),
+    url: `/${apiPrefix ? `${apiPrefix}/docs/${d.path}` : `docs/${d.path}`}`,
+  }));
+  const moduleSearchJs = `
+(function () {
+  var modules = ${JSON.stringify(moduleNavList)};
+  function inject() {
+    var topbar = document.querySelector('.topbar-wrapper');
+    if (!topbar) { setTimeout(inject, 300); return; }
+    if (document.getElementById('erp-module-search')) return;
+    var wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:relative;display:flex;align-items:center;margin-left:16px;';
+    var input = document.createElement('input');
+    input.id = 'erp-module-search';
+    input.type = 'text';
+    input.placeholder = 'Search modules…';
+    input.autocomplete = 'off';
+    input.style.cssText = 'padding:6px 14px;border-radius:20px;border:none;font-size:13px;width:220px;outline:none;background:#fff;color:#333;box-shadow:0 1px 4px rgba(0,0,0,.25);';
+    var dropdown = document.createElement('div');
+    dropdown.style.cssText = 'position:absolute;top:calc(100% + 6px);left:0;width:260px;background:#fff;border:1px solid #ddd;border-radius:6px;max-height:320px;overflow-y:auto;z-index:9999;display:none;box-shadow:0 6px 16px rgba(0,0,0,.15);';
+    function renderItems(val) {
+      dropdown.innerHTML = '';
+      var list = val ? modules.filter(function(m){ return m.label.toLowerCase().includes(val.toLowerCase()); }) : modules;
+      if (!list.length) { dropdown.style.display='none'; return; }
+      list.forEach(function(m) {
+        var a = document.createElement('a');
+        a.href = m.url;
+        a.textContent = m.label;
+        a.style.cssText = 'display:block;padding:9px 14px;color:#3b4151;text-decoration:none;font-size:13px;border-bottom:1px solid #f0f0f0;';
+        a.addEventListener('mouseover', function(){ a.style.background='#f7f9fc'; });
+        a.addEventListener('mouseout',  function(){ a.style.background=''; });
+        dropdown.appendChild(a);
+      });
+      dropdown.style.display = 'block';
+    }
+    input.addEventListener('focus', function(){ renderItems(input.value); });
+    input.addEventListener('input', function(){ renderItems(input.value); });
+    document.addEventListener('click', function(e){ if (!wrapper.contains(e.target)){ dropdown.style.display='none'; } });
+    wrapper.appendChild(input);
+    wrapper.appendChild(dropdown);
+    topbar.appendChild(wrapper);
+  }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', inject); } else { inject(); }
+})();
+`;
+  SwaggerModule.setup(allDocsPath, app, allSwaggerDocument, { customJsStr: moduleSearchJs });
   for (const docs of swaggerModuleDocs) {
     const docsPath = apiPrefix ? `${apiPrefix}/docs/${docs.path}` : `docs/${docs.path}`;
     const moduleSwaggerDocument = SwaggerModule.createDocument(

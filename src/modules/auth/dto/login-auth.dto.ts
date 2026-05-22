@@ -60,26 +60,4 @@ export class LoginAuthDto {
   @IsString()
   @MaxLength(30)
   device_type?: string;
-  @ApiPropertyOptional({
-    example: "John's iPhone",
-    maxLength: 120,
-    description: 'Human-readable device name',
-  })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalTrimmedString(value))
-  @ValidateIf((_, value) => value !== undefined)
-  @IsString()
-  @MaxLength(120)
-  device_name?: string;
-  @ApiPropertyOptional({
-    example: 'Android',
-    maxLength: 30,
-    description: 'Device platform (e.g. Android, iOS, Windows)',
-  })
-  @IsOptional()
-  @Transform(({ value }) => toOptionalTrimmedString(value))
-  @ValidateIf((_, value) => value !== undefined)
-  @IsString()
-  @MaxLength(30)
-  platform?: string;
 }

@@ -87,8 +87,6 @@ export class AuthService {
       loginAuthDto.device_id || isWebDevice
         ? await this.upsertDeviceOnLogin(loginAuthDto.device_id, user, {
             deviceType: loginAuthDto.device_type,
-            deviceName: loginAuthDto.device_name,
-            platform: loginAuthDto.platform,
           }).catch((error: unknown) => {
             this.logger.warn(
               `Skipping device upsert on login for user ${user.usrId}: ${this.describeError(error)}`,
@@ -157,7 +155,7 @@ export class AuthService {
   private async upsertDeviceOnLogin(
     deviceUid: string | undefined,
     user: UserMaster,
-    opts: { deviceType?: string; deviceName?: string; platform?: string } = {},
+    opts: { deviceType?: string } = {},
   ): Promise<DeviceMaster | null> {
     const now = new Date();
     const ip = this.requestContextService.getIpAddress();
@@ -170,7 +168,6 @@ export class AuthService {
       devLastLogin: now,
       devModifiedOn: now,
       devModifiedBy: user.usrId,
-      ...(opts.deviceName !== undefined && { devDeviceName: opts.deviceName }),
     };
     if (resolvedType.toLowerCase() === 'web') {
       const webDeviceUid = `web:${user.usrId}`;
@@ -179,7 +176,6 @@ export class AuthService {
         create: {
           devDeviceUid: webDeviceUid,
           devDeviceType: 'web',
-          devDeviceName: opts.deviceName ?? null,
           devUserId: user.usrId,
           devCompanyId: user.usrCompanyId,
           devBranchId: user.usrBranchId,
@@ -201,8 +197,6 @@ export class AuthService {
       create: {
         devDeviceUid: deviceUid,
         devDeviceType: resolvedType,
-        devDeviceName: opts.deviceName ?? null,
-        devPlatform: opts.platform ?? null,
         devUserId: user.usrId,
         devCompanyId: user.usrCompanyId,
         devBranchId: user.usrBranchId,
@@ -218,7 +212,6 @@ export class AuthService {
       update: {
         ...commonUpdate,
         ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
-        ...(opts.platform !== undefined && { devPlatform: opts.platform }),
       },
     });
   }

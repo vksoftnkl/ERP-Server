@@ -40,4 +40,9 @@ export class ListAuditLogQueryDto extends ModuleListQueryBaseDto {
   })
   @OptionalUuid()
   cursor?: string;
+
+  @ApiPropertyOptional({
+    description: 'Set to true to include total count. Omit to skip the COUNT(*) query.',
+  })
+  include_total?: boolean;
 }

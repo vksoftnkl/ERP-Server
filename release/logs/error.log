@@ -3,3 +3,15 @@
 2026-02-14T10:33:35.220Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
 2026-03-07T05:22:04.326Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
 2026-03-07T06:40:41.338Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-21T13:58:30.549Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-21T13:58:43.655Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-21T13:58:45.428Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-21T13:58:45.711Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-21T14:09:13.268Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-21T14:10:59.623Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:00.423Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:00.585Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:00.931Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:02.224Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:09.277Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
+2026-05-21T14:11:12.160Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use :::3010
