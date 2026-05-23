@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { isForeignKeyConstraintError, isUniqueConstraintError } from 'src/common/utils/module-service.utils';
 import { ItemStockLedger as PrismaItemStockLedger, Prisma } from '@prisma/client';
 import {
   OpeningStockDetailPayload,
@@ -1685,27 +1686,15 @@ export class ItemStockLedgerService {
     return parsed;
   }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
+    if (isUniqueConstraintError(error)) {
       throw new ConflictException(
         'Duplicate item stock ledger or item stock balance rows are not allowed',
       );
     }
-    if (this.isForeignKeyConstraintError(error)) {
+    if (isForeignKeyConstraintError(error)) {
       throw new BadRequestException(
         'One or more referenced ids do not exist for the requested stock posting',
       );
     }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2003';
   }
 }

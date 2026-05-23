@@ -1,10 +1,12 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { resolvePagination } from 'src/common/utils/module-list.utils';
+import {
+  isForeignKeyConstraintError,
+  throwBadRequest,
+  throwNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import {
   CreatePhysicalStockBatchDetailDto,
@@ -21,9 +23,6 @@ import type {
   PhysicalStockListItem,
   PhysicalStockListMeta,
 } from './types/physical-stock-response.types';
-const VALIDATION_FAILED_MESSAGE = 'Validation failed';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
 const PHYSICAL_STOCK_DOCUMENT_INCLUDE = {
   details: {
     where: {
@@ -108,9 +107,7 @@ export class PhysicalStockService {
   async list(
     queryDto: ListPhysicalStockQueryDto,
   ): Promise<{ items: PhysicalStockListItem[]; meta: PhysicalStockListMeta }> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const where = this.buildListWhere(queryDto);
     const [total, records] = await Promise.all([
       this.prisma.physicalStockHeader.count({ where }),
@@ -247,7 +244,7 @@ export class PhysicalStockService {
       });
     }
     if (errors.length > 0) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, errors);
+      throwBadRequest<PhysicalStockErrorDetail>('Validation failed',errors);
     }
   }
   private validateDocumentScopes(dto: CreatePhysicalStockDto): void {
@@ -310,7 +307,7 @@ export class PhysicalStockService {
       }
     }
     if (errors.length > 0) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, errors);
+      throwBadRequest<PhysicalStockErrorDetail>('Validation failed',errors);
     }
   }
   private pushMismatchError(
@@ -439,37 +436,21 @@ export class PhysicalStockService {
     }
   }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Physical stock already exists', [
-          {
-            field: 'psDocNo',
-            message:
-              'Duplicate physical stock document number is not allowed for the same accounting year, company, and branch',
-          },
-        ]),
-      );
-    }
-    if (this.isForeignKeyConstraintError(error)) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+    throwOnUniqueConstraintError<PhysicalStockErrorDetail>(error, 'Physical stock already exists', [
+      {
+        field: 'psDocNo',
+        message:
+          'Duplicate physical stock document number is not allowed for the same accounting year, company, and branch',
+      },
+    ]);
+    if (isForeignKeyConstraintError(error)) {
+      throwBadRequest<PhysicalStockErrorDetail>('Validation failed', [
         {
           field: this.resolveForeignKeyField(error),
           message: 'Referenced master record was not found or is inactive',
         },
       ]);
     }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    return this.getPrismaErrorCode(error) === 'P2002';
-  }
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    return this.getPrismaErrorCode(error) === 'P2003';
-  }
-  private getPrismaErrorCode(error: unknown): string | undefined {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return undefined;
-    }
-    return (error as { code?: string }).code;
   }
   private resolveForeignKeyField(error: unknown): string {
     const constraintName = this.getPrismaErrorMetaText(error).toLowerCase();
@@ -509,19 +490,6 @@ export class PhysicalStockService {
     return [meta.field_name, meta.constraint, meta.target]
       .filter((value): value is string => typeof value === 'string')
       .join(' ');
-  }
-  private throwBadRequest(message: string, errors: PhysicalStockErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: PhysicalStockErrorDetail[] = [],
-  ): { success: false; message: string; errors: PhysicalStockErrorDetail[] } {
-    return {
-      success: false,
-      message,
-      errors,
-    };
   }
   private buildScopedListWhere(
     queryDto: Pick<
@@ -596,7 +564,7 @@ export class PhysicalStockService {
   ): Promise<PhysicalStockHeaderRecord> {
     const refNo = queryDto.ps_doc_refno?.trim() ?? '';
     if (!refNo) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<PhysicalStockErrorDetail>('Validation failed',[
         {
           field: 'ps_doc_refno',
           message: 'ps_doc_refno is required',
@@ -613,14 +581,7 @@ export class PhysicalStockService {
       orderBy: [{ psDocDate: 'desc' }, { psDocNo: 'desc' }, { psId: 'desc' }],
     });
     if (!header) {
-      throw new NotFoundException(
-        this.buildErrorResponse('Physical stock document not found', [
-          {
-            field: 'ps_doc_refno',
-            message: `No active physical stock document found with ref no ${refNo}`,
-          },
-        ]),
-      );
+      throwNotFound<PhysicalStockErrorDetail>('Physical stock document not found', 'ps_doc_refno', `No active physical stock document found with ref no ${refNo}`);
     }
     return header;
   }
@@ -908,7 +869,7 @@ export class PhysicalStockService {
       include: PHYSICAL_STOCK_DOCUMENT_INCLUDE,
     });
     if (!document) {
-      throw new NotFoundException(`Physical stock header ${headerId} not found`);
+      throwNotFound<PhysicalStockErrorDetail>('Physical stock document not found', 'ps_id', `Physical stock header ${headerId} not found`);
     }
     return this.toDocumentResponse(document);
   }
@@ -923,14 +884,7 @@ export class PhysicalStockService {
       },
     });
     if (!header) {
-      throw new NotFoundException(
-        this.buildErrorResponse('Physical stock document not found', [
-          {
-            field: 'psId',
-            message: `No active physical stock document found with psId ${psId}`,
-          },
-        ]),
-      );
+      throwNotFound<PhysicalStockErrorDetail>('Physical stock document not found', 'psId', `No active physical stock document found with psId ${psId}`);
     }
     return header;
   }

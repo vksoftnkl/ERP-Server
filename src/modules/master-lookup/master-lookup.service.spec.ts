@@ -402,6 +402,48 @@ describe('MasterLookupService', () => {
     expect(prisma.company.findMany).not.toHaveBeenCalled();
   });
 
+  it('matches configured dropdown records by master page display names', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 11,
+        dropdownName: 'GSP Service Master',
+        dropdownSql: 'SELECT ttm_type_id, ttm_type_name FROM accounts.tender_type',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'ttm_type_name',
+        dropdownSortOrder: 'ASC',
+        dropdownColumns: [
+          {
+            dropColumnsColumnNo: 1,
+            dropColumnsColumnName: 'ttm_type_id',
+            dropColumnsColumnAlias: null,
+            dropColumnsColumnFilter: false,
+          },
+          {
+            dropColumnsColumnNo: 2,
+            dropColumnsColumnName: 'ttm_type_name',
+            dropColumnsColumnAlias: null,
+            dropColumnsColumnFilter: true,
+          },
+        ],
+      },
+    ]);
+    prisma.$queryRawUnsafe.mockResolvedValue([
+      {
+        ttm_type_id: 1,
+        ttm_type_name: 'E-Invoice',
+      },
+    ]);
+
+    const result = await service.getAllAccountsAndMasterNameIds('tenderTypes');
+
+    expect(result).toEqual({
+      scope: 'accounts',
+      module: 'tenderTypes',
+      items: [{ id: '1', name: 'E-Invoice', ttm_type_id: 1, ttm_type_name: 'E-Invoice' }],
+    });
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+  });
+
   it('falls back to Prisma table queries when no dropdown mapping exists for the module', async () => {
     prisma.company.findMany.mockResolvedValue([
       {

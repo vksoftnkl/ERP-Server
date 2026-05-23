@@ -1,9 +1,10 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import { Controller, Get, Query, Version } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Query, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -13,14 +14,15 @@ import {
   LOOKUP_MODULE_KEYS,
   MasterLookupDataPayload,
   MasterLookupSuccessResponse,
+  NameIdOption,
 } from './types/master-lookup-api.types';
-import { MasterLookupSuccessDto } from './dto/master-lookup-response.dto';
+import { MasterLookupSuccessDto, NameIdOptionListSuccessDto } from './dto/master-lookup-response.dto';
 import { MasterLookupService } from './master-lookup.service';
-import { MasterLookupQueryDto } from './dto/master-lookup-query.dto';
+import { DropdownSqlQueryDto, MasterLookupQueryDto } from './dto/master-lookup-query.dto';
 @ApiTags('Master Lookup')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('master-lookups')
 export class MasterLookupController {
   constructor(private readonly masterLookupService: MasterLookupService) {}
@@ -55,10 +57,36 @@ export class MasterLookupController {
     const message = queryDto.module
       ? `Name-id data fetched successfully for module ${queryDto.module}`
       : 'Name-id data fetched successfully';
-    return {
-      success: true,
-      message,
-      data,
-    };
+    return { success: true, message, data };
+  }
+
+  @Get('branches/by-company/:companyId')
+  @Version('1')
+  @ApiOperation({ summary: 'Get branches for a specific company' })
+  @ApiParam({ name: 'companyId', type: String, description: 'UUID of the company' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Case-insensitive search on branch name' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Maximum records to return (1-100)' })
+  @ApiOkResponse({ type: NameIdOptionListSuccessDto })
+  async getBranchesByCompany(
+    @Param('companyId') companyId: string,
+    @Query() query: DropdownSqlQueryDto,
+  ): Promise<MasterLookupSuccessResponse<NameIdOption[]>> {
+    const data = await this.masterLookupService.getBranchesByCompany(companyId, query.search, query.limit);
+    return { success: true, message: `Branches fetched for company ${companyId}`, data };
+  }
+
+  @Get('dropdown/:dropdownId')
+  @Version('1')
+  @ApiOperation({ summary: 'Run dropdown SQL query by dropdown ID and return results' })
+  @ApiParam({ name: 'dropdownId', type: Number, description: 'ID of the dropdown to execute' })
+  @ApiQuery({ name: 'search', required: false, type: String, description: 'Case-insensitive filter applied to results' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Maximum records to return (1-100)' })
+  @ApiOkResponse({ type: NameIdOptionListSuccessDto })
+  async getDropdownSqlData(
+    @Param('dropdownId', ParseIntPipe) dropdownId: number,
+    @Query() query: DropdownSqlQueryDto,
+  ): Promise<MasterLookupSuccessResponse<NameIdOption[]>> {
+    const data = await this.masterLookupService.getDropdownSqlData(dropdownId, query.search, query.limit);
+    return { success: true, message: `Dropdown ${dropdownId} data fetched successfully`, data };
   }
 }

@@ -19,7 +19,6 @@ import {
   OpeningStockHeaderPayload,
   OpeningStockListItem,
   OpeningStockListMeta,
-  OpeningStockSuccessResponse,
   OpeningStockDetailPayload,
 } from './types/opening-stock-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
@@ -29,10 +28,9 @@ import { createAccountVoucherHeader, CreateAccountVoucherHeaderPayload, softDele
 import { resolvePagination } from 'src/common/utils/module-list.utils';
 import {
   isForeignKeyConstraintError,
-  isUniqueConstraintError,
   throwBadRequest,
-  throwConflict,
   throwNotFound,
+  throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
 const OPENING_STOCK_HEADER_TABLE_NAME = 'opening stock header';
@@ -815,7 +813,7 @@ export class OpeningStockService {
     if (missingIds.length === 0) {
       return;
     }
-    this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+    throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
       {
         field,
         message: `Invalid ${field} reference: ${missingIds.join(', ')}`,
@@ -1055,7 +1053,7 @@ export class OpeningStockService {
       orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
     });
     if (!header) {
-      this.throwNotFound(avhVoucherRefno ?? '', 'avh_voucher_refno');
+      throwNotFound<OpeningStockErrorDetail>('Opening stock document not found', 'avh_voucher_refno', `No active opening stock document found with avh_voucher_refno ${avhVoucherRefno ?? ''}`);
     }
     return header;
   }
@@ -1191,8 +1189,8 @@ export class OpeningStockService {
       osh_ref_no: record.oshRefNo,
       osh_narration: record.oshNarration,
       osh_total_lines: record.oshTotalLines,
-      osh_total_qty: this.toNumber(record.oshTotalQty),
-      osh_total_value: this.toNumber(record.oshTotalValue),
+      osh_total_qty: toNumber(record.oshTotalQty),
+      osh_total_value: toNumber(record.oshTotalValue),
       osh_status: record.oshStatus,
       osh_user_name: userName,
       osh_user_id: record.oshUserId,
@@ -1239,37 +1237,37 @@ export class OpeningStockService {
       osl_mfg_date: this.toNullableIsoString(record.oslMfgDate),
       osl_expiry_date: this.toNullableIsoString(record.oslExpiryDate),
       osl_serial_no: record.oslSerialNo,
-      osl_qty: this.toNumber(record.oslQty),
-      osl_base_qty: this.toNumber(record.oslBaseQty),
-      osl_free_qty: this.toNumber(record.oslFreeQty),
-      osl_free_base_qty: this.toNumber(record.oslFreeBaseQty),
-      osl_conv_factor: this.toNumber(record.oslConvFactor),
+      osl_qty: toNumber(record.oslQty),
+      osl_base_qty: toNumber(record.oslBaseQty),
+      osl_free_qty: toNumber(record.oslFreeQty),
+      osl_free_base_qty: toNumber(record.oslFreeBaseQty),
+      osl_conv_factor: toNumber(record.oslConvFactor),
       osl_tax_id: record.oslTaxId,
       osl_tax_name: record.oslTaxId
         ? (lookups.taxesById.get(record.oslTaxId)?.taxName ?? null)
         : null,
-      osl_tax_perc: this.toNumber(record.oslTaxPerc),
+      osl_tax_perc: toNumber(record.oslTaxPerc),
       osl_cess_type: record.oslCessType,
-      osl_cess_perc: this.toNumber(record.oslCessPerc),
-      osl_cess_per_unit: this.toNumber(record.oslCessPerUnit),
-      osl_cost_rate: this.toNumber(record.oslCostRate),
-      osl_cost_rate_wot: this.toNumber(record.oslCostRateWot),
-      osl_stock_value: this.toNumber(record.oslStockValue),
-      osl_stock_value_wot: this.toNumber(record.oslStockValueWot),
-      osl_sale_rate_a: this.toNumber(record.oslSaleRateA),
-      osl_sale_rate_b: this.toNumber(record.oslSaleRateB),
-      osl_sale_rate_c: this.toNumber(record.oslSaleRateC),
-      osl_sale_rate_d: this.toNumber(record.oslSaleRateD),
-      osl_sale_rate_a_wot: this.toNumber(record.oslSaleRateAWot),
-      osl_sale_rate_b_wot: this.toNumber(record.oslSaleRateBWot),
-      osl_sale_rate_c_wot: this.toNumber(record.oslSaleRateCWot),
-      osl_sale_rate_d_wot: this.toNumber(record.oslSaleRateDWot),
-      osl_markup_perc_a: this.toNumber(record.oslMarkupPercA),
-      osl_markup_perc_b: this.toNumber(record.oslMarkupPercB),
-      osl_markup_perc_c: this.toNumber(record.oslMarkupPercC),
-      osl_markup_perc_d: this.toNumber(record.oslMarkupPercD),
-      osl_mrp_rate: this.toNumber(record.oslMrpRate),
-      osl_min_rate: this.toNumber(record.oslMinRate),
+      osl_cess_perc: toNumber(record.oslCessPerc),
+      osl_cess_per_unit: toNumber(record.oslCessPerUnit),
+      osl_cost_rate: toNumber(record.oslCostRate),
+      osl_cost_rate_wot: toNumber(record.oslCostRateWot),
+      osl_stock_value: toNumber(record.oslStockValue),
+      osl_stock_value_wot: toNumber(record.oslStockValueWot),
+      osl_sale_rate_a: toNumber(record.oslSaleRateA),
+      osl_sale_rate_b: toNumber(record.oslSaleRateB),
+      osl_sale_rate_c: toNumber(record.oslSaleRateC),
+      osl_sale_rate_d: toNumber(record.oslSaleRateD),
+      osl_sale_rate_a_wot: toNumber(record.oslSaleRateAWot),
+      osl_sale_rate_b_wot: toNumber(record.oslSaleRateBWot),
+      osl_sale_rate_c_wot: toNumber(record.oslSaleRateCWot),
+      osl_sale_rate_d_wot: toNumber(record.oslSaleRateDWot),
+      osl_markup_perc_a: toNumber(record.oslMarkupPercA),
+      osl_markup_perc_b: toNumber(record.oslMarkupPercB),
+      osl_markup_perc_c: toNumber(record.oslMarkupPercC),
+      osl_markup_perc_d: toNumber(record.oslMarkupPercD),
+      osl_mrp_rate: toNumber(record.oslMrpRate),
+      osl_min_rate: toNumber(record.oslMinRate),
       osl_remarks: record.oslRemarks,
       osl_is_active: record.oslIsActive,
       osl_is_deleted: record.oslIsDeleted,
@@ -1331,12 +1329,6 @@ export class OpeningStockService {
   private uniqueIds(values: string[]): string[] {
     return Array.from(new Set(values));
   }
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-    return Number(value.toString());
-  }
   private toNullableIsoString(value: Date | null): string | null {
     return value ? value.toISOString() : null;
   }
@@ -1347,17 +1339,13 @@ export class OpeningStockService {
     return Number(value.toFixed(2));
   }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Opening stock already exists', [
-          {
-            field: 'avh_voucher_id',
-            message: 'Duplicate opening stock document is not allowed for the same voucher',
-          },
-        ]),
-      );
-    }
-    if (this.isForeignKeyConstraintError(error)) {
+    throwOnUniqueConstraintError<OpeningStockErrorDetail>(error, 'Opening stock already exists', [
+      {
+        field: 'avh_voucher_id',
+        message: 'Duplicate opening stock document is not allowed for the same voucher',
+      },
+    ]);
+    if (isForeignKeyConstraintError(error)) {
       throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'request',
@@ -1365,45 +1353,5 @@ export class OpeningStockService {
         },
       ]);
     }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2003';
-  }
-  private throwNotFound(
-    value: string,
-    field: 'avh_voucher_id' | 'avh_voucher_refno' = 'avh_voucher_id',
-  ): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Opening stock document not found', [
-        {
-          field,
-          message: `No active opening stock document found with ${field} ${value}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: OpeningStockErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: OpeningStockErrorDetail[] = [],
-  ):
-    | OpeningStockSuccessResponse<never>
-    | { success: false; message: string; errors: OpeningStockErrorDetail[] } {
-    return {
-      success: false,
-      message,
-      errors,
-    };
   }
 }

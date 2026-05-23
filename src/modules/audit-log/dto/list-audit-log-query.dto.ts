@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalDateString, OptionalQueryInt, OptionalTrimmedString, OptionalUuid } from '../../../common/dto/dtoDecorators';
+import { OptionalDateString, OptionalQueryBoolean, OptionalQueryInt, OptionalTrimmedString, OptionalUuid } from '../../../common/dto/dtoDecorators';
 import { ModuleListQueryBaseDto } from '../../../common/utils/module-list-query.base.dto';
 
 export class ListAuditLogQueryDto extends ModuleListQueryBaseDto {
@@ -44,5 +44,6 @@ export class ListAuditLogQueryDto extends ModuleListQueryBaseDto {
   @ApiPropertyOptional({
     description: 'Set to true to include total count. Omit to skip the COUNT(*) query.',
   })
+  @OptionalQueryBoolean()
   include_total?: boolean;
 }

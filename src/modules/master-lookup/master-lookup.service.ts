@@ -158,6 +158,47 @@ export class MasterLookupService {
       },
     };
   }
+  async getBranchesByCompany(companyId: string, search?: string, limit?: number): Promise<NameIdOption[]> {
+    const normalizedSearch = this.normalizeSearch(search);
+    const take = this.resolveTake(normalizedSearch, limit);
+    const contains = normalizedSearch ? this.buildContainsFilter(normalizedSearch) : undefined;
+    const rows = await this.prisma.branchMaster.findMany({
+      where: {
+        compId: companyId,
+        brIsDeleted: false,
+        brIsActive: true,
+        ...(contains ? { brName: contains } : {}),
+      },
+      select: { brId: true, brName: true },
+      orderBy: [{ brName: 'asc' }, { brId: 'asc' }],
+      ...(take ? { take } : {}),
+    });
+    return rows.map((row) => this.toOption(row.brId, row.brName));
+  }
+
+  async getDropdownSqlData(dropdownId: number, search?: string, limit?: number): Promise<NameIdOption[]> {
+    const record = await this.prisma.dropdownDetails.findUnique({
+      where: { dropdownId },
+      include: { dropdownColumns: { orderBy: [{ dropColumnsColumnNo: 'asc' }] } },
+    });
+    if (!record) return [];
+    const config: DropdownLookupConfig = {
+      dropdownId: record.dropdownId,
+      dropdownName: record.dropdownName,
+      dropdownSql: record.dropdownSql,
+      dropdownSqlRegional: record.dropdownSqlRegional,
+      dropdownSortColumn: record.dropdownSortColumn,
+      dropdownSortOrder: record.dropdownSortOrder,
+      dropdownColumns: record.dropdownColumns.map((col) => ({
+        name: col.dropColumnsColumnName,
+        alias: col.dropColumnsColumnAlias,
+        filter: col.dropColumnsColumnFilter,
+      })),
+    };
+    const normalizedSearch = this.normalizeSearch(search);
+    const take = this.resolveTake(normalizedSearch, limit);
+    return (await this.tryFetchConfiguredModuleItems(config, normalizedSearch, take)) ?? [];
+  }
   // ─── Module Fetcher Registry ─────────────────────────────────────────────────
   /**
    * Builds the registry of per-module table fetchers.
@@ -701,9 +742,7 @@ export class MasterLookupService {
     if (sqlCandidates.length === 0) return null;
     for (const sql of sqlCandidates) {
       try {
-        const rows = await this.prisma.$queryRawUnsafe<LookupRow[]>(
-          `SELECT * FROM (${sql}) AS lookup_source`,
-        );
+        const rows = await this.prisma.$queryRawUnsafe<LookupRow[]>(sql);
         return this.mapConfiguredRowsToOptions(rows, config.dropdownColumns, search, take, config);
       } catch {
         continue;

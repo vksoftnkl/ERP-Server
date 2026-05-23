@@ -112,3 +112,14 @@ export class MasterLookupSuccessDto {
   @ApiProperty({ type: MasterLookupPayloadDto })
   data!: MasterLookupPayloadDto;
 }
+
+export class NameIdOptionListSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Data fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: NameIdOptionDto, isArray: true })
+  data!: NameIdOptionDto[];
+}
