@@ -1,14 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { ItemMaster, ItemPriceMaster, ItemTaxMaster, Prisma } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+import { ItemMaster, ItemPriceMaster, ItemTaxMaster } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemPayload } from '../items-master/types/item-api.types';
 import { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
 import { ItemTaxPayload } from '../items-tax-master/types/item-tax-api.types';
 import {
   ItemPriceDetailErrorDetail,
-  ItemPriceDetailErrorResponse,
   ItemPriceDetailPayload,
 } from './types/item-price-detail-api.types';
+import { throwInventoryNotFound, toNumber } from 'src/common/utils/module-service.utils';
 @Injectable()
 export class ItemPriceDetailsService {
   constructor(private readonly prisma: PrismaService) { }
@@ -20,7 +20,7 @@ export class ItemPriceDetailsService {
       },
     });
     if (!itemRecord) {
-      this.throwItemNotFound(itemId);
+      throwInventoryNotFound<ItemPriceDetailErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
     }
     const [priceRecords, taxRecord] = await Promise.all([
       this.prisma.itemPriceMaster.findMany({
@@ -120,36 +120,36 @@ export class ItemPriceDetailsService {
       ipm_unit_id: record.ipmUnitId,
       ipm_godown_id: record.ipmGodownId,
       ipm_base_unit_id: record.ipmBaseUnitId,
-      ipm_to_base_factor: this.toNumber(record.ipmToBaseFactor),
+      ipm_to_base_factor: toNumber(record.ipmToBaseFactor),
       ipm_unit_slno: record.ipmUnitSlno,
-      ipm_unit_factor: this.toNumber(record.ipmUnitFactor),
+      ipm_unit_factor: toNumber(record.ipmUnitFactor),
       ipm_is_default_unit: record.ipmIsDefaultUnit,
       ipm_is_big_unit: record.ipmIsBigUnit,
       ipm_is_base_unit: record.ipmIsBaseUnit,
-      ipm_cost_price: this.toNumber(record.ipmCostPrice),
-      ipm_cost_wot: this.toNumber(record.ipmCostWot),
-      ipm_sales_price_a: this.toNumber(record.ipmSalesPriceA),
-      ipm_sales_price_b: this.toNumber(record.ipmSalesPriceB),
-      ipm_sales_price_c: this.toNumber(record.ipmSalesPriceC),
-      ipm_sales_price_d: this.toNumber(record.ipmSalesPriceD),
-      ipm_price_a_wot: this.toNumber(record.ipmPriceAWot),
-      ipm_price_b_wot: this.toNumber(record.ipmPriceBWot),
-      ipm_price_c_wot: this.toNumber(record.ipmPriceCWot),
-      ipm_price_d_wot: this.toNumber(record.ipmPriceDWot),
-      ipm_price_a_markup_perc: this.toNumber(record.ipmPriceAMarkupPerc),
-      ipm_price_b_markup_perc: this.toNumber(record.ipmPriceBMarkupPerc),
-      ipm_price_c_markup_perc: this.toNumber(record.ipmPriceCMarkupPerc),
-      ipm_price_d_markup_perc: this.toNumber(record.ipmPriceDMarkupPerc),
-      ipm_max_price: this.toNumber(record.ipmMaxPrice),
-      ipm_min_price: this.toNumber(record.ipmMinPrice),
-      ipm_disc_perc: this.toNumber(record.ipmDiscPerc),
-      ipm_disc_qty: this.toNumber(record.ipmDiscQty),
-      ipm_addl_cess: this.toNumber(record.ipmAddlCess),
+      ipm_cost_price: toNumber(record.ipmCostPrice),
+      ipm_cost_wot: toNumber(record.ipmCostWot),
+      ipm_sales_price_a: toNumber(record.ipmSalesPriceA),
+      ipm_sales_price_b: toNumber(record.ipmSalesPriceB),
+      ipm_sales_price_c: toNumber(record.ipmSalesPriceC),
+      ipm_sales_price_d: toNumber(record.ipmSalesPriceD),
+      ipm_price_a_wot: toNumber(record.ipmPriceAWot),
+      ipm_price_b_wot: toNumber(record.ipmPriceBWot),
+      ipm_price_c_wot: toNumber(record.ipmPriceCWot),
+      ipm_price_d_wot: toNumber(record.ipmPriceDWot),
+      ipm_price_a_markup_perc: toNumber(record.ipmPriceAMarkupPerc),
+      ipm_price_b_markup_perc: toNumber(record.ipmPriceBMarkupPerc),
+      ipm_price_c_markup_perc: toNumber(record.ipmPriceCMarkupPerc),
+      ipm_price_d_markup_perc: toNumber(record.ipmPriceDMarkupPerc),
+      ipm_max_price: toNumber(record.ipmMaxPrice),
+      ipm_min_price: toNumber(record.ipmMinPrice),
+      ipm_disc_perc: toNumber(record.ipmDiscPerc),
+      ipm_disc_qty: toNumber(record.ipmDiscQty),
+      ipm_addl_cess: toNumber(record.ipmAddlCess),
       ipm_profit_type: record.ipmProfitType,
-      ipm_round_off: this.toNumber(record.ipmRoundOff),
-      ipm_loading_charge: this.toNumber(record.ipmLoadingCharge),
-      ipm_freight_charge: this.toNumber(record.ipmFreightCharge),
-      ipm_loyalty_points: this.toNumber(record.ipmLoyaltyPoints),
+      ipm_round_off: toNumber(record.ipmRoundOff),
+      ipm_loading_charge: toNumber(record.ipmLoadingCharge),
+      ipm_freight_charge: toNumber(record.ipmFreightCharge),
+      ipm_loyalty_points: toNumber(record.ipmLoyaltyPoints),
       ipm_uom_remarks: record.ipmUomRemarks,
       ipm_cost_remarks: record.ipmCostRemarks,
       ipm_is_active: record.ipmIsActive,
@@ -168,18 +168,18 @@ export class ItemPriceDetailsService {
       tax_code: record.taxCode,
       tax_taxability_type: record.taxTaxabilityType,
       tax_is_reverse_charge: record.taxIsReverseCharge,
-      tax_cgst_perc: this.toNumber(record.taxCgstPerc),
-      tax_sgst_perc: this.toNumber(record.taxSgstPerc),
-      tax_igst_perc: this.toNumber(record.taxIgstPerc),
-      tax_cgst_pur_perc: this.toNumber(record.taxCgstPurPerc),
-      tax_sgst_pur_perc: this.toNumber(record.taxSgstPurPerc),
-      tax_igst_pur_perc: this.toNumber(record.taxIgstPurPerc),
+      tax_cgst_perc: toNumber(record.taxCgstPerc),
+      tax_sgst_perc: toNumber(record.taxSgstPerc),
+      tax_igst_perc: toNumber(record.taxIgstPerc),
+      tax_cgst_pur_perc: toNumber(record.taxCgstPurPerc),
+      tax_sgst_pur_perc: toNumber(record.taxSgstPurPerc),
+      tax_igst_pur_perc: toNumber(record.taxIgstPurPerc),
       tax_cess_type: record.taxCessType,
-      tax_cess_perc: this.toNumber(record.taxCessPerc),
-      tax_cess_unit: this.toNumber(record.taxCessUnit),
-      tax_cess_pur_perc: this.toNumber(record.taxCessPurPerc),
-      tax_cess_pur_unit: this.toNumber(record.taxCessPurUnit),
-      tax_gst_rate_total: this.toNumber(record.taxGstRateTotal),
+      tax_cess_perc: toNumber(record.taxCessPerc),
+      tax_cess_unit: toNumber(record.taxCessUnit),
+      tax_cess_pur_perc: toNumber(record.taxCessPurPerc),
+      tax_cess_pur_unit: toNumber(record.taxCessPurUnit),
+      tax_gst_rate_total: toNumber(record.taxGstRateTotal),
       tax_sales_ledger_id: record.taxSalesLedgerId,
       tax_sales_return_ledger_id: record.taxSalesReturnLedgerId,
       tax_purchase_ledger_id: record.taxPurchaseLedgerId,
@@ -199,30 +199,6 @@ export class ItemPriceDetailsService {
       tax_created_by: record.taxCreatedBy,
       tax_modified_on: record.taxModifiedOn.toISOString(),
       tax_modified_by: record.taxModifiedBy,
-    };
-  }
-  private toNumber(value: Prisma.Decimal | number): number {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  private throwItemNotFound(itemId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item not found', [
-        {
-          field: 'item_id',
-          message: `No active item found with id ${itemId}`,
-        },
-      ]),
-    );
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: ItemPriceDetailErrorDetail[] = [],
-  ): ItemPriceDetailErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
     };
   }
 }

@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { AccVoucherSeq, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { CreateSequenceDto } from './dto/create-sequence.dto';
@@ -12,12 +7,17 @@ import { SaveSequenceDto } from './dto/save-sequence.dto';
 import { UpdateSequenceDto } from './dto/update-sequence.dto';
 import {
   SequenceErrorDetail,
-  SequenceErrorResponse,
   SequenceListResult,
   SequencePayload,
 } from './types/sequence-api.types';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import {
+  DEFAULT_LIMIT,
+  DEFAULT_PAGE,
+  throwBadRequest,
+  throwConflict,
+  throwNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
 const MAX_LIMIT = 100;
 const DEFAULT_DEVICE_CODE = 'MAIN';
 const DEFAULT_NO_WIDTH = 5;
@@ -131,7 +131,7 @@ export class SequenceService {
       },
     });
     if (!record) {
-      this.throwNotFound(id);
+      throwNotFound<SequenceErrorDetail>('Sequence not found', 'id', `No active sequence found with id ${id}`);
     }
     return this.toPayload(record);
   }
@@ -149,7 +149,7 @@ export class SequenceService {
           },
         });
         if (!existing) {
-          this.throwNotFound(id);
+          throwNotFound<SequenceErrorDetail>('Sequence not found', 'id', `No active sequence found with id ${id}`);
         }
         const scope = this.resolveUpdateScope(existing, updateSequenceDto);
         await this.ensureReferencesExist(tx, scope);
@@ -189,7 +189,7 @@ export class SequenceService {
       },
     });
     if (result.count === 0) {
-      this.throwNotFound(id);
+      throwNotFound<SequenceErrorDetail>('Sequence not found', 'id', `No active sequence found with id ${id}`);
     }
     return {
       id: sequenceId,
@@ -453,7 +453,7 @@ export class SequenceService {
     ]);
 
     if (!voucherType) {
-      this.throwBadRequest('Voucher type does not exist', [
+      throwBadRequest<SequenceErrorDetail>('Voucher type does not exist', [
         {
           field: 'vchrTypeId',
           message: `No voucher type found with id ${scope.vchrTypeId}`,
@@ -462,7 +462,7 @@ export class SequenceService {
     }
 
     if (!company) {
-      this.throwBadRequest('Company does not exist', [
+      throwBadRequest<SequenceErrorDetail>('Company does not exist', [
         {
           field: 'companyId',
           message: `No active company found with id ${scope.companyId}`,
@@ -471,7 +471,7 @@ export class SequenceService {
     }
 
     if (!branch) {
-      this.throwBadRequest('Branch does not exist', [
+      throwBadRequest<SequenceErrorDetail>('Branch does not exist', [
         {
           field: 'branchId',
           message: `No active branch found with id ${scope.branchId} for company ${scope.companyId}`,
@@ -501,15 +501,13 @@ export class SequenceService {
     });
 
     if (existing) {
-      throw new ConflictException(
-        this.buildErrorResponse('Sequence scope already exists', [
-          {
-            field: 'scope',
-            message:
-              'Duplicate vchrTypeId, companyId, branchId, accYear, deviceCode, and periodKey values are not allowed',
-          },
-        ]),
-      );
+      throwConflict<SequenceErrorDetail>('Sequence scope already exists', [
+        {
+          field: 'scope',
+          message:
+            'Duplicate vchrTypeId, companyId, branchId, accYear, deviceCode, and periodKey values are not allowed',
+        },
+      ]);
     }
   }
 
@@ -630,7 +628,7 @@ export class SequenceService {
 
   private normalizeUuid(value: unknown, field: string): string {
     if (typeof value !== 'string' || !this.isUuid(value.trim())) {
-      this.throwBadRequest('Validation failed', [
+      throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
           message: `${field} must be a valid UUID`,
@@ -655,7 +653,7 @@ export class SequenceService {
 
   private normalizeRequiredString(value: unknown, field: string, maxLength: number): string {
     if (typeof value !== 'string') {
-      this.throwBadRequest('Validation failed', [
+      throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
           message: `${field} must be a string`,
@@ -665,7 +663,7 @@ export class SequenceService {
 
     const trimmed = value.trim();
     if (!trimmed) {
-      this.throwBadRequest('Validation failed', [
+      throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
           message: `${field} must not be empty`,
@@ -674,7 +672,7 @@ export class SequenceService {
     }
 
     if (trimmed.length > maxLength) {
-      this.throwBadRequest('Validation failed', [
+      throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
           message: `${field} must be ${maxLength} characters or less`,
@@ -713,7 +711,7 @@ export class SequenceService {
     const parsed = this.parseInteger(value, field);
 
     if (options.min !== undefined && parsed < options.min) {
-      this.throwBadRequest('Validation failed', [
+      throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
           message: `${field} must be greater than or equal to ${options.min}`,
@@ -722,7 +720,7 @@ export class SequenceService {
     }
 
     if (options.max !== undefined && parsed > options.max) {
-      this.throwBadRequest('Validation failed', [
+      throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
           message: `${field} must be less than or equal to ${options.max}`,
@@ -754,7 +752,7 @@ export class SequenceService {
           : Number.NaN;
 
     if (!Number.isSafeInteger(parsed)) {
-      this.throwBadRequest('Validation failed', [
+      throwBadRequest<SequenceErrorDetail>('Validation failed', [
         {
           field,
           message: `${field} must be a valid integer`,
@@ -798,7 +796,7 @@ export class SequenceService {
   }
 
   private throwBigIntRangeError(field: string): never {
-    this.throwBadRequest('Validation failed', [
+    throwBadRequest<SequenceErrorDetail>('Validation failed', [
       {
         field,
         message: `${field} must be a valid non-negative integer`,
@@ -826,7 +824,7 @@ export class SequenceService {
       }
     }
 
-    this.throwBadRequest('Validation failed', [
+    throwBadRequest<SequenceErrorDetail>('Validation failed', [
       {
         field,
         message: `${field} must be a boolean`,
@@ -839,50 +837,12 @@ export class SequenceService {
   }
 
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Sequence scope already exists', [
-          {
-            field: 'scope',
-            message:
-              'Duplicate vchrTypeId, companyId, branchId, accYear, deviceCode, and periodKey values are not allowed',
-          },
-        ]),
-      );
-    }
-  }
-
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(id: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Sequence not found', [
-        {
-          field: 'id',
-          message: `No active sequence found with id ${id}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: SequenceErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: SequenceErrorDetail[] = [],
-  ): SequenceErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
+    throwOnUniqueConstraintError<SequenceErrorDetail>(error, 'Sequence scope already exists', [
+      {
+        field: 'scope',
+        message:
+          'Duplicate vchrTypeId, companyId, branchId, accYear, deviceCode, and periodKey values are not allowed',
+      },
+    ]);
   }
 }

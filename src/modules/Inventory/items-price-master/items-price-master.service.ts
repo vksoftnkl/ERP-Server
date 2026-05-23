@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ItemPriceMaster, ItemUnitConversion, Prisma } from '@prisma/client';
 import { ListItemUnitConversionQueryDto } from './dto/list-item-unit-conversion-query.dto';
 import { ListItemPriceQueryDto } from './dto/list-item-price-query.dto';
@@ -12,7 +7,6 @@ import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import {
   ItemPriceDeleteResult,
   ItemPriceErrorDetail,
-  ItemPriceErrorResponse,
   ItemPriceListItem,
   ItemPriceListMeta,
   ItemPricePayload,
@@ -24,10 +18,16 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
+import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import {
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+  toNumber,
+} from 'src/common/utils/module-service.utils';
 const DEFAULT_AUDIT_ACTOR = 'system';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const ITEM_PRICE_TABLE_NAME = 'item price master';
 const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
 const ITEM_UNIT_CONVERSION_TABLE_NAME = 'item_unit_conversion';
@@ -126,9 +126,7 @@ export class ItemsPriceMasterService {
   async list(
     queryDto: ListItemPriceQueryDto,
   ): Promise<ConfiguredGridListResult<ItemPriceListItem, ItemPriceListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.ipm_company_id !== undefined ||
       queryDto.ipm_branch_id !== undefined ||
@@ -139,38 +137,27 @@ export class ItemsPriceMasterService {
       queryDto.ipm_profit_type !== undefined ||
       queryDto.ipm_is_active !== undefined ||
       queryDto.ipm_is_deleted !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
     const where = this.buildListWhere(queryDto);
-    const [total, records] = await Promise.all([
-      this.prisma.itemPriceMaster.count({ where }),
-      this.prisma.itemPriceMaster.findMany({
+    return runInventoryListQuery<ItemPriceMaster, ItemPriceListItem>({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<ItemPriceListItem>(
+        this.configuredGridSqlService,
+        { tableName: ITEM_PRICE_TABLE_NAME, alias: 'item_price_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.itemPriceMaster.count({ where }),
+      findManyFn: () => this.prisma.itemPriceMaster.findMany({
         where,
         orderBy: [{ ipmItemId: 'asc' }, { ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
         skip,
         take: limit,
       }),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
+      toItemFn: (record) => this.toPayload(record),
+    });
   }
   async listItemUnitConversions(
     queryDto: ListItemUnitConversionQueryDto,
   ): Promise<ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.iuc_company_id !== undefined ||
       queryDto.iuc_item_id !== undefined ||
@@ -181,145 +168,22 @@ export class ItemsPriceMasterService {
       queryDto.iuc_is_big_unit !== undefined ||
       queryDto.iuc_is_active !== undefined ||
       queryDto.iuc_is_deleted !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listItemUnitConversionsFromConfiguredGridSql(
-        queryDto.search,
-        page,
-        limit,
-        skip,
-      );
-      if (configuredList) {
-        return configuredList;
-      }
-    }
     const where = this.buildItemUnitConversionListWhere(queryDto);
-    const [total, records] = await Promise.all([
-      this.prisma.itemUnitConversion.count({ where }),
-      this.prisma.itemUnitConversion.findMany({
+    return runInventoryListQuery<ItemUnitConversion, ItemUnitConversionListItem>({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<ItemUnitConversionListItem>(
+        this.configuredGridSqlService,
+        { tableName: ITEM_UNIT_CONVERSION_TABLE_NAME, alias: 'item_unit_conversion_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.itemUnitConversion.count({ where }),
+      findManyFn: () => this.prisma.itemUnitConversion.findMany({
         where,
         orderBy: [{ iucItemId: 'asc' }, { iucUnitSlno: 'asc' }, { iucId: 'asc' }],
         skip,
         take: limit,
       }),
-    ]);
-    return {
-      items: records.map((record) => this.toItemUnitConversionPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<ItemPriceListItem, ItemPriceListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ITEM_PRICE_TABLE_NAME,
+      toItemFn: (record) => this.toItemUnitConversionPayload(record),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ITEM_PRICE_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ITEM_PRICE_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<ItemPriceListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'item_price_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
-  }
-  private async listItemUnitConversionsFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<
-    ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta> | null
-  > {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ITEM_UNIT_CONVERSION_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result =
-          await this.configuredGridSqlService.runPagedQuery<ItemUnitConversionListItem>({
-            baseSql: validation.normalizedSql,
-            alias: 'item_unit_conversion_grid',
-            search,
-            limit,
-            skip,
-            gridId: configuredGrid.gridId,
-          });
-       return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
   }
   async getById(ipmId: string): Promise<ItemPricePayload> {
     const record = await this.prisma.itemPriceMaster.findFirst({
@@ -329,7 +193,7 @@ export class ItemsPriceMasterService {
       },
     });
     if (!record) {
-      this.throwNotFound(ipmId);
+      throwInventoryNotFound<ItemPriceErrorDetail>('Item price not found', 'ipm_id', `No item price found with id ${ipmId}`);
     }
     return this.toPayload(record);
   }
@@ -341,7 +205,7 @@ export class ItemsPriceMasterService {
       },
     });
     if (!record) {
-      this.throwItemUnitConversionNotFound(iucId);
+      throwInventoryNotFound<ItemPriceErrorDetail>('Item unit conversion not found', 'iuc_id', `No item unit conversion found with id ${iucId}`);
     }
     return this.toItemUnitConversionPayload(record);
   }
@@ -407,7 +271,7 @@ export class ItemsPriceMasterService {
       },
     });
     if (!existing) {
-      this.throwNotFound(ipmId);
+      throwInventoryNotFound<ItemPriceErrorDetail>('Item price not found', 'ipm_id', `No item price found with id ${ipmId}`);
     }
     const deletedOn = new Date();
     const updated = await tx.itemPriceMaster.update({
@@ -503,7 +367,7 @@ export class ItemsPriceMasterService {
       },
     });
     if (!existing) {
-      this.throwItemUnitConversionNotFound(iucId);
+      throwInventoryNotFound<ItemPriceErrorDetail>('Item unit conversion not found', 'iuc_id', `No item unit conversion found with id ${iucId}`);
     }
     const baseUnitId =
       saveItemUnitConversionDto.iuc_base_unit_id ?? existing.iucBaseUnitId;
@@ -514,7 +378,7 @@ export class ItemsPriceMasterService {
       iucBaseUnitId: baseUnitId,
       iucUpdatedOn: new Date(),
     };
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_updated_by')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_updated_by')) {
       data.iucUpdatedBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by);
     }
     this.applyItemUnitConversionOptionalFields(data, saveItemUnitConversionDto);
@@ -554,7 +418,7 @@ export class ItemsPriceMasterService {
       },
     });
     if (!existing) {
-      this.throwItemUnitConversionNotFound(iucId);
+      throwInventoryNotFound<ItemPriceErrorDetail>('Item unit conversion not found', 'iuc_id', `No item unit conversion found with id ${iucId}`);
     }
     const deletedOn = new Date();
     const updated = await tx.itemUnitConversion.update({
@@ -592,7 +456,7 @@ export class ItemsPriceMasterService {
   ): Promise<ItemPricePayload> {
     const profitType = saveItemPriceDto.ipm_profit_type?.trim();
     if (!profitType) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'ipm_profit_type',
           message: 'ipm_profit_type is required',
@@ -641,7 +505,7 @@ export class ItemsPriceMasterService {
     const ipmId = saveItemPriceDto.ipm_id!;
     const profitType = saveItemPriceDto.ipm_profit_type?.trim();
     if (!profitType) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'ipm_profit_type',
           message: 'ipm_profit_type cannot be empty',
@@ -655,7 +519,7 @@ export class ItemsPriceMasterService {
       },
     });
     if (!existing) {
-      this.throwNotFound(ipmId);
+      throwInventoryNotFound<ItemPriceErrorDetail>('Item price not found', 'ipm_id', `No item price found with id ${ipmId}`);
     }
     const unitConversion = await this.syncUnitConversionFromItemPriceInput(tx, saveItemPriceDto);
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
@@ -665,7 +529,7 @@ export class ItemsPriceMasterService {
       ipmProfitType: profitType,
       ipmUpdatedOn: new Date(),
     };
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_updated_by')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_updated_by')) {
       data.ipmUpdatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by);
     }
     this.applyOptionalFields(data, saveItemPriceDto);
@@ -775,7 +639,7 @@ export class ItemsPriceMasterService {
     const resolvedBaseUnitId =
       saveItemUnitConversionDto.iuc_base_unit_id ?? saveItemUnitConversionDto.iuc_unit_id;
     if (factor !== undefined && factor <= 0) {
-      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'iuc_to_base_factor',
           message: 'iuc_to_base_factor must be greater than 0',
@@ -783,7 +647,7 @@ export class ItemsPriceMasterService {
       ]);
     }
     if (unitFactor !== undefined && unitFactor <= 0) {
-      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'iuc_unit_factor',
           message: 'iuc_unit_factor must be greater than 0',
@@ -792,7 +656,7 @@ export class ItemsPriceMasterService {
     }
     const uomWeight = saveItemUnitConversionDto.iuc_uom_weight;
     if (uomWeight !== undefined && uomWeight < 0) {
-      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'iuc_uom_weight',
           message: 'iuc_uom_weight cannot be negative',
@@ -803,7 +667,7 @@ export class ItemsPriceMasterService {
       return;
     }
     if (saveItemUnitConversionDto.iuc_unit_id !== resolvedBaseUnitId) {
-      this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'iuc_unit_id',
           message: 'Base unit conversion row must use the selected base unit as iuc_unit_id',
@@ -811,7 +675,7 @@ export class ItemsPriceMasterService {
       ]);
     }
     // if (factor !== undefined && factor !== 1) {
-    //   this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+    //   throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
     //     {
     //       field: 'iuc_to_base_factor',
     //       message: 'Base unit conversion row must use iuc_to_base_factor = 1',
@@ -962,7 +826,7 @@ export class ItemsPriceMasterService {
 
       const baseCumulative = cumulativeByUnitId.get(resolvedBaseUnitId);
       if (!baseCumulative) {
-        this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+        throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
           {
             field: 'iuc_base_unit_id',
             message: 'Unable to resolve base unit cumulative factor',
@@ -1011,7 +875,7 @@ export class ItemsPriceMasterService {
     ) {
       return this.roundFactor(previousToBaseFactor / currentToBaseFactor);
     }
-    this.throwItemUnitConversionBadRequest(VALIDATION_FAILED_MESSAGE, [
+    throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
       {
         field: 'iuc_unit_factor',
         message: `Missing iuc_unit_factor for unit row ${currentRow.unitId}`,
@@ -1131,7 +995,7 @@ export class ItemsPriceMasterService {
         (row) => row.companyId !== saveItemPriceDto.ipm_company_id,
       );
       if (wrongCompanyRow) {
-        this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
           {
             field: 'ipm_company_id',
             message:
@@ -1178,7 +1042,7 @@ export class ItemsPriceMasterService {
     }
     const baseRow = chainRows.find((row) => row.unitId === resolvedBaseUnitId);
     if (!baseRow) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'ipm_base_unit_id',
           message: 'Unable to resolve base unit for item price conversion',
@@ -1240,7 +1104,7 @@ export class ItemsPriceMasterService {
       saveItemPriceDto.ipm_company_id !== null &&
       saveItemPriceDto.ipm_company_id !== unitConversion.iucCompanyId
     ) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'ipm_company_id',
           message: 'ipm_company_id must match the company configured on the selected item unit conversion',
@@ -1287,7 +1151,7 @@ export class ItemsPriceMasterService {
     data.ipmIsDefaultUnit = unitConversion.iucIsDefaultUnit;
     data.ipmIsBigUnit = unitConversion.iucIsBigUnit;
     data.ipmIsBaseUnit = unitConversion.iucIsBaseUnit;
-    if (!this.hasOwnProperty(saveItemPriceDto, 'ipm_uom_remarks')) {
+    if (!hasOwnProperty(saveItemPriceDto, 'ipm_uom_remarks')) {
       data.ipmUomRemarks = unitConversion.iucUomRemarks;
     }
   }
@@ -1297,39 +1161,39 @@ export class ItemsPriceMasterService {
       | Prisma.ItemUnitConversionUncheckedUpdateInput,
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
   ): void {
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_to_base_factor')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_to_base_factor')) {
       data.iucToBaseFactor = saveItemUnitConversionDto.iuc_to_base_factor;
     }
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_unit_slno')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_unit_slno')) {
       data.iucUnitSlno = saveItemUnitConversionDto.iuc_unit_slno;
     }
     const hasUnitFactor =
-      this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_unit_factor') ||
-      this.hasOwnProperty(saveItemUnitConversionDto, 'iul_unit_factor');
+      hasOwnProperty(saveItemUnitConversionDto, 'iuc_unit_factor') ||
+      hasOwnProperty(saveItemUnitConversionDto, 'iul_unit_factor');
     const unitFactor =
       saveItemUnitConversionDto.iuc_unit_factor ?? saveItemUnitConversionDto.iul_unit_factor;
     if (hasUnitFactor && unitFactor !== undefined) {
       data.iucUnitFactor = unitFactor;
     }
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_default_unit')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_default_unit')) {
       data.iucIsDefaultUnit = saveItemUnitConversionDto.iuc_is_default_unit;
     }
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_base_unit')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_base_unit')) {
       data.iucIsBaseUnit = saveItemUnitConversionDto.iuc_is_base_unit;
     }
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_big_unit')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_big_unit')) {
       data.iucIsBigUnit = saveItemUnitConversionDto.iuc_is_big_unit;
     }
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_uom_weight')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_uom_weight')) {
       data.iucUomWeight = saveItemUnitConversionDto.iuc_uom_weight;
     }
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_uom_remarks')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_uom_remarks')) {
       data.iucUomRemarks = saveItemUnitConversionDto.iuc_uom_remarks;
     }
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_active')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_is_active')) {
       data.iucIsActive = saveItemUnitConversionDto.iuc_is_active;
     }
-    if (this.hasOwnProperty(saveItemUnitConversionDto, 'iuc_sync_date')) {
+    if (hasOwnProperty(saveItemUnitConversionDto, 'iuc_sync_date')) {
       data.iucSyncDate = this.parseOptionalDate(
         saveItemUnitConversionDto.iuc_sync_date,
         'iuc_sync_date',
@@ -1340,112 +1204,112 @@ export class ItemsPriceMasterService {
     data: Prisma.ItemPriceMasterUncheckedCreateInput | Prisma.ItemPriceMasterUncheckedUpdateInput,
     saveItemPriceDto: SaveItemPriceDto,
   ): void {
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_company_id')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_company_id')) {
       data.ipmCompanyId = saveItemPriceDto.ipm_company_id;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_branch_id')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_branch_id')) {
       data.ipmBranchId = saveItemPriceDto.ipm_branch_id;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_base_unit_id')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_base_unit_id')) {
       data.ipmBaseUnitId = saveItemPriceDto.ipm_base_unit_id;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_to_base_factor')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_to_base_factor')) {
       data.ipmToBaseFactor = saveItemPriceDto.ipm_to_base_factor;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_unit_slno')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_unit_slno')) {
       data.ipmUnitSlno = saveItemPriceDto.ipm_unit_slno;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_unit_factor')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_unit_factor')) {
       data.ipmUnitFactor = saveItemPriceDto.ipm_unit_factor;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_is_default_unit')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_is_default_unit')) {
       data.ipmIsDefaultUnit = saveItemPriceDto.ipm_is_default_unit;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_is_big_unit')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_is_big_unit')) {
       data.ipmIsBigUnit = saveItemPriceDto.ipm_is_big_unit;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_is_base_unit')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_is_base_unit')) {
       data.ipmIsBaseUnit = saveItemPriceDto.ipm_is_base_unit;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_cost_price')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_cost_price')) {
       data.ipmCostPrice = saveItemPriceDto.ipm_cost_price;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_cost_wot')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_cost_wot')) {
       data.ipmCostWot = saveItemPriceDto.ipm_cost_wot;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_sales_price_a')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_sales_price_a')) {
       data.ipmSalesPriceA = saveItemPriceDto.ipm_sales_price_a;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_sales_price_b')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_sales_price_b')) {
       data.ipmSalesPriceB = saveItemPriceDto.ipm_sales_price_b;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_sales_price_c')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_sales_price_c')) {
       data.ipmSalesPriceC = saveItemPriceDto.ipm_sales_price_c;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_sales_price_d')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_sales_price_d')) {
       data.ipmSalesPriceD = saveItemPriceDto.ipm_sales_price_d;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_a_wot')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_price_a_wot')) {
       data.ipmPriceAWot = saveItemPriceDto.ipm_price_a_wot;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_b_wot')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_price_b_wot')) {
       data.ipmPriceBWot = saveItemPriceDto.ipm_price_b_wot;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_c_wot')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_price_c_wot')) {
       data.ipmPriceCWot = saveItemPriceDto.ipm_price_c_wot;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_d_wot')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_price_d_wot')) {
       data.ipmPriceDWot = saveItemPriceDto.ipm_price_d_wot;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_a_markup_perc')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_price_a_markup_perc')) {
       data.ipmPriceAMarkupPerc = saveItemPriceDto.ipm_price_a_markup_perc;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_b_markup_perc')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_price_b_markup_perc')) {
       data.ipmPriceBMarkupPerc = saveItemPriceDto.ipm_price_b_markup_perc;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_c_markup_perc')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_price_c_markup_perc')) {
       data.ipmPriceCMarkupPerc = saveItemPriceDto.ipm_price_c_markup_perc;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_price_d_markup_perc')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_price_d_markup_perc')) {
       data.ipmPriceDMarkupPerc = saveItemPriceDto.ipm_price_d_markup_perc;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_max_price')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_max_price')) {
       data.ipmMaxPrice = saveItemPriceDto.ipm_max_price;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_min_price')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_min_price')) {
       data.ipmMinPrice = saveItemPriceDto.ipm_min_price;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_disc_perc')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_disc_perc')) {
       data.ipmDiscPerc = saveItemPriceDto.ipm_disc_perc;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_disc_qty')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_disc_qty')) {
       data.ipmDiscQty = saveItemPriceDto.ipm_disc_qty;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_addl_cess')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_addl_cess')) {
       data.ipmAddlCess = saveItemPriceDto.ipm_addl_cess;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_round_off')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_round_off')) {
       data.ipmRoundOff = saveItemPriceDto.ipm_round_off;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_loading_charge')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_loading_charge')) {
       data.ipmLoadingCharge = saveItemPriceDto.ipm_loading_charge;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_freight_charge')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_freight_charge')) {
       data.ipmFreightCharge = saveItemPriceDto.ipm_freight_charge;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_loyalty_points')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_loyalty_points')) {
       data.ipmLoyaltyPoints = saveItemPriceDto.ipm_loyalty_points;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_uom_remarks')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_uom_remarks')) {
       data.ipmUomRemarks = saveItemPriceDto.ipm_uom_remarks;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_cost_remarks')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_cost_remarks')) {
       data.ipmCostRemarks = saveItemPriceDto.ipm_cost_remarks;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_is_active')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_is_active')) {
       data.ipmIsActive = saveItemPriceDto.ipm_is_active;
     }
-    if (this.hasOwnProperty(saveItemPriceDto, 'ipm_sync_date')) {
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_sync_date')) {
       data.ipmSyncDate = this.parseOptionalDate(saveItemPriceDto.ipm_sync_date, 'ipm_sync_date');
     }
   }
@@ -1461,7 +1325,7 @@ export class ItemsPriceMasterService {
     }
     const parsedDate = new Date(value);
     if (Number.isNaN(parsedDate.getTime())) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: fieldName,
           message: `${fieldName} must be a valid date`,
@@ -1479,36 +1343,36 @@ export class ItemsPriceMasterService {
       ipm_unit_id: record.ipmUnitId,
       ipm_godown_id: record.ipmGodownId,
       ipm_base_unit_id: record.ipmBaseUnitId,
-      ipm_to_base_factor: this.toNumber(record.ipmToBaseFactor),
+      ipm_to_base_factor: toNumber(record.ipmToBaseFactor),
       ipm_unit_slno: record.ipmUnitSlno,
-      ipm_unit_factor: this.toNumber(record.ipmUnitFactor),
+      ipm_unit_factor: toNumber(record.ipmUnitFactor),
       ipm_is_default_unit: record.ipmIsDefaultUnit,
       ipm_is_big_unit: record.ipmIsBigUnit,
       ipm_is_base_unit: record.ipmIsBaseUnit,
-      ipm_cost_price: this.toNumber(record.ipmCostPrice),
-      ipm_cost_wot: this.toNumber(record.ipmCostWot),
-      ipm_sales_price_a: this.toNumber(record.ipmSalesPriceA),
-      ipm_sales_price_b: this.toNumber(record.ipmSalesPriceB),
-      ipm_sales_price_c: this.toNumber(record.ipmSalesPriceC),
-      ipm_sales_price_d: this.toNumber(record.ipmSalesPriceD),
-      ipm_price_a_wot: this.toNumber(record.ipmPriceAWot),
-      ipm_price_b_wot: this.toNumber(record.ipmPriceBWot),
-      ipm_price_c_wot: this.toNumber(record.ipmPriceCWot),
-      ipm_price_d_wot: this.toNumber(record.ipmPriceDWot),
-      ipm_price_a_markup_perc: this.toNumber(record.ipmPriceAMarkupPerc),
-      ipm_price_b_markup_perc: this.toNumber(record.ipmPriceBMarkupPerc),
-      ipm_price_c_markup_perc: this.toNumber(record.ipmPriceCMarkupPerc),
-      ipm_price_d_markup_perc: this.toNumber(record.ipmPriceDMarkupPerc),
-      ipm_max_price: this.toNumber(record.ipmMaxPrice),
-      ipm_min_price: this.toNumber(record.ipmMinPrice),
-      ipm_disc_perc: this.toNumber(record.ipmDiscPerc),
-      ipm_disc_qty: this.toNumber(record.ipmDiscQty),
-      ipm_addl_cess: this.toNumber(record.ipmAddlCess),
+      ipm_cost_price: toNumber(record.ipmCostPrice),
+      ipm_cost_wot: toNumber(record.ipmCostWot),
+      ipm_sales_price_a: toNumber(record.ipmSalesPriceA),
+      ipm_sales_price_b: toNumber(record.ipmSalesPriceB),
+      ipm_sales_price_c: toNumber(record.ipmSalesPriceC),
+      ipm_sales_price_d: toNumber(record.ipmSalesPriceD),
+      ipm_price_a_wot: toNumber(record.ipmPriceAWot),
+      ipm_price_b_wot: toNumber(record.ipmPriceBWot),
+      ipm_price_c_wot: toNumber(record.ipmPriceCWot),
+      ipm_price_d_wot: toNumber(record.ipmPriceDWot),
+      ipm_price_a_markup_perc: toNumber(record.ipmPriceAMarkupPerc),
+      ipm_price_b_markup_perc: toNumber(record.ipmPriceBMarkupPerc),
+      ipm_price_c_markup_perc: toNumber(record.ipmPriceCMarkupPerc),
+      ipm_price_d_markup_perc: toNumber(record.ipmPriceDMarkupPerc),
+      ipm_max_price: toNumber(record.ipmMaxPrice),
+      ipm_min_price: toNumber(record.ipmMinPrice),
+      ipm_disc_perc: toNumber(record.ipmDiscPerc),
+      ipm_disc_qty: toNumber(record.ipmDiscQty),
+      ipm_addl_cess: toNumber(record.ipmAddlCess),
       ipm_profit_type: record.ipmProfitType,
-      ipm_round_off: this.toNumber(record.ipmRoundOff),
-      ipm_loading_charge: this.toNumber(record.ipmLoadingCharge),
-      ipm_freight_charge: this.toNumber(record.ipmFreightCharge),
-      ipm_loyalty_points: this.toNumber(record.ipmLoyaltyPoints),
+      ipm_round_off: toNumber(record.ipmRoundOff),
+      ipm_loading_charge: toNumber(record.ipmLoadingCharge),
+      ipm_freight_charge: toNumber(record.ipmFreightCharge),
+      ipm_loyalty_points: toNumber(record.ipmLoyaltyPoints),
       ipm_uom_remarks: record.ipmUomRemarks,
       ipm_cost_remarks: record.ipmCostRemarks,
       ipm_is_active: record.ipmIsActive,
@@ -1527,13 +1391,13 @@ export class ItemsPriceMasterService {
       iuc_item_id: record.iucItemId,
       iuc_unit_id: record.iucUnitId,
       iuc_base_unit_id: record.iucBaseUnitId,
-      iuc_to_base_factor: this.toNumber(record.iucToBaseFactor),
+      iuc_to_base_factor: toNumber(record.iucToBaseFactor),
       iuc_unit_slno: record.iucUnitSlno,
-      iuc_unit_factor: this.toNumber(record.iucUnitFactor),
+      iuc_unit_factor: toNumber(record.iucUnitFactor),
       iuc_is_default_unit: record.iucIsDefaultUnit,
       iuc_is_base_unit: record.iucIsBaseUnit,
       iuc_is_big_unit: record.iucIsBigUnit,
-      iuc_uom_weight: this.toNumber(record.iucUomWeight),
+      iuc_uom_weight: toNumber(record.iucUomWeight),
       iuc_uom_remarks: record.iucUomRemarks,
       iuc_is_active: record.iucIsActive,
       iuc_is_deleted: record.iucIsDeleted,
@@ -1543,10 +1407,6 @@ export class ItemsPriceMasterService {
       iuc_updated_on: record.iucUpdatedOn ? record.iucUpdatedOn.toISOString() : null,
       iuc_updated_by: record.iucUpdatedBy,
     };
-  }
-  private toNumber(value: Prisma.Decimal | number): number {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
   }
   private buildDisplayName(record: ItemPriceMaster): string {
     const branchSegment = record.ipmBranchId ?? 'NO_BRANCH';
@@ -1564,136 +1424,37 @@ export class ItemsPriceMasterService {
     return trimmed || fallback;
   }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Item price already exists', [
-          {
-            field: 'ipm_item_id',
-            message: 'Duplicate item price configuration is not allowed',
-          },
-        ]),
-      );
-    }
-    if (this.isForeignKeyConstraintError(error)) {
-      throw new BadRequestException(
-        this.buildErrorResponse('Invalid relation reference', [
-          {
-            field: 'request',
-            message: 'Referenced company, branch, item, unit, base unit, or godown does not exist',
-          },
-        ]),
-      );
+    throwOnUniqueConstraintError<ItemPriceErrorDetail>(error, 'Item price already exists', [
+      { field: 'ipm_item_id', message: 'Duplicate item price configuration is not allowed' },
+    ]);
+    if (isForeignKeyConstraintError(error)) {
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Invalid relation reference', [
+        { field: 'request', message: 'Referenced company, branch, item, unit, base unit, or godown does not exist' },
+      ]);
     }
   }
   private handleItemUnitConversionWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildItemUnitConversionErrorResponse('Item unit conversion already exists', [
-          {
-            field: 'iuc_unit_id',
-            message:
-              'Duplicate item unit conversion, default-unit, or base-unit configuration is not allowed',
-          },
-        ]),
-      );
-    }
-    if (this.isForeignKeyConstraintError(error)) {
-      throw new BadRequestException(
-        this.buildItemUnitConversionErrorResponse('Invalid relation reference', [
-          {
-            field: 'request',
-            message: 'Referenced company, item, unit, or base unit does not exist',
-          },
-        ]),
-      );
+    throwOnUniqueConstraintError<ItemPriceErrorDetail>(error, 'Item unit conversion already exists', [
+      { field: 'iuc_unit_id', message: 'Duplicate item unit conversion, default-unit, or base-unit configuration is not allowed' },
+    ]);
+    if (isForeignKeyConstraintError(error)) {
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Invalid relation reference', [
+        { field: 'request', message: 'Referenced company, item, unit, or base unit does not exist' },
+      ]);
     }
   }
   private handleDeleteError(error: unknown): void {
-    if (this.isForeignKeyConstraintError(error)) {
-      throw new BadRequestException(
-        this.buildErrorResponse('Cannot delete item price', [
-          {
-            field: 'ipm_id',
-            message: 'Item price is referenced by related records',
-          },
-        ]),
-      );
+    if (isForeignKeyConstraintError(error)) {
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Cannot delete item price', [
+        { field: 'ipm_id', message: 'Item price is referenced by related records' },
+      ]);
     }
   }
   private handleItemUnitConversionDeleteError(error: unknown): void {
-    if (this.isForeignKeyConstraintError(error)) {
-      throw new BadRequestException(
-        this.buildItemUnitConversionErrorResponse('Cannot delete item unit conversion', [
-          {
-            field: 'iuc_id',
-            message: 'Item unit conversion is referenced by related records',
-          },
-        ]),
-      );
+    if (isForeignKeyConstraintError(error)) {
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Cannot delete item unit conversion', [
+        { field: 'iuc_id', message: 'Item unit conversion is referenced by related records' },
+      ]);
     }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2003';
-  }
-  private throwNotFound(ipmId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item price not found', [
-        {
-          field: 'ipm_id',
-          message: `No item price found with id ${ipmId}`,
-        },
-      ]),
-    );
-  }
-  private throwItemUnitConversionNotFound(iucId: string): never {
-    throw new NotFoundException(
-      this.buildItemUnitConversionErrorResponse('Item unit conversion not found', [
-        {
-          field: 'iuc_id',
-          message: `No item unit conversion found with id ${iucId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: ItemPriceErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private throwItemUnitConversionBadRequest(
-    message: string,
-    errors: ItemPriceErrorDetail[],
-  ): never {
-    throw new BadRequestException(this.buildItemUnitConversionErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: ItemPriceErrorDetail[] = [],
-  ): ItemPriceErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private buildItemUnitConversionErrorResponse(
-    message: string,
-    errors: ItemPriceErrorDetail[] = [],
-  ): ItemPriceErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

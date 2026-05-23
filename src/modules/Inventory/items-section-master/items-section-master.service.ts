@@ -1,15 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
 import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import {
   ItemSectionErrorDetail,
-  ItemSectionErrorResponse,
   ItemSectionListItem,
   ItemSectionListMeta,
   ItemSectionPayload,
@@ -17,10 +11,15 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
+import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
 
-const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
 const ROOT_SECTION_LEVEL = 1;
 const ITEM_SECTION_TABLE_NAME = 'item section master';
 const ITEM_SECTION_AUDIT_SCREEN_NAME = 'Item Section Master';
@@ -45,122 +44,29 @@ export class ItemsSectionMasterService {
   async list(
     queryDto: ListItemSectionQueryDto,
   ): Promise<ConfiguredGridListResult<ItemSectionListItem, ItemSectionListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
 
     const hasStructuredFilters =
       queryDto.sec_parent_id !== undefined ||
       queryDto.sec_is_active !== undefined;
 
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
-    const where: Prisma.ItemSectionMasterWhereInput = {
-      secIsDeleted: false,
-    };
-
-    if (queryDto.sec_parent_id !== undefined) {
-      where.secParentId = queryDto.sec_parent_id;
-    }
-
-    if (queryDto.sec_is_active !== undefined) {
-      where.secIsActive = queryDto.sec_is_active;
-    }
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { secName: { contains: search, mode: 'insensitive' } },
-        { secAlias: { contains: search, mode: 'insensitive' } },
-        { secDescription: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    const [total, records, styles] = await Promise.all([
-      this.prisma.itemSectionMaster.count({ where }),
-      this.prisma.itemSectionMaster.findMany({
+    const where = this.buildListWhere(queryDto);
+    return runInventoryListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<ItemSectionListItem>(
+        this.configuredGridSqlService,
+        { tableName: ITEM_SECTION_TABLE_NAME, alias: 'item_section_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.itemSectionMaster.count({ where }),
+      findManyFn: () => this.prisma.itemSectionMaster.findMany({
         where,
         orderBy: [{ secSort: 'asc' }, { secName: 'asc' }],
         skip,
         take: limit,
       }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_SECTION_TABLE_NAME),
-    ]);
-
-    return {
-      items: records.map((record) => this.toListItem(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<ItemSectionListItem, ItemSectionListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ITEM_SECTION_TABLE_NAME,
+      toItemFn: (record) => this.toListItem(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_SECTION_TABLE_NAME),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ITEM_SECTION_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ITEM_SECTION_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<ItemSectionListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'item_section_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   private toListItem(record: ItemSectionMaster): ItemSectionListItem {
@@ -172,49 +78,34 @@ export class ItemsSectionMasterService {
 
   async getById(secId: string): Promise<ItemSectionPayload> {
     const record = await this.prisma.itemSectionMaster.findFirst({
-      where: {
-        secId,
-        secIsDeleted: false,
-      },
+      where: { secId, secIsDeleted: false },
     });
-
     if (!record) {
-      this.throwNotFound(secId);
+      throwInventoryNotFound<ItemSectionErrorDetail>('Item section not found', 'sec_id', `No active item section found with id ${secId}`);
     }
-
     return this.toPayload(record);
   }
 
   async softDelete(secId: string): Promise<{ sec_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.itemSectionMaster.findFirst({
-        where: {
-          secId,
-          secIsDeleted: false,
-        },
+        where: { secId, secIsDeleted: false },
       });
 
       if (!existing) {
-        this.throwNotFound(secId);
+        throwInventoryNotFound<ItemSectionErrorDetail>('Item section not found', 'sec_id', `No active item section found with id ${secId}`);
       }
 
       const subtreeIds = await this.getActiveSubtreeIds(tx, secId);
       const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
       const modifiedOn = new Date();
       const result = await tx.itemSectionMaster.updateMany({
-        where: {
-          secId,
-          secIsDeleted: false,
-        },
-        data: {
-          secIsDeleted: true,
-          secModifiedOn: modifiedOn,
-          secModifiedBy: DEFAULT_ACTOR,
-        },
+        where: { secId, secIsDeleted: false },
+        data: { secIsDeleted: true, secModifiedOn: modifiedOn, secModifiedBy: DEFAULT_ACTOR },
       });
 
       if (result.count === 0) {
-        this.throwNotFound(secId);
+        throwInventoryNotFound<ItemSectionErrorDetail>('Item section not found', 'sec_id', `No active item section found with id ${secId}`);
       }
 
       await this.removePathIds(tx, ancestorIds, subtreeIds);
@@ -242,10 +133,7 @@ export class ItemsSectionMasterService {
         tx,
       );
 
-      return {
-        sec_id: secId,
-        deleted: true,
-      };
+      return { sec_id: secId, deleted: true };
     });
   }
 
@@ -283,10 +171,7 @@ export class ItemsSectionMasterService {
         }
 
         const refreshed = await tx.itemSectionMaster.findFirst({
-          where: {
-            secId: created.secId,
-            secIsDeleted: false,
-          },
+          where: { secId: created.secId, secIsDeleted: false },
         });
         const payload = !refreshed
           ? this.toPayload({
@@ -324,22 +209,16 @@ export class ItemsSectionMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.itemSectionMaster.findFirst({
-          where: {
-            secId,
-            secIsDeleted: false,
-          },
+          where: { secId, secIsDeleted: false },
         });
 
         if (!existing) {
-          this.throwNotFound(secId);
+          throwInventoryNotFound<ItemSectionErrorDetail>('Item section not found', 'sec_id', `No active item section found with id ${secId}`);
         }
 
         if (saveItemSectionDto.sec_parent_id === secId) {
-          this.throwBadRequest('Item section cannot be its own parent', [
-            {
-              field: 'sec_parent_id',
-              message: 'sec_parent_id cannot be same as sec_id',
-            },
+          throwInventoryBadRequest<ItemSectionErrorDetail>('Item section cannot be its own parent', [
+            { field: 'sec_parent_id', message: 'sec_parent_id cannot be same as sec_id' },
           ]);
         }
 
@@ -349,7 +228,7 @@ export class ItemsSectionMasterService {
           requestedParentLevel = parent.secLevel;
         }
 
-        const hasParentField = this.hasOwnProperty(saveItemSectionDto, 'sec_parent_id');
+        const hasParentField = hasOwnProperty(saveItemSectionDto, 'sec_parent_id');
         const nextParentId = hasParentField
           ? (saveItemSectionDto.sec_parent_id ?? null)
           : existing.secParentId;
@@ -369,12 +248,7 @@ export class ItemsSectionMasterService {
         }
 
         this.applyOptionalFields(data, saveItemSectionDto);
-        const updated = await tx.itemSectionMaster.update({
-          where: {
-            secId,
-          },
-          data,
-        });
+        const updated = await tx.itemSectionMaster.update({ where: { secId }, data });
 
         await this.ensureSelfInPath(tx, secId);
         if (isParentChanged) {
@@ -384,10 +258,7 @@ export class ItemsSectionMasterService {
         }
 
         const refreshed = await tx.itemSectionMaster.findFirst({
-          where: {
-            secId,
-            secIsDeleted: false,
-          },
+          where: { secId, secIsDeleted: false },
         });
         const payload = this.toPayload(refreshed ?? updated);
         await this.auditLogService.logEntityChange(
@@ -418,26 +289,35 @@ export class ItemsSectionMasterService {
     tx: ItemSectionWriteClient,
   ): Promise<{ secId: string; secLevel: number | null }> {
     const parent = await tx.itemSectionMaster.findFirst({
-      where: {
-        secId: parentId,
-        secIsDeleted: false,
-      },
-      select: {
-        secId: true,
-        secLevel: true,
-      },
+      where: { secId: parentId, secIsDeleted: false },
+      select: { secId: true, secLevel: true },
     });
 
     if (!parent) {
-      this.throwBadRequest('Parent item section does not exist', [
-        {
-          field: 'sec_parent_id',
-          message: `No active item section found with id ${parentId}`,
-        },
+      throwInventoryBadRequest<ItemSectionErrorDetail>('Parent item section does not exist', [
+        { field: 'sec_parent_id', message: `No active item section found with id ${parentId}` },
       ]);
     }
 
     return parent;
+  }
+
+  private buildListWhere(queryDto: ListItemSectionQueryDto): Prisma.ItemSectionMasterWhereInput {
+    const where: Prisma.ItemSectionMasterWhereInput = { secIsDeleted: false };
+
+    if (queryDto.sec_parent_id !== undefined) where.secParentId = queryDto.sec_parent_id;
+    if (queryDto.sec_is_active !== undefined) where.secIsActive = queryDto.sec_is_active;
+
+    if (queryDto.search?.trim()) {
+      const search = queryDto.search.trim();
+      where.OR = [
+        { secName: { contains: search, mode: 'insensitive' } },
+        { secAlias: { contains: search, mode: 'insensitive' } },
+        { secDescription: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    return where;
   }
 
   private applyOptionalFields(
@@ -446,45 +326,18 @@ export class ItemsSectionMasterService {
       | Prisma.ItemSectionMasterUncheckedUpdateInput,
     saveItemSectionDto: SaveItemSectionDto,
   ): void {
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_alias')) {
-      data.secAlias = saveItemSectionDto.sec_alias;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_short')) {
-      data.secShort = saveItemSectionDto.sec_short;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_description')) {
-      data.secDescription = saveItemSectionDto.sec_description;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_parent_id')) {
-      data.secParentId = saveItemSectionDto.sec_parent_id;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_sort')) {
-      data.secSort = saveItemSectionDto.sec_sort;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_position')) {
-      data.secPosition = saveItemSectionDto.sec_position;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_color_code')) {
-      data.secColorCode = saveItemSectionDto.sec_color_code;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_icon')) {
-      data.secIcon = saveItemSectionDto.sec_icon;
-    }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_photo')) {
+    if (hasOwnProperty(saveItemSectionDto, 'sec_alias')) data.secAlias = saveItemSectionDto.sec_alias;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_short')) data.secShort = saveItemSectionDto.sec_short;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_description')) data.secDescription = saveItemSectionDto.sec_description;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_parent_id')) data.secParentId = saveItemSectionDto.sec_parent_id;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_sort')) data.secSort = saveItemSectionDto.sec_sort;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_position')) data.secPosition = saveItemSectionDto.sec_position;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_color_code')) data.secColorCode = saveItemSectionDto.sec_color_code;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_icon')) data.secIcon = saveItemSectionDto.sec_icon;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_photo')) {
       data.secPhoto = this.decodePhotoInput(saveItemSectionDto.sec_photo);
     }
-
-    if (this.hasOwnProperty(saveItemSectionDto, 'sec_photo_url')) {
-      data.secPhotoUrl = saveItemSectionDto.sec_photo_url;
-    }
+    if (hasOwnProperty(saveItemSectionDto, 'sec_photo_url')) data.secPhotoUrl = saveItemSectionDto.sec_photo_url;
   }
 
   private async getAncestorIds(
@@ -496,24 +349,14 @@ export class ItemsSectionMasterService {
     let currentParentId = startParentId;
 
     while (currentParentId) {
-      if (visited.has(currentParentId)) {
-        break;
-      }
+      if (visited.has(currentParentId)) break;
       visited.add(currentParentId);
 
       const parent = await tx.itemSectionMaster.findFirst({
-        where: {
-          secId: currentParentId,
-          secIsDeleted: false,
-        },
-        select: {
-          secId: true,
-          secParentId: true,
-        },
+        where: { secId: currentParentId, secIsDeleted: false },
+        select: { secId: true, secParentId: true },
       });
-      if (!parent) {
-        break;
-      }
+      if (!parent) break;
 
       ancestorIds.push(parent.secId);
       currentParentId = parent.secParentId;
@@ -529,33 +372,19 @@ export class ItemsSectionMasterService {
 
     while (queue.length > 0) {
       const currentId = queue.shift()!;
-      if (visited.has(currentId)) {
-        continue;
-      }
+      if (visited.has(currentId)) continue;
       visited.add(currentId);
 
       const node = await tx.itemSectionMaster.findFirst({
-        where: {
-          secId: currentId,
-          secIsDeleted: false,
-        },
-        select: {
-          secId: true,
-        },
+        where: { secId: currentId, secIsDeleted: false },
+        select: { secId: true },
       });
-      if (!node) {
-        continue;
-      }
+      if (!node) continue;
       subtreeIds.push(node.secId);
 
       const children = await tx.itemSectionMaster.findMany({
-        where: {
-          secParentId: node.secId,
-          secIsDeleted: false,
-        },
-        select: {
-          secId: true,
-        },
+        where: { secParentId: node.secId, secIsDeleted: false },
+        select: { secId: true },
       });
       for (const child of children) {
         if (!visited.has(child.secId)) {
@@ -574,35 +403,19 @@ export class ItemsSectionMasterService {
   ): Promise<void> {
     const normalizedTargetIds = this.toUniqueIds(targetIds);
     const normalizedIdsToAdd = this.toUniqueIds(idsToAdd);
-    if (normalizedTargetIds.length === 0 || normalizedIdsToAdd.length === 0) {
-      return;
-    }
+    if (normalizedTargetIds.length === 0 || normalizedIdsToAdd.length === 0) return;
 
     const records = await tx.itemSectionMaster.findMany({
-      where: {
-        secId: {
-          in: normalizedTargetIds,
-        },
-        secIsDeleted: false,
-      },
-      select: {
-        secId: true,
-        secPathIds: true,
-      },
+      where: { secId: { in: normalizedTargetIds }, secIsDeleted: false },
+      select: { secId: true, secPathIds: true },
     });
 
     for (const record of records) {
       const nextPathIds = this.mergePathIds(record.secPathIds, normalizedIdsToAdd);
-      if (this.areSameIds(record.secPathIds, nextPathIds)) {
-        continue;
-      }
+      if (this.areSameIds(record.secPathIds, nextPathIds)) continue;
       await tx.itemSectionMaster.update({
-        where: {
-          secId: record.secId,
-        },
-        data: {
-          secPathIds: nextPathIds,
-        },
+        where: { secId: record.secId },
+        data: { secPathIds: nextPathIds },
       });
     }
   }
@@ -614,35 +427,19 @@ export class ItemsSectionMasterService {
   ): Promise<void> {
     const normalizedTargetIds = this.toUniqueIds(targetIds);
     const normalizedIdsToRemove = this.toUniqueIds(idsToRemove);
-    if (normalizedTargetIds.length === 0 || normalizedIdsToRemove.length === 0) {
-      return;
-    }
+    if (normalizedTargetIds.length === 0 || normalizedIdsToRemove.length === 0) return;
 
     const records = await tx.itemSectionMaster.findMany({
-      where: {
-        secId: {
-          in: normalizedTargetIds,
-        },
-        secIsDeleted: false,
-      },
-      select: {
-        secId: true,
-        secPathIds: true,
-      },
+      where: { secId: { in: normalizedTargetIds }, secIsDeleted: false },
+      select: { secId: true, secPathIds: true },
     });
 
     for (const record of records) {
       const nextPathIds = this.excludePathIds(record.secPathIds, normalizedIdsToRemove);
-      if (this.areSameIds(record.secPathIds, nextPathIds)) {
-        continue;
-      }
+      if (this.areSameIds(record.secPathIds, nextPathIds)) continue;
       await tx.itemSectionMaster.update({
-        where: {
-          secId: record.secId,
-        },
-        data: {
-          secPathIds: nextPathIds,
-        },
+        where: { secId: record.secId },
+        data: { secPathIds: nextPathIds },
       });
     }
   }
@@ -673,13 +470,9 @@ export class ItemsSectionMasterService {
   }
 
   private areSameIds(left: readonly string[], right: readonly string[]): boolean {
-    if (left.length !== right.length) {
-      return false;
-    }
+    if (left.length !== right.length) return false;
     for (let i = 0; i < left.length; i += 1) {
-      if (left[i] !== right[i]) {
-        return false;
-      }
+      if (left[i] !== right[i]) return false;
     }
     return true;
   }
@@ -687,47 +480,31 @@ export class ItemsSectionMasterService {
   private decodePhotoInput(
     photo: string | Buffer | Uint8Array | null | undefined,
   ): Uint8Array<ArrayBuffer> | null | undefined {
-    if (photo === undefined) {
-      return undefined;
-    }
-
-    if (photo === null) {
-      return null;
-    }
+    if (photo === undefined) return undefined;
+    if (photo === null) return null;
 
     if (Buffer.isBuffer(photo)) {
       if (photo.length === 0) {
-        this.throwBadRequest('Invalid image provided', [
-          {
-            field: 'sec_photo',
-            message: 'sec_photo must contain binary image data',
-          },
+        throwInventoryBadRequest<ItemSectionErrorDetail>('Invalid image provided', [
+          { field: 'sec_photo', message: 'sec_photo must contain binary image data' },
         ]);
       }
-
       return new Uint8Array(photo);
     }
 
     if (photo instanceof Uint8Array) {
       if (photo.length === 0) {
-        this.throwBadRequest('Invalid image provided', [
-          {
-            field: 'sec_photo',
-            message: 'sec_photo must contain binary image data',
-          },
+        throwInventoryBadRequest<ItemSectionErrorDetail>('Invalid image provided', [
+          { field: 'sec_photo', message: 'sec_photo must contain binary image data' },
         ]);
       }
-
       return new Uint8Array(photo);
     }
 
     const trimmed = photo.trim();
     if (!trimmed) {
-      this.throwBadRequest('Invalid base64 image provided', [
-        {
-          field: 'sec_photo',
-          message: 'sec_photo must be a non-empty base64 string',
-        },
+      throwInventoryBadRequest<ItemSectionErrorDetail>('Invalid base64 image provided', [
+        { field: 'sec_photo', message: 'sec_photo must be a non-empty base64 string' },
       ]);
     }
 
@@ -735,11 +512,8 @@ export class ItemsSectionMasterService {
     const normalized = candidate.replace(/\s+/g, '');
 
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
-      this.throwBadRequest('Invalid base64 image provided', [
-        {
-          field: 'sec_photo',
-          message: 'sec_photo must be valid base64 content',
-        },
+      throwInventoryBadRequest<ItemSectionErrorDetail>('Invalid base64 image provided', [
+        { field: 'sec_photo', message: 'sec_photo must be valid base64 content' },
       ]);
     }
 
@@ -773,64 +547,17 @@ export class ItemsSectionMasterService {
   }
 
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Item section name already exists', [
-          {
-            field: 'sec_name',
-            message: 'Duplicate sec_name is not allowed',
-          },
-        ]),
-      );
-    }
+    throwOnUniqueConstraintError<ItemSectionErrorDetail>(error, 'Item section name already exists', [
+      { field: 'sec_name', message: 'Duplicate sec_name is not allowed' },
+    ]);
   }
 
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private throwNotFound(secId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item section not found', [
-        {
-          field: 'sec_id',
-          message: `No active item section found with id ${secId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: ItemSectionErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: ItemSectionErrorDetail[] = [],
-  ): ItemSectionErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
-  }
 
   private resolveSectionLevel(
     parentId: string | null | undefined,
     parentLevel: number | null | undefined,
   ): number {
-    if (!parentId) {
-      return ROOT_SECTION_LEVEL;
-    }
-
+    if (!parentId) return ROOT_SECTION_LEVEL;
     return (parentLevel ?? ROOT_SECTION_LEVEL) + 1;
   }
 }

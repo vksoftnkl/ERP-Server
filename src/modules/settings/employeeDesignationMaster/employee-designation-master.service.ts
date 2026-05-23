@@ -15,10 +15,9 @@ import {
   EmployeeDesignationMasterListMeta,
   EmployeeDesignationMasterPayload,
 } from './types/employee-designation-master-api.types';
+import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   SettingsWriteClient,
   buildSettingsErrorResponse,
   hasOwnProperty,
@@ -58,37 +57,12 @@ export class EmployeeDesignationMasterService {
   ): Promise<
     ConfiguredGridListResult<EmployeeDesignationMasterListItem, EmployeeDesignationMasterListMeta>
   > {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.edIsActive !== undefined || queryDto.edIsDefault !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(
-        queryDto.search,
-        page,
-        limit,
-        skip,
-      );
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
-    const where: Prisma.EmployeeDesignationWhereInput = {
-      edIsDeleted: false,
-    };
-
-    if (queryDto.edIsActive !== undefined) {
-      where.edIsActive = queryDto.edIsActive;
-    }
-
-    if (queryDto.edIsDefault !== undefined) {
-      where.edIsDefault = queryDto.edIsDefault;
-    }
-
+    const where: Prisma.EmployeeDesignationWhereInput = { edIsDeleted: false };
+    if (queryDto.edIsActive !== undefined) where.edIsActive = queryDto.edIsActive;
+    if (queryDto.edIsDefault !== undefined) where.edIsDefault = queryDto.edIsDefault;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -97,91 +71,17 @@ export class EmployeeDesignationMasterService {
         { edRemarks: { contains: search, mode: 'insensitive' } },
       ];
     }
-
-    const [total, records, styles] = await Promise.all([
-      this.prisma.employeeDesignation.count({ where }),
-      this.prisma.employeeDesignation.findMany({
-        where,
-        orderBy: [{ edIsDefault: 'desc' }, { edName: 'asc' }, { edId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<
-    EmployeeDesignationMasterListItem,
-    EmployeeDesignationMasterListMeta
-  > | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME,
+    return runSettingsListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<EmployeeDesignationMasterListItem>(
+        this.configuredGridSqlService,
+        { tableName: EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME, alias: 'employee_designation_master_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.employeeDesignation.count({ where }),
+      findManyFn: () => this.prisma.employeeDesignation.findMany({ where, orderBy: [{ edIsDefault: 'desc' }, { edName: 'asc' }, { edId: 'asc' }], skip, take: limit }),
+      toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        const result =
-          await this.configuredGridSqlService.runPagedQuery<EmployeeDesignationMasterListItem>({
-            baseSql: validation.normalizedSql,
-            alias: 'employee_designation_master_grid',
-            search,
-            limit,
-            skip,
-            gridId: configuredGrid.gridId,
-          });
-
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   async getById(edId: string): Promise<EmployeeDesignationMasterPayload> {

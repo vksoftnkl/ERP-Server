@@ -1,16 +1,10 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { GodownLocation, Prisma } from '@prisma/client';
 import { ListOrGetGodownQueryDto } from './dto/list-or-get-godown-query.dto';
 import { SaveGodownDto } from './dto/save-godown.dto';
 import {
   GodownErrorDetail,
-  GodownErrorResponse,
   GodownListItem,
   GodownListMeta,
   GodownPayload,
@@ -18,10 +12,16 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const VALIDATION_FAILED_MESSAGE = 'Validation failed';
+import { resolvePagination } from 'src/common/utils/module-list.utils';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+  toNumber,
+} from 'src/common/utils/module-service.utils';
 const GODOWN_LOCATION_TABLE_NAME = 'godown locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
 type GodownLocationWriteClient = Prisma.TransactionClient | PrismaService;
@@ -47,9 +47,7 @@ export class GodownsMasterService {
   async list(
     queryDto: ListOrGetGodownQueryDto,
   ): Promise<ConfiguredGridListResult<GodownListItem, GodownListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
     if (configuredList) {
       return configuredList;
@@ -102,11 +100,8 @@ export class GodownsMasterService {
       tableName: GODOWN_LOCATION_TABLE_NAME,
     });
     if (!validation.isValid) {
-      this.throwBadRequest('Invalid grid_sql configuration for godown location list', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
+      throwInventoryBadRequest<GodownErrorDetail>('Invalid grid_sql configuration for godown location list', [
+        { field: 'grid_sql', message: validation.message },
       ]);
     }
     const baseSql = validation.normalizedSql;
@@ -138,11 +133,8 @@ export class GodownsMasterService {
         styles: result.styles ?? [],
       };
     } catch {
-      this.throwBadRequest('Invalid grid_sql configuration for godown location list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for godown_locations',
-        },
+      throwInventoryBadRequest<GodownErrorDetail>('Invalid grid_sql configuration for godown location list', [
+        { field: 'grid_sql', message: 'Configured query could not be executed for godown_locations' },
       ]);
     }
   }
@@ -426,7 +418,7 @@ export class GodownsMasterService {
   async getById(gdlId: string): Promise<GodownPayload> {
     const record = await this.findActiveLocation(this.prisma, gdlId);
     if (!record) {
-      this.throwNotFound(gdlId);
+      throwInventoryNotFound<GodownErrorDetail>('Godown location not found', 'gdl_id', `No active godown location found with id ${gdlId}`);
     }
     return this.toPayload(record);
   }
@@ -450,7 +442,7 @@ export class GodownsMasterService {
       });
 
       if (result.count === 0) {
-        this.throwNotFound(gdlId);
+        throwInventoryNotFound<GodownErrorDetail>('Godown location not found', 'gdl_id', `No active godown location found with id ${gdlId}`);
       }
 
       await this.removePathIds(tx, ancestorIds, subtreeIds);
@@ -552,11 +544,8 @@ export class GodownsMasterService {
   private async updateGodownLocation(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
     const gdlId = saveGodownDto.gdl_id!;
     if (!saveGodownDto.gdl_godown_id) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'gdl_godown_id',
-          message: 'gdl_godown_id is required for update',
-        },
+      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+        { field: 'gdl_godown_id', message: 'gdl_godown_id is required for update' },
       ]);
     }
 
@@ -565,7 +554,7 @@ export class GodownsMasterService {
         const existing = await this.getActiveLocationOrThrow(tx, gdlId);
         const gdlGodownId = saveGodownDto.gdl_godown_id ?? existing.gdlGodownId;
         const gdlBranchId = saveGodownDto.gdl_branch_id ?? existing.gdlBranchId;
-        const parentId = this.hasOwnProperty(saveGodownDto, 'gdl_parent_id')
+        const parentId = hasOwnProperty(saveGodownDto, 'gdl_parent_id')
           ? (saveGodownDto.gdl_parent_id ?? null)
           : existing.gdlParentId;
 
@@ -576,7 +565,7 @@ export class GodownsMasterService {
           gdlBranchId,
         });
 
-        const hasParentField = this.hasOwnProperty(saveGodownDto, 'gdl_parent_id');
+        const hasParentField = hasOwnProperty(saveGodownDto, 'gdl_parent_id');
         const nextParentId = hasParentField
           ? (saveGodownDto.gdl_parent_id ?? null)
           : existing.gdlParentId;
@@ -589,13 +578,10 @@ export class GodownsMasterService {
         const data: Prisma.GodownLocationUncheckedUpdateInput = {};
         this.applyOptionalFields(data, saveGodownDto);
 
-        if (this.hasOwnProperty(saveGodownDto, 'gdl_name')) {
+        if (hasOwnProperty(saveGodownDto, 'gdl_name')) {
           if (!saveGodownDto.gdl_name?.trim()) {
-            this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-              {
-                field: 'gdl_name',
-                message: 'gdl_name cannot be empty',
-              },
+            throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+              { field: 'gdl_name', message: 'gdl_name cannot be empty' },
             ]);
           }
 
@@ -740,20 +726,14 @@ export class GodownsMasterService {
   } {
     const gdlName = saveGodownDto.gdl_name?.trim();
     if (!gdlName) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'gdl_name',
-          message: 'gdl_name is required',
-        },
+      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+        { field: 'gdl_name', message: 'gdl_name is required' },
       ]);
     }
 
     if (!saveGodownDto.gdl_branch_id) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'gdl_branch_id',
-          message: 'gdl_branch_id is required',
-        },
+      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+        { field: 'gdl_branch_id', message: 'gdl_branch_id is required' },
       ]);
     }
 
@@ -782,7 +762,7 @@ export class GodownsMasterService {
   ): Promise<GodownLocation> {
     const record = await this.findActiveLocation(client, gdlId);
     if (!record) {
-      this.throwNotFound(gdlId);
+      throwInventoryNotFound<GodownErrorDetail>('Godown location not found', 'gdl_id', `No active godown location found with id ${gdlId}`);
     }
 
     return record;
@@ -802,32 +782,23 @@ export class GodownsMasterService {
     }
 
     if (params.currentId && params.parentId === params.currentId) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'gdl_parent_id',
-          message: 'gdl_parent_id cannot be the same as gdl_id',
-        },
+      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+        { field: 'gdl_parent_id', message: 'gdl_parent_id cannot be the same as gdl_id' },
       ]);
     }
 
     const parent = await this.findActiveLocation(tx, params.parentId);
     if (!parent) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'gdl_parent_id',
-          message: `No active parent location found with id ${params.parentId}`,
-        },
+      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+        { field: 'gdl_parent_id', message: `No active parent location found with id ${params.parentId}` },
       ]);
     }
 
     const isSameHierarchy =
       parent.gdlGodownId === params.gdlGodownId && parent.gdlBranchId === params.gdlBranchId;
     if (!isSameHierarchy) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'gdl_parent_id',
-          message: 'Parent location must belong to the same gdl_godown_id and gdl_branch_id',
-        },
+      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+        { field: 'gdl_parent_id', message: 'Parent location must belong to the same gdl_godown_id and gdl_branch_id' },
       ]);
     }
   }
@@ -1039,76 +1010,73 @@ export class GodownsMasterService {
     saveGodownDto: SaveGodownDto,
   ): void {
     if (
-      this.hasOwnProperty(saveGodownDto, 'gdl_godown_id') &&
+      hasOwnProperty(saveGodownDto, 'gdl_godown_id') &&
       saveGodownDto.gdl_godown_id !== undefined
     ) {
       data.gdlGodownId = saveGodownDto.gdl_godown_id;
     }
 
     if (
-      this.hasOwnProperty(saveGodownDto, 'gdl_branch_id') &&
+      hasOwnProperty(saveGodownDto, 'gdl_branch_id') &&
       saveGodownDto.gdl_branch_id !== undefined
     ) {
       data.gdlBranchId = saveGodownDto.gdl_branch_id;
     }
-    if (this.hasOwnProperty(saveGodownDto, 'gdl_short') && saveGodownDto.gdl_short !== undefined) {
+    if (hasOwnProperty(saveGodownDto, 'gdl_short') && saveGodownDto.gdl_short !== undefined) {
       data.gdlShort = saveGodownDto.gdl_short;
     }
-    if (this.hasOwnProperty(saveGodownDto, 'gdl_code') && saveGodownDto.gdl_code !== undefined) {
+    if (hasOwnProperty(saveGodownDto, 'gdl_code') && saveGodownDto.gdl_code !== undefined) {
       data.gdlCode = saveGodownDto.gdl_code;
     }
-    if (this.hasOwnProperty(saveGodownDto, 'gdl_type') && saveGodownDto.gdl_type !== undefined) {
+    if (hasOwnProperty(saveGodownDto, 'gdl_type') && saveGodownDto.gdl_type !== undefined) {
       if (!saveGodownDto.gdl_type.trim()) {
-        this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-          {
-            field: 'gdl_type',
-            message: 'gdl_type cannot be empty',
-          },
+        throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+          { field: 'gdl_type', message: 'gdl_type cannot be empty' },
         ]);
       }
       data.gdlType = saveGodownDto.gdl_type.trim();
     }
-    if (this.hasOwnProperty(saveGodownDto, 'gdl_parent_id')) {
+    if (hasOwnProperty(saveGodownDto, 'gdl_parent_id')) {
       data.gdlParentId = saveGodownDto.gdl_parent_id ?? null;
     }
-    if (this.hasOwnProperty(saveGodownDto, 'gdl_sort') && saveGodownDto.gdl_sort !== undefined) {
+    if (hasOwnProperty(saveGodownDto, 'gdl_sort') && saveGodownDto.gdl_sort !== undefined) {
       data.gdlSort = saveGodownDto.gdl_sort;
     }
-    if (this.hasOwnProperty(saveGodownDto, 'gdl_level') && saveGodownDto.gdl_level !== undefined) {
+    if (hasOwnProperty(saveGodownDto, 'gdl_level') && saveGodownDto.gdl_level !== undefined) {
       data.gdlLevel = saveGodownDto.gdl_level;
     }
     if (
-      this.hasOwnProperty(saveGodownDto, 'gdl_del_sheet') &&
+      hasOwnProperty(saveGodownDto, 'gdl_del_sheet') &&
       saveGodownDto.gdl_del_sheet !== undefined
     ) {
       data.gdlDelSheet = saveGodownDto.gdl_del_sheet;
     }
     if (
-      this.hasOwnProperty(saveGodownDto, 'gdl_split_stock') &&
+      hasOwnProperty(saveGodownDto, 'gdl_split_stock') &&
       saveGodownDto.gdl_split_stock !== undefined
     ) {
       data.gdlSplitStock = saveGodownDto.gdl_split_stock;
     }
     if (
-      this.hasOwnProperty(saveGodownDto, 'gdl_negative_stock') &&
+      hasOwnProperty(saveGodownDto, 'gdl_negative_stock') &&
       saveGodownDto.gdl_negative_stock !== undefined
     ) {
       data.gdlNegativeStock = saveGodownDto.gdl_negative_stock;
     }
     if (
-      this.hasOwnProperty(saveGodownDto, 'gdl_volume') &&
+      hasOwnProperty(saveGodownDto, 'gdl_volume') &&
       saveGodownDto.gdl_volume !== undefined
     ) {
       data.gdlVolume = saveGodownDto.gdl_volume;
     }
     if (
-      this.hasOwnProperty(saveGodownDto, 'gdl_is_active') &&
+      hasOwnProperty(saveGodownDto, 'gdl_is_active') &&
       saveGodownDto.gdl_is_active !== undefined
     ) {
       data.gdlIsActive = saveGodownDto.gdl_is_active;
     }
     if (
-      this.hasOwnProperty(saveGodownDto, 'gdl_remarks') &&
+      hasOwnProperty(saveGodownDto, 'gdl_remarks') &&
       saveGodownDto.gdl_remarks !== undefined
     ) {
       data.gdlRemarks = saveGodownDto.gdl_remarks;
@@ -1130,7 +1098,7 @@ export class GodownsMasterService {
       gdl_del_sheet: record.gdlDelSheet,
       gdl_split_stock: record.gdlSplitStock,
       gdl_negative_stock: record.gdlNegativeStock,
-      gdl_volume: this.toNumber(record.gdlVolume),
+      gdl_volume: toNumber(record.gdlVolume),
       gdl_is_active: record.gdlIsActive,
       gdl_is_deleted: record.gdlIsDeleted,
       gdl_created_on: record.gdlCreatedOn.toISOString(),
@@ -1140,68 +1108,14 @@ export class GodownsMasterService {
       gdl_remarks: record.gdlRemarks,
     };
   }
-  private toNumber(value: Prisma.Decimal | number): number {
-    if (typeof value === 'number') {
-      return value;
-    }
-    return Number(value.toString());
-  }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Godown location already exists', [
-          {
-            field: 'gdl_name',
-            message: 'Duplicate gdl_name under the same parent is not allowed',
-          },
-        ]),
-      );
-    }
-    if (this.isForeignKeyConstraintError(error)) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'gdl_parent_id',
-          message: 'Invalid gdl_parent_id reference',
-        },
+    throwOnUniqueConstraintError<GodownErrorDetail>(error, 'Godown location already exists', [
+      { field: 'gdl_name', message: 'Duplicate gdl_name under the same parent is not allowed' },
+    ]);
+    if (isForeignKeyConstraintError(error)) {
+      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
+        { field: 'gdl_parent_id', message: 'Invalid gdl_parent_id reference' },
       ]);
     }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2003';
-  }
-  private throwNotFound(gdlId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Godown location not found', [
-        {
-          field: 'gdl_id',
-          message: `No active godown location found with id ${gdlId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: GodownErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: GodownErrorDetail[] = [],
-  ): GodownErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

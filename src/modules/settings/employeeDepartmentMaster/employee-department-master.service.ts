@@ -15,10 +15,9 @@ import {
   EmployeeDepartmentMasterListMeta,
   EmployeeDepartmentMasterPayload,
 } from './types/employee-department-master-api.types';
+import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   SettingsWriteClient,
   buildSettingsErrorResponse,
   hasOwnProperty,
@@ -52,27 +51,10 @@ export class EmployeeDepartmentMasterService {
   ): Promise<
     ConfiguredGridListResult<EmployeeDepartmentMasterListItem, EmployeeDepartmentMasterListMeta>
   > {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters = queryDto.edptIsActive !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(
-        queryDto.search,
-        page,
-        limit,
-        skip,
-      );
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-    const where: Prisma.EmployeeDepartmentWhereInput = {
-      edptIsDeleted: false,
-    };
-    if (queryDto.edptIsActive !== undefined) {
-      where.edptIsActive = queryDto.edptIsActive;
-    }
+    const where: Prisma.EmployeeDepartmentWhereInput = { edptIsDeleted: false };
+    if (queryDto.edptIsActive !== undefined) where.edptIsActive = queryDto.edptIsActive;
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
       where.OR = [
@@ -82,84 +64,17 @@ export class EmployeeDepartmentMasterService {
         { edptRemarks: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.employeeDepartment.count({ where }),
-      this.prisma.employeeDepartment.findMany({
-        where,
-        orderBy: [{ edptName: 'asc' }, { edptId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<
-    EmployeeDepartmentMasterListItem,
-    EmployeeDepartmentMasterListMeta
-  > | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME,
+    return runSettingsListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<EmployeeDepartmentMasterListItem>(
+        this.configuredGridSqlService,
+        { tableName: EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME, alias: 'employee_department_master_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.employeeDepartment.count({ where }),
+      findManyFn: () => this.prisma.employeeDepartment.findMany({ where, orderBy: [{ edptName: 'asc' }, { edptId: 'asc' }], skip, take: limit }),
+      toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result =
-          await this.configuredGridSqlService.runPagedQuery<EmployeeDepartmentMasterListItem>({
-            baseSql: validation.normalizedSql,
-            alias: 'employee_department_master_grid',
-            search,
-            limit,
-            skip,
-            gridId: configuredGrid.gridId,
-          });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
   }
   async getById(edptId: string): Promise<EmployeeDepartmentMasterPayload> {
     const record = await this.prisma.employeeDepartment.findFirst({

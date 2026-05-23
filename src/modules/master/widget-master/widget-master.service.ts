@@ -1,17 +1,19 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, Widget, WidgetPlatform } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { ListWidgetQueryDto } from './dto/list-widget-query.dto';
 import { SaveWidgetDto } from './dto/save-widget.dto';
 import {
   WidgetMasterErrorDetail,
-  WidgetMasterErrorResponse,
   WidgetMasterListMeta,
   WidgetMasterPayload,
 } from './types/widget-master-api.types';
-
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import { resolvePagination } from 'src/common/utils/module-list.utils';
+import {
+  hasOwnProperty,
+  throwMasterBadRequest,
+  throwMasterNotFound,
+} from 'src/common/utils/module-service.utils';
 
 @Injectable()
 export class WidgetMasterService {
@@ -28,9 +30,7 @@ export class WidgetMasterService {
   async list(
     queryDto: ListWidgetQueryDto,
   ): Promise<{ items: WidgetMasterPayload[]; meta: WidgetMasterListMeta }> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const where: Prisma.WidgetWhereInput = {};
     const search = queryDto.search?.trim() ?? '';
     const widgetGroupId = this.getWidgetGroupId(queryDto);
@@ -190,10 +190,10 @@ export class WidgetMasterService {
     data: Record<string, unknown>,
     saveWidgetDto: SaveWidgetDto,
   ): void {
-    if (this.hasOwnProperty(saveWidgetDto, 'widgetGuiName')) {
+    if (hasOwnProperty(saveWidgetDto, 'widgetGuiName')) {
       data.widgetGuiName = saveWidgetDto.widgetGuiName ?? null;
     }
-    if (this.hasOwnProperty(saveWidgetDto, 'widgetSecondaryText')) {
+    if (hasOwnProperty(saveWidgetDto, 'widgetSecondaryText')) {
       data.widgetSecondaryText = saveWidgetDto.widgetSecondaryText ?? null;
     }
   }
@@ -284,31 +284,14 @@ export class WidgetMasterService {
     return widgetNo;
   }
   private throwNotFound(widgetNo: number, widgetType?: WidgetPlatform): never {
-    const suffix =
-      widgetType !== undefined ? ` with widgetType ${widgetType}` : '';
-    throw new NotFoundException(
-      this.buildErrorResponse('Widget not found', [
-        {
-          field: 'widgetNo',
-          message: `No widget found with widgetNo ${widgetNo}${suffix}`,
-        },
-      ]),
+    const suffix = widgetType !== undefined ? ` with widgetType ${widgetType}` : '';
+    throwMasterNotFound<WidgetMasterErrorDetail>(
+      'Widget not found',
+      'widgetNo',
+      `No widget found with widgetNo ${widgetNo}${suffix}`,
     );
   }
   private throwBadRequest(message: string, errors: WidgetMasterErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: WidgetMasterErrorDetail[] = [],
-  ): WidgetMasterErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
+    throwMasterBadRequest<WidgetMasterErrorDetail>(message, errors);
   }
 }

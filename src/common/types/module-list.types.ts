@@ -10,3 +10,4 @@ export type PurchaseListMeta = ModuleListMeta;
 export type InventoryListMeta = ModuleListMeta;
 export type FixedListMeta = ModuleListMeta;
 export type SettingsListMeta = ModuleListMeta;
+export type MasterListMeta = ModuleListMeta;

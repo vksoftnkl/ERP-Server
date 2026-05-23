@@ -15,10 +15,9 @@ import {
   UserAdminPayload,
   UserMenuPayload,
 } from './types/user-administration-api.types';
+import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   SettingsWriteClient,
   throwOnUniqueConstraintError,
   throwSettingsBadRequest,
@@ -53,33 +52,15 @@ export class UserAdministrationService {
   async list(
     queryDto: ListUserAdministrationQueryDto,
   ): Promise<ConfiguredGridListResult<UserAdminListItem, UserAdminListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.usrCompanyId !== undefined ||
       queryDto.usrIsActive !== undefined ||
       queryDto.usrType !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configured = await this.listFromConfiguredGrid(queryDto.search, page, limit, skip);
-      if (configured) {
-        return configured;
-      }
-    }
-
     const where: Prisma.UserMasterWhereInput = { usrIsDeleted: false };
-
-    if (queryDto.usrCompanyId !== undefined) {
-      where.usrCompanyId = queryDto.usrCompanyId;
-    }
-    if (queryDto.usrIsActive !== undefined) {
-      where.usrIsActive = queryDto.usrIsActive;
-    }
-    if (queryDto.usrType !== undefined) {
-      where.usrType = { equals: queryDto.usrType, mode: 'insensitive' };
-    }
+    if (queryDto.usrCompanyId !== undefined) where.usrCompanyId = queryDto.usrCompanyId;
+    if (queryDto.usrIsActive !== undefined) where.usrIsActive = queryDto.usrIsActive;
+    if (queryDto.usrType !== undefined) where.usrType = { equals: queryDto.usrType, mode: 'insensitive' };
     if (queryDto.search?.trim()) {
       const s = queryDto.search.trim();
       where.OR = [
@@ -90,26 +71,16 @@ export class UserAdministrationService {
         { usrMobileNo: { contains: s, mode: 'insensitive' } },
       ];
     }
-
-    const [total, records] = await Promise.all([
-      this.prisma.userMaster.count({ where }),
-      this.prisma.userMaster.findMany({
-        where,
-        orderBy: [{ usrDisplayName: 'asc' }, { usrId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-    ]);
-
-    return {
-      items: records.map((r) => this.toPayloadWithoutMenus(r)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
+    return runSettingsListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<UserAdminListItem>(
+        this.configuredGridSqlService,
+        { tableName: USER_MASTER_TABLE_NAME, alias: 'user_admin_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.userMaster.count({ where }),
+      findManyFn: () => this.prisma.userMaster.findMany({ where, orderBy: [{ usrDisplayName: 'asc' }, { usrId: 'asc' }], skip, take: limit }),
+      toItemFn: (r) => this.toPayloadWithoutMenus(r),
+    });
   }
 
   async getById(usrId: string): Promise<UserAdminPayload> {
@@ -493,59 +464,6 @@ export class UserAdministrationService {
       umModifiedOn: m.umModifiedOn?.toISOString() ?? null,
       umModifiedBy: m.umModifiedBy,
     };
-  }
-
-  private async listFromConfiguredGrid(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<UserAdminListItem, UserAdminListMeta> | null> {
-    const candidates = await this.configuredGridSqlService.loadCandidates({
-      tableName: USER_MASTER_TABLE_NAME,
-    });
-    const primary = this.configuredGridSqlService.filterPrimaryFromTable(
-      candidates,
-      USER_MASTER_TABLE_NAME,
-    );
-
-    if (primary.length === 0) return null;
-
-    for (const grid of primary) {
-      const raw = grid.gridSql?.trim();
-      if (!raw) continue;
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: raw,
-        tableName: USER_MASTER_TABLE_NAME,
-      });
-      if (!validation.isValid) continue;
-
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<UserAdminListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'user_admin_grid',
-          search,
-          limit,
-          skip,
-          gridId: grid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   private handleWriteError(error: unknown): void {

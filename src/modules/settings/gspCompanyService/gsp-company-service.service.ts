@@ -15,10 +15,9 @@ import {
   GspCompanyServiceListMeta,
   GspCompanyServicePayload,
 } from './types/gsp-company-service-api.types';
+import { resolvePagination } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   SettingsWriteClient,
   buildSettingsErrorResponse,
   hasOwnProperty,
@@ -75,9 +74,7 @@ export class GspCompanyServiceService {
   async list(
     queryDto: ListGspCompanyServiceQueryDto,
   ): Promise<ConfiguredGridListResult<GspCompanyServiceListItem, GspCompanyServiceListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
     if (configuredList) {
       return configuredList;

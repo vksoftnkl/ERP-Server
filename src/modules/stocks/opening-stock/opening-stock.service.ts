@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DeviceType, OpeningStockDetail, Prisma, VoucherStatus } from '@prisma/client';
 import {
   OpeningStockDetailCessType,
@@ -31,9 +26,15 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
 import { createAccountVoucherHeader, CreateAccountVoucherHeaderPayload, softDeleteAccountVoucherHeader, updateAccountVoucherHeader, UpdateAccountVoucherHeaderPayload } from 'src/modules/accountsModule/accountVoucherHeader/account-voucher-header.helper';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const VALIDATION_FAILED_MESSAGE = 'Validation failed';
+import { resolvePagination } from 'src/common/utils/module-list.utils';
+import {
+  isForeignKeyConstraintError,
+  isUniqueConstraintError,
+  throwBadRequest,
+  throwConflict,
+  throwNotFound,
+  toNumber,
+} from 'src/common/utils/module-service.utils';
 const OPENING_STOCK_HEADER_TABLE_NAME = 'opening stock header';
 const OPENING_STOCK_AUDIT_SCREEN_NAME = 'Opening Stock';
 const OPENING_STOCK_HEADER_INCLUDE = {
@@ -137,9 +138,7 @@ export class OpeningStockService {
   async list(
     queryDto: ListOpeningStockQueryDto,
   ): Promise<{ items: OpeningStockListItem[]; meta: OpeningStockListMeta }> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const where = this.buildListWhere(queryDto);
     const [total, records] = await Promise.all([
       this.prisma.openingStockHeader.count({ where }),
@@ -355,7 +354,7 @@ export class OpeningStockService {
     this.ensureDetailsPresent(saveOpeningStockDto.details);
     const avhVoucherId = saveOpeningStockDto.header.avh_voucher_id;
     if (!avhVoucherId) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'avh_voucher_id',
           message: 'avh_voucher_id is required for update',
@@ -457,7 +456,7 @@ export class OpeningStockService {
     const requestUserId = this.requestContextService.getUserId();
     const actorUserId = header.osh_user_id ?? requestUserId;
     if (!actorUserId) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'osh_user_id',
           message: 'Authenticated user context or osh_user_id is required',
@@ -552,7 +551,7 @@ export class OpeningStockService {
       const mfgDate = this.parseNullableDate(detail.osl_mfg_date, 'osl_mfg_date');
       const expiryDate = this.parseNullableDate(detail.osl_expiry_date, 'osl_expiry_date');
       if (mfgDate && expiryDate && expiryDate.getTime() < mfgDate.getTime()) {
-        this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+        throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
           {
             field: `details[${index}].osl_expiry_date`,
             message: 'osl_expiry_date must be greater than or equal to osl_mfg_date',
@@ -612,7 +611,7 @@ export class OpeningStockService {
       !Number.isInteger(voucherTypeId) ||
       voucherTypeId <= 0
     ) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'avh_voucher_type_id',
           message:
@@ -920,7 +919,7 @@ export class OpeningStockService {
       : null;
     const dateTo = queryDto.date_to ? this.parseRequiredDate(queryDto.date_to, 'date_to') : null;
     if (dateFrom && dateTo && dateFrom.getTime() > dateTo.getTime()) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'date_from',
           message: 'date_from must be less than or equal to date_to',
@@ -1015,7 +1014,7 @@ export class OpeningStockService {
       include: OPENING_STOCK_HEADER_INCLUDE,
     });
     if (!header) {
-      this.throwNotFound(avhVoucherId);
+      throwNotFound<OpeningStockErrorDetail>('Opening stock document not found', 'avh_voucher_id', `No active opening stock document found with avh_voucher_id ${avhVoucherId}`);
     }
     return header;
   }
@@ -1034,7 +1033,7 @@ export class OpeningStockService {
   ): Promise<OpeningStockHeaderWithVoucher> {
     const avhVoucherRefno = queryDto.avh_voucher_refno?.trim() ?? '';
     if (!avhVoucherRefno) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'avh_voucher_refno',
           message: 'avh_voucher_refno is required',
@@ -1292,7 +1291,7 @@ export class OpeningStockService {
   private parseRequiredDate(value: string, field: string): Date {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field,
           message: `${field} must be a valid date`,
@@ -1309,7 +1308,7 @@ export class OpeningStockService {
   }
   private ensureDetailsPresent(details: OpeningStockDetailLineDto[]): void {
     if (!Array.isArray(details) || details.length === 0) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'details',
           message: 'At least one opening stock detail row is required',
@@ -1320,7 +1319,7 @@ export class OpeningStockService {
   private resolveActorUserId(): string {
     const actorUserId = this.requestContextService.getUserId();
     if (!actorUserId) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'user_id',
           message: 'Authenticated user context is required',
@@ -1359,7 +1358,7 @@ export class OpeningStockService {
       );
     }
     if (this.isForeignKeyConstraintError(error)) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwBadRequest<OpeningStockErrorDetail>('Validation failed', [
         {
           field: 'request',
           message: 'Invalid foreign key reference in opening stock payload',

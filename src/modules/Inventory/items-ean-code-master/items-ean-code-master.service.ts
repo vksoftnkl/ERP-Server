@@ -1,16 +1,10 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ItemEanCode, Prisma } from '@prisma/client';
 import { ListItemEanCodeQueryDto } from './dto/list-item-ean-code-query.dto';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import {
   ItemEanCodeDeleteResult,
   ItemEanCodeErrorDetail,
-  ItemEanCodeErrorResponse,
   ItemEanCodeListItem,
   ItemEanCodeListMeta,
   ItemEanCodePayload,
@@ -18,10 +12,16 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-
-const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  resolveActor,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
 const ITEM_EAN_CODE_TABLE_NAME = 'item ean codes';
 const ITEM_EAN_CODE_AUDIT_SCREEN_NAME = 'Item EAN Code Master';
 
@@ -64,103 +64,29 @@ export class ItemsEanCodeMasterService {
   async list(
     queryDto: ListItemEanCodeQueryDto,
   ): Promise<ConfiguredGridListResult<ItemEanCodeListItem, ItemEanCodeListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.ean_item_id !== undefined ||
       queryDto.ean_unit_id !== undefined ||
       queryDto.ean_godown_id !== undefined ||
       queryDto.ean_is_active !== undefined ||
       queryDto.ean_is_default !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
     const where = this.buildListWhere(queryDto);
-    const [total, records] = await Promise.all([
-      this.prisma.itemEanCode.count({ where }),
-      this.prisma.itemEanCode.findMany({
+    return runInventoryListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<ItemEanCodeListItem>(
+        this.configuredGridSqlService,
+        { tableName: ITEM_EAN_CODE_TABLE_NAME, alias: 'item_ean_code_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.itemEanCode.count({ where }),
+      findManyFn: () => this.prisma.itemEanCode.findMany({
         where,
         orderBy: [{ eanCode: 'asc' }, { eanId: 'asc' }],
         skip,
         take: limit,
       }),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<ItemEanCodeListItem, ItemEanCodeListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ITEM_EAN_CODE_TABLE_NAME,
+      toItemFn: (record) => this.toPayload(record),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ITEM_EAN_CODE_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ITEM_EAN_CODE_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<ItemEanCodeListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'item_ean_code_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   async getById(eanId: string): Promise<ItemEanCodePayload> {
@@ -172,7 +98,7 @@ export class ItemsEanCodeMasterService {
     });
 
     if (!record) {
-      this.throwNotFound(eanId);
+      throwInventoryNotFound<ItemEanCodeErrorDetail>('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`);
     }
 
     return this.toPayload(record);
@@ -223,7 +149,7 @@ export class ItemsEanCodeMasterService {
       },
     });
     if (!existing) {
-      this.throwNotFound(eanId);
+      throwInventoryNotFound<ItemEanCodeErrorDetail>('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`);
     }
 
     const modifiedOn = new Date();
@@ -240,7 +166,7 @@ export class ItemsEanCodeMasterService {
       },
     });
     if (result.count === 0) {
-      this.throwNotFound(eanId);
+      throwInventoryNotFound<ItemEanCodeErrorDetail>('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`);
     }
 
     const originalRecord = this.toPayload(existing);
@@ -278,7 +204,7 @@ export class ItemsEanCodeMasterService {
   ): Promise<ItemEanCodePayload> {
     const eanCode = saveItemEanCodeDto.ean_code?.trim();
     if (!eanCode) {
-      this.throwBadRequest('Validation failed', [
+      throwInventoryBadRequest<ItemEanCodeErrorDetail>('Validation failed', [
         {
           field: 'ean_code',
           message: 'ean_code is required',
@@ -287,8 +213,8 @@ export class ItemsEanCodeMasterService {
     }
 
     const now = new Date();
-    const createdBy = this.resolveActor(saveItemEanCodeDto.ean_created_by);
-    const modifiedBy = this.resolveActor(saveItemEanCodeDto.ean_modified_by, createdBy);
+    const createdBy = resolveActor(saveItemEanCodeDto.ean_created_by);
+    const modifiedBy = resolveActor(saveItemEanCodeDto.ean_modified_by, createdBy);
     const data: Prisma.ItemEanCodeUncheckedCreateInput = {
       eanItemId: saveItemEanCodeDto.ean_item_id,
       eanUnitId: saveItemEanCodeDto.ean_unit_id,
@@ -336,12 +262,12 @@ export class ItemsEanCodeMasterService {
       },
     });
     if (!existing) {
-      this.throwNotFound(eanId);
+      throwInventoryNotFound<ItemEanCodeErrorDetail>('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`);
     }
 
     const eanCode = saveItemEanCodeDto.ean_code?.trim();
     if (!eanCode) {
-      this.throwBadRequest('Validation failed', [
+      throwInventoryBadRequest<ItemEanCodeErrorDetail>('Validation failed', [
         {
           field: 'ean_code',
           message: 'ean_code cannot be empty',
@@ -354,7 +280,7 @@ export class ItemsEanCodeMasterService {
       eanUnitId: saveItemEanCodeDto.ean_unit_id,
       eanCode,
       eanModifiedOn: new Date(),
-      eanModifiedBy: this.resolveActor(saveItemEanCodeDto.ean_modified_by),
+      eanModifiedBy: resolveActor(saveItemEanCodeDto.ean_modified_by),
     };
     this.applyOptionalFields(data, saveItemEanCodeDto);
 
@@ -427,19 +353,19 @@ export class ItemsEanCodeMasterService {
     data: Prisma.ItemEanCodeUncheckedCreateInput | Prisma.ItemEanCodeUncheckedUpdateInput,
     saveItemEanCodeDto: SaveItemEanCodeDto,
   ): void {
-    if (this.hasOwnProperty(saveItemEanCodeDto, 'ean_godown_id')) {
+    if (hasOwnProperty(saveItemEanCodeDto, 'ean_godown_id')) {
       data.eanGodownId = saveItemEanCodeDto.ean_godown_id;
     }
 
-    if (this.hasOwnProperty(saveItemEanCodeDto, 'ean_is_default')) {
+    if (hasOwnProperty(saveItemEanCodeDto, 'ean_is_default')) {
       data.eanIsDefault = saveItemEanCodeDto.ean_is_default;
     }
 
-    if (this.hasOwnProperty(saveItemEanCodeDto, 'ean_is_active')) {
+    if (hasOwnProperty(saveItemEanCodeDto, 'ean_is_active')) {
       data.eanIsActive = saveItemEanCodeDto.ean_is_active;
     }
 
-    if (this.hasOwnProperty(saveItemEanCodeDto, 'ean_remarks')) {
+    if (hasOwnProperty(saveItemEanCodeDto, 'ean_remarks')) {
       data.eanRemarks = saveItemEanCodeDto.ean_remarks;
     }
   }
@@ -490,78 +416,15 @@ export class ItemsEanCodeMasterService {
     };
   }
 
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    const trimmed = value?.trim();
-    return trimmed || fallback;
-  }
-
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('EAN code already exists', [
-          {
-            field: 'ean_code',
-            message: 'Duplicate ean_code is not allowed',
-          },
-        ]),
-      );
-    }
-
-    if (this.isForeignKeyConstraintError(error)) {
-      throw new BadRequestException(
-        this.buildErrorResponse('Invalid relation reference', [
-          {
-            field: 'ean_unit_id',
-            message: 'Referenced relation does not exist',
-          },
-        ]),
-      );
+    throwOnUniqueConstraintError<ItemEanCodeErrorDetail>(error, 'EAN code already exists', [
+      { field: 'ean_code', message: 'Duplicate ean_code is not allowed' },
+    ]);
+    if (isForeignKeyConstraintError(error)) {
+      throwInventoryBadRequest<ItemEanCodeErrorDetail>('Invalid relation reference', [
+        { field: 'ean_unit_id', message: 'Referenced relation does not exist' },
+      ]);
     }
   }
 
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2003';
-  }
-
-  private throwNotFound(eanId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item EAN code not found', [
-        {
-          field: 'ean_id',
-          message: `No active item EAN code found with id ${eanId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: ItemEanCodeErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: ItemEanCodeErrorDetail[] = [],
-  ): ItemEanCodeErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
-  }
 }

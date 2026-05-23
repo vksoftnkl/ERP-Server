@@ -1,14 +1,8 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ListItemBrandQueryDto } from './dto/list-item-brand-query.dto';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import {
   ItemBrandErrorDetail,
-  ItemBrandErrorResponse,
   ItemBrandListItem,
   ItemBrandListMeta,
   ItemBrandPayload,
@@ -17,9 +11,14 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
 const ITEM_BRAND_TABLE_NAME = 'item brand master';
 const ITEM_BRAND_AUDIT_SCREEN_NAME = 'Item Brand Master';
 type ItemBrandWriteClient = Prisma.TransactionClient | PrismaService;
@@ -38,19 +37,30 @@ export class ItemsBrandMasterService {
   }
   async list(
     queryDto: ListItemBrandQueryDto,
-   ): Promise<ConfiguredGridListResult<ItemBrandListItem, ItemBrandListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+  ): Promise<ConfiguredGridListResult<ItemBrandListItem, ItemBrandListMeta>> {
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.brand_parent_id !== undefined ||
       queryDto.brand_is_active !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
+    const where = this.buildListWhere(queryDto);
+    return runInventoryListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<ItemBrandListItem>(
+        this.configuredGridSqlService,
+        { tableName: ITEM_BRAND_TABLE_NAME, alias: 'item_brand_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.itemBrandMaster.count({ where }),
+      findManyFn: () => this.prisma.itemBrandMaster.findMany({
+        where,
+        orderBy: [{ brand_sort: 'asc' }, { brand_name: 'asc' }],
+        skip,
+        take: limit,
+      }),
+      toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_BRAND_TABLE_NAME),
+    });
+  }
+  private buildListWhere(queryDto: ListItemBrandQueryDto): Prisma.ItemBrandMasterWhereInput {
     const where: Prisma.ItemBrandMasterWhereInput = {
       brand_is_deleted: false,
     };
@@ -68,80 +78,7 @@ export class ItemsBrandMasterService {
         { brand_description: { contains: search, mode: 'insensitive' } },
       ];
     }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.itemBrandMaster.count({ where }),
-      this.prisma.itemBrandMaster.findMany({
-        where,
-        orderBy: [{ brand_sort: 'asc' }, { brand_name: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_BRAND_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-   ): Promise<ConfiguredGridListResult<ItemBrandListItem, ItemBrandListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ITEM_BRAND_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ITEM_BRAND_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ITEM_BRAND_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<ItemBrandListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'item_brand_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
+    return where;
   }
   async getById(brandId: string): Promise<ItemBrandPayload> {
     const record = await this.prisma.itemBrandMaster.findFirst({
@@ -151,7 +88,7 @@ export class ItemsBrandMasterService {
       },
     });
     if (!record) {
-      this.throwNotFound(brandId);
+      throwInventoryNotFound<ItemBrandErrorDetail>('Item brand not found', 'brand_id', `No active item brand found with id ${brandId}`);
     }
     return this.toPayload(record);
   }
@@ -164,7 +101,7 @@ export class ItemsBrandMasterService {
         },
       });
       if (!existing) {
-        this.throwNotFound(brandId);
+        throwInventoryNotFound<ItemBrandErrorDetail>('Item brand not found', 'brand_id', `No active item brand found with id ${brandId}`);
       }
       const subtreeIds = await this.getActiveSubtreeIds(tx, brandId);
       const ancestorIds = await this.getAncestorIds(tx, existing.brand_parent_id);
@@ -181,7 +118,7 @@ export class ItemsBrandMasterService {
         },
       });
       if (result.count === 0) {
-        this.throwNotFound(brandId);
+        throwInventoryNotFound<ItemBrandErrorDetail>('Item brand not found', 'brand_id', `No active item brand found with id ${brandId}`);
       }
       await this.removePathIds(tx, ancestorIds, subtreeIds);
       const originalRecord = this.toPayload(existing);
@@ -280,10 +217,10 @@ export class ItemsBrandMasterService {
           },
         });
         if (!existing) {
-          this.throwNotFound(brandId);
+          throwInventoryNotFound<ItemBrandErrorDetail>('Item brand not found', 'brand_id', `No active item brand found with id ${brandId}`);
         }
         if (saveItemBrandDto.brand_parent_id === brandId) {
-          this.throwBadRequest('Item brand cannot be its own parent', [
+          throwInventoryBadRequest<ItemBrandErrorDetail>('Item brand cannot be its own parent', [
             {
               field: 'brand_parent_id',
               message: 'brand_parent_id cannot be same as brand_id',
@@ -293,7 +230,7 @@ export class ItemsBrandMasterService {
         if (saveItemBrandDto.brand_parent_id) {
           await this.ensureParentExists(saveItemBrandDto.brand_parent_id, tx);
         }
-        const hasParentField = this.hasOwnProperty(saveItemBrandDto, 'brand_parent_id');
+        const hasParentField = hasOwnProperty(saveItemBrandDto, 'brand_parent_id');
         const nextParentId = hasParentField
           ? (saveItemBrandDto.brand_parent_id ?? null)
           : existing.brand_parent_id;
@@ -360,7 +297,7 @@ export class ItemsBrandMasterService {
       },
     });
     if (!parent) {
-      this.throwBadRequest('Parent item brand does not exist', [
+      throwInventoryBadRequest<ItemBrandErrorDetail>('Parent item brand does not exist', [
         {
           field: 'brand_parent_id',
           message: `No active item brand found with id ${parentId}`,
@@ -372,28 +309,28 @@ export class ItemsBrandMasterService {
     data: Prisma.ItemBrandMasterUncheckedCreateInput | Prisma.ItemBrandMasterUncheckedUpdateInput,
     saveItemBrandDto: SaveItemBrandDto,
   ): void {
-    if (this.hasOwnProperty(saveItemBrandDto, 'brand_alias')) {
+    if (hasOwnProperty(saveItemBrandDto, 'brand_alias')) {
       data.brand_alias = saveItemBrandDto.brand_alias;
     }
-    if (this.hasOwnProperty(saveItemBrandDto, 'brand_short')) {
+    if (hasOwnProperty(saveItemBrandDto, 'brand_short')) {
       data.brand_short = saveItemBrandDto.brand_short;
     }
-    if (this.hasOwnProperty(saveItemBrandDto, 'brand_description')) {
+    if (hasOwnProperty(saveItemBrandDto, 'brand_description')) {
       data.brand_description = saveItemBrandDto.brand_description;
     }
-    if (this.hasOwnProperty(saveItemBrandDto, 'brand_parent_id')) {
+    if (hasOwnProperty(saveItemBrandDto, 'brand_parent_id')) {
       data.brand_parent_id = saveItemBrandDto.brand_parent_id;
     }
-    if (this.hasOwnProperty(saveItemBrandDto, 'brand_sort')) {
+    if (hasOwnProperty(saveItemBrandDto, 'brand_sort')) {
       data.brand_sort = saveItemBrandDto.brand_sort;
     }
-    if (this.hasOwnProperty(saveItemBrandDto, 'brand_level')) {
+    if (hasOwnProperty(saveItemBrandDto, 'brand_level')) {
       data.brand_level = saveItemBrandDto.brand_level;
     }
-    if (this.hasOwnProperty(saveItemBrandDto, 'brand_photo')) {
+    if (hasOwnProperty(saveItemBrandDto, 'brand_photo')) {
       data.brand_photo = this.decodePhotoInput(saveItemBrandDto.brand_photo);
     }
-    if (this.hasOwnProperty(saveItemBrandDto, 'brand_photo_url')) {
+    if (hasOwnProperty(saveItemBrandDto, 'brand_photo_url')) {
       data.brand_photo_url = saveItemBrandDto.brand_photo_url;
     }
   }
@@ -584,7 +521,7 @@ export class ItemsBrandMasterService {
     }
     const trimmed = photo.trim();
     if (!trimmed) {
-      this.throwBadRequest('Invalid base64 image provided', [
+      throwInventoryBadRequest<ItemBrandErrorDetail>('Invalid base64 image provided', [
         {
           field: 'brand_photo',
           message: 'brand_photo must be a non-empty base64 string',
@@ -594,7 +531,7 @@ export class ItemsBrandMasterService {
     const candidate = trimmed.includes(',') ? (trimmed.split(',').pop() ?? '') : trimmed;
     const normalized = candidate.replace(/\s+/g, '');
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
-      this.throwBadRequest('Invalid base64 image provided', [
+      throwInventoryBadRequest<ItemBrandErrorDetail>('Invalid base64 image provided', [
         {
           field: 'brand_photo',
           message: 'brand_photo must be valid base64 content',
@@ -626,47 +563,8 @@ export class ItemsBrandMasterService {
     };
   }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Item brand name already exists', [
-          {
-            field: 'brand_name',
-            message: 'Duplicate brand_name is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private throwNotFound(brandId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item brand not found', [
-        {
-          field: 'brand_id',
-          message: `No active item brand found with id ${brandId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: ItemBrandErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: ItemBrandErrorDetail[] = [],
-  ): ItemBrandErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
+    throwOnUniqueConstraintError<ItemBrandErrorDetail>(error, 'Item brand name already exists', [
+      { field: 'brand_name', message: 'Duplicate brand_name is not allowed' },
+    ]);
   }
 }

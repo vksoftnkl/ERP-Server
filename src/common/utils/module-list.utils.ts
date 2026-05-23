@@ -56,9 +56,11 @@ export async function runConfiguredGridQuery<TItem>(
     page: number;
     limit: number;
     skip: number;
+    primaryTableSchema?: string;
+    extraForbiddenPatterns?: Array<{ pattern: RegExp; message: string }>;
   },
 ): Promise<ConfiguredGridListResult<TItem, ModuleListMeta> | null> {
-  const { tableName, alias, search, page, limit, skip } = options;
+  const { tableName, alias, search, page, limit, skip, primaryTableSchema, extraForbiddenPatterns } = options;
   const configuredGrids = await configuredGridSqlService.loadCandidates({ tableName });
   const primaryConfiguredGrids = configuredGridSqlService.filterPrimaryFromTable(
     configuredGrids,
@@ -72,7 +74,12 @@ export async function runConfiguredGridQuery<TItem>(
     if (!rawGridSql) {
       continue;
     }
-    const validation = configuredGridSqlService.validateBaseSql({ sql: rawGridSql, tableName });
+    const validation = configuredGridSqlService.validateBaseSql({
+      sql: rawGridSql,
+      tableName,
+      ...(primaryTableSchema ? { primaryTableSchema } : {}),
+      ...(extraForbiddenPatterns ? { extraForbiddenPatterns } : {}),
+    });
     if (!validation.isValid) {
       continue;
     }
@@ -100,6 +107,7 @@ export type {
   AccountsListMeta,
   FixedListMeta,
   InventoryListMeta,
+  MasterListMeta,
   ModuleListMeta,
   PurchaseListMeta,
   SalesListMeta,
@@ -108,12 +116,16 @@ export type {
 export type AccountsListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export type FixedListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export type InventoryListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
+export type MasterListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export type PurchaseListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export type SalesListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
+export type SettingsListQueryOptions<TRecord, TItem> = ModuleListQueryOptions<TRecord, TItem>;
 export {
   runModuleListQuery as runAccountsListQuery,
   runModuleListQuery as runFixedListQuery,
   runModuleListQuery as runInventoryListQuery,
+  runModuleListQuery as runMasterListQuery,
   runModuleListQuery as runPurchaseListQuery,
   runModuleListQuery as runSalesListQuery,
+  runModuleListQuery as runSettingsListQuery,
 };

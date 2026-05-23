@@ -1,16 +1,20 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DropdownColumns, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { ListDropdownColumnQueryDto } from './dto/list-dropdown-column-query.dto';
 import { SaveDropdownColumnDto } from './dto/save-dropdown-column.dto';
 import {
   DropdownColumnErrorDetail,
-  DropdownColumnErrorResponse,
   DropdownColumnListMeta,
   DropdownColumnPayload,
 } from './types/dropdown-column-api.types';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import { resolvePagination } from 'src/common/utils/module-list.utils';
+import {
+  hasOwnProperty,
+  throwBadRequest,
+  throwNotFound,
+  toNullableNumber,
+} from 'src/common/utils/module-service.utils';
 type DropdownColumnWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()
 export class DropdownColumnsService {
@@ -24,9 +28,7 @@ export class DropdownColumnsService {
   async list(
     queryDto: ListDropdownColumnQueryDto,
   ): Promise<{ items: DropdownColumnPayload[]; meta: DropdownColumnListMeta }> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const where: Prisma.DropdownColumnsWhereInput = {};
     if (queryDto.dropdown_id !== undefined) {
       where.dropColumnsDropdownId = this.parseIntId('dropdown_id', queryDto.dropdown_id);
@@ -75,7 +77,7 @@ export class DropdownColumnsService {
       },
     });
     if (!record) {
-      this.throwNotFound(dropColumnsSerialId);
+      throwNotFound<DropdownColumnErrorDetail>('Dropdown column not found', 'drop_columns_serial_id', `No dropdown column found with id ${dropColumnsSerialId}`);
     }
     return this.toPayload(record);
   }
@@ -110,7 +112,7 @@ export class DropdownColumnsService {
     });
 
     if (!deleted) {
-      this.throwNotFound(dropColumnsSerialId);
+      throwNotFound<DropdownColumnErrorDetail>('Dropdown column not found', 'drop_columns_serial_id', `No dropdown column found with id ${dropColumnsSerialId}`);
     }
 
     return {
@@ -158,7 +160,7 @@ export class DropdownColumnsService {
       });
 
       if (!existing) {
-        this.throwNotFound(dropColumnsSerialId);
+        throwNotFound<DropdownColumnErrorDetail>('Dropdown column not found', 'drop_columns_serial_id', `No dropdown column found with id ${dropColumnsSerialId}`);
       }
 
       await this.ensureDropdownExists(parsedDropdownId, saveDropdownColumnDto.dropdown_id, tx);
@@ -195,7 +197,7 @@ export class DropdownColumnsService {
     });
 
     if (!parentDropdown) {
-      this.throwBadRequest('Validation error', [
+      throwBadRequest<DropdownColumnErrorDetail>('Validation error', [
         {
           field: 'dropdown_id',
           message: `No dropdown details found with id ${rawDropdownId}`,
@@ -210,23 +212,23 @@ export class DropdownColumnsService {
       | Prisma.DropdownColumnsUncheckedUpdateInput,
     saveDropdownColumnDto: SaveDropdownColumnDto,
   ): void {
-    if (this.hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_alias')) {
+    if (hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_alias')) {
       data.dropColumnsColumnAlias = saveDropdownColumnDto.drop_columns_column_alias;
     }
 
-    if (this.hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_width')) {
+    if (hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_width')) {
       data.dropColumnsColumnWidth = saveDropdownColumnDto.drop_columns_column_width;
     }
 
-    if (this.hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_visiblity')) {
+    if (hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_visiblity')) {
       data.dropColumnsColumnVisiblity = saveDropdownColumnDto.drop_columns_column_visiblity;
     }
 
-    if (this.hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_allignment')) {
+    if (hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_allignment')) {
       data.dropColumnsColumnAllignment = saveDropdownColumnDto.drop_columns_column_allignment;
     }
 
-    if (this.hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_filter')) {
+    if (hasOwnProperty(saveDropdownColumnDto, 'drop_columns_column_filter')) {
       data.dropColumnsColumnFilter = saveDropdownColumnDto.drop_columns_column_filter;
     }
   }
@@ -239,7 +241,7 @@ export class DropdownColumnsService {
       drop_columns_data_type: record.dropColumnsDataType,
       drop_columns_column_name: record.dropColumnsColumnName,
       drop_columns_column_alias: record.dropColumnsColumnAlias,
-      drop_columns_column_width: this.toNullableNumber(record.dropColumnsColumnWidth),
+      drop_columns_column_width: toNullableNumber(record.dropColumnsColumnWidth),
       drop_columns_column_visiblity: record.dropColumnsColumnVisiblity,
       drop_columns_column_allignment: record.dropColumnsColumnAllignment,
       drop_columns_column_filter: record.dropColumnsColumnFilter,
@@ -248,14 +250,10 @@ export class DropdownColumnsService {
     };
   }
 
-  private toNullableNumber(value: Prisma.Decimal | null): number | null {
-    return value === null ? null : Number(value);
-  }
-
   private parseIntId(field: string, value: string): number {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {
-      this.throwBadRequest('Validation error', [
+      throwBadRequest<DropdownColumnErrorDetail>('Validation error', [
         {
           field,
           message: `${field} must be a numeric id`,
@@ -265,7 +263,7 @@ export class DropdownColumnsService {
 
     const parsed = Number(normalized);
     if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-      this.throwBadRequest('Validation error', [
+      throwBadRequest<DropdownColumnErrorDetail>('Validation error', [
         {
           field,
           message: `${field} must be a positive numeric id`,
@@ -279,7 +277,7 @@ export class DropdownColumnsService {
   private parseBigIntId(field: string, value: string): bigint {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {
-      this.throwBadRequest('Validation error', [
+      throwBadRequest<DropdownColumnErrorDetail>('Validation error', [
         {
           field,
           message: `${field} must be a numeric id`,
@@ -289,7 +287,7 @@ export class DropdownColumnsService {
 
     const parsed = BigInt(normalized);
     if (parsed <= 0n) {
-      this.throwBadRequest('Validation error', [
+      throwBadRequest<DropdownColumnErrorDetail>('Validation error', [
         {
           field,
           message: `${field} must be a positive numeric id`,
@@ -300,33 +298,4 @@ export class DropdownColumnsService {
     return parsed;
   }
 
-  private throwNotFound(dropColumnsSerialId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Dropdown column not found', [
-        {
-          field: 'drop_columns_serial_id',
-          message: `No dropdown column found with id ${dropColumnsSerialId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: DropdownColumnErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: DropdownColumnErrorDetail[] = [],
-  ): DropdownColumnErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
-  }
 }

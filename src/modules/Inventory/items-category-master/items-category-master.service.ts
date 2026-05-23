@@ -1,15 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { categoryMaster, Prisma } from '@prisma/client';
 import { ListItemCategoryQueryDto } from './dto/list-item-category-query.dto';
 import { SaveItemCategoryDto } from './dto/save-item-category.dto';
 import {
   ItemCategoryErrorDetail,
-  ItemCategoryErrorResponse,
   ItemCategoryListItem,
   ItemCategoryListMeta,
   ItemCategoryPayload,
@@ -17,9 +11,14 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import { resolvePagination } from 'src/common/utils/module-list.utils';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
 const ITEM_CATEGORY_TABLE_NAME = 'item category master';
 const ITEM_CATEGORY_AUDIT_SCREEN_NAME = 'Category Master';
 const ITEM_CATEGORY_GRID_ALIAS = 'item_category_grid';
@@ -46,9 +45,7 @@ export class ItemsCategoryMasterService {
   async list(
     queryDto: ListItemCategoryQueryDto,
   ): Promise<ConfiguredGridListResult<ItemCategoryListItem, ItemCategoryListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
     if (configuredList) {
       return configuredList;
@@ -532,7 +529,7 @@ export class ItemsCategoryMasterService {
       },
     });
     if (!record) {
-      this.throwNotFound(categoryId);
+      throwInventoryNotFound<ItemCategoryErrorDetail>('Item category not found', 'category_id', `No active item category found with id ${categoryId}`);
     }
     return this.toPayload(record);
   }
@@ -545,7 +542,7 @@ export class ItemsCategoryMasterService {
         },
       });
       if (!existing) {
-        this.throwNotFound(categoryId);
+        throwInventoryNotFound<ItemCategoryErrorDetail>('Item category not found', 'category_id', `No active item category found with id ${categoryId}`);
       }
       const subtreeIds = await this.getActiveSubtreeIds(tx, categoryId);
       const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
@@ -562,7 +559,7 @@ export class ItemsCategoryMasterService {
         },
       });
       if (result.count === 0) {
-        this.throwNotFound(categoryId);
+        throwInventoryNotFound<ItemCategoryErrorDetail>('Item category not found', 'category_id', `No active item category found with id ${categoryId}`);
       }
       await this.removePathIds(tx, ancestorIds, subtreeIds);
       const originalRecord = this.toPayload(existing);
@@ -667,10 +664,10 @@ export class ItemsCategoryMasterService {
           },
         });
         if (!existing) {
-          this.throwNotFound(categoryId);
+          throwInventoryNotFound<ItemCategoryErrorDetail>('Item category not found', 'category_id', `No active item category found with id ${categoryId}`);
         }
         if (saveItemCategoryDto.category_parent_id === categoryId) {
-          this.throwBadRequest('Item category cannot be its own parent', [
+          throwInventoryBadRequest<ItemCategoryErrorDetail>('Item category cannot be its own parent', [
             {
               field: 'category_parent_id',
               message: 'category_parent_id cannot be same as category_id',
@@ -680,7 +677,7 @@ export class ItemsCategoryMasterService {
         if (saveItemCategoryDto.category_parent_id) {
           await this.ensureParentExists(saveItemCategoryDto.category_parent_id, tx);
         }
-        const hasParentField = this.hasOwnProperty(saveItemCategoryDto, 'category_parent_id');
+        const hasParentField = hasOwnProperty(saveItemCategoryDto, 'category_parent_id');
         const nextParentId = hasParentField
           ? (saveItemCategoryDto.category_parent_id ?? null)
           : existing.categoryParentId;
@@ -747,7 +744,7 @@ export class ItemsCategoryMasterService {
       },
     });
     if (!parent) {
-      this.throwBadRequest('Parent item category does not exist', [
+      throwInventoryBadRequest<ItemCategoryErrorDetail>('Parent item category does not exist', [
         {
           field: 'category_parent_id',
           message: `No active item category found with id ${parentId}`,
@@ -759,29 +756,29 @@ export class ItemsCategoryMasterService {
     data: Prisma.categoryMasterUncheckedCreateInput | Prisma.categoryMasterUncheckedUpdateInput,
     saveItemCategoryDto: SaveItemCategoryDto,
   ): void {
-    if (this.hasOwnProperty(saveItemCategoryDto, 'category_alias')) {
+    if (hasOwnProperty(saveItemCategoryDto, 'category_alias')) {
       data.categoryAlias = saveItemCategoryDto.category_alias;
     }
 
-    if (this.hasOwnProperty(saveItemCategoryDto, 'category_short')) {
+    if (hasOwnProperty(saveItemCategoryDto, 'category_short')) {
       data.categoryShort = saveItemCategoryDto.category_short;
     }
-    if (this.hasOwnProperty(saveItemCategoryDto, 'category_description')) {
+    if (hasOwnProperty(saveItemCategoryDto, 'category_description')) {
       data.categoryDescription = saveItemCategoryDto.category_description;
     }
-    if (this.hasOwnProperty(saveItemCategoryDto, 'category_parent_id')) {
+    if (hasOwnProperty(saveItemCategoryDto, 'category_parent_id')) {
       data.categoryParentId = saveItemCategoryDto.category_parent_id;
     }
-    if (this.hasOwnProperty(saveItemCategoryDto, 'category_sort')) {
+    if (hasOwnProperty(saveItemCategoryDto, 'category_sort')) {
       data.categorySort = saveItemCategoryDto.category_sort;
     }
-    if (this.hasOwnProperty(saveItemCategoryDto, 'category_level')) {
+    if (hasOwnProperty(saveItemCategoryDto, 'category_level')) {
       data.categoryLevel = saveItemCategoryDto.category_level;
     }
-    if (this.hasOwnProperty(saveItemCategoryDto, 'category_photo')) {
+    if (hasOwnProperty(saveItemCategoryDto, 'category_photo')) {
       data.categoryPhoto = this.decodePhotoInput(saveItemCategoryDto.category_photo);
     }
-    if (this.hasOwnProperty(saveItemCategoryDto, 'category_photo_url')) {
+    if (hasOwnProperty(saveItemCategoryDto, 'category_photo_url')) {
       data.categoryPhotoUrl = saveItemCategoryDto.category_photo_url;
     }
   }
@@ -975,7 +972,7 @@ export class ItemsCategoryMasterService {
     }
     const trimmed = photo.trim();
     if (!trimmed) {
-      this.throwBadRequest('Invalid base64 image provided', [
+      throwInventoryBadRequest<ItemCategoryErrorDetail>('Invalid base64 image provided', [
         {
           field: 'category_photo',
           message: 'category_photo must be a non-empty base64 string',
@@ -985,7 +982,7 @@ export class ItemsCategoryMasterService {
     const candidate = trimmed.includes(',') ? (trimmed.split(',').pop() ?? '') : trimmed;
     const normalized = candidate.replace(/\s+/g, '');
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
-      this.throwBadRequest('Invalid base64 image provided', [
+      throwInventoryBadRequest<ItemCategoryErrorDetail>('Invalid base64 image provided', [
         {
           field: 'category_photo',
           message: 'category_photo must be valid base64 content',
@@ -1023,47 +1020,8 @@ export class ItemsCategoryMasterService {
     };
   }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Item category name already exists', [
-          {
-            field: 'category_name',
-            message: 'Duplicate category_name is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private throwNotFound(categoryId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item category not found', [
-        {
-          field: 'category_id',
-          message: `No active item category found with id ${categoryId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: ItemCategoryErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: ItemCategoryErrorDetail[] = [],
-  ): ItemCategoryErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
+    throwOnUniqueConstraintError<ItemCategoryErrorDetail>(error, 'Item category name already exists', [
+      { field: 'category_name', message: 'Duplicate category_name is not allowed' },
+    ]);
   }
 }

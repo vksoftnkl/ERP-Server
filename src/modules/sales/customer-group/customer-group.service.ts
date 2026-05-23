@@ -27,7 +27,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { buildListMeta, resolvePagination, runSalesListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
 const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
 const CUSTOMER_GROUP_OPTIONAL_FIELDS = [
@@ -80,78 +80,15 @@ export class CustomerGroupService {
     }
     return runSalesListQuery({ page, limit }, {
       hasStructuredFilters,
-      configuredGridFn: () => this.listFromConfiguredGridSql(queryDto.search, page, limit, skip),
+      configuredGridFn: () => runConfiguredGridQuery<CustomerGroupListItem>(
+        this.configuredGridSqlService,
+        { tableName: CUSTOMER_GROUP_TABLE_NAME, alias: 'customer_group_grid', search: queryDto.search, page, limit, skip },
+      ),
       countFn: () => this.prisma.custGroup.count({ where }),
       findManyFn: () => this.prisma.custGroup.findMany({ where, orderBy: [{ cgrName: 'asc' }, { cgrId: 'asc' }], skip, take: limit }),
       toItemFn: (record) => this.toPayload(record),
       loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(CUSTOMER_GROUP_TABLE_NAME),
     });
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<CustomerGroupListItem, CustomerGroupListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: CUSTOMER_GROUP_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      CUSTOMER_GROUP_TABLE_NAME,
-    );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
-      return null;
-    }
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
-      return null;
-    }
-
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: CUSTOMER_GROUP_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      throwSalesBadRequest<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
-        'Invalid grid_sql configuration for customer group list',
-        [
-          {
-            field: 'grid_sql',
-            message: validation.message,
-          },
-        ],
-      );
-    }
-
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<CustomerGroupListItem>({
-        baseSql: validation.normalizedSql,
-        alias: 'customer_group_grid',
-        search,
-        limit,
-        skip,
-        gridId: configuredGrid.gridId,
-      });
-
-      return {
-        items: result.items,
-        meta: buildListMeta(page, limit, result.total),
-        styles: result.styles,
-      };
-    } catch {
-      throwSalesBadRequest<CustomerGroupErrorDetail, CustomerGroupErrorResponse>(
-        'Invalid grid_sql configuration for customer group list',
-        [
-          {
-            field: 'grid_sql',
-            message: 'Configured query could not be executed for cust_groups',
-          },
-        ],
-      );
-    }
   }
 
   async getById(cgrId: string): Promise<CustomerGroupPayload> {

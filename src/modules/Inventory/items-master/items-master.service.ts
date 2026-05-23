@@ -1,15 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ItemMaster, Prisma } from '@prisma/client';
 import { ListItemQueryDto } from './dto/list-item-query.dto';
 import { SaveItemDto } from './dto/save-item.dto';
 import {
   ItemErrorDetail,
-  ItemErrorResponse,
   ItemListItem,
   ItemListMeta,
   ItemPayload,
@@ -17,10 +11,16 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const VALIDATION_FAILED_MESSAGE = 'Validation failed';
+import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  resolveActor,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
 const ITEM_TABLE_NAME = 'item master';
 const ITEM_AUDIT_SCREEN_NAME = 'Item Master';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -40,9 +40,7 @@ export class ItemsMasterService {
   async list(
     queryDto: ListItemQueryDto,
   ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.item_branch_id !== undefined ||
       queryDto.item_group_id !== undefined ||
@@ -54,94 +52,23 @@ export class ItemsMasterService {
       queryDto.item_stock_type !== undefined ||
       queryDto.item_is_active !== undefined ||
       queryDto.item_is_service !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-    return this.listFromPrisma(queryDto, page, limit, skip);
-  }
-  private async listFromPrisma(
-    queryDto: ListItemQueryDto,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta>> {
     const where = this.buildListWhere(queryDto);
-    const [total, records, styles] = await Promise.all([
-      this.prisma.itemMaster.count({ where }),
-      this.prisma.itemMaster.findMany({
+    return runInventoryListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<ItemListItem>(
+        this.configuredGridSqlService,
+        { tableName: ITEM_TABLE_NAME, alias: 'item_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.itemMaster.count({ where }),
+      findManyFn: () => this.prisma.itemMaster.findMany({
         where,
         orderBy: [{ itemSortOrder: 'asc' }, { itemNameEn: 'asc' }],
         skip,
         take: limit,
       }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ITEM_TABLE_NAME,
+      toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_TABLE_NAME),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ITEM_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ITEM_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<ItemListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'item_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
   }
   async getById(itemId: string): Promise<ItemPayload> {
     const record = await this.prisma.itemMaster.findFirst({
@@ -151,7 +78,7 @@ export class ItemsMasterService {
       },
     });
     if (!record) {
-      this.throwNotFound(itemId);
+      throwInventoryNotFound<ItemErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
     }
     return this.toPayload(record);
   }
@@ -164,7 +91,7 @@ export class ItemsMasterService {
         },
       });
       if (!existing) {
-        this.throwNotFound(itemId);
+        throwInventoryNotFound<ItemErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
       }
       const modifiedOn = new Date();
       const modifiedBy = DEFAULT_ACTOR;
@@ -180,7 +107,7 @@ export class ItemsMasterService {
         },
       });
       if (result.count === 0) {
-        this.throwNotFound(itemId);
+        throwInventoryNotFound<ItemErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -213,7 +140,7 @@ export class ItemsMasterService {
   private async createItem(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     const itemNameEn = saveItemDto.item_name_en?.trim();
     if (!itemNameEn) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
         {
           field: 'item_name_en',
           message: 'item_name_en is required',
@@ -221,8 +148,8 @@ export class ItemsMasterService {
       ]);
     }
     const now = new Date();
-    const createdBy = this.resolveActor(saveItemDto.item_created_by);
-    const modifiedBy = this.resolveActor(saveItemDto.item_modified_by, createdBy);
+    const createdBy = resolveActor(saveItemDto.item_created_by);
+    const modifiedBy = resolveActor(saveItemDto.item_modified_by, createdBy);
     const data: Prisma.ItemMasterUncheckedCreateInput = {
       itemCompanyId: saveItemDto.item_company_id,
       itemNameEn,
@@ -265,7 +192,7 @@ export class ItemsMasterService {
     const itemId = saveItemDto.item_id!;
     const itemNameEn = saveItemDto.item_name_en?.trim();
     if (!itemNameEn) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
         {
           field: 'item_name_en',
           message: 'item_name_en cannot be empty',
@@ -281,14 +208,14 @@ export class ItemsMasterService {
           },
         });
         if (!existing) {
-          this.throwNotFound(itemId);
+          throwInventoryNotFound<ItemErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
         }
         const data: Prisma.ItemMasterUncheckedUpdateInput = {
           itemNameEn,
           itemGroupId: saveItemDto.item_group_id,
           itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
           itemModifiedOn: new Date(),
-          itemModifiedBy: this.resolveActor(saveItemDto.item_modified_by),
+          itemModifiedBy: resolveActor(saveItemDto.item_modified_by),
         };
         this.applyOptionalFields(data, saveItemDto);
         const updated = await tx.itemMaster.update({
@@ -372,183 +299,183 @@ export class ItemsMasterService {
     data: Prisma.ItemMasterUncheckedCreateInput | Prisma.ItemMasterUncheckedUpdateInput,
     saveItemDto: SaveItemDto,
   ): void {
-    if (this.hasOwnProperty(saveItemDto, 'item_company_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_company_id')) {
       data.itemCompanyId = saveItemDto.item_company_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_branch_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_branch_id')) {
       data.itemBranchId = saveItemDto.item_branch_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_code')) {
+    if (hasOwnProperty(saveItemDto, 'item_code')) {
       data.itemCode = saveItemDto.item_code;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_sku')) {
+    if (hasOwnProperty(saveItemDto, 'item_sku')) {
       data.itemSku = saveItemDto.item_sku;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_name_ta')) {
+    if (hasOwnProperty(saveItemDto, 'item_name_ta')) {
       data.itemNameTa = saveItemDto.item_name_ta;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_alias')) {
+    if (hasOwnProperty(saveItemDto, 'item_alias')) {
       data.itemAlias = saveItemDto.item_alias;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_stock_type')) {
+    if (hasOwnProperty(saveItemDto, 'item_stock_type')) {
       data.itemStockType = saveItemDto.item_stock_type;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_default_barcode')) {
+    if (hasOwnProperty(saveItemDto, 'item_default_barcode')) {
       data.itemDefaultBarcode = saveItemDto.item_default_barcode;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_category_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_category_id')) {
       data.itemCategoryId = saveItemDto.item_category_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_brand_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_brand_id')) {
       data.itemBrandId = saveItemDto.item_brand_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_section_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_section_id')) {
       data.itemSectionId = saveItemDto.item_section_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_company_category_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_company_category_id')) {
       data.itemCompanyCategoryId = saveItemDto.item_company_category_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_mfgr_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_mfgr_id')) {
       data.itemMfgrId = saveItemDto.item_mfgr_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_supplier_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_supplier_id')) {
       data.itemSupplierId = saveItemDto.item_supplier_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_cust_group')) {
+    if (hasOwnProperty(saveItemDto, 'item_cust_group')) {
       data.itemCustGroup = saveItemDto.item_cust_group;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_is_service')) {
+    if (hasOwnProperty(saveItemDto, 'item_is_service')) {
       data.itemIsService = saveItemDto.item_is_service;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_is_batch_based')) {
+    if (hasOwnProperty(saveItemDto, 'item_is_batch_based')) {
       data.itemIsBatchBased = saveItemDto.item_is_batch_based;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_is_expiry_item')) {
+    if (hasOwnProperty(saveItemDto, 'item_is_expiry_item')) {
       data.itemIsExpiryItem = saveItemDto.item_is_expiry_item;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_expiry_days')) {
+    if (hasOwnProperty(saveItemDto, 'item_expiry_days')) {
       data.itemExpiryDays = saveItemDto.item_expiry_days;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_intimate_before_days')) {
+    if (hasOwnProperty(saveItemDto, 'item_intimate_before_days')) {
       data.itemIntimateBeforeDays = saveItemDto.item_intimate_before_days;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_sales')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_sales')) {
       data.itemAllowSales = saveItemDto.item_allow_sales;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_sales_return')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_sales_return')) {
       data.itemAllowSalesReturn = saveItemDto.item_allow_sales_return;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_purchase')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_purchase')) {
       data.itemAllowPurchase = saveItemDto.item_allow_purchase;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_po')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_po')) {
       data.itemAllowPo = saveItemDto.item_allow_po;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_so')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_so')) {
       data.itemAllowSo = saveItemDto.item_allow_so;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_neg_stock')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_neg_stock')) {
       data.itemAllowNegStock = saveItemDto.item_allow_neg_stock;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_negative_so')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_negative_so')) {
       data.itemAllowNegativeSo = saveItemDto.item_allow_negative_so;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_price_list')) {
+    if (hasOwnProperty(saveItemDto, 'item_price_list')) {
       data.itemPriceList = saveItemDto.item_price_list;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_weigh_scale')) {
+    if (hasOwnProperty(saveItemDto, 'item_weigh_scale')) {
       data.itemWeighScale = saveItemDto.item_weigh_scale;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_retail_item')) {
+    if (hasOwnProperty(saveItemDto, 'item_retail_item')) {
       data.itemRetailItem = saveItemDto.item_retail_item;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_is_kit')) {
+    if (hasOwnProperty(saveItemDto, 'item_is_kit')) {
       data.itemIsKit = saveItemDto.item_is_kit;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_auto_break')) {
+    if (hasOwnProperty(saveItemDto, 'item_auto_break')) {
       data.itemAutoBreak = saveItemDto.item_auto_break;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_auto_make')) {
+    if (hasOwnProperty(saveItemDto, 'item_auto_make')) {
       data.itemAutoMake = saveItemDto.item_auto_make;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_loyalty')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_loyalty')) {
       data.itemAllowLoyalty = saveItemDto.item_allow_loyalty;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_promo')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_promo')) {
       data.itemAllowPromo = saveItemDto.item_allow_promo;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_has_offer')) {
+    if (hasOwnProperty(saveItemDto, 'item_has_offer')) {
       data.itemHasOffer = saveItemDto.item_has_offer;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_damagable_product')) {
+    if (hasOwnProperty(saveItemDto, 'item_damagable_product')) {
       data.itemDamagableProduct = saveItemDto.item_damagable_product;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_is_demand')) {
+    if (hasOwnProperty(saveItemDto, 'item_is_demand')) {
       data.itemIsDemand = saveItemDto.item_is_demand;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_loading')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_loading')) {
       data.itemAllowLoading = saveItemDto.item_allow_loading;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_allow_freight')) {
+    if (hasOwnProperty(saveItemDto, 'item_allow_freight')) {
       data.itemAllowFreight = saveItemDto.item_allow_freight;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_random_stock')) {
+    if (hasOwnProperty(saveItemDto, 'item_random_stock')) {
       data.itemRandomStock = saveItemDto.item_random_stock;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_barcode_sticker')) {
+    if (hasOwnProperty(saveItemDto, 'item_barcode_sticker')) {
       data.itemBarcodeSticker = saveItemDto.item_barcode_sticker;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_barcode_sticker_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_barcode_sticker_id')) {
       data.itemBarcodeStickerId = saveItemDto.item_barcode_sticker_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_default_tax_id')) {
+    if (hasOwnProperty(saveItemDto, 'item_default_tax_id')) {
       data.itemDefaultTaxId = saveItemDto.item_default_tax_id;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_hsn_code')) {
+    if (hasOwnProperty(saveItemDto, 'item_hsn_code')) {
       data.itemHsnCode = saveItemDto.item_hsn_code;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_batch_config')) {
+    if (hasOwnProperty(saveItemDto, 'item_batch_config')) {
       data.itemBatchConfig = saveItemDto.item_batch_config;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_sort_order')) {
+    if (hasOwnProperty(saveItemDto, 'item_sort_order')) {
       data.itemSortOrder = saveItemDto.item_sort_order;
     }
 
-    if (this.hasOwnProperty(saveItemDto, 'item_photo')) {
+    if (hasOwnProperty(saveItemDto, 'item_photo')) {
       data.itemPhoto = this.decodePhoto(saveItemDto.item_photo);
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_image_url')) {
+    if (hasOwnProperty(saveItemDto, 'item_image_url')) {
       data.itemImageUrl = saveItemDto.item_image_url;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_notes')) {
+    if (hasOwnProperty(saveItemDto, 'item_notes')) {
       data.itemNotes = saveItemDto.item_notes;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_storage_location')) {
+    if (hasOwnProperty(saveItemDto, 'item_storage_location')) {
       data.itemStorageLocation = saveItemDto.item_storage_location;
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_packing_item_ids')) {
+    if (hasOwnProperty(saveItemDto, 'item_packing_item_ids')) {
       data.itemPackingItemIds = saveItemDto.item_packing_item_ids ?? [];
     }
-    if (this.hasOwnProperty(saveItemDto, 'item_is_active')) {
+    if (hasOwnProperty(saveItemDto, 'item_is_active')) {
       data.itemIsActive = saveItemDto.item_is_active;
     }
   }
@@ -566,7 +493,7 @@ export class ItemsMasterService {
       return null;
     }
     if (normalized.length % 4 !== 0 || !BASE64_PATTERN.test(normalized)) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
+      throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
         {
           field: 'item_photo',
           message: 'item_photo must be a valid base64 string',
@@ -642,74 +569,15 @@ export class ItemsMasterService {
       item_modified_by: record.itemModifiedBy,
     };
   }
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    const trimmed = value?.trim();
-    return trimmed || fallback;
-  }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Item already exists', [
-          {
-            field: 'item_name_en',
-            message: 'Duplicate item_name_en is not allowed',
-          },
-        ]),
-      );
-    }
-
-    if (this.isForeignKeyConstraintError(error)) {
-      throw new BadRequestException(
-        this.buildErrorResponse('Invalid relation reference', [
-          {
-            field: 'item_group_id',
-            message: 'Referenced relation does not exist',
-          },
-        ]),
-      );
+    throwOnUniqueConstraintError<ItemErrorDetail>(error, 'Item already exists', [
+      { field: 'item_name_en', message: 'Duplicate item_name_en is not allowed' },
+    ]);
+    if (isForeignKeyConstraintError(error)) {
+      throwInventoryBadRequest<ItemErrorDetail>('Invalid relation reference', [
+        { field: 'item_group_id', message: 'Referenced relation does not exist' },
+      ]);
     }
   }
 
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2003';
-  }
-
-  private throwNotFound(itemId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item not found', [
-        {
-          field: 'item_id',
-          message: `No active item found with id ${itemId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: ItemErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(message: string, errors: ItemErrorDetail[] = []): ItemErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
-  }
 }

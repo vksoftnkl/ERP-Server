@@ -1,16 +1,19 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { DropdownDetails, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { ListDropdownDetailQueryDto } from './dto/list-dropdown-detail-query.dto';
 import { SaveDropdownDetailDto } from './dto/save-dropdown-detail.dto';
 import {
   DropdownDetailErrorDetail,
-  DropdownDetailErrorResponse,
   DropdownDetailListMeta,
   DropdownDetailPayload,
 } from './types/dropdown-detail-api.types';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import { resolvePagination } from 'src/common/utils/module-list.utils';
+import {
+  hasOwnProperty,
+  throwBadRequest,
+  throwNotFound,
+} from 'src/common/utils/module-service.utils';
 @Injectable()
 export class DropdownDetailsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -23,9 +26,7 @@ export class DropdownDetailsService {
   async list(
     queryDto: ListDropdownDetailQueryDto,
   ): Promise<{ items: DropdownDetailPayload[]; meta: DropdownDetailListMeta }> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const where: Prisma.DropdownDetailsWhereInput = {};
     if (queryDto.dropdown_show_header !== undefined) {
       where.dropdownShowHeader = queryDto.dropdown_show_header;
@@ -66,7 +67,7 @@ export class DropdownDetailsService {
       },
     });
     if (!record) {
-      this.throwNotFound(dropdownId);
+      throwNotFound<DropdownDetailErrorDetail>('Dropdown details not found', 'dropdown_id', `No dropdown details found with id ${dropdownId}`);
     }
     return this.toPayload(record);
   }
@@ -92,7 +93,7 @@ export class DropdownDetailsService {
       return true;
     });
     if (!deleted) {
-      this.throwNotFound(dropdownId);
+      throwNotFound<DropdownDetailErrorDetail>('Dropdown details not found', 'dropdown_id', `No dropdown details found with id ${dropdownId}`);
     }
     return {
       dropdown_id: dropdownId,
@@ -122,7 +123,7 @@ export class DropdownDetailsService {
         },
       });
       if (!existing) {
-        this.throwNotFound(dropdownId);
+        throwNotFound<DropdownDetailErrorDetail>('Dropdown details not found', 'dropdown_id', `No dropdown details found with id ${dropdownId}`);
       }
       const data: Prisma.DropdownDetailsUncheckedUpdateInput = {
         dropdownName: saveDropdownDetailDto.dropdown_name.trim(),
@@ -142,28 +143,28 @@ export class DropdownDetailsService {
       | Prisma.DropdownDetailsUncheckedUpdateInput,
     saveDropdownDetailDto: SaveDropdownDetailDto,
   ): void {
-    if (this.hasOwnProperty(saveDropdownDetailDto, 'dropdown_description')) {
+    if (hasOwnProperty(saveDropdownDetailDto, 'dropdown_description')) {
       data.dropdownDescription = saveDropdownDetailDto.dropdown_description;
     }
-    if (this.hasOwnProperty(saveDropdownDetailDto, 'dropdown_sort_order')) {
+    if (hasOwnProperty(saveDropdownDetailDto, 'dropdown_sort_order')) {
       data.dropdownSortOrder = saveDropdownDetailDto.dropdown_sort_order;
     }
-    if (this.hasOwnProperty(saveDropdownDetailDto, 'dropdown_sort_column')) {
+    if (hasOwnProperty(saveDropdownDetailDto, 'dropdown_sort_column')) {
       data.dropdownSortColumn = saveDropdownDetailDto.dropdown_sort_column;
     }
-    if (this.hasOwnProperty(saveDropdownDetailDto, 'dropdown_completion')) {
+    if (hasOwnProperty(saveDropdownDetailDto, 'dropdown_completion')) {
       data.dropdownCompletion = saveDropdownDetailDto.dropdown_completion;
     }
-    if (this.hasOwnProperty(saveDropdownDetailDto, 'dropdown_sql_regional')) {
+    if (hasOwnProperty(saveDropdownDetailDto, 'dropdown_sql_regional')) {
       data.dropdownSqlRegional = saveDropdownDetailDto.dropdown_sql_regional;
     }
-    if (this.hasOwnProperty(saveDropdownDetailDto, 'dropdown_max_visible_items')) {
+    if (hasOwnProperty(saveDropdownDetailDto, 'dropdown_max_visible_items')) {
       data.dropdownMaxVisibleItems = saveDropdownDetailDto.dropdown_max_visible_items;
     }
-    if (this.hasOwnProperty(saveDropdownDetailDto, 'dropdown_show_header')) {
+    if (hasOwnProperty(saveDropdownDetailDto, 'dropdown_show_header')) {
       data.dropdownShowHeader = saveDropdownDetailDto.dropdown_show_header;
     }
-    if (this.hasOwnProperty(saveDropdownDetailDto, 'dropdown_width')) {
+    if (hasOwnProperty(saveDropdownDetailDto, 'dropdown_width')) {
       data.dropdownWidth = saveDropdownDetailDto.dropdown_width;
     }
   }
@@ -185,7 +186,7 @@ export class DropdownDetailsService {
   private parseIntId(field: string, value: string): number {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {
-      this.throwBadRequest('Validation error', [
+      throwBadRequest<DropdownDetailErrorDetail>('Validation error', [
         {
           field,
           message: `${field} must be a numeric id`,
@@ -194,7 +195,7 @@ export class DropdownDetailsService {
     }
     const parsed = Number(normalized);
     if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-      this.throwBadRequest('Validation error', [
+      throwBadRequest<DropdownDetailErrorDetail>('Validation error', [
         {
           field,
           message: `${field} must be a positive numeric id`,
@@ -202,31 +203,5 @@ export class DropdownDetailsService {
       ]);
     }
     return parsed;
-  }
-  private throwNotFound(dropdownId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Dropdown details not found', [
-        {
-          field: 'dropdown_id',
-          message: `No dropdown details found with id ${dropdownId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: DropdownDetailErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: DropdownDetailErrorDetail[] = [],
-  ): DropdownDetailErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
   }
 }

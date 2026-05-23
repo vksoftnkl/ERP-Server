@@ -1,15 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ItemQtywiseRate, Prisma } from '@prisma/client';
 import { ListItemQtywiseRateQueryDto } from './dto/list-item-qtywise-rate-query.dto';
 import { SaveItemQtywiseRateDto } from './dto/save-item-qtywise-rate.dto';
 import {
   ItemQtywiseRateErrorDetail,
-  ItemQtywiseRateErrorResponse,
   ItemQtywiseRateListItem,
   ItemQtywiseRateListMeta,
   ItemQtywiseRatePayload,
@@ -17,11 +11,19 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
+import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  isForeignKeyConstraintError,
+  resolveActor,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+  toNullableNumber,
+  toNumber,
+} from 'src/common/utils/module-service.utils';
 
-const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const VALIDATION_FAILED_MESSAGE = 'Validation failed';
 const ITEM_QTYWISE_RATE_TABLE_NAME = 'item qtywise rates';
 const ITEM_QTYWISE_RATE_AUDIT_SCREEN_NAME = 'Item Qtywise Rate Master';
 
@@ -44,9 +46,7 @@ export class ItemsQtywiseRatesMasterService {
   async list(
     queryDto: ListItemQtywiseRateQueryDto,
   ): Promise<ConfiguredGridListResult<ItemQtywiseRateListItem, ItemQtywiseRateListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
 
     const hasStructuredFilters =
       queryDto.iqr_branch_id !== undefined ||
@@ -54,136 +54,51 @@ export class ItemsQtywiseRatesMasterService {
       queryDto.iqr_price_level !== undefined ||
       queryDto.iqr_is_active !== undefined;
 
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
-    }
-
     const where = this.buildListWhere(queryDto);
-    const [total, records] = await Promise.all([
-      this.prisma.itemQtywiseRate.count({ where }),
-      this.prisma.itemQtywiseRate.findMany({
+    return runInventoryListQuery({ page, limit }, {
+      hasStructuredFilters,
+      configuredGridFn: () => runConfiguredGridQuery<ItemQtywiseRateListItem>(
+        this.configuredGridSqlService,
+        { tableName: ITEM_QTYWISE_RATE_TABLE_NAME, alias: 'item_qtywise_rate_grid', search: queryDto.search, page, limit, skip },
+      ),
+      countFn: () => this.prisma.itemQtywiseRate.count({ where }),
+      findManyFn: () => this.prisma.itemQtywiseRate.findMany({
         where,
         orderBy: [{ iqrPriority: 'desc' }, { iqrId: 'asc' }],
         skip,
         take: limit,
       }),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<ItemQtywiseRateListItem, ItemQtywiseRateListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ITEM_QTYWISE_RATE_TABLE_NAME,
+      toItemFn: (record) => this.toPayload(record),
     });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ITEM_QTYWISE_RATE_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ITEM_QTYWISE_RATE_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<ItemQtywiseRateListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'item_qtywise_rate_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   async getById(iqrId: string): Promise<ItemQtywiseRatePayload> {
     const record = await this.prisma.itemQtywiseRate.findFirst({
-      where: {
-        iqrId,
-        iqrIsDeleted: false,
-      },
+      where: { iqrId, iqrIsDeleted: false },
     });
-
     if (!record) {
-      this.throwNotFound(iqrId);
+      throwInventoryNotFound<ItemQtywiseRateErrorDetail>('Item qty-wise rate not found', 'iqr_id', `No active item qty-wise rate found with id ${iqrId}`);
     }
-
     return this.toPayload(record);
   }
 
   async softDelete(iqrId: string): Promise<{ iqr_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.itemQtywiseRate.findFirst({
-        where: {
-          iqrId,
-          iqrIsDeleted: false,
-        },
+        where: { iqrId, iqrIsDeleted: false },
       });
       if (!existing) {
-        this.throwNotFound(iqrId);
+        throwInventoryNotFound<ItemQtywiseRateErrorDetail>('Item qty-wise rate not found', 'iqr_id', `No active item qty-wise rate found with id ${iqrId}`);
       }
 
       const modifiedOn = new Date();
       const modifiedBy = DEFAULT_ACTOR;
       const result = await tx.itemQtywiseRate.updateMany({
-        where: {
-          iqrId,
-          iqrIsDeleted: false,
-        },
-        data: {
-          iqrIsDeleted: true,
-          iqrModifiedOn: modifiedOn,
-          iqrModifiedBy: modifiedBy,
-        },
+        where: { iqrId, iqrIsDeleted: false },
+        data: { iqrIsDeleted: true, iqrModifiedOn: modifiedOn, iqrModifiedBy: modifiedBy },
       });
       if (result.count === 0) {
-        this.throwNotFound(iqrId);
+        throwInventoryNotFound<ItemQtywiseRateErrorDetail>('Item qty-wise rate not found', 'iqr_id', `No active item qty-wise rate found with id ${iqrId}`);
       }
 
       const originalRecord = this.toPayload(existing);
@@ -209,10 +124,7 @@ export class ItemsQtywiseRatesMasterService {
         tx,
       );
 
-      return {
-        iqr_id: iqrId,
-        deleted: true,
-      };
+      return { iqr_id: iqrId, deleted: true };
     });
   }
 
@@ -228,8 +140,8 @@ export class ItemsQtywiseRatesMasterService {
     );
 
     const now = new Date();
-    const createdBy = this.resolveActor(saveItemQtywiseRateDto.iqr_created_by);
-    const modifiedBy = this.resolveActor(saveItemQtywiseRateDto.iqr_modified_by, createdBy);
+    const createdBy = resolveActor(saveItemQtywiseRateDto.iqr_created_by);
+    const modifiedBy = resolveActor(saveItemQtywiseRateDto.iqr_modified_by, createdBy);
     const data: Prisma.ItemQtywiseRateUncheckedCreateInput = {
       iqrUnitRateId: saveItemQtywiseRateDto.iqr_unit_rate_id,
       iqrPriceLevel: saveItemQtywiseRateDto.iqr_price_level,
@@ -279,26 +191,22 @@ export class ItemsQtywiseRatesMasterService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.itemQtywiseRate.findFirst({
-          where: {
-            iqrId,
-            iqrIsDeleted: false,
-          },
+          where: { iqrId, iqrIsDeleted: false },
         });
         if (!existing) {
-          this.throwNotFound(iqrId);
+          throwInventoryNotFound<ItemQtywiseRateErrorDetail>('Item qty-wise rate not found', 'iqr_id', `No active item qty-wise rate found with id ${iqrId}`);
         }
 
         const nextStartQty = saveItemQtywiseRateDto.iqr_start_qty;
-        const nextEndQty = this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_end_qty')
+        const nextEndQty = hasOwnProperty(saveItemQtywiseRateDto, 'iqr_end_qty')
           ? (saveItemQtywiseRateDto.iqr_end_qty ?? null)
-          : this.toNullableNumber(existing.iqrEndQty);
+          : toNullableNumber(existing.iqrEndQty);
         this.validateQuantityRange(nextStartQty, nextEndQty);
 
-        const nextValidFrom = this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_valid_from')
-          ? (this.parseOptionalDate(saveItemQtywiseRateDto.iqr_valid_from, 'iqr_valid_from') ??
-            null)
+        const nextValidFrom = hasOwnProperty(saveItemQtywiseRateDto, 'iqr_valid_from')
+          ? (this.parseOptionalDate(saveItemQtywiseRateDto.iqr_valid_from, 'iqr_valid_from') ?? null)
           : existing.iqrValidFrom;
-        const nextValidTo = this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_valid_to')
+        const nextValidTo = hasOwnProperty(saveItemQtywiseRateDto, 'iqr_valid_to')
           ? (this.parseOptionalDate(saveItemQtywiseRateDto.iqr_valid_to, 'iqr_valid_to') ?? null)
           : existing.iqrValidTo;
         this.validateDateRange(nextValidFrom, nextValidTo);
@@ -309,16 +217,11 @@ export class ItemsQtywiseRatesMasterService {
           iqrStartQty: saveItemQtywiseRateDto.iqr_start_qty,
           iqrEachQty: saveItemQtywiseRateDto.iqr_each_qty,
           iqrModifiedOn: new Date(),
-          iqrModifiedBy: this.resolveActor(saveItemQtywiseRateDto.iqr_modified_by),
+          iqrModifiedBy: resolveActor(saveItemQtywiseRateDto.iqr_modified_by),
         };
         this.applyOptionalFields(data, saveItemQtywiseRateDto);
 
-        const updated = await tx.itemQtywiseRate.update({
-          where: {
-            iqrId,
-          },
-          data,
-        });
+        const updated = await tx.itemQtywiseRate.update({ where: { iqrId }, data });
 
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
@@ -346,25 +249,12 @@ export class ItemsQtywiseRatesMasterService {
   }
 
   private buildListWhere(queryDto: ListItemQtywiseRateQueryDto): Prisma.ItemQtywiseRateWhereInput {
-    const where: Prisma.ItemQtywiseRateWhereInput = {
-      iqrIsDeleted: false,
-    };
+    const where: Prisma.ItemQtywiseRateWhereInput = { iqrIsDeleted: false };
 
-    if (queryDto.iqr_branch_id !== undefined) {
-      where.iqrBranchId = queryDto.iqr_branch_id;
-    }
-
-    if (queryDto.iqr_unit_rate_id !== undefined) {
-      where.iqrUnitRateId = queryDto.iqr_unit_rate_id;
-    }
-
-    if (queryDto.iqr_price_level !== undefined) {
-      where.iqrPriceLevel = queryDto.iqr_price_level;
-    }
-
-    if (queryDto.iqr_is_active !== undefined) {
-      where.iqrIsActive = queryDto.iqr_is_active;
-    }
+    if (queryDto.iqr_branch_id !== undefined) where.iqrBranchId = queryDto.iqr_branch_id;
+    if (queryDto.iqr_unit_rate_id !== undefined) where.iqrUnitRateId = queryDto.iqr_unit_rate_id;
+    if (queryDto.iqr_price_level !== undefined) where.iqrPriceLevel = queryDto.iqr_price_level;
+    if (queryDto.iqr_is_active !== undefined) where.iqrIsActive = queryDto.iqr_is_active;
 
     if (queryDto.search?.trim()) {
       const search = queryDto.search.trim();
@@ -382,110 +272,51 @@ export class ItemsQtywiseRatesMasterService {
     data: Prisma.ItemQtywiseRateUncheckedCreateInput | Prisma.ItemQtywiseRateUncheckedUpdateInput,
     saveItemQtywiseRateDto: SaveItemQtywiseRateDto,
   ): void {
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_branch_id')) {
-      data.iqrBranchId = saveItemQtywiseRateDto.iqr_branch_id;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_branch_id')) data.iqrBranchId = saveItemQtywiseRateDto.iqr_branch_id;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_end_qty')) data.iqrEndQty = saveItemQtywiseRateDto.iqr_end_qty;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_sales_price')) data.iqrSalesPrice = saveItemQtywiseRateDto.iqr_sales_price;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_price_wot')) data.iqrPriceWot = saveItemQtywiseRateDto.iqr_price_wot;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_price_margin')) data.iqrPriceMargin = saveItemQtywiseRateDto.iqr_price_margin;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_disc_perc')) data.iqrDiscPerc = saveItemQtywiseRateDto.iqr_disc_perc;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_disc_qty')) data.iqrDiscQty = saveItemQtywiseRateDto.iqr_disc_qty;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_valid_from')) {
+      data.iqrValidFrom = this.parseOptionalDate(saveItemQtywiseRateDto.iqr_valid_from, 'iqr_valid_from');
     }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_end_qty')) {
-      data.iqrEndQty = saveItemQtywiseRateDto.iqr_end_qty;
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_sales_price')) {
-      data.iqrSalesPrice = saveItemQtywiseRateDto.iqr_sales_price;
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_price_wot')) {
-      data.iqrPriceWot = saveItemQtywiseRateDto.iqr_price_wot;
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_price_margin')) {
-      data.iqrPriceMargin = saveItemQtywiseRateDto.iqr_price_margin;
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_disc_perc')) {
-      data.iqrDiscPerc = saveItemQtywiseRateDto.iqr_disc_perc;
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_disc_qty')) {
-      data.iqrDiscQty = saveItemQtywiseRateDto.iqr_disc_qty;
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_valid_from')) {
-      data.iqrValidFrom = this.parseOptionalDate(
-        saveItemQtywiseRateDto.iqr_valid_from,
-        'iqr_valid_from',
-      );
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_valid_to')) {
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_valid_to')) {
       data.iqrValidTo = this.parseOptionalDate(saveItemQtywiseRateDto.iqr_valid_to, 'iqr_valid_to');
     }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_priority')) {
-      data.iqrPriority = saveItemQtywiseRateDto.iqr_priority;
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_is_active')) {
-      data.iqrIsActive = saveItemQtywiseRateDto.iqr_is_active;
-    }
-
-    if (this.hasOwnProperty(saveItemQtywiseRateDto, 'iqr_remarks')) {
-      data.iqrRemarks = saveItemQtywiseRateDto.iqr_remarks;
-    }
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_priority')) data.iqrPriority = saveItemQtywiseRateDto.iqr_priority;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_is_active')) data.iqrIsActive = saveItemQtywiseRateDto.iqr_is_active;
+    if (hasOwnProperty(saveItemQtywiseRateDto, 'iqr_remarks')) data.iqrRemarks = saveItemQtywiseRateDto.iqr_remarks;
   }
 
   private validateQuantityRange(startQty: number, endQty: number | null): void {
-    if (endQty === null) {
-      return;
-    }
-
+    if (endQty === null) return;
     if (startQty > endQty) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'iqr_end_qty',
-          message: 'iqr_end_qty must be greater than or equal to iqr_start_qty',
-        },
+      throwInventoryBadRequest<ItemQtywiseRateErrorDetail>('Validation failed', [
+        { field: 'iqr_end_qty', message: 'iqr_end_qty must be greater than or equal to iqr_start_qty' },
       ]);
     }
   }
 
   private validateDateRange(validFrom: Date | null, validTo: Date | null): void {
-    if (!validFrom || !validTo) {
-      return;
-    }
-
+    if (!validFrom || !validTo) return;
     if (validFrom.getTime() > validTo.getTime()) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: 'iqr_valid_to',
-          message: 'iqr_valid_to must be greater than or equal to iqr_valid_from',
-        },
+      throwInventoryBadRequest<ItemQtywiseRateErrorDetail>('Validation failed', [
+        { field: 'iqr_valid_to', message: 'iqr_valid_to must be greater than or equal to iqr_valid_from' },
       ]);
     }
   }
 
-  private parseOptionalDate(
-    value: string | null | undefined,
-    fieldName: string,
-  ): Date | null | undefined {
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (value === null) {
-      return null;
-    }
-
+  private parseOptionalDate(value: string | null | undefined, fieldName: string): Date | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
     const parsedDate = new Date(value);
     if (Number.isNaN(parsedDate.getTime())) {
-      this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
-        {
-          field: fieldName,
-          message: `${fieldName} must be a valid date`,
-        },
+      throwInventoryBadRequest<ItemQtywiseRateErrorDetail>('Validation failed', [
+        { field: fieldName, message: `${fieldName} must be a valid date` },
       ]);
     }
-
     return parsedDate;
   }
 
@@ -495,14 +326,14 @@ export class ItemsQtywiseRatesMasterService {
       iqr_branch_id: record.iqrBranchId,
       iqr_unit_rate_id: record.iqrUnitRateId,
       iqr_price_level: record.iqrPriceLevel,
-      iqr_start_qty: this.toNumber(record.iqrStartQty),
-      iqr_end_qty: this.toNullableNumber(record.iqrEndQty),
-      iqr_each_qty: this.toNumber(record.iqrEachQty),
-      iqr_sales_price: this.toNumber(record.iqrSalesPrice),
-      iqr_price_wot: this.toNumber(record.iqrPriceWot),
-      iqr_price_margin: this.toNumber(record.iqrPriceMargin),
-      iqr_disc_perc: this.toNumber(record.iqrDiscPerc),
-      iqr_disc_qty: this.toNumber(record.iqrDiscQty),
+      iqr_start_qty: toNumber(record.iqrStartQty),
+      iqr_end_qty: toNullableNumber(record.iqrEndQty),
+      iqr_each_qty: toNumber(record.iqrEachQty),
+      iqr_sales_price: toNumber(record.iqrSalesPrice),
+      iqr_price_wot: toNumber(record.iqrPriceWot),
+      iqr_price_margin: toNumber(record.iqrPriceMargin),
+      iqr_disc_perc: toNumber(record.iqrDiscPerc),
+      iqr_disc_qty: toNumber(record.iqrDiscQty),
       iqr_valid_from: record.iqrValidFrom ? record.iqrValidFrom.toISOString() : null,
       iqr_valid_to: record.iqrValidTo ? record.iqrValidTo.toISOString() : null,
       iqr_priority: record.iqrPriority,
@@ -516,98 +347,20 @@ export class ItemsQtywiseRatesMasterService {
     };
   }
 
-  private toNumber(value: Prisma.Decimal | number): number {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  private toNullableNumber(value: Prisma.Decimal | number | null): number | null {
-    if (value === null) {
-      return null;
-    }
-
-    return this.toNumber(value);
-  }
-
   private buildDisplayName(record: ItemQtywiseRate): string {
-    const endQty = this.toNullableNumber(record.iqrEndQty) ?? 'MAX';
-    return `${record.iqrUnitRateId}:L${record.iqrPriceLevel}:${this.toNumber(
-      record.iqrStartQty,
-    )}-${endQty}`;
-  }
-
-  private resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-    const trimmed = value?.trim();
-    return trimmed || fallback;
+    const endQty = toNullableNumber(record.iqrEndQty) ?? 'MAX';
+    return `${record.iqrUnitRateId}:L${record.iqrPriceLevel}:${toNumber(record.iqrStartQty)}-${endQty}`;
   }
 
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Item qty-wise rate already exists', [
-          {
-            field: 'iqr_id',
-            message: 'Duplicate item qty-wise rate is not allowed',
-          },
-        ]),
-      );
-    }
-
-    if (this.isForeignKeyConstraintError(error)) {
-      throw new BadRequestException(
-        this.buildErrorResponse('Invalid relation reference', [
-          {
-            field: 'iqr_unit_rate_id',
-            message: 'Referenced unit rate does not exist',
-          },
-        ]),
-      );
+    throwOnUniqueConstraintError<ItemQtywiseRateErrorDetail>(error, 'Item qty-wise rate already exists', [
+      { field: 'iqr_id', message: 'Duplicate item qty-wise rate is not allowed' },
+    ]);
+    if (isForeignKeyConstraintError(error)) {
+      throwInventoryBadRequest<ItemQtywiseRateErrorDetail>('Invalid relation reference', [
+        { field: 'iqr_unit_rate_id', message: 'Referenced unit rate does not exist' },
+      ]);
     }
   }
 
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2002';
-  }
-
-  private isForeignKeyConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-
-    return (error as { code?: string }).code === 'P2003';
-  }
-
-  private throwNotFound(iqrId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item qty-wise rate not found', [
-        {
-          field: 'iqr_id',
-          message: `No active item qty-wise rate found with id ${iqrId}`,
-        },
-      ]),
-    );
-  }
-
-  private throwBadRequest(message: string, errors: ItemQtywiseRateErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: ItemQtywiseRateErrorDetail[] = [],
-  ): ItemQtywiseRateErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
-  }
 }

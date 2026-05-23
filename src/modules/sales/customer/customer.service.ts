@@ -27,7 +27,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { buildListMeta, resolvePagination, runSalesListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
 const CUSTOMER_OPTIONAL_FIELDS = [
@@ -142,77 +142,15 @@ export class CustomerService {
     }
     return runSalesListQuery({ page, limit }, {
       hasStructuredFilters,
-      configuredGridFn: () => this.listFromConfiguredGridSql(queryDto, page, limit, skip),
+      configuredGridFn: () => runConfiguredGridQuery<CustomerListItem>(
+        this.configuredGridSqlService,
+        { tableName: CUSTOMER_TABLE_NAME, alias: 'customer_grid', search: queryDto.search, page, limit, skip },
+      ),
       countFn: () => this.prisma.customer.count({ where }),
       findManyFn: () => this.prisma.customer.findMany({ where, orderBy: [{ cusName: 'asc' }, { cusId: 'asc' }], skip, take: limit }),
       toItemFn: (record) => this.toPayload(record),
+      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(CUSTOMER_TABLE_NAME),
     });
-  }
-
-  private async listFromConfiguredGridSql(
-    queryDto: ListCustomerQueryDto,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<CustomerListItem, CustomerListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: CUSTOMER_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      CUSTOMER_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: CUSTOMER_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        const baseSql = validation.normalizedSql;
-        const searchableFieldNames = queryDto.search?.trim()
-          ? await this.configuredGridSqlService.getSearchableFieldNames(
-              configuredGrid.gridId,
-              baseSql,
-            )
-          : [];
-        const { sql: filteredSql, params } = this.configuredGridSqlService.buildSearchSql({
-          baseSql,
-          alias: 'customer_grid',
-          search: queryDto.search ?? '',
-          searchableFieldNames,
-        });
-        const result = await this.configuredGridSqlService.runPagedQuery<CustomerListItem>({
-          baseSql: filteredSql,
-          alias: 'customer_grid',
-          params,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: buildListMeta(page, limit, result.total),
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   async getById(cusId: string): Promise<CustomerPayload> {

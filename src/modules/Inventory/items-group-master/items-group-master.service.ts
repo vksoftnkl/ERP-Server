@@ -1,15 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
 import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import {
   ItemGroupErrorDetail,
-  ItemGroupErrorResponse,
   ItemGroupListItem,
   ItemGroupListMeta,
   ItemGroupPayload,
@@ -17,9 +11,14 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
+import { resolvePagination } from 'src/common/utils/module-list.utils';
+import {
+  DEFAULT_ACTOR,
+  hasOwnProperty,
+  throwInventoryBadRequest,
+  throwInventoryNotFound,
+  throwOnUniqueConstraintError,
+} from 'src/common/utils/module-service.utils';
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
@@ -45,9 +44,7 @@ export class ItemsGroupMasterService {
   async list(
     queryDto: ListItemGroupQueryDto,
   ): Promise<ConfiguredGridListResult<ItemGroupListItem, ItemGroupListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
+    const { page, limit, skip } = resolvePagination(queryDto);
     const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
     if (configuredList) {
       return configuredList;
@@ -527,7 +524,7 @@ export class ItemsGroupMasterService {
       },
     });
     if (!record) {
-      this.throwNotFound(itgId);
+      throwInventoryNotFound<ItemGroupErrorDetail>('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
     }
     return this.toPayload(record);
   }
@@ -540,7 +537,7 @@ export class ItemsGroupMasterService {
         },
       });
       if (!existing) {
-        this.throwNotFound(itgId);
+        throwInventoryNotFound<ItemGroupErrorDetail>('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
       }
       const subtreeIds = await this.getActiveSubtreeIds(tx, itgId);
       const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
@@ -557,7 +554,7 @@ export class ItemsGroupMasterService {
         },
       });
       if (result.count === 0) {
-        this.throwNotFound(itgId);
+        throwInventoryNotFound<ItemGroupErrorDetail>('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
       }
       await this.removePathIds(tx, ancestorIds, subtreeIds);
       const originalRecord = this.toPayload(existing);
@@ -658,10 +655,10 @@ export class ItemsGroupMasterService {
           },
         });
         if (!existing) {
-          this.throwNotFound(itgId);
+          throwInventoryNotFound<ItemGroupErrorDetail>('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
         }
         if (saveItemGroupDto.itg_parent_id === itgId) {
-          this.throwBadRequest('Item group cannot be its own parent', [
+          throwInventoryBadRequest<ItemGroupErrorDetail>('Item group cannot be its own parent', [
             {
               field: 'itg_parent_id',
               message: 'itg_parent_id cannot be same as itg_id',
@@ -671,7 +668,7 @@ export class ItemsGroupMasterService {
         if (saveItemGroupDto.itg_parent_id) {
           await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
         }
-        const hasParentField = this.hasOwnProperty(saveItemGroupDto, 'itg_parent_id');
+        const hasParentField = hasOwnProperty(saveItemGroupDto, 'itg_parent_id');
         const nextParentId = hasParentField
           ? (saveItemGroupDto.itg_parent_id ?? null)
           : existing.itgParentId;
@@ -738,7 +735,7 @@ export class ItemsGroupMasterService {
       },
     });
     if (!parent) {
-      this.throwBadRequest('Parent item group does not exist', [
+      throwInventoryBadRequest<ItemGroupErrorDetail>('Parent item group does not exist', [
         {
           field: 'itg_parent_id',
           message: `No active item group found with id ${parentId}`,
@@ -750,40 +747,40 @@ export class ItemsGroupMasterService {
     data: Prisma.ItemGroupMasterUncheckedCreateInput | Prisma.ItemGroupMasterUncheckedUpdateInput,
     saveItemGroupDto: SaveItemGroupDto,
   ): void {
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_alias')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_alias')) {
       data.itgAlias = saveItemGroupDto.itg_alias;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_short')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_short')) {
       data.itgShort = saveItemGroupDto.itg_short;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_description')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_description')) {
       data.itgDescription = saveItemGroupDto.itg_description;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_parent_id')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_parent_id')) {
       data.itgParentId = saveItemGroupDto.itg_parent_id;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_sort')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_sort')) {
       data.itgSort = saveItemGroupDto.itg_sort;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_level')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_level')) {
       data.itgLevel = saveItemGroupDto.itg_level;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_tax_claim')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_tax_claim')) {
       data.itgTaxClaim = saveItemGroupDto.itg_tax_claim;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_default_tax_id')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_default_tax_id')) {
       data.itgDefaultTaxId = saveItemGroupDto.itg_default_tax_id;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_default_hsn')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_default_hsn')) {
       data.itgDefaultHsn = saveItemGroupDto.itg_default_hsn;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_default_uom_id')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_default_uom_id')) {
       data.itgDefaultUomId = saveItemGroupDto.itg_default_uom_id;
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_photo')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_photo')) {
       data.itgPhoto = this.decodePhotoInput(saveItemGroupDto.itg_photo);
     }
-    if (this.hasOwnProperty(saveItemGroupDto, 'itg_photo_url')) {
+    if (hasOwnProperty(saveItemGroupDto, 'itg_photo_url')) {
       data.itgPhotoUrl = saveItemGroupDto.itg_photo_url;
     }
   }
@@ -977,7 +974,7 @@ export class ItemsGroupMasterService {
     }
     const trimmed = photo.trim();
     if (!trimmed) {
-      this.throwBadRequest('Invalid base64 image provided', [
+      throwInventoryBadRequest<ItemGroupErrorDetail>('Invalid base64 image provided', [
         {
           field: 'itg_photo',
           message: 'itg_photo must be a non-empty base64 string',
@@ -987,7 +984,7 @@ export class ItemsGroupMasterService {
     const candidate = trimmed.includes(',') ? (trimmed.split(',').pop() ?? '') : trimmed;
     const normalized = candidate.replace(/\s+/g, '');
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
-      this.throwBadRequest('Invalid base64 image provided', [
+      throwInventoryBadRequest<ItemGroupErrorDetail>('Invalid base64 image provided', [
         {
           field: 'itg_photo',
           message: 'itg_photo must be valid base64 content',
@@ -1023,47 +1020,8 @@ export class ItemsGroupMasterService {
     };
   }
   private handleWriteError(error: unknown): void {
-    if (this.isUniqueConstraintError(error)) {
-      throw new ConflictException(
-        this.buildErrorResponse('Item group name already exists', [
-          {
-            field: 'itg_name',
-            message: 'Duplicate itg_name is not allowed',
-          },
-        ]),
-      );
-    }
-  }
-  private isUniqueConstraintError(error: unknown): boolean {
-    if (typeof error !== 'object' || error === null || !('code' in error)) {
-      return false;
-    }
-    return (error as { code?: string }).code === 'P2002';
-  }
-  private throwNotFound(itgId: string): never {
-    throw new NotFoundException(
-      this.buildErrorResponse('Item group not found', [
-        {
-          field: 'itg_id',
-          message: `No active item group found with id ${itgId}`,
-        },
-      ]),
-    );
-  }
-  private throwBadRequest(message: string, errors: ItemGroupErrorDetail[]): never {
-    throw new BadRequestException(this.buildErrorResponse(message, errors));
-  }
-  private buildErrorResponse(
-    message: string,
-    errors: ItemGroupErrorDetail[] = [],
-  ): ItemGroupErrorResponse {
-    return {
-      success: false,
-      message,
-      errors,
-    };
-  }
-  private hasOwnProperty<T extends object>(obj: T, key: PropertyKey): boolean {
-    return Object.prototype.hasOwnProperty.call(obj, key);
+    throwOnUniqueConstraintError<ItemGroupErrorDetail>(error, 'Item group name already exists', [
+      { field: 'itg_name', message: 'Duplicate itg_name is not allowed' },
+    ]);
   }
 }
