@@ -67,6 +67,7 @@ type DropdownLookupColumnConfig = {
   name: string;
   alias: string | null;
   filter: boolean;
+  visible: boolean;
 };
 type DropdownLookupConfig = {
   dropdownId: number;
@@ -90,6 +91,7 @@ type DropdownRecord = {
     dropColumnsColumnName: string;
     dropColumnsColumnAlias: string | null;
     dropColumnsColumnFilter: boolean;
+    dropColumnsColumnVisiblity: boolean;
   }>;
 };
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -175,7 +177,6 @@ export class MasterLookupService {
     });
     return rows.map((row) => this.toOption(row.brId, row.brName));
   }
-
   async getDropdownSqlData(dropdownId: number, search?: string, limit?: number): Promise<NameIdOption[]> {
     const record = await this.prisma.dropdownDetails.findUnique({
       where: { dropdownId },
@@ -189,11 +190,14 @@ export class MasterLookupService {
       dropdownSqlRegional: record.dropdownSqlRegional,
       dropdownSortColumn: record.dropdownSortColumn,
       dropdownSortOrder: record.dropdownSortOrder,
-      dropdownColumns: record.dropdownColumns.map((col) => ({
-        name: col.dropColumnsColumnName,
-        alias: col.dropColumnsColumnAlias,
-        filter: col.dropColumnsColumnFilter,
-      })),
+      dropdownColumns: record.dropdownColumns
+        .filter((col) => col.dropColumnsColumnVisiblity)
+        .map((col) => ({
+          name: col.dropColumnsColumnName,
+          alias: col.dropColumnsColumnAlias,
+          filter: col.dropColumnsColumnFilter,
+          visible: true,
+        })),
     };
     const normalizedSearch = this.normalizeSearch(search);
     const take = this.resolveTake(normalizedSearch, limit);
@@ -713,11 +717,14 @@ export class MasterLookupService {
         dropdownSqlRegional: record.dropdownSqlRegional,
         dropdownSortColumn: record.dropdownSortColumn,
         dropdownSortOrder: record.dropdownSortOrder,
-        dropdownColumns: record.dropdownColumns.map((col) => ({
-          name: col.dropColumnsColumnName,
-          alias: col.dropColumnsColumnAlias,
-          filter: col.dropColumnsColumnFilter,
-        })),
+        dropdownColumns: record.dropdownColumns
+          .filter((col) => col.dropColumnsColumnVisiblity)
+          .map((col) => ({
+            name: col.dropColumnsColumnName,
+            alias: col.dropColumnsColumnAlias,
+            filter: col.dropColumnsColumnFilter,
+            visible: true,
+          })),
       });
     }
     return configs;
@@ -785,7 +792,7 @@ export class MasterLookupService {
     const items = rows
       .map((row) => ({ row, option: this.mapConfiguredRowToOption(row, columns) }))
       .filter((item): item is { row: LookupRow; option: NameIdOption } => item.option !== null)
-      .filter((item) => this.matchesConfiguredSearch(item, search))
+      .filter((item) => this.matchesConfiguredSearch(item, search, columns))
       .sort((a, b) => this.compareConfiguredRows(a, b, config))
       .map((item) => item.option);
     return take ? items.slice(0, take) : items;
@@ -811,15 +818,23 @@ export class MasterLookupService {
   private matchesConfiguredSearch(
     item: { row: LookupRow; option: NameIdOption },
     search: string | undefined,
+    columns: DropdownLookupColumnConfig[],
   ): boolean {
     if (!search) return true;
-    const haystack = [
-      item.option.id,
-      item.option.name,
-      ...Object.values(item.row)
-        .map((v) => this.toLookupValue(v))
-        .filter((v): v is string => Boolean(v)),
-    ]
+    const filterableKeys = new Set(
+      columns
+        .filter((col) => col.filter)
+        .flatMap((col) => [col.name, col.alias].filter((v): v is string => Boolean(v)))
+        .map((v) => this.normalizeLookupToken(v)),
+    );
+    const extraValues =
+      filterableKeys.size > 0
+        ? Object.entries(item.row)
+            .filter(([key]) => filterableKeys.has(this.normalizeLookupToken(key)))
+            .map(([, v]) => this.toLookupValue(v))
+            .filter((v): v is string => Boolean(v))
+        : [];
+    const haystack = [item.option.id, item.option.name, ...extraValues]
       .join(' ')
       .toLowerCase();
     return haystack.includes(search.toLowerCase());

@@ -26,7 +26,7 @@ import {
   throwFixedNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
@@ -156,40 +156,14 @@ export class DeviceListMasterService {
     queryDto: ListDeviceListMasterQueryDto,
   ): Promise<ConfiguredGridListResult<DeviceListMasterListItem, DeviceListMasterListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.devCompanyId !== undefined ||
-      queryDto.devIsActive !== undefined ||
-      queryDto.devIsBlocked !== undefined;
-    const where: Prisma.DeviceMasterWhereInput = { devIsDeleted: false };
-    if (queryDto.devCompanyId !== undefined) where.devCompanyId = queryDto.devCompanyId;
-    if (queryDto.devIsActive !== undefined) where.devIsActive = queryDto.devIsActive;
-    if (queryDto.devIsBlocked !== undefined) where.devIsBlocked = queryDto.devIsBlocked;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { devDeviceUid: { contains: search, mode: 'insensitive' } },
-        { devDeviceName: { contains: search, mode: 'insensitive' } },
-        { devDeviceType: { contains: search, mode: 'insensitive' } },
-        { devPlatform: { contains: search, mode: 'insensitive' } },
-        { devMacAddress: { contains: search, mode: 'insensitive' } },
-        { devLastIp: { contains: search, mode: 'insensitive' } },
-      ];
+    const result = await runConfiguredGridQuery<DeviceListMasterListItem>(
+      this.configuredGridSqlService,
+      { tableName: DEVICE_LIST_MASTER_TABLE_NAME, alias: 'device_list_master_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwFixedBadRequest<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>('No configured grid found for device list master', []);
     }
-    return runFixedListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<DeviceListMasterListItem>(
-        this.configuredGridSqlService,
-        { tableName: DEVICE_LIST_MASTER_TABLE_NAME, alias: 'device_list_master_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.deviceMaster.count({ where }),
-      findManyFn: () => this.prisma.deviceMaster.findMany({
-        where,
-        orderBy: [{ devCreatedOn: 'desc' }, { devId: 'desc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record as DeviceMaster),
-    });
+    return result;
   }
   async getById(devId: string): Promise<DeviceListMasterPayload> {
     const record = await this.prisma.deviceMaster.findFirst({

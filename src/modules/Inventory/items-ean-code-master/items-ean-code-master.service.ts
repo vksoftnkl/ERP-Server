@@ -12,7 +12,7 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -65,28 +65,14 @@ export class ItemsEanCodeMasterService {
     queryDto: ListItemEanCodeQueryDto,
   ): Promise<ConfiguredGridListResult<ItemEanCodeListItem, ItemEanCodeListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.ean_item_id !== undefined ||
-      queryDto.ean_unit_id !== undefined ||
-      queryDto.ean_godown_id !== undefined ||
-      queryDto.ean_is_active !== undefined ||
-      queryDto.ean_is_default !== undefined;
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemEanCodeListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_EAN_CODE_TABLE_NAME, alias: 'item_ean_code_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemEanCode.count({ where }),
-      findManyFn: () => this.prisma.itemEanCode.findMany({
-        where,
-        orderBy: [{ eanCode: 'asc' }, { eanId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-    });
+    const result = await runConfiguredGridQuery<ItemEanCodeListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_EAN_CODE_TABLE_NAME, alias: 'item_ean_code_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemEanCodeErrorDetail>('No configured grid found for item EAN code list', []);
+    }
+    return result;
   }
 
   async getById(eanId: string): Promise<ItemEanCodePayload> {

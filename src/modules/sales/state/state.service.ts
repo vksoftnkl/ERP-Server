@@ -22,7 +22,7 @@ import {
   throwStateNotFound,
   toStatePayload,
 } from './utils/state.utils';
-import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 @Injectable()
 export class StateService {
   constructor(
@@ -40,28 +40,14 @@ export class StateService {
     queryDto: ListStateQueryDto,
   ): Promise<ConfiguredGridListResult<StateListItem, StateListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters = queryDto.stmIsActive !== undefined;
-    const where: Prisma.StateMasterWhereInput = { stmIsDeleted: false };
-    if (queryDto.stmIsActive !== undefined) where.stmIsActive = queryDto.stmIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { stmName: { contains: search, mode: 'insensitive' } },
-        { stmAlias: { contains: search, mode: 'insensitive' } },
-        { stmShort: { contains: search, mode: 'insensitive' } },
-      ];
+    const result = await runConfiguredGridQuery<StateListItem>(
+      this.configuredGridSqlService,
+      { tableName: STATE_TABLE_NAME, alias: 'state_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwStateBadRequest('No configured grid found for state list', []);
     }
-    return runSalesListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<StateListItem>(
-        this.configuredGridSqlService,
-        { tableName: STATE_TABLE_NAME, alias: 'state_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.stateMaster.count({ where }),
-      findManyFn: () => this.prisma.stateMaster.findMany({ where, orderBy: [{ stmName: 'asc' }, { stmId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => toStatePayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(STATE_TABLE_NAME),
-    });
+    return result;
   }
   async getById(stmId: string): Promise<StatePayload> {
     const record = await this.prisma.stateMaster.findFirst({

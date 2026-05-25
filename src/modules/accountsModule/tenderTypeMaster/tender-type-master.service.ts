@@ -16,8 +16,6 @@ import {
 } from './types/tender-type-master-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   hasOwnProperty,
   normalizeRequiredText,
   throwAccountsBadRequest,
@@ -26,6 +24,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const TENDER_TYPE_MASTER_TABLE_NAME = 'tender type';
 const LEGACY_TENDER_TYPE_MASTER_TABLE_NAME = 'tender_type_master';
 const TENDER_TYPE_MASTER_AUDIT_SCREEN_NAME = 'Tender Type Master';
@@ -46,49 +45,15 @@ export class TenderTypeMasterService {
   async list(
     queryDto: ListTenderTypeMasterQueryDto,
   ): Promise<ConfiguredGridListResult<TenderTypeMasterListItem, TenderTypeMasterListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-    const hasStructuredFilters = queryDto.ttmIsActive !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const result = await runConfiguredGridQuery<TenderTypeMasterListItem>(
+      this.configuredGridSqlService,
+      { tableName: TENDER_TYPE_MASTER_TABLE_NAME, alias: 'tender_type_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwAccountsBadRequest<TenderTypeMasterErrorDetail>('No configured grid found for tender type master list', []);
     }
-    const where: Prisma.AccountTenderTypesWhereInput = {
-      accttTypeIsDeleted: false,
-    };
-    if (queryDto.ttmIsActive !== undefined) {
-      where.accttTypeIsActive = queryDto.ttmIsActive;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { accttTypeName: { contains: search, mode: 'insensitive' } },
-        { accttTypeShortName: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.accountTenderTypes.count({ where }),
-      this.prisma.accountTenderTypes.findMany({
-        where,
-        orderBy: [{ accttTypeName: 'asc' }, { accttTypeId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(TENDER_TYPE_MASTER_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
+    return result;
   }
   private async listFromConfiguredGridSql(
     search: string | undefined,

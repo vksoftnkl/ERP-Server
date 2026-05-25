@@ -225,7 +225,7 @@ async function bootstrap(): Promise<void> {
         include: docs.include,
       },
     );
-    SwaggerModule.setup(docsPath, app, moduleSwaggerDocument);
+    SwaggerModule.setup(docsPath, app, moduleSwaggerDocument, { customJsStr: moduleSearchJs });
   }
   await app.listen(port, host);
   const appUrl = await app.getUrl();

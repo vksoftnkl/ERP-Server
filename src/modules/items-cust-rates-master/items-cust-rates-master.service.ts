@@ -11,7 +11,7 @@ import {
   ItemCustRateListMeta,
   ItemCustRatePayload,
 } from './types/item-cust-rate-api.types';
-import { resolvePagination, runConfiguredGridQuery, runMasterListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -45,30 +45,14 @@ export class ItemsCustRatesMasterService {
     queryDto: ListItemCustRateQueryDto,
   ): Promise<ConfiguredGridListResult<ItemCustRateListItem, ItemCustRateListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.csr_branch_id !== undefined ||
-      queryDto.csr_customer_id !== undefined ||
-      queryDto.csr_unit_rate_id !== undefined ||
-      queryDto.csr_rate_type !== undefined ||
-      queryDto.csr_price_level !== undefined ||
-      queryDto.csr_is_active !== undefined;
-    const where = this.buildListWhere(queryDto);
-    return runMasterListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemCustRateListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_CUST_RATE_TABLE_NAME, alias: 'item_cust_rate_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.custItemRate.count({ where }),
-      findManyFn: () => this.prisma.custItemRate.findMany({
-        where,
-        orderBy: [{ csrPriority: 'desc' }, { csrId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_CUST_RATE_TABLE_NAME),
-    });
+    const result = await runConfiguredGridQuery<ItemCustRateListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_CUST_RATE_TABLE_NAME, alias: 'item_cust_rate_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwMasterBadRequest<ItemCustRateErrorDetail>('No configured grid found for item customer rate list', []);
+    }
+    return result;
   }
 
   async getById(csrId: string): Promise<ItemCustRatePayload> {

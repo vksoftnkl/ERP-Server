@@ -16,8 +16,6 @@ import {
 } from './types/tender-master-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   hasOwnProperty,
   normalizeRequiredText,
   throwAccountsBadRequest,
@@ -26,6 +24,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const TENDER_MASTER_TABLE_NAME = 'account tender master';
 const TENDER_MASTER_AUDIT_SCREEN_NAME = 'Tender Master';
 type TenderMasterWriteClient = AccountsWriteClient;
@@ -49,67 +48,15 @@ export class TenderMasterService {
   async list(
     queryDto: ListTenderMasterQueryDto,
   ): Promise<ConfiguredGridListResult<TenderMasterListItem, TenderMasterListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-
-    const hasStructuredFilters =
-      queryDto.tndTypeId !== undefined ||
-      queryDto.tndLedgerId !== undefined ||
-      queryDto.tndIsActive !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const result = await runConfiguredGridQuery<TenderMasterListItem>(
+      this.configuredGridSqlService,
+      { tableName: TENDER_MASTER_TABLE_NAME, alias: 'tender_master_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwAccountsBadRequest<TenderMasterErrorDetail>('No configured grid found for tender master list', []);
     }
-
-    const where: Prisma.AccountTenderMasterWhereInput = {
-      acctndIsDeleted: false,
-    };
-
-    if (queryDto.tndTypeId !== undefined) {
-      where.acctndTypeId = this.parseTenderTypeId(queryDto.tndTypeId, 'tndTypeId');
-    }
-
-    if (queryDto.tndLedgerId !== undefined) {
-      where.acctndLedgerId = queryDto.tndLedgerId;
-    }
-
-    if (queryDto.tndIsActive !== undefined) {
-      where.acctndIsActive = queryDto.tndIsActive;
-    }
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { acctndName: { contains: search, mode: 'insensitive' } },
-        { acctndRemarks: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    const [total, records, styles] = await Promise.all([
-      this.prisma.accountTenderMaster.count({ where }),
-      this.prisma.accountTenderMaster.findMany({
-        where,
-        orderBy: [{ acctndDisplayPosition: 'asc' }, { acctndName: 'asc' }, { acctndId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(TENDER_MASTER_TABLE_NAME),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
+    return result;
   }
 
   private async listFromConfiguredGridSql(

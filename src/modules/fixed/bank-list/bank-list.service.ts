@@ -23,7 +23,7 @@ import {
   throwFixedNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const BANK_LIST_TABLE_NAME = 'bank master';
 const BANK_LIST_AUDIT_SCREEN_NAME = 'Bank List Master';
@@ -48,33 +48,14 @@ export class BankListService {
     queryDto: ListBankListQueryDto,
   ): Promise<ConfiguredGridListResult<BankListItem, BankListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters = queryDto.bnkIsActive !== undefined;
-    const where: Prisma.BankMasterWhereInput = { bnkIsDeleted: false };
-    if (queryDto.bnkIsActive !== undefined) where.bnkIsActive = queryDto.bnkIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { bnkName: { contains: search, mode: 'insensitive' } },
-        { bnkShortName: { contains: search, mode: 'insensitive' } },
-        { bnkAlias: { contains: search, mode: 'insensitive' } },
-        { bnkRbiCode: { contains: search, mode: 'insensitive' } },
-      ];
+    const result = await runConfiguredGridQuery<BankListItem>(
+      this.configuredGridSqlService,
+      { tableName: BANK_LIST_TABLE_NAME, alias: 'bank_list_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwFixedBadRequest<BankListErrorDetail, BankListErrorResponse>('No configured grid found for bank list', []);
     }
-    return runFixedListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<BankListItem>(
-        this.configuredGridSqlService,
-        { tableName: BANK_LIST_TABLE_NAME, alias: 'bank_list_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.bankMaster.count({ where }),
-      findManyFn: () => this.prisma.bankMaster.findMany({
-        where,
-        orderBy: [{ bnkName: 'asc' }, { bnkId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-    });
+    return result;
   }
 
   async getById(bnkId: string): Promise<BankListPayload> {

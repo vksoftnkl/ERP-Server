@@ -8,16 +8,13 @@ import { HTTP_CACHE_NAMESPACE } from './http-cache.constants';
 import { LegacyRedisKeyvStoreAdapter } from './legacy-redis-keyv-store.adapter';
 import { NoopKeyvStoreAdapter } from './noop-keyv-store.adapter';
 import { RedisCacheService } from './redis-cache.service';
-
 const parseNumber = (value: string | number | undefined, fallback: number): number => {
   if (value === undefined || value === null || value === '') {
     return fallback;
   }
-
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : fallback;
 };
-
 @Global()
 @Module({
   imports: [
@@ -28,8 +25,7 @@ const parseNumber = (value: string | number | undefined, fallback: number): numb
         const logger = new Logger(RedisModule.name);
         const cacheEnabled = configService.get<boolean>('redis.enabled', false);
         const ttlSeconds = parseNumber(process.env.REDIS_TTL, configService.get<number>('redis.ttl', 3600));
-        const ttlMilliseconds = ttlSeconds * 1000;
-
+        const ttlMilliseconds = ttlSeconds * 1;
         if (!cacheEnabled) {
           return {
             ttl: ttlMilliseconds,

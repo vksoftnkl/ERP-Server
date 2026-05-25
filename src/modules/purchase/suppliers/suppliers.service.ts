@@ -22,7 +22,7 @@ import {
   throwPurchaseNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runPurchaseListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const SUPPLIER_TABLE_NAME = 'suppliers';
 const SUPPLIER_AUDIT_SCREEN_NAME = 'Supplier Master';
@@ -48,54 +48,14 @@ export class SuppliersService {
     queryDto: ListSupplierQueryDto,
   ): Promise<ConfiguredGridListResult<SupplierListItem, SupplierListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.supCompanyId !== undefined ||
-      queryDto.supGroupId !== undefined ||
-      queryDto.supIsActive !== undefined;
-    const where: Prisma.SupplierWhereInput = { supIsDeleted: false };
-    if (queryDto.supCompanyId !== undefined) {
-      where.supCompanyId = queryDto.supCompanyId;
+    const result = await runConfiguredGridQuery<SupplierListItem>(
+      this.configuredGridSqlService,
+      { tableName: SUPPLIER_TABLE_NAME, alias: 'supplier_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwPurchaseBadRequest('No configured grid found for supplier list', []);
     }
-    if (queryDto.supGroupId !== undefined) {
-      where.supGroupId = queryDto.supGroupId;
-    }
-    if (queryDto.supIsActive !== undefined) {
-      where.supIsActive = queryDto.supIsActive;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { supName: { contains: search, mode: 'insensitive' } },
-        { supShort: { contains: search, mode: 'insensitive' } },
-        { supPurchaseType: { contains: search, mode: 'insensitive' } },
-        { supCity: { contains: search, mode: 'insensitive' } },
-        { supDistrict: { contains: search, mode: 'insensitive' } },
-        { supPhone: { contains: search, mode: 'insensitive' } },
-        { supMailId: { contains: search, mode: 'insensitive' } },
-        { supGstNo: { contains: search, mode: 'insensitive' } },
-        { supPanNo: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return runPurchaseListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery(this.configuredGridSqlService, {
-        tableName: SUPPLIER_TABLE_NAME,
-        alias: 'supplier_grid',
-        search: queryDto.search,
-        page,
-        limit,
-        skip,
-      }),
-      countFn: () => this.prisma.supplier.count({ where }),
-      findManyFn: () => this.prisma.supplier.findMany({
-        where,
-        orderBy: [{ supName: 'asc' }, { supId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(SUPPLIER_TABLE_NAME),
-    });
+    return result;
   }
 
   async getById(supId: string): Promise<SupplierPayload> {

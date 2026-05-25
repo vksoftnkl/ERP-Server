@@ -22,7 +22,7 @@ import {
   throwFixedNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const UI_TABLE_COLUMNS_TABLE_NAME = 'ui table columns';
 const UI_TABLE_COLUMNS_AUDIT_SCREEN_NAME = 'UI Table Columns';
@@ -56,50 +56,14 @@ export class UiTableColumnsService {
     queryDto: ListUiTableColumnQueryDto,
   ): Promise<ConfiguredGridListResult<UiTableColumnListItem, UiTableColumnListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.uiTblClmId !== undefined ||
-      queryDto.uiTblClmNo !== undefined ||
-      queryDto.uiTblClmTableId !== undefined ||
-      queryDto.uiTblClmIsActive !== undefined ||
-      queryDto.uiTblClmColumnVisibility !== undefined ||
-      queryDto.uiTblClmColumnFocus !== undefined ||
-      queryDto.uiTblClmColumnNecessity !== undefined;
-
-    const where: Prisma.UitableColumnsWhereInput = { uiTblClmIsDeleted: false };
-    if (queryDto.uiTblClmId !== undefined) {
-      where.uiTblClmId = this.parseBigIntId('uiTblClmId', queryDto.uiTblClmId);
+    const result = await runConfiguredGridQuery<UiTableColumnListItem>(
+      this.configuredGridSqlService,
+      { tableName: UI_TABLE_COLUMNS_TABLE_NAME, alias: 'ui_table_columns_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwFixedBadRequest<UiTableColumnErrorDetail, UiTableColumnErrorResponse>('No configured grid found for UI table columns list', []);
     }
-    if (queryDto.uiTblClmNo !== undefined) {
-      where.uiTblClmNo = this.parseBigIntId('uiTblClmNo', queryDto.uiTblClmNo);
-    }
-    if (queryDto.uiTblClmTableId !== undefined) {
-      where.uiTblClmTableId = this.parseBigIntId('uiTblClmTableId', queryDto.uiTblClmTableId);
-    }
-    if (queryDto.uiTblClmIsActive !== undefined) where.uiTblClmIsActive = queryDto.uiTblClmIsActive;
-    if (queryDto.uiTblClmColumnVisibility !== undefined) where.uiTblClmColumnVisibility = queryDto.uiTblClmColumnVisibility;
-    if (queryDto.uiTblClmColumnFocus !== undefined) where.uiTblClmColumnFocus = queryDto.uiTblClmColumnFocus;
-    if (queryDto.uiTblClmColumnNecessity !== undefined) where.uiTblClmColumnNecessity = queryDto.uiTblClmColumnNecessity;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [{ uiTblClmName: { contains: search, mode: 'insensitive' } }];
-    }
-
-    return runFixedListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<UiTableColumnListItem>(
-        this.configuredGridSqlService,
-        { tableName: UI_TABLE_COLUMNS_TABLE_NAME, alias: 'ui_table_columns_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.uitableColumns.count({ where }),
-      findManyFn: () => this.prisma.uitableColumns.findMany({
-        where,
-        orderBy: [{ uiTblClmColumnPosition: 'asc' }, { uiTblClmId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record as UitableColumns),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(UI_TABLE_COLUMNS_TABLE_NAME),
-    });
+    return result;
   }
 
   async getById(uiTblClmId: string): Promise<UiTableColumnPayload> {

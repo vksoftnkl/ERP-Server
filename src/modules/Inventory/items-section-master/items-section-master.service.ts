@@ -11,7 +11,7 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -45,28 +45,14 @@ export class ItemsSectionMasterService {
     queryDto: ListItemSectionQueryDto,
   ): Promise<ConfiguredGridListResult<ItemSectionListItem, ItemSectionListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-
-    const hasStructuredFilters =
-      queryDto.sec_parent_id !== undefined ||
-      queryDto.sec_is_active !== undefined;
-
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemSectionListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_SECTION_TABLE_NAME, alias: 'item_section_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemSectionMaster.count({ where }),
-      findManyFn: () => this.prisma.itemSectionMaster.findMany({
-        where,
-        orderBy: [{ secSort: 'asc' }, { secName: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toListItem(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_SECTION_TABLE_NAME),
-    });
+    const result = await runConfiguredGridQuery<ItemSectionListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_SECTION_TABLE_NAME, alias: 'item_section_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemSectionErrorDetail>('No configured grid found for item section list', []);
+    }
+    return result;
   }
 
   private toListItem(record: ItemSectionMaster): ItemSectionListItem {

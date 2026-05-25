@@ -23,7 +23,7 @@ import {
   throwFixedNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const STATE_CODE_MASTER_TABLE_NAME = 'state codes';
 const STATE_CODE_MASTER_AUDIT_SCREEN_NAME = 'State Code Master';
@@ -53,35 +53,14 @@ export class StateCodeMasterService {
     queryDto: ListStateCodeMasterQueryDto,
   ): Promise<ConfiguredGridListResult<StateCodeMasterListItem, StateCodeMasterListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.isActive !== undefined || queryDto.stateUt !== undefined;
-    const where: Prisma.StateCodeWhereInput = { isDeleted: false };
-    if (queryDto.isActive !== undefined) where.isActive = queryDto.isActive;
-    if (queryDto.stateUt !== undefined) where.stateUt = queryDto.stateUt;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { stateCode: { contains: search, mode: 'insensitive' } },
-        { stateName: { contains: search, mode: 'insensitive' } },
-        { tinCode: { contains: search, mode: 'insensitive' } },
-      ];
+    const result = await runConfiguredGridQuery<StateCodeMasterListItem>(
+      this.configuredGridSqlService,
+      { tableName: STATE_CODE_MASTER_TABLE_NAME, alias: 'state_code_master_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwFixedBadRequest<StateCodeMasterErrorDetail, StateCodeMasterErrorResponse>('No configured grid found for state code master list', []);
     }
-    return runFixedListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<StateCodeMasterListItem>(
-        this.configuredGridSqlService,
-        { tableName: STATE_CODE_MASTER_TABLE_NAME, alias: 'state_code_master_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.stateCode.count({ where }),
-      findManyFn: () => this.prisma.stateCode.findMany({
-        where,
-        orderBy: [{ stateName: 'asc' }, { stateCode: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(STATE_CODE_MASTER_TABLE_NAME),
-    });
+    return result;
   }
 
   async getById(stateCodeValue: string): Promise<StateCodeMasterPayload> {

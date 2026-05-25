@@ -13,8 +13,6 @@ import {
 } from './types/ledger-shipping-address-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   hasOwnProperty,
   throwAccountsBadRequest,
   throwAccountsConflict,
@@ -22,6 +20,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const LEDGER_SHIPPING_ADDRESS_TABLE_NAME = 'acc ship addrs';
 const LEDGER_SHIPPING_ADDRESS_AUDIT_SCREEN_NAME = 'Ledger Shipping Address';
 const DEFAULT_ADDR_TYPE = 'SHIP_TO';
@@ -48,95 +47,15 @@ export class LedgerShippingAddressService {
   async list(
     queryDto: ListLedgerShippingAddressQueryDto,
   ): Promise<ConfiguredGridListResult<LedgerShippingAddressListItem, LedgerShippingAddressListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-
-    const hasStructuredFilters =
-      queryDto.saaCompanyId !== undefined ||
-      queryDto.saaLedgerId !== undefined ||
-      Boolean(queryDto.saaAddrType?.trim()) ||
-      queryDto.saaIsActive !== undefined ||
-      queryDto.saaIsDefault !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const result = await runConfiguredGridQuery<LedgerShippingAddressListItem>(
+      this.configuredGridSqlService,
+      { tableName: LEDGER_SHIPPING_ADDRESS_TABLE_NAME, alias: 'ledger_shipping_address_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwAccountsBadRequest<LedgerShippingAddressErrorDetail>('No configured grid found for ledger shipping address list', []);
     }
-
-    const where: Prisma.AccShipAddrWhereInput = {
-      saaIsDeleted: false,
-    };
-
-    if (queryDto.saaCompanyId !== undefined) {
-      where.saaCompanyId = queryDto.saaCompanyId as string | null;
-    }
-
-    if (queryDto.saaLedgerId !== undefined) {
-      where.saaLedgerId = queryDto.saaLedgerId;
-    }
-
-    if (queryDto.saaAddrType?.trim()) {
-      where.saaAddrType = queryDto.saaAddrType.trim().toUpperCase();
-    }
-
-    if (queryDto.saaIsActive !== undefined) {
-      where.saaIsActive = queryDto.saaIsActive;
-    }
-
-    if (queryDto.saaIsDefault !== undefined) {
-      where.saaIsDefault = queryDto.saaIsDefault;
-    }
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { saaTrdnm: { contains: search, mode: 'insensitive' } },
-        { saaContactName: { contains: search, mode: 'insensitive' } },
-        { saaAddr1: { contains: search, mode: 'insensitive' } },
-        { saaAddr2: { contains: search, mode: 'insensitive' } },
-        { saaAddr3: { contains: search, mode: 'insensitive' } },
-        { saaLoc: { contains: search, mode: 'insensitive' } },
-        { saaPin: { contains: search, mode: 'insensitive' } },
-        { saaStateCode: { contains: search, mode: 'insensitive' } },
-        { saaStateName: { contains: search, mode: 'insensitive' } },
-        { saaPhone: { contains: search, mode: 'insensitive' } },
-        { saaEmail: { contains: search, mode: 'insensitive' } },
-        { saaGstin: { contains: search, mode: 'insensitive' } },
-        { saaPan: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    const [total, records, styles] = await Promise.all([
-      this.prisma.accShipAddr.count({ where }),
-      this.prisma.accShipAddr.findMany({
-        where,
-        orderBy: [
-          { saaLedgerId: 'asc' },
-          { saaAddrType: 'asc' },
-          { saaIsDefault: 'desc' },
-          { saaSort: 'asc' },
-          { saaCreatedOn: 'desc' },
-          { saaId: 'asc' },
-        ],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(LEDGER_SHIPPING_ADDRESS_TABLE_NAME),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
+    return result;
   }
 
   private async listFromConfiguredGridSql(

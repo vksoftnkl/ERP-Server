@@ -13,8 +13,6 @@ import {
 } from './types/ledger-bank-account-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   hasOwnProperty,
   isForeignKeyConstraintError,
   normalizeRequiredText,
@@ -24,6 +22,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const LEDGER_BANK_ACCOUNT_TABLE_NAME = 'acc ledger bank accounts';
 const LEDGER_BANK_ACCOUNT_AUDIT_SCREEN_NAME = 'Ledger Bank Account';
 type LedgerBankAccountWriteClient = AccountsWriteClient;
@@ -45,69 +44,15 @@ export class LedgerBankAccountService {
   async list(
     queryDto: ListLedgerBankAccountQueryDto,
   ): Promise<ConfiguredGridListResult<LedgerBankAccountListItem, LedgerBankAccountListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-    const hasStructuredFilters =
-      queryDto.lbaCompanyId !== undefined ||
-      Boolean(queryDto.lbaLedgerId?.trim()) ||
-      queryDto.lbaIsActive !== undefined ||
-      queryDto.lbaIsDefault !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const result = await runConfiguredGridQuery<LedgerBankAccountListItem>(
+      this.configuredGridSqlService,
+      { tableName: LEDGER_BANK_ACCOUNT_TABLE_NAME, alias: 'ledger_bank_account_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwAccountsBadRequest<LedgerBankAccountErrorDetail>('No configured grid found for ledger bank account list', []);
     }
-    const where: Prisma.AccLedgerBankAccountWhereInput = {
-      lbaIsDeleted: false,
-    };
-    if (queryDto.lbaCompanyId !== undefined) {
-      where.lbaCompanyId = queryDto.lbaCompanyId as string | "";
-    }
-    if (queryDto.lbaLedgerId?.trim()) {
-      where.lbaLedgerId = queryDto.lbaLedgerId.trim();
-    }
-    if (queryDto.lbaIsActive !== undefined) {
-      where.lbaIsActive = queryDto.lbaIsActive;
-    }
-    if (queryDto.lbaIsDefault !== undefined) {
-      where.lbaIsDefault = queryDto.lbaIsDefault;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { lbaAccountHolder: { contains: search, mode: 'insensitive' } },
-        { lbaBankName: { contains: search, mode: 'insensitive' } },
-        { lbaBranchName: { contains: search, mode: 'insensitive' } },
-        { lbaAccountNo: { contains: search, mode: 'insensitive' } },
-        { lbaIfscCode: { contains: search, mode: 'insensitive' } },
-        { lbaMicrCode: { contains: search, mode: 'insensitive' } },
-        { lbaAccountType: { contains: search, mode: 'insensitive' } },
-        { lbaUpiId: { contains: search, mode: 'insensitive' } },
-        { lbaChequeName: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.accLedgerBankAccount.count({ where }),
-      this.prisma.accLedgerBankAccount.findMany({
-        where,
-        orderBy: [{ lbaIsDefault: 'desc' }, { lbaAccountHolder: 'asc' }, { lbaId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(LEDGER_BANK_ACCOUNT_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
+    return result;
   }
   private async listFromConfiguredGridSql(
     search: string | undefined,

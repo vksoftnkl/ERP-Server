@@ -11,7 +11,7 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -41,34 +41,14 @@ export class ItemsMasterService {
     queryDto: ListItemQueryDto,
   ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.item_branch_id !== undefined ||
-      queryDto.item_group_id !== undefined ||
-      queryDto.item_category_id !== undefined ||
-      queryDto.item_brand_id !== undefined ||
-      queryDto.item_section_id !== undefined ||
-      queryDto.item_base_unit_id !== undefined ||
-      queryDto.item_default_tax_id !== undefined ||
-      queryDto.item_stock_type !== undefined ||
-      queryDto.item_is_active !== undefined ||
-      queryDto.item_is_service !== undefined;
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_TABLE_NAME, alias: 'item_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemMaster.count({ where }),
-      findManyFn: () => this.prisma.itemMaster.findMany({
-        where,
-        orderBy: [{ itemSortOrder: 'asc' }, { itemNameEn: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_TABLE_NAME),
-    });
+    const result = await runConfiguredGridQuery<ItemListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_TABLE_NAME, alias: 'item_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemErrorDetail>('No configured grid found for item list', []);
+    }
+    return result;
   }
   async getById(itemId: string): Promise<ItemPayload> {
     const record = await this.prisma.itemMaster.findFirst({

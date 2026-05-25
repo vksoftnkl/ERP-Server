@@ -27,7 +27,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
 const CUSTOMER_GROUP_OPTIONAL_FIELDS = [
@@ -64,31 +64,14 @@ export class CustomerGroupService {
     queryDto: ListCustomerGroupQueryDto,
   ): Promise<ConfiguredGridListResult<CustomerGroupListItem, CustomerGroupListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.cgrCompanyId !== undefined || queryDto.cgrIsActive !== undefined;
-    const where: Prisma.CustGroupWhereInput = { cgrIsDeleted: false };
-    if (queryDto.cgrCompanyId !== undefined) where.cgrCompanyId = queryDto.cgrCompanyId as string | null;
-    if (queryDto.cgrIsActive !== undefined) where.cgrIsActive = queryDto.cgrIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { cgrName: { contains: search, mode: 'insensitive' } },
-        { cgrAlias: { contains: search, mode: 'insensitive' } },
-        { cgrShort: { contains: search, mode: 'insensitive' } },
-        { cgrNarration: { contains: search, mode: 'insensitive' } },
-      ];
+    const result = await runConfiguredGridQuery<CustomerGroupListItem>(
+      this.configuredGridSqlService,
+      { tableName: CUSTOMER_GROUP_TABLE_NAME, alias: 'customer_group_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwSalesBadRequest<CustomerGroupErrorDetail, CustomerGroupErrorResponse>('No configured grid found for customer group list', []);
     }
-    return runSalesListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<CustomerGroupListItem>(
-        this.configuredGridSqlService,
-        { tableName: CUSTOMER_GROUP_TABLE_NAME, alias: 'customer_group_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.custGroup.count({ where }),
-      findManyFn: () => this.prisma.custGroup.findMany({ where, orderBy: [{ cgrName: 'asc' }, { cgrId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(CUSTOMER_GROUP_TABLE_NAME),
-    });
+    return result;
   }
 
   async getById(cgrId: string): Promise<CustomerGroupPayload> {

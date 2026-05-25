@@ -33,7 +33,6 @@ export class HttpCacheInterceptor extends CacheInterceptor {
     if (context.getType<'http'>() !== 'http') {
       return next.handle();
     }
-    const request = context.switchToHttp().getRequest<CacheableRequest>();
     const key = this.trackBy(context);
     const ttlValueOrFactory =
       this.reflector.get(CACHE_TTL_METADATA, context.getHandler()) ??
@@ -42,13 +41,15 @@ export class HttpCacheInterceptor extends CacheInterceptor {
     const ttlSeconds = isFunction(ttlValueOrFactory)
       ? await ttlValueOrFactory(context)
       : ttlValueOrFactory;
-    if (request.method === 'GET' && (ttlSeconds === 0 || !key)) {
-      this.setCacheHeader(context, 'MISS');
-      return next.handle();
-    }
     if (!key) {
       return next.handle();
     }
+    const ttlIsExplicit = typeof ttlSeconds === 'number' && ttlSeconds > 0;
+    if (!ttlIsExplicit) {
+      this.setCacheHeader(context, 'MISS');
+      return next.handle();
+    }
+    const ttlMilliseconds = ttlSeconds * 1000;
     try {
       const cachedValue = await this.cacheManager.get(key);
       this.setCacheHeader(context, isNil(cachedValue) ? 'MISS' : 'HIT');
@@ -61,18 +62,12 @@ export class HttpCacheInterceptor extends CacheInterceptor {
       this.setCacheHeader(context, 'MISS');
       return next.handle();
     }
-    const ttlMilliseconds =
-      typeof ttlSeconds === 'number' && ttlSeconds > 0 ? ttlSeconds * 1000 : undefined;
     return next.handle().pipe(
       tap(async (response) => {
         if (response instanceof StreamableFile) {
           return;
         }
         try {
-          if (ttlMilliseconds === undefined) {
-            await this.cacheManager.set(key, response);
-            return;
-          }
           await this.cacheManager.set(key, response, ttlMilliseconds);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown cache write error';

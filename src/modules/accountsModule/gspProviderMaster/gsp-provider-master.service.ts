@@ -14,8 +14,6 @@ import {
 } from './types/gsp-provider-master-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   hasOwnProperty,
   normalizeRequiredText,
   throwAccountsBadRequest,
@@ -24,6 +22,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const GSP_PROVIDER_MASTER_TABLE_NAME = 'gsp provider master';
 const GSP_PROVIDER_MASTER_AUDIT_SCREEN_NAME = 'GSP Provider Master';
 type GspProviderMasterWriteClient = AccountsWriteClient;
@@ -45,54 +44,15 @@ export class GspProviderMasterService {
   async list(
     queryDto: ListGspProviderMasterQueryDto,
   ): Promise<ConfiguredGridListResult<GspProviderMasterListItem, GspProviderMasterListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-    const hasStructuredFilters =
-      queryDto.gspIsActive !== undefined;
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const result = await runConfiguredGridQuery<GspProviderMasterListItem>(
+      this.configuredGridSqlService,
+      { tableName: GSP_PROVIDER_MASTER_TABLE_NAME, alias: 'gsp_provider_master_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwAccountsBadRequest<GspProviderMasterErrorDetail>('No configured grid found for GSP provider master list', []);
     }
-    const where: Prisma.GspProviderMasterWhereInput = {
-      gspIsDeleted: false,
-    };
-    if (queryDto.gspIsActive !== undefined) {
-      where.gspIsActive = queryDto.gspIsActive;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { gspProviderCode: { contains: search, mode: 'insensitive' } },
-        { gspProviderName: { contains: search, mode: 'insensitive' } },
-        { gspBaseUrl: { contains: search, mode: 'insensitive' } },
-        { gspRoute: { contains: search, mode: 'insensitive' } },
-        { gspIpAddress: { contains: search, mode: 'insensitive' } },
-        { gspUserName: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.gspProviderMaster.count({ where }),
-      this.prisma.gspProviderMaster.findMany({
-        where,
-        orderBy: [{ gspProviderName: 'asc' }, { gspProviderId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(GSP_PROVIDER_MASTER_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
+    return result;
   }
   private async listFromConfiguredGridSql(
     search: string | undefined,

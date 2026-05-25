@@ -13,8 +13,6 @@ import {
 } from './types/account-group-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   hasOwnProperty,
   isForeignKeyConstraintError,
   normalizeRequiredText,
@@ -24,6 +22,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const ACCOUNT_GROUP_TABLE_NAME = 'account groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
@@ -53,57 +52,15 @@ export class AccountsGroupService {
   async list(
     queryDto: ListAccountGroupQueryDto,
   ): Promise<ConfiguredGridListResult<AccountGroupListItem, AccountGroupListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-    const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
-    if (configuredList) {
-      return configuredList;
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const result = await runConfiguredGridQuery<AccountGroupListItem>(
+      this.configuredGridSqlService,
+      { tableName: ACCOUNT_GROUP_TABLE_NAME, alias: 'account_group_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwAccountsBadRequest<AccountGroupErrorDetail>('No configured grid found for account group list', []);
     }
-    const where: Prisma.AccountGroupWhereInput = {
-      accGroupIsDeleted: false,
-    };
-    if (queryDto.accGroupCompanyId !== undefined) {
-      where.accGroupCompanyId = queryDto.accGroupCompanyId;
-    }
-    if (queryDto.accGroupParentId !== undefined) {
-      where.accGroupParentId = queryDto.accGroupParentId;
-    }
-    if (queryDto.accGroupIsActive !== undefined) {
-      where.accGroupIsActive = queryDto.accGroupIsActive;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { accGroupName: { contains: search, mode: 'insensitive' } },
-        { accGroupAlias: { contains: search, mode: 'insensitive' } },
-        { accGroupShort: { contains: search, mode: 'insensitive' } },
-        { accGroupDescription: { contains: search, mode: 'insensitive' } },
-        { accGroupTallyName: { contains: search, mode: 'insensitive' } },
-        { accGroupPrimaryName: { contains: search, mode: 'insensitive' } },
-        { accGroupNature: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.accountGroup.count({ where }),
-      this.prisma.accountGroup.findMany({
-        where,
-        orderBy: [{ accGroupSort: 'asc' }, { accGroupName: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(ACCOUNT_GROUP_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
+    return result;
   }
   private async listFromConfiguredGridSql(
     queryDto: ListAccountGroupQueryDto,

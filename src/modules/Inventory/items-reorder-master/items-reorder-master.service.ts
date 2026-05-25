@@ -12,7 +12,7 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -44,7 +44,6 @@ export class ItemsReorderMasterService {
     saveItemReorderDto: SaveItemReorderDto | SaveItemReorderDto[],
   ): Promise<ItemReorderPayload | ItemReorderPayload[]> {
     const saveItems = Array.isArray(saveItemReorderDto) ? saveItemReorderDto : [saveItemReorderDto];
-
     try {
       const results = await this.prisma.$transaction(async (tx) => {
         const savedItems: ItemReorderPayload[] = [];
@@ -53,7 +52,6 @@ export class ItemsReorderMasterService {
         }
         return savedItems;
       });
-
       return Array.isArray(saveItemReorderDto) ? results : results[0];
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -65,31 +63,14 @@ export class ItemsReorderMasterService {
     queryDto: ListItemReorderQueryDto,
   ): Promise<ConfiguredGridListResult<ItemReorderListItem, ItemReorderListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-
-    const hasStructuredFilters =
-      queryDto.ir_branch_id !== undefined ||
-      queryDto.ir_item_id !== undefined ||
-      queryDto.ir_unit_id !== undefined ||
-      queryDto.ir_godown_id !== undefined ||
-      queryDto.ir_reorder_type !== undefined ||
-      queryDto.ir_is_active !== undefined;
-
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemReorderListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_REORDER_TABLE_NAME, alias: 'item_reorder_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemReorder.count({ where }),
-      findManyFn: () => this.prisma.itemReorder.findMany({
-        where,
-        orderBy: [{ irItemId: 'asc' }, { irId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-    });
+    const result = await runConfiguredGridQuery<ItemReorderListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_REORDER_TABLE_NAME, alias: 'item_reorder_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemReorderErrorDetail>('No configured grid found for item reorder list', []);
+    }
+    return result;
   }
 
   async getById(irId: string): Promise<ItemReorderPayload> {

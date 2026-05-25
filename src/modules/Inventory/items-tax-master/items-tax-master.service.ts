@@ -6,7 +6,7 @@ import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
 import { ItemTaxErrorDetail, ItemTaxListItem, ItemTaxListMeta, ItemTaxPayload } from './types/item-tax-api.types';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -35,27 +35,14 @@ export class ItemsTaxMasterService {
     queryDto: ListItemTaxQueryDto,
   ): Promise<ConfiguredGridListResult<ItemTaxListItem, ItemTaxListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.tax_is_active !== undefined ||
-      queryDto.tax_taxability_type !== undefined ||
-      queryDto.tax_is_reverse_charge !== undefined;
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemTaxListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_TAX_TABLE_NAME, alias: 'item_tax_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemTaxMaster.count({ where }),
-      findManyFn: () => this.prisma.itemTaxMaster.findMany({
-        where,
-        orderBy: [{ taxName: 'asc' }, { taxId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_TAX_TABLE_NAME),
-    });
+    const result = await runConfiguredGridQuery<ItemTaxListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_TAX_TABLE_NAME, alias: 'item_tax_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemTaxErrorDetail>('No configured grid found for item tax list', []);
+    }
+    return result;
   }
   async getById(taxId: string): Promise<ItemTaxPayload> {
     const record = await this.prisma.itemTaxMaster.findFirst({

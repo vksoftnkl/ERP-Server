@@ -28,7 +28,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
 const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];
@@ -55,30 +55,14 @@ export class CityService {
     queryDto: ListCityQueryDto,
   ): Promise<ConfiguredGridListResult<CityListItem, CityListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.ctmStateId !== undefined || queryDto.ctmIsActive !== undefined;
-    const where: Prisma.CityMasterWhereInput = { ctmIsDeleted: false };
-    if (queryDto.ctmStateId !== undefined) where.ctmStateId = queryDto.ctmStateId;
-    if (queryDto.ctmIsActive !== undefined) where.ctmIsActive = queryDto.ctmIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { ctmName: { contains: search, mode: 'insensitive' } },
-        { ctmAlias: { contains: search, mode: 'insensitive' } },
-        { ctmShort: { contains: search, mode: 'insensitive' } },
-      ];
+    const result = await runConfiguredGridQuery<CityListItem>(
+      this.configuredGridSqlService,
+      { tableName: CITY_TABLE_NAME, alias: 'city_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwSalesBadRequest<CityErrorDetail, CityErrorResponse>('No configured grid found for city list', []);
     }
-    return runSalesListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<CityListItem>(
-        this.configuredGridSqlService,
-        { tableName: CITY_TABLE_NAME, alias: 'city_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.cityMaster.count({ where }),
-      findManyFn: () => this.prisma.cityMaster.findMany({ where, orderBy: [{ ctmName: 'asc' }, { ctmId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(CITY_TABLE_NAME),
-    });
+    return result;
   }
 
   async getById(ctmId: string): Promise<CityPayload> {

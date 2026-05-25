@@ -16,8 +16,6 @@ import {
 } from './types/account-ledger-master-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   hasOwnProperty,
   normalizeRequiredText,
   throwAccountsBadRequest,
@@ -28,6 +26,7 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
@@ -60,65 +59,15 @@ export class AccountLedgerMastersService {
   async list(
     queryDto: ListAccountLedgerMasterQueryDto,
   ): Promise<ConfiguredGridListResult<AccountLedgerMasterListItem, AccountLedgerMasterListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-    const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
-    if (configuredList) {
-      return configuredList;
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const result = await runConfiguredGridQuery<AccountLedgerMasterListItem>(
+      this.configuredGridSqlService,
+      { tableName: ACCOUNT_LEDGER_MASTER_TABLE_NAME, alias: 'account_ledger_master_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('No configured grid found for account ledger master list', []);
     }
-    const where: Prisma.AccLedgerMasterWhereInput = {
-      ledIsDeleted: false,
-    };
-    if (queryDto.ledCompanyId !== undefined) {
-      where.ledCompanyId = queryDto.ledCompanyId;
-    }
-    if (queryDto.ledGroupId !== undefined) {
-      where.ledGroupId = queryDto.ledGroupId;
-    }
-    if (queryDto.ledCategory?.trim()) {
-      where.ledCategory = queryDto.ledCategory.trim();
-    }
-    if (queryDto.ledIsActive !== undefined) {
-      where.ledIsActive = queryDto.ledIsActive;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { ledName: { contains: search, mode: 'insensitive' } },
-        { ledAlias: { contains: search, mode: 'insensitive' } },
-        { ledShort: { contains: search, mode: 'insensitive' } },
-        { ledTallyName: { contains: search, mode: 'insensitive' } },
-        { ledTallyGroupName: { contains: search, mode: 'insensitive' } },
-        { ledContactPerson: { contains: search, mode: 'insensitive' } },
-        { ledEmail: { contains: search, mode: 'insensitive' } },
-        { ledCity: { contains: search, mode: 'insensitive' } },
-        { ledDistrict: { contains: search, mode: 'insensitive' } },
-        { ledStateName: { contains: search, mode: 'insensitive' } },
-        { ledGstinNo: { contains: search, mode: 'insensitive' } },
-        { ledPanNo: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.accLedgerMaster.count({ where }),
-      this.prisma.accLedgerMaster.findMany({
-        where,
-        orderBy: [{ ledName: 'asc' }, { ledId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(ACCOUNT_LEDGER_MASTER_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
+    return result;
   }
   private async listFromConfiguredGridSql(
     queryDto: ListAccountLedgerMasterQueryDto,

@@ -13,15 +13,15 @@ import {
 } from './types/company-group-master-api.types';
 import {
   DEFAULT_ACTOR,
-  DEFAULT_LIMIT,
-  DEFAULT_PAGE,
   hasOwnProperty,
   normalizeRequiredText,
+  throwAccountsBadRequest,
   throwAccountsConflict,
   throwAccountsNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const COMPANY_GROUP_MASTER_TABLE_NAME = 'company group master';
 const COMPANY_GROUP_MASTER_AUDIT_SCREEN_NAME = 'Company Group Master';
 type CompanyGroupWriteClient = AccountsWriteClient;
@@ -47,54 +47,15 @@ export class CompanyGroupMasterService {
   async list(
     queryDto: ListCompanyGroupMasterQueryDto,
   ): Promise<ConfiguredGridListResult<CompanyGroupMasterListItem, CompanyGroupMasterListMeta>> {
-    const page = queryDto.page ?? DEFAULT_PAGE;
-    const limit = queryDto.limit ?? DEFAULT_LIMIT;
-    const skip = (page - 1) * limit;
-
-    const hasStructuredFilters =
-      queryDto.cogIsActive !== undefined;
-
-    if (!hasStructuredFilters) {
-      const configuredList = await this.listFromConfiguredGridSql(queryDto.search, page, limit, skip);
-      if (configuredList) {
-        return configuredList;
-      }
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const result = await runConfiguredGridQuery<CompanyGroupMasterListItem>(
+      this.configuredGridSqlService,
+      { tableName: COMPANY_GROUP_MASTER_TABLE_NAME, alias: 'company_group_master_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwAccountsBadRequest<CompanyGroupMasterErrorDetail>('No configured grid found for company group master list', []);
     }
-
-    const where: Prisma.CompanyGroupMasterWhereInput = {
-      cogIsDeleted: false,
-    };
-
-    if (queryDto.cogIsActive !== undefined) {
-      where.cogIsActive = queryDto.cogIsActive;
-    }
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [{ cogGroupName: { contains: search, mode: 'insensitive' } }];
-    }
-
-    const [total, records, styles] = await Promise.all([
-      this.prisma.companyGroupMaster.count({ where }),
-      this.prisma.companyGroupMaster.findMany({
-        where,
-        orderBy: [{ cogGroupName: 'asc' }, { cogGroupId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(COMPANY_GROUP_MASTER_TABLE_NAME),
-    ]);
-
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
+    return result;
   }
 
   private async listFromConfiguredGridSql(

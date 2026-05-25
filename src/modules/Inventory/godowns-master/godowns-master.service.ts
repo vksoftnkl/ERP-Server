@@ -192,7 +192,7 @@ export class GodownsMasterService {
   private async getConfiguredSearchableFieldNames(
     gridId: bigint,
     baseSql: string,
-  ): Promise<string[]> {
+   ): Promise<string[]> {
     const sqlFieldNames = this.extractSelectFieldNames(baseSql);
     if (sqlFieldNames.length === 0) {
       return [];

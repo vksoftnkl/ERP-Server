@@ -11,7 +11,7 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -39,26 +39,14 @@ export class ItemsBrandMasterService {
     queryDto: ListItemBrandQueryDto,
   ): Promise<ConfiguredGridListResult<ItemBrandListItem, ItemBrandListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.brand_parent_id !== undefined ||
-      queryDto.brand_is_active !== undefined;
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemBrandListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_BRAND_TABLE_NAME, alias: 'item_brand_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemBrandMaster.count({ where }),
-      findManyFn: () => this.prisma.itemBrandMaster.findMany({
-        where,
-        orderBy: [{ brand_sort: 'asc' }, { brand_name: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_BRAND_TABLE_NAME),
-    });
+    const result = await runConfiguredGridQuery<ItemBrandListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_BRAND_TABLE_NAME, alias: 'item_brand_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemBrandErrorDetail>('No configured grid found for item brand list', []);
+    }
+    return result;
   }
   private buildListWhere(queryDto: ListItemBrandQueryDto): Prisma.ItemBrandMasterWhereInput {
     const where: Prisma.ItemBrandMasterWhereInput = {

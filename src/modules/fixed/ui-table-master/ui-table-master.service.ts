@@ -22,7 +22,7 @@ import {
   throwFixedNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const UI_TABLE_MASTER_TABLE_NAME = 'ui tables';
 const UI_TABLE_MASTER_AUDIT_SCREEN_NAME = 'UI Table Master';
@@ -47,34 +47,14 @@ export class UiTableMasterService {
     queryDto: ListUiTableMasterQueryDto,
   ): Promise<ConfiguredGridListResult<UiTableMasterListItem, UiTableMasterListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.uiTblEditable !== undefined ||
-      queryDto.uiTblIsActive !== undefined;
-
-    const where: Prisma.UitableWhereInput = { uiTblIsDeleted: false };
-    if (queryDto.uiTblEditable !== undefined) where.uiTblEditable = queryDto.uiTblEditable;
-    if (queryDto.uiTblIsActive !== undefined) where.uiTblIsActive = queryDto.uiTblIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [{ uiTblName: { contains: search, mode: 'insensitive' } }];
+    const result = await runConfiguredGridQuery<UiTableMasterListItem>(
+      this.configuredGridSqlService,
+      { tableName: UI_TABLE_MASTER_TABLE_NAME, alias: 'ui_table_master_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>('No configured grid found for UI table master list', []);
     }
-
-    return runFixedListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<UiTableMasterListItem>(
-        this.configuredGridSqlService,
-        { tableName: UI_TABLE_MASTER_TABLE_NAME, alias: 'ui_table_master_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.uitable.count({ where }),
-      findManyFn: () => this.prisma.uitable.findMany({
-        where,
-        orderBy: [{ uiTblName: 'asc' }, { uiTblId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record as Uitable),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(UI_TABLE_MASTER_TABLE_NAME),
-    });
+    return result;
   }
 
   async getById(uiTblId: string): Promise<UiTableMasterPayload> {

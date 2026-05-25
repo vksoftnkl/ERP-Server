@@ -31,7 +31,7 @@ import {
 @ApiTags('Grid Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('grid-details')
 @UseFilters(GridDetailExceptionFilter)
 export class GridDetailsController {

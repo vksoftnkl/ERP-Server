@@ -28,7 +28,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
 const AREA_OPTIONAL_FIELDS = [
@@ -57,30 +57,14 @@ export class AreaService {
     queryDto: ListAreaQueryDto,
   ): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.armCityId !== undefined || queryDto.armIsActive !== undefined;
-    const where: Prisma.AreaMasterWhereInput = { armIsDeleted: false };
-    if (queryDto.armCityId !== undefined) where.armCityId = queryDto.armCityId;
-    if (queryDto.armIsActive !== undefined) where.armIsActive = queryDto.armIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { armName: { contains: search, mode: 'insensitive' } },
-        { armAlias: { contains: search, mode: 'insensitive' } },
-        { armShort: { contains: search, mode: 'insensitive' } },
-      ];
+    const result = await runConfiguredGridQuery<AreaListItem>(
+      this.configuredGridSqlService,
+      { tableName: AREA_TABLE_NAME, alias: 'area_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwSalesBadRequest<AreaErrorDetail, AreaErrorResponse>('No configured grid found for area list', []);
     }
-    return runSalesListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<AreaListItem>(
-        this.configuredGridSqlService,
-        { tableName: AREA_TABLE_NAME, alias: 'area_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.areaMaster.count({ where }),
-      findManyFn: () => this.prisma.areaMaster.findMany({ where, orderBy: [{ armName: 'asc' }, { armId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(AREA_TABLE_NAME),
-    });
+    return result;
   }
   async getById(armId: string): Promise<AreaPayload> {
     const record = await this.prisma.areaMaster.findFirst({

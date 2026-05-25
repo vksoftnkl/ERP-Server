@@ -11,7 +11,7 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -44,39 +44,27 @@ export class UnitsMasterService {
 
   async list(queryDto: ListUnitQueryDto): Promise<UnitListResult> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.unit_base_unit_id !== undefined ||
-      queryDto.unit_is_active !== undefined;
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery<Unit, UnitListItem>({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<UnitListItem>(
-        this.configuredGridSqlService,
-        {
-          tableName: UNIT_TABLE_NAME,
-          alias: 'unit_grid',
-          search: queryDto.search,
-          page,
-          limit,
-          skip,
-          extraForbiddenPatterns: [
-            {
-              pattern: LEGACY_UNIT_UUID_NUMERIC_COMPARISON_PATTERN,
-              message: 'Configured query compares unit UUID fields with numeric values',
-            },
-          ],
-        },
-      ),
-      countFn: () => this.prisma.unit.count({ where }),
-      findManyFn: () => this.prisma.unit.findMany({
-        where,
-        orderBy: [{ unit_name: 'asc' }, { unit_id: 'asc' }],
+    const result = await runConfiguredGridQuery<UnitListItem>(
+      this.configuredGridSqlService,
+      {
+        tableName: UNIT_TABLE_NAME,
+        alias: 'unit_grid',
+        search: queryDto.search,
+        page,
+        limit,
         skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(UNIT_TABLE_NAME),
-    });
+        extraForbiddenPatterns: [
+          {
+            pattern: LEGACY_UNIT_UUID_NUMERIC_COMPARISON_PATTERN,
+            message: 'Configured query compares unit UUID fields with numeric values',
+          },
+        ],
+      },
+    );
+    if (!result) {
+      throwInventoryBadRequest<UnitErrorDetail>('No configured grid found for unit list', []);
+    }
+    return result;
   }
   async getById(unitId: string): Promise<UnitPayload> {
     const record = await this.prisma.unit.findFirst({

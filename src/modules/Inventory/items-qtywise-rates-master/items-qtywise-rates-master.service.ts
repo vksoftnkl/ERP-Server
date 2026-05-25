@@ -11,7 +11,7 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -47,29 +47,14 @@ export class ItemsQtywiseRatesMasterService {
     queryDto: ListItemQtywiseRateQueryDto,
   ): Promise<ConfiguredGridListResult<ItemQtywiseRateListItem, ItemQtywiseRateListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-
-    const hasStructuredFilters =
-      queryDto.iqr_branch_id !== undefined ||
-      queryDto.iqr_unit_rate_id !== undefined ||
-      queryDto.iqr_price_level !== undefined ||
-      queryDto.iqr_is_active !== undefined;
-
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemQtywiseRateListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_QTYWISE_RATE_TABLE_NAME, alias: 'item_qtywise_rate_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemQtywiseRate.count({ where }),
-      findManyFn: () => this.prisma.itemQtywiseRate.findMany({
-        where,
-        orderBy: [{ iqrPriority: 'desc' }, { iqrId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-    });
+    const result = await runConfiguredGridQuery<ItemQtywiseRateListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_QTYWISE_RATE_TABLE_NAME, alias: 'item_qtywise_rate_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemQtywiseRateErrorDetail>('No configured grid found for item qty-wise rate list', []);
+    }
+    return result;
   }
 
   async getById(iqrId: string): Promise<ItemQtywiseRatePayload> {

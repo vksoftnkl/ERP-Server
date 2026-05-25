@@ -32,7 +32,7 @@ import {
 @ApiTags('Grid Columns')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('grid-columns')
 @UseFilters(GridColumnExceptionFilter)
 export class GridColumnsController {

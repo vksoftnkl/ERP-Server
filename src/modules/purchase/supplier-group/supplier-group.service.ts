@@ -21,7 +21,7 @@ import {
   throwPurchaseConflict,
   throwPurchaseNotFound,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runPurchaseListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const SUPPLIER_GROUP_TABLE_NAME = 'supplier groups';
 const SUPPLIER_GROUP_AUDIT_SCREEN_NAME = 'Supplier Group Master';
@@ -48,40 +48,14 @@ export class SupplierGroupService {
     queryDto: ListSupplierGroupQueryDto,
   ): Promise<ConfiguredGridListResult<SupplierGroupListItem, SupplierGroupListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters = queryDto.spgIsActive !== undefined;
-    const where: Prisma.SupplierGroupWhereInput = { spgIsDeleted: false };
-    if (queryDto.spgIsActive !== undefined) {
-      where.spgIsActive = queryDto.spgIsActive;
+    const result = await runConfiguredGridQuery<SupplierGroupListItem>(
+      this.configuredGridSqlService,
+      { tableName: SUPPLIER_GROUP_TABLE_NAME, alias: 'supplier_group_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwPurchaseBadRequest('No configured grid found for supplier group list', []);
     }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { spgName: { contains: search, mode: 'insensitive' } },
-        { spgAlias: { contains: search, mode: 'insensitive' } },
-        { spgShort: { contains: search, mode: 'insensitive' } },
-        { spgDesc: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return runPurchaseListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery(this.configuredGridSqlService, {
-        tableName: SUPPLIER_GROUP_TABLE_NAME,
-        alias: 'supplier_group_grid',
-        search: queryDto.search,
-        page,
-        limit,
-        skip,
-      }),
-      countFn: () => this.prisma.supplierGroup.count({ where }),
-      findManyFn: () => this.prisma.supplierGroup.findMany({
-        where,
-        orderBy: [{ spgName: 'asc' }, { spgId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(SUPPLIER_GROUP_TABLE_NAME),
-    });
+    return result;
   }
 
   async getById(spgId: string): Promise<SupplierGroupPayload> {

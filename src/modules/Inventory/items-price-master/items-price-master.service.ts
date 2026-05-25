@@ -18,7 +18,7 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   hasOwnProperty,
   isForeignKeyConstraintError,
@@ -127,63 +127,27 @@ export class ItemsPriceMasterService {
     queryDto: ListItemPriceQueryDto,
   ): Promise<ConfiguredGridListResult<ItemPriceListItem, ItemPriceListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.ipm_company_id !== undefined ||
-      queryDto.ipm_branch_id !== undefined ||
-      queryDto.ipm_item_id !== undefined ||
-      queryDto.ipm_unit_id !== undefined ||
-      queryDto.ipm_godown_id !== undefined ||
-      queryDto.ipm_base_unit_id !== undefined ||
-      queryDto.ipm_profit_type !== undefined ||
-      queryDto.ipm_is_active !== undefined ||
-      queryDto.ipm_is_deleted !== undefined;
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery<ItemPriceMaster, ItemPriceListItem>({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemPriceListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_PRICE_TABLE_NAME, alias: 'item_price_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemPriceMaster.count({ where }),
-      findManyFn: () => this.prisma.itemPriceMaster.findMany({
-        where,
-        orderBy: [{ ipmItemId: 'asc' }, { ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-    });
+    const result = await runConfiguredGridQuery<ItemPriceListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_PRICE_TABLE_NAME, alias: 'item_price_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemPriceErrorDetail>('No configured grid found for item price list', []);
+    }
+    return result;
   }
   async listItemUnitConversions(
     queryDto: ListItemUnitConversionQueryDto,
   ): Promise<ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.iuc_company_id !== undefined ||
-      queryDto.iuc_item_id !== undefined ||
-      queryDto.iuc_unit_id !== undefined ||
-      queryDto.iuc_base_unit_id !== undefined ||
-      queryDto.iuc_is_default_unit !== undefined ||
-      queryDto.iuc_is_base_unit !== undefined ||
-      queryDto.iuc_is_big_unit !== undefined ||
-      queryDto.iuc_is_active !== undefined ||
-      queryDto.iuc_is_deleted !== undefined;
-    const where = this.buildItemUnitConversionListWhere(queryDto);
-    return runInventoryListQuery<ItemUnitConversion, ItemUnitConversionListItem>({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemUnitConversionListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_UNIT_CONVERSION_TABLE_NAME, alias: 'item_unit_conversion_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemUnitConversion.count({ where }),
-      findManyFn: () => this.prisma.itemUnitConversion.findMany({
-        where,
-        orderBy: [{ iucItemId: 'asc' }, { iucUnitSlno: 'asc' }, { iucId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toItemUnitConversionPayload(record),
-    });
+    const result = await runConfiguredGridQuery<ItemUnitConversionListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_UNIT_CONVERSION_TABLE_NAME, alias: 'item_unit_conversion_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemPriceErrorDetail>('No configured grid found for item unit conversion list', []);
+    }
+    return result;
   }
   async getById(ipmId: string): Promise<ItemPricePayload> {
     const record = await this.prisma.itemPriceMaster.findFirst({

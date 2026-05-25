@@ -19,7 +19,7 @@ import {
   throwFixedNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const USER_LOGIN_SESSIONS_TABLE_NAME = 'user login sessions';
 const USER_LOGIN_SESSIONS_AUDIT_SCREEN_NAME = 'User Login Sessions';
@@ -54,61 +54,19 @@ export class UserLoginSessionsService {
     }
     return this.createSession(saveUserLoginSessionDto);
   }
-
   async list(
     queryDto: ListUserLoginSessionsQueryDto,
   ): Promise<ConfiguredGridListResult<UserLoginSessionsListItem, UserLoginSessionsListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.ulsCompanyId !== undefined ||
-      queryDto.ulsBranchId !== undefined ||
-      queryDto.ulsUserId !== undefined ||
-      queryDto.ulsDeviceId !== undefined ||
-      queryDto.ulsLoginStatus !== undefined ||
-      queryDto.ulsIsActiveSession !== undefined ||
-      queryDto.ulsIsActive !== undefined;
-
-    const where: Prisma.UserLoginSessionWhereInput = { ulsIsDeleted: false };
-    if (queryDto.ulsCompanyId !== undefined) where.ulsCompanyId = queryDto.ulsCompanyId;
-    if (queryDto.ulsBranchId !== undefined) where.ulsBranchId = queryDto.ulsBranchId;
-    if (queryDto.ulsUserId !== undefined) where.ulsUserId = queryDto.ulsUserId;
-    if (queryDto.ulsDeviceId !== undefined) where.ulsDeviceId = queryDto.ulsDeviceId;
-    if (queryDto.ulsLoginStatus?.trim()) {
-      where.ulsLoginStatus = { equals: queryDto.ulsLoginStatus.trim(), mode: 'insensitive' };
+    const result = await runConfiguredGridQuery<UserLoginSessionsListItem>(
+      this.configuredGridSqlService,
+      { tableName: USER_LOGIN_SESSIONS_TABLE_NAME, alias: 'user_login_sessions_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwFixedNotFound<UserLoginSessionsErrorDetail, UserLoginSessionsErrorResponse>('No configured grid found for user login sessions list', 'list', 'No configured grid found');
     }
-    if (queryDto.ulsIsActiveSession !== undefined) where.ulsIsActiveSession = queryDto.ulsIsActiveSession;
-    if (queryDto.ulsIsActive !== undefined) where.ulsIsActive = queryDto.ulsIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { ulsSessionToken: { contains: search, mode: 'insensitive' } },
-        { ulsRefreshTokenId: { contains: search, mode: 'insensitive' } },
-        { ulsLoginStatus: { contains: search, mode: 'insensitive' } },
-        { ulsFailReason: { contains: search, mode: 'insensitive' } },
-        { ulsIpAddress: { contains: search, mode: 'insensitive' } },
-        { ulsUserAgent: { contains: search, mode: 'insensitive' } },
-        { ulsAppVersion: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    return runFixedListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<UserLoginSessionsListItem>(
-        this.configuredGridSqlService,
-        { tableName: USER_LOGIN_SESSIONS_TABLE_NAME, alias: 'user_login_sessions_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.userLoginSession.count({ where }),
-      findManyFn: () => this.prisma.userLoginSession.findMany({
-        where,
-        orderBy: [{ ulsLoginOn: 'desc' }, { ulsId: 'desc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record as UserLoginSession),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(USER_LOGIN_SESSIONS_TABLE_NAME),
-    });
+    return result;
   }
-
   async getById(ulsId: string): Promise<UserLoginSessionsPayload> {
     const record = await this.prisma.userLoginSession.findFirst({
       where: { ulsId, ulsIsDeleted: false },

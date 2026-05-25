@@ -27,7 +27,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runSalesListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
 const CUSTOMER_OPTIONAL_FIELDS = [
@@ -117,40 +117,14 @@ export class CustomerService {
     queryDto: ListCustomerQueryDto,
   ): Promise<ConfiguredGridListResult<CustomerListItem, CustomerListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.cusCompanyId !== undefined ||
-      queryDto.cusAreaId !== undefined ||
-      queryDto.cusGroupId !== undefined ||
-      queryDto.cusIsActive !== undefined;
-    const where: Prisma.CustomerWhereInput = { cusIsDeleted: false };
-    if (queryDto.cusCompanyId !== undefined) where.cusCompanyId = queryDto.cusCompanyId;
-    if (queryDto.cusAreaId !== undefined) where.cusAreaId = queryDto.cusAreaId;
-    if (queryDto.cusGroupId !== undefined) where.cusGroupId = queryDto.cusGroupId;
-    if (queryDto.cusIsActive !== undefined) where.cusIsActive = queryDto.cusIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { cusName: { contains: search, mode: 'insensitive' } },
-        { cusShort: { contains: search, mode: 'insensitive' } },
-        { cusCode: { contains: search, mode: 'insensitive' } },
-        { cusCity: { contains: search, mode: 'insensitive' } },
-        { cusDistrict: { contains: search, mode: 'insensitive' } },
-        { cusPhone1: { contains: search, mode: 'insensitive' } },
-        { cusEmail: { contains: search, mode: 'insensitive' } },
-        { cusGstNo: { contains: search, mode: 'insensitive' } },
-      ];
+    const result = await runConfiguredGridQuery<CustomerListItem>(
+      this.configuredGridSqlService,
+      { tableName: CUSTOMER_TABLE_NAME, alias: 'customer_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('No configured grid found for customer list', []);
     }
-    return runSalesListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<CustomerListItem>(
-        this.configuredGridSqlService,
-        { tableName: CUSTOMER_TABLE_NAME, alias: 'customer_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.customer.count({ where }),
-      findManyFn: () => this.prisma.customer.findMany({ where, orderBy: [{ cusName: 'asc' }, { cusId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(CUSTOMER_TABLE_NAME),
-    });
+    return result;
   }
 
   async getById(cusId: string): Promise<CustomerPayload> {

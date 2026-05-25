@@ -94,7 +94,7 @@ export class BranchMasterService {
   }
   async list(
     queryDto: ListBranchMasterQueryDto,
-  ): Promise<ConfiguredGridListResult<BranchMasterListItem, BranchMasterListMeta>> {
+   ): Promise<ConfiguredGridListResult<BranchMasterListItem, BranchMasterListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
     const hasStructuredFilters =
       queryDto.compId !== undefined ||

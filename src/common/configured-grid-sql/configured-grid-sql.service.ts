@@ -163,9 +163,14 @@ export class ConfiguredGridSqlService {
   ): Promise<RunConfiguredGridSqlPageResult<TItem>> {
     let baseSql = options.baseSql;
     let params = options.params ?? [];
+    let preloadedColumns: GridColumnItem[] | undefined;
+
     if (options.search?.trim() && options.gridId !== undefined) {
-      const searchableFieldNames = await this.getSearchableFieldNames(
-        options.gridId,
+      // Load columns once — reused for both searchable field derivation and styles response.
+      // This avoids a second gridColumn query that getSearchableFieldNames would otherwise make.
+      preloadedColumns = await this.loadGridColumns(options.gridId);
+      const searchableFieldNames = this.deriveSearchableFieldNames(
+        preloadedColumns,
         options.baseSql,
       );
       const searchableSql = this.buildSearchSql({
@@ -178,13 +183,18 @@ export class ConfiguredGridSqlService {
       baseSql = searchableSql.sql;
       params = searchableSql.params;
     }
+
     const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS ${options.alias}_count`;
     const rowsSql = `SELECT * FROM (${baseSql}) AS ${options.alias}_rows LIMIT $${params.length + 1
       } OFFSET $${params.length + 2}`;
-    const columnsPromise =
-      options.gridId !== undefined
-        ? this.loadGridColumns(options.gridId)
-        : Promise.resolve(undefined);
+
+    const columnsPromise: Promise<GridColumnItem[] | undefined> =
+      preloadedColumns !== undefined
+        ? Promise.resolve(preloadedColumns)
+        : options.gridId !== undefined
+          ? this.loadGridColumns(options.gridId)
+          : Promise.resolve(undefined);
+
     const [countResult, rows, styles] = await Promise.all([
       this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql, ...params),
       this.prisma.$queryRawUnsafe<TItem[]>(rowsSql, ...params, options.limit, options.skip),
@@ -251,33 +261,25 @@ export class ConfiguredGridSqlService {
     return this.loadGridColumns(configuredGrid.gridId);
   }
   async getSearchableFieldNames(gridId: bigint, baseSql: string): Promise<string[]> {
+    const columns = await this.loadGridColumns(gridId);
+    return this.deriveSearchableFieldNames(columns, baseSql);
+  }
+  private deriveSearchableFieldNames(columns: GridColumnItem[], baseSql: string): string[] {
     const sqlFieldNames = this.extractSelectFieldNames(baseSql);
     if (sqlFieldNames.length === 0) {
       return [];
     }
-    const configuredColumns = await this.prisma.gridColumn.findMany({
-      where: {
-        gridId,
-        gridColumnIsDeleted: false,
-        gridColumnFilter: true,
-        grid: {
-          gridIsDeleted: false,
-        },
-      },
-      orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
-      select: {
-        gridColumnName: true,
-        gridColumnNumber: true,
-      },
-    });
+    const filterableColumns = columns
+      .filter((col) => col.grid_column_filter)
+      .sort((a, b) => a.grid_column_number - b.grid_column_number);
     const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
       fieldName,
       descriptor: this.describeSearchColumnName(fieldName),
     }));
     const usedSqlFieldIndexes = new Set<number>();
     const matchedFieldNames: string[] = [];
-    for (const column of configuredColumns) {
-      const columnName = column.gridColumnName.trim();
+    for (const column of filterableColumns) {
+      const columnName = column.grid_column_name.trim();
       let matchedSqlFieldIndex = -1;
       const columnDescriptor = this.describeSearchColumnName(columnName);
       if (columnDescriptor.normalized) {
@@ -316,7 +318,7 @@ export class ConfiguredGridSqlService {
         }
       }
       if (matchedSqlFieldIndex === -1) {
-        const sqlFieldIndexFromColumnNumber = column.gridColumnNumber - 1;
+        const sqlFieldIndexFromColumnNumber = column.grid_column_number - 1;
         if (
           sqlFieldIndexFromColumnNumber >= 0 &&
           sqlFieldIndexFromColumnNumber < normalizedSqlFields.length &&

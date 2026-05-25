@@ -11,7 +11,7 @@ import {
   ItemTaxHistoryListMeta,
   ItemTaxHistoryPayload,
 } from './types/item-tax-history-api.types';
-import { resolvePagination, runConfiguredGridQuery, runInventoryListQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -44,29 +44,14 @@ export class ItemsTaxHistoryMasterService {
     queryDto: ListItemTaxHistoryQueryDto,
   ): Promise<ConfiguredGridListResult<ItemTaxHistoryListItem, ItemTaxHistoryListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-
-    const hasStructuredFilters =
-      queryDto.ith_item_id !== undefined ||
-      queryDto.ith_tax_id !== undefined ||
-      queryDto.ith_effective_from !== undefined ||
-      queryDto.ith_effective_to !== undefined;
-
-    const where = this.buildListWhere(queryDto);
-    return runInventoryListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<ItemTaxHistoryListItem>(
-        this.configuredGridSqlService,
-        { tableName: ITEM_TAX_HISTORY_TABLE_NAME, alias: 'item_tax_history_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.itemTaxHistory.count({ where }),
-      findManyFn: () => this.prisma.itemTaxHistory.findMany({
-        where,
-        orderBy: [{ ithEffectiveFrom: 'desc' }, { ithId: 'desc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (record) => this.toPayload(record),
-    });
+    const result = await runConfiguredGridQuery<ItemTaxHistoryListItem>(
+      this.configuredGridSqlService,
+      { tableName: ITEM_TAX_HISTORY_TABLE_NAME, alias: 'item_tax_history_grid', search: queryDto.search, page, limit, skip },
+    );
+    if (!result) {
+      throwInventoryBadRequest<ItemTaxHistoryErrorDetail>('No configured grid found for item tax history list', []);
+    }
+    return result;
   }
 
   async getById(ithId: string): Promise<ItemTaxHistoryPayload> {
