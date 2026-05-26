@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
-import { PrismaService } from '../../database/prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import { ItemsSectionMasterService } from './items-section-master.service';
 

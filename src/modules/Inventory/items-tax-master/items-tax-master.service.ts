@@ -3,7 +3,7 @@ import { ItemTaxMaster, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
-import { ItemTaxErrorDetail, temTaxPayload } from './types/item-tax-api.types';
+import { ItemTaxErrorDetail, ItemTaxPayload } from './types/item-tax-api.types';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,

@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
-import { PrismaService } from '../../database/prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemsBrandMasterService } from './items-brand-master.service';
 
@@ -526,7 +526,7 @@ describe('ItemsBrandMasterService', () => {
     expect(findFirstArgs.where?.brand_id).toBe(BRAND_ID);
     expect(findFirstArgs.where?.brand_is_deleted).toBe(false);
   });
-  t('soft delete removes subtree ids from ancestor caches', async () => {
+  it('soft delete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       brand_id: PARENT_BRAND_ID,
       brand_parent_id: null,

@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { ItemPriceMaster, ItemUnitConversion, Prisma } from '@prisma/client';
-import { PrismaService } from '../../database/prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import { ItemsPriceMasterService } from './items-price-master.service';
 

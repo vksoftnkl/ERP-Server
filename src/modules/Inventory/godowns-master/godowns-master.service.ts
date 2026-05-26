@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { GodownLocation, Prisma } from '@prisma/client';import { SaveGodownDto } from './dto/save-godown.dto';
-import {
-  GodownErrorDetail, GodownPayload,
-} from './types/godown-api.types';
+import { GodownLocation, Prisma } from '@prisma/client';
+import { SaveGodownDto } from './dto/save-godown.dto';
+import { GodownErrorDetail, GodownPayload } from './types/godown-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -22,7 +21,8 @@ type GodownLocationWriteClient = Prisma.TransactionClient | PrismaService;
 export class GodownsMasterService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogService: AuditLogService,  ) {}
+    private readonly auditLogService: AuditLogService,
+  ) {}
   async save(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
     const normalizedSaveGodownDto = this.normalizeLegacySaveGodownDto(saveGodownDto);
     if (normalizedSaveGodownDto.gdl_id) {
@@ -33,7 +33,11 @@ export class GodownsMasterService {
   async getById(gdlId: string): Promise<GodownPayload> {
     const record = await this.findActiveLocation(this.prisma, gdlId);
     if (!record) {
-      throwInventoryNotFound<GodownErrorDetail>('Godown location not found', 'gdl_id', `No active godown location found with id ${gdlId}`);
+      throwInventoryNotFound<GodownErrorDetail>(
+        'Godown location not found',
+        'gdl_id',
+        `No active godown location found with id ${gdlId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -57,7 +61,11 @@ export class GodownsMasterService {
       });
 
       if (result.count === 0) {
-        throwInventoryNotFound<GodownErrorDetail>('Godown location not found', 'gdl_id', `No active godown location found with id ${gdlId}`);
+        throwInventoryNotFound<GodownErrorDetail>(
+          'Godown location not found',
+          'gdl_id',
+          `No active godown location found with id ${gdlId}`,
+        );
       }
 
       await this.removePathIds(tx, ancestorIds, subtreeIds);
@@ -343,7 +351,11 @@ export class GodownsMasterService {
   ): Promise<GodownLocation> {
     const record = await this.findActiveLocation(client, gdlId);
     if (!record) {
-      throwInventoryNotFound<GodownErrorDetail>('Godown location not found', 'gdl_id', `No active godown location found with id ${gdlId}`);
+      throwInventoryNotFound<GodownErrorDetail>(
+        'Godown location not found',
+        'gdl_id',
+        `No active godown location found with id ${gdlId}`,
+      );
     }
 
     return record;
@@ -371,7 +383,10 @@ export class GodownsMasterService {
     const parent = await this.findActiveLocation(tx, params.parentId);
     if (!parent) {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-        { field: 'gdl_parent_id', message: `No active parent location found with id ${params.parentId}` },
+        {
+          field: 'gdl_parent_id',
+          message: `No active parent location found with id ${params.parentId}`,
+        },
       ]);
     }
 
@@ -379,7 +394,10 @@ export class GodownsMasterService {
       parent.gdlGodownId === params.gdlGodownId && parent.gdlBranchId === params.gdlBranchId;
     if (!isSameHierarchy) {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-        { field: 'gdl_parent_id', message: 'Parent location must belong to the same gdl_godown_id and gdl_branch_id' },
+        {
+          field: 'gdl_parent_id',
+          message: 'Parent location must belong to the same gdl_godown_id and gdl_branch_id',
+        },
       ]);
     }
   }
@@ -644,10 +662,7 @@ export class GodownsMasterService {
     ) {
       data.gdlNegativeStock = saveGodownDto.gdl_negative_stock;
     }
-    if (
-      hasOwnProperty(saveGodownDto, 'gdl_volume') &&
-      saveGodownDto.gdl_volume !== undefined
-    ) {
+    if (hasOwnProperty(saveGodownDto, 'gdl_volume') && saveGodownDto.gdl_volume !== undefined) {
       data.gdlVolume = saveGodownDto.gdl_volume;
     }
     if (
@@ -656,10 +671,7 @@ export class GodownsMasterService {
     ) {
       data.gdlIsActive = saveGodownDto.gdl_is_active;
     }
-    if (
-      hasOwnProperty(saveGodownDto, 'gdl_remarks') &&
-      saveGodownDto.gdl_remarks !== undefined
-    ) {
+    if (hasOwnProperty(saveGodownDto, 'gdl_remarks') && saveGodownDto.gdl_remarks !== undefined) {
       data.gdlRemarks = saveGodownDto.gdl_remarks;
     }
   }

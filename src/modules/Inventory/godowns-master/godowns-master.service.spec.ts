@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { GodownLocation, Prisma } from '@prisma/client';
-import { PrismaService } from '../../database/prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveGodownDto } from './dto/save-godown.dto';
 import { GodownsMasterService } from './godowns-master.service';
 
@@ -419,7 +419,7 @@ describe('GodownsMasterService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
-  t('adds newly created child id to parent cache', async () => {
+  it('adds newly created child id to parent cache', async () => {
     const parent = makeRecord({
       gdlId: PARENT_ID,
       gdlParentId: null,

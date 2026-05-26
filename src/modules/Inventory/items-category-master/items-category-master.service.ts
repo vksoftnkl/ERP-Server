@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { categoryMaster, Prisma } from '@prisma/client';import { SaveItemCategoryDto } from './dto/save-item-category.dto';
-import {
-  ItemCategoryErrorDetail, ItemCategoryPayload,
-} from './types/item-category-api.types';
+import { categoryMaster, Prisma } from '@prisma/client';
+import { SaveItemCategoryDto } from './dto/save-item-category.dto';
+import { ItemCategoryErrorDetail, ItemCategoryPayload } from './types/item-category-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -19,7 +18,8 @@ type ItemCategoryWriteClient = Prisma.TransactionClient | PrismaService;
 export class ItemsCategoryMasterService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogService: AuditLogService,  ) { }
+    private readonly auditLogService: AuditLogService,
+  ) {}
   async save(saveItemCategoryDto: SaveItemCategoryDto): Promise<ItemCategoryPayload> {
     if (saveItemCategoryDto.category_id) {
       return this.updateItemCategory(saveItemCategoryDto);
@@ -34,7 +34,11 @@ export class ItemsCategoryMasterService {
       },
     });
     if (!record) {
-      throwInventoryNotFound<ItemCategoryErrorDetail>('Item category not found', 'category_id', `No active item category found with id ${categoryId}`);
+      throwInventoryNotFound<ItemCategoryErrorDetail>(
+        'Item category not found',
+        'category_id',
+        `No active item category found with id ${categoryId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -47,7 +51,11 @@ export class ItemsCategoryMasterService {
         },
       });
       if (!existing) {
-        throwInventoryNotFound<ItemCategoryErrorDetail>('Item category not found', 'category_id', `No active item category found with id ${categoryId}`);
+        throwInventoryNotFound<ItemCategoryErrorDetail>(
+          'Item category not found',
+          'category_id',
+          `No active item category found with id ${categoryId}`,
+        );
       }
       const subtreeIds = await this.getActiveSubtreeIds(tx, categoryId);
       const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
@@ -64,7 +72,11 @@ export class ItemsCategoryMasterService {
         },
       });
       if (result.count === 0) {
-        throwInventoryNotFound<ItemCategoryErrorDetail>('Item category not found', 'category_id', `No active item category found with id ${categoryId}`);
+        throwInventoryNotFound<ItemCategoryErrorDetail>(
+          'Item category not found',
+          'category_id',
+          `No active item category found with id ${categoryId}`,
+        );
       }
       await this.removePathIds(tx, ancestorIds, subtreeIds);
       const originalRecord = this.toPayload(existing);
@@ -128,11 +140,11 @@ export class ItemsCategoryMasterService {
         });
         const payload = !refreshed
           ? this.toPayload({
-            ...created,
-            categoryPathIdsCache: this.mergePathIds(created.categoryPathIdsCache, [
-              created.categoryId,
-            ]),
-          })
+              ...created,
+              categoryPathIdsCache: this.mergePathIds(created.categoryPathIdsCache, [
+                created.categoryId,
+              ]),
+            })
           : this.toPayload(refreshed);
         await this.auditLogService.logEntityChange(
           {
@@ -169,15 +181,22 @@ export class ItemsCategoryMasterService {
           },
         });
         if (!existing) {
-          throwInventoryNotFound<ItemCategoryErrorDetail>('Item category not found', 'category_id', `No active item category found with id ${categoryId}`);
+          throwInventoryNotFound<ItemCategoryErrorDetail>(
+            'Item category not found',
+            'category_id',
+            `No active item category found with id ${categoryId}`,
+          );
         }
         if (saveItemCategoryDto.category_parent_id === categoryId) {
-          throwInventoryBadRequest<ItemCategoryErrorDetail>('Item category cannot be its own parent', [
-            {
-              field: 'category_parent_id',
-              message: 'category_parent_id cannot be same as category_id',
-            },
-          ]);
+          throwInventoryBadRequest<ItemCategoryErrorDetail>(
+            'Item category cannot be its own parent',
+            [
+              {
+                field: 'category_parent_id',
+                message: 'category_parent_id cannot be same as category_id',
+              },
+            ],
+          );
         }
         if (saveItemCategoryDto.category_parent_id) {
           await this.ensureParentExists(saveItemCategoryDto.category_parent_id, tx);
@@ -525,8 +544,10 @@ export class ItemsCategoryMasterService {
     };
   }
   private handleWriteError(error: unknown): void {
-    throwOnUniqueConstraintError<ItemCategoryErrorDetail>(error, 'Item category name already exists', [
-      { field: 'category_name', message: 'Duplicate category_name is not allowed' },
-    ]);
+    throwOnUniqueConstraintError<ItemCategoryErrorDetail>(
+      error,
+      'Item category name already exists',
+      [{ field: 'category_name', message: 'Duplicate category_name is not allowed' }],
+    );
   }
 }
