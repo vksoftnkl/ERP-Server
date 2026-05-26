@@ -22,12 +22,10 @@ import {
   throwFixedNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
-
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
 const UI_TABLE_MASTER_TABLE_NAME = 'ui tables';
 const UI_TABLE_MASTER_AUDIT_SCREEN_NAME = 'UI Table Master';
 const UI_TABLE_MASTER_OPTIONAL_FIELDS = ['uiTblEditable', 'uiTblIsActive'];
-
 @Injectable()
 export class UiTableMasterService {
   constructor(
@@ -35,28 +33,36 @@ export class UiTableMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveUiTableMasterDto: SaveUiTableMasterDto): Promise<UiTableMasterPayload> {
     if (saveUiTableMasterDto.uiTblId) {
       return this.updateUiTable(saveUiTableMasterDto);
     }
     return this.createUiTable(saveUiTableMasterDto);
   }
-
   async list(
     queryDto: ListUiTableMasterQueryDto,
   ): Promise<ConfiguredGridListResult<UiTableMasterListItem, UiTableMasterListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<UiTableMasterListItem>(
-      this.configuredGridSqlService,
-      { tableName: UI_TABLE_MASTER_TABLE_NAME, alias: 'ui_table_master_grid', search: queryDto.search, page, limit, skip },
+    return runFixedListQuery<Uitable, UiTableMasterListItem>(
+      { page, limit },
+      {
+        configuredGridFn: () =>
+          runConfiguredGridQuery<UiTableMasterListItem>(
+            this.configuredGridSqlService,
+            { tableName: UI_TABLE_MASTER_TABLE_NAME, alias: 'ui_table_master_grid', search: queryDto.search, page, limit, skip },
+          ),
+        countFn: () => this.prisma.uitable.count({ where: { uiTblIsDeleted: false } }),
+        findManyFn: () =>
+          this.prisma.uitable.findMany({
+            where: { uiTblIsDeleted: false },
+            orderBy: { uiTblId: 'asc' },
+            skip,
+            take: limit,
+          }),
+        toItemFn: (record) => this.toPayload(record),
+      },
     );
-    if (!result) {
-      throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>('No configured grid found for UI table master list', []);
-    }
-    return result;
   }
-
   async getById(uiTblId: string): Promise<UiTableMasterPayload> {
     const parsedUiTableId = this.parseBigIntId('uiTblId', uiTblId);
     const record = await this.prisma.uitable.findFirst({
@@ -71,7 +77,6 @@ export class UiTableMasterService {
     }
     return this.toPayload(record);
   }
-
   async softDelete(uiTblId: string): Promise<{ uiTblId: string; deleted: true }> {
     const parsedUiTableId = this.parseBigIntId('uiTblId', uiTblId);
     return this.prisma.$transaction(async (tx) => {
@@ -128,7 +133,6 @@ export class UiTableMasterService {
       return { uiTblId, deleted: true };
     });
   }
-
   private async createUiTable(
     saveUiTableMasterDto: SaveUiTableMasterDto,
   ): Promise<UiTableMasterPayload> {
@@ -175,7 +179,6 @@ export class UiTableMasterService {
       throw error;
     }
   }
-
   private async updateUiTable(
     saveUiTableMasterDto: SaveUiTableMasterDto,
   ): Promise<UiTableMasterPayload> {
@@ -229,7 +232,6 @@ export class UiTableMasterService {
       throw error;
     }
   }
-
   private async ensureNameIsUnique(
     tx: FixedWriteClient,
     uiTblName: string,
@@ -250,7 +252,6 @@ export class UiTableMasterService {
       );
     }
   }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -261,7 +262,6 @@ export class UiTableMasterService {
     }
     return trimmed;
   }
-
   private toPayload(record: Uitable): UiTableMasterPayload {
     return {
       uiTblId: record.uiTblId.toString(),
@@ -276,11 +276,9 @@ export class UiTableMasterService {
       uiTblModifiedBy: record.uiTblModifiedBy,
     };
   }
-
   private resolveDisplayName(uiTblName: string | null, uiTblId: string): string {
     return uiTblName?.trim() || `UI Table ${uiTblId}`;
   }
-
   private parseBigIntId(field: string, value: string): bigint {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {
