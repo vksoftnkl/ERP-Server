@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ListItemEanCodeQueryDto } from './dto/list-item-ean-code-query.dto';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import { ItemsEanCodeMasterController } from './items-ean-code-master.controller';
 import { ItemsEanCodeMasterService } from './items-ean-code-master.service';
@@ -99,36 +98,6 @@ describe('ItemsEanCodeMasterController', () => {
       data: [itemEanCodePayload],
     });
   });
-
-  it('returns list wrapper with pagination meta', async () => {
-    serviceMock.list.mockResolvedValue({
-      items: [itemEanCodePayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListItemEanCodeQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.list(query)).resolves.toEqual({
-      success: true,
-      message: 'Item EAN codes fetched successfully',
-      data: [itemEanCodePayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemEanCodePayload);
 

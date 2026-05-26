@@ -1,11 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from 'src/common/utils/module-response.dto';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
 export { InventoryErrorFieldDto as ItemSectionErrorFieldDto };
 export { InventoryErrorResponseDto as ItemSectionErrorResponseDto };
-export { InventoryListMetaDto as ItemSectionListMetaDto };
-
 export class ItemSectionPayloadDto {
   @ApiProperty({ format: 'uuid' })
   sec_id!: string;
@@ -70,15 +70,6 @@ export class ItemSectionPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   sec_modified_by!: string | null;
 }
-
-export class ItemSectionListItemDto {
-  @ApiProperty({ format: 'uuid' })
-  sec_id!: string;
-
-  @ApiProperty({ maxLength: 150 })
-  sec_name!: string;
-}
-
 export class ItemSectionDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   sec_id!: string;
@@ -97,24 +88,6 @@ export class ItemSectionSuccessSingleDto {
   @ApiProperty({ type: ItemSectionPayloadDto })
   data!: ItemSectionPayloadDto;
 }
-
-export class ItemSectionSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Item sections fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: ItemSectionListItemDto, isArray: true })
-  data!: ItemSectionListItemDto[];
-
-  @ApiProperty({ type: InventoryListMetaDto })
-  meta!: InventoryListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
-
 export class ItemSectionSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

@@ -2,7 +2,10 @@ import { ApiExtraModels, ApiProperty } from '@nestjs/swagger';
 import { ItemPayloadDto } from '../../items-master/dto/item-response.dto';
 import { ItemPricePayloadDto } from '../../items-price-master/dto/item-price-response.dto';
 import { ItemTaxPayloadDto } from '../../items-tax-master/dto/item-tax-response.dto';
-import { InventoryErrorFieldDto, InventoryErrorResponseDto } from 'src/common/utils/module-response.dto';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 export { InventoryErrorFieldDto as ItemPriceDetailErrorFieldDto };
 export { InventoryErrorResponseDto as ItemPriceDetailErrorResponseDto };
 export class ItemPriceDetailPayloadDto {

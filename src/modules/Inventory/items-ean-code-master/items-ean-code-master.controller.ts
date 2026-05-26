@@ -27,13 +27,11 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 
-import { ListItemEanCodeQueryDto } from './dto/list-item-ean-code-query.dto';
 import {
   ItemEanCodeDeleteResultDto,
   ItemEanCodeErrorResponseDto,
   ItemEanCodePayloadDto,
   ItemEanCodeSuccessDeleteDto,
-  ItemEanCodeSuccessListDto,
   ItemEanCodeSuccessSaveDto,
   ItemEanCodeSuccessSingleDto,
 } from './dto/item-ean-code-response.dto';
@@ -43,13 +41,15 @@ import { ItemEanCodeExceptionFilter } from './item-ean-code-exception.filter';
 import { ItemsEanCodeMasterService } from './items-ean-code-master.service';
 import {
   ItemEanCodeDeleteResult,
-  ItemEanCodeListItem,
-  ItemEanCodeListMeta,
   ItemEanCodePayload,
   ItemEanCodeSuccessResponse,
 } from './types/item-ean-code-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
-import { hasRequestPayload, validateDto, validateSingleOrArrayDto } from 'src/common/utils/request-payload-validation.util';
+import {
+  hasRequestPayload,
+  validateDto,
+  validateSingleOrArrayDto,
+} from 'src/common/utils/request-payload-validation.util';
 
 @ApiTags('Item EAN Codes')
 @ApiBearerAuth('access-token')
@@ -99,25 +99,6 @@ export class ItemsEanCodeMasterController {
           ? 'Item EAN code updated successfully'
           : 'Item EAN code created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item EAN codes with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemEanCodeSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemEanCodeErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemEanCodeQueryDto,
-  ): Promise<ItemEanCodeSuccessResponse<ItemEanCodeListItem[], ItemEanCodeListMeta>> {
-    const result = await this.itemsEanCodeMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Item EAN codes fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

@@ -3,6 +3,11 @@ import { InventoryExceptionFilter } from 'src/common/utils/module-exception-filt
 import { ItemSectionErrorDetail, ItemSectionErrorResponse } from './types/item-section-api.types';
 
 @Catch()
-export class ItemSectionExceptionFilter extends InventoryExceptionFilter<ItemSectionErrorDetail, ItemSectionErrorResponse> {
-  constructor() { super(/\b(sec_[a-z0-9_]+)\b/i); }
+export class ItemSectionExceptionFilter extends InventoryExceptionFilter<
+  ItemSectionErrorDetail,
+  ItemSectionErrorResponse
+> {
+  constructor() {
+    super(/\b(sec_[a-z0-9_]+)\b/i);
+  }
 }

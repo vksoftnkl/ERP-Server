@@ -1,17 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { ListItemBrandQueryDto } from './dto/list-item-brand-query.dto';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
-import {
-  ItemBrandErrorDetail,
-  ItemBrandListItem,
-  ItemBrandListMeta,
-  ItemBrandPayload,
-} from './types/item-brand-api.types';
+import { ItemBrandErrorDetail, ItemBrandPayload } from './types/item-brand-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -27,46 +19,12 @@ export class ItemsBrandMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveItemBrandDto: SaveItemBrandDto): Promise<ItemBrandPayload> {
     if (saveItemBrandDto.brand_id) {
       return this.updateItemBrand(saveItemBrandDto);
     }
     return this.createItemBrand(saveItemBrandDto);
-  }
-  async list(
-    queryDto: ListItemBrandQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemBrandListItem, ItemBrandListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemBrandListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_BRAND_TABLE_NAME, alias: 'item_brand_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemBrandErrorDetail>('No configured grid found for item brand list', []);
-    }
-    return result;
-  }
-  private buildListWhere(queryDto: ListItemBrandQueryDto): Prisma.ItemBrandMasterWhereInput {
-    const where: Prisma.ItemBrandMasterWhereInput = {
-      brand_is_deleted: false,
-    };
-    if (queryDto.brand_parent_id !== undefined) {
-      where.brand_parent_id = queryDto.brand_parent_id;
-    }
-    if (queryDto.brand_is_active !== undefined) {
-      where.brand_is_active = queryDto.brand_is_active;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { brand_name: { contains: search, mode: 'insensitive' } },
-        { brand_alias: { contains: search, mode: 'insensitive' } },
-        { brand_description: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return where;
   }
   async getById(brandId: string): Promise<ItemBrandPayload> {
     const record = await this.prisma.itemBrandMaster.findFirst({
@@ -76,7 +34,11 @@ export class ItemsBrandMasterService {
       },
     });
     if (!record) {
-      throwInventoryNotFound<ItemBrandErrorDetail>('Item brand not found', 'brand_id', `No active item brand found with id ${brandId}`);
+      throwInventoryNotFound<ItemBrandErrorDetail>(
+        'Item brand not found',
+        'brand_id',
+        `No active item brand found with id ${brandId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -89,7 +51,11 @@ export class ItemsBrandMasterService {
         },
       });
       if (!existing) {
-        throwInventoryNotFound<ItemBrandErrorDetail>('Item brand not found', 'brand_id', `No active item brand found with id ${brandId}`);
+        throwInventoryNotFound<ItemBrandErrorDetail>(
+          'Item brand not found',
+          'brand_id',
+          `No active item brand found with id ${brandId}`,
+        );
       }
       const subtreeIds = await this.getActiveSubtreeIds(tx, brandId);
       const ancestorIds = await this.getAncestorIds(tx, existing.brand_parent_id);
@@ -106,7 +72,11 @@ export class ItemsBrandMasterService {
         },
       });
       if (result.count === 0) {
-        throwInventoryNotFound<ItemBrandErrorDetail>('Item brand not found', 'brand_id', `No active item brand found with id ${brandId}`);
+        throwInventoryNotFound<ItemBrandErrorDetail>(
+          'Item brand not found',
+          'brand_id',
+          `No active item brand found with id ${brandId}`,
+        );
       }
       await this.removePathIds(tx, ancestorIds, subtreeIds);
       const originalRecord = this.toPayload(existing);
@@ -205,7 +175,11 @@ export class ItemsBrandMasterService {
           },
         });
         if (!existing) {
-          throwInventoryNotFound<ItemBrandErrorDetail>('Item brand not found', 'brand_id', `No active item brand found with id ${brandId}`);
+          throwInventoryNotFound<ItemBrandErrorDetail>(
+            'Item brand not found',
+            'brand_id',
+            `No active item brand found with id ${brandId}`,
+          );
         }
         if (saveItemBrandDto.brand_parent_id === brandId) {
           throwInventoryBadRequest<ItemBrandErrorDetail>('Item brand cannot be its own parent', [

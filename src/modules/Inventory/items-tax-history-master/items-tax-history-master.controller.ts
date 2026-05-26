@@ -26,16 +26,12 @@ import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import {
   ItemTaxHistoryErrorResponseDto,
   ItemTaxHistorySuccessDeleteDto,
-  ItemTaxHistorySuccessListDto,
   ItemTaxHistorySuccessSingleDto,
 } from './dto/item-tax-history-response.dto';
-import { ListItemTaxHistoryQueryDto } from './dto/list-item-tax-history-query.dto';
 import { SaveItemTaxHistoryDto } from './dto/save-item-tax-history.dto';
 import { ItemTaxHistoryExceptionFilter } from './item-tax-history-exception.filter';
 import { ItemsTaxHistoryMasterService } from './items-tax-history-master.service';
 import {
-  ItemTaxHistoryListItem,
-  ItemTaxHistoryListMeta,
   ItemTaxHistoryPayload,
   ItemTaxHistorySuccessResponse,
 } from './types/item-tax-history-api.types';
@@ -64,23 +60,6 @@ export class ItemsTaxHistoryMasterController {
         ? 'Item tax history updated successfully'
         : 'Item tax history created successfully',
       data,
-    };
-  }
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item tax histories with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemTaxHistorySuccessListDto })
-  @ApiBadRequestResponse({ type: ItemTaxHistoryErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemTaxHistoryQueryDto,
-  ): Promise<ItemTaxHistorySuccessResponse<ItemTaxHistoryListItem[], ItemTaxHistoryListMeta>> {
-    const result = await this.itemsTaxHistoryMasterService.list(queryDto);
-    return {
-      success: true,
-      message: 'Item tax histories fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
   @Get('get')

@@ -3,6 +3,11 @@ import { InventoryExceptionFilter } from 'src/common/utils/module-exception-filt
 import { ItemReorderErrorDetail, ItemReorderErrorResponse } from './types/item-reorder-api.types';
 
 @Catch()
-export class ItemReorderExceptionFilter extends InventoryExceptionFilter<ItemReorderErrorDetail, ItemReorderErrorResponse> {
-  constructor() { super(/\b(ir_[a-z0-9_]+)\b/i); }
+export class ItemReorderExceptionFilter extends InventoryExceptionFilter<
+  ItemReorderErrorDetail,
+  ItemReorderErrorResponse
+> {
+  constructor() {
+    super(/\b(ir_[a-z0-9_]+)\b/i);
+  }
 }

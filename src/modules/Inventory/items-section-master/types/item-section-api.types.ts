@@ -1,7 +1,6 @@
 export type { InventoryErrorDetail as ItemSectionErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemSectionErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemSectionSuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as ItemSectionListMeta } from 'src/common/types/module-list.types';
 export interface ItemSectionPayload {
   sec_id: string;
   sec_name: string;
@@ -25,10 +24,3 @@ export interface ItemSectionPayload {
   sec_modified_on: string;
   sec_modified_by: string | null;
 }
-
-export interface ItemSectionDefaultListItem {
-  sec_id: string;
-  sec_name: string;
-}
-
-export type ItemSectionListItem = ItemSectionDefaultListItem | Record<string, unknown>;

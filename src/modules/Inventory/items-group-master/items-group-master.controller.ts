@@ -27,22 +27,15 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import {
   ItemGroupErrorResponseDto,
   ItemGroupSuccessDeleteDto,
-  ItemGroupSuccessListDto,
   ItemGroupSuccessSingleDto,
 } from './dto/item-group-response.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import { ItemGroupExceptionFilter } from './item-group-exception.filter';
 import { ItemsGroupMasterService } from './items-group-master.service';
-import {
-  ItemGroupListMeta,
-  ItemGroupListItem,
-  ItemGroupPayload,
-  ItemGroupSuccessResponse,
-} from './types/item-group-api.types';
+import { ItemGroupPayload, ItemGroupSuccessResponse } from './types/item-group-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 
 type UploadedPhotoFile = {
@@ -81,25 +74,6 @@ export class ItemsGroupMasterController {
         ? 'Item group updated successfully'
         : 'Item group created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item groups with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemGroupSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemGroupErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemGroupQueryDto,
-  ): Promise<ItemGroupSuccessResponse<ItemGroupListItem[], ItemGroupListMeta>> {
-    const result = await this.itemsGroupMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Item groups fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

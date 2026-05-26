@@ -25,19 +25,12 @@ import {
 import {
   ItemErrorResponseDto,
   ItemSuccessDeleteDto,
-  ItemSuccessListDto,
   ItemSuccessSingleDto,
 } from './dto/item-response.dto';
-import { ListItemQueryDto } from './dto/list-item-query.dto';
 import { SaveItemDto } from './dto/save-item.dto';
 import { ItemExceptionFilter } from './item-exception.filter';
 import { ItemsMasterService } from './items-master.service';
-import {
-  ItemListItem,
-  ItemListMeta,
-  ItemPayload,
-  ItemSuccessResponse,
-} from './types/item-api.types';
+import { ItemPayload, ItemSuccessResponse } from './types/item-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 @ApiTags('Items')
 @ApiBearerAuth('access-token')
@@ -60,23 +53,6 @@ export class ItemsMasterController {
       success: true,
       message: saveItemDto.item_id ? 'Item updated successfully' : 'Item created successfully',
       data,
-    };
-  }
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List items with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemQueryDto,
-  ): Promise<ItemSuccessResponse<ItemListItem[], ItemListMeta>> {
-    const result = await this.itemsMasterService.list(queryDto);
-    return {
-      success: true,
-      message: 'Items fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
   @Get('get')

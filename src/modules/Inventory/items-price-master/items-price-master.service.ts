@@ -1,24 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { ItemPriceMaster, ItemUnitConversion, Prisma } from '@prisma/client';
-import { ListItemUnitConversionQueryDto } from './dto/list-item-unit-conversion-query.dto';
-import { ListItemPriceQueryDto } from './dto/list-item-price-query.dto';
 import { SaveItemUnitConversionDto } from './dto/save-item-unit-conversion.dto';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import {
   ItemPriceDeleteResult,
   ItemPriceErrorDetail,
-  ItemPriceListItem,
-  ItemPriceListMeta,
   ItemPricePayload,
   ItemUnitConversionDeleteResult,
-  ItemUnitConversionListItem,
-  ItemUnitConversionListMeta,
   ItemUnitConversionPayload,
 } from './types/item-price-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   hasOwnProperty,
   isForeignKeyConstraintError,
@@ -58,7 +50,6 @@ export class ItemsPriceMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveItemPriceDto: SaveItemPriceDto): Promise<ItemPricePayload>;
   async save(saveItemPriceDto: SaveItemPriceDto[]): Promise<ItemPricePayload[]>;
@@ -123,32 +114,6 @@ export class ItemsPriceMasterService {
       throw error;
     }
   }
-  async list(
-    queryDto: ListItemPriceQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemPriceListItem, ItemPriceListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemPriceListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_PRICE_TABLE_NAME, alias: 'item_price_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemPriceErrorDetail>('No configured grid found for item price list', []);
-    }
-    return result;
-  }
-  async listItemUnitConversions(
-    queryDto: ListItemUnitConversionQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemUnitConversionListItem, ItemUnitConversionListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemUnitConversionListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_UNIT_CONVERSION_TABLE_NAME, alias: 'item_unit_conversion_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemPriceErrorDetail>('No configured grid found for item unit conversion list', []);
-    }
-    return result;
-  }
   async getById(ipmId: string): Promise<ItemPricePayload> {
     const record = await this.prisma.itemPriceMaster.findFirst({
       where: {
@@ -157,7 +122,11 @@ export class ItemsPriceMasterService {
       },
     });
     if (!record) {
-      throwInventoryNotFound<ItemPriceErrorDetail>('Item price not found', 'ipm_id', `No item price found with id ${ipmId}`);
+      throwInventoryNotFound<ItemPriceErrorDetail>(
+        'Item price not found',
+        'ipm_id',
+        `No item price found with id ${ipmId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -169,7 +138,11 @@ export class ItemsPriceMasterService {
       },
     });
     if (!record) {
-      throwInventoryNotFound<ItemPriceErrorDetail>('Item unit conversion not found', 'iuc_id', `No item unit conversion found with id ${iucId}`);
+      throwInventoryNotFound<ItemPriceErrorDetail>(
+        'Item unit conversion not found',
+        'iuc_id',
+        `No item unit conversion found with id ${iucId}`,
+      );
     }
     return this.toItemUnitConversionPayload(record);
   }
@@ -235,7 +208,11 @@ export class ItemsPriceMasterService {
       },
     });
     if (!existing) {
-      throwInventoryNotFound<ItemPriceErrorDetail>('Item price not found', 'ipm_id', `No item price found with id ${ipmId}`);
+      throwInventoryNotFound<ItemPriceErrorDetail>(
+        'Item price not found',
+        'ipm_id',
+        `No item price found with id ${ipmId}`,
+      );
     }
     const deletedOn = new Date();
     const updated = await tx.itemPriceMaster.update({
@@ -331,10 +308,13 @@ export class ItemsPriceMasterService {
       },
     });
     if (!existing) {
-      throwInventoryNotFound<ItemPriceErrorDetail>('Item unit conversion not found', 'iuc_id', `No item unit conversion found with id ${iucId}`);
+      throwInventoryNotFound<ItemPriceErrorDetail>(
+        'Item unit conversion not found',
+        'iuc_id',
+        `No item unit conversion found with id ${iucId}`,
+      );
     }
-    const baseUnitId =
-      saveItemUnitConversionDto.iuc_base_unit_id ?? existing.iucBaseUnitId;
+    const baseUnitId = saveItemUnitConversionDto.iuc_base_unit_id ?? existing.iucBaseUnitId;
     const data: Prisma.ItemUnitConversionUncheckedUpdateInput = {
       iucCompanyId: saveItemUnitConversionDto.iuc_company_id,
       iucItemId: saveItemUnitConversionDto.iuc_item_id,
@@ -382,7 +362,11 @@ export class ItemsPriceMasterService {
       },
     });
     if (!existing) {
-      throwInventoryNotFound<ItemPriceErrorDetail>('Item unit conversion not found', 'iuc_id', `No item unit conversion found with id ${iucId}`);
+      throwInventoryNotFound<ItemPriceErrorDetail>(
+        'Item unit conversion not found',
+        'iuc_id',
+        `No item unit conversion found with id ${iucId}`,
+      );
     }
     const deletedOn = new Date();
     const updated = await tx.itemUnitConversion.update({
@@ -483,7 +467,11 @@ export class ItemsPriceMasterService {
       },
     });
     if (!existing) {
-      throwInventoryNotFound<ItemPriceErrorDetail>('Item price not found', 'ipm_id', `No item price found with id ${ipmId}`);
+      throwInventoryNotFound<ItemPriceErrorDetail>(
+        'Item price not found',
+        'ipm_id',
+        `No item price found with id ${ipmId}`,
+      );
     }
     const unitConversion = await this.syncUnitConversionFromItemPriceInput(tx, saveItemPriceDto);
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
@@ -521,80 +509,6 @@ export class ItemsPriceMasterService {
       tx,
     );
     return payload;
-  }
-  private buildListWhere(queryDto: ListItemPriceQueryDto): Prisma.ItemPriceMasterWhereInput {
-    const where: Prisma.ItemPriceMasterWhereInput = {
-      ipmIsDeleted: queryDto.ipm_is_deleted ?? false,
-    };
-    if (queryDto.ipm_company_id !== undefined) {
-      where.ipmCompanyId = queryDto.ipm_company_id;
-    }
-    if (queryDto.ipm_branch_id !== undefined) {
-      where.ipmBranchId = queryDto.ipm_branch_id;
-    }
-    if (queryDto.ipm_item_id !== undefined) {
-      where.ipmItemId = queryDto.ipm_item_id;
-    }
-    if (queryDto.ipm_unit_id !== undefined) {
-      where.ipmUnitId = queryDto.ipm_unit_id;
-    }
-    if (queryDto.ipm_godown_id !== undefined) {
-      where.ipmGodownId = queryDto.ipm_godown_id;
-    }
-    if (queryDto.ipm_base_unit_id !== undefined) {
-      where.ipmBaseUnitId = queryDto.ipm_base_unit_id;
-    }
-    if (queryDto.ipm_profit_type !== undefined) {
-      where.ipmProfitType = queryDto.ipm_profit_type;
-    }
-    if (queryDto.ipm_is_active !== undefined) {
-      where.ipmIsActive = queryDto.ipm_is_active;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { ipmProfitType: { contains: search, mode: 'insensitive' } },
-        { ipmUomRemarks: { contains: search, mode: 'insensitive' } },
-        { ipmCostRemarks: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return where;
-  }
-  private buildItemUnitConversionListWhere(
-    queryDto: ListItemUnitConversionQueryDto,
-  ): Prisma.ItemUnitConversionWhereInput {
-    const where: Prisma.ItemUnitConversionWhereInput = {
-      iucIsDeleted: queryDto.iuc_is_deleted ?? false,
-    };
-    if (queryDto.iuc_company_id !== undefined) {
-      where.iucCompanyId = queryDto.iuc_company_id;
-    }
-    if (queryDto.iuc_item_id !== undefined) {
-      where.iucItemId = queryDto.iuc_item_id;
-    }
-    if (queryDto.iuc_unit_id !== undefined) {
-      where.iucUnitId = queryDto.iuc_unit_id;
-    }
-    if (queryDto.iuc_base_unit_id !== undefined) {
-      where.iucBaseUnitId = queryDto.iuc_base_unit_id;
-    }
-    if (queryDto.iuc_is_default_unit !== undefined) {
-      where.iucIsDefaultUnit = queryDto.iuc_is_default_unit;
-    }
-    if (queryDto.iuc_is_base_unit !== undefined) {
-      where.iucIsBaseUnit = queryDto.iuc_is_base_unit;
-    }
-    if (queryDto.iuc_is_big_unit !== undefined) {
-      where.iucIsBigUnit = queryDto.iuc_is_big_unit;
-    }
-    if (queryDto.iuc_is_active !== undefined) {
-      where.iucIsActive = queryDto.iuc_is_active;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [{ iucUomRemarks: { contains: search, mode: 'insensitive' } }];
-    }
-    return where;
   }
   private validateItemUnitConversion(saveItemUnitConversionDto: SaveItemUnitConversionDto): void {
     const factor = saveItemUnitConversionDto.iuc_to_base_factor;
@@ -672,18 +586,14 @@ export class ItemsPriceMasterService {
         saveItem.iuc_id,
         saveItem.iuc_item_id,
       );
-      inferredBaseUnitIds.set(
-        saveItem.iuc_item_id,
-        persistedBaseUnitId ?? saveItem.iuc_unit_id,
-      );
+      inferredBaseUnitIds.set(saveItem.iuc_item_id, persistedBaseUnitId ?? saveItem.iuc_unit_id);
     }
     return saveItems.map((saveItem) =>
       saveItem.iuc_base_unit_id
         ? saveItem
         : {
             ...saveItem,
-            iuc_base_unit_id:
-              inferredBaseUnitIds.get(saveItem.iuc_item_id) ?? saveItem.iuc_unit_id,
+            iuc_base_unit_id: inferredBaseUnitIds.get(saveItem.iuc_item_id) ?? saveItem.iuc_unit_id,
           },
     );
   }
@@ -951,10 +861,7 @@ export class ItemsPriceMasterService {
       cumulative: 1,
       companyId: row.iucCompanyId,
     }));
-    if (
-      saveItemPriceDto.ipm_company_id !== undefined &&
-      saveItemPriceDto.ipm_company_id !== null
-    ) {
+    if (saveItemPriceDto.ipm_company_id !== undefined && saveItemPriceDto.ipm_company_id !== null) {
       const wrongCompanyRow = chainRows.find(
         (row) => row.companyId !== saveItemPriceDto.ipm_company_id,
       );
@@ -1071,7 +978,8 @@ export class ItemsPriceMasterService {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
         {
           field: 'ipm_company_id',
-          message: 'ipm_company_id must match the company configured on the selected item unit conversion',
+          message:
+            'ipm_company_id must match the company configured on the selected item unit conversion',
         },
       ]);
     }
@@ -1080,13 +988,11 @@ export class ItemsPriceMasterService {
   private buildFallbackUnitConversionSnapshot(
     saveItemPriceDto: SaveItemPriceDto,
   ): ItemUnitConversionSnapshot {
-    const resolvedBaseUnitId =
-      saveItemPriceDto.ipm_base_unit_id ?? saveItemPriceDto.ipm_unit_id;
+    const resolvedBaseUnitId = saveItemPriceDto.ipm_base_unit_id ?? saveItemPriceDto.ipm_unit_id;
     const isBaseUnit =
       saveItemPriceDto.ipm_is_base_unit ?? resolvedBaseUnitId === saveItemPriceDto.ipm_unit_id;
     // only unit_factor defaults to 1
-    const unitFactor =
-      this.toPositiveFactor(saveItemPriceDto.ipm_unit_factor) ?? 1;
+    const unitFactor = this.toPositiveFactor(saveItemPriceDto.ipm_unit_factor) ?? 1;
     // do NOT force to_base_factor = 1
     const toBaseFactor =
       this.toPositiveFactor(saveItemPriceDto.ipm_to_base_factor) ??
@@ -1383,7 +1289,10 @@ export class ItemsPriceMasterService {
     const trimmed = value?.trim();
     return trimmed || null;
   }
-  private resolveAuditActor(value: string | null | undefined, fallback = DEFAULT_AUDIT_ACTOR): string {
+  private resolveAuditActor(
+    value: string | null | undefined,
+    fallback = DEFAULT_AUDIT_ACTOR,
+  ): string {
     const trimmed = value?.trim();
     return trimmed || fallback;
   }
@@ -1393,17 +1302,31 @@ export class ItemsPriceMasterService {
     ]);
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Invalid relation reference', [
-        { field: 'request', message: 'Referenced company, branch, item, unit, base unit, or godown does not exist' },
+        {
+          field: 'request',
+          message: 'Referenced company, branch, item, unit, base unit, or godown does not exist',
+        },
       ]);
     }
   }
   private handleItemUnitConversionWriteError(error: unknown): void {
-    throwOnUniqueConstraintError<ItemPriceErrorDetail>(error, 'Item unit conversion already exists', [
-      { field: 'iuc_unit_id', message: 'Duplicate item unit conversion, default-unit, or base-unit configuration is not allowed' },
-    ]);
+    throwOnUniqueConstraintError<ItemPriceErrorDetail>(
+      error,
+      'Item unit conversion already exists',
+      [
+        {
+          field: 'iuc_unit_id',
+          message:
+            'Duplicate item unit conversion, default-unit, or base-unit configuration is not allowed',
+        },
+      ],
+    );
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemPriceErrorDetail>('Invalid relation reference', [
-        { field: 'request', message: 'Referenced company, item, unit, or base unit does not exist' },
+        {
+          field: 'request',
+          message: 'Referenced company, item, unit, or base unit does not exist',
+        },
       ]);
     }
   }

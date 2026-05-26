@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { Response } from 'express';
 import { DeleteGodownQueryDto } from './dto/delete-godown-query.dto';
-import { ListOrGetGodownQueryDto } from './dto/list-or-get-godown-query.dto';
 import { SaveGodownDto } from './dto/save-godown.dto';
 import { GodownsMasterController } from './godowns-master.controller';
 import { GodownsMasterService } from './godowns-master.service';
@@ -123,52 +122,6 @@ describe('GodownsMasterController', () => {
     });
     expect(statusMock).toHaveBeenCalledWith(201);
   });
-
-  it('returns list wrapper when gdl_id query is absent', async () => {
-    serviceMock.list.mockResolvedValue({
-      items: [godownPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-      styles: [],
-    });
-
-    const query: ListOrGetGodownQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.listOrGet(query)).resolves.toEqual({
-      success: true,
-      message: 'Godown locations fetched successfully',
-      data: [godownPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-      styles: [],
-    });
-
-    expect(serviceMock.getById).not.toHaveBeenCalled();
-  });
-
-  it('returns single wrapper when gdl_id query is present', async () => {
-    serviceMock.getById.mockResolvedValue(godownPayload);
-
-    await expect(controller.listOrGet({ gdl_id: GDL_ID })).resolves.toEqual({
-      success: true,
-      message: 'Godown location fetched successfully',
-      data: godownPayload,
-    });
-
-    expect(serviceMock.list).not.toHaveBeenCalled();
-  });
-
   it('returns wrapped single response from /get endpoint with gdl_id query', async () => {
     serviceMock.getById.mockResolvedValue(godownPayload);
 
@@ -180,41 +133,6 @@ describe('GodownsMasterController', () => {
 
     expect(serviceMock.getById).toHaveBeenCalledWith(GDL_ID);
   });
-
-  it('returns list wrapper from /list endpoint', async () => {
-    serviceMock.getList.mockResolvedValue({
-      items: [godownPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-      styles: [],
-    });
-
-    const query: ListOrGetGodownQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.getList(query)).resolves.toEqual({
-      success: true,
-      message: 'Godown locations fetched successfully',
-      data: [godownPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-      styles: [],
-    });
-
-    expect(serviceMock.getList).toHaveBeenCalledWith(query);
-    expect(serviceMock.getById).not.toHaveBeenCalled();
-  });
-
   it('returns wrapped soft delete response', async () => {
     serviceMock.softDelete.mockResolvedValue({
       gdl_id: GDL_ID,

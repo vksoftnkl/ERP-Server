@@ -33,31 +33,28 @@ import {
   ItemPricePayloadDto,
   ItemUnitConversionPayloadDto,
   ItemPriceSuccessDeleteDto,
-  ItemPriceSuccessListDto,
   ItemPriceSuccessSaveDto,
   ItemPriceSuccessSingleDto,
 } from './dto/item-price-response.dto';
 import { DeleteItemPriceDto } from './dto/delete-item-price.dto';
-import { ListItemPriceQueryDto } from './dto/list-item-price-query.dto';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import { DeleteItemUnitConversionDto } from './dto/delete-item-unit-conversion.dto';
-import { ListItemUnitConversionQueryDto } from './dto/list-item-unit-conversion-query.dto';
 import { SaveItemUnitConversionDto } from './dto/save-item-unit-conversion.dto';
 import { ItemPriceExceptionFilter } from './item-price-exception.filter';
 import { ItemsPriceMasterService } from './items-price-master.service';
 import {
   ItemPriceDeleteResult,
-  ItemPriceListItem,
-  ItemPriceListMeta,
   ItemPricePayload,
   ItemUnitConversionDeleteResult,
-  ItemUnitConversionListItem,
-  ItemUnitConversionListMeta,
   ItemUnitConversionPayload,
   ItemPriceSuccessResponse,
 } from './types/item-price-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
-import { hasRequestPayload, validateDto, validateSingleOrArrayDto } from 'src/common/utils/request-payload-validation.util';
+import {
+  hasRequestPayload,
+  validateDto,
+  validateSingleOrArrayDto,
+} from 'src/common/utils/request-payload-validation.util';
 
 @ApiTags('Item Prices')
 @ApiBearerAuth('access-token')
@@ -133,40 +130,6 @@ export class ItemsPriceMasterController {
     };
   }
 
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item prices with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemPriceSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemPriceErrorResponseDto })
-  async list(
-    @Query() query: Record<string, unknown>,
-  ): Promise<
-    ItemPriceSuccessResponse<
-      ItemPriceListItem[] | ItemUnitConversionListItem[],
-      ItemPriceListMeta | ItemUnitConversionListMeta
-    >
-  > {
-    const isUnitConversionRequest = this.hasUnitConversionKeys(query);
-    const queryDto = isUnitConversionRequest
-      ? await validateDto(query, ListItemUnitConversionQueryDto, { type: 'query' })
-      : await validateDto(query, ListItemPriceQueryDto, { type: 'query' });
-    const result = isUnitConversionRequest
-      ? await this.itemsPriceMasterService.listItemUnitConversions(
-          queryDto as ListItemUnitConversionQueryDto,
-        )
-      : await this.itemsPriceMasterService.list(queryDto as ListItemPriceQueryDto);
-
-    return {
-      success: true,
-      message: isUnitConversionRequest
-        ? 'Item unit conversions fetched successfully'
-        : 'Item prices fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item price by id' })
@@ -196,13 +159,9 @@ export class ItemsPriceMasterController {
     }
 
     if (hasUnitConversionId) {
-      const dto = (await validateDto(
-        { iuc_id: query.iuc_id },
-        DeleteItemUnitConversionDto,
-        {
-          type: 'query',
-        },
-      )) as DeleteItemUnitConversionDto;
+      const dto = (await validateDto({ iuc_id: query.iuc_id }, DeleteItemUnitConversionDto, {
+        type: 'query',
+      })) as DeleteItemUnitConversionDto;
       const data = await this.itemsPriceMasterService.getItemUnitConversionById(dto.iuc_id);
 
       return {
@@ -212,13 +171,9 @@ export class ItemsPriceMasterController {
       };
     }
 
-    const dto = (await validateDto(
-      { ipm_id: query.ipm_id },
-      DeleteItemPriceDto,
-      {
-        type: 'query',
-      },
-    )) as DeleteItemPriceDto;
+    const dto = (await validateDto({ ipm_id: query.ipm_id }, DeleteItemPriceDto, {
+      type: 'query',
+    })) as DeleteItemPriceDto;
     const data = await this.itemsPriceMasterService.getById(dto.ipm_id);
 
     return {

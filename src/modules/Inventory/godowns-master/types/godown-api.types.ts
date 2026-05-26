@@ -1,7 +1,6 @@
 export type { InventoryErrorDetail as GodownErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as GodownErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as GodownSuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as GodownListMeta } from 'src/common/types/module-list.types';
 export interface GodownPayload {
   gdl_id: string;
   gdl_godown_id: string;
@@ -26,4 +25,3 @@ export interface GodownPayload {
   gdl_modified_by: string | null;
   gdl_remarks: string | null;
 }
-export type GodownListItem = GodownPayload | Record<string, unknown>;

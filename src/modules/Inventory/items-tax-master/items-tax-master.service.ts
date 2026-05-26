@@ -1,12 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ItemTaxMaster, Prisma } from '@prisma/client';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
-import { ItemTaxErrorDetail, ItemTaxListItem, ItemTaxListMeta, ItemTaxPayload } from './types/item-tax-api.types';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
+import { ItemTaxErrorDetail, temTaxPayload } from './types/item-tax-api.types';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -23,7 +20,6 @@ export class ItemsTaxMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveItemTaxDto: SaveItemTaxDto): Promise<ItemTaxPayload> {
     if (saveItemTaxDto.tax_id) {
@@ -31,25 +27,16 @@ export class ItemsTaxMasterService {
     }
     return this.createItemTax(saveItemTaxDto);
   }
-  async list(
-    queryDto: ListItemTaxQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemTaxListItem, ItemTaxListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemTaxListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_TAX_TABLE_NAME, alias: 'item_tax_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemTaxErrorDetail>('No configured grid found for item tax list', []);
-    }
-    return result;
-  }
   async getById(taxId: string): Promise<ItemTaxPayload> {
     const record = await this.prisma.itemTaxMaster.findFirst({
       where: { taxId, taxIsDeleted: false },
     });
     if (!record) {
-      throwInventoryNotFound<ItemTaxErrorDetail>('Item tax not found', 'tax_id', `No active item tax found with id ${taxId}`);
+      throwInventoryNotFound<ItemTaxErrorDetail>(
+        'Item tax not found',
+        'tax_id',
+        `No active item tax found with id ${taxId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -59,7 +46,11 @@ export class ItemsTaxMasterService {
         where: { taxId, taxIsDeleted: false },
       });
       if (!existing) {
-        throwInventoryNotFound<ItemTaxErrorDetail>('Item tax not found', 'tax_id', `No active item tax found with id ${taxId}`);
+        throwInventoryNotFound<ItemTaxErrorDetail>(
+          'Item tax not found',
+          'tax_id',
+          `No active item tax found with id ${taxId}`,
+        );
       }
       const modifiedOn = new Date();
       const result = await tx.itemTaxMaster.updateMany({
@@ -67,7 +58,11 @@ export class ItemsTaxMasterService {
         data: { taxIsDeleted: true, taxModifiedOn: modifiedOn, taxModifiedBy: DEFAULT_ACTOR },
       });
       if (result.count === 0) {
-        throwInventoryNotFound<ItemTaxErrorDetail>('Item tax not found', 'tax_id', `No active item tax found with id ${taxId}`);
+        throwInventoryNotFound<ItemTaxErrorDetail>(
+          'Item tax not found',
+          'tax_id',
+          `No active item tax found with id ${taxId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -146,7 +141,11 @@ export class ItemsTaxMasterService {
           where: { taxId, taxIsDeleted: false },
         });
         if (!existing) {
-          throwInventoryNotFound<ItemTaxErrorDetail>('Item tax not found', 'tax_id', `No active item tax found with id ${taxId}`);
+          throwInventoryNotFound<ItemTaxErrorDetail>(
+            'Item tax not found',
+            'tax_id',
+            `No active item tax found with id ${taxId}`,
+          );
         }
         const taxName = saveItemTaxDto.tax_name?.trim();
         if (!taxName) {
@@ -184,56 +183,65 @@ export class ItemsTaxMasterService {
       throw error;
     }
   }
-  private buildListWhere(queryDto: ListItemTaxQueryDto): Prisma.ItemTaxMasterWhereInput {
-    const where: Prisma.ItemTaxMasterWhereInput = { taxIsDeleted: false };
-    if (queryDto.tax_is_active !== undefined) where.taxIsActive = queryDto.tax_is_active;
-    if (queryDto.tax_taxability_type?.trim()) {
-      where.taxTaxabilityType = { equals: queryDto.tax_taxability_type.trim(), mode: 'insensitive' };
-    }
-    if (queryDto.tax_is_reverse_charge !== undefined) where.taxIsReverseCharge = queryDto.tax_is_reverse_charge;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { taxName: { contains: search, mode: 'insensitive' } },
-        { taxCode: { contains: search, mode: 'insensitive' } },
-        { taxTaxabilityType: { contains: search, mode: 'insensitive' } },
-        { taxCessType: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return where;
-  }
   private applyOptionalFields(
     data: Prisma.ItemTaxMasterUncheckedCreateInput | Prisma.ItemTaxMasterUncheckedUpdateInput,
     saveItemTaxDto: SaveItemTaxDto,
   ): void {
     if (hasOwnProperty(saveItemTaxDto, 'tax_code')) data.taxCode = saveItemTaxDto.tax_code;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_taxability_type')) data.taxTaxabilityType = saveItemTaxDto.tax_taxability_type;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_is_reverse_charge')) data.taxIsReverseCharge = saveItemTaxDto.tax_is_reverse_charge;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cgst_perc')) data.taxCgstPerc = saveItemTaxDto.tax_cgst_perc;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_sgst_perc')) data.taxSgstPerc = saveItemTaxDto.tax_sgst_perc;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_igst_perc')) data.taxIgstPerc = saveItemTaxDto.tax_igst_perc;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cgst_pur_perc')) data.taxCgstPurPerc = saveItemTaxDto.tax_cgst_pur_perc;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_sgst_pur_perc')) data.taxSgstPurPerc = saveItemTaxDto.tax_sgst_pur_perc;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_igst_pur_perc')) data.taxIgstPurPerc = saveItemTaxDto.tax_igst_pur_perc;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_type')) data.taxCessType = saveItemTaxDto.tax_cess_type;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_perc')) data.taxCessPerc = saveItemTaxDto.tax_cess_perc;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_unit')) data.taxCessUnit = saveItemTaxDto.tax_cess_unit;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_pur_perc')) data.taxCessPurPerc = saveItemTaxDto.tax_cess_pur_perc;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_pur_unit')) data.taxCessPurUnit = saveItemTaxDto.tax_cess_pur_unit;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_gst_rate_total')) data.taxGstRateTotal = saveItemTaxDto.tax_gst_rate_total;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_sales_ledger_id')) data.taxSalesLedgerId = saveItemTaxDto.tax_sales_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_sales_return_ledger_id')) data.taxSalesReturnLedgerId = saveItemTaxDto.tax_sales_return_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_purchase_ledger_id')) data.taxPurchaseLedgerId = saveItemTaxDto.tax_purchase_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_purchase_return_ledger_id')) data.taxPurchaseReturnLedgerId = saveItemTaxDto.tax_purchase_return_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cgst_output_ledger_id')) data.taxCgstOutputLedgerId = saveItemTaxDto.tax_cgst_output_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_sgst_output_ledger_id')) data.taxSgstOutputLedgerId = saveItemTaxDto.tax_sgst_output_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_igst_output_ledger_id')) data.taxIgstOutputLedgerId = saveItemTaxDto.tax_igst_output_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_output_ledger_id')) data.taxCessOutputLedgerId = saveItemTaxDto.tax_cess_output_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cgst_input_ledger_id')) data.taxCgstInputLedgerId = saveItemTaxDto.tax_cgst_input_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_sgst_input_ledger_id')) data.taxSgstInputLedgerId = saveItemTaxDto.tax_sgst_input_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_igst_input_ledger_id')) data.taxIgstInputLedgerId = saveItemTaxDto.tax_igst_input_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_input_ledger_id')) data.taxCessInputLedgerId = saveItemTaxDto.tax_cess_input_ledger_id;
-    if (hasOwnProperty(saveItemTaxDto, 'tax_is_active')) data.taxIsActive = saveItemTaxDto.tax_is_active;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_taxability_type'))
+      data.taxTaxabilityType = saveItemTaxDto.tax_taxability_type;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_is_reverse_charge'))
+      data.taxIsReverseCharge = saveItemTaxDto.tax_is_reverse_charge;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cgst_perc'))
+      data.taxCgstPerc = saveItemTaxDto.tax_cgst_perc;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_sgst_perc'))
+      data.taxSgstPerc = saveItemTaxDto.tax_sgst_perc;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_igst_perc'))
+      data.taxIgstPerc = saveItemTaxDto.tax_igst_perc;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cgst_pur_perc'))
+      data.taxCgstPurPerc = saveItemTaxDto.tax_cgst_pur_perc;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_sgst_pur_perc'))
+      data.taxSgstPurPerc = saveItemTaxDto.tax_sgst_pur_perc;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_igst_pur_perc'))
+      data.taxIgstPurPerc = saveItemTaxDto.tax_igst_pur_perc;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_type'))
+      data.taxCessType = saveItemTaxDto.tax_cess_type;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_perc'))
+      data.taxCessPerc = saveItemTaxDto.tax_cess_perc;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_unit'))
+      data.taxCessUnit = saveItemTaxDto.tax_cess_unit;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_pur_perc'))
+      data.taxCessPurPerc = saveItemTaxDto.tax_cess_pur_perc;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_pur_unit'))
+      data.taxCessPurUnit = saveItemTaxDto.tax_cess_pur_unit;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_gst_rate_total'))
+      data.taxGstRateTotal = saveItemTaxDto.tax_gst_rate_total;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_sales_ledger_id'))
+      data.taxSalesLedgerId = saveItemTaxDto.tax_sales_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_sales_return_ledger_id'))
+      data.taxSalesReturnLedgerId = saveItemTaxDto.tax_sales_return_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_purchase_ledger_id'))
+      data.taxPurchaseLedgerId = saveItemTaxDto.tax_purchase_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_purchase_return_ledger_id'))
+      data.taxPurchaseReturnLedgerId = saveItemTaxDto.tax_purchase_return_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cgst_output_ledger_id'))
+      data.taxCgstOutputLedgerId = saveItemTaxDto.tax_cgst_output_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_sgst_output_ledger_id'))
+      data.taxSgstOutputLedgerId = saveItemTaxDto.tax_sgst_output_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_igst_output_ledger_id'))
+      data.taxIgstOutputLedgerId = saveItemTaxDto.tax_igst_output_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_output_ledger_id'))
+      data.taxCessOutputLedgerId = saveItemTaxDto.tax_cess_output_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cgst_input_ledger_id'))
+      data.taxCgstInputLedgerId = saveItemTaxDto.tax_cgst_input_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_sgst_input_ledger_id'))
+      data.taxSgstInputLedgerId = saveItemTaxDto.tax_sgst_input_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_igst_input_ledger_id'))
+      data.taxIgstInputLedgerId = saveItemTaxDto.tax_igst_input_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_cess_input_ledger_id'))
+      data.taxCessInputLedgerId = saveItemTaxDto.tax_cess_input_ledger_id;
+    if (hasOwnProperty(saveItemTaxDto, 'tax_is_active'))
+      data.taxIsActive = saveItemTaxDto.tax_is_active;
   }
   private toPayload(record: ItemTaxMaster): ItemTaxPayload {
     return {

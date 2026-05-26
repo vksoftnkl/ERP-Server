@@ -1,18 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ItemEanCode, Prisma } from '@prisma/client';
-import { ListItemEanCodeQueryDto } from './dto/list-item-ean-code-query.dto';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import {
   ItemEanCodeDeleteResult,
   ItemEanCodeErrorDetail,
-  ItemEanCodeListItem,
-  ItemEanCodeListMeta,
   ItemEanCodePayload,
 } from './types/item-ean-code-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -30,7 +25,6 @@ export class ItemsEanCodeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveItemEanCodeDto: SaveItemEanCodeDto): Promise<ItemEanCodePayload>;
@@ -60,21 +54,6 @@ export class ItemsEanCodeMasterService {
       throw error;
     }
   }
-
-  async list(
-    queryDto: ListItemEanCodeQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemEanCodeListItem, ItemEanCodeListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemEanCodeListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_EAN_CODE_TABLE_NAME, alias: 'item_ean_code_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemEanCodeErrorDetail>('No configured grid found for item EAN code list', []);
-    }
-    return result;
-  }
-
   async getById(eanId: string): Promise<ItemEanCodePayload> {
     const record = await this.prisma.itemEanCode.findFirst({
       where: {
@@ -84,7 +63,11 @@ export class ItemsEanCodeMasterService {
     });
 
     if (!record) {
-      throwInventoryNotFound<ItemEanCodeErrorDetail>('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`);
+      throwInventoryNotFound<ItemEanCodeErrorDetail>(
+        'Item EAN code not found',
+        'ean_id',
+        `No active item EAN code found with id ${eanId}`,
+      );
     }
 
     return this.toPayload(record);
@@ -135,7 +118,11 @@ export class ItemsEanCodeMasterService {
       },
     });
     if (!existing) {
-      throwInventoryNotFound<ItemEanCodeErrorDetail>('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`);
+      throwInventoryNotFound<ItemEanCodeErrorDetail>(
+        'Item EAN code not found',
+        'ean_id',
+        `No active item EAN code found with id ${eanId}`,
+      );
     }
 
     const modifiedOn = new Date();
@@ -152,7 +139,11 @@ export class ItemsEanCodeMasterService {
       },
     });
     if (result.count === 0) {
-      throwInventoryNotFound<ItemEanCodeErrorDetail>('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`);
+      throwInventoryNotFound<ItemEanCodeErrorDetail>(
+        'Item EAN code not found',
+        'ean_id',
+        `No active item EAN code found with id ${eanId}`,
+      );
     }
 
     const originalRecord = this.toPayload(existing);
@@ -248,7 +239,11 @@ export class ItemsEanCodeMasterService {
       },
     });
     if (!existing) {
-      throwInventoryNotFound<ItemEanCodeErrorDetail>('Item EAN code not found', 'ean_id', `No active item EAN code found with id ${eanId}`);
+      throwInventoryNotFound<ItemEanCodeErrorDetail>(
+        'Item EAN code not found',
+        'ean_id',
+        `No active item EAN code found with id ${eanId}`,
+      );
     }
 
     const eanCode = saveItemEanCodeDto.ean_code?.trim();
@@ -298,43 +293,6 @@ export class ItemsEanCodeMasterService {
 
     return payload;
   }
-
-  private buildListWhere(queryDto: ListItemEanCodeQueryDto): Prisma.ItemEanCodeWhereInput {
-    const where: Prisma.ItemEanCodeWhereInput = {
-      eanIsDeleted: false,
-    };
-
-    if (queryDto.ean_item_id !== undefined) {
-      where.eanItemId = queryDto.ean_item_id;
-    }
-
-    if (queryDto.ean_unit_id !== undefined) {
-      where.eanUnitId = queryDto.ean_unit_id;
-    }
-
-    if (queryDto.ean_godown_id !== undefined) {
-      where.eanGodownId = queryDto.ean_godown_id;
-    }
-
-    if (queryDto.ean_is_active !== undefined) {
-      where.eanIsActive = queryDto.ean_is_active;
-    }
-
-    if (queryDto.ean_is_default !== undefined) {
-      where.eanIsDefault = queryDto.ean_is_default;
-    }
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { eanCode: { contains: search, mode: 'insensitive' } },
-        { eanRemarks: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    return where;
-  }
-
   private applyOptionalFields(
     data: Prisma.ItemEanCodeUncheckedCreateInput | Prisma.ItemEanCodeUncheckedUpdateInput,
     saveItemEanCodeDto: SaveItemEanCodeDto,
@@ -412,5 +370,4 @@ export class ItemsEanCodeMasterService {
       ]);
     }
   }
-
 }

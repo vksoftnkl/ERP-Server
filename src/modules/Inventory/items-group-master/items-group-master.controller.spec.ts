@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import { ItemsGroupMasterController } from './items-group-master.controller';
 import { ItemsGroupMasterService } from './items-group-master.service';
@@ -84,36 +83,6 @@ describe('ItemsGroupMasterController', () => {
       data: itemGroupPayload,
     });
   });
-
-  it('returns list wrapper with pagination meta', async () => {
-    serviceMock.list.mockResolvedValue({
-      items: [itemGroupPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListItemGroupQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.list(query)).resolves.toEqual({
-      success: true,
-      message: 'Item groups fetched successfully',
-      data: [itemGroupPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemGroupPayload);
 

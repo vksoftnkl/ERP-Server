@@ -1,17 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
-import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
-import {
-  ItemGroupErrorDetail,
-  ItemGroupListItem,
-  ItemGroupListMeta,
-  ItemGroupPayload,
-} from './types/item-group-api.types';
+import { ItemGroupErrorDetail, ItemGroupPayload } from './types/item-group-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -21,500 +13,18 @@ import {
 } from 'src/common/utils/module-service.utils';
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
-const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
 type ItemGroupWriteClient = Prisma.TransactionClient | PrismaService;
-type SearchColumnDescriptor = {
-  normalized: string;
-  tokens: string[];
-  lastToken: string;
-};
 @Injectable()
 export class ItemsGroupMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload> {
     if (saveItemGroupDto.itg_id) {
       return this.updateItemGroup(saveItemGroupDto);
     }
     return this.createItemGroup(saveItemGroupDto);
-  }
-  async list(
-    queryDto: ListItemGroupQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemGroupListItem, ItemGroupListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const configuredList = await this.listFromConfiguredGridSql(queryDto, page, limit, skip);
-    if (configuredList) {
-      return configuredList;
-    }
-    const where: Prisma.ItemGroupMasterWhereInput = {
-      itgIsDeleted: false,
-    };
-    if (queryDto.itg_parent_id !== undefined) {
-      where.itgParentId = queryDto.itg_parent_id;
-    }
-    if (queryDto.itg_is_active !== undefined) {
-      where.itgIsActive = queryDto.itg_is_active;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { itgName: { contains: search, mode: 'insensitive' } },
-        { itgAlias: { contains: search, mode: 'insensitive' } },
-        { itgDescription: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    const [total, records, styles] = await Promise.all([
-      this.prisma.itemGroupMaster.count({ where }),
-      this.prisma.itemGroupMaster.findMany({
-        where,
-        orderBy: [{ itgSort: 'asc' }, { itgName: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      this.configuredGridSqlService.loadPrimaryGridStyles(ITEM_GROUP_TABLE_NAME),
-    ]);
-    return {
-      items: records.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
-      },
-      ...(styles !== undefined && { styles }),
-    };
-  }
-  private async listFromConfiguredGridSql(
-    queryDto: ListItemGroupQueryDto,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<ItemGroupListItem, ItemGroupListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ITEM_GROUP_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ITEM_GROUP_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ITEM_GROUP_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      const baseSql = validation.normalizedSql;
-      const searchableFieldNames = queryDto.search?.trim()
-        ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
-        : [];
-      const { sql: filteredSql, params } = this.buildConfiguredGridListSql(
-        baseSql,
-        queryDto,
-        searchableFieldNames,
-      );
-
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<ItemGroupListItem>({
-          baseSql: filteredSql,
-          alias: 'item_group_grid',
-          params,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
-  }
-  private buildConfiguredGridListSql(
-    baseSql: string,
-    queryDto: ListItemGroupQueryDto,
-    searchableFieldNames: string[],
-  ): { sql: string; params: unknown[] } {
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    if (queryDto.itg_parent_id !== undefined) {
-      params.push(queryDto.itg_parent_id);
-      conditions.push(`item_group_grid.itg_parent_id = $${params.length}`);
-    }
-    if (queryDto.itg_is_active !== undefined) {
-      params.push(queryDto.itg_is_active);
-      conditions.push(`item_group_grid.itg_is_active = $${params.length}`);
-    }
-    if (queryDto.search?.trim()) {
-      const searchText = `%${queryDto.search.trim()}%`;
-      if (searchableFieldNames.length > 0) {
-        const searchConditions: string[] = [];
-        for (const fieldName of searchableFieldNames) {
-          params.push(fieldName);
-          const columnParamIndex = params.length;
-          params.push(searchText);
-          const valueParamIndex = params.length;
-          searchConditions.push(
-            `EXISTS (` +
-              `SELECT 1 FROM jsonb_each_text(row_to_json(item_group_grid)::jsonb) AS grid_kv(key, value) ` +
-              `WHERE grid_kv.key = $${columnParamIndex} ` +
-              `AND grid_kv.value ILIKE $${valueParamIndex}` +
-              `)`,
-          );
-        }
-        conditions.push(`(${searchConditions.join(' OR ')})`);
-      } else {
-        conditions.push('1 = 0');
-      }
-    }
-    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-    return {
-      sql: `SELECT * FROM (${baseSql}) AS item_group_grid${whereClause}`,
-      params,
-    };
-  }
-  private async getConfiguredSearchableFieldNames(
-    gridId: bigint,
-    baseSql: string,
-  ): Promise<string[]> {
-    const sqlFieldNames = this.extractSelectFieldNames(baseSql);
-    if (sqlFieldNames.length === 0) {
-      return [];
-    }
-    const configuredColumns = await this.prisma.gridColumn.findMany({
-      where: {
-        gridId,
-        gridColumnIsDeleted: false,
-        gridColumnFilter: true,
-        grid: {
-          gridIsDeleted: false,
-        },
-      },
-      orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
-      select: {
-        gridColumnName: true,
-        gridColumnNumber: true,
-      },
-    });
-    const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
-      fieldName,
-      descriptor: this.describeSearchColumnName(fieldName),
-    }));
-    const usedSqlFieldIndexes = new Set<number>();
-    const matchedFieldNames: string[] = [];
-    for (const column of configuredColumns) {
-      const columnName = column.gridColumnName.trim();
-      let matchedSqlFieldIndex = -1;
-      const columnDescriptor = this.describeSearchColumnName(columnName);
-      if (columnDescriptor.normalized) {
-        let bestScore = -1;
-        let nextBestScore = -1;
-        let bestScoreIsAmbiguous = false;
-        for (let index = 0; index < normalizedSqlFields.length; index += 1) {
-          if (usedSqlFieldIndexes.has(index)) {
-            continue;
-          }
-          const score = this.getSearchColumnMatchScore(
-            columnDescriptor,
-            normalizedSqlFields[index].descriptor,
-          );
-          if (score > bestScore) {
-            nextBestScore = bestScore;
-            bestScore = score;
-            matchedSqlFieldIndex = index;
-            bestScoreIsAmbiguous = false;
-            continue;
-          }
-          if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
-            bestScoreIsAmbiguous = true;
-            continue;
-          }
-          if (score > nextBestScore) {
-            nextBestScore = score;
-          }
-        }
-        if (
-          bestScore < MIN_CONFIDENT_COLUMN_MATCH_SCORE ||
-          bestScore === nextBestScore ||
-          bestScoreIsAmbiguous
-        ) {
-          matchedSqlFieldIndex = -1;
-        }
-      }
-      if (matchedSqlFieldIndex === -1) {
-        const sqlFieldIndexFromColumnNumber = column.gridColumnNumber - 1;
-        if (
-          sqlFieldIndexFromColumnNumber >= 0 &&
-          sqlFieldIndexFromColumnNumber < normalizedSqlFields.length &&
-          !usedSqlFieldIndexes.has(sqlFieldIndexFromColumnNumber)
-        ) {
-          matchedSqlFieldIndex = sqlFieldIndexFromColumnNumber;
-        }
-      }
-      if (matchedSqlFieldIndex !== -1) {
-        usedSqlFieldIndexes.add(matchedSqlFieldIndex);
-        matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
-      }
-    }
-    return matchedFieldNames;
-  }
-  private tokenizeSearchColumnName(value: string): string[] {
-    const normalizedSpacing = value
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .replace(/[^a-z0-9]+/gi, ' ')
-      .trim()
-      .toLowerCase();
-    return normalizedSpacing ? normalizedSpacing.split(/\s+/) : [];
-  }
-  private describeSearchColumnName(value: string): SearchColumnDescriptor {
-    const tokens = this.tokenizeSearchColumnName(value);
-    return {
-      normalized: tokens.join(''),
-      tokens,
-      lastToken: tokens[tokens.length - 1] ?? '',
-    };
-  }
-  private getSearchColumnMatchScore(
-    source: SearchColumnDescriptor,
-    target: SearchColumnDescriptor,
-  ): number {
-    if (!source.normalized || !target.normalized) {
-      return -1;
-    }
-    if (source.normalized === target.normalized) {
-      return 4;
-    }
-    if (
-      source.normalized.includes(target.normalized) ||
-      target.normalized.includes(source.normalized)
-    ) {
-      return 3;
-    }
-    const sourceWithoutBooleanPrefix = source.normalized.replace(/^is/, '');
-    const targetWithoutBooleanPrefix = target.normalized.replace(/^is/, '');
-    if (
-      sourceWithoutBooleanPrefix &&
-      targetWithoutBooleanPrefix &&
-      (sourceWithoutBooleanPrefix === targetWithoutBooleanPrefix ||
-        sourceWithoutBooleanPrefix.endsWith(targetWithoutBooleanPrefix) ||
-        targetWithoutBooleanPrefix.endsWith(sourceWithoutBooleanPrefix))
-    ) {
-      return 2;
-    }
-    if (source.lastToken && source.lastToken === target.lastToken) {
-      return 2;
-    }
-    if (
-      source.lastToken &&
-      target.lastToken &&
-      (source.lastToken.startsWith(target.lastToken) ||
-        target.lastToken.startsWith(source.lastToken))
-    ) {
-      return 2;
-    }
-    const sharedTokens = source.tokens.filter((token) => target.tokens.includes(token));
-    if (sharedTokens.length >= 2) {
-      return 1;
-    }
-    return -1;
-  }
-  private extractSelectFieldNames(sql: string): string[] {
-    const selectClause = this.extractTopLevelSelectClause(sql);
-    if (!selectClause) {
-      return [];
-    }
-    const expressions = this.splitTopLevelCommaSeparated(selectClause);
-    const fieldNames: string[] = [];
-    for (const expression of expressions) {
-      const outputFieldName = this.extractSqlOutputFieldName(expression);
-      if (!outputFieldName) {
-        continue;
-      }
-      if (!fieldNames.includes(outputFieldName)) {
-        fieldNames.push(outputFieldName);
-      }
-    }
-    return fieldNames;
-  }
-  private extractTopLevelSelectClause(sql: string): string | null {
-    const trimmed = sql.trim();
-    const selectMatch = trimmed.match(/^select\b/i);
-    if (!selectMatch) {
-      return null;
-    }
-    const selectStartIndex = selectMatch[0].length;
-    let depth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-    for (let i = selectStartIndex; i < trimmed.length; i += 1) {
-      const current = trimmed[i];
-      const next = trimmed[i + 1];
-      if (insideSingleQuote) {
-        if (current === "'" && next === "'") {
-          i += 1;
-          continue;
-        }
-        if (current === "'") {
-          insideSingleQuote = false;
-        }
-        continue;
-      }
-      if (insideDoubleQuote) {
-        if (current === '"' && next === '"') {
-          i += 1;
-          continue;
-        }
-        if (current === '"') {
-          insideDoubleQuote = false;
-        }
-        continue;
-      }
-      if (current === "'") {
-        insideSingleQuote = true;
-        continue;
-      }
-      if (current === '"') {
-        insideDoubleQuote = true;
-        continue;
-      }
-      if (current === '(') {
-        depth += 1;
-        continue;
-      }
-      if (current === ')') {
-        depth = Math.max(0, depth - 1);
-        continue;
-      }
-      if (
-        depth === 0 &&
-        /^from$/i.test(trimmed.slice(i, i + 4)) &&
-        (i === 0 || /\s/.test(trimmed[i - 1])) &&
-        (i + 4 >= trimmed.length || /\s/.test(trimmed[i + 4]))
-      ) {
-        return trimmed.slice(selectStartIndex, i).trim();
-      }
-    }
-    return null;
-  }
-  private splitTopLevelCommaSeparated(value: string): string[] {
-    const chunks: string[] = [];
-    let startIndex = 0;
-    let depth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-    for (let i = 0; i < value.length; i += 1) {
-      const current = value[i];
-      const next = value[i + 1];
-      if (insideSingleQuote) {
-        if (current === "'" && next === "'") {
-          i += 1;
-          continue;
-        }
-        if (current === "'") {
-          insideSingleQuote = false;
-        }
-        continue;
-      }
-      if (insideDoubleQuote) {
-        if (current === '"' && next === '"') {
-          i += 1;
-          continue;
-        }
-        if (current === '"') {
-          insideDoubleQuote = false;
-        }
-        continue;
-      }
-      if (current === "'") {
-        insideSingleQuote = true;
-        continue;
-      }
-      if (current === '"') {
-        insideDoubleQuote = true;
-        continue;
-      }
-      if (current === '(') {
-        depth += 1;
-        continue;
-      }
-      if (current === ')') {
-        depth = Math.max(0, depth - 1);
-        continue;
-      }
-      if (current === ',' && depth === 0) {
-        chunks.push(value.slice(startIndex, i).trim());
-        startIndex = i + 1;
-      }
-    }
-    const tail = value.slice(startIndex).trim();
-    if (tail) {
-      chunks.push(tail);
-    }
-    return chunks;
-  }
-  private extractSqlOutputFieldName(expression: string): string | null {
-    const trimmed = expression.trim();
-    if (!trimmed || trimmed === '*' || /\.\*$/.test(trimmed)) {
-      return null;
-    }
-    const explicitAliasMatch = trimmed.match(/\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
-    if (explicitAliasMatch) {
-      return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
-    }
-    const implicitAliasMatch = trimmed.match(/\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
-    if (implicitAliasMatch) {
-      const aliasToken = implicitAliasMatch[1];
-      const expressionWithoutAlias = trimmed.slice(0, trimmed.length - aliasToken.length).trim();
-      if (expressionWithoutAlias) {
-        return this.parseSqlIdentifierToken(aliasToken);
-      }
-    }
-    const simpleColumnMatch = trimmed.match(
-      /^((?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)\.)*(?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)$/i,
-    );
-    if (simpleColumnMatch) {
-      const parts = trimmed.split('.');
-      return this.parseSqlIdentifierToken(parts[parts.length - 1]);
-    }
-    return null;
-  }
-  private parseSqlIdentifierToken(token: string): string | null {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      return null;
-    }
-    if (/^"([^"]|"")+"$/.test(trimmed)) {
-      return trimmed.slice(1, -1).replace(/""/g, '"');
-    }
-    if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
-      // PostgreSQL folds unquoted identifiers to lowercase.
-      return trimmed.toLowerCase();
-    }
-    return null;
   }
   async getById(itgId: string): Promise<ItemGroupPayload> {
     const record = await this.prisma.itemGroupMaster.findFirst({
@@ -524,7 +34,11 @@ export class ItemsGroupMasterService {
       },
     });
     if (!record) {
-      throwInventoryNotFound<ItemGroupErrorDetail>('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
+      throwInventoryNotFound<ItemGroupErrorDetail>(
+        'Item group not found',
+        'itg_id',
+        `No active item group found with id ${itgId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -537,7 +51,11 @@ export class ItemsGroupMasterService {
         },
       });
       if (!existing) {
-        throwInventoryNotFound<ItemGroupErrorDetail>('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
+        throwInventoryNotFound<ItemGroupErrorDetail>(
+          'Item group not found',
+          'itg_id',
+          `No active item group found with id ${itgId}`,
+        );
       }
       const subtreeIds = await this.getActiveSubtreeIds(tx, itgId);
       const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
@@ -554,7 +72,11 @@ export class ItemsGroupMasterService {
         },
       });
       if (result.count === 0) {
-        throwInventoryNotFound<ItemGroupErrorDetail>('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
+        throwInventoryNotFound<ItemGroupErrorDetail>(
+          'Item group not found',
+          'itg_id',
+          `No active item group found with id ${itgId}`,
+        );
       }
       await this.removePathIds(tx, ancestorIds, subtreeIds);
       const originalRecord = this.toPayload(existing);
@@ -655,7 +177,11 @@ export class ItemsGroupMasterService {
           },
         });
         if (!existing) {
-          throwInventoryNotFound<ItemGroupErrorDetail>('Item group not found', 'itg_id', `No active item group found with id ${itgId}`);
+          throwInventoryNotFound<ItemGroupErrorDetail>(
+            'Item group not found',
+            'itg_id',
+            `No active item group found with id ${itgId}`,
+          );
         }
         if (saveItemGroupDto.itg_parent_id === itgId) {
           throwInventoryBadRequest<ItemGroupErrorDetail>('Item group cannot be its own parent', [

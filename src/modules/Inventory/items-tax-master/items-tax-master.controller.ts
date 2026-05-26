@@ -23,22 +23,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
-import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import {
   ItemTaxErrorResponseDto,
   ItemTaxSuccessDeleteDto,
-  ItemTaxSuccessListDto,
   ItemTaxSuccessSingleDto,
 } from './dto/item-tax-response.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
 import { ItemTaxExceptionFilter } from './item-tax-exception.filter';
 import { ItemsTaxMasterService } from './items-tax-master.service';
-import {
-  ItemTaxListItem,
-  ItemTaxListMeta,
-  ItemTaxPayload,
-  ItemTaxSuccessResponse,
-} from './types/item-tax-api.types';
+import { ItemTaxPayload, ItemTaxSuccessResponse } from './types/item-tax-api.types';
 @ApiTags('Item Taxes')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -64,24 +57,6 @@ export class ItemsTaxMasterController {
         ? 'Item tax updated successfully'
         : 'Item tax created successfully',
       data,
-    };
-  }
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item taxes with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemTaxSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemTaxErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemTaxQueryDto,
-  ): Promise<ItemTaxSuccessResponse<ItemTaxListItem[], ItemTaxListMeta>> {
-    const result = await this.itemsTaxMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Item taxes fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
   @Get('get')

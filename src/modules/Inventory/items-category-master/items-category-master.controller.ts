@@ -27,22 +27,15 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { ListItemCategoryQueryDto } from './dto/list-item-category-query.dto';
 import {
   ItemCategoryErrorResponseDto,
   ItemCategorySuccessDeleteDto,
-  ItemCategorySuccessListDto,
   ItemCategorySuccessSingleDto,
 } from './dto/item-category-response.dto';
 import { SaveItemCategoryDto } from './dto/save-item-category.dto';
 import { ItemCategoryExceptionFilter } from './item-category-exception.filter';
 import { ItemsCategoryMasterService } from './items-category-master.service';
-import {
-  ItemCategoryListItem,
-  ItemCategoryListMeta,
-  ItemCategoryPayload,
-  ItemCategorySuccessResponse,
-} from './types/item-category-api.types';
+import { ItemCategoryPayload, ItemCategorySuccessResponse } from './types/item-category-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 
 type UploadedPhotoFile = {
@@ -81,25 +74,6 @@ export class ItemsCategoryMasterController {
         ? 'Item category updated successfully'
         : 'Item category created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item categories with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemCategorySuccessListDto })
-  @ApiBadRequestResponse({ type: ItemCategoryErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemCategoryQueryDto,
-  ): Promise<ItemCategorySuccessResponse<ItemCategoryListItem[], ItemCategoryListMeta>> {
-    const result = await this.itemsCategoryMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Item categories fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

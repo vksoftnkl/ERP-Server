@@ -11,7 +11,7 @@ import {
 import { throwInventoryNotFound, toNumber } from 'src/common/utils/module-service.utils';
 @Injectable()
 export class ItemPriceDetailsService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
   async getByItemId(itemId: string): Promise<ItemPriceDetailPayload> {
     const itemRecord = await this.prisma.itemMaster.findFirst({
       where: {
@@ -20,7 +20,11 @@ export class ItemPriceDetailsService {
       },
     });
     if (!itemRecord) {
-      throwInventoryNotFound<ItemPriceDetailErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
+      throwInventoryNotFound<ItemPriceDetailErrorDetail>(
+        'Item not found',
+        'item_id',
+        `No active item found with id ${itemId}`,
+      );
     }
     const [priceRecords, taxRecord] = await Promise.all([
       this.prisma.itemPriceMaster.findMany({
@@ -32,11 +36,11 @@ export class ItemPriceDetailsService {
       }),
       itemRecord.itemDefaultTaxId
         ? this.prisma.itemTaxMaster.findFirst({
-          where: {
-            taxId: itemRecord.itemDefaultTaxId,
-            taxIsDeleted: false,
-          },
-        })
+            where: {
+              taxId: itemRecord.itemDefaultTaxId,
+              taxIsDeleted: false,
+            },
+          })
         : Promise.resolve(null),
     ]);
     return {

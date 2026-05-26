@@ -1,9 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { GodownLocation, Prisma } from '@prisma/client';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { ListOrGetGodownQueryDto } from './dto/list-or-get-godown-query.dto';
 import { SaveGodownDto } from './dto/save-godown.dto';
 import { GodownsMasterService } from './godowns-master.service';
 
@@ -144,7 +142,9 @@ describe('GodownsMasterService', () => {
 
         return [configuredGrid];
       }),
-      filterPrimaryFromTable: jest.fn().mockImplementation((candidates: Array<unknown>) => candidates),
+      filterPrimaryFromTable: jest
+        .fn()
+        .mockImplementation((candidates: Array<unknown>) => candidates),
       validateBaseSql: jest
         .fn()
         .mockImplementation((options: { sql: string; tableName: string }) => {
@@ -184,43 +184,44 @@ describe('GodownsMasterService', () => {
             normalizedSql,
           };
         }),
-      runPagedQuery: jest.fn().mockImplementation(
-        async (options: {
-          baseSql: string;
-          alias: string;
-          params?: unknown[];
-          limit: number;
-          skip: number;
-        }) => {
-          const params = options.params ?? [];
-          const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
-          const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
-            params.length + 1
-          } OFFSET $${params.length + 2}`;
-          const [countResult, rows] = await Promise.all([
-            prisma.$queryRawUnsafe(countSql, ...params),
-            prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
-          ]);
-          const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
-          if (typeof totalRaw === 'bigint') {
-            return { items: rows as unknown[], total: Number(totalRaw) };
-          }
-          if (typeof totalRaw === 'number') {
-            return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
-          }
-          if (typeof totalRaw === 'string') {
-            const parsed = Number(totalRaw);
-            return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
-          }
-          return { items: rows as unknown[], total: 0 };
-        },
-      ),
+      runPagedQuery: jest
+        .fn()
+        .mockImplementation(
+          async (options: {
+            baseSql: string;
+            alias: string;
+            params?: unknown[];
+            limit: number;
+            skip: number;
+          }) => {
+            const params = options.params ?? [];
+            const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
+            const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
+              params.length + 1
+            } OFFSET $${params.length + 2}`;
+            const [countResult, rows] = await Promise.all([
+              prisma.$queryRawUnsafe(countSql, ...params),
+              prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
+            ]);
+            const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
+            if (typeof totalRaw === 'bigint') {
+              return { items: rows as unknown[], total: Number(totalRaw) };
+            }
+            if (typeof totalRaw === 'number') {
+              return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
+            }
+            if (typeof totalRaw === 'string') {
+              const parsed = Number(totalRaw);
+              return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
+            }
+            return { items: rows as unknown[], total: 0 };
+          },
+        ),
     };
 
     service = new GodownsMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
 
@@ -418,134 +419,7 @@ describe('GodownsMasterService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
-
-  it('list enforces soft-delete exclusion', async () => {
-    prisma.godownLocation.count.mockResolvedValue(1);
-    prisma.godownLocation.findMany.mockResolvedValue([makeRecord()]);
-
-    await service.list({} as ListOrGetGodownQueryDto);
-
-    const countArgs = prisma.godownLocation.count.mock.calls[0][0];
-    const findArgs = prisma.godownLocation.findMany.mock.calls[0][0];
-    expect(countArgs.where?.gdlIsDeleted).toBe(false);
-    expect(findArgs.where?.gdlIsDeleted).toBe(false);
-  });
-
-  it('list applies search and active filters', async () => {
-    prisma.godownLocation.count.mockResolvedValue(0);
-    prisma.godownLocation.findMany.mockResolvedValue([]);
-
-    await service.list({
-      search: 'rack',
-      gdl_is_active: true,
-    });
-
-    const findArgs = prisma.godownLocation.findMany.mock.calls[0][0];
-    expect(findArgs.where?.gdlIsActive).toBe(true);
-    expect(Array.isArray(findArgs.where?.OR)).toBe(true);
-  });
-
-  it('list returns pagination metadata', async () => {
-    prisma.godownLocation.count.mockResolvedValue(25);
-    prisma.godownLocation.findMany.mockResolvedValue([makeRecord()]);
-
-    const result = await service.list({
-      page: 2,
-      limit: 10,
-    });
-
-    expect(result.meta).toEqual({
-      page: 2,
-      limit: 10,
-      total: 25,
-      total_pages: 3,
-    });
-  });
-
-  it('uses configured grid_sql even when filters and search are provided', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridId: BigInt(7),
-      gridSql:
-        'SELECT gdl_id AS "location id", gdl_name AS "location name", gdl_code AS "location code", gdl_godown_id, gdl_branch_id, gdl_is_active FROM godown_locations WHERE gdl_is_deleted = false',
-    });
-    prisma.gridColumn.findMany.mockResolvedValue([
-      { gridColumnName: 'location name' },
-      { gridColumnName: 'location code' },
-    ]);
-    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
-      {
-        'location id': GDL_ID,
-        'location name': 'Rack A1',
-        'location code': 'RACK-A1',
-        gdl_godown_id: GODOWN_ID,
-        gdl_branch_id: BRANCH_ID,
-        gdl_is_active: true,
-      },
-    ]);
-
-    const result = await service.list({
-      gdl_godown_id: GODOWN_ID,
-      gdl_branch_id: BRANCH_ID,
-      gdl_is_active: true,
-      search: 'rack',
-      page: 1,
-      limit: 20,
-    });
-
-    expect(prisma.godownLocation.findMany).not.toHaveBeenCalled();
-    expect(prisma.godownLocation.count).not.toHaveBeenCalled();
-    expect(prisma.gridColumn.findMany).toHaveBeenCalledWith({
-      where: {
-        gridId: BigInt(7),
-        gridColumnIsDeleted: false,
-        gridColumnFilter: true,
-        grid: {
-          gridIsDeleted: false,
-        },
-      },
-      orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
-      select: {
-        gridColumnName: true,
-      },
-    });
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('WHERE grid_kv.key = $4'),
-      GODOWN_ID,
-      BRANCH_ID,
-      true,
-      'location name',
-      '%rack%',
-      'location code',
-      '%rack%',
-    );
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('LIMIT $8 OFFSET $9'),
-      GODOWN_ID,
-      BRANCH_ID,
-      true,
-      'location name',
-      '%rack%',
-      'location code',
-      '%rack%',
-      20,
-      0,
-    );
-    expect(result.meta.total).toBe(1);
-  });
-
-  it('rejects invalid configured grid_sql in list', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridId: BigInt(7),
-      gridSql: 'DELETE FROM godown_locations',
-    });
-
-    await expect(service.list({})).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
-  });
-
-  it('adds newly created child id to parent cache', async () => {
+  t('adds newly created child id to parent cache', async () => {
     const parent = makeRecord({
       gdlId: PARENT_ID,
       gdlParentId: null,

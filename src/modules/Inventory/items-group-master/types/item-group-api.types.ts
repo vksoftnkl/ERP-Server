@@ -1,7 +1,6 @@
 export type { InventoryErrorDetail as ItemGroupErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemGroupErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemGroupSuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as ItemGroupListMeta } from 'src/common/types/module-list.types';
 export interface ItemGroupPayload {
   itg_id: string;
   itg_name: string;
@@ -26,5 +25,3 @@ export interface ItemGroupPayload {
   itg_modified_on: string;
   itg_modified_by: string | null;
 }
-
-export type ItemGroupListItem = ItemGroupPayload | Record<string, unknown>;

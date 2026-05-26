@@ -3,6 +3,11 @@ import { InventoryExceptionFilter } from 'src/common/utils/module-exception-filt
 import { ItemEanCodeErrorDetail, ItemEanCodeErrorResponse } from './types/item-ean-code-api.types';
 
 @Catch()
-export class ItemEanCodeExceptionFilter extends InventoryExceptionFilter<ItemEanCodeErrorDetail, ItemEanCodeErrorResponse> {
-  constructor() { super(/\b(ean_[a-z0-9_]+)\b/i); }
+export class ItemEanCodeExceptionFilter extends InventoryExceptionFilter<
+  ItemEanCodeErrorDetail,
+  ItemEanCodeErrorResponse
+> {
+  constructor() {
+    super(/\b(ean_[a-z0-9_]+)\b/i);
+  }
 }

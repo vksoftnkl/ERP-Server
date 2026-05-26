@@ -1,9 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { ListItemGroupQueryDto } from './dto/list-item-group-query.dto';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import { ItemsGroupMasterService } from './items-group-master.service';
 const ITEM_GROUP_ID = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678';
@@ -141,7 +139,9 @@ describe('ItemsGroupMasterService', () => {
           },
         ];
       }),
-      filterPrimaryFromTable: jest.fn().mockImplementation((candidates: Array<unknown>) => candidates),
+      filterPrimaryFromTable: jest
+        .fn()
+        .mockImplementation((candidates: Array<unknown>) => candidates),
       validateBaseSql: jest
         .fn()
         .mockImplementation((options: { sql: string; tableName: string }) => {
@@ -175,43 +175,44 @@ describe('ItemsGroupMasterService', () => {
             normalizedSql,
           };
         }),
-      runPagedQuery: jest.fn().mockImplementation(
-        async (options: {
-          baseSql: string;
-          alias: string;
-          params?: unknown[];
-          limit: number;
-          skip: number;
-        }) => {
-          const params = options.params ?? [];
-          const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
-          const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
-            params.length + 1
-          } OFFSET $${params.length + 2}`;
-          const [countResult, rows] = await Promise.all([
-            prisma.$queryRawUnsafe(countSql, ...params),
-            prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
-          ]);
-          const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
-          if (typeof totalRaw === 'bigint') {
-            return { items: rows as unknown[], total: Number(totalRaw) };
-          }
-          if (typeof totalRaw === 'number') {
-            return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
-          }
-          if (typeof totalRaw === 'string') {
-            const parsed = Number(totalRaw);
-            return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
-          }
-          return { items: rows as unknown[], total: 0 };
-        },
-      ),
+      runPagedQuery: jest
+        .fn()
+        .mockImplementation(
+          async (options: {
+            baseSql: string;
+            alias: string;
+            params?: unknown[];
+            limit: number;
+            skip: number;
+          }) => {
+            const params = options.params ?? [];
+            const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
+            const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
+              params.length + 1
+            } OFFSET $${params.length + 2}`;
+            const [countResult, rows] = await Promise.all([
+              prisma.$queryRawUnsafe(countSql, ...params),
+              prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
+            ]);
+            const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
+            if (typeof totalRaw === 'bigint') {
+              return { items: rows as unknown[], total: Number(totalRaw) };
+            }
+            if (typeof totalRaw === 'number') {
+              return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
+            }
+            if (typeof totalRaw === 'string') {
+              const parsed = Number(totalRaw);
+              return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
+            }
+            return { items: rows as unknown[], total: 0 };
+          },
+        ),
     };
 
     service = new ItemsGroupMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
   it('creates an item group when itg_id is not provided', async () => {
@@ -527,331 +528,7 @@ describe('ItemsGroupMasterService', () => {
     expect(findFirstArgs.where?.itgId).toBe(ITEM_GROUP_ID);
     expect(findFirstArgs.where?.itgIsDeleted).toBe(false);
   });
-  it('excludes deleted rows in list', async () => {
-    prisma.itemGroupMaster.count.mockResolvedValue(1);
-    prisma.itemGroupMaster.findMany.mockResolvedValue([makeRecord()]);
-    const query: ListItemGroupQueryDto = {};
-    await service.list(query);
-    expect(prisma.itemGroupMaster.count).toHaveBeenCalledTimes(1);
-    const countArgs = prisma.itemGroupMaster.count.mock.calls[0][0];
-    expect(countArgs.where?.itgIsDeleted).toBe(false);
-  });
-  it('applies pagination and search filters correctly', async () => {
-    prisma.itemGroupMaster.count.mockResolvedValue(35);
-    prisma.itemGroupMaster.findMany.mockResolvedValue([makeRecord()]);
-    const query: ListItemGroupQueryDto = {
-      itg_is_active: true,
-      search: 'raw',
-      page: 2,
-      limit: 10,
-    };
-    const result = await service.list(query);
-    expect(prisma.gridDetails.findFirst).toHaveBeenCalledTimes(1);
-    expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
-    const findManyArgs = prisma.itemGroupMaster.findMany.mock.calls[0][0];
-    expect(findManyArgs.skip).toBe(10);
-    expect(findManyArgs.take).toBe(10);
-    expect(findManyArgs.where?.itgIsDeleted).toBe(false);
-    expect(findManyArgs.where?.itgIsActive).toBe(true);
-    expect(findManyArgs.where?.OR).toEqual([
-      { itgName: { contains: 'raw', mode: 'insensitive' } },
-      { itgAlias: { contains: 'raw', mode: 'insensitive' } },
-      { itgDescription: { contains: 'raw', mode: 'insensitive' } },
-    ]);
-    expect(result.meta).toEqual({
-      page: 2,
-      limit: 10,
-      total: 35,
-      total_pages: 4,
-    });
-  });
-  it('uses configured grid_sql even when filters and search are provided', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT itg_id AS "item group id", itg_name AS "item group name", itg_alias AS "item group short", itg_description, itg_parent_id, itg_is_active FROM item_group_master WHERE itg_is_deleted = false',
-    });
-    prisma.gridColumn.findMany.mockResolvedValue([
-      { gridColumnName: 'item group name', gridColumnNumber: 2 },
-      { gridColumnName: 'item group short', gridColumnNumber: 3 },
-    ]);
-    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
-      {
-        'item group id': ITEM_GROUP_ID,
-        'item group name': 'Raw Materials',
-        'item group short': 'RM',
-        itg_description: 'Default description',
-        itg_parent_id: null,
-        itg_is_active: true,
-      },
-    ]);
 
-    const result = await service.list({
-      itg_is_active: true,
-      search: 'raw',
-      page: 1,
-      limit: 20,
-    });
-    expect(prisma.itemGroupMaster.findMany).not.toHaveBeenCalled();
-    expect(prisma.itemGroupMaster.count).not.toHaveBeenCalled();
-    expect(prisma.gridColumn.findMany).toHaveBeenCalledWith({
-      where: {
-        gridId: BigInt(1),
-        gridColumnIsDeleted: false,
-        gridColumnFilter: true,
-        grid: {
-          gridIsDeleted: false,
-        },
-      },
-      orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
-      select: {
-        gridColumnName: true,
-        gridColumnNumber: true,
-      },
-    });
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('WHERE grid_kv.key = $2'),
-      true,
-      'item group name',
-      '%raw%',
-      'item group short',
-      '%raw%',
-    );
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('LIMIT $6 OFFSET $7'),
-      true,
-      'item group name',
-      '%raw%',
-      'item group short',
-      '%raw%',
-      20,
-      0,
-    );
-    expect(result.meta.total).toBe(1);
-  });
-  it('searches unquoted camelCase aliases from grid_sql using filtered grid columns', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT igm.itg_id AS itemGroupId, igm.itg_name AS itemGroupName, igm.itg_alias AS groupAlias, igm.itg_short AS groupShort, igm.itg_is_active AS isActive FROM item_group_master igm WHERE igm.itg_is_deleted = false',
-    });
-    prisma.gridColumn.findMany.mockResolvedValue([
-      { gridColumnName: 'item group name', gridColumnNumber: 1 },
-      { gridColumnName: 'item group short', gridColumnNumber: 2 },
-      { gridColumnName: 'item group alias', gridColumnNumber: 3 },
-      { gridColumnName: 'item group active', gridColumnNumber: 4 },
-    ]);
-    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
-      {
-        itemgroupid: ITEM_GROUP_ID,
-        itemgroupname: 'Shoes',
-        groupalias: 'Footwear',
-        groupshort: 'SH',
-        isactive: true,
-      },
-    ]);
-
-    const result = await service.list({
-      search: 'sh',
-      page: 1,
-      limit: 20,
-    });
-
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('WHERE grid_kv.key = $1'),
-      'itemgroupname',
-      '%sh%',
-      'groupshort',
-      '%sh%',
-      'groupalias',
-      '%sh%',
-      'isactive',
-      '%sh%',
-    );
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('LIMIT $9 OFFSET $10'),
-      'itemgroupname',
-      '%sh%',
-      'groupshort',
-      '%sh%',
-      'groupalias',
-      '%sh%',
-      'isactive',
-      '%sh%',
-      20,
-      0,
-    );
-    expect(result.meta.total).toBe(1);
-  });
-  it('dynamically includes newly added description field when filter is enabled', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT igm.itg_id AS itemGroupId, igm.itg_name AS itemGroupName, igm.itg_alias AS groupAlias, igm.itg_short AS groupShort, igm.itg_description AS itemGroupDesc FROM item_group_master igm WHERE igm.itg_is_deleted = false',
-    });
-    prisma.gridColumn.findMany.mockResolvedValue([
-      { gridColumnName: 'item group description', gridColumnNumber: 5 },
-    ]);
-    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
-      {
-        itemgroupid: ITEM_GROUP_ID,
-        itemgroupname: 'Shoes',
-        groupalias: 'Footwear',
-        groupshort: 'SH',
-        itemgroupdesc: 'Leather shoes',
-      },
-    ]);
-
-    const result = await service.list({
-      search: 'leather',
-      page: 1,
-      limit: 20,
-    });
-
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('WHERE grid_kv.key = $1'),
-      'itemgroupdesc',
-      '%leather%',
-    );
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('LIMIT $3 OFFSET $4'),
-      'itemgroupdesc',
-      '%leather%',
-      20,
-      0,
-    );
-    expect(result.meta.total).toBe(1);
-  });
-  it('maps search fields by grid_column_number when names do not match sql fields', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT itg_name, itg_alias, itg_description, itg_short FROM item_group_master WHERE itg_is_deleted = false',
-    });
-    prisma.gridColumn.findMany.mockResolvedValue([
-      { gridColumnName: 'column one', gridColumnNumber: 1 },
-      { gridColumnName: 'column three', gridColumnNumber: 3 },
-    ]);
-    prisma.$queryRawUnsafe.mockResolvedValueOnce([{ total: BigInt(1) }]).mockResolvedValueOnce([
-      {
-        itg_name: 'Raw Materials',
-        itg_alias: 'RM',
-        itg_description: 'Default description',
-        itg_short: 'RAW',
-      },
-    ]);
-    await service.list({
-      search: 'raw',
-      page: 1,
-      limit: 20,
-    });
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('WHERE grid_kv.key = $1'),
-      'itg_name',
-      '%raw%',
-      'itg_description',
-      '%raw%',
-    );
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('LIMIT $5 OFFSET $6'),
-      'itg_name',
-      '%raw%',
-      'itg_description',
-      '%raw%',
-      20,
-      0,
-    );
-  });
-  it('uses configured grid_sql for plain get-all list', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT itg_id AS \"itemGroupId\", itg_name AS \"groupName\" FROM item_group_master WHERE itg_is_deleted = false',
-    });
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([{ total: BigInt(1) }])
-      .mockResolvedValueOnce([{ itemGroupId: ITEM_GROUP_ID, groupName: 'Raw Materials' }]);
-    const result = await service.list({});
-    expect(prisma.gridDetails.findFirst).toHaveBeenCalledWith({
-      where: {
-        gridId: BigInt(1),
-        gridIsDeleted: false,
-        gridStatus: true,
-        gridSql: {
-          not: null,
-        },
-      },
-      select: {
-        gridSql: true,
-      },
-    });
-    expect(prisma.gridColumn.findMany).not.toHaveBeenCalled();
-    expect(prisma.itemGroupMaster.findMany).not.toHaveBeenCalled();
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('COUNT(*)::bigint AS total'),
-    );
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('LIMIT $1 OFFSET $2'),
-      20,
-      0,
-    );
-    expect(result).toEqual({
-      items: [{ itemGroupId: ITEM_GROUP_ID, groupName: 'Raw Materials' }],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-  it('falls back to prisma list when configured grid_sql is invalid', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql: 'DELETE FROM item_group_master',
-    });
-    prisma.itemGroupMaster.count.mockResolvedValue(1);
-    prisma.itemGroupMaster.findMany.mockResolvedValue([makeRecord()]);
-    await expect(service.list({})).resolves.toEqual({
-      items: [service['toPayload'](makeRecord())],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
-    expect(prisma.itemGroupMaster.count).toHaveBeenCalledTimes(1);
-    expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
-  });
-  it('falls back to prisma list when configured grid_sql execution fails', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT itg_id AS "itemGroupId", itg_name AS "groupName" FROM item_group_master WHERE itg_is_deleted = false',
-    });
-    prisma.$queryRawUnsafe.mockRejectedValue(new Error('broken configured grid'));
-    prisma.itemGroupMaster.count.mockResolvedValue(1);
-    prisma.itemGroupMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    await expect(service.list({})).resolves.toEqual({
-      items: [service['toPayload'](makeRecord())],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalled();
-    expect(prisma.itemGroupMaster.count).toHaveBeenCalledTimes(1);
-    expect(prisma.itemGroupMaster.findMany).toHaveBeenCalledTimes(1);
-  });
   it('soft delete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       itgId: PARENT_GROUP_ID,

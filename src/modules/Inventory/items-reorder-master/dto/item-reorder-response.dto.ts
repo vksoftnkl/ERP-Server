@@ -1,11 +1,11 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from 'src/common/utils/module-response.dto';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
 export { InventoryErrorFieldDto as ItemReorderErrorFieldDto };
 export { InventoryErrorResponseDto as ItemReorderErrorResponseDto };
-export { InventoryListMetaDto as ItemReorderListMetaDto };
-
 export class ItemReorderPayloadDto {
   @ApiProperty({ format: 'uuid' })
   ir_id!: string;
@@ -109,24 +109,6 @@ export class ItemReorderSuccessSaveDto {
   })
   data!: ItemReorderPayloadDto | ItemReorderPayloadDto[];
 }
-
-export class ItemReorderSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Item reorders fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: ItemReorderPayloadDto, isArray: true })
-  data!: ItemReorderPayloadDto[];
-
-  @ApiProperty({ type: InventoryListMetaDto })
-  meta!: InventoryListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
-
 export class ItemReorderSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

@@ -1,8 +1,6 @@
 export type { PurchaseErrorDetail as SupplierGroupErrorDetail } from 'src/common/types/module-api.types';
 export type { PurchaseErrorResponse as SupplierGroupErrorResponse } from 'src/common/types/module-api.types';
 export type { PurchaseSuccessResponse as SupplierGroupSuccessResponse } from 'src/common/types/module-api.types';
-export type { PurchaseListMeta as SupplierGroupListMeta } from 'src/common/types/module-list.types';
-
 export interface SupplierGroupPayload {
   spgId: string;
   spgName: string;
@@ -17,4 +15,3 @@ export interface SupplierGroupPayload {
   spgModifiedOn: string;
   spgModifiedBy: string | null;
 }
-export type SupplierGroupListItem = SupplierGroupPayload | Record<string, unknown>;

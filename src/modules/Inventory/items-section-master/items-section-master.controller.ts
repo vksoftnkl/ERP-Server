@@ -27,22 +27,15 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
 import {
   ItemSectionErrorResponseDto,
   ItemSectionSuccessDeleteDto,
-  ItemSectionSuccessListDto,
   ItemSectionSuccessSingleDto,
 } from './dto/item-section-response.dto';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import { ItemSectionExceptionFilter } from './item-section-exception.filter';
 import { ItemsSectionMasterService } from './items-section-master.service';
-import {
-  ItemSectionListItem,
-  ItemSectionListMeta,
-  ItemSectionPayload,
-  ItemSectionSuccessResponse,
-} from './types/item-section-api.types';
+import { ItemSectionPayload, ItemSectionSuccessResponse } from './types/item-section-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 
 type UploadedPhotoFile = {
@@ -81,25 +74,6 @@ export class ItemsSectionMasterController {
         ? 'Item section updated successfully'
         : 'Item section created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item sections with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemSectionSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemSectionErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemSectionQueryDto,
-  ): Promise<ItemSectionSuccessResponse<ItemSectionListItem[], ItemSectionListMeta>> {
-    const result = await this.itemsSectionMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Item sections fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

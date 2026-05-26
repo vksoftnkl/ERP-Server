@@ -1,7 +1,6 @@
 export type { InventoryErrorDetail as ItemBrandErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemBrandErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemBrandSuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as ItemBrandListMeta } from 'src/common/types/module-list.types';
 export interface ItemBrandPayload {
   brand_id: string;
   brand_name: string;
@@ -22,4 +21,3 @@ export interface ItemBrandPayload {
   brand_modified_on: string;
   brand_modified_by: string | null;
 }
-export type ItemBrandListItem = ItemBrandPayload | Record<string, unknown>;

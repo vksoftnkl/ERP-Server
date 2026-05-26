@@ -1,13 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, SupplierGroup } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListSupplierGroupQueryDto } from './dto/list-supplier-group-query.dto';
 import { SaveSupplierGroupDto } from './dto/save-supplier-group.dto';
 import {
-  SupplierGroupListItem,
-  SupplierGroupListMeta,
   SupplierGroupPayload,
 } from './types/supplier-group-api.types';
 import {
@@ -21,7 +17,6 @@ import {
   throwPurchaseConflict,
   throwPurchaseNotFound,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const SUPPLIER_GROUP_TABLE_NAME = 'supplier groups';
 const SUPPLIER_GROUP_AUDIT_SCREEN_NAME = 'Supplier Group Master';
@@ -34,7 +29,6 @@ export class SupplierGroupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveSupplierGroupDto: SaveSupplierGroupDto): Promise<SupplierGroupPayload> {
@@ -42,20 +36,6 @@ export class SupplierGroupService {
       return this.updateSupplierGroup(saveSupplierGroupDto);
     }
     return this.createSupplierGroup(saveSupplierGroupDto);
-  }
-
-  async list(
-    queryDto: ListSupplierGroupQueryDto,
-  ): Promise<ConfiguredGridListResult<SupplierGroupListItem, SupplierGroupListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<SupplierGroupListItem>(
-      this.configuredGridSqlService,
-      { tableName: SUPPLIER_GROUP_TABLE_NAME, alias: 'supplier_group_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwPurchaseBadRequest('No configured grid found for supplier group list', []);
-    }
-    return result;
   }
 
   async getById(spgId: string): Promise<SupplierGroupPayload> {

@@ -1,17 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Unit } from '@prisma/client';
-import { ListUnitQueryDto } from './dto/list-unit-query.dto';
 import { SaveUnitDto } from './dto/save-unit.dto';
-import {
-  UnitErrorDetail,
-  UnitListResult,
-  UnitListItem,
-  UnitPayload,
-} from './types/unit-api.types';
+import { UnitErrorDetail, UnitPayload } from './types/unit-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -32,7 +24,6 @@ export class UnitsMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
@@ -41,37 +32,16 @@ export class UnitsMasterService {
     }
     return this.createUnit(saveUnitDto);
   }
-
-  async list(queryDto: ListUnitQueryDto): Promise<UnitListResult> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<UnitListItem>(
-      this.configuredGridSqlService,
-      {
-        tableName: UNIT_TABLE_NAME,
-        alias: 'unit_grid',
-        search: queryDto.search,
-        page,
-        limit,
-        skip,
-        extraForbiddenPatterns: [
-          {
-            pattern: LEGACY_UNIT_UUID_NUMERIC_COMPARISON_PATTERN,
-            message: 'Configured query compares unit UUID fields with numeric values',
-          },
-        ],
-      },
-    );
-    if (!result) {
-      throwInventoryBadRequest<UnitErrorDetail>('No configured grid found for unit list', []);
-    }
-    return result;
-  }
   async getById(unitId: string): Promise<UnitPayload> {
     const record = await this.prisma.unit.findFirst({
       where: { unit_id: unitId, unit_is_deleted: false },
     });
     if (!record) {
-      throwInventoryNotFound<UnitErrorDetail>('Unit not found', 'unit_id', `No active unit found with id ${unitId}`);
+      throwInventoryNotFound<UnitErrorDetail>(
+        'Unit not found',
+        'unit_id',
+        `No active unit found with id ${unitId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -82,16 +52,28 @@ export class UnitsMasterService {
         where: { unit_id: unitId, unit_is_deleted: false },
       });
       if (!existing) {
-        throwInventoryNotFound<UnitErrorDetail>('Unit not found', 'unit_id', `No active unit found with id ${unitId}`);
+        throwInventoryNotFound<UnitErrorDetail>(
+          'Unit not found',
+          'unit_id',
+          `No active unit found with id ${unitId}`,
+        );
       }
 
       const modifiedOn = new Date();
       const result = await tx.unit.updateMany({
         where: { unit_id: unitId, unit_is_deleted: false },
-        data: { unit_is_deleted: true, unit_modified_on: modifiedOn, unit_modified_by: DEFAULT_ACTOR },
+        data: {
+          unit_is_deleted: true,
+          unit_modified_on: modifiedOn,
+          unit_modified_by: DEFAULT_ACTOR,
+        },
       });
       if (result.count === 0) {
-        throwInventoryNotFound<UnitErrorDetail>('Unit not found', 'unit_id', `No active unit found with id ${unitId}`);
+        throwInventoryNotFound<UnitErrorDetail>(
+          'Unit not found',
+          'unit_id',
+          `No active unit found with id ${unitId}`,
+        );
       }
 
       const originalRecord = this.toPayload(existing);
@@ -175,7 +157,11 @@ export class UnitsMasterService {
           where: { unit_id: unitId, unit_is_deleted: false },
         });
         if (!existing) {
-          throwInventoryNotFound<UnitErrorDetail>('Unit not found', 'unit_id', `No active unit found with id ${unitId}`);
+          throwInventoryNotFound<UnitErrorDetail>(
+            'Unit not found',
+            'unit_id',
+            `No active unit found with id ${unitId}`,
+          );
         }
         const baseUnitId = hasOwnProperty(saveUnitDto, 'unit_base_unit_id')
           ? (saveUnitDto.unit_base_unit_id ?? null)
@@ -219,31 +205,14 @@ export class UnitsMasterService {
       throw error;
     }
   }
-
-  private buildListWhere(queryDto: ListUnitQueryDto): Prisma.UnitWhereInput {
-    const where: Prisma.UnitWhereInput = { unit_is_deleted: false };
-
-    if (queryDto.unit_base_unit_id !== undefined) where.unit_base_unit_id = queryDto.unit_base_unit_id;
-    if (queryDto.unit_is_active !== undefined) where.unit_is_active = queryDto.unit_is_active;
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { unit_name: { contains: search, mode: 'insensitive' } },
-        { unit_alias: { contains: search, mode: 'insensitive' } },
-        { unit_code: { contains: search, mode: 'insensitive' } },
-        { unit_description: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    return where;
-  }
-
   private validateConversionRules(baseUnitId: string | null, conversion: number | null): void {
     if (baseUnitId !== null) {
       if (conversion === null || conversion === undefined) {
         throwInventoryBadRequest<UnitErrorDetail>('Validation error', [
-          { field: 'unit_conversion', message: 'unit_conversion is required when unit_base_unit_id is set' },
+          {
+            field: 'unit_conversion',
+            message: 'unit_conversion is required when unit_base_unit_id is set',
+          },
         ]);
       }
       if (Number(conversion) <= 0) {
@@ -260,16 +229,24 @@ export class UnitsMasterService {
   ): void {
     if (hasOwnProperty(saveUnitDto, 'unit_alias')) data.unit_alias = saveUnitDto.unit_alias;
     if (hasOwnProperty(saveUnitDto, 'unit_code')) data.unit_code = saveUnitDto.unit_code;
-    if (hasOwnProperty(saveUnitDto, 'unit_description')) data.unit_description = saveUnitDto.unit_description;
-    if (hasOwnProperty(saveUnitDto, 'unit_decimal_count')) data.unit_decimal_count = saveUnitDto.unit_decimal_count;
+    if (hasOwnProperty(saveUnitDto, 'unit_description'))
+      data.unit_description = saveUnitDto.unit_description;
+    if (hasOwnProperty(saveUnitDto, 'unit_decimal_count'))
+      data.unit_decimal_count = saveUnitDto.unit_decimal_count;
     if (hasOwnProperty(saveUnitDto, 'unit_weight')) data.unit_weight = saveUnitDto.unit_weight;
     if (hasOwnProperty(saveUnitDto, 'unit_loading')) data.unit_loading = saveUnitDto.unit_loading;
-    if (hasOwnProperty(saveUnitDto, 'unit_unloading')) data.unit_unloading = saveUnitDto.unit_unloading;
-    if (hasOwnProperty(saveUnitDto, 'unit_attach_charge')) data.unit_attach_charge = saveUnitDto.unit_attach_charge;
-    if (hasOwnProperty(saveUnitDto, 'unit_is_pack_unit')) data.unit_is_pack_unit = saveUnitDto.unit_is_pack_unit;
-    if (hasOwnProperty(saveUnitDto, 'unit_base_unit_id')) data.unit_base_unit_id = saveUnitDto.unit_base_unit_id;
-    if (hasOwnProperty(saveUnitDto, 'unit_conversion')) data.unit_conversion = saveUnitDto.unit_conversion;
-    if (hasOwnProperty(saveUnitDto, 'unit_is_active')) data.unit_is_active = saveUnitDto.unit_is_active;
+    if (hasOwnProperty(saveUnitDto, 'unit_unloading'))
+      data.unit_unloading = saveUnitDto.unit_unloading;
+    if (hasOwnProperty(saveUnitDto, 'unit_attach_charge'))
+      data.unit_attach_charge = saveUnitDto.unit_attach_charge;
+    if (hasOwnProperty(saveUnitDto, 'unit_is_pack_unit'))
+      data.unit_is_pack_unit = saveUnitDto.unit_is_pack_unit;
+    if (hasOwnProperty(saveUnitDto, 'unit_base_unit_id'))
+      data.unit_base_unit_id = saveUnitDto.unit_base_unit_id;
+    if (hasOwnProperty(saveUnitDto, 'unit_conversion'))
+      data.unit_conversion = saveUnitDto.unit_conversion;
+    if (hasOwnProperty(saveUnitDto, 'unit_is_active'))
+      data.unit_is_active = saveUnitDto.unit_is_active;
   }
 
   private toPayload(record: Unit): UnitPayload {
@@ -302,5 +279,4 @@ export class UnitsMasterService {
       { field: 'unit_name', message: 'Duplicate unit_name is not allowed' },
     ]);
   }
-
 }

@@ -1,17 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
-import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
-import {
-  ItemSectionErrorDetail,
-  ItemSectionListItem,
-  ItemSectionListMeta,
-  ItemSectionPayload,
-} from './types/item-section-api.types';
+import { ItemSectionErrorDetail, ItemSectionPayload } from './types/item-section-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -30,7 +22,6 @@ export class ItemsSectionMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveItemSectionDto: SaveItemSectionDto): Promise<ItemSectionPayload> {
@@ -40,34 +31,16 @@ export class ItemsSectionMasterService {
 
     return this.createItemSection(saveItemSectionDto);
   }
-
-  async list(
-    queryDto: ListItemSectionQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemSectionListItem, ItemSectionListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemSectionListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_SECTION_TABLE_NAME, alias: 'item_section_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemSectionErrorDetail>('No configured grid found for item section list', []);
-    }
-    return result;
-  }
-
-  private toListItem(record: ItemSectionMaster): ItemSectionListItem {
-    return {
-      sec_id: record.secId,
-      sec_name: record.secName,
-    };
-  }
-
   async getById(secId: string): Promise<ItemSectionPayload> {
     const record = await this.prisma.itemSectionMaster.findFirst({
       where: { secId, secIsDeleted: false },
     });
     if (!record) {
-      throwInventoryNotFound<ItemSectionErrorDetail>('Item section not found', 'sec_id', `No active item section found with id ${secId}`);
+      throwInventoryNotFound<ItemSectionErrorDetail>(
+        'Item section not found',
+        'sec_id',
+        `No active item section found with id ${secId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -79,7 +52,11 @@ export class ItemsSectionMasterService {
       });
 
       if (!existing) {
-        throwInventoryNotFound<ItemSectionErrorDetail>('Item section not found', 'sec_id', `No active item section found with id ${secId}`);
+        throwInventoryNotFound<ItemSectionErrorDetail>(
+          'Item section not found',
+          'sec_id',
+          `No active item section found with id ${secId}`,
+        );
       }
 
       const subtreeIds = await this.getActiveSubtreeIds(tx, secId);
@@ -91,7 +68,11 @@ export class ItemsSectionMasterService {
       });
 
       if (result.count === 0) {
-        throwInventoryNotFound<ItemSectionErrorDetail>('Item section not found', 'sec_id', `No active item section found with id ${secId}`);
+        throwInventoryNotFound<ItemSectionErrorDetail>(
+          'Item section not found',
+          'sec_id',
+          `No active item section found with id ${secId}`,
+        );
       }
 
       await this.removePathIds(tx, ancestorIds, subtreeIds);
@@ -199,13 +180,18 @@ export class ItemsSectionMasterService {
         });
 
         if (!existing) {
-          throwInventoryNotFound<ItemSectionErrorDetail>('Item section not found', 'sec_id', `No active item section found with id ${secId}`);
+          throwInventoryNotFound<ItemSectionErrorDetail>(
+            'Item section not found',
+            'sec_id',
+            `No active item section found with id ${secId}`,
+          );
         }
 
         if (saveItemSectionDto.sec_parent_id === secId) {
-          throwInventoryBadRequest<ItemSectionErrorDetail>('Item section cannot be its own parent', [
-            { field: 'sec_parent_id', message: 'sec_parent_id cannot be same as sec_id' },
-          ]);
+          throwInventoryBadRequest<ItemSectionErrorDetail>(
+            'Item section cannot be its own parent',
+            [{ field: 'sec_parent_id', message: 'sec_parent_id cannot be same as sec_id' }],
+          );
         }
 
         let requestedParentLevel: number | null | undefined;
@@ -287,43 +273,31 @@ export class ItemsSectionMasterService {
 
     return parent;
   }
-
-  private buildListWhere(queryDto: ListItemSectionQueryDto): Prisma.ItemSectionMasterWhereInput {
-    const where: Prisma.ItemSectionMasterWhereInput = { secIsDeleted: false };
-
-    if (queryDto.sec_parent_id !== undefined) where.secParentId = queryDto.sec_parent_id;
-    if (queryDto.sec_is_active !== undefined) where.secIsActive = queryDto.sec_is_active;
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { secName: { contains: search, mode: 'insensitive' } },
-        { secAlias: { contains: search, mode: 'insensitive' } },
-        { secDescription: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    return where;
-  }
-
   private applyOptionalFields(
     data:
       | Prisma.ItemSectionMasterUncheckedCreateInput
       | Prisma.ItemSectionMasterUncheckedUpdateInput,
     saveItemSectionDto: SaveItemSectionDto,
   ): void {
-    if (hasOwnProperty(saveItemSectionDto, 'sec_alias')) data.secAlias = saveItemSectionDto.sec_alias;
-    if (hasOwnProperty(saveItemSectionDto, 'sec_short')) data.secShort = saveItemSectionDto.sec_short;
-    if (hasOwnProperty(saveItemSectionDto, 'sec_description')) data.secDescription = saveItemSectionDto.sec_description;
-    if (hasOwnProperty(saveItemSectionDto, 'sec_parent_id')) data.secParentId = saveItemSectionDto.sec_parent_id;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_alias'))
+      data.secAlias = saveItemSectionDto.sec_alias;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_short'))
+      data.secShort = saveItemSectionDto.sec_short;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_description'))
+      data.secDescription = saveItemSectionDto.sec_description;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_parent_id'))
+      data.secParentId = saveItemSectionDto.sec_parent_id;
     if (hasOwnProperty(saveItemSectionDto, 'sec_sort')) data.secSort = saveItemSectionDto.sec_sort;
-    if (hasOwnProperty(saveItemSectionDto, 'sec_position')) data.secPosition = saveItemSectionDto.sec_position;
-    if (hasOwnProperty(saveItemSectionDto, 'sec_color_code')) data.secColorCode = saveItemSectionDto.sec_color_code;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_position'))
+      data.secPosition = saveItemSectionDto.sec_position;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_color_code'))
+      data.secColorCode = saveItemSectionDto.sec_color_code;
     if (hasOwnProperty(saveItemSectionDto, 'sec_icon')) data.secIcon = saveItemSectionDto.sec_icon;
     if (hasOwnProperty(saveItemSectionDto, 'sec_photo')) {
       data.secPhoto = this.decodePhotoInput(saveItemSectionDto.sec_photo);
     }
-    if (hasOwnProperty(saveItemSectionDto, 'sec_photo_url')) data.secPhotoUrl = saveItemSectionDto.sec_photo_url;
+    if (hasOwnProperty(saveItemSectionDto, 'sec_photo_url'))
+      data.secPhotoUrl = saveItemSectionDto.sec_photo_url;
   }
 
   private async getAncestorIds(
@@ -533,11 +507,12 @@ export class ItemsSectionMasterService {
   }
 
   private handleWriteError(error: unknown): void {
-    throwOnUniqueConstraintError<ItemSectionErrorDetail>(error, 'Item section name already exists', [
-      { field: 'sec_name', message: 'Duplicate sec_name is not allowed' },
-    ]);
+    throwOnUniqueConstraintError<ItemSectionErrorDetail>(
+      error,
+      'Item section name already exists',
+      [{ field: 'sec_name', message: 'Duplicate sec_name is not allowed' }],
+    );
   }
-
 
   private resolveSectionLevel(
     parentId: string | null | undefined,

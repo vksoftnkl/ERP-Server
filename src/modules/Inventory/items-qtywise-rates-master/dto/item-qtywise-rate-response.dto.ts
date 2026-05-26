@@ -1,11 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from 'src/common/utils/module-response.dto';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
 export { InventoryErrorFieldDto as ItemQtywiseRateErrorFieldDto };
 export { InventoryErrorResponseDto as ItemQtywiseRateErrorResponseDto };
-export { InventoryListMetaDto as ItemQtywiseRateListMetaDto };
-
 export class ItemQtywiseRatePayloadDto {
   @ApiProperty({ format: 'uuid' })
   iqr_id!: string;
@@ -92,24 +92,6 @@ export class ItemQtywiseRateSuccessSingleDto {
   @ApiProperty({ type: ItemQtywiseRatePayloadDto })
   data!: ItemQtywiseRatePayloadDto;
 }
-
-export class ItemQtywiseRateSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Item qty-wise rates fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: ItemQtywiseRatePayloadDto, isArray: true })
-  data!: ItemQtywiseRatePayloadDto[];
-
-  @ApiProperty({ type: InventoryListMetaDto })
-  meta!: InventoryListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
-
 export class ItemQtywiseRateSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

@@ -23,9 +23,7 @@ type PrismaMock = {
   };
 };
 
-const makeItemMasterRecord = (
-  overrides: Partial<ItemMaster> = {},
-): ItemMaster =>
+const makeItemMasterRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =>
   ({
     itemId: ITEM_ID,
     itemCompanyId: COMPANY_ID,
@@ -92,9 +90,7 @@ const makeItemMasterRecord = (
     ...overrides,
   }) as ItemMaster;
 
-const makeItemPriceRecord = (
-  overrides: Partial<ItemPriceMaster> = {},
-): ItemPriceMaster =>
+const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPriceMaster =>
   ({
     ipmId: ITEM_PRICE_ID,
     ipmCompanyId: COMPANY_ID,
@@ -145,9 +141,7 @@ const makeItemPriceRecord = (
     ...overrides,
   }) as ItemPriceMaster;
 
-const makeItemTaxRecord = (
-  overrides: Partial<ItemTaxMaster> = {},
-): ItemTaxMaster =>
+const makeItemTaxRecord = (overrides: Partial<ItemTaxMaster> = {}): ItemTaxMaster =>
   ({
     taxId: TAX_ID,
     taxName: 'GST 18%',

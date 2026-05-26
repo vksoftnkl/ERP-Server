@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ListItemBrandQueryDto } from './dto/list-item-brand-query.dto';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemsBrandMasterController } from './items-brand-master.controller';
 import { ItemsBrandMasterService } from './items-brand-master.service';
@@ -80,36 +79,6 @@ describe('ItemsBrandMasterController', () => {
       data: itemBrandPayload,
     });
   });
-
-  it('returns list wrapper with pagination meta', async () => {
-    serviceMock.list.mockResolvedValue({
-      items: [itemBrandPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListItemBrandQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.list(query)).resolves.toEqual({
-      success: true,
-      message: 'Item brands fetched successfully',
-      data: [itemBrandPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemBrandPayload);
 

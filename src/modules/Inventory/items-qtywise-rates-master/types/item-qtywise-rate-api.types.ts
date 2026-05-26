@@ -1,7 +1,6 @@
 export type { InventoryErrorDetail as ItemQtywiseRateErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemQtywiseRateErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemQtywiseRateSuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as ItemQtywiseRateListMeta } from 'src/common/types/module-list.types';
 export interface ItemQtywiseRatePayload {
   iqr_id: string;
   iqr_branch_id: string | null;
@@ -26,5 +25,3 @@ export interface ItemQtywiseRatePayload {
   iqr_modified_by: string | null;
   iqr_remarks: string | null;
 }
-
-export type ItemQtywiseRateListItem = ItemQtywiseRatePayload | Record<string, unknown>;

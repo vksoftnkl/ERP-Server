@@ -3,6 +3,11 @@ import { InventoryExceptionFilter } from 'src/common/utils/module-exception-filt
 import { UnitErrorDetail, UnitErrorResponse } from './types/unit-api.types';
 
 @Catch()
-export class UnitExceptionFilter extends InventoryExceptionFilter<UnitErrorDetail, UnitErrorResponse> {
-  constructor() { super(/\b(unit_[a-z0-9_]+)\b/i); }
+export class UnitExceptionFilter extends InventoryExceptionFilter<
+  UnitErrorDetail,
+  UnitErrorResponse
+> {
+  constructor() {
+    super(/\b(unit_[a-z0-9_]+)\b/i);
+  }
 }

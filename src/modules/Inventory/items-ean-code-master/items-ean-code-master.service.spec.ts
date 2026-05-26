@@ -2,8 +2,6 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { ItemEanCode, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
-import { ListItemEanCodeQueryDto } from './dto/list-item-ean-code-query.dto';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import { ItemsEanCodeMasterService } from './items-ean-code-master.service';
 
@@ -46,10 +44,7 @@ describe('ItemsEanCodeMasterService', () => {
   let service: ItemsEanCodeMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
-  let configuredGridSqlService: Pick<
-    ConfiguredGridSqlService,
-    'loadCandidates' | 'filterPrimaryFromTable'
-  >;
+  let configuredGridSqlService: { loadCandidates: jest.Mock; filterPrimaryFromTable: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -82,7 +77,6 @@ describe('ItemsEanCodeMasterService', () => {
     service = new ItemsEanCodeMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      configuredGridSqlService as ConfiguredGridSqlService,
     );
   });
 
@@ -232,43 +226,6 @@ describe('ItemsEanCodeMasterService', () => {
     expect(findFirstArgs.where?.eanId).toBe(EAN_ID);
     expect(findFirstArgs.where?.eanIsDeleted).toBe(false);
   });
-
-  it('applies pagination and search filters correctly', async () => {
-    prisma.itemEanCode.count.mockResolvedValue(35);
-    prisma.itemEanCode.findMany.mockResolvedValue([makeRecord()]);
-
-    const query: ListItemEanCodeQueryDto = {
-      ean_item_id: ITEM_ID,
-      ean_is_active: true,
-      ean_is_default: false,
-      search: '8901',
-      page: 2,
-      limit: 10,
-    };
-
-    const result = await service.list(query);
-
-    expect(prisma.itemEanCode.findMany).toHaveBeenCalledTimes(1);
-    const findManyArgs = prisma.itemEanCode.findMany.mock.calls[0][0];
-    expect(findManyArgs.skip).toBe(10);
-    expect(findManyArgs.take).toBe(10);
-    expect(findManyArgs.where?.eanIsDeleted).toBe(false);
-    expect(findManyArgs.where?.eanItemId).toBe(ITEM_ID);
-    expect(findManyArgs.where?.eanIsActive).toBe(true);
-    expect(findManyArgs.where?.eanIsDefault).toBe(false);
-    expect(findManyArgs.where?.OR).toEqual([
-      { eanCode: { contains: '8901', mode: 'insensitive' } },
-      { eanRemarks: { contains: '8901', mode: 'insensitive' } },
-    ]);
-
-    expect(result.meta).toEqual({
-      page: 2,
-      limit: 10,
-      total: 35,
-      total_pages: 4,
-    });
-  });
-
   it('soft delete updates ean_is_deleted and audit fields', async () => {
     const existing = makeRecord();
     prisma.itemEanCode.findFirst.mockResolvedValue(existing);

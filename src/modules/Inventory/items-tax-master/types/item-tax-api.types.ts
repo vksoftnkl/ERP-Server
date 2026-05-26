@@ -1,7 +1,6 @@
 export type { InventoryErrorDetail as ItemTaxErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemTaxErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemTaxSuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as ItemTaxListMeta } from 'src/common/types/module-list.types';
 export interface ItemTaxPayload {
   tax_id: string;
   tax_name: string;
@@ -40,4 +39,3 @@ export interface ItemTaxPayload {
   tax_modified_on: string;
   tax_modified_by: string | null;
 }
-export type ItemTaxListItem = ItemTaxPayload | Record<string, unknown>;

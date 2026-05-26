@@ -1,17 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ItemMaster, Prisma } from '@prisma/client';
-import { ListItemQueryDto } from './dto/list-item-query.dto';
 import { SaveItemDto } from './dto/save-item.dto';
-import {
-  ItemErrorDetail,
-  ItemListItem,
-  ItemListMeta,
-  ItemPayload,
-} from './types/item-api.types';
+import { ItemErrorDetail, ItemPayload } from './types/item-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -29,26 +21,12 @@ export class ItemsMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
-  ) { }
+  ) {}
   async save(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     if (saveItemDto.item_id) {
       return this.updateItem(saveItemDto);
     }
     return this.createItem(saveItemDto);
-  }
-  async list(
-    queryDto: ListItemQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemListItem, ItemListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_TABLE_NAME, alias: 'item_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemErrorDetail>('No configured grid found for item list', []);
-    }
-    return result;
   }
   async getById(itemId: string): Promise<ItemPayload> {
     const record = await this.prisma.itemMaster.findFirst({
@@ -58,7 +36,11 @@ export class ItemsMasterService {
       },
     });
     if (!record) {
-      throwInventoryNotFound<ItemErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
+      throwInventoryNotFound<ItemErrorDetail>(
+        'Item not found',
+        'item_id',
+        `No active item found with id ${itemId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -71,7 +53,11 @@ export class ItemsMasterService {
         },
       });
       if (!existing) {
-        throwInventoryNotFound<ItemErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
+        throwInventoryNotFound<ItemErrorDetail>(
+          'Item not found',
+          'item_id',
+          `No active item found with id ${itemId}`,
+        );
       }
       const modifiedOn = new Date();
       const modifiedBy = DEFAULT_ACTOR;
@@ -87,7 +73,11 @@ export class ItemsMasterService {
         },
       });
       if (result.count === 0) {
-        throwInventoryNotFound<ItemErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
+        throwInventoryNotFound<ItemErrorDetail>(
+          'Item not found',
+          'item_id',
+          `No active item found with id ${itemId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -188,7 +178,11 @@ export class ItemsMasterService {
           },
         });
         if (!existing) {
-          throwInventoryNotFound<ItemErrorDetail>('Item not found', 'item_id', `No active item found with id ${itemId}`);
+          throwInventoryNotFound<ItemErrorDetail>(
+            'Item not found',
+            'item_id',
+            `No active item found with id ${itemId}`,
+          );
         }
         const data: Prisma.ItemMasterUncheckedUpdateInput = {
           itemNameEn,
@@ -226,54 +220,6 @@ export class ItemsMasterService {
       this.handleWriteError(error);
       throw error;
     }
-  }
-  private buildListWhere(queryDto: ListItemQueryDto): Prisma.ItemMasterWhereInput {
-    const where: Prisma.ItemMasterWhereInput = {
-      itemIsDeleted: false,
-    };
-    if (queryDto.item_branch_id !== undefined) {
-      where.itemBranchId = queryDto.item_branch_id;
-    }
-    if (queryDto.item_group_id !== undefined) {
-      where.itemGroupId = queryDto.item_group_id;
-    }
-    if (queryDto.item_category_id !== undefined) {
-      where.itemCategoryId = queryDto.item_category_id;
-    }
-    if (queryDto.item_brand_id !== undefined) {
-      where.itemBrandId = queryDto.item_brand_id;
-    }
-    if (queryDto.item_section_id !== undefined) {
-      where.itemSectionId = queryDto.item_section_id;
-    }
-    if (queryDto.item_base_unit_id !== undefined) {
-      where.itemBaseUnitId = queryDto.item_base_unit_id;
-    }
-    if (queryDto.item_default_tax_id !== undefined) {
-      where.itemDefaultTaxId = queryDto.item_default_tax_id;
-    }
-    if (queryDto.item_stock_type !== undefined) {
-      where.itemStockType = queryDto.item_stock_type;
-    }
-    if (queryDto.item_is_active !== undefined) {
-      where.itemIsActive = queryDto.item_is_active;
-    }
-    if (queryDto.item_is_service !== undefined) {
-      where.itemIsService = queryDto.item_is_service;
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { itemNameEn: { contains: search, mode: 'insensitive' } },
-        { itemCode: { contains: search, mode: 'insensitive' } },
-        { itemSku: { contains: search, mode: 'insensitive' } },
-        { itemAlias: { contains: search, mode: 'insensitive' } },
-        { itemDefaultBarcode: { contains: search, mode: 'insensitive' } },
-        { itemHsnCode: { contains: search, mode: 'insensitive' } },
-        { itemNotes: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return where;
   }
   private applyOptionalFields(
     data: Prisma.ItemMasterUncheckedCreateInput | Prisma.ItemMasterUncheckedUpdateInput,
@@ -559,5 +505,4 @@ export class ItemsMasterService {
       ]);
     }
   }
-
 }

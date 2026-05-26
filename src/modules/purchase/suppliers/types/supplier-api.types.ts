@@ -1,8 +1,6 @@
 export type { PurchaseErrorDetail as SupplierErrorDetail } from 'src/common/types/module-api.types';
 export type { PurchaseErrorResponse as SupplierErrorResponse } from 'src/common/types/module-api.types';
 export type { PurchaseSuccessResponse as SupplierSuccessResponse } from 'src/common/types/module-api.types';
-export type { PurchaseListMeta as SupplierListMeta } from 'src/common/types/module-list.types';
-
 export interface SupplierPayload {
   supId: string;
   supCompanyId: string | null;
@@ -54,4 +52,3 @@ export interface SupplierPayload {
   supModifiedBy: string | null;
   supStateId: string | null;
 }
-export type SupplierListItem = SupplierPayload | Record<string, unknown>;

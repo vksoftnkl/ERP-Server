@@ -36,7 +36,7 @@ import {
 @Controller('item-price-details')
 @UseFilters(ItemPriceDetailExceptionFilter)
 export class ItemPriceDetailsController {
-  constructor(private readonly itemPriceDetailsService: ItemPriceDetailsService) { }
+  constructor(private readonly itemPriceDetailsService: ItemPriceDetailsService) {}
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get item with joined item price and item tax details' })

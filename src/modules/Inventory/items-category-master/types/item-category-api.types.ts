@@ -1,7 +1,6 @@
 export type { InventoryErrorDetail as ItemCategoryErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemCategoryErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemCategorySuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as ItemCategoryListMeta } from 'src/common/types/module-list.types';
 export interface ItemCategoryPayload {
   category_id: string;
   category_name: string;
@@ -26,10 +25,3 @@ export interface ItemCategoryPayload {
   category_modified_on: string;
   category_modified_by: string | null;
 }
-
-export interface ItemCategoryDefaultListItem {
-  category_id: string;
-  category_name: string;
-}
-
-export type ItemCategoryListItem = ItemCategoryDefaultListItem | Record<string, unknown>;

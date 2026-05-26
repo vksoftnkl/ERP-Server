@@ -1,9 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { ListItemSectionQueryDto } from './dto/list-item-section-query.dto';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import { ItemsSectionMasterService } from './items-section-master.service';
 
@@ -107,7 +105,6 @@ describe('ItemsSectionMasterService', () => {
     service = new ItemsSectionMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
 
@@ -440,65 +437,6 @@ describe('ItemsSectionMasterService', () => {
     expect(findFirstArgs.where?.secId).toBe(ITEM_SECTION_ID);
     expect(findFirstArgs.where?.secIsDeleted).toBe(false);
   });
-
-  it('excludes deleted rows in list', async () => {
-    prisma.itemSectionMaster.count.mockResolvedValue(1);
-    prisma.itemSectionMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const query: ListItemSectionQueryDto = {};
-
-    const result = await service.list(query);
-
-    expect(prisma.itemSectionMaster.count).toHaveBeenCalledTimes(1);
-    const countArgs = prisma.itemSectionMaster.count.mock.calls[0][0];
-    expect(countArgs.where?.secIsDeleted).toBe(false);
-    expect(result.items).toEqual([
-      {
-        sec_id: ITEM_SECTION_ID,
-        sec_name: 'Dairy',
-      },
-    ]);
-  });
-
-  it('applies pagination and search filters correctly', async () => {
-    prisma.itemSectionMaster.count.mockResolvedValue(35);
-    prisma.itemSectionMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const query: ListItemSectionQueryDto = {
-      sec_is_active: true,
-      search: 'dairy',
-      page: 2,
-      limit: 10,
-    };
-
-    const result = await service.list(query);
-
-    expect(prisma.itemSectionMaster.findMany).toHaveBeenCalledTimes(1);
-    const findManyArgs = prisma.itemSectionMaster.findMany.mock.calls[0][0];
-    expect(findManyArgs.skip).toBe(10);
-    expect(findManyArgs.take).toBe(10);
-    expect(findManyArgs.where?.secIsDeleted).toBe(false);
-    expect(findManyArgs.where?.secIsActive).toBe(true);
-    expect(findManyArgs.where?.OR).toEqual([
-      { secName: { contains: 'dairy', mode: 'insensitive' } },
-      { secAlias: { contains: 'dairy', mode: 'insensitive' } },
-      { secDescription: { contains: 'dairy', mode: 'insensitive' } },
-    ]);
-
-    expect(result.meta).toEqual({
-      page: 2,
-      limit: 10,
-      total: 35,
-      total_pages: 4,
-    });
-    expect(result.items).toEqual([
-      {
-        sec_id: ITEM_SECTION_ID,
-        sec_name: 'Dairy',
-      },
-    ]);
-  });
-
   it('soft delete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       secId: PARENT_SECTION_ID,

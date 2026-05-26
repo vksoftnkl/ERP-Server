@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ListItemCategoryQueryDto } from './dto/list-item-category-query.dto';
 import { SaveItemCategoryDto } from './dto/save-item-category.dto';
 import { ItemsCategoryMasterController } from './items-category-master.controller';
 import { ItemsCategoryMasterService } from './items-category-master.service';
@@ -84,36 +83,6 @@ describe('ItemsCategoryMasterController', () => {
       data: itemCategoryPayload,
     });
   });
-
-  it('returns list wrapper with pagination meta', async () => {
-    serviceMock.list.mockResolvedValue({
-      items: [itemCategoryPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListItemCategoryQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.list(query)).resolves.toEqual({
-      success: true,
-      message: 'Item categories fetched successfully',
-      data: [itemCategoryPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemCategoryPayload);
 

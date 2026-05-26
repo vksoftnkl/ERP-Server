@@ -1,11 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from 'src/common/utils/module-response.dto';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
 export { InventoryErrorFieldDto as ItemGroupErrorFieldDto };
 export { InventoryErrorResponseDto as ItemGroupErrorResponseDto };
-export { InventoryListMetaDto as ItemGroupListMetaDto };
-
 export class ItemGroupPayloadDto {
   @ApiProperty({ format: 'uuid' })
   itg_id!: string;
@@ -92,24 +92,6 @@ export class ItemGroupSuccessSingleDto {
   @ApiProperty({ type: ItemGroupPayloadDto })
   data!: ItemGroupPayloadDto;
 }
-
-export class ItemGroupSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Item groups fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: ItemGroupPayloadDto, isArray: true })
-  data!: ItemGroupPayloadDto[];
-
-  @ApiProperty({ type: InventoryListMetaDto })
-  meta!: InventoryListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
-
 export class ItemGroupSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

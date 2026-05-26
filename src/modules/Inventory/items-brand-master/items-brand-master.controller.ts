@@ -27,22 +27,15 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { ListItemBrandQueryDto } from './dto/list-item-brand-query.dto';
 import {
   ItemBrandErrorResponseDto,
   ItemBrandSuccessDeleteDto,
-  ItemBrandSuccessListDto,
   ItemBrandSuccessSingleDto,
 } from './dto/item-brand-response.dto';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemBrandExceptionFilter } from './item-brand-exception.filter';
 import { ItemsBrandMasterService } from './items-brand-master.service';
-import {
-  ItemBrandListItem,
-  ItemBrandListMeta,
-  ItemBrandPayload,
-  ItemBrandSuccessResponse,
-} from './types/item-brand-api.types';
+import { ItemBrandPayload, ItemBrandSuccessResponse } from './types/item-brand-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 type UploadedPhotoFile = {
   buffer: Buffer;
@@ -77,23 +70,6 @@ export class ItemsBrandMasterController {
         ? 'Item brand updated successfully'
         : 'Item brand created successfully',
       data,
-    };
-  }
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item brands with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemBrandSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemBrandErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemBrandQueryDto,
-  ): Promise<ItemBrandSuccessResponse<ItemBrandListItem[], ItemBrandListMeta>> {
-    const result = await this.itemsBrandMasterService.list(queryDto);
-    return {
-      success: true,
-      message: 'Item brands fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
   @Get('get')

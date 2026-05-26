@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ListItemReorderQueryDto } from './dto/list-item-reorder-query.dto';
 import { ItemsReorderMasterController } from './items-reorder-master.controller';
 import { ItemsReorderMasterService } from './items-reorder-master.service';
 
@@ -87,36 +86,6 @@ describe('ItemsReorderMasterController', () => {
       data: [itemReorderPayload],
     });
   });
-
-  it('returns list wrapper with pagination meta', async () => {
-    serviceMock.list.mockResolvedValue({
-      items: [itemReorderPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListItemReorderQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.list(query)).resolves.toEqual({
-      success: true,
-      message: 'Item reorders fetched successfully',
-      data: [itemReorderPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemReorderPayload);
 

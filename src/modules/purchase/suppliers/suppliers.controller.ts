@@ -23,19 +23,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
-import { ListSupplierQueryDto } from './dto/list-supplier-query.dto';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
 import {
   SupplierErrorResponseDto,
   SupplierSuccessDeleteDto,
-  SupplierSuccessListDto,
   SupplierSuccessSingleDto,
 } from './dto/supplier-response.dto';
 import { SupplierExceptionFilter } from './supplier-exception.filter';
 import { SuppliersService } from './suppliers.service';
 import {
-  SupplierListItem,
-  SupplierListMeta,
   SupplierPayload,
   SupplierSuccessResponse,
 } from './types/supplier-api.types';
@@ -67,25 +63,6 @@ export class SuppliersController {
         ? 'Supplier updated successfully'
         : 'Supplier created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List suppliers with filter/search/pagination' })
-  @ApiOkResponse({ type: SupplierSuccessListDto })
-  @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
-  async list(
-    @Query() queryDto: ListSupplierQueryDto,
-  ): Promise<SupplierSuccessResponse<SupplierListItem[], SupplierListMeta>> {
-    const result = await this.suppliersService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Suppliers fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

@@ -25,16 +25,12 @@ import {
 import {
   ItemQtywiseRateErrorResponseDto,
   ItemQtywiseRateSuccessDeleteDto,
-  ItemQtywiseRateSuccessListDto,
   ItemQtywiseRateSuccessSingleDto,
 } from './dto/item-qtywise-rate-response.dto';
-import { ListItemQtywiseRateQueryDto } from './dto/list-item-qtywise-rate-query.dto';
 import { SaveItemQtywiseRateDto } from './dto/save-item-qtywise-rate.dto';
 import { ItemQtywiseRateExceptionFilter } from './item-qtywise-rate-exception.filter';
 import { ItemsQtywiseRatesMasterService } from './items-qtywise-rates-master.service';
 import {
-  ItemQtywiseRateListItem,
-  ItemQtywiseRateListMeta,
   ItemQtywiseRatePayload,
   ItemQtywiseRateSuccessResponse,
 } from './types/item-qtywise-rate-api.types';
@@ -67,25 +63,6 @@ export class ItemsQtywiseRatesMasterController {
         ? 'Item qty-wise rate updated successfully'
         : 'Item qty-wise rate created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item qty-wise rates with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemQtywiseRateSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemQtywiseRateErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemQtywiseRateQueryDto,
-  ): Promise<ItemQtywiseRateSuccessResponse<ItemQtywiseRateListItem[], ItemQtywiseRateListMeta>> {
-    const result = await this.itemsQtywiseRatesMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Item qty-wise rates fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

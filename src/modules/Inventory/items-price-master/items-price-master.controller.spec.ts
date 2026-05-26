@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ListItemPriceQueryDto } from './dto/list-item-price-query.dto';
 import { ItemsPriceMasterController } from './items-price-master.controller';
 import { ItemsPriceMasterService } from './items-price-master.service';
 
@@ -180,36 +179,6 @@ describe('ItemsPriceMasterController', () => {
       data: itemUnitConversionPayload,
     });
   });
-
-  it('returns list wrapper with pagination meta', async () => {
-    serviceMock.list.mockResolvedValue({
-      items: [itemPricePayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListItemPriceQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.list(query as unknown as Record<string, unknown>)).resolves.toEqual({
-      success: true,
-      message: 'Item prices fetched successfully',
-      data: [itemPricePayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemPricePayload);
 

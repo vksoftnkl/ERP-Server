@@ -1,12 +1,5 @@
 import { Transform } from 'class-transformer';
-import {
-  IsBoolean,
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,

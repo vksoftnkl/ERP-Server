@@ -1,9 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemTaxMaster, Prisma } from '@prisma/client';
-import { ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
 import { ItemsTaxMasterService } from './items-tax-master.service';
 const TAX_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
@@ -143,7 +141,9 @@ describe('ItemsTaxMasterService', () => {
           },
         ];
       }),
-      filterPrimaryFromTable: jest.fn().mockImplementation((candidates: Array<unknown>) => candidates),
+      filterPrimaryFromTable: jest
+        .fn()
+        .mockImplementation((candidates: Array<unknown>) => candidates),
       validateBaseSql: jest
         .fn()
         .mockImplementation((options: { sql: string; tableName: string }) => {
@@ -177,42 +177,43 @@ describe('ItemsTaxMasterService', () => {
             normalizedSql,
           };
         }),
-      runPagedQuery: jest.fn().mockImplementation(
-        async (options: {
-          baseSql: string;
-          alias: string;
-          params?: unknown[];
-          limit: number;
-          skip: number;
-        }) => {
-          const params = options.params ?? [];
-          const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
-          const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
-            params.length + 1
-          } OFFSET $${params.length + 2}`;
-          const [countResult, rows] = await Promise.all([
-            prisma.$queryRawUnsafe(countSql, ...params),
-            prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
-          ]);
-          const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
-          if (typeof totalRaw === 'bigint') {
-            return { items: rows as unknown[], total: Number(totalRaw) };
-          }
-          if (typeof totalRaw === 'number') {
-            return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
-          }
-          if (typeof totalRaw === 'string') {
-            const parsed = Number(totalRaw);
-            return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
-          }
-          return { items: rows as unknown[], total: 0 };
-        },
-      ),
+      runPagedQuery: jest
+        .fn()
+        .mockImplementation(
+          async (options: {
+            baseSql: string;
+            alias: string;
+            params?: unknown[];
+            limit: number;
+            skip: number;
+          }) => {
+            const params = options.params ?? [];
+            const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
+            const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
+              params.length + 1
+            } OFFSET $${params.length + 2}`;
+            const [countResult, rows] = await Promise.all([
+              prisma.$queryRawUnsafe(countSql, ...params),
+              prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
+            ]);
+            const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
+            if (typeof totalRaw === 'bigint') {
+              return { items: rows as unknown[], total: Number(totalRaw) };
+            }
+            if (typeof totalRaw === 'number') {
+              return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
+            }
+            if (typeof totalRaw === 'string') {
+              const parsed = Number(totalRaw);
+              return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
+            }
+            return { items: rows as unknown[], total: 0 };
+          },
+        ),
     };
     service = new ItemsTaxMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
   it('creates an item tax with minimal payload', async () => {
@@ -270,107 +271,7 @@ describe('ItemsTaxMasterService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
-  it('list enforces soft-delete exclusion', async () => {
-    prisma.itemTaxMaster.count.mockResolvedValue(1);
-    prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
-    await service.list({} as ListItemTaxQueryDto);
-    const countArgs = prisma.itemTaxMaster.count.mock.calls[0][0];
-    const findArgs = prisma.itemTaxMaster.findMany.mock.calls[0][0];
-    expect(countArgs.where?.taxIsDeleted).toBe(false);
-    expect(findArgs.where?.taxIsDeleted).toBe(false);
-  });
-  it('list applies search and active filters', async () => {
-    prisma.itemTaxMaster.count.mockResolvedValue(0);
-    prisma.itemTaxMaster.findMany.mockResolvedValue([]);
-    await service.list({
-      search: 'gst',
-      tax_is_active: true,
-      tax_is_reverse_charge: false,
-      tax_taxability_type: 'TAXABLE',
-    });
-    const findArgs = prisma.itemTaxMaster.findMany.mock.calls[0][0];
-    expect(findArgs.where?.taxIsActive).toBe(true);
-    expect(findArgs.where?.taxIsReverseCharge).toBe(false);
-    expect(Array.isArray(findArgs.where?.OR)).toBe(true);
-  });
-  it('list returns pagination metadata', async () => {
-    prisma.itemTaxMaster.count.mockResolvedValue(25);
-    prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
-    const result = await service.list({
-      page: 2,
-      limit: 10,
-    });
-    expect(result.meta).toEqual({
-      page: 2,
-      limit: 10,
-      total: 25,
-      total_pages: 3,
-    });
-  });
-  it('uses configured grid_sql for plain get-all list', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT tax_id AS "taxId", tax_name AS "taxName" FROM item_tax_master WHERE tax_is_deleted = false',
-    });
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([{ total: BigInt(1) }])
-      .mockResolvedValueOnce([{ taxId: TAX_ID, taxName: 'GST 18%' }]);
-    const result = await service.list({});
-    expect(prisma.itemTaxMaster.findMany).not.toHaveBeenCalled();
-    expect(prisma.itemTaxMaster.count).not.toHaveBeenCalled();
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('COUNT(*)::bigint AS total'),
-    );
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('LIMIT $1 OFFSET $2'),
-      20,
-      0,
-    );
-    expect(result).toEqual({
-      items: [{ taxId: TAX_ID, taxName: 'GST 18%' }],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-  it('falls back to prisma list when configured grid_sql is invalid', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql: 'DELETE FROM item_tax_master',
-    });
 
-    prisma.itemTaxMaster.count.mockResolvedValue(1);
-    prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const result = await service.list({});
-
-    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
-    expect(prisma.itemTaxMaster.count).toHaveBeenCalledTimes(1);
-    expect(prisma.itemTaxMaster.findMany).toHaveBeenCalledTimes(1);
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0]?.tax_id).toBe(TAX_ID);
-  });
-  it('falls back to prisma list when configured grid_sql execution fails', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT tax_id AS "taxId", tax_name AS "taxName" FROM item_tax_master WHERE tax_is_deleted = false',
-    });
-    prisma.$queryRawUnsafe.mockRejectedValue(new Error('broken configured SQL'));
-    prisma.itemTaxMaster.count.mockResolvedValue(1);
-    prisma.itemTaxMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const result = await service.list({});
-
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalled();
-    expect(prisma.itemTaxMaster.count).toHaveBeenCalledTimes(1);
-    expect(prisma.itemTaxMaster.findMany).toHaveBeenCalledTimes(1);
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0]?.tax_id).toBe(TAX_ID);
-  });
   it('getById returns an item tax when it exists and is not deleted', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(makeRecord());
     const result = await service.getById(TAX_ID);

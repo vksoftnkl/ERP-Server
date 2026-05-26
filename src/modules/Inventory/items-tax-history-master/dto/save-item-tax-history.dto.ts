@@ -1,16 +1,7 @@
 import { Transform } from 'class-transformer';
-import {
-  IsDateString,
-  IsNotEmpty,
-  IsString,
-  IsUUID,
-} from 'class-validator';
+import { IsDateString, IsNotEmpty, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  NullableString,
-  OptionalUuid,
-  toTrimmedString,
-} from 'src/common/dto/dtoDecorators';
+import { NullableString, OptionalUuid, toTrimmedString } from 'src/common/dto/dtoDecorators';
 
 export class SaveItemTaxHistoryDto {
   @ApiPropertyOptional({

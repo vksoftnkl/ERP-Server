@@ -1,17 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ItemTaxHistory, Prisma } from '@prisma/client';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ListItemTaxHistoryQueryDto } from './dto/list-item-tax-history-query.dto';
 import { SaveItemTaxHistoryDto } from './dto/save-item-tax-history.dto';
 import {
   ItemTaxHistoryErrorDetail,
-  ItemTaxHistoryListItem,
-  ItemTaxHistoryListMeta,
   ItemTaxHistoryPayload,
 } from './types/item-tax-history-api.types';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -30,7 +25,6 @@ export class ItemsTaxHistoryMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveItemTaxHistoryDto: SaveItemTaxHistoryDto): Promise<ItemTaxHistoryPayload> {
@@ -39,25 +33,14 @@ export class ItemsTaxHistoryMasterService {
     }
     return this.createItemTaxHistory(saveItemTaxHistoryDto);
   }
-
-  async list(
-    queryDto: ListItemTaxHistoryQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemTaxHistoryListItem, ItemTaxHistoryListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemTaxHistoryListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_TAX_HISTORY_TABLE_NAME, alias: 'item_tax_history_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemTaxHistoryErrorDetail>('No configured grid found for item tax history list', []);
-    }
-    return result;
-  }
-
   async getById(ithId: string): Promise<ItemTaxHistoryPayload> {
     const record = await this.prisma.itemTaxHistory.findUnique({ where: { ithId } });
     if (!record) {
-      throwInventoryNotFound<ItemTaxHistoryErrorDetail>('Item tax history not found', 'ith_id', `No item tax history found with id ${ithId}`);
+      throwInventoryNotFound<ItemTaxHistoryErrorDetail>(
+        'Item tax history not found',
+        'ith_id',
+        `No item tax history found with id ${ithId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -67,7 +50,11 @@ export class ItemsTaxHistoryMasterService {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.itemTaxHistory.findUnique({ where: { ithId } });
         if (!existing) {
-          throwInventoryNotFound<ItemTaxHistoryErrorDetail>('Item tax history not found', 'ith_id', `No item tax history found with id ${ithId}`);
+          throwInventoryNotFound<ItemTaxHistoryErrorDetail>(
+            'Item tax history not found',
+            'ith_id',
+            `No item tax history found with id ${ithId}`,
+          );
         }
         await tx.itemTaxHistory.delete({ where: { ithId } });
         await this.auditLogService.logEntityChange(
@@ -158,7 +145,11 @@ export class ItemsTaxHistoryMasterService {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.itemTaxHistory.findUnique({ where: { ithId } });
         if (!existing) {
-          throwInventoryNotFound<ItemTaxHistoryErrorDetail>('Item tax history not found', 'ith_id', `No item tax history found with id ${ithId}`);
+          throwInventoryNotFound<ItemTaxHistoryErrorDetail>(
+            'Item tax history not found',
+            'ith_id',
+            `No item tax history found with id ${ithId}`,
+          );
         }
         const data: Prisma.ItemTaxHistoryUncheckedUpdateInput = {
           ithItemId: saveItemTaxHistoryDto.ith_item_id,
@@ -190,26 +181,6 @@ export class ItemsTaxHistoryMasterService {
       throw error;
     }
   }
-
-  private buildListWhere(queryDto: ListItemTaxHistoryQueryDto): Prisma.ItemTaxHistoryWhereInput {
-    const where: Prisma.ItemTaxHistoryWhereInput = {};
-
-    if (queryDto.ith_item_id !== undefined) where.ithItemId = queryDto.ith_item_id;
-    if (queryDto.ith_tax_id !== undefined) where.ithTaxId = queryDto.ith_tax_id;
-    if (queryDto.ith_effective_from !== undefined) {
-      where.ithEffectiveFrom = this.parseRequiredDate(queryDto.ith_effective_from, 'ith_effective_from');
-    }
-    if (queryDto.ith_effective_to !== undefined) {
-      where.ithEffectiveTo = this.parseRequiredDate(queryDto.ith_effective_to, 'ith_effective_to');
-    }
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [{ ithReason: { contains: search, mode: 'insensitive' } }];
-    }
-
-    return where;
-  }
-
   private applyOptionalFields(
     data: Prisma.ItemTaxHistoryUncheckedCreateInput | Prisma.ItemTaxHistoryUncheckedUpdateInput,
     saveItemTaxHistoryDto: SaveItemTaxHistoryDto,
@@ -235,7 +206,10 @@ export class ItemsTaxHistoryMasterService {
     return parsedDate;
   }
 
-  private parseOptionalDate(value: string | null | undefined, fieldName: string): Date | null | undefined {
+  private parseOptionalDate(
+    value: string | null | undefined,
+    fieldName: string,
+  ): Date | null | undefined {
     if (value === undefined) return undefined;
     if (value === null) return null;
     return this.parseRequiredDate(value, fieldName);
@@ -245,7 +219,10 @@ export class ItemsTaxHistoryMasterService {
     if (!effectiveTo) return;
     if (effectiveFrom.getTime() > effectiveTo.getTime()) {
       throwInventoryBadRequest<ItemTaxHistoryErrorDetail>('Validation failed', [
-        { field: 'ith_effective_to', message: 'ith_effective_to must be greater than or equal to ith_effective_from' },
+        {
+          field: 'ith_effective_to',
+          message: 'ith_effective_to must be greater than or equal to ith_effective_from',
+        },
       ]);
     }
   }
@@ -268,9 +245,11 @@ export class ItemsTaxHistoryMasterService {
   }
 
   private handleWriteError(error: unknown): void {
-    throwOnUniqueConstraintError<ItemTaxHistoryErrorDetail>(error, 'Item tax history already exists', [
-      { field: 'ith_id', message: 'Duplicate item tax history is not allowed' },
-    ]);
+    throwOnUniqueConstraintError<ItemTaxHistoryErrorDetail>(
+      error,
+      'Item tax history already exists',
+      [{ field: 'ith_id', message: 'Duplicate item tax history is not allowed' }],
+    );
     if (isForeignKeyConstraintError(error)) {
       throwInventoryBadRequest<ItemTaxHistoryErrorDetail>('Invalid relation reference', [
         { field: 'ith_item_id', message: 'Referenced item or tax does not exist' },
@@ -285,5 +264,4 @@ export class ItemsTaxHistoryMasterService {
       ]);
     }
   }
-
 }

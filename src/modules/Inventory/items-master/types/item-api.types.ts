@@ -1,7 +1,6 @@
 export type { InventoryErrorDetail as ItemErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemSuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as ItemListMeta } from 'src/common/types/module-list.types';
 export interface ItemPayload {
   item_id: string;
   item_company_id: string;
@@ -66,4 +65,3 @@ export interface ItemPayload {
   item_modified_on: string;
   item_modified_by: string | null;
 }
-export type ItemListItem = ItemPayload | Record<string, unknown>;

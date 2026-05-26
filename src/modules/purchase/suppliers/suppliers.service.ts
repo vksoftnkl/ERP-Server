@@ -1,13 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma, Supplier } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListSupplierQueryDto } from './dto/list-supplier-query.dto';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
 import {
-  SupplierListItem,
-  SupplierListMeta,
   SupplierPayload,
 } from './types/supplier-api.types';
 import {
@@ -22,7 +18,6 @@ import {
   throwPurchaseNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 
 const SUPPLIER_TABLE_NAME = 'suppliers';
 const SUPPLIER_AUDIT_SCREEN_NAME = 'Supplier Master';
@@ -34,7 +29,6 @@ export class SuppliersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
@@ -42,20 +36,6 @@ export class SuppliersService {
       return this.updateSupplier(saveSupplierDto);
     }
     return this.createSupplier(saveSupplierDto);
-  }
-
-  async list(
-    queryDto: ListSupplierQueryDto,
-  ): Promise<ConfiguredGridListResult<SupplierListItem, SupplierListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<SupplierListItem>(
-      this.configuredGridSqlService,
-      { tableName: SUPPLIER_TABLE_NAME, alias: 'supplier_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwPurchaseBadRequest('No configured grid found for supplier list', []);
-    }
-    return result;
   }
 
   async getById(supId: string): Promise<SupplierPayload> {

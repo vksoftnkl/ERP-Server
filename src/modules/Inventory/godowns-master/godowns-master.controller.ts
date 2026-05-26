@@ -27,19 +27,12 @@ import { DeleteGodownQueryDto } from './dto/delete-godown-query.dto';
 import {
   GodownErrorResponseDto,
   GodownSuccessDeleteDto,
-  GodownSuccessListDto,
   GodownSuccessSingleDto,
 } from './dto/godown-response.dto';
-import { ListOrGetGodownQueryDto } from './dto/list-or-get-godown-query.dto';
 import { SaveGodownDto } from './dto/save-godown.dto';
 import { GodownExceptionFilter } from './godown-exception.filter';
 import { GodownsMasterService } from './godowns-master.service';
-import {
-  GodownListItem,
-  GodownListMeta,
-  GodownPayload,
-  GodownSuccessResponse,
-} from './types/godown-api.types';
+import { GodownPayload, GodownSuccessResponse } from './types/godown-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 
 @ApiTags('Godowns')
@@ -99,31 +92,19 @@ export class GodownsMasterController {
   @Get()
   @Version('1')
   @ApiOperation({
-    summary: 'List godown locations or get single location when gdl_id query is provided',
+    summary: 'Get godown location by gdl_id query parameter',
   })
-  @ApiOkResponse({ type: GodownSuccessListDto })
+  @ApiOkResponse({ type: GodownSuccessSingleDto })
   @ApiBadRequestResponse({ type: GodownErrorResponseDto })
   @ApiNotFoundResponse({ type: GodownErrorResponseDto })
   async listOrGet(
-    @Query() queryDto: ListOrGetGodownQueryDto,
-  ): Promise<GodownSuccessResponse<GodownPayload | GodownListItem[], GodownListMeta>> {
-    if (queryDto.gdl_id) {
-      const data = await this.godownsMasterService.getById(queryDto.gdl_id);
-      return {
-        success: true,
-        message: 'Godown location fetched successfully',
-        data,
-      };
-    }
-
-    const result = await this.godownsMasterService.list(queryDto);
-
+    @Query() queryDto: DeleteGodownQueryDto,
+  ): Promise<GodownSuccessResponse<GodownPayload>> {
+    const data = await this.godownsMasterService.getById(queryDto.gdl_id);
     return {
       success: true,
-      message: 'Godown locations fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      styles: result.styles ?? [],
+      message: 'Godown location fetched successfully',
+      data,
     };
   }
 
@@ -142,25 +123,6 @@ export class GodownsMasterController {
       success: true,
       message: 'Godown location fetched successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List godown locations' })
-  @ApiOkResponse({ type: GodownSuccessListDto })
-  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
-  async getList(
-    @Query() queryDto: ListOrGetGodownQueryDto,
-  ): Promise<GodownSuccessResponse<GodownListItem[], GodownListMeta>> {
-    const result = await this.godownsMasterService.getList(queryDto);
-
-    return {
-      success: true,
-      message: 'Godown locations fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      styles: result.styles ?? [],
     };
   }
 

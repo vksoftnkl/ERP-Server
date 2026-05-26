@@ -1,9 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { categoryMaster, Prisma } from '@prisma/client';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { ListItemCategoryQueryDto } from './dto/list-item-category-query.dto';
 import { SaveItemCategoryDto } from './dto/save-item-category.dto';
 import { ItemsCategoryMasterService } from './items-category-master.service';
 
@@ -105,7 +103,6 @@ describe('ItemsCategoryMasterService', () => {
     service = new ItemsCategoryMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
 
@@ -433,197 +430,6 @@ describe('ItemsCategoryMasterService', () => {
     expect(findFirstArgs.where?.categoryId).toBe(ITEM_CATEGORY_ID);
     expect(findFirstArgs.where?.categoryIsDeleted).toBe(false);
   });
-
-  it('excludes deleted rows in list', async () => {
-    prisma.categoryMaster.count.mockResolvedValue(1);
-    prisma.categoryMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const query: ListItemCategoryQueryDto = {};
-
-    const result = await service.list(query);
-
-    expect(prisma.categoryMaster.count).toHaveBeenCalledTimes(1);
-    const countArgs = prisma.categoryMaster.count.mock.calls[0][0];
-    expect(countArgs.where?.categoryIsDeleted).toBe(false);
-    expect(result.items).toEqual([
-      {
-        category_id: ITEM_CATEGORY_ID,
-        category_name: 'Dairy',
-      },
-    ]);
-  });
-
-  it('returns configured grid rows with styles for the item category table', async () => {
-    const gridId = 2n;
-    const gridSql =
-      'SELECT category_id, category_name FROM inventory.item_category_master WHERE category_is_deleted = false';
-    const styles = [
-      {
-        grid_column_number: 1,
-        grid_column_name: 'category_name',
-        grid_column_width: 180,
-        grid_column_alignment: 'left',
-        grid_column_visibility: true,
-        grid_column_filter: true,
-        grid_column_condition: null,
-        grid_column_condition_color: null,
-        grid_column_group: false,
-        grid_column_total: false,
-        grid_column_data_type: 'text',
-        grid_column_color: null,
-        grid_column_notes: null,
-      },
-    ];
-
-    configuredGridSqlService.loadCandidates.mockResolvedValue([{ gridId, gridSql }]);
-    configuredGridSqlService.validateBaseSql.mockReturnValue({
-      isValid: true,
-      normalizedSql: gridSql,
-    });
-    configuredGridSqlService.runPagedQuery.mockResolvedValue({
-      items: [{ category_id: ITEM_CATEGORY_ID, category_name: 'Dairy' }],
-      total: 1,
-      styles,
-    });
-
-    const result = await service.list({});
-
-    expect(configuredGridSqlService.loadCandidates).toHaveBeenCalledWith({
-      tableName: 'item category master',
-    });
-    expect(configuredGridSqlService.filterPrimaryFromTable).toHaveBeenCalledWith(
-      [{ gridId, gridSql }],
-      'item category master',
-    );
-    expect(configuredGridSqlService.validateBaseSql).toHaveBeenCalledWith({
-      sql: gridSql,
-      tableName: 'item category master',
-      primaryTableSchema: 'inventory',
-    });
-    expect(configuredGridSqlService.runPagedQuery).toHaveBeenCalledWith({
-      baseSql: `SELECT * FROM (${gridSql}) AS item_category_grid`,
-      alias: 'item_category_grid',
-      params: [],
-      limit: 20,
-      skip: 0,
-      gridId,
-    });
-    expect(prisma.categoryMaster.count).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      items: [{ category_id: ITEM_CATEGORY_ID, category_name: 'Dairy' }],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-      styles,
-    });
-  });
-
-  it('returns configured grid styles when filters are applied', async () => {
-    const gridId = 3n;
-    const gridSql =
-      'SELECT category_id, category_name, category_is_active FROM inventory.item_category_master WHERE category_is_deleted = false';
-    const styles = [
-      {
-        grid_column_number: 1,
-        grid_column_name: 'category_name',
-        grid_column_width: 180,
-        grid_column_alignment: 'left',
-        grid_column_visibility: true,
-        grid_column_filter: true,
-        grid_column_condition: null,
-        grid_column_condition_color: null,
-        grid_column_group: false,
-        grid_column_total: false,
-        grid_column_data_type: 'text',
-        grid_column_color: null,
-        grid_column_notes: null,
-      },
-    ];
-
-    configuredGridSqlService.loadCandidates.mockResolvedValue([{ gridId, gridSql }]);
-    configuredGridSqlService.validateBaseSql.mockReturnValue({
-      isValid: true,
-      normalizedSql: gridSql,
-    });
-    configuredGridSqlService.runPagedQuery.mockResolvedValue({
-      items: [{ category_id: ITEM_CATEGORY_ID, category_name: 'Dairy' }],
-      total: 1,
-      styles,
-    });
-    prisma.gridColumn.findMany.mockResolvedValue([
-      {
-        gridColumnName: 'category_name',
-        gridColumnNumber: 2,
-      },
-    ]);
-
-    const result = await service.list({
-      category_is_active: true,
-      search: 'dairy',
-      page: 2,
-      limit: 10,
-    });
-
-    expect(configuredGridSqlService.runPagedQuery).toHaveBeenCalledWith({
-      baseSql:
-        `SELECT * FROM (${gridSql}) AS item_category_grid WHERE ` +
-        `item_category_grid.category_is_active = $1 AND ` +
-        `(` +
-        `EXISTS (SELECT 1 FROM jsonb_each_text(row_to_json(item_category_grid)::jsonb) AS grid_kv(key, value) ` +
-        `WHERE grid_kv.key = $2 AND grid_kv.value ILIKE $3)` +
-        `)`,
-      alias: 'item_category_grid',
-      params: [true, 'category_name', '%dairy%'],
-      limit: 10,
-      skip: 10,
-      gridId,
-    });
-    expect(prisma.categoryMaster.count).not.toHaveBeenCalled();
-    expect(result.styles).toEqual(styles);
-  });
-
-  it('applies pagination and search filters correctly', async () => {
-    prisma.categoryMaster.count.mockResolvedValue(35);
-    prisma.categoryMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const query: ListItemCategoryQueryDto = {
-      category_is_active: true,
-      search: 'dairy',
-      page: 2,
-      limit: 10,
-    };
-
-    const result = await service.list(query);
-
-    expect(prisma.categoryMaster.findMany).toHaveBeenCalledTimes(1);
-    const findManyArgs = prisma.categoryMaster.findMany.mock.calls[0][0];
-    expect(findManyArgs.skip).toBe(10);
-    expect(findManyArgs.take).toBe(10);
-    expect(findManyArgs.where?.categoryIsDeleted).toBe(false);
-    expect(findManyArgs.where?.categoryIsActive).toBe(true);
-    expect(findManyArgs.where?.OR).toEqual([
-      { categoryName: { contains: 'dairy', mode: 'insensitive' } },
-      { categoryAlias: { contains: 'dairy', mode: 'insensitive' } },
-      { categoryDescription: { contains: 'dairy', mode: 'insensitive' } },
-    ]);
-
-    expect(result.meta).toEqual({
-      page: 2,
-      limit: 10,
-      total: 35,
-      total_pages: 4,
-    });
-    expect(result.items).toEqual([
-      {
-        category_id: ITEM_CATEGORY_ID,
-        category_name: 'Dairy',
-      },
-    ]);
-  });
-
   it('soft delete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       categoryId: PARENT_CATEGORY_ID,

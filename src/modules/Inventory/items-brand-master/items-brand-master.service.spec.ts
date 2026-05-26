@@ -1,9 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { ListItemBrandQueryDto } from './dto/list-item-brand-query.dto';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemsBrandMasterService } from './items-brand-master.service';
 
@@ -130,7 +128,9 @@ describe('ItemsBrandMasterService', () => {
           },
         ];
       }),
-      filterPrimaryFromTable: jest.fn().mockImplementation((candidates: Array<unknown>) => candidates),
+      filterPrimaryFromTable: jest
+        .fn()
+        .mockImplementation((candidates: Array<unknown>) => candidates),
       validateBaseSql: jest
         .fn()
         .mockImplementation((options: { sql: string; tableName: string }) => {
@@ -164,43 +164,44 @@ describe('ItemsBrandMasterService', () => {
             normalizedSql,
           };
         }),
-      runPagedQuery: jest.fn().mockImplementation(
-        async (options: {
-          baseSql: string;
-          alias: string;
-          params?: unknown[];
-          limit: number;
-          skip: number;
-        }) => {
-          const params = options.params ?? [];
-          const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
-          const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
-            params.length + 1
-          } OFFSET $${params.length + 2}`;
-          const [countResult, rows] = await Promise.all([
-            prisma.$queryRawUnsafe(countSql, ...params),
-            prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
-          ]);
-          const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
-          if (typeof totalRaw === 'bigint') {
-            return { items: rows as unknown[], total: Number(totalRaw) };
-          }
-          if (typeof totalRaw === 'number') {
-            return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
-          }
-          if (typeof totalRaw === 'string') {
-            const parsed = Number(totalRaw);
-            return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
-          }
-          return { items: rows as unknown[], total: 0 };
-        },
-      ),
+      runPagedQuery: jest
+        .fn()
+        .mockImplementation(
+          async (options: {
+            baseSql: string;
+            alias: string;
+            params?: unknown[];
+            limit: number;
+            skip: number;
+          }) => {
+            const params = options.params ?? [];
+            const countSql = `SELECT COUNT(*)::bigint AS total FROM (${options.baseSql}) AS ${options.alias}_count`;
+            const rowsSql = `SELECT * FROM (${options.baseSql}) AS ${options.alias}_rows LIMIT $${
+              params.length + 1
+            } OFFSET $${params.length + 2}`;
+            const [countResult, rows] = await Promise.all([
+              prisma.$queryRawUnsafe(countSql, ...params),
+              prisma.$queryRawUnsafe(rowsSql, ...params, options.limit, options.skip),
+            ]);
+            const totalRaw = (countResult as Array<{ total: bigint | number | string }>)[0]?.total;
+            if (typeof totalRaw === 'bigint') {
+              return { items: rows as unknown[], total: Number(totalRaw) };
+            }
+            if (typeof totalRaw === 'number') {
+              return { items: rows as unknown[], total: Number.isFinite(totalRaw) ? totalRaw : 0 };
+            }
+            if (typeof totalRaw === 'string') {
+              const parsed = Number(totalRaw);
+              return { items: rows as unknown[], total: Number.isFinite(parsed) ? parsed : 0 };
+            }
+            return { items: rows as unknown[], total: 0 };
+          },
+        ),
     };
 
     service = new ItemsBrandMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
 
@@ -525,136 +526,7 @@ describe('ItemsBrandMasterService', () => {
     expect(findFirstArgs.where?.brand_id).toBe(BRAND_ID);
     expect(findFirstArgs.where?.brand_is_deleted).toBe(false);
   });
-
-  it('excludes deleted rows in list', async () => {
-    prisma.itemBrandMaster.count.mockResolvedValue(1);
-    prisma.itemBrandMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const query: ListItemBrandQueryDto = {};
-
-    await service.list(query);
-
-    expect(prisma.itemBrandMaster.count).toHaveBeenCalledTimes(1);
-    const countArgs = prisma.itemBrandMaster.count.mock.calls[0][0];
-    expect(countArgs.where?.brand_is_deleted).toBe(false);
-  });
-
-  it('applies pagination and search filters correctly', async () => {
-    prisma.itemBrandMaster.count.mockResolvedValue(35);
-    prisma.itemBrandMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const query: ListItemBrandQueryDto = {
-      brand_is_active: true,
-      search: 'ac',
-      page: 2,
-      limit: 10,
-    };
-
-    const result = await service.list(query);
-
-    expect(prisma.gridDetails.findFirst).not.toHaveBeenCalled();
-    expect(prisma.itemBrandMaster.findMany).toHaveBeenCalledTimes(1);
-    const findManyArgs = prisma.itemBrandMaster.findMany.mock.calls[0][0];
-    expect(findManyArgs.skip).toBe(10);
-    expect(findManyArgs.take).toBe(10);
-    expect(findManyArgs.where?.brand_is_deleted).toBe(false);
-    expect(findManyArgs.where?.brand_is_active).toBe(true);
-    expect(findManyArgs.where?.OR).toEqual([
-      { brand_name: { contains: 'ac', mode: 'insensitive' } },
-      { brand_alias: { contains: 'ac', mode: 'insensitive' } },
-      { brand_description: { contains: 'ac', mode: 'insensitive' } },
-    ]);
-
-    expect(result.meta).toEqual({
-      page: 2,
-      limit: 10,
-      total: 35,
-      total_pages: 4,
-    });
-  });
-
-  it('uses configured grid_sql for plain get-all list', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql:
-        'SELECT brand_id AS "itemBrandId", brand_name AS "brandName" FROM item_brand_master WHERE brand_is_deleted = false',
-    });
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([{ total: BigInt(1) }])
-      .mockResolvedValueOnce([{ itemBrandId: BRAND_ID, brandName: 'Acme' }]);
-
-    const result = await service.list({});
-
-    expect(prisma.itemBrandMaster.findMany).not.toHaveBeenCalled();
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('COUNT(*)::bigint AS total'),
-    );
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('LIMIT $1 OFFSET $2'),
-      20,
-      0,
-    );
-    expect(result).toEqual({
-      items: [{ itemBrandId: BRAND_ID, brandName: 'Acme' }],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
-  it('falls back to prisma list when configured grid_sql is invalid', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql: 'DELETE FROM item_brand_master',
-    });
-    prisma.itemBrandMaster.count.mockResolvedValue(0);
-    prisma.itemBrandMaster.findMany.mockResolvedValue([]);
-
-    const result = await service.list({});
-    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
-    expect(prisma.itemBrandMaster.findMany).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({
-      items: [],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 0,
-        total_pages: 0,
-      },
-    });
-  });
-
-  it('falls back to prisma list when configured grid_sql cannot execute', async () => {
-    prisma.gridDetails.findFirst.mockResolvedValue({
-      gridSql: 'SELECT brand_id, brand_name FROM item_brand_master WHERE brand_is_deleted = false',
-    });
-    prisma.$queryRawUnsafe.mockRejectedValueOnce(
-      new Prisma.PrismaClientKnownRequestError(
-        'Raw query failed. Code: `42P01`. Message: `relation "item_brand_master" does not exist`',
-        {
-          code: 'P2010',
-          clientVersion: '6.0.0',
-        },
-      ),
-    );
-    prisma.itemBrandMaster.count.mockResolvedValue(1);
-    prisma.itemBrandMaster.findMany.mockResolvedValue([makeRecord()]);
-
-    const result = await service.list({});
-
-    expect(prisma.itemBrandMaster.findMany).toHaveBeenCalledTimes(1);
-    expect(result.meta).toEqual({
-      page: 1,
-      limit: 20,
-      total: 1,
-      total_pages: 1,
-    });
-  });
-
-  it('soft delete removes subtree ids from ancestor caches', async () => {
+  t('soft delete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       brand_id: PARENT_BRAND_ID,
       brand_parent_id: null,

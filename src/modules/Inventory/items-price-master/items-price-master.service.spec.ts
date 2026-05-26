@@ -1,6 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
 import { ItemPriceMaster, ItemUnitConversion, Prisma } from '@prisma/client';
-import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
@@ -46,9 +45,7 @@ type ConfiguredGridSqlServiceMock = {
   runPagedQuery: jest.Mock;
 };
 
-const makeItemPriceRecord = (
-  overrides: Partial<ItemPriceMaster> = {},
-): ItemPriceMaster =>
+const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPriceMaster =>
   ({
     ipmId: ITEM_PRICE_ID,
     ipmCompanyId: COMPANY_ID,
@@ -155,10 +152,7 @@ describe('ItemsPriceMasterService', () => {
           Promise<ItemUnitConversion | null>,
           [Prisma.ItemUnitConversionFindFirstArgs]
         >(),
-        findMany: jest.fn<
-          Promise<ItemUnitConversion[]>,
-          [Prisma.ItemUnitConversionFindManyArgs]
-        >(),
+        findMany: jest.fn<Promise<ItemUnitConversion[]>, [Prisma.ItemUnitConversionFindManyArgs]>(),
         update: jest.fn<Promise<ItemUnitConversion>, [Prisma.ItemUnitConversionUpdateArgs]>(),
       },
       $transaction: jest.fn<
@@ -187,7 +181,6 @@ describe('ItemsPriceMasterService', () => {
     service = new ItemsPriceMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      configuredGridSqlService as unknown as ConfiguredGridSqlService,
     );
   });
 
@@ -712,10 +705,11 @@ describe('ItemsPriceMasterService', () => {
       }),
     );
 
-    await expect(service.deleteItemUnitConversions('019c6f6c-be87-7a11-8905-36092c46fd12')).resolves
-      .toEqual({
-        iuc_id: '019c6f6c-be87-7a11-8905-36092c46fd12',
-        deleted: true,
-      });
+    await expect(
+      service.deleteItemUnitConversions('019c6f6c-be87-7a11-8905-36092c46fd12'),
+    ).resolves.toEqual({
+      iuc_id: '019c6f6c-be87-7a11-8905-36092c46fd12',
+      deleted: true,
+    });
   });
 });

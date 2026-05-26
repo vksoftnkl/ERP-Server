@@ -1,18 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ItemReorder, Prisma } from '@prisma/client';
-import { ListItemReorderQueryDto } from './dto/list-item-reorder-query.dto';
 import { SaveItemReorderDto } from './dto/save-item-reorder.dto';
 import {
   ItemReorderDeleteResult,
   ItemReorderErrorDetail,
-  ItemReorderListItem,
-  ItemReorderListMeta,
   ItemReorderPayload,
 } from './types/item-reorder-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from 'src/common/configured-grid-sql/configured-grid-sql.service';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -32,7 +27,6 @@ export class ItemsReorderMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveItemReorderDto: SaveItemReorderDto): Promise<ItemReorderPayload>;
@@ -58,35 +52,28 @@ export class ItemsReorderMasterService {
       throw error;
     }
   }
-
-  async list(
-    queryDto: ListItemReorderQueryDto,
-  ): Promise<ConfiguredGridListResult<ItemReorderListItem, ItemReorderListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<ItemReorderListItem>(
-      this.configuredGridSqlService,
-      { tableName: ITEM_REORDER_TABLE_NAME, alias: 'item_reorder_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwInventoryBadRequest<ItemReorderErrorDetail>('No configured grid found for item reorder list', []);
-    }
-    return result;
-  }
-
   async getById(irId: string): Promise<ItemReorderPayload> {
     const record = await this.prisma.itemReorder.findFirst({
       where: { irId, irIsDeleted: false },
     });
     if (!record) {
-      throwInventoryNotFound<ItemReorderErrorDetail>('Item reorder not found', 'ir_id', `No active item reorder found with id ${irId}`);
+      throwInventoryNotFound<ItemReorderErrorDetail>(
+        'Item reorder not found',
+        'ir_id',
+        `No active item reorder found with id ${irId}`,
+      );
     }
     return this.toPayload(record);
   }
 
   async softDelete(irId: string): Promise<ItemReorderDeleteResult>;
   async softDelete(irId: string[]): Promise<ItemReorderDeleteResult[]>;
-  async softDelete(irId: string | string[]): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;
-  async softDelete(irId: string | string[]): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]> {
+  async softDelete(
+    irId: string | string[],
+  ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;
+  async softDelete(
+    irId: string | string[],
+  ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]> {
     const deleteIds = Array.isArray(irId) ? irId : [irId];
 
     const results = await this.prisma.$transaction(async (tx) => {
@@ -118,7 +105,11 @@ export class ItemsReorderMasterService {
       where: { irId, irIsDeleted: false },
     });
     if (!existing) {
-      throwInventoryNotFound<ItemReorderErrorDetail>('Item reorder not found', 'ir_id', `No active item reorder found with id ${irId}`);
+      throwInventoryNotFound<ItemReorderErrorDetail>(
+        'Item reorder not found',
+        'ir_id',
+        `No active item reorder found with id ${irId}`,
+      );
     }
 
     const modifiedOn = new Date();
@@ -128,7 +119,11 @@ export class ItemsReorderMasterService {
       data: { irIsDeleted: true, irModifiedOn: modifiedOn, irModifiedBy: modifiedBy },
     });
     if (result.count === 0) {
-      throwInventoryNotFound<ItemReorderErrorDetail>('Item reorder not found', 'ir_id', `No active item reorder found with id ${irId}`);
+      throwInventoryNotFound<ItemReorderErrorDetail>(
+        'Item reorder not found',
+        'ir_id',
+        `No active item reorder found with id ${irId}`,
+      );
     }
 
     const originalRecord = this.toPayload(existing);
@@ -209,7 +204,11 @@ export class ItemsReorderMasterService {
       where: { irId, irIsDeleted: false },
     });
     if (!existing) {
-      throwInventoryNotFound<ItemReorderErrorDetail>('Item reorder not found', 'ir_id', `No active item reorder found with id ${irId}`);
+      throwInventoryNotFound<ItemReorderErrorDetail>(
+        'Item reorder not found',
+        'ir_id',
+        `No active item reorder found with id ${irId}`,
+      );
     }
 
     const data: Prisma.ItemReorderUncheckedUpdateInput = {
@@ -241,45 +240,36 @@ export class ItemsReorderMasterService {
 
     return payload;
   }
-
-  private buildListWhere(queryDto: ListItemReorderQueryDto): Prisma.ItemReorderWhereInput {
-    const where: Prisma.ItemReorderWhereInput = { irIsDeleted: false };
-
-    if (queryDto.ir_branch_id !== undefined) where.irBranchId = queryDto.ir_branch_id;
-    if (queryDto.ir_item_id !== undefined) where.irItemId = queryDto.ir_item_id;
-    if (queryDto.ir_unit_id !== undefined) where.irUnitId = queryDto.ir_unit_id;
-    if (queryDto.ir_godown_id !== undefined) where.irGodownId = queryDto.ir_godown_id;
-    if (queryDto.ir_reorder_type !== undefined) where.irReorderType = queryDto.ir_reorder_type;
-    if (queryDto.ir_is_active !== undefined) where.irIsActive = queryDto.ir_is_active;
-
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { irReorderType: { contains: search, mode: 'insensitive' } },
-        { irRemarks: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    return where;
-  }
-
   private applyOptionalFields(
     data: Prisma.ItemReorderUncheckedCreateInput | Prisma.ItemReorderUncheckedUpdateInput,
     saveItemReorderDto: SaveItemReorderDto,
   ): void {
-    if (hasOwnProperty(saveItemReorderDto, 'ir_branch_id')) data.irBranchId = saveItemReorderDto.ir_branch_id;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_godown_id')) data.irGodownId = saveItemReorderDto.ir_godown_id;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_min_level')) data.irMinLevel = saveItemReorderDto.ir_min_level;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_max_level')) data.irMaxLevel = saveItemReorderDto.ir_max_level;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_reorder_level')) data.irReorderLevel = saveItemReorderDto.ir_reorder_level;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_reorder_qty')) data.irReorderQty = saveItemReorderDto.ir_reorder_qty;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_lead_time_days')) data.irLeadTimeDays = saveItemReorderDto.ir_lead_time_days;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_review_cycle_days')) data.irReviewCycleDays = saveItemReorderDto.ir_review_cycle_days;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_reorder_days')) data.irReorderDays = saveItemReorderDto.ir_reorder_days;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_expiry_buffer_days')) data.irExpiryBufferDays = saveItemReorderDto.ir_expiry_buffer_days;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_reorder_type')) data.irReorderType = saveItemReorderDto.ir_reorder_type;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_is_active')) data.irIsActive = saveItemReorderDto.ir_is_active;
-    if (hasOwnProperty(saveItemReorderDto, 'ir_remarks')) data.irRemarks = saveItemReorderDto.ir_remarks;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_branch_id'))
+      data.irBranchId = saveItemReorderDto.ir_branch_id;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_godown_id'))
+      data.irGodownId = saveItemReorderDto.ir_godown_id;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_min_level'))
+      data.irMinLevel = saveItemReorderDto.ir_min_level;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_max_level'))
+      data.irMaxLevel = saveItemReorderDto.ir_max_level;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_reorder_level'))
+      data.irReorderLevel = saveItemReorderDto.ir_reorder_level;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_reorder_qty'))
+      data.irReorderQty = saveItemReorderDto.ir_reorder_qty;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_lead_time_days'))
+      data.irLeadTimeDays = saveItemReorderDto.ir_lead_time_days;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_review_cycle_days'))
+      data.irReviewCycleDays = saveItemReorderDto.ir_review_cycle_days;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_reorder_days'))
+      data.irReorderDays = saveItemReorderDto.ir_reorder_days;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_expiry_buffer_days'))
+      data.irExpiryBufferDays = saveItemReorderDto.ir_expiry_buffer_days;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_reorder_type'))
+      data.irReorderType = saveItemReorderDto.ir_reorder_type;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_is_active'))
+      data.irIsActive = saveItemReorderDto.ir_is_active;
+    if (hasOwnProperty(saveItemReorderDto, 'ir_remarks'))
+      data.irRemarks = saveItemReorderDto.ir_remarks;
   }
 
   private validateReorderRange(saveItemReorderDto: SaveItemReorderDto): void {
@@ -287,7 +277,10 @@ export class ItemsReorderMasterService {
     const maxLevel = saveItemReorderDto.ir_max_level;
     if (minLevel !== undefined && maxLevel !== undefined && minLevel > maxLevel) {
       throwInventoryBadRequest<ItemReorderErrorDetail>('Validation failed', [
-        { field: 'ir_max_level', message: 'ir_max_level must be greater than or equal to ir_min_level' },
+        {
+          field: 'ir_max_level',
+          message: 'ir_max_level must be greater than or equal to ir_min_level',
+        },
       ]);
     }
   }
@@ -334,5 +327,4 @@ export class ItemsReorderMasterService {
       ]);
     }
   }
-
 }

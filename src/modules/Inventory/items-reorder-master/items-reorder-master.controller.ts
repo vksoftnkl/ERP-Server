@@ -31,24 +31,24 @@ import {
   ItemReorderErrorResponseDto,
   ItemReorderPayloadDto,
   ItemReorderSuccessDeleteDto,
-  ItemReorderSuccessListDto,
   ItemReorderSuccessSaveDto,
   ItemReorderSuccessSingleDto,
 } from './dto/item-reorder-response.dto';
 import { DeleteItemReorderDto } from './dto/delete-item-reorder.dto';
-import { ListItemReorderQueryDto } from './dto/list-item-reorder-query.dto';
 import { SaveItemReorderDto } from './dto/save-item-reorder.dto';
 import { ItemReorderExceptionFilter } from './item-reorder-exception.filter';
 import { ItemsReorderMasterService } from './items-reorder-master.service';
 import {
   ItemReorderDeleteResult,
-  ItemReorderListItem,
-  ItemReorderListMeta,
   ItemReorderPayload,
   ItemReorderSuccessResponse,
 } from './types/item-reorder-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
-import { hasRequestPayload, validateDto, validateSingleOrArrayDto } from 'src/common/utils/request-payload-validation.util';
+import {
+  hasRequestPayload,
+  validateDto,
+  validateSingleOrArrayDto,
+} from 'src/common/utils/request-payload-validation.util';
 
 @ApiTags('Item Reorders')
 @ApiBearerAuth('access-token')
@@ -98,25 +98,6 @@ export class ItemsReorderMasterController {
           ? 'Item reorder updated successfully'
           : 'Item reorder created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List item reorders with filter/search/pagination' })
-  @ApiOkResponse({ type: ItemReorderSuccessListDto })
-  @ApiBadRequestResponse({ type: ItemReorderErrorResponseDto })
-  async list(
-    @Query() queryDto: ListItemReorderQueryDto,
-  ): Promise<ItemReorderSuccessResponse<ItemReorderListItem[], ItemReorderListMeta>> {
-    const result = await this.itemsReorderMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Item reorders fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

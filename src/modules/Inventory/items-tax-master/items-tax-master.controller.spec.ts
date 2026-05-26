@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ListItemTaxQueryDto } from './dto/list-item-tax-query.dto';
 import { SaveItemTaxDto } from './dto/save-item-tax.dto';
 import { ItemsTaxMasterController } from './items-tax-master.controller';
 import { ItemsTaxMasterService } from './items-tax-master.service';
@@ -94,36 +93,6 @@ describe('ItemsTaxMasterController', () => {
       data: itemTaxPayload,
     });
   });
-
-  it('returns list wrapper with pagination meta', async () => {
-    serviceMock.list.mockResolvedValue({
-      items: [itemTaxPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListItemTaxQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    await expect(controller.list(query)).resolves.toEqual({
-      success: true,
-      message: 'Item taxes fetched successfully',
-      data: [itemTaxPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemTaxPayload);
 

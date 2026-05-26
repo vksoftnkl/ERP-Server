@@ -1,11 +1,11 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from 'src/common/utils/module-response.dto';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
 export { InventoryErrorFieldDto as ItemPriceErrorFieldDto };
 export { InventoryErrorResponseDto as ItemPriceErrorResponseDto };
-export { InventoryListMetaDto as ItemPriceListMetaDto };
-
 export class ItemPricePayloadDto {
   @ApiProperty({ format: 'uuid' })
   ipm_id!: string;
@@ -197,26 +197,6 @@ export class ItemPriceSuccessSaveDto {
     | ItemPricePayloadDto[]
     | ItemUnitConversionPayloadDto
     | ItemUnitConversionPayloadDto[];
-}
-export class ItemPriceSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-  @ApiProperty({ example: 'Item prices fetched successfully' })
-  message!: string;
-  @ApiProperty({
-    type: 'array',
-    items: {
-      oneOf: [
-        { $ref: getSchemaPath(ItemPricePayloadDto) },
-        { $ref: getSchemaPath(ItemUnitConversionPayloadDto) },
-      ],
-    },
-  })
-  data!: Array<ItemPricePayloadDto | ItemUnitConversionPayloadDto>;
-  @ApiProperty({ type: InventoryListMetaDto })
-  meta!: InventoryListMetaDto;
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 export class ItemPriceSuccessDeleteDto {
   @ApiProperty({ example: true })

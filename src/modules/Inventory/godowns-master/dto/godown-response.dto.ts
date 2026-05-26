@@ -1,11 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
-import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from 'src/common/utils/module-response.dto';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
 export { InventoryErrorFieldDto as GodownErrorFieldDto };
 export { InventoryErrorResponseDto as GodownErrorResponseDto };
-export { InventoryListMetaDto as GodownListMetaDto };
-
 export class GodownPayloadDto {
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
   gdl_id!: string;
@@ -92,24 +92,6 @@ export class GodownSuccessSingleDto {
   @ApiProperty({ type: GodownPayloadDto })
   data!: GodownPayloadDto;
 }
-
-export class GodownSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Godown locations fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: GodownPayloadDto, isArray: true })
-  data!: GodownPayloadDto[];
-
-  @ApiProperty({ type: InventoryListMetaDto })
-  meta!: InventoryListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
-
 export class GodownSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

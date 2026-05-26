@@ -1,9 +1,6 @@
 export type { InventoryErrorDetail as ItemPriceErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemPriceErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemPriceSuccessResponse } from 'src/common/types/module-api.types';
-export type { InventoryListMeta as ItemPriceListMeta } from 'src/common/types/module-list.types';
-export type { InventoryListMeta as ItemUnitConversionListMeta } from 'src/common/types/module-list.types';
-
 export interface ItemPriceDeleteResult {
   ipm_id: string;
   deleted: true;
@@ -62,9 +59,6 @@ export interface ItemPricePayload {
   ipm_updated_on: string | null;
   ipm_updated_by: string | null;
 }
-
-export type ItemPriceListItem = ItemPricePayload | Record<string, unknown>;
-
 export interface ItemUnitConversionPayload {
   iuc_id: string;
   iuc_company_id: string;
@@ -87,7 +81,3 @@ export interface ItemUnitConversionPayload {
   iuc_updated_on: string | null;
   iuc_updated_by: string | null;
 }
-
-export type ItemUnitConversionListItem =
-  | ItemUnitConversionPayload
-  | Record<string, unknown>;

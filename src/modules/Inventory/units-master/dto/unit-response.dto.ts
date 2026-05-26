@@ -1,10 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { InventoryErrorFieldDto, InventoryErrorResponseDto, InventoryListMetaDto } from 'src/common/utils/module-response.dto';
+import {
+  InventoryErrorFieldDto,
+  InventoryErrorResponseDto,
+} from 'src/common/utils/module-response.dto';
 
 export { InventoryErrorFieldDto as UnitErrorFieldDto };
 export { InventoryErrorResponseDto as UnitErrorResponseDto };
-export { InventoryListMetaDto as UnitListMetaDto };
-
 export class UnitPayloadDto {
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
   unit_id!: string;
@@ -130,24 +131,6 @@ export class UnitSuccessSingleDto {
   @ApiProperty({ type: UnitPayloadDto })
   data!: UnitPayloadDto;
 }
-
-export class UnitSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Units fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: UnitPayloadDto, isArray: true })
-  data!: UnitPayloadDto[];
-
-  @ApiProperty({ type: InventoryListMetaDto })
-  meta!: InventoryListMetaDto;
-
-  @ApiPropertyOptional({ type: UnitGridStyleDto, isArray: true })
-  styles?: UnitGridStyleDto[];
-}
-
 export class UnitSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
