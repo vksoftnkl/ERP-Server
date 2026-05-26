@@ -27,15 +27,11 @@ import { CompanyGroupMasterExceptionFilter } from './company-group-master-except
 import {
   CompanyGroupMasterErrorResponseDto,
   CompanyGroupMasterSuccessDeleteDto,
-  CompanyGroupMasterSuccessListDto,
   CompanyGroupMasterSuccessSingleDto,
 } from './dto/company-group-master-response.dto';
-import { ListCompanyGroupMasterQueryDto } from './dto/list-company-group-master-query.dto';
 import { SaveCompanyGroupMasterDto } from './dto/save-company-group-master.dto';
 import { CompanyGroupMasterService } from './company-group-master.service';
 import {
-  CompanyGroupMasterListItem,
-  CompanyGroupMasterListMeta,
   CompanyGroupMasterPayload,
   CompanyGroupMasterSuccessResponse,
 } from './types/company-group-master-api.types';
@@ -67,27 +63,6 @@ export class CompanyGroupMasterController {
         ? 'Company group updated successfully'
         : 'Company group created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List company groups with filter/search/pagination' })
-  @ApiOkResponse({ type: CompanyGroupMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: CompanyGroupMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCompanyGroupMasterQueryDto,
-  ): Promise<
-    CompanyGroupMasterSuccessResponse<CompanyGroupMasterListItem[], CompanyGroupMasterListMeta>
-  > {
-    const result = await this.companyGroupMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Company groups fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

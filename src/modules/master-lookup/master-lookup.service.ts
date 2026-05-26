@@ -773,6 +773,11 @@ export class MasterLookupService {
       /,(\s*(from|where|group\s+by|order\s+by|having|union|limit|offset)\b)/gi,
       '$1',
     );
+    // Reject SQL that would cause "syntax error at or near '.'" — a dot without a
+    // column name after it, e.g. "t. FROM" produced by an incomplete alias reference.
+    if (/\.\s*(from|where|group\s+by|order\s+by|having|union|limit|offset)\b/i.test(normalized)) {
+      return undefined;
+    }
     return this.normalizeConfiguredSqlTableReferences(normalized);
   }
   private normalizeConfiguredSqlTableReferences(sql: string): string {

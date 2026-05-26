@@ -1,6 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-import { AccountsListMetaDto } from 'src/common/utils/module-response.dto';
 
 export class CompanyGroupMasterErrorFieldDto {
   @ApiProperty({ example: 'cogGroupName' })
@@ -70,23 +68,6 @@ export class CompanyGroupMasterSuccessSingleDto {
 
   @ApiProperty({ type: CompanyGroupMasterPayloadDto })
   data!: CompanyGroupMasterPayloadDto;
-}
-
-export class CompanyGroupMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Company groups fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: CompanyGroupMasterPayloadDto, isArray: true })
-  data!: CompanyGroupMasterPayloadDto[];
-
-  @ApiProperty({ type: AccountsListMetaDto })
-  meta!: AccountsListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class CompanyGroupMasterSuccessDeleteDto {

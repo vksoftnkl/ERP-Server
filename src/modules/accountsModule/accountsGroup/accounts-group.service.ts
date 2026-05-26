@@ -1,16 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccountGroup, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListAccountGroupQueryDto } from './dto/list-account-group-query.dto';
 import { SaveAccountGroupDto } from './dto/save-account-group.dto';
-import {
-  AccountGroupErrorDetail,
-  AccountGroupListItem,
-  AccountGroupListMeta,
-  AccountGroupPayload,
-} from './types/account-group-api.types';
+import { AccountGroupErrorDetail, AccountGroupPayload } from './types/account-group-api.types';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -22,16 +15,9 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const ACCOUNT_GROUP_TABLE_NAME = 'account groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
-const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
 type AccountGroupWriteClient = AccountsWriteClient;
-type SearchColumnDescriptor = {
-  normalized: string;
-  tokens: string[];
-  lastToken: string;
-};
 type AccountGroupParentRecord = {
   accGroupId: string;
   accGroupCompanyId: string | null;
@@ -41,7 +27,6 @@ export class AccountsGroupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveAccountGroupDto: SaveAccountGroupDto): Promise<AccountGroupPayload> {
     if (saveAccountGroupDto.accGroupId) {
@@ -49,446 +34,7 @@ export class AccountsGroupService {
     }
     return this.createAccountGroup(saveAccountGroupDto);
   }
-  async list(
-    queryDto: ListAccountGroupQueryDto,
-  ): Promise<ConfiguredGridListResult<AccountGroupListItem, AccountGroupListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<AccountGroupListItem>(
-      this.configuredGridSqlService,
-      { tableName: ACCOUNT_GROUP_TABLE_NAME, alias: 'account_group_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwAccountsBadRequest<AccountGroupErrorDetail>('No configured grid found for account group list', []);
-    }
-    return result;
-  }
-  private async listFromConfiguredGridSql(
-    queryDto: ListAccountGroupQueryDto,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<AccountGroupListItem, AccountGroupListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ACCOUNT_GROUP_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ACCOUNT_GROUP_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: ACCOUNT_GROUP_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const baseSql = validation.normalizedSql;
-        const searchableFieldNames = queryDto.search?.trim()
-          ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
-          : [];
-        const { sql: filteredSql, params } = this.buildConfiguredGridListSql(
-          baseSql,
-          queryDto,
-          searchableFieldNames,
-        );
-        const result = await this.configuredGridSqlService.runPagedQuery<AccountGroupListItem>({
-          baseSql: filteredSql,
-          alias: 'account_group_grid',
-          params,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
-  }
-  private buildConfiguredGridListSql(
-    baseSql: string,
-    queryDto: ListAccountGroupQueryDto,
-    searchableFieldNames: string[],
-  ): { sql: string; params: unknown[] } {
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    if (queryDto.accGroupCompanyId !== undefined) {
-      params.push(queryDto.accGroupCompanyId);
-      conditions.push(`account_group_grid.acc_group_company_id = $${params.length}`);
-    }
-    if (queryDto.accGroupParentId !== undefined) {
-      params.push(queryDto.accGroupParentId);
-      conditions.push(`account_group_grid.acc_group_parent_id = $${params.length}`);
-    }
-    if (queryDto.accGroupIsActive !== undefined) {
-      params.push(queryDto.accGroupIsActive);
-      conditions.push(`account_group_grid.acc_group_is_active = $${params.length}`);
-    }
-    if (queryDto.search?.trim()) {
-      const searchText = `%${queryDto.search.trim()}%`;
-      if (searchableFieldNames.length > 0) {
-        const searchConditions: string[] = [];
-        for (const fieldName of searchableFieldNames) {
-          params.push(fieldName);
-          const columnParamIndex = params.length;
-          params.push(searchText);
-          const valueParamIndex = params.length;
-          searchConditions.push(
-            `EXISTS (` +
-              `SELECT 1 FROM jsonb_each_text(row_to_json(account_group_grid)::jsonb) AS grid_kv(key, value) ` +
-              `WHERE grid_kv.key = $${columnParamIndex} ` +
-              `AND grid_kv.value ILIKE $${valueParamIndex}` +
-              `)`,
-          );
-        }
-        conditions.push(`(${searchConditions.join(' OR ')})`);
-      } else {
-        conditions.push('1 = 0');
-      }
-    }
-    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-    return {
-      sql: `SELECT * FROM (${baseSql}) AS account_group_grid${whereClause}`,
-      params,
-    };
-  }
-  private async getConfiguredSearchableFieldNames(
-    gridId: bigint,
-    baseSql: string,
-  ): Promise<string[]> {
-    const sqlFieldNames = this.extractSelectFieldNames(baseSql);
-    if (sqlFieldNames.length === 0) {
-      return [];
-    }
-   const configuredColumns = await this.prisma.gridColumn.findMany({
-      where: {
-        gridId,
-        gridColumnIsDeleted: false,
-        gridColumnFilter: true,
-        grid: {
-          gridIsDeleted: false,
-        },
-      },
-      orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
-      select: {
-        gridColumnName: true,
-        gridColumnNumber: true,
-      },
-    });
-    const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
-      fieldName,
-      descriptor: this.describeSearchColumnName(fieldName),
-    }));
-    const usedSqlFieldIndexes = new Set<number>();
-    const matchedFieldNames: string[] = [];
-    for (const column of configuredColumns) {
-      const columnName = column.gridColumnName.trim();
-      let matchedSqlFieldIndex = -1;
-      const columnDescriptor = this.describeSearchColumnName(columnName);
-      if (columnDescriptor.normalized) {
-        let bestScore = -1;
-        let nextBestScore = -1;
-        let bestScoreIsAmbiguous = false;
-        for (let index = 0; index < normalizedSqlFields.length; index += 1) {
-          if (usedSqlFieldIndexes.has(index)) {
-            continue;
-          }
-          const score = this.getSearchColumnMatchScore(
-            columnDescriptor,
-            normalizedSqlFields[index].descriptor,
-          );
-          if (score > bestScore) {
-            nextBestScore = bestScore;
-            bestScore = score;
-            matchedSqlFieldIndex = index;
-            bestScoreIsAmbiguous = false;
-            continue;
-          }
-          if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
-            bestScoreIsAmbiguous = true;
-            continue;
-          }
-          if (score > nextBestScore) {
-            nextBestScore = score;
-          }
-        }
-        if (
-          bestScore < MIN_CONFIDENT_COLUMN_MATCH_SCORE ||
-          bestScore === nextBestScore ||
-          bestScoreIsAmbiguous
-        ) {
-          matchedSqlFieldIndex = -1;
-        }
-      }
-      if (matchedSqlFieldIndex === -1) {
-        const sqlFieldIndexFromColumnNumber = column.gridColumnNumber - 1;
-        if (
-          sqlFieldIndexFromColumnNumber >= 0 &&
-          sqlFieldIndexFromColumnNumber < normalizedSqlFields.length &&
-          !usedSqlFieldIndexes.has(sqlFieldIndexFromColumnNumber)
-        ) {
-          matchedSqlFieldIndex = sqlFieldIndexFromColumnNumber;
-        }
-      }
-      if (matchedSqlFieldIndex !== -1) {
-        usedSqlFieldIndexes.add(matchedSqlFieldIndex);
-        matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
-      }
-    }
-    return matchedFieldNames;
-  }
-  private tokenizeSearchColumnName(value: string): string[] {
-    const normalizedSpacing = value
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .replace(/[^a-z0-9]+/gi, ' ')
-      .trim()
-      .toLowerCase();
-    return normalizedSpacing ? normalizedSpacing.split(/\s+/) : [];
-  }
-  private describeSearchColumnName(value: string): SearchColumnDescriptor {
-    const tokens = this.tokenizeSearchColumnName(value);
-    return {
-      normalized: tokens.join(''),
-      tokens,
-      lastToken: tokens[tokens.length - 1] ?? '',
-    };
-  }
-  private getSearchColumnMatchScore(
-    source: SearchColumnDescriptor,
-    target: SearchColumnDescriptor,
-  ): number {
-    if (!source.normalized || !target.normalized) {
-      return -1;
-    }
-    if (source.normalized === target.normalized) {
-      return 4;
-    }
-    if (
-      source.normalized.includes(target.normalized) ||
-      target.normalized.includes(source.normalized)
-    ) {
-      return 3;
-    }
-    const sourceWithoutBooleanPrefix = source.normalized.replace(/^is/, '');
-    const targetWithoutBooleanPrefix = target.normalized.replace(/^is/, '');
-    if (
-      sourceWithoutBooleanPrefix &&
-      targetWithoutBooleanPrefix &&
-      (sourceWithoutBooleanPrefix === targetWithoutBooleanPrefix ||
-        sourceWithoutBooleanPrefix.endsWith(targetWithoutBooleanPrefix) ||
-        targetWithoutBooleanPrefix.endsWith(sourceWithoutBooleanPrefix))
-    ) {
-      return 2;
-    }
-    if (source.lastToken && source.lastToken === target.lastToken) {
-      return 2;
-    }
-    if (
-      source.lastToken &&
-      target.lastToken &&
-      (source.lastToken.startsWith(target.lastToken) ||
-        target.lastToken.startsWith(source.lastToken))
-    ) {
-      return 2;
-    }
-    const sharedTokens = source.tokens.filter((token) => target.tokens.includes(token));
-    if (sharedTokens.length >= 2) {
-      return 1;
-    }
-    return -1;
-  }
-  private extractSelectFieldNames(sql: string): string[] {
-    const selectClause = this.extractTopLevelSelectClause(sql);
-    if (!selectClause) {
-      return [];
-    }
-    const expressions = this.splitTopLevelCommaSeparated(selectClause);
-    const fieldNames: string[] = [];
-    for (const expression of expressions) {
-      const outputFieldName = this.extractSqlOutputFieldName(expression);
-      if (!outputFieldName) {
-        continue;
-      }
-      if (!fieldNames.includes(outputFieldName)) {
-        fieldNames.push(outputFieldName);
-      }
-    }
-    return fieldNames;
-  }
-  private extractTopLevelSelectClause(sql: string): string | null {
-    const trimmed = sql.trim();
-    const selectMatch = trimmed.match(/^select\b/i);
-    if (!selectMatch) {
-      return null;
-    }
-    const selectStartIndex = selectMatch[0].length;
-    let depth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-    for (let index = selectStartIndex; index < trimmed.length; index += 1) {
-      const current = trimmed[index];
-      const next = trimmed[index + 1];
-      if (insideSingleQuote) {
-        if (current === "'" && next === "'") {
-          index += 1;
-          continue;
-        }
-        if (current === "'") {
-          insideSingleQuote = false;
-        }
-        continue;
-      }
-      if (insideDoubleQuote) {
-        if (current === '"' && next === '"') {
-          index += 1;
-          continue;
-        }
-        if (current === '"') {
-          insideDoubleQuote = false;
-        }
-        continue;
-      }
-      if (current === "'") {
-        insideSingleQuote = true;
-        continue;
-      }
-      if (current === '"') {
-        insideDoubleQuote = true;
-        continue;
-      }
-      if (current === '(') {
-        depth += 1;
-        continue;
-      }
-      if (current === ')') {
-        depth = Math.max(0, depth - 1);
-        continue;
-      }
-      if (
-        depth === 0 &&
-        /^from$/i.test(trimmed.slice(index, index + 4)) &&
-        (index === 0 || /\s/.test(trimmed[index - 1])) &&
-        (index + 4 >= trimmed.length || /\s/.test(trimmed[index + 4]))
-      ) {
-        return trimmed.slice(selectStartIndex, index).trim();
-      }
-    }
-    return null;
-  }
-  private splitTopLevelCommaSeparated(value: string): string[] {
-    const chunks: string[] = [];
-    let startIndex = 0;
-    let depth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-    for (let index = 0; index < value.length; index += 1) {
-      const current = value[index];
-      const next = value[index + 1];
-      if (insideSingleQuote) {
-        if (current === "'" && next === "'") {
-          index += 1;
-          continue;
-        }
-        if (current === "'") {
-          insideSingleQuote = false;
-        }
-        continue;
-      }
-      if (insideDoubleQuote) {
-        if (current === '"' && next === '"') {
-          index += 1;
-          continue;
-        }
-        if (current === '"') {
-          insideDoubleQuote = false;
-        }
-        continue;
-      }
-      if (current === "'") {
-        insideSingleQuote = true;
-        continue;
-      }
-      if (current === '"') {
-        insideDoubleQuote = true;
-        continue;
-      }
-      if (current === '(') {
-        depth += 1;
-        continue;
-      }
-      if (current === ')') {
-        depth = Math.max(0, depth - 1);
-        continue;
-      }
-      if (current === ',' && depth === 0) {
-        chunks.push(value.slice(startIndex, index).trim());
-        startIndex = index + 1;
-      }
-    }
-    const tail = value.slice(startIndex).trim();
-    if (tail) {
-      chunks.push(tail);
-    }
-    return chunks;
-  }
-  private extractSqlOutputFieldName(expression: string): string | null {
-    const trimmed = expression.trim();
-    if (!trimmed || trimmed === '*' || /\.\*$/.test(trimmed)) {
-      return null;
-    }
-    const explicitAliasMatch = trimmed.match(/\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
-    if (explicitAliasMatch) {
-      return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
-    }
-    const implicitAliasMatch = trimmed.match(/\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
-    if (implicitAliasMatch) {
-      const aliasToken = implicitAliasMatch[1];
-      const expressionWithoutAlias = trimmed.slice(0, trimmed.length - aliasToken.length).trim();
-      if (expressionWithoutAlias) {
-        return this.parseSqlIdentifierToken(aliasToken);
-      }
-    }
-    const simpleColumnMatch = trimmed.match(
-      /^((?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)\.)*(?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)$/i,
-    );
-    if (simpleColumnMatch) {
-      const parts = trimmed.split('.');
-      return this.parseSqlIdentifierToken(parts[parts.length - 1]);
-    }
-    return null;
-  }
-  private parseSqlIdentifierToken(token: string): string | null {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      return null;
-    }
-    if (/^"([^"]|"")+"$/.test(trimmed)) {
-      return trimmed.slice(1, -1).replace(/""/g, '"');
-    }
-    if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
-      return trimmed.toLowerCase();
-    }
-    return null;
-  }
+
   async getById(accGroupId: string): Promise<AccountGroupPayload> {
     const record = await this.prisma.accountGroup.findFirst({
       where: {
@@ -497,7 +43,11 @@ export class AccountsGroupService {
       },
     });
     if (!record) {
-      throwAccountsNotFound<AccountGroupErrorDetail>('Account group not found', 'accGroupId', `No active account group found with id ${accGroupId}`);
+      throwAccountsNotFound<AccountGroupErrorDetail>(
+        'Account group not found',
+        'accGroupId',
+        `No active account group found with id ${accGroupId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -510,7 +60,11 @@ export class AccountsGroupService {
         },
       });
       if (!existing) {
-        throwAccountsNotFound<AccountGroupErrorDetail>('Account group not found', 'accGroupId', `No active account group found with id ${accGroupId}`);
+        throwAccountsNotFound<AccountGroupErrorDetail>(
+          'Account group not found',
+          'accGroupId',
+          `No active account group found with id ${accGroupId}`,
+        );
       }
       const hasChildren = await tx.accountGroup.count({
         where: {
@@ -519,12 +73,15 @@ export class AccountsGroupService {
         },
       });
       if (hasChildren > 0) {
-        throwAccountsBadRequest<AccountGroupErrorDetail>('Cannot delete account group with active children', [
-          {
-            field: 'accGroupId',
-            message: `Account group ${accGroupId} has child groups. Reassign or delete them first.`,
-          },
-        ]);
+        throwAccountsBadRequest<AccountGroupErrorDetail>(
+          'Cannot delete account group with active children',
+          [
+            {
+              field: 'accGroupId',
+              message: `Account group ${accGroupId} has child groups. Reassign or delete them first.`,
+            },
+          ],
+        );
       }
       const ledgerCount = await tx.accLedgerMaster.count({
         where: {
@@ -533,12 +90,15 @@ export class AccountsGroupService {
         },
       });
       if (ledgerCount > 0) {
-        throwAccountsBadRequest<AccountGroupErrorDetail>('Cannot delete account group with active ledgers', [
-          {
-            field: 'accGroupId',
-            message: `Account group ${accGroupId} is used by ${ledgerCount} ledger(s).`,
-          },
-        ]);
+        throwAccountsBadRequest<AccountGroupErrorDetail>(
+          'Cannot delete account group with active ledgers',
+          [
+            {
+              field: 'accGroupId',
+              message: `Account group ${accGroupId} is used by ${ledgerCount} ledger(s).`,
+            },
+          ],
+        );
       }
       const ancestorIds = await this.getAncestorIds(tx, existing.accGroupParentId);
       const modifiedOn = new Date();
@@ -555,7 +115,11 @@ export class AccountsGroupService {
         },
       });
       if (result.count === 0) {
-        throwAccountsNotFound<AccountGroupErrorDetail>('Account group not found', 'accGroupId', `No active account group found with id ${accGroupId}`);
+        throwAccountsNotFound<AccountGroupErrorDetail>(
+          'Account group not found',
+          'accGroupId',
+          `No active account group found with id ${accGroupId}`,
+        );
       }
       await this.removeChildIds(tx, ancestorIds, [accGroupId]);
       const originalRecord = this.toPayload(existing);
@@ -592,7 +156,10 @@ export class AccountsGroupService {
   ): Promise<AccountGroupPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const normalizedName = normalizeRequiredText<AccountGroupErrorDetail>(saveAccountGroupDto.accGroupName, 'accGroupName');
+        const normalizedName = normalizeRequiredText<AccountGroupErrorDetail>(
+          saveAccountGroupDto.accGroupName,
+          'accGroupName',
+        );
         const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
         const parent = saveAccountGroupDto.accGroupParentId
           ? await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx)
@@ -635,9 +202,7 @@ export class AccountsGroupService {
         const payload = !refreshed
           ? this.toPayload({
               ...created,
-              accGroupChildIds: this.mergeChildIds(created.accGroupChildIds, [
-                created.accGroupId,
-              ]),
+              accGroupChildIds: this.mergeChildIds(created.accGroupChildIds, [created.accGroupId]),
             })
           : this.toPayload(refreshed);
         await this.auditLogService.logEntityChange(
@@ -658,9 +223,16 @@ export class AccountsGroupService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<AccountGroupErrorDetail>(error, 'Account group already exists', [{ field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' }]);
+      throwOnUniqueConstraintError<AccountGroupErrorDetail>(error, 'Account group already exists', [
+        { field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' },
+      ]);
       if (isForeignKeyConstraintError(error)) {
-        throwAccountsBadRequest<AccountGroupErrorDetail>('Invalid reference value provided', [{ field: 'accGroupCompanyId', message: 'Referenced company or parent account group does not exist' }]);
+        throwAccountsBadRequest<AccountGroupErrorDetail>('Invalid reference value provided', [
+          {
+            field: 'accGroupCompanyId',
+            message: 'Referenced company or parent account group does not exist',
+          },
+        ]);
       }
       throw error;
     }
@@ -678,17 +250,27 @@ export class AccountsGroupService {
           },
         });
         if (!existing) {
-          throwAccountsNotFound<AccountGroupErrorDetail>('Account group not found', 'accGroupId', `No active account group found with id ${accGroupId}`);
+          throwAccountsNotFound<AccountGroupErrorDetail>(
+            'Account group not found',
+            'accGroupId',
+            `No active account group found with id ${accGroupId}`,
+          );
         }
-        const normalizedName = normalizeRequiredText<AccountGroupErrorDetail>(saveAccountGroupDto.accGroupName, 'accGroupName');
+        const normalizedName = normalizeRequiredText<AccountGroupErrorDetail>(
+          saveAccountGroupDto.accGroupName,
+          'accGroupName',
+        );
         const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
         if (saveAccountGroupDto.accGroupParentId === accGroupId) {
-          throwAccountsBadRequest<AccountGroupErrorDetail>('Account group cannot be its own parent', [
-            {
-              field: 'accGroupParentId',
-              message: 'accGroupParentId cannot be same as accGroupId',
-            },
-          ]);
+          throwAccountsBadRequest<AccountGroupErrorDetail>(
+            'Account group cannot be its own parent',
+            [
+              {
+                field: 'accGroupParentId',
+                message: 'accGroupParentId cannot be same as accGroupId',
+              },
+            ],
+          );
         }
         const hasParentField = hasOwnProperty(saveAccountGroupDto, 'accGroupParentId');
         const nextParentId = hasParentField
@@ -763,9 +345,16 @@ export class AccountsGroupService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<AccountGroupErrorDetail>(error, 'Account group already exists', [{ field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' }]);
+      throwOnUniqueConstraintError<AccountGroupErrorDetail>(error, 'Account group already exists', [
+        { field: 'accGroupName', message: 'Duplicate accGroupName is not allowed' },
+      ]);
       if (isForeignKeyConstraintError(error)) {
-        throwAccountsBadRequest<AccountGroupErrorDetail>('Invalid reference value provided', [{ field: 'accGroupCompanyId', message: 'Referenced company or parent account group does not exist' }]);
+        throwAccountsBadRequest<AccountGroupErrorDetail>('Invalid reference value provided', [
+          {
+            field: 'accGroupCompanyId',
+            message: 'Referenced company or parent account group does not exist',
+          },
+        ]);
       }
       throw error;
     }
@@ -864,9 +453,15 @@ export class AccountsGroupService {
       },
     });
     if (existing) {
-      throwAccountsConflict<AccountGroupErrorDetail>('Account group name already exists for this company', [
-        { field: 'accGroupName', message: 'Duplicate accGroupName is not allowed for this company' },
-      ]);
+      throwAccountsConflict<AccountGroupErrorDetail>(
+        'Account group name already exists for this company',
+        [
+          {
+            field: 'accGroupName',
+            message: 'Duplicate accGroupName is not allowed for this company',
+          },
+        ],
+      );
     }
   }
   private applyOptionalFields(

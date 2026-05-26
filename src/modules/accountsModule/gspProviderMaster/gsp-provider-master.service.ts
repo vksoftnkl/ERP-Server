@@ -1,15 +1,11 @@
 import { isIP } from 'node:net';
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { GspProviderMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListGspProviderMasterQueryDto } from './dto/list-gsp-provider-master-query.dto';
 import { SaveGspProviderMasterDto } from './dto/save-gsp-provider-master.dto';
 import {
   GspProviderMasterErrorDetail,
-  GspProviderMasterListItem,
-  GspProviderMasterListMeta,
   GspProviderMasterPayload,
 } from './types/gsp-provider-master-api.types';
 import {
@@ -22,7 +18,6 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const GSP_PROVIDER_MASTER_TABLE_NAME = 'gsp provider master';
 const GSP_PROVIDER_MASTER_AUDIT_SCREEN_NAME = 'GSP Provider Master';
 type GspProviderMasterWriteClient = AccountsWriteClient;
@@ -31,7 +26,6 @@ export class GspProviderMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(
     saveGspProviderMasterDto: SaveGspProviderMasterDto,
@@ -41,72 +35,6 @@ export class GspProviderMasterService {
     }
     return this.createProvider(saveGspProviderMasterDto);
   }
-  async list(
-    queryDto: ListGspProviderMasterQueryDto,
-  ): Promise<ConfiguredGridListResult<GspProviderMasterListItem, GspProviderMasterListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<GspProviderMasterListItem>(
-      this.configuredGridSqlService,
-      { tableName: GSP_PROVIDER_MASTER_TABLE_NAME, alias: 'gsp_provider_master_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwAccountsBadRequest<GspProviderMasterErrorDetail>('No configured grid found for GSP provider master list', []);
-    }
-    return result;
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<GspProviderMasterListItem, GspProviderMasterListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: GSP_PROVIDER_MASTER_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      GSP_PROVIDER_MASTER_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: GSP_PROVIDER_MASTER_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<GspProviderMasterListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'gsp_provider_master_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-    return null;
-  }
   async getById(gspProviderId: string): Promise<GspProviderMasterPayload> {
     const record = await this.prisma.gspProviderMaster.findFirst({
       where: {
@@ -115,7 +43,11 @@ export class GspProviderMasterService {
       },
     });
     if (!record) {
-      throwAccountsNotFound<GspProviderMasterErrorDetail>('GSP provider not found', 'gspProviderId', `No active GSP provider found with id ${gspProviderId}`);
+      throwAccountsNotFound<GspProviderMasterErrorDetail>(
+        'GSP provider not found',
+        'gspProviderId',
+        `No active GSP provider found with id ${gspProviderId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -128,7 +60,11 @@ export class GspProviderMasterService {
         },
       });
       if (!existing) {
-        throwAccountsNotFound<GspProviderMasterErrorDetail>('GSP provider not found', 'gspProviderId', `No active GSP provider found with id ${gspProviderId}`);
+        throwAccountsNotFound<GspProviderMasterErrorDetail>(
+          'GSP provider not found',
+          'gspProviderId',
+          `No active GSP provider found with id ${gspProviderId}`,
+        );
       }
       const activeServiceCount = await tx.gspCompanyService.count({
         where: {
@@ -137,12 +73,15 @@ export class GspProviderMasterService {
         },
       });
       if (activeServiceCount > 0) {
-        throwAccountsBadRequest<GspProviderMasterErrorDetail>('Cannot delete GSP provider linked to active company services', [
-          {
-            field: 'gspProviderId',
-            message: `GSP provider ${gspProviderId} is linked to ${activeServiceCount} active service record(s).`,
-          },
-        ]);
+        throwAccountsBadRequest<GspProviderMasterErrorDetail>(
+          'Cannot delete GSP provider linked to active company services',
+          [
+            {
+              field: 'gspProviderId',
+              message: `GSP provider ${gspProviderId} is linked to ${activeServiceCount} active service record(s).`,
+            },
+          ],
+        );
       }
       const modifiedOn = new Date();
       const result = await tx.gspProviderMaster.updateMany({
@@ -158,7 +97,11 @@ export class GspProviderMasterService {
         },
       });
       if (result.count === 0) {
-        throwAccountsNotFound<GspProviderMasterErrorDetail>('GSP provider not found', 'gspProviderId', `No active GSP provider found with id ${gspProviderId}`);
+        throwAccountsNotFound<GspProviderMasterErrorDetail>(
+          'GSP provider not found',
+          'gspProviderId',
+          `No active GSP provider found with id ${gspProviderId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -206,7 +149,10 @@ export class GspProviderMasterService {
           saveGspProviderMasterDto.gspBaseUrl,
           'gspBaseUrl',
         );
-        const gspRoute = normalizeRequiredText<GspProviderMasterErrorDetail>(saveGspProviderMasterDto.gspRoute, 'gspRoute');
+        const gspRoute = normalizeRequiredText<GspProviderMasterErrorDetail>(
+          saveGspProviderMasterDto.gspRoute,
+          'gspRoute',
+        );
         const gspIpAddress = this.normalizeIpAddress(saveGspProviderMasterDto.gspIpAddress);
         const gspUserName = normalizeRequiredText<GspProviderMasterErrorDetail>(
           saveGspProviderMasterDto.gspUserName,
@@ -255,7 +201,16 @@ export class GspProviderMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<GspProviderMasterErrorDetail>(error, 'GSP provider already exists', [{ field: 'gspProviderCode', message: 'Duplicate GSP provider unique value is not allowed' }]);
+      throwOnUniqueConstraintError<GspProviderMasterErrorDetail>(
+        error,
+        'GSP provider already exists',
+        [
+          {
+            field: 'gspProviderCode',
+            message: 'Duplicate GSP provider unique value is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -272,7 +227,11 @@ export class GspProviderMasterService {
           },
         });
         if (!existing) {
-          throwAccountsNotFound<GspProviderMasterErrorDetail>('GSP provider not found', 'gspProviderId', `No active GSP provider found with id ${gspProviderId}`);
+          throwAccountsNotFound<GspProviderMasterErrorDetail>(
+            'GSP provider not found',
+            'gspProviderId',
+            `No active GSP provider found with id ${gspProviderId}`,
+          );
         }
         const gspProviderCode = normalizeRequiredText<GspProviderMasterErrorDetail>(
           saveGspProviderMasterDto.gspProviderCode,
@@ -286,7 +245,10 @@ export class GspProviderMasterService {
           saveGspProviderMasterDto.gspBaseUrl,
           'gspBaseUrl',
         );
-        const gspRoute = normalizeRequiredText<GspProviderMasterErrorDetail>(saveGspProviderMasterDto.gspRoute, 'gspRoute');
+        const gspRoute = normalizeRequiredText<GspProviderMasterErrorDetail>(
+          saveGspProviderMasterDto.gspRoute,
+          'gspRoute',
+        );
         const gspIpAddress = this.normalizeIpAddress(saveGspProviderMasterDto.gspIpAddress);
         const gspUserName = normalizeRequiredText<GspProviderMasterErrorDetail>(
           saveGspProviderMasterDto.gspUserName,
@@ -337,7 +299,16 @@ export class GspProviderMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<GspProviderMasterErrorDetail>(error, 'GSP provider already exists', [{ field: 'gspProviderCode', message: 'Duplicate GSP provider unique value is not allowed' }]);
+      throwOnUniqueConstraintError<GspProviderMasterErrorDetail>(
+        error,
+        'GSP provider already exists',
+        [
+          {
+            field: 'gspProviderCode',
+            message: 'Duplicate GSP provider unique value is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }

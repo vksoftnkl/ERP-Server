@@ -27,15 +27,11 @@ import { AccountLedgerMasterExceptionFilter } from './account-ledger-master-exce
 import {
   AccountLedgerMasterErrorResponseDto,
   AccountLedgerMasterSuccessDeleteDto,
-  AccountLedgerMasterSuccessListDto,
   AccountLedgerMasterSuccessSingleDto,
 } from './dto/account-ledger-master-response.dto';
-import { ListAccountLedgerMasterQueryDto } from './dto/list-account-ledger-master-query.dto';
 import { SaveAccountLedgerMasterDto } from './dto/save-account-ledger-master.dto';
 import { AccountLedgerMastersService } from './account-ledger-masters.service';
 import {
-  AccountLedgerMasterListItem,
-  AccountLedgerMasterListMeta,
   AccountLedgerMasterPayload,
   AccountLedgerMasterSuccessResponse,
 } from './types/account-ledger-master-api.types';
@@ -67,27 +63,6 @@ export class AccountLedgerMastersController {
         ? 'Account ledger updated successfully'
         : 'Account ledger created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List account ledgers with filter/search/pagination' })
-  @ApiOkResponse({ type: AccountLedgerMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: AccountLedgerMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListAccountLedgerMasterQueryDto,
-  ): Promise<
-    AccountLedgerMasterSuccessResponse<AccountLedgerMasterListItem[], AccountLedgerMasterListMeta>
-  > {
-    const result = await this.accountLedgerMastersService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Account ledgers fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

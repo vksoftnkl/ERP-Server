@@ -1,7 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 import { LedGstPartyRegType, LedObType } from '@prisma/client';
-import { AccountsListMetaDto } from 'src/common/utils/module-response.dto';
 
 export class AccountLedgerMasterErrorFieldDto {
   @ApiProperty({ example: 'ledName' })
@@ -249,23 +247,6 @@ export class AccountLedgerMasterSuccessSingleDto {
 
   @ApiProperty({ type: AccountLedgerMasterPayloadDto })
   data!: AccountLedgerMasterPayloadDto;
-}
-
-export class AccountLedgerMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Account ledgers fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: AccountLedgerMasterPayloadDto, isArray: true })
-  data!: AccountLedgerMasterPayloadDto[];
-
-  @ApiProperty({ type: AccountsListMetaDto })
-  meta!: AccountsListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class AccountLedgerMasterSuccessDeleteDto {

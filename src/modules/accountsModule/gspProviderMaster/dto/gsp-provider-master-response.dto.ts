@@ -1,6 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-import { AccountsListMetaDto } from 'src/common/utils/module-response.dto';
 
 export class GspProviderMasterErrorFieldDto {
   @ApiProperty({ example: 'gspProviderName' })
@@ -82,23 +80,6 @@ export class GspProviderMasterSuccessSingleDto {
 
   @ApiProperty({ type: GspProviderMasterPayloadDto })
   data!: GspProviderMasterPayloadDto;
-}
-
-export class GspProviderMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'GSP providers fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: GspProviderMasterPayloadDto, isArray: true })
-  data!: GspProviderMasterPayloadDto[];
-
-  @ApiProperty({ type: AccountsListMetaDto })
-  meta!: AccountsListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class GspProviderMasterSuccessDeleteDto {

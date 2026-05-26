@@ -200,9 +200,6 @@ export class EmployeeMasterSuccessSingleDto {
 
   @ApiProperty({ type: EmployeeMasterPayloadDto })
   data!: EmployeeMasterPayloadDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class EmployeeMasterSuccessDeleteDto {

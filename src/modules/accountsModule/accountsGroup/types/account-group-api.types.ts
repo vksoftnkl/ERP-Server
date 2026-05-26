@@ -1,7 +1,6 @@
 export type { AccountsErrorDetail as AccountGroupErrorDetail } from 'src/common/types/module-api.types';
 export type { AccountsErrorResponse as AccountGroupErrorResponse } from 'src/common/types/module-api.types';
 export type { AccountsSuccessResponse as AccountGroupSuccessResponse } from 'src/common/types/module-api.types';
-export type { AccountsListMeta as AccountGroupListMeta } from 'src/common/types/module-list.types';
 
 export interface AccountGroupPayload {
   accGroupId: string;
@@ -30,5 +29,3 @@ export interface AccountGroupPayload {
   accGroupModifiedOn: string;
   accGroupModifiedBy: string | null;
 }
-
-export type AccountGroupListItem = AccountGroupPayload | Record<string, unknown>;

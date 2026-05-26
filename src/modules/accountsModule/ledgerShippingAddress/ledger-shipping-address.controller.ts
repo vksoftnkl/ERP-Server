@@ -26,16 +26,12 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import {
   LedgerShippingAddressErrorResponseDto,
   LedgerShippingAddressSuccessDeleteDto,
-  LedgerShippingAddressSuccessListDto,
   LedgerShippingAddressSuccessSingleDto,
 } from './dto/ledger-shipping-address-response.dto';
-import { ListLedgerShippingAddressQueryDto } from './dto/list-ledger-shipping-address-query.dto';
 import { SaveLedgerShippingAddressDto } from './dto/save-ledger-shipping-address.dto';
 import { LedgerShippingAddressExceptionFilter } from './ledger-shipping-address-exception.filter';
 import { LedgerShippingAddressService } from './ledger-shipping-address.service';
 import {
-  LedgerShippingAddressListItem,
-  LedgerShippingAddressListMeta,
   LedgerShippingAddressPayload,
   LedgerShippingAddressSuccessResponse,
 } from './types/ledger-shipping-address-api.types';
@@ -67,30 +63,6 @@ export class LedgerShippingAddressController {
         ? 'Ledger shipping address updated successfully'
         : 'Ledger shipping address created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List ledger shipping addresses with filter/search/pagination' })
-  @ApiOkResponse({ type: LedgerShippingAddressSuccessListDto })
-  @ApiBadRequestResponse({ type: LedgerShippingAddressErrorResponseDto })
-  async list(
-    @Query() queryDto: ListLedgerShippingAddressQueryDto,
-  ): Promise<
-    LedgerShippingAddressSuccessResponse<
-      LedgerShippingAddressListItem[],
-      LedgerShippingAddressListMeta
-    >
-  > {
-    const result = await this.ledgerShippingAddressService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Ledger shipping addresses fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

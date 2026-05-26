@@ -8,7 +8,6 @@ import {
   EmployeeMasterErrorResponse,
   EmployeeMasterPayload,
 } from './types/employee-master-api.types';
-import type { GridColumnItem } from '../../../common/configured-grid-sql/types/configured-grid-sql.types';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -99,39 +98,6 @@ export class EmployeeMasterService {
       this.throwNotFound(empId);
     }
     return this.toPayload(record);
-  }
-
-  async getStyles(): Promise<GridColumnItem[]> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: EMPLOYEE_MASTER_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      EMPLOYEE_MASTER_TABLE_NAME,
-    );
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: EMPLOYEE_MASTER_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        return await this.configuredGridSqlService.loadGridColumns(configuredGrid.gridId);
-      } catch {
-        continue;
-      }
-    }
-
-    return [];
   }
 
   async softDelete(empId: string): Promise<{ empId: string; deleted: true }> {

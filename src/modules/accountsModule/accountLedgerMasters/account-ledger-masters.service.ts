@@ -1,17 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccLedgerMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListAccountLedgerMasterQueryDto } from './dto/list-account-ledger-master-query.dto';
 import { SaveAccountLedgerMasterDto } from './dto/save-account-ledger-master.dto';
 import {
   AccountLedgerMasterErrorDetail,
-  AccountLedgerMasterListItem,
-  AccountLedgerMasterListMeta,
   AccountLedgerMasterPayload,
 } from './types/account-ledger-master-api.types';
 import {
@@ -26,27 +19,14 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
-const MIN_CONFIDENT_COLUMN_MATCH_SCORE = 2;
-const MIN_CONFIDENT_FILTER_COLUMN_MATCH_SCORE = 3;
 type AccountLedgerWriteClient = AccountsWriteClient;
-type SearchColumnDescriptor = {
-  normalized: string;
-  tokens: string[];
-  lastToken: string;
-};
-type ConfiguredGridListSql = {
-  sql: string;
-  params: unknown[];
-};
 @Injectable()
 export class AccountLedgerMastersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
@@ -56,561 +36,7 @@ export class AccountLedgerMastersService {
     }
     return this.createLedger(saveAccountLedgerMasterDto);
   }
-  async list(
-    queryDto: ListAccountLedgerMasterQueryDto,
-  ): Promise<ConfiguredGridListResult<AccountLedgerMasterListItem, AccountLedgerMasterListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<AccountLedgerMasterListItem>(
-      this.configuredGridSqlService,
-      { tableName: ACCOUNT_LEDGER_MASTER_TABLE_NAME, alias: 'account_ledger_master_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('No configured grid found for account ledger master list', []);
-    }
-    return result;
-  }
-  private async listFromConfiguredGridSql(
-    queryDto: ListAccountLedgerMasterQueryDto,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<
-    AccountLedgerMasterListItem,
-    AccountLedgerMasterListMeta
-  > | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: ACCOUNT_LEDGER_MASTER_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      ACCOUNT_LEDGER_MASTER_TABLE_NAME,
-    );
-    const configuredGrid = primaryConfiguredGrids[0];
-    if (!configuredGrid) {
-      return null;
-    }
-    const rawGridSql = configuredGrid.gridSql?.trim();
-    if (!rawGridSql) {
-      return null;
-    }
-    const validation = this.configuredGridSqlService.validateBaseSql({
-      sql: rawGridSql,
-      tableName: ACCOUNT_LEDGER_MASTER_TABLE_NAME,
-    });
-    if (!validation.isValid) {
-      throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('Invalid grid_sql configuration for account ledger list', [
-        {
-          field: 'grid_sql',
-          message: validation.message,
-        },
-      ]);
-    }
-    const baseSql = validation.normalizedSql;
-    const searchableFieldNames = queryDto.search?.trim()
-      ? await this.getConfiguredSearchableFieldNames(configuredGrid.gridId, baseSql)
-      : [];
-    const configuredListSql = this.buildConfiguredGridListSql(
-      baseSql,
-      queryDto,
-      searchableFieldNames,
-    );
-    if (!configuredListSql) {
-      return null;
-    }
-    const { sql: filteredSql, params } = configuredListSql;
-    try {
-      const result = await this.configuredGridSqlService.runPagedQuery<AccountLedgerMasterListItem>(
-        {
-          baseSql: filteredSql,
-          alias: 'account_ledger_master_grid',
-          params,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        },
-      );
-      return {
-        items: result.items,
-        meta: {
-          page,
-          limit,
-          total: result.total,
-          total_pages: Math.ceil(result.total / limit),
-        },
-        styles: result.styles,
-      };
-    } catch {
-      throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('Invalid grid_sql configuration for account ledger list', [
-        {
-          field: 'grid_sql',
-          message: 'Configured query could not be executed for acc_ledger_master',
-        },
-      ]);
-    }
-  }
-  private buildConfiguredGridListSql(
-    baseSql: string,
-    queryDto: ListAccountLedgerMasterQueryDto,
-    searchableFieldNames: string[],
-  ): ConfiguredGridListSql | null {
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-    const sqlFieldNames = this.extractSelectFieldNames(baseSql);
-    const hasWildcardSelect = this.hasTopLevelWildcardSelect(baseSql);
 
-    if (queryDto.ledCompanyId !== undefined) {
-      const column = this.resolveConfiguredGridFilterColumn(
-        sqlFieldNames,
-        'led_company_id',
-        hasWildcardSelect,
-      );
-      if (!column) {
-        return null;
-      }
-      params.push(queryDto.ledCompanyId);
-      conditions.push(`account_ledger_grid.${column} = $${params.length}`);
-    }
-    if (queryDto.ledGroupId !== undefined) {
-      const column = this.resolveConfiguredGridFilterColumn(
-        sqlFieldNames,
-        'led_group_id',
-        hasWildcardSelect,
-      );
-      if (!column) {
-        return null;
-      }
-      params.push(queryDto.ledGroupId);
-      conditions.push(`account_ledger_grid.${column} = $${params.length}`);
-    }
-    if (queryDto.ledCategory?.trim()) {
-      const column = this.resolveConfiguredGridFilterColumn(
-        sqlFieldNames,
-        'led_category',
-        hasWildcardSelect,
-      );
-      if (!column) {
-        return null;
-      }
-      params.push(queryDto.ledCategory.trim());
-      conditions.push(`account_ledger_grid.${column} = $${params.length}`);
-    }
-    if (queryDto.ledIsActive !== undefined) {
-      const column = this.resolveConfiguredGridFilterColumn(
-        sqlFieldNames,
-        'led_is_active',
-        hasWildcardSelect,
-      );
-      if (!column) {
-        return null;
-      }
-      params.push(queryDto.ledIsActive);
-      conditions.push(`account_ledger_grid.${column} = $${params.length}`);
-    }
-    if (queryDto.search?.trim()) {
-      const searchText = `%${queryDto.search.trim()}%`;
-      if (searchableFieldNames.length > 0) {
-        const searchConditions: string[] = [];
-        for (const fieldName of searchableFieldNames) {
-          params.push(fieldName);
-          const columnParamIndex = params.length;
-          params.push(searchText);
-          const valueParamIndex = params.length;
-          searchConditions.push(
-            `EXISTS (` +
-              `SELECT 1 FROM jsonb_each_text(row_to_json(account_ledger_grid)::jsonb) AS grid_kv(key, value) ` +
-              `WHERE grid_kv.key = $${columnParamIndex} ` +
-              `AND grid_kv.value ILIKE $${valueParamIndex}` +
-              `)`,
-          );
-        }
-        conditions.push(`(${searchConditions.join(' OR ')})`);
-      } else {
-        conditions.push('1 = 0');
-      }
-    }
-    const whereClause = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-    return {
-      sql: `SELECT * FROM (${baseSql}) AS account_ledger_grid${whereClause}`,
-      params,
-    };
-  }
-  private resolveConfiguredGridFilterColumn(
-    sqlFieldNames: string[],
-    sourceColumnName: string,
-    hasWildcardSelect: boolean,
-  ): string | null {
-    if (sqlFieldNames.length === 0) {
-      return hasWildcardSelect ? this.quoteSqlIdentifier(sourceColumnName) : null;
-    }
-    const sourceDescriptor = this.describeSearchColumnName(sourceColumnName);
-    let matchedSqlFieldIndex = -1;
-    let bestScore = -1;
-    let nextBestScore = -1;
-    let bestScoreIsAmbiguous = false;
-    const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
-      fieldName,
-      descriptor: this.describeSearchColumnName(fieldName),
-    }));
-    for (let index = 0; index < normalizedSqlFields.length; index += 1) {
-      const score = this.getSearchColumnMatchScore(
-        sourceDescriptor,
-        normalizedSqlFields[index].descriptor,
-      );
-      if (score > bestScore) {
-        nextBestScore = bestScore;
-        bestScore = score;
-        matchedSqlFieldIndex = index;
-        bestScoreIsAmbiguous = false;
-        continue;
-      }
-      if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
-        bestScoreIsAmbiguous = true;
-        continue;
-      }
-      if (score > nextBestScore) {
-        nextBestScore = score;
-      }
-    }
-    if (
-      bestScore < MIN_CONFIDENT_FILTER_COLUMN_MATCH_SCORE ||
-      bestScore === nextBestScore ||
-      bestScoreIsAmbiguous ||
-      matchedSqlFieldIndex === -1
-    ) {
-      return null;
-    }
-    return this.quoteSqlIdentifier(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
-  }
-  private quoteSqlIdentifier(identifier: string): string {
-    return `"${identifier.replace(/"/g, '""')}"`;
-  }
-  private hasTopLevelWildcardSelect(sql: string): boolean {
-    const selectClause = this.extractTopLevelSelectClause(sql);
-    if (!selectClause) {
-      return false;
-    }
-    return this.splitTopLevelCommaSeparated(selectClause).some(
-      (expression) => expression.trim() === '*' || /\.\*$/.test(expression.trim()),
-    );
-  }
-  private async getConfiguredSearchableFieldNames(
-    gridId: bigint,
-    baseSql: string,
-  ): Promise<string[]> {
-    const sqlFieldNames = this.extractSelectFieldNames(baseSql);
-    if (sqlFieldNames.length === 0) {
-      return [];
-    }
-    const configuredColumns = await this.prisma.gridColumn.findMany({
-      where: {
-        gridId,
-        gridColumnIsDeleted: false,
-        gridColumnFilter: true,
-        grid: {
-          gridIsDeleted: false,
-        },
-      },
-      orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
-      select: {
-        gridColumnName: true,
-        gridColumnNumber: true,
-      },
-    });
-    const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
-      fieldName,
-      descriptor: this.describeSearchColumnName(fieldName),
-    }));
-    const usedSqlFieldIndexes = new Set<number>();
-    const matchedFieldNames: string[] = [];
-    for (const column of configuredColumns) {
-      const columnName = column.gridColumnName.trim();
-      let matchedSqlFieldIndex = -1;
-      const columnDescriptor = this.describeSearchColumnName(columnName);
-      if (columnDescriptor.normalized) {
-        let bestScore = -1;
-        let nextBestScore = -1;
-        let bestScoreIsAmbiguous = false;
-        for (let index = 0; index < normalizedSqlFields.length; index += 1) {
-          if (usedSqlFieldIndexes.has(index)) {
-            continue;
-          }
-          const score = this.getSearchColumnMatchScore(
-            columnDescriptor,
-            normalizedSqlFields[index].descriptor,
-          );
-          if (score > bestScore) {
-            nextBestScore = bestScore;
-            bestScore = score;
-            matchedSqlFieldIndex = index;
-            bestScoreIsAmbiguous = false;
-            continue;
-          }
-          if (score === bestScore && score >= MIN_CONFIDENT_COLUMN_MATCH_SCORE) {
-            bestScoreIsAmbiguous = true;
-            continue;
-          }
-          if (score > nextBestScore) {
-            nextBestScore = score;
-          }
-        }
-        if (
-          bestScore < MIN_CONFIDENT_COLUMN_MATCH_SCORE ||
-          bestScore === nextBestScore ||
-          bestScoreIsAmbiguous
-        ) {
-          matchedSqlFieldIndex = -1;
-        }
-      }
-      if (matchedSqlFieldIndex === -1) {
-        const sqlFieldIndexFromColumnNumber = column.gridColumnNumber - 1;
-        if (
-          sqlFieldIndexFromColumnNumber >= 0 &&
-          sqlFieldIndexFromColumnNumber < normalizedSqlFields.length &&
-          !usedSqlFieldIndexes.has(sqlFieldIndexFromColumnNumber)
-        ) {
-          matchedSqlFieldIndex = sqlFieldIndexFromColumnNumber;
-        }
-      }
-      if (matchedSqlFieldIndex !== -1) {
-        usedSqlFieldIndexes.add(matchedSqlFieldIndex);
-        matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
-      }
-    }
-    return matchedFieldNames;
-  }
-  private tokenizeSearchColumnName(value: string): string[] {
-    const normalizedSpacing = value
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .replace(/[^a-z0-9]+/gi, ' ')
-      .trim()
-      .toLowerCase();
-    return normalizedSpacing ? normalizedSpacing.split(/\s+/) : [];
-  }
-  private describeSearchColumnName(value: string): SearchColumnDescriptor {
-    const tokens = this.tokenizeSearchColumnName(value);
-    return {
-      normalized: tokens.join(''),
-      tokens,
-      lastToken: tokens[tokens.length - 1] ?? '',
-    };
-  }
-  private getSearchColumnMatchScore(
-    source: SearchColumnDescriptor,
-    target: SearchColumnDescriptor,
-  ): number {
-    if (!source.normalized || !target.normalized) {
-      return -1;
-    }
-    if (source.normalized === target.normalized) {
-      return 4;
-    }
-    if (
-      source.normalized.includes(target.normalized) ||
-      target.normalized.includes(source.normalized)
-    ) {
-      return 3;
-    }
-    const sourceWithoutBooleanPrefix = source.normalized.replace(/^is/, '');
-    const targetWithoutBooleanPrefix = target.normalized.replace(/^is/, '');
-    if (
-      sourceWithoutBooleanPrefix &&
-      targetWithoutBooleanPrefix &&
-      (sourceWithoutBooleanPrefix === targetWithoutBooleanPrefix ||
-        sourceWithoutBooleanPrefix.endsWith(targetWithoutBooleanPrefix) ||
-        targetWithoutBooleanPrefix.endsWith(sourceWithoutBooleanPrefix))
-    ) {
-      return 2;
-    }
-    if (source.lastToken && source.lastToken === target.lastToken) {
-      return 2;
-    }
-    if (
-      source.lastToken &&
-      target.lastToken &&
-      (source.lastToken.startsWith(target.lastToken) ||
-        target.lastToken.startsWith(source.lastToken))
-    ) {
-      return 2;
-    }
-    const sharedTokens = source.tokens.filter((token) => target.tokens.includes(token));
-    if (sharedTokens.length >= 2) {
-      return 1;
-    }
-    return -1;
-  }
-  private extractSelectFieldNames(sql: string): string[] {
-    const selectClause = this.extractTopLevelSelectClause(sql);
-    if (!selectClause) {
-      return [];
-    }
-    const expressions = this.splitTopLevelCommaSeparated(selectClause);
-    const fieldNames: string[] = [];
-    for (const expression of expressions) {
-      const outputFieldName = this.extractSqlOutputFieldName(expression);
-      if (!outputFieldName) {
-        continue;
-      }
-      if (!fieldNames.includes(outputFieldName)) {
-        fieldNames.push(outputFieldName);
-      }
-    }
-    return fieldNames;
-  }
-  private extractTopLevelSelectClause(sql: string): string | null {
-    const trimmed = sql.trim();
-    const selectMatch = trimmed.match(/^select\b/i);
-    if (!selectMatch) {
-      return null;
-    }
-    const selectStartIndex = selectMatch[0].length;
-    let depth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-    for (let index = selectStartIndex; index < trimmed.length; index += 1) {
-      const current = trimmed[index];
-      const next = trimmed[index + 1];
-      if (insideSingleQuote) {
-        if (current === "'" && next === "'") {
-          index += 1;
-          continue;
-        }
-        if (current === "'") {
-          insideSingleQuote = false;
-        }
-        continue;
-      }
-      if (insideDoubleQuote) {
-        if (current === '"' && next === '"') {
-          index += 1;
-          continue;
-        }
-        if (current === '"') {
-          insideDoubleQuote = false;
-        }
-        continue;
-      }
-      if (current === "'") {
-        insideSingleQuote = true;
-        continue;
-      }
-      if (current === '"') {
-        insideDoubleQuote = true;
-        continue;
-      }
-      if (current === '(') {
-        depth += 1;
-        continue;
-      }
-      if (current === ')') {
-        depth = Math.max(0, depth - 1);
-        continue;
-      }
-      if (
-        depth === 0 &&
-        /^from$/i.test(trimmed.slice(index, index + 4)) &&
-        (index === 0 || /\s/.test(trimmed[index - 1])) &&
-        (index + 4 >= trimmed.length || /\s/.test(trimmed[index + 4]))
-      ) {
-        return trimmed.slice(selectStartIndex, index).trim();
-      }
-    }
-    return null;
-  }
-  private splitTopLevelCommaSeparated(value: string): string[] {
-    const chunks: string[] = [];
-    let startIndex = 0;
-    let depth = 0;
-    let insideSingleQuote = false;
-    let insideDoubleQuote = false;
-    for (let index = 0; index < value.length; index += 1) {
-      const current = value[index];
-      const next = value[index + 1];
-      if (insideSingleQuote) {
-        if (current === "'" && next === "'") {
-          index += 1;
-          continue;
-        }
-        if (current === "'") {
-          insideSingleQuote = false;
-        }
-        continue;
-      }
-      if (insideDoubleQuote) {
-        if (current === '"' && next === '"') {
-          index += 1;
-          continue;
-        }
-        if (current === '"') {
-          insideDoubleQuote = false;
-        }
-        continue;
-      }
-      if (current === "'") {
-        insideSingleQuote = true;
-        continue;
-      }
-      if (current === '"') {
-        insideDoubleQuote = true;
-        continue;
-      }
-      if (current === '(') {
-        depth += 1;
-        continue;
-      }
-      if (current === ')') {
-        depth = Math.max(0, depth - 1);
-        continue;
-      }
-      if (current === ',' && depth === 0) {
-        chunks.push(value.slice(startIndex, index).trim());
-        startIndex = index + 1;
-      }
-    }
-    const tail = value.slice(startIndex).trim();
-    if (tail) {
-      chunks.push(tail);
-    }
-    return chunks;
-  }
-  private extractSqlOutputFieldName(expression: string): string | null {
-    const trimmed = expression.trim();
-    if (!trimmed || trimmed === '*' || /\.\*$/.test(trimmed)) {
-      return null;
-    }
-    const explicitAliasMatch = trimmed.match(/\s+as\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
-    if (explicitAliasMatch) {
-      return this.parseSqlIdentifierToken(explicitAliasMatch[1]);
-    }
-    const implicitAliasMatch = trimmed.match(/\s+("([^"]|"")+"|[a-z_][a-z0-9_$]*)\s*$/i);
-    if (implicitAliasMatch) {
-      const aliasToken = implicitAliasMatch[1];
-      const expressionWithoutAlias = trimmed.slice(0, trimmed.length - aliasToken.length).trim();
-      if (expressionWithoutAlias) {
-        return this.parseSqlIdentifierToken(aliasToken);
-      }
-    }
-    const simpleColumnMatch = trimmed.match(
-      /^((?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)\.)*(?:"([^"]|"")+"|[a-z_][a-z0-9_$]*)$/i,
-    );
-    if (simpleColumnMatch) {
-      const parts = trimmed.split('.');
-      return this.parseSqlIdentifierToken(parts[parts.length - 1]);
-    }
-    return null;
-  }
-  private parseSqlIdentifierToken(token: string): string | null {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      return null;
-    }
-    if (/^"([^"]|"")+"$/.test(trimmed)) {
-      return trimmed.slice(1, -1).replace(/""/g, '"');
-    }
-    if (/^[a-z_][a-z0-9_$]*$/i.test(trimmed)) {
-      return trimmed.toLowerCase();
-    }
-    return null;
-  }
   async getById(ledId: string): Promise<AccountLedgerMasterPayload> {
     const record = await this.prisma.accLedgerMaster.findFirst({
       where: {
@@ -619,7 +45,11 @@ export class AccountLedgerMastersService {
       },
     });
     if (!record) {
-      throwAccountsNotFound<AccountLedgerMasterErrorDetail>('Account ledger not found', 'ledId', `No active account ledger found with id ${ledId}`);
+      throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
+        'Account ledger not found',
+        'ledId',
+        `No active account ledger found with id ${ledId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -632,7 +62,11 @@ export class AccountLedgerMastersService {
         },
       });
       if (!existing) {
-        throwAccountsNotFound<AccountLedgerMasterErrorDetail>('Account ledger not found', 'ledId', `No active account ledger found with id ${ledId}`);
+        throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
+          'Account ledger not found',
+          'ledId',
+          `No active account ledger found with id ${ledId}`,
+        );
       }
       const modifiedOn = new Date();
       const result = await tx.accLedgerMaster.updateMany({
@@ -648,7 +82,11 @@ export class AccountLedgerMastersService {
         },
       });
       if (result.count === 0) {
-        throwAccountsNotFound<AccountLedgerMasterErrorDetail>('Account ledger not found', 'ledId', `No active account ledger found with id ${ledId}`);
+        throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
+          'Account ledger not found',
+          'ledId',
+          `No active account ledger found with id ${ledId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -684,7 +122,10 @@ export class AccountLedgerMastersService {
   ): Promise<AccountLedgerMasterPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const normalizedName = normalizeRequiredText<AccountLedgerMasterErrorDetail>(saveAccountLedgerMasterDto.ledName, 'ledName');
+        const normalizedName = normalizeRequiredText<AccountLedgerMasterErrorDetail>(
+          saveAccountLedgerMasterDto.ledName,
+          'ledName',
+        );
 
         await this.ensureGroupExists(saveAccountLedgerMasterDto.ledGroupId, tx);
 
@@ -733,7 +174,11 @@ export class AccountLedgerMastersService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<AccountLedgerMasterErrorDetail>(error, 'Account ledger already exists', [{ field: 'ledName', message: 'Duplicate ledName is not allowed' }]);
+      throwOnUniqueConstraintError<AccountLedgerMasterErrorDetail>(
+        error,
+        'Account ledger already exists',
+        [{ field: 'ledName', message: 'Duplicate ledName is not allowed' }],
+      );
       throw error;
     }
   }
@@ -750,9 +195,16 @@ export class AccountLedgerMastersService {
           },
         });
         if (!existing) {
-          throwAccountsNotFound<AccountLedgerMasterErrorDetail>('Account ledger not found', 'ledId', `No active account ledger found with id ${ledId}`);
+          throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
+            'Account ledger not found',
+            'ledId',
+            `No active account ledger found with id ${ledId}`,
+          );
         }
-        const normalizedName = normalizeRequiredText<AccountLedgerMasterErrorDetail>(saveAccountLedgerMasterDto.ledName, 'ledName');
+        const normalizedName = normalizeRequiredText<AccountLedgerMasterErrorDetail>(
+          saveAccountLedgerMasterDto.ledName,
+          'ledName',
+        );
         const nextGroupId = saveAccountLedgerMasterDto.ledGroupId;
         await this.ensureGroupExists(nextGroupId, tx);
         const nextCompanyId = hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')
@@ -800,7 +252,11 @@ export class AccountLedgerMastersService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<AccountLedgerMasterErrorDetail>(error, 'Account ledger already exists', [{ field: 'ledName', message: 'Duplicate ledName is not allowed' }]);
+      throwOnUniqueConstraintError<AccountLedgerMasterErrorDetail>(
+        error,
+        'Account ledger already exists',
+        [{ field: 'ledName', message: 'Duplicate ledName is not allowed' }],
+      );
       throw error;
     }
   }
@@ -850,9 +306,10 @@ export class AccountLedgerMastersService {
       },
     });
     if (existing) {
-      throwAccountsConflict<AccountLedgerMasterErrorDetail>('Account ledger name already exists for this company', [
-        { field: 'ledName', message: 'Duplicate ledName is not allowed for this company' },
-      ]);
+      throwAccountsConflict<AccountLedgerMasterErrorDetail>(
+        'Account ledger name already exists for this company',
+        [{ field: 'ledName', message: 'Duplicate ledName is not allowed for this company' }],
+      );
     }
   }
   private applyOptionalFields(

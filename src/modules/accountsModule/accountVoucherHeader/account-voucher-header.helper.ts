@@ -170,7 +170,10 @@ export async function buildAccountVoucherHeaderUpdateInput(
 function syncBillDateWithVoucherDate<
   T extends { avhVoucherDate?: Date | string | null; avhBillDate?: Date | string | null },
 >(payload: T): T {
-  if (!Object.prototype.hasOwnProperty.call(payload, 'avhVoucherDate') || payload.avhVoucherDate == null) {
+  if (
+    !Object.prototype.hasOwnProperty.call(payload, 'avhVoucherDate') ||
+    payload.avhVoucherDate == null
+  ) {
     return payload;
   }
   return {

@@ -1,7 +1,6 @@
 export type { AccountsErrorDetail as CompanyGroupMasterErrorDetail } from 'src/common/types/module-api.types';
 export type { AccountsErrorResponse as CompanyGroupMasterErrorResponse } from 'src/common/types/module-api.types';
 export type { AccountsSuccessResponse as CompanyGroupMasterSuccessResponse } from 'src/common/types/module-api.types';
-export type { AccountsListMeta as CompanyGroupMasterListMeta } from 'src/common/types/module-list.types';
 
 export interface CompanyGroupMasterPayload {
   cogGroupId: string;
@@ -15,5 +14,3 @@ export interface CompanyGroupMasterPayload {
   cogModifiedOn: string;
   cogModifiedBy: string | null;
 }
-
-export type CompanyGroupMasterListItem = CompanyGroupMasterPayload | Record<string, unknown>;

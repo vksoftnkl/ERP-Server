@@ -27,15 +27,11 @@ import { GspProviderMasterExceptionFilter } from './gsp-provider-master-exceptio
 import {
   GspProviderMasterErrorResponseDto,
   GspProviderMasterSuccessDeleteDto,
-  GspProviderMasterSuccessListDto,
   GspProviderMasterSuccessSingleDto,
 } from './dto/gsp-provider-master-response.dto';
-import { ListGspProviderMasterQueryDto } from './dto/list-gsp-provider-master-query.dto';
 import { SaveGspProviderMasterDto } from './dto/save-gsp-provider-master.dto';
 import { GspProviderMasterService } from './gsp-provider-master.service';
 import {
-  GspProviderMasterListItem,
-  GspProviderMasterListMeta,
   GspProviderMasterPayload,
   GspProviderMasterSuccessResponse,
 } from './types/gsp-provider-master-api.types';
@@ -67,27 +63,6 @@ export class GspProviderMasterController {
         ? 'GSP provider updated successfully'
         : 'GSP provider created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List GSP providers with filter/search/pagination' })
-  @ApiOkResponse({ type: GspProviderMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: GspProviderMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListGspProviderMasterQueryDto,
-  ): Promise<
-    GspProviderMasterSuccessResponse<GspProviderMasterListItem[], GspProviderMasterListMeta>
-  > {
-    const result = await this.gspProviderMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'GSP providers fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

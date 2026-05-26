@@ -1,14 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccShipAddr, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListLedgerShippingAddressQueryDto } from './dto/list-ledger-shipping-address-query.dto';
 import { SaveLedgerShippingAddressDto } from './dto/save-ledger-shipping-address.dto';
 import {
   LedgerShippingAddressErrorDetail,
-  LedgerShippingAddressListItem,
-  LedgerShippingAddressListMeta,
   LedgerShippingAddressPayload,
 } from './types/ledger-shipping-address-api.types';
 import {
@@ -20,7 +16,6 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const LEDGER_SHIPPING_ADDRESS_TABLE_NAME = 'acc ship addrs';
 const LEDGER_SHIPPING_ADDRESS_AUDIT_SCREEN_NAME = 'Ledger Shipping Address';
 const DEFAULT_ADDR_TYPE = 'SHIP_TO';
@@ -31,7 +26,6 @@ export class LedgerShippingAddressService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(
@@ -44,79 +38,6 @@ export class LedgerShippingAddressService {
     return this.createAddress(saveLedgerShippingAddressDto);
   }
 
-  async list(
-    queryDto: ListLedgerShippingAddressQueryDto,
-  ): Promise<ConfiguredGridListResult<LedgerShippingAddressListItem, LedgerShippingAddressListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<LedgerShippingAddressListItem>(
-      this.configuredGridSqlService,
-      { tableName: LEDGER_SHIPPING_ADDRESS_TABLE_NAME, alias: 'ledger_shipping_address_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwAccountsBadRequest<LedgerShippingAddressErrorDetail>('No configured grid found for ledger shipping address list', []);
-    }
-    return result;
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<LedgerShippingAddressListItem, LedgerShippingAddressListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: LEDGER_SHIPPING_ADDRESS_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      LEDGER_SHIPPING_ADDRESS_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: LEDGER_SHIPPING_ADDRESS_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<LedgerShippingAddressListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'ledger_shipping_address_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
-  }
-
   async getById(saaId: string): Promise<LedgerShippingAddressPayload> {
     const record = await this.prisma.accShipAddr.findFirst({
       where: {
@@ -126,7 +47,11 @@ export class LedgerShippingAddressService {
     });
 
     if (!record) {
-      throwAccountsNotFound<LedgerShippingAddressErrorDetail>('Ledger shipping address not found', 'saaId', `No active ledger shipping address found with id ${saaId}`);
+      throwAccountsNotFound<LedgerShippingAddressErrorDetail>(
+        'Ledger shipping address not found',
+        'saaId',
+        `No active ledger shipping address found with id ${saaId}`,
+      );
     }
 
     return this.toPayload(record);
@@ -142,7 +67,11 @@ export class LedgerShippingAddressService {
       });
 
       if (!existing) {
-        throwAccountsNotFound<LedgerShippingAddressErrorDetail>('Ledger shipping address not found', 'saaId', `No active ledger shipping address found with id ${saaId}`);
+        throwAccountsNotFound<LedgerShippingAddressErrorDetail>(
+          'Ledger shipping address not found',
+          'saaId',
+          `No active ledger shipping address found with id ${saaId}`,
+        );
       }
 
       const modifiedOn = new Date();
@@ -160,7 +89,11 @@ export class LedgerShippingAddressService {
       });
 
       if (result.count === 0) {
-        throwAccountsNotFound<LedgerShippingAddressErrorDetail>('Ledger shipping address not found', 'saaId', `No active ledger shipping address found with id ${saaId}`);
+        throwAccountsNotFound<LedgerShippingAddressErrorDetail>(
+          'Ledger shipping address not found',
+          'saaId',
+          `No active ledger shipping address found with id ${saaId}`,
+        );
       }
 
       const originalRecord = this.toPayload(existing);
@@ -252,7 +185,16 @@ export class LedgerShippingAddressService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<LedgerShippingAddressErrorDetail>(error, 'Ledger shipping address already exists', [{ field: 'saaId', message: 'Duplicate ledger shipping address unique value is not allowed' }]);
+      throwOnUniqueConstraintError<LedgerShippingAddressErrorDetail>(
+        error,
+        'Ledger shipping address already exists',
+        [
+          {
+            field: 'saaId',
+            message: 'Duplicate ledger shipping address unique value is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -272,7 +214,11 @@ export class LedgerShippingAddressService {
         });
 
         if (!existing) {
-          throwAccountsNotFound<LedgerShippingAddressErrorDetail>('Ledger shipping address not found', 'saaId', `No active ledger shipping address found with id ${saaId}`);
+          throwAccountsNotFound<LedgerShippingAddressErrorDetail>(
+            'Ledger shipping address not found',
+            'saaId',
+            `No active ledger shipping address found with id ${saaId}`,
+          );
         }
 
         const nextAddrType = this.normalizeAddressType(
@@ -332,7 +278,16 @@ export class LedgerShippingAddressService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<LedgerShippingAddressErrorDetail>(error, 'Ledger shipping address already exists', [{ field: 'saaId', message: 'Duplicate ledger shipping address unique value is not allowed' }]);
+      throwOnUniqueConstraintError<LedgerShippingAddressErrorDetail>(
+        error,
+        'Ledger shipping address already exists',
+        [
+          {
+            field: 'saaId',
+            message: 'Duplicate ledger shipping address unique value is not allowed',
+          },
+        ],
+      );
       throw error;
     }
   }
@@ -552,5 +507,4 @@ export class LedgerShippingAddressService {
       saaRemarks: record.saaRemarks,
     };
   }
-
 }

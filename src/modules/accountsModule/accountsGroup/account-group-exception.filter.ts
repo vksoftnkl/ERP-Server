@@ -1,10 +1,15 @@
 import { Catch } from '@nestjs/common';
 import { AccountsExceptionFilter } from 'src/common/utils/module-exception-filter.utils';
-import { AccountGroupErrorDetail, AccountGroupErrorResponse } from './types/account-group-api.types';
+import {
+  AccountGroupErrorDetail,
+  AccountGroupErrorResponse,
+} from './types/account-group-api.types';
 @Catch()
 export class AccountGroupExceptionFilter extends AccountsExceptionFilter<
   AccountGroupErrorDetail,
   AccountGroupErrorResponse
 > {
-  constructor() { super(/\b(accGroup[a-zA-Z0-9]+)\b/); }
+  constructor() {
+    super(/\b(accGroup[a-zA-Z0-9]+)\b/);
+  }
 }

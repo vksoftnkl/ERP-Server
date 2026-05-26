@@ -1,19 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccountTenderMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListTenderMasterQueryDto } from './dto/list-tender-master-query.dto';
 import { SaveTenderMasterDto } from './dto/save-tender-master.dto';
-import {
-  TenderMasterErrorDetail,
-  TenderMasterListItem,
-  TenderMasterListMeta,
-  TenderMasterPayload,
-} from './types/tender-master-api.types';
+import { TenderMasterErrorDetail, TenderMasterPayload } from './types/tender-master-api.types';
 import {
   DEFAULT_ACTOR,
   hasOwnProperty,
@@ -24,7 +14,6 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const TENDER_MASTER_TABLE_NAME = 'account tender master';
 const TENDER_MASTER_AUDIT_SCREEN_NAME = 'Tender Master';
 type TenderMasterWriteClient = AccountsWriteClient;
@@ -34,7 +23,6 @@ export class TenderMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveTenderMasterDto: SaveTenderMasterDto): Promise<TenderMasterPayload> {
@@ -43,79 +31,6 @@ export class TenderMasterService {
     }
 
     return this.createTender(saveTenderMasterDto);
-  }
-
-  async list(
-    queryDto: ListTenderMasterQueryDto,
-  ): Promise<ConfiguredGridListResult<TenderMasterListItem, TenderMasterListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<TenderMasterListItem>(
-      this.configuredGridSqlService,
-      { tableName: TENDER_MASTER_TABLE_NAME, alias: 'tender_master_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwAccountsBadRequest<TenderMasterErrorDetail>('No configured grid found for tender master list', []);
-    }
-    return result;
-  }
-
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<TenderMasterListItem, TenderMasterListMeta> | null> {
-    const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-      tableName: TENDER_MASTER_TABLE_NAME,
-    });
-    const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-      configuredGrids,
-      TENDER_MASTER_TABLE_NAME,
-    );
-    if (primaryConfiguredGrids.length === 0) {
-      return null;
-    }
-
-    for (const configuredGrid of primaryConfiguredGrids) {
-      const rawGridSql = configuredGrid.gridSql?.trim();
-      if (!rawGridSql) {
-        continue;
-      }
-
-      const validation = this.configuredGridSqlService.validateBaseSql({
-        sql: rawGridSql,
-        tableName: TENDER_MASTER_TABLE_NAME,
-      });
-      if (!validation.isValid) {
-        continue;
-      }
-
-      try {
-        const result = await this.configuredGridSqlService.runPagedQuery<TenderMasterListItem>({
-          baseSql: validation.normalizedSql,
-          alias: 'tender_master_grid',
-          search,
-          limit,
-          skip,
-          gridId: configuredGrid.gridId,
-        });
-
-        return {
-          items: result.items,
-          meta: {
-            page,
-            limit,
-            total: result.total,
-            total_pages: Math.ceil(result.total / limit),
-          },
-          styles: result.styles,
-        };
-      } catch {
-        continue;
-      }
-    }
-
-    return null;
   }
 
   async getById(tndId: string): Promise<TenderMasterPayload> {
@@ -127,7 +42,11 @@ export class TenderMasterService {
     });
 
     if (!record) {
-      throwAccountsNotFound<TenderMasterErrorDetail>('Tender not found', 'tndId', `No active tender found with id ${tndId}`);
+      throwAccountsNotFound<TenderMasterErrorDetail>(
+        'Tender not found',
+        'tndId',
+        `No active tender found with id ${tndId}`,
+      );
     }
 
     return this.toPayload(record);
@@ -143,7 +62,11 @@ export class TenderMasterService {
       });
 
       if (!existing) {
-        throwAccountsNotFound<TenderMasterErrorDetail>('Tender not found', 'tndId', `No active tender found with id ${tndId}`);
+        throwAccountsNotFound<TenderMasterErrorDetail>(
+          'Tender not found',
+          'tndId',
+          `No active tender found with id ${tndId}`,
+        );
       }
 
       const modifiedOn = new Date();
@@ -161,7 +84,11 @@ export class TenderMasterService {
       });
 
       if (result.count === 0) {
-        throwAccountsNotFound<TenderMasterErrorDetail>('Tender not found', 'tndId', `No active tender found with id ${tndId}`);
+        throwAccountsNotFound<TenderMasterErrorDetail>(
+          'Tender not found',
+          'tndId',
+          `No active tender found with id ${tndId}`,
+        );
       }
 
       const originalRecord = this.toPayload(existing);
@@ -201,7 +128,10 @@ export class TenderMasterService {
   ): Promise<TenderMasterPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const tndName = normalizeRequiredText<TenderMasterErrorDetail>(saveTenderMasterDto.tndName, 'tndName');
+        const tndName = normalizeRequiredText<TenderMasterErrorDetail>(
+          saveTenderMasterDto.tndName,
+          'tndName',
+        );
         const tndTypeId = this.parseTenderTypeId(saveTenderMasterDto.tndTypeId, 'tndTypeId');
         const tndRemarks = this.normalizeNullableString(saveTenderMasterDto.tndRemarks);
         const tndMinAmount = this.toInputNumber(saveTenderMasterDto.tndMinAmount, 'tndMinAmount');
@@ -289,7 +219,9 @@ export class TenderMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<TenderMasterErrorDetail>(error, 'Tender already exists', [{ field: 'tndName', message: 'Duplicate tender unique value is not allowed' }]);
+      throwOnUniqueConstraintError<TenderMasterErrorDetail>(error, 'Tender already exists', [
+        { field: 'tndName', message: 'Duplicate tender unique value is not allowed' },
+      ]);
       throw error;
     }
   }
@@ -309,10 +241,17 @@ export class TenderMasterService {
         });
 
         if (!existing) {
-          throwAccountsNotFound<TenderMasterErrorDetail>('Tender not found', 'tndId', `No active tender found with id ${tndId}`);
+          throwAccountsNotFound<TenderMasterErrorDetail>(
+            'Tender not found',
+            'tndId',
+            `No active tender found with id ${tndId}`,
+          );
         }
 
-        const tndName = normalizeRequiredText<TenderMasterErrorDetail>(saveTenderMasterDto.tndName, 'tndName');
+        const tndName = normalizeRequiredText<TenderMasterErrorDetail>(
+          saveTenderMasterDto.tndName,
+          'tndName',
+        );
         const tndTypeId = this.parseTenderTypeId(saveTenderMasterDto.tndTypeId, 'tndTypeId');
         const tndRemarks = this.normalizeNullableString(saveTenderMasterDto.tndRemarks);
         const tndMinAmount = this.toInputNumber(saveTenderMasterDto.tndMinAmount, 'tndMinAmount');
@@ -402,7 +341,9 @@ export class TenderMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<TenderMasterErrorDetail>(error, 'Tender already exists', [{ field: 'tndName', message: 'Duplicate tender unique value is not allowed' }]);
+      throwOnUniqueConstraintError<TenderMasterErrorDetail>(error, 'Tender already exists', [
+        { field: 'tndName', message: 'Duplicate tender unique value is not allowed' },
+      ]);
       throw error;
     }
   }
@@ -477,9 +418,10 @@ export class TenderMasterService {
     });
 
     if (existing) {
-      throwAccountsConflict<TenderMasterErrorDetail>('Tender name already exists for this tender type', [
-        { field: 'tndName', message: 'Duplicate tndName is not allowed for this tender type' },
-      ]);
+      throwAccountsConflict<TenderMasterErrorDetail>(
+        'Tender name already exists for this tender type',
+        [{ field: 'tndName', message: 'Duplicate tndName is not allowed for this tender type' }],
+      );
     }
   }
 
@@ -583,5 +525,4 @@ export class TenderMasterService {
       tndModifiedBy: record.acctndModifiedBy,
     };
   }
-
 }

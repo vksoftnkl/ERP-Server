@@ -1,17 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AccountTenderTypes, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListTenderTypeMasterQueryDto } from './dto/list-tender-type-master-query.dto';
 import { SaveTenderTypeMasterDto } from './dto/save-tender-type-master.dto';
 import {
   TenderTypeMasterErrorDetail,
-  TenderTypeMasterListItem,
-  TenderTypeMasterListMeta,
   TenderTypeMasterPayload,
 } from './types/tender-type-master-api.types';
 import {
@@ -24,7 +17,6 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const TENDER_TYPE_MASTER_TABLE_NAME = 'tender type';
 const LEGACY_TENDER_TYPE_MASTER_TABLE_NAME = 'tender_type_master';
 const TENDER_TYPE_MASTER_AUDIT_SCREEN_NAME = 'Tender Type Master';
@@ -34,83 +26,12 @@ export class TenderTypeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveTenderTypeMasterDto: SaveTenderTypeMasterDto): Promise<TenderTypeMasterPayload> {
     if (saveTenderTypeMasterDto.ttmTypeId) {
       return this.updateTenderType(saveTenderTypeMasterDto);
     }
     return this.createTenderType(saveTenderTypeMasterDto);
-  }
-  async list(
-    queryDto: ListTenderTypeMasterQueryDto,
-  ): Promise<ConfiguredGridListResult<TenderTypeMasterListItem, TenderTypeMasterListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<TenderTypeMasterListItem>(
-      this.configuredGridSqlService,
-      { tableName: TENDER_TYPE_MASTER_TABLE_NAME, alias: 'tender_type_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwAccountsBadRequest<TenderTypeMasterErrorDetail>('No configured grid found for tender type master list', []);
-    }
-    return result;
-  }
-  private async listFromConfiguredGridSql(
-    search: string | undefined,
-    page: number,
-    limit: number,
-    skip: number,
-  ): Promise<ConfiguredGridListResult<TenderTypeMasterListItem, TenderTypeMasterListMeta> | null> {
-    const candidateTableNames = [
-      TENDER_TYPE_MASTER_TABLE_NAME,
-      LEGACY_TENDER_TYPE_MASTER_TABLE_NAME,
-    ];
-    for (const tableName of candidateTableNames) {
-      const configuredGrids = await this.configuredGridSqlService.loadCandidates({
-        tableName,
-      });
-      const primaryConfiguredGrids = this.configuredGridSqlService.filterPrimaryFromTable(
-        configuredGrids,
-        tableName,
-      );
-      for (const configuredGrid of primaryConfiguredGrids) {
-        const rawGridSql = configuredGrid.gridSql?.trim();
-        if (!rawGridSql) {
-          continue;
-        }
-        const validation = this.configuredGridSqlService.validateBaseSql({
-          sql: rawGridSql,
-          tableName,
-        });
-        if (!validation.isValid) {
-          continue;
-        }
-        try {
-          const result =
-            await this.configuredGridSqlService.runPagedQuery<TenderTypeMasterListItem>({
-              baseSql: validation.normalizedSql,
-              alias: 'tender_type_grid',
-              search,
-              limit,
-              skip,
-              gridId: configuredGrid.gridId,
-            });
-          return {
-            items: result.items,
-            meta: {
-              page,
-              limit,
-              total: result.total,
-              total_pages: Math.ceil(result.total / limit),
-            },
-            styles: result.styles,
-          };
-        } catch {
-          continue;
-        }
-      }
-    }
-    return null;
   }
   async getById(ttmTypeId: string): Promise<TenderTypeMasterPayload> {
     const record = await this.prisma.accountTenderTypes.findFirst({
@@ -120,7 +41,11 @@ export class TenderTypeMasterService {
       },
     });
     if (!record) {
-      throwAccountsNotFound<TenderTypeMasterErrorDetail>('Tender type not found', 'ttmTypeId', `No active tender type found with id ${ttmTypeId}`);
+      throwAccountsNotFound<TenderTypeMasterErrorDetail>(
+        'Tender type not found',
+        'ttmTypeId',
+        `No active tender type found with id ${ttmTypeId}`,
+      );
     }
     return this.toPayload(record);
   }
@@ -134,7 +59,11 @@ export class TenderTypeMasterService {
         },
       });
       if (!existing) {
-        throwAccountsNotFound<TenderTypeMasterErrorDetail>('Tender type not found', 'ttmTypeId', `No active tender type found with id ${ttmTypeId}`);
+        throwAccountsNotFound<TenderTypeMasterErrorDetail>(
+          'Tender type not found',
+          'ttmTypeId',
+          `No active tender type found with id ${ttmTypeId}`,
+        );
       }
       const activeTendersCount = await tx.accountTenderMaster.count({
         where: {
@@ -143,12 +72,15 @@ export class TenderTypeMasterService {
         },
       });
       if (activeTendersCount > 0) {
-        throwAccountsBadRequest<TenderTypeMasterErrorDetail>('Cannot delete tender type with active tenders', [
-          {
-            field: 'ttmTypeId',
-            message: `Tender type ${ttmTypeId} is used by ${activeTendersCount} tender(s).`,
-          },
-        ]);
+        throwAccountsBadRequest<TenderTypeMasterErrorDetail>(
+          'Cannot delete tender type with active tenders',
+          [
+            {
+              field: 'ttmTypeId',
+              message: `Tender type ${ttmTypeId} is used by ${activeTendersCount} tender(s).`,
+            },
+          ],
+        );
       }
       const modifiedOn = new Date();
       const result = await tx.accountTenderTypes.updateMany({
@@ -164,7 +96,11 @@ export class TenderTypeMasterService {
         },
       });
       if (result.count === 0) {
-        throwAccountsNotFound<TenderTypeMasterErrorDetail>('Tender type not found', 'ttmTypeId', `No active tender type found with id ${ttmTypeId}`);
+        throwAccountsNotFound<TenderTypeMasterErrorDetail>(
+          'Tender type not found',
+          'ttmTypeId',
+          `No active tender type found with id ${ttmTypeId}`,
+        );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
@@ -200,7 +136,10 @@ export class TenderTypeMasterService {
   ): Promise<TenderTypeMasterPayload> {
     try {
       return this.prisma.$transaction(async (tx) => {
-        const ttmTypeName = normalizeRequiredText<TenderTypeMasterErrorDetail>(saveTenderTypeMasterDto.ttmTypeName, 'ttmTypeName');
+        const ttmTypeName = normalizeRequiredText<TenderTypeMasterErrorDetail>(
+          saveTenderTypeMasterDto.ttmTypeName,
+          'ttmTypeName',
+        );
         await this.ensureNameIsUnique(tx, ttmTypeName);
         const now = new Date();
         const data: Prisma.AccountTenderTypesUncheckedCreateInput = {
@@ -234,7 +173,11 @@ export class TenderTypeMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<TenderTypeMasterErrorDetail>(error, 'Tender type already exists', [{ field: 'ttmTypeName', message: 'Duplicate tender type unique value is not allowed' }]);
+      throwOnUniqueConstraintError<TenderTypeMasterErrorDetail>(
+        error,
+        'Tender type already exists',
+        [{ field: 'ttmTypeName', message: 'Duplicate tender type unique value is not allowed' }],
+      );
       throw error;
     }
   }
@@ -252,9 +195,16 @@ export class TenderTypeMasterService {
           },
         });
         if (!existing) {
-          throwAccountsNotFound<TenderTypeMasterErrorDetail>('Tender type not found', 'ttmTypeId', `No active tender type found with id ${ttmTypeId}`);
+          throwAccountsNotFound<TenderTypeMasterErrorDetail>(
+            'Tender type not found',
+            'ttmTypeId',
+            `No active tender type found with id ${ttmTypeId}`,
+          );
         }
-        const ttmTypeName = normalizeRequiredText<TenderTypeMasterErrorDetail>(saveTenderTypeMasterDto.ttmTypeName, 'ttmTypeName');
+        const ttmTypeName = normalizeRequiredText<TenderTypeMasterErrorDetail>(
+          saveTenderTypeMasterDto.ttmTypeName,
+          'ttmTypeName',
+        );
         await this.ensureNameIsUnique(tx, ttmTypeName, tenderTypeId);
         const data: Prisma.AccountTenderTypesUncheckedUpdateInput = {
           accttTypeName: ttmTypeName,
@@ -290,7 +240,11 @@ export class TenderTypeMasterService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<TenderTypeMasterErrorDetail>(error, 'Tender type already exists', [{ field: 'ttmTypeName', message: 'Duplicate tender type unique value is not allowed' }]);
+      throwOnUniqueConstraintError<TenderTypeMasterErrorDetail>(
+        error,
+        'Tender type already exists',
+        [{ field: 'ttmTypeName', message: 'Duplicate tender type unique value is not allowed' }],
+      );
       throw error;
     }
   }

@@ -27,18 +27,11 @@ import { AccountGroupExceptionFilter } from './account-group-exception.filter';
 import {
   AccountGroupErrorResponseDto,
   AccountGroupSuccessDeleteDto,
-  AccountGroupSuccessListDto,
   AccountGroupSuccessSingleDto,
 } from './dto/account-group-response.dto';
-import { ListAccountGroupQueryDto } from './dto/list-account-group-query.dto';
 import { SaveAccountGroupDto } from './dto/save-account-group.dto';
 import { AccountsGroupService } from './accounts-group.service';
-import {
-  AccountGroupListItem,
-  AccountGroupListMeta,
-  AccountGroupPayload,
-  AccountGroupSuccessResponse,
-} from './types/account-group-api.types';
+import { AccountGroupPayload, AccountGroupSuccessResponse } from './types/account-group-api.types';
 
 @ApiTags('Account Groups')
 @ApiBearerAuth('access-token')
@@ -67,25 +60,6 @@ export class AccountsGroupController {
         ? 'Account group updated successfully'
         : 'Account group created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List account groups with filter/search/pagination' })
-  @ApiOkResponse({ type: AccountGroupSuccessListDto })
-  @ApiBadRequestResponse({ type: AccountGroupErrorResponseDto })
-  async list(
-    @Query() queryDto: ListAccountGroupQueryDto,
-  ): Promise<AccountGroupSuccessResponse<AccountGroupListItem[], AccountGroupListMeta>> {
-    const result = await this.accountsGroupService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Account groups fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

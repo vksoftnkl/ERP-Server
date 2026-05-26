@@ -1,6 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-import { AccountsListMetaDto } from 'src/common/utils/module-response.dto';
 
 export class TenderMasterErrorFieldDto {
   @ApiProperty({ example: 'tndName' })
@@ -94,23 +92,6 @@ export class TenderMasterSuccessSingleDto {
 
   @ApiProperty({ type: TenderMasterPayloadDto })
   data!: TenderMasterPayloadDto;
-}
-
-export class TenderMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Tenders fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: TenderMasterPayloadDto, isArray: true })
-  data!: TenderMasterPayloadDto[];
-
-  @ApiProperty({ type: AccountsListMetaDto })
-  meta!: AccountsListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class TenderMasterSuccessDeleteDto {

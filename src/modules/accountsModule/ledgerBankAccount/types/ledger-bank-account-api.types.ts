@@ -1,7 +1,6 @@
 export type { AccountsErrorDetail as LedgerBankAccountErrorDetail } from 'src/common/types/module-api.types';
 export type { AccountsErrorResponse as LedgerBankAccountErrorResponse } from 'src/common/types/module-api.types';
 export type { AccountsSuccessResponse as LedgerBankAccountSuccessResponse } from 'src/common/types/module-api.types';
-export type { AccountsListMeta as LedgerBankAccountListMeta } from 'src/common/types/module-list.types';
 export interface LedgerBankAccountPayload {
   lbaId: string;
   lbaCompanyId: string | null;
@@ -25,4 +24,3 @@ export interface LedgerBankAccountPayload {
   lbaModifiedBy: string | null;
   lbaRemarks: string | null;
 }
-export type LedgerBankAccountListItem = LedgerBankAccountPayload | Record<string, unknown>;

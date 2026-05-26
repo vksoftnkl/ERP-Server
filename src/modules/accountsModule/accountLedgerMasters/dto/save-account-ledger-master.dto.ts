@@ -1,6 +1,15 @@
 import { Type } from 'class-transformer';
 import { LedGstPartyRegType, LedObType } from '@prisma/client';
-import { IsDate, IsEmail, IsEnum, IsNotEmpty, IsNumber, IsOptional, Min, ValidateIf } from 'class-validator';
+import {
+  IsDate,
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {

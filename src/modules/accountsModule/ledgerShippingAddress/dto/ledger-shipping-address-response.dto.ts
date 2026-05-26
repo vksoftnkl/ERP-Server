@@ -1,6 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
-import { AccountsListMetaDto } from 'src/common/utils/module-response.dto';
 
 export class LedgerShippingAddressErrorFieldDto {
   @ApiProperty({ example: 'saaLedgerId' })
@@ -124,23 +122,6 @@ export class LedgerShippingAddressSuccessSingleDto {
 
   @ApiProperty({ type: LedgerShippingAddressPayloadDto })
   data!: LedgerShippingAddressPayloadDto;
-}
-
-export class LedgerShippingAddressSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Ledger shipping addresses fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: LedgerShippingAddressPayloadDto, isArray: true })
-  data!: LedgerShippingAddressPayloadDto[];
-
-  @ApiProperty({ type: AccountsListMetaDto })
-  meta!: AccountsListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class LedgerShippingAddressSuccessDeleteDto {

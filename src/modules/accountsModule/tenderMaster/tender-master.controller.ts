@@ -26,19 +26,12 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import {
   TenderMasterErrorResponseDto,
   TenderMasterSuccessDeleteDto,
-  TenderMasterSuccessListDto,
   TenderMasterSuccessSingleDto,
 } from './dto/tender-master-response.dto';
-import { ListTenderMasterQueryDto } from './dto/list-tender-master-query.dto';
 import { SaveTenderMasterDto } from './dto/save-tender-master.dto';
 import { TenderMasterExceptionFilter } from './tender-master-exception.filter';
 import { TenderMasterService } from './tender-master.service';
-import {
-  TenderMasterListItem,
-  TenderMasterListMeta,
-  TenderMasterPayload,
-  TenderMasterSuccessResponse,
-} from './types/tender-master-api.types';
+import { TenderMasterPayload, TenderMasterSuccessResponse } from './types/tender-master-api.types';
 
 @ApiTags('Tender Master')
 @ApiBearerAuth('access-token')
@@ -67,25 +60,6 @@ export class TenderMasterController {
         ? 'Tender updated successfully'
         : 'Tender created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List tenders with filter/search/pagination' })
-  @ApiOkResponse({ type: TenderMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: TenderMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListTenderMasterQueryDto,
-  ): Promise<TenderMasterSuccessResponse<TenderMasterListItem[], TenderMasterListMeta>> {
-    const result = await this.tenderMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Tenders fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

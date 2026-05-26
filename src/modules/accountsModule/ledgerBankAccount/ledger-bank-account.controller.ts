@@ -27,15 +27,11 @@ import { LedgerBankAccountExceptionFilter } from './ledger-bank-account-exceptio
 import {
   LedgerBankAccountErrorResponseDto,
   LedgerBankAccountSuccessDeleteDto,
-  LedgerBankAccountSuccessListDto,
   LedgerBankAccountSuccessSingleDto,
 } from './dto/ledger-bank-account-response.dto';
-import { ListLedgerBankAccountQueryDto } from './dto/list-ledger-bank-account-query.dto';
 import { SaveLedgerBankAccountDto } from './dto/save-ledger-bank-account.dto';
 import { LedgerBankAccountService } from './ledger-bank-account.service';
 import {
-  LedgerBankAccountListItem,
-  LedgerBankAccountListMeta,
   LedgerBankAccountPayload,
   LedgerBankAccountSuccessResponse,
 } from './types/ledger-bank-account-api.types';
@@ -67,27 +63,6 @@ export class LedgerBankAccountController {
         ? 'Ledger bank account updated successfully'
         : 'Ledger bank account created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List ledger bank accounts with filter/search/pagination' })
-  @ApiOkResponse({ type: LedgerBankAccountSuccessListDto })
-  @ApiBadRequestResponse({ type: LedgerBankAccountErrorResponseDto })
-  async list(
-    @Query() queryDto: ListLedgerBankAccountQueryDto,
-  ): Promise<
-    LedgerBankAccountSuccessResponse<LedgerBankAccountListItem[], LedgerBankAccountListMeta>
-  > {
-    const result = await this.ledgerBankAccountService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Ledger bank accounts fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

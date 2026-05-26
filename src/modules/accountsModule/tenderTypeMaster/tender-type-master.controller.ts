@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  ParseUUIDPipe,
   Post,
   Query,
   UseFilters,
@@ -22,19 +23,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
-import { ListTenderTypeMasterQueryDto } from './dto/list-tender-type-master-query.dto';
 import {
   TenderTypeMasterErrorResponseDto,
   TenderTypeMasterSuccessDeleteDto,
-  TenderTypeMasterSuccessListDto,
   TenderTypeMasterSuccessSingleDto,
 } from './dto/tender-type-master-response.dto';
 import { SaveTenderTypeMasterDto } from './dto/save-tender-type-master.dto';
 import { TenderTypeMasterExceptionFilter } from './tender-type-master-exception.filter';
 import { TenderTypeMasterService } from './tender-type-master.service';
 import {
-  TenderTypeMasterListItem,
-  TenderTypeMasterListMeta,
   TenderTypeMasterPayload,
   TenderTypeMasterSuccessResponse,
 } from './types/tender-type-master-api.types';
@@ -66,27 +63,6 @@ export class TenderTypeMasterController {
         ? 'Tender type updated successfully'
         : 'Tender type created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List tender types with filter/search/pagination' })
-  @ApiOkResponse({ type: TenderTypeMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: TenderTypeMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListTenderTypeMasterQueryDto,
-  ): Promise<
-    TenderTypeMasterSuccessResponse<TenderTypeMasterListItem[], TenderTypeMasterListMeta>
-  > {
-    const result = await this.tenderTypeMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Tender types fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 
