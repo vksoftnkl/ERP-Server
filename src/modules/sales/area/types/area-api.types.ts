@@ -1,7 +1,6 @@
 export type { SalesErrorDetail as AreaErrorDetail } from 'src/common/types/module-api.types';
 export type { SalesErrorResponse as AreaErrorResponse } from 'src/common/types/module-api.types';
 export type { SalesSuccessResponse as AreaSuccessResponse } from 'src/common/types/module-api.types';
-export type { SalesListMeta as AreaListMeta } from 'src/common/types/module-list.types';
 
 export interface AreaPayload {
   armId: string;
@@ -21,4 +20,3 @@ export interface AreaPayload {
   armModifiedBy: string | null;
 }
 
-export type AreaListItem = AreaPayload | Record<string, unknown>;

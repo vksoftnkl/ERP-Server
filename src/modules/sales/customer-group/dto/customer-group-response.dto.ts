@@ -1,14 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 import {
   SalesErrorFieldDto,
   SalesErrorResponseDto,
-  SalesListMetaDto,
 } from 'src/common/utils/module-response.dto';
 
 export { SalesErrorFieldDto as CustomerGroupErrorFieldDto };
 export { SalesErrorResponseDto as CustomerGroupErrorResponseDto };
-export { SalesListMetaDto as CustomerGroupListMetaDto };
 
 export class CustomerGroupPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -86,23 +83,6 @@ export class CustomerGroupSuccessSingleDto {
 
   @ApiProperty({ type: CustomerGroupPayloadDto })
   data!: CustomerGroupPayloadDto;
-}
-
-export class CustomerGroupSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Customer groups fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: CustomerGroupPayloadDto, isArray: true })
-  data!: CustomerGroupPayloadDto[];
-
-  @ApiProperty({ type: SalesListMetaDto })
-  meta!: SalesListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class CustomerGroupSuccessDeleteDto {

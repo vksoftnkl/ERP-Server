@@ -23,19 +23,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
-import { ListCustomerGroupQueryDto } from './dto/list-customer-group-query.dto';
 import { SaveCustomerGroupDto } from './dto/save-customer-group.dto';
 import {
   CustomerGroupErrorResponseDto,
   CustomerGroupSuccessDeleteDto,
-  CustomerGroupSuccessListDto,
   CustomerGroupSuccessSingleDto,
 } from './dto/customer-group-response.dto';
 import { CustomerGroupExceptionFilter } from './customer-group-exception.filter';
 import { CustomerGroupService } from './customer-group.service';
 import {
-  CustomerGroupListItem,
-  CustomerGroupListMeta,
   CustomerGroupPayload,
   CustomerGroupSuccessResponse,
 } from './types/customer-group-api.types';
@@ -67,25 +63,6 @@ export class CustomerGroupController {
         ? 'Customer group updated successfully'
         : 'Customer group created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List customer groups with filter/search/pagination' })
-  @ApiOkResponse({ type: CustomerGroupSuccessListDto })
-  @ApiBadRequestResponse({ type: CustomerGroupErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCustomerGroupQueryDto,
-  ): Promise<CustomerGroupSuccessResponse<CustomerGroupListItem[], CustomerGroupListMeta>> {
-    const result = await this.customerGroupService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Customer groups fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

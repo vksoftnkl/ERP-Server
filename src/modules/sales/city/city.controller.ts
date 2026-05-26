@@ -25,17 +25,13 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { CityExceptionFilter } from './city-exception.filter';
 import { CityService } from './city.service';
-import { ListCityQueryDto } from './dto/list-city-query.dto';
 import { SaveCityDto } from './dto/save-city.dto';
 import {
   CityErrorResponseDto,
   CitySuccessDeleteDto,
-  CitySuccessListDto,
   CitySuccessSingleDto,
 } from './dto/city-response.dto';
 import {
-  CityListItem,
-  CityListMeta,
   CityPayload,
   CitySuccessResponse,
 } from './types/city-api.types';
@@ -65,26 +61,6 @@ export class CityController {
       data,
     };
   }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List cities with filter/search/pagination' })
-  @ApiOkResponse({ type: CitySuccessListDto })
-  @ApiBadRequestResponse({ type: CityErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCityQueryDto,
-  ): Promise<CitySuccessResponse<CityListItem[], CityListMeta>> {
-    const result = await this.cityService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Cities fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
-    };
-  }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get city by id' })

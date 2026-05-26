@@ -1,9 +1,7 @@
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
 export type PromotionLoyaltyPointsErrorDetail = ModuleApiErrorDetail;
 export type PromotionLoyaltyPointsErrorResponse = ModuleApiErrorResponse<PromotionLoyaltyPointsErrorDetail>;
 export type PromotionLoyaltyPointsSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
-export type PromotionLoyaltyPointsListMeta = ModuleListMeta;
 
 export interface LoyaltyPointPayload {
   lspt_id: string;

@@ -25,17 +25,13 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { CustomerExceptionFilter } from './customer-exception.filter';
 import { CustomerService } from './customer.service';
-import { ListCustomerQueryDto } from './dto/list-customer-query.dto';
 import { SaveCustomerDto } from './dto/save-customer.dto';
 import {
   CustomerErrorResponseDto,
   CustomerSuccessDeleteDto,
-  CustomerSuccessListDto,
   CustomerSuccessSingleDto,
 } from './dto/customer-response.dto';
 import {
-  CustomerListItem,
-  CustomerListMeta,
   CustomerPayload,
   CustomerSuccessResponse,
 } from './types/customer-api.types';
@@ -67,25 +63,6 @@ export class CustomerController {
         ? 'Customer updated successfully'
         : 'Customer created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List customers with filter/search/pagination' })
-  @ApiOkResponse({ type: CustomerSuccessListDto })
-  @ApiBadRequestResponse({ type: CustomerErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCustomerQueryDto,
-  ): Promise<CustomerSuccessResponse<CustomerListItem[], CustomerListMeta>> {
-    const result = await this.customerService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Customers fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

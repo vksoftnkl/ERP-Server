@@ -25,17 +25,13 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { StateExceptionFilter } from './state-exception.filter';
 import { StateService } from './state.service';
-import { ListStateQueryDto } from './dto/list-state-query.dto';
 import { SaveStateDto } from './dto/save-state.dto';
 import {
   StateErrorResponseDto,
   StateSuccessDeleteDto,
-  StateSuccessListDto,
   StateSuccessSingleDto,
 } from './dto/state-response.dto';
 import {
-  StateListItem,
-  StateListMeta,
   StatePayload,
   StateSuccessResponse,
 } from './types/state-api.types';
@@ -63,25 +59,6 @@ export class StateController {
       success: true,
       message: saveStateDto.stmId ? 'State updated successfully' : 'State created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List states with filter/search/pagination' })
-  @ApiOkResponse({ type: StateSuccessListDto })
-  @ApiBadRequestResponse({ type: StateErrorResponseDto })
-  async list(
-    @Query() queryDto: ListStateQueryDto,
-  ): Promise<StateSuccessResponse<StateListItem[], StateListMeta>> {
-    const result = await this.stateService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'States fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

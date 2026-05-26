@@ -1,9 +1,7 @@
 import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
 export type CustomerErrorDetail = ModuleApiErrorDetail;
 export type CustomerErrorResponse = ModuleApiErrorResponse<CustomerErrorDetail>;
 export type CustomerSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-export type CustomerListMeta = ModuleListMeta;
 
 export interface CustomerPayload {
   cusId: string;
@@ -84,5 +82,4 @@ export interface CustomerPayload {
   cusModifiedBy: string | null;
 }
 
-export type CustomerListItem = CustomerPayload | Record<string, unknown>;
 

@@ -1,18 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { CustGroup, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListCustomerGroupQueryDto } from './dto/list-customer-group-query.dto';
 import { SaveCustomerGroupDto } from './dto/save-customer-group.dto';
 import {
   CustomerGroupErrorDetail,
   CustomerGroupErrorResponse,
-  CustomerGroupListItem,
-  CustomerGroupListMeta,
   CustomerGroupPayload,
 } from './types/customer-group-api.types';
 import {
@@ -27,7 +20,6 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const CUSTOMER_GROUP_TABLE_NAME = 'cust groups';
 const CUSTOMER_GROUP_AUDIT_SCREEN_NAME = 'Customer Group Master';
 const CUSTOMER_GROUP_OPTIONAL_FIELDS = [
@@ -52,26 +44,12 @@ export class CustomerGroupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveCustomerGroupDto: SaveCustomerGroupDto): Promise<CustomerGroupPayload> {
     if (saveCustomerGroupDto.cgrId) {
       return this.updateCustomerGroup(saveCustomerGroupDto);
     }
     return this.createCustomerGroup(saveCustomerGroupDto);
-  }
-  async list(
-    queryDto: ListCustomerGroupQueryDto,
-  ): Promise<ConfiguredGridListResult<CustomerGroupListItem, CustomerGroupListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<CustomerGroupListItem>(
-      this.configuredGridSqlService,
-      { tableName: CUSTOMER_GROUP_TABLE_NAME, alias: 'customer_group_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwSalesBadRequest<CustomerGroupErrorDetail, CustomerGroupErrorResponse>('No configured grid found for customer group list', []);
-    }
-    return result;
   }
 
   async getById(cgrId: string): Promise<CustomerGroupPayload> {

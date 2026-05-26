@@ -1,18 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Customer, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListCustomerQueryDto } from './dto/list-customer-query.dto';
 import { SaveCustomerDto } from './dto/save-customer.dto';
 import {
   CustomerErrorDetail,
   CustomerErrorResponse,
-  CustomerListItem,
-  CustomerListMeta,
   CustomerPayload,
 } from './types/customer-api.types';
 import {
@@ -27,7 +20,6 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
 const CUSTOMER_OPTIONAL_FIELDS = [
@@ -94,15 +86,12 @@ const CUSTOMER_OPTIONAL_FIELDS = [
   'cusCompanyId',
   'cusIsActive',
 ];
-
 type CustomerWriteClient = SalesWriteClient;
-
 @Injectable()
 export class CustomerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveCustomerDto: SaveCustomerDto): Promise<CustomerPayload> {
@@ -111,20 +100,6 @@ export class CustomerService {
     }
 
     return this.createCustomer(saveCustomerDto);
-  }
-
-  async list(
-    queryDto: ListCustomerQueryDto,
-  ): Promise<ConfiguredGridListResult<CustomerListItem, CustomerListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<CustomerListItem>(
-      this.configuredGridSqlService,
-      { tableName: CUSTOMER_TABLE_NAME, alias: 'customer_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('No configured grid found for customer list', []);
-    }
-    return result;
   }
 
   async getById(cusId: string): Promise<CustomerPayload> {

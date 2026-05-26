@@ -1,17 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import {
   LoyaltyScheme,
-  LoyaltySchemeGift,
   LoyaltySchemeParty,
-  LoyaltySchemePoint,
   Prisma,
 } from '@prisma/client';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListLoyaltyGiftQueryDto } from './dto/list-loyalty-gift-query.dto';
-import { ListLoyaltyPointQueryDto } from './dto/list-loyalty-point-query.dto';
-import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
 import { SaveLoyaltyGiftDto } from './dto/save-loyalty-gift.dto';
 import { SaveLoyaltyPartyDto } from './dto/save-loyalty-party.dto';
 import { SaveLoyaltyPointDto } from './dto/save-loyalty-point.dto';
@@ -19,15 +14,12 @@ import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
 import {
   LoyaltyGiftDeleteResult,
   LoyaltyGiftPayload,
-  LoyaltyPartyPayload,
   LoyaltyPointDeleteResult,
   LoyaltyPointPayload,
   LoyaltySchemeDeleteResult,
   LoyaltySchemePayload,
-  LoyaltySchemeSummaryPayload,
   PromotionLoyaltyPointsErrorDetail,
   PromotionLoyaltyPointsErrorResponse,
-  PromotionLoyaltyPointsListMeta,
 } from './types/promotion-loyalty-points-api.types';
 import {
   DEFAULT_AUDIT_ACTOR,
@@ -37,37 +29,28 @@ import {
   throwSalesBadRequest,
   throwSalesConflict,
   throwSalesNotFound,
-  toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runSalesListQuery } from 'src/common/utils/module-list.utils';
 import {
   SchemeWithChildren,
   applyOptionalGiftFields,
   applyOptionalPointFields,
   applyOptionalSchemeFields,
-  buildDateRangeFilter,
   buildGiftDisplayName,
   buildPartyDisplayName,
   buildPointDisplayName,
   ensureDateRange,
   handleLoyaltyWriteError,
   normalizeNullableString,
-  parseDateBoundary,
-  parseTimeToUtcDate,
   requireDate,
-  requireDateTime,
   requireInteger,
   requireNumber,
   requireString,
   requireUuid,
   resolveActorUuid,
   toGiftPayload,
-  toIsoDate,
-  toIsoTime,
   toPartyPayload,
   toPointPayload,
   toSchemePayload,
-  toSchemeSummaryPayload,
 } from './utils/loyalty.utils';
 const LOYALTY_SCREEN_NAME = 'Promotion Loyalty Points';
 const LOYALTY_SCHEME_TABLE_NAME = 'loyalty scheme list';
@@ -75,7 +58,6 @@ const LOYALTY_POINTS_TABLE_NAME = 'loyalty scheme points';
 const LOYALTY_GIFT_TABLE_NAME = 'loyalty scheme gift';
 const LOYALTY_PARTY_TABLE_NAME = 'loyalty scheme party scope';
 type LoyaltyWriteClient = SalesWriteClient;
-type ListResult<T> = { items: T[]; meta: PromotionLoyaltyPointsListMeta };
 @Injectable()
 export class PromotionLoyaltyPointsService {
   constructor(
@@ -88,54 +70,6 @@ export class PromotionLoyaltyPointsService {
       return this.updateScheme(dto);
     }
     return this.createScheme(dto);
-  }
-  async listSchemes(
-    queryDto: ListLoyaltySchemeQueryDto,
-  ): Promise<ListResult<LoyaltySchemePayload>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const filters: Prisma.LoyaltySchemeWhereInput[] = [{ lsIsDeleted: false }];
-    if (queryDto.ls_comp_id) filters.push({ lsCompId: queryDto.ls_comp_id });
-    if (queryDto.ls_branch_id) filters.push({ lsBranchId: queryDto.ls_branch_id });
-    if (queryDto.ls_is_active !== undefined) filters.push({ lsIsActive: queryDto.ls_is_active });
-    if (queryDto.ls_type) filters.push({ lsType: queryDto.ls_type });
-    if (queryDto.ls_status) filters.push({ lsStatus: queryDto.ls_status });
-    if (queryDto.search) {
-      filters.push({
-        OR: [
-          { lsName: { contains: queryDto.search, mode: Prisma.QueryMode.insensitive } },
-          { lsCode: { contains: queryDto.search, mode: Prisma.QueryMode.insensitive } },
-        ],
-      });
-    }
-    const startDateFilter = buildDateRangeFilter(
-      queryDto.ls_start_date_from,
-      queryDto.ls_start_date_to,
-      'ls_start_date',
-    );
-    if (startDateFilter) filters.push({ lsStartDate: startDateFilter });
-    const endDateFilter = buildDateRangeFilter(
-      queryDto.ls_end_date_from,
-      queryDto.ls_end_date_to,
-      'ls_end_date',
-    );
-    if (endDateFilter) filters.push({ lsEndDate: endDateFilter });
-    const where: Prisma.LoyaltySchemeWhereInput =
-      filters.length === 1 ? filters[0] : { AND: filters };
-    return runSalesListQuery({ page, limit }, {
-      countFn: () => this.prisma.loyaltyScheme.count({ where }),
-      findManyFn: () => this.prisma.loyaltyScheme.findMany({
-        where,
-        include: {
-          parties: { where: { lpsIsDeleted: false, lpsIsActive: true }, orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }] },
-          points: { where: { lsptIsDeleted: false, lsptIsActive: true }, orderBy: [{ lsptSlno: 'asc' }, { lsptId: 'asc' }] },
-          gifts: { where: { lsgIsDeleted: false, lsgIsActive: true }, orderBy: [{ lsgSlno: 'asc' }, { lsgId: 'asc' }] },
-        },
-        orderBy: [{ lsName: 'asc' }, { lsId: 'asc' }],
-        skip,
-        take: limit,
-      }),
-      toItemFn: (scheme) => toSchemePayload(scheme),
-    });
   }
   async getSchemeById(lsId: string): Promise<LoyaltySchemePayload> {
     const scheme = await this.findActiveSchemeWithChildren(this.prisma, lsId);
@@ -237,19 +171,6 @@ export class PromotionLoyaltyPointsService {
     }
     return this.createPoint(dto);
   }
-  async listPoints(queryDto: ListLoyaltyPointQueryDto): Promise<ListResult<LoyaltyPointPayload>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const where: Prisma.LoyaltySchemePointWhereInput = {
-      lsptLsId: queryDto.lspt_ls_id,
-      lsptIsDeleted: false,
-      ...(queryDto.lspt_is_active !== undefined ? { lsptIsActive: queryDto.lspt_is_active } : {}),
-    };
-    return runSalesListQuery({ page, limit }, {
-      countFn: () => this.prisma.loyaltySchemePoint.count({ where }),
-      findManyFn: () => this.prisma.loyaltySchemePoint.findMany({ where, orderBy: [{ lsptSlno: 'asc' }, { lsptId: 'asc' }], skip, take: limit }),
-      toItemFn: (point) => toPointPayload(point),
-    });
-  }
   async getPointById(lsptId: string): Promise<LoyaltyPointPayload> {
     const point = await this.prisma.loyaltySchemePoint.findFirst({
       where: { lsptId, lsptIsDeleted: false },
@@ -305,20 +226,6 @@ export class PromotionLoyaltyPointsService {
     }
     return this.createGift(dto);
   }
-  async listGifts(queryDto: ListLoyaltyGiftQueryDto): Promise<ListResult<LoyaltyGiftPayload>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const where: Prisma.LoyaltySchemeGiftWhereInput = {
-      lsgLsId: queryDto.lsg_ls_id,
-      lsgIsDeleted: false,
-      ...(queryDto.lsg_is_active !== undefined ? { lsgIsActive: queryDto.lsg_is_active } : {}),
-    };
-    return runSalesListQuery({ page, limit }, {
-      countFn: () => this.prisma.loyaltySchemeGift.count({ where }),
-      findManyFn: () => this.prisma.loyaltySchemeGift.findMany({ where, orderBy: [{ lsgSlno: 'asc' }, { lsgId: 'asc' }], skip, take: limit }),
-      toItemFn: (gift) => toGiftPayload(gift),
-    });
-  }
-
   async getGiftById(lsgId: string): Promise<LoyaltyGiftPayload> {
     const gift = await this.prisma.loyaltySchemeGift.findFirst({
       where: { lsgId, lsgIsDeleted: false },
@@ -600,47 +507,37 @@ export class PromotionLoyaltyPointsService {
       throw error;
     }
   }
-
   private async updatePoint(dto: SaveLoyaltyPointDto): Promise<LoyaltyPointPayload> {
     const lsptId = requireUuid(dto.lspt_id, 'lspt_id');
     const actorId = resolveActorUuid(this.requestContextService.getUserId());
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.loyaltySchemePoint.findFirst({
           where: { lsptId, lsptIsDeleted: false },
         });
-
         if (!existing) {
           this.throwNotFound('lspt_id', lsptId, 'Loyalty point not found');
         }
-
         const effectiveSchemeId = hasOwnProperty(dto, 'lspt_ls_id')
           ? requireUuid(dto.lspt_ls_id, 'lspt_ls_id')
           : existing.lsptLsId;
         const effectiveSlno = hasOwnProperty(dto, 'lspt_slno')
           ? requireInteger(dto.lspt_slno, 'lspt_slno')
           : existing.lsptSlno;
-
         const scheme = await this.getActiveScheme(tx, effectiveSchemeId);
         await this.ensurePointReferenceRecords(tx, scheme.lsItemType, dto);
         await this.ensurePointSlnoUnique(tx, effectiveSchemeId, effectiveSlno, lsptId);
-
         const effectivePoints = hasOwnProperty(dto, 'lspt_points')
           ? requireNumber(dto.lspt_points, 'lspt_points', 0)
           : requireNumber(existing.lsptPoints.toNumber(), 'lspt_points', 0);
-
         const effectiveEach = hasOwnProperty(dto, 'lspt_each')
           ? requireNumber(dto.lspt_each, 'lspt_each', Number.EPSILON)
           : requireNumber(existing.lsptEach.toNumber(), 'lspt_each', Number.EPSILON);
-
         const effectiveFactor = this.calculatePointFactor(effectivePoints, effectiveEach);
-
         const data: Prisma.LoyaltySchemePointUncheckedUpdateInput = {
           lsptUpdatedOn: new Date(),
           lsptUpdatedBy: resolveActorUuid(dto.lspt_updated_by, actorId),
         };
-
         if (hasOwnProperty(dto, 'lspt_ls_id')) {
           data.lsptLsId = effectiveSchemeId;
         }
@@ -650,19 +547,15 @@ export class PromotionLoyaltyPointsService {
         if (hasOwnProperty(dto, 'lspt_points')) {
           data.lsptPoints = effectivePoints;
         }
-
         applyOptionalPointFields(data, dto);
-
         data.lsptPoints = effectivePoints;
         data.lsptEach = effectiveEach;
         data.lsptFactor = effectiveFactor;
-
         const updated = await tx.loyaltySchemePoint.update({
           where: { lsptId },
           data,
         });
         const payload = toPointPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -678,7 +571,6 @@ export class PromotionLoyaltyPointsService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error) {
@@ -686,22 +578,18 @@ export class PromotionLoyaltyPointsService {
       throw error;
     }
   }
-
   private async createGift(dto: SaveLoyaltyGiftDto): Promise<LoyaltyGiftPayload> {
     const now = new Date();
     const actorId = resolveActorUuid(this.requestContextService.getUserId());
     const lsgLsId = requireUuid(dto.lsg_ls_id, 'lsg_ls_id');
     const lsgCreatedBy = resolveActorUuid(dto.lsg_created_by, actorId);
     const lsgUpdatedBy = resolveActorUuid(dto.lsg_updated_by, lsgCreatedBy, actorId);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureSchemeExists(tx, lsgLsId);
         await this.ensureGiftReferenceRecords(tx, dto);
-
         const lsgSlno = dto.lsg_slno ?? (await this.getNextGiftSlno(tx, lsgLsId));
         await this.ensureGiftSlnoUnique(tx, lsgLsId, lsgSlno);
-
         const data: Prisma.LoyaltySchemeGiftUncheckedCreateInput = {
           lsgLsId,
           lsgSlno,
@@ -714,12 +602,9 @@ export class PromotionLoyaltyPointsService {
           lsgUpdatedOn: now,
           lsgUpdatedBy,
         };
-
         applyOptionalGiftFields(data, dto);
-
         const created = await tx.loyaltySchemeGift.create({ data });
         const payload = toGiftPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'insert',
@@ -735,7 +620,6 @@ export class PromotionLoyaltyPointsService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error) {
@@ -743,37 +627,30 @@ export class PromotionLoyaltyPointsService {
       throw error;
     }
   }
-
   private async updateGift(dto: SaveLoyaltyGiftDto): Promise<LoyaltyGiftPayload> {
     const lsgId = requireUuid(dto.lsg_id, 'lsg_id');
     const actorId = resolveActorUuid(this.requestContextService.getUserId());
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.loyaltySchemeGift.findFirst({
           where: { lsgId, lsgIsDeleted: false },
         });
-
         if (!existing) {
           this.throwNotFound('lsg_id', lsgId, 'Loyalty gift not found');
         }
-
         const effectiveSchemeId = hasOwnProperty(dto, 'lsg_ls_id')
           ? requireUuid(dto.lsg_ls_id, 'lsg_ls_id')
           : existing.lsgLsId;
         const effectiveSlno = hasOwnProperty(dto, 'lsg_slno')
           ? requireInteger(dto.lsg_slno, 'lsg_slno')
           : existing.lsgSlno;
-
         await this.ensureSchemeExists(tx, effectiveSchemeId);
         await this.ensureGiftReferenceRecords(tx, dto);
         await this.ensureGiftSlnoUnique(tx, effectiveSchemeId, effectiveSlno, lsgId);
-
         const data: Prisma.LoyaltySchemeGiftUncheckedUpdateInput = {
           lsgUpdatedOn: new Date(),
           lsgUpdatedBy: resolveActorUuid(dto.lsg_updated_by, actorId),
         };
-
         if (hasOwnProperty(dto, 'lsg_ls_id')) {
           data.lsgLsId = effectiveSchemeId;
         }
@@ -792,15 +669,12 @@ export class PromotionLoyaltyPointsService {
         if (hasOwnProperty(dto, 'lsg_redeem_points')) {
           data.lsgRedeemPoints = requireNumber(dto.lsg_redeem_points, 'lsg_redeem_points', 0);
         }
-
         applyOptionalGiftFields(data, dto);
-
         const updated = await tx.loyaltySchemeGift.update({
           where: { lsgId },
           data,
         });
         const payload = toGiftPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -816,7 +690,6 @@ export class PromotionLoyaltyPointsService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error) {
@@ -824,7 +697,6 @@ export class PromotionLoyaltyPointsService {
       throw error;
     }
   }
-
   private async findActiveSchemeWithChildren(
     client: LoyaltyWriteClient,
     lsId: string,
@@ -847,7 +719,6 @@ export class PromotionLoyaltyPointsService {
       },
     });
   }
-
   private async syncSchemeParties(
     client: LoyaltyWriteClient,
     lsId: string,
@@ -858,20 +729,16 @@ export class PromotionLoyaltyPointsService {
       where: { lpsLsId: lsId, lpsIsDeleted: false },
       orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }],
     });
-
     if (inputParties === undefined) {
       return existing;
     }
-
     const existingMap = new Map(existing.map((party) => [party.lpsId, party]));
     const keptIds = new Set<string>();
     const seenSlnos = new Set<number>();
     const now = new Date();
     const persisted: LoyaltySchemeParty[] = [];
-
     for (const [index, inputParty] of inputParties.entries()) {
       const lpsSlno = inputParty.lps_slno ?? index + 1;
-
       if (seenSlnos.has(lpsSlno)) {
         this.throwConflict('Duplicate loyalty party serial number is not allowed', [
           {
@@ -880,15 +747,12 @@ export class PromotionLoyaltyPointsService {
           },
         ]);
       }
-
       seenSlnos.add(lpsSlno);
-
       if (inputParty.lps_id) {
         const existingParty = existingMap.get(inputParty.lps_id);
         if (!existingParty) {
           this.throwNotFound('lps_id', inputParty.lps_id, 'Loyalty party scope row not found');
         }
-
         const updated = await client.loyaltySchemeParty.update({
           where: { lpsId: inputParty.lps_id },
           data: {
@@ -902,7 +766,6 @@ export class PromotionLoyaltyPointsService {
             lpsUpdatedBy: resolveActorUuid(inputParty.lps_updated_by, actorId),
           },
         });
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -918,15 +781,12 @@ export class PromotionLoyaltyPointsService {
           },
           client,
         );
-
         keptIds.add(updated.lpsId);
         persisted.push(updated);
         continue;
       }
-
       const createdBy = resolveActorUuid(inputParty.lps_created_by, actorId);
       const updatedBy = resolveActorUuid(inputParty.lps_updated_by, createdBy, actorId);
-
       const created = await client.loyaltySchemeParty.create({
         data: {
           lpsLsId: lsId,
@@ -942,7 +802,6 @@ export class PromotionLoyaltyPointsService {
           lpsUpdatedBy: updatedBy,
         },
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'insert',
@@ -958,13 +817,10 @@ export class PromotionLoyaltyPointsService {
         },
         client,
       );
-
       keptIds.add(created.lpsId);
       persisted.push(created);
     }
-
     const removedParties = existing.filter((party) => !keptIds.has(party.lpsId));
-
     for (const removedParty of removedParties) {
       const deleted = await client.loyaltySchemeParty.update({
         where: { lpsId: removedParty.lpsId },
@@ -975,7 +831,6 @@ export class PromotionLoyaltyPointsService {
           lpsUpdatedBy: resolveActorUuid(actorId),
         },
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -992,7 +847,6 @@ export class PromotionLoyaltyPointsService {
         client,
       );
     }
-
     return persisted.sort((left, right) => {
       if (left.lpsSlno === right.lpsSlno) {
         return left.lpsId.localeCompare(right.lpsId);
@@ -1000,13 +854,11 @@ export class PromotionLoyaltyPointsService {
       return left.lpsSlno - right.lpsSlno;
     });
   }
-
   private async ensureSchemeExists(client: LoyaltyWriteClient, lsId: string): Promise<void> {
     const scheme = await client.loyaltyScheme.findFirst({
       where: { lsId, lsIsDeleted: false },
       select: { lsId: true },
     });
-
     if (!scheme) {
       this.throwBadRequest('Validation failed', [
         {
@@ -1016,7 +868,6 @@ export class PromotionLoyaltyPointsService {
       ]);
     }
   }
-
   private async getActiveScheme(
     client: LoyaltyWriteClient,
     lsId: string,
@@ -1028,7 +879,6 @@ export class PromotionLoyaltyPointsService {
         lsItemType: true,
       },
     });
-
     if (!scheme) {
       this.throwBadRequest('Validation failed', [
         {
@@ -1037,10 +887,8 @@ export class PromotionLoyaltyPointsService {
         },
       ]);
     }
-
     return scheme;
   }
-
   private async ensureItemExists(
     client: LoyaltyWriteClient,
     itemId: string,
@@ -1054,7 +902,6 @@ export class PromotionLoyaltyPointsService {
       },
       select: { itemId: true },
     });
-
     if (!item) {
       this.throwBadRequest('Validation failed', [
         {
@@ -1064,7 +911,6 @@ export class PromotionLoyaltyPointsService {
       ]);
     }
   }
-
   private async ensureUnitExists(
     client: LoyaltyWriteClient,
     unitId: string,
@@ -1078,7 +924,6 @@ export class PromotionLoyaltyPointsService {
       },
       select: { unit_id: true },
     });
-
     if (!unit) {
       this.throwBadRequest('Validation failed', [
         {
@@ -1088,7 +933,6 @@ export class PromotionLoyaltyPointsService {
       ]);
     }
   }
-
   private async ensurePointReferenceRecords(
     client: LoyaltyWriteClient,
     schemeItemType: string,
@@ -1102,12 +946,10 @@ export class PromotionLoyaltyPointsService {
         'lspt_item_id',
       );
     }
-
     if (dto.lspt_unit_id) {
       await this.ensureUnitExists(client, dto.lspt_unit_id, 'lspt_unit_id');
     }
   }
-
   private async ensureGiftReferenceRecords(
     client: LoyaltyWriteClient,
     dto: SaveLoyaltyGiftDto,
@@ -1123,7 +965,6 @@ export class PromotionLoyaltyPointsService {
       'lsg_unit_id',
     );
   }
-
   private async ensurePointScopeReference(
     client: LoyaltyWriteClient,
     schemeItemType: string,
@@ -1140,7 +981,6 @@ export class PromotionLoyaltyPointsService {
           },
           select: { itgId: true },
         });
-
         if (!itemGroup) {
           this.throwBadRequest('Validation failed', [
             {
@@ -1217,7 +1057,6 @@ export class PromotionLoyaltyPointsService {
         await this.ensureItemExists(client, scopeId, field);
     }
   }
-
   private async ensureSchemeCodeUnique(
     client: LoyaltyWriteClient,
     lsCompId: string,
@@ -1227,7 +1066,6 @@ export class PromotionLoyaltyPointsService {
     if (!lsCode) {
       return;
     }
-
     const existing = await client.loyaltyScheme.findFirst({
       where: {
         lsCompId,
@@ -1237,7 +1075,6 @@ export class PromotionLoyaltyPointsService {
       },
       select: { lsId: true },
     });
-
     if (existing) {
       this.throwConflict('Duplicate loyalty scheme code is not allowed', [
         {
@@ -1247,7 +1084,6 @@ export class PromotionLoyaltyPointsService {
       ]);
     }
   }
-
   private async ensurePointSlnoUnique(
     client: LoyaltyWriteClient,
     lsptLsId: string,

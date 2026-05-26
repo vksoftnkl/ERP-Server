@@ -56,16 +56,19 @@ export async function runConfiguredGridQuery<TItem>(
     page: number;
     limit: number;
     skip: number;
+    fixedGridId?: bigint;
     primaryTableSchema?: string;
     extraForbiddenPatterns?: Array<{ pattern: RegExp; message: string }>;
   },
 ): Promise<ConfiguredGridListResult<TItem, ModuleListMeta> | null> {
-  const { tableName, alias, search, page, limit, skip, primaryTableSchema, extraForbiddenPatterns } = options;
-  const configuredGrids = await configuredGridSqlService.loadCandidates({ tableName });
-  const primaryConfiguredGrids = configuredGridSqlService.filterPrimaryFromTable(
-    configuredGrids,
+  const { tableName, alias, search, page, limit, skip, fixedGridId, primaryTableSchema, extraForbiddenPatterns } = options;
+  const configuredGrids = await configuredGridSqlService.loadCandidates({
     tableName,
-  );
+    ...(fixedGridId !== undefined && { fixedGridId, applyTableNameFilter: false }),
+  });
+  const primaryConfiguredGrids = fixedGridId !== undefined
+    ? configuredGrids
+    : configuredGridSqlService.filterPrimaryFromTable(configuredGrids, tableName);
   if (primaryConfiguredGrids.length === 0) {
     return null;
   }

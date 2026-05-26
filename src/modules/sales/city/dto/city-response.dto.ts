@@ -1,14 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 import {
   SalesErrorFieldDto,
   SalesErrorResponseDto,
-  SalesListMetaDto,
 } from 'src/common/utils/module-response.dto';
 
 export { SalesErrorFieldDto as CityErrorFieldDto };
 export { SalesErrorResponseDto as CityErrorResponseDto };
-export { SalesListMetaDto as CityListMetaDto };
 
 export class CityPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -55,18 +52,6 @@ export class CitySuccessSingleDto {
   data!: CityPayloadDto;
 }
 
-export class CitySuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-  @ApiProperty({ example: 'Cities fetched successfully' })
-  message!: string;
-  @ApiProperty({ type: CityPayloadDto, isArray: true })
-  data!: CityPayloadDto[];
-  @ApiProperty({ type: SalesListMetaDto })
-  meta!: SalesListMetaDto;
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
 
 export class CitySuccessDeleteDto {
   @ApiProperty({ example: true })

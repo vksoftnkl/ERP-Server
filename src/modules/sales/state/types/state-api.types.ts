@@ -1,8 +1,6 @@
 export type { SalesErrorDetail as StateErrorDetail } from 'src/common/types/module-api.types';
 export type { SalesErrorResponse as StateErrorResponse } from 'src/common/types/module-api.types';
 export type { SalesSuccessResponse as StateSuccessResponse } from 'src/common/types/module-api.types';
-export type { SalesListMeta as StateListMeta } from 'src/common/types/module-list.types';
-
 export interface StatePayload {
   stmId: string;
   stmName: string;
@@ -18,4 +16,3 @@ export interface StatePayload {
   stmModifiedBy: string | null;
 }
 
-export type StateListItem = StatePayload | Record<string, unknown>;

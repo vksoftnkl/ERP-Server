@@ -1,7 +1,6 @@
 export type { SalesErrorDetail as CustomerGroupErrorDetail } from 'src/common/types/module-api.types';
 export type { SalesErrorResponse as CustomerGroupErrorResponse } from 'src/common/types/module-api.types';
 export type { SalesSuccessResponse as CustomerGroupSuccessResponse } from 'src/common/types/module-api.types';
-export type { SalesListMeta as CustomerGroupListMeta } from 'src/common/types/module-list.types';
 
 export interface CustomerGroupPayload {
   cgrId: string;
@@ -25,4 +24,3 @@ export interface CustomerGroupPayload {
   cgrModifiedOn: string;
 }
 
-export type CustomerGroupListItem = CustomerGroupPayload | Record<string, unknown>;

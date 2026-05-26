@@ -2,12 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   SalesErrorFieldDto,
   SalesErrorResponseDto,
-  SalesListMetaDto,
 } from 'src/common/utils/module-response.dto';
 
 export { SalesErrorFieldDto as PromotionLoyaltyPointsErrorFieldDto };
 export { SalesErrorResponseDto as PromotionLoyaltyPointsErrorResponseDto };
-export { SalesListMetaDto as PromotionLoyaltyPointsListMetaDto };
 
 export class LoyaltyPointPayloadDto {
   @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
@@ -327,20 +325,6 @@ export class LoyaltySchemeSuccessSingleDto {
   data!: LoyaltySchemePayloadDto;
 }
 
-export class LoyaltySchemeSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Loyalty schemes fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: LoyaltySchemePayloadDto, isArray: true })
-  data!: LoyaltySchemePayloadDto[];
-
-  @ApiProperty({ type: SalesListMetaDto })
-  meta!: SalesListMetaDto;
-}
-
 export class LoyaltySchemeSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -363,20 +347,6 @@ export class LoyaltyPointSuccessSingleDto {
   data!: LoyaltyPointPayloadDto;
 }
 
-export class LoyaltyPointSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Loyalty points fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: LoyaltyPointPayloadDto, isArray: true })
-  data!: LoyaltyPointPayloadDto[];
-
-  @ApiProperty({ type: SalesListMetaDto })
-  meta!: SalesListMetaDto;
-}
-
 export class LoyaltyPointSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -397,20 +367,6 @@ export class LoyaltyGiftSuccessSingleDto {
 
   @ApiProperty({ type: LoyaltyGiftPayloadDto })
   data!: LoyaltyGiftPayloadDto;
-}
-
-export class LoyaltyGiftSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Loyalty gifts fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: LoyaltyGiftPayloadDto, isArray: true })
-  data!: LoyaltyGiftPayloadDto[];
-
-  @ApiProperty({ type: SalesListMetaDto })
-  meta!: SalesListMetaDto;
 }
 
 export class LoyaltyGiftSuccessDeleteDto {

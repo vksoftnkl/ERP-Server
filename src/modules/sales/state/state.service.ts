@@ -1,14 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListStateQueryDto } from './dto/list-state-query.dto';
 import { SaveStateDto } from './dto/save-state.dto';
-import { StateListItem, StateListMeta, StatePayload } from './types/state-api.types';
+import { StatePayload } from './types/state-api.types';
 import {
   applyStateOptionalFields,
   DEFAULT_ACTOR,
@@ -22,32 +17,17 @@ import {
   throwStateNotFound,
   toStatePayload,
 } from './utils/state.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 @Injectable()
 export class StateService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveStateDto: SaveStateDto): Promise<StatePayload> {
     if (saveStateDto.stmId) {
       return this.updateState(saveStateDto);
     }
     return this.createState(saveStateDto);
-  }
-  async list(
-    queryDto: ListStateQueryDto,
-  ): Promise<ConfiguredGridListResult<StateListItem, StateListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<StateListItem>(
-      this.configuredGridSqlService,
-      { tableName: STATE_TABLE_NAME, alias: 'state_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwStateBadRequest('No configured grid found for state list', []);
-    }
-    return result;
   }
   async getById(stmId: string): Promise<StatePayload> {
     const record = await this.prisma.stateMaster.findFirst({

@@ -25,17 +25,13 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { AreaExceptionFilter } from './area-exception.filter';
 import { AreaService } from './area.service';
-import { ListAreaQueryDto } from './dto/list-area-query.dto';
 import { SaveAreaDto } from './dto/save-area.dto';
 import {
   AreaErrorResponseDto,
   AreaSuccessDeleteDto,
-  AreaSuccessListDto,
   AreaSuccessSingleDto,
 } from './dto/area-response.dto';
 import {
-  AreaListItem,
-  AreaListMeta,
   AreaPayload,
   AreaSuccessResponse,
 } from './types/area-api.types';
@@ -60,23 +56,6 @@ export class AreaController {
       success: true,
       message: saveAreaDto.armId ? 'Area updated successfully' : 'Area created successfully',
       data,
-    };
-  }
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List areas with filter/search/pagination' })
-  @ApiOkResponse({ type: AreaSuccessListDto })
-  @ApiBadRequestResponse({ type: AreaErrorResponseDto })
-  async list(
-    @Query() queryDto: ListAreaQueryDto,
-  ): Promise<AreaSuccessResponse<AreaListItem[], AreaListMeta>> {
-    const result = await this.areaService.list(queryDto);
-    return {
-      success: true,
-      message: 'Areas fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
   @Get('get')

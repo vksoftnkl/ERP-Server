@@ -1,14 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 import {
   SalesErrorFieldDto,
   SalesErrorResponseDto,
-  SalesListMetaDto,
 } from 'src/common/utils/module-response.dto';
 
 export { SalesErrorFieldDto as AreaErrorFieldDto };
 export { SalesErrorResponseDto as AreaErrorResponseDto };
-export { SalesListMetaDto as AreaListMetaDto };
 
 export class AreaPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -57,19 +54,6 @@ export class AreaSuccessSingleDto {
   message!: string;
   @ApiProperty({ type: AreaPayloadDto })
   data!: AreaPayloadDto;
-}
-
-export class AreaSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-  @ApiProperty({ example: 'Areas fetched successfully' })
-  message!: string;
-  @ApiProperty({ type: AreaPayloadDto, isArray: true })
-  data!: AreaPayloadDto[];
-  @ApiProperty({ type: SalesListMetaDto })
-  meta!: SalesListMetaDto;
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class AreaSuccessDeleteDto {

@@ -1,18 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { CityMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListCityQueryDto } from './dto/list-city-query.dto';
 import { SaveCityDto } from './dto/save-city.dto';
 import {
   CityErrorDetail,
   CityErrorResponse,
-  CityListItem,
-  CityListMeta,
   CityPayload,
 } from './types/city-api.types';
 import {
@@ -28,43 +21,22 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
 const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];
-
 type CityWriteClient = SalesWriteClient;
-
 @Injectable()
 export class CityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveCityDto: SaveCityDto): Promise<CityPayload> {
     if (saveCityDto.ctmId) {
       return this.updateCity(saveCityDto);
     }
-
     return this.createCity(saveCityDto);
   }
-
-  async list(
-    queryDto: ListCityQueryDto,
-  ): Promise<ConfiguredGridListResult<CityListItem, CityListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<CityListItem>(
-      this.configuredGridSqlService,
-      { tableName: CITY_TABLE_NAME, alias: 'city_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwSalesBadRequest<CityErrorDetail, CityErrorResponse>('No configured grid found for city list', []);
-    }
-    return result;
-  }
-
   async getById(ctmId: string): Promise<CityPayload> {
     const record = await this.prisma.cityMaster.findFirst({
       where: {
@@ -72,7 +44,6 @@ export class CityService {
         ctmIsDeleted: false,
       },
     });
-
     if (!record) {
       throwSalesNotFound<CityErrorDetail, CityErrorResponse>(
         'City not found',
@@ -80,10 +51,8 @@ export class CityService {
         `No active city found with id ${ctmId}`,
       );
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(ctmId: string): Promise<{ ctmId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.cityMaster.findFirst({
@@ -92,7 +61,6 @@ export class CityService {
           ctmIsDeleted: false,
         },
       });
-
       if (!existing) {
         throwSalesNotFound<CityErrorDetail, CityErrorResponse>(
           'City not found',
@@ -100,14 +68,12 @@ export class CityService {
           `No active city found with id ${ctmId}`,
         );
       }
-
       const areaCount = await tx.areaMaster.count({
         where: {
           armCityId: ctmId,
           armIsDeleted: false,
         },
       });
-
       if (areaCount > 0) {
         throwSalesBadRequest<CityErrorDetail, CityErrorResponse>(
           'Cannot delete city with active areas',
@@ -119,7 +85,6 @@ export class CityService {
           ],
         );
       }
-
       const modifiedOn = new Date();
       const result = await tx.cityMaster.updateMany({
         where: {
@@ -133,7 +98,6 @@ export class CityService {
           ctmModifiedBy: DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         throwSalesNotFound<CityErrorDetail, CityErrorResponse>(
           'City not found',
@@ -141,7 +105,6 @@ export class CityService {
           `No active city found with id ${ctmId}`,
         );
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -150,7 +113,6 @@ export class CityService {
         ctmModifiedOn: modifiedOn,
         ctmModifiedBy: DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -166,14 +128,12 @@ export class CityService {
         },
         tx,
       );
-
       return {
         ctmId,
         deleted: true,
       };
     });
   }
-
   private async createCity(saveCityDto: SaveCityDto): Promise<CityPayload> {
     const normalizedName = normalizeRequiredText<CityErrorDetail, CityErrorResponse>(
       saveCityDto.ctmName,
@@ -191,15 +151,12 @@ export class CityService {
       ctmModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveCityDto);
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.ensureStateExists(tx, data.ctmStateId);
         await this.ensureNameIsUnique(tx, normalizedName, data.ctmStateId);
-
         const created = await tx.cityMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -215,7 +172,6 @@ export class CityService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -232,10 +188,8 @@ export class CityService {
       throw error;
     }
   }
-
   private async updateCity(saveCityDto: SaveCityDto): Promise<CityPayload> {
     const ctmId = saveCityDto.ctmId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.cityMaster.findFirst({

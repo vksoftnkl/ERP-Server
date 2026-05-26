@@ -15,21 +15,15 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import { DeleteLoyaltyGiftQueryDto } from './dto/delete-loyalty-gift-query.dto';
 import { DeleteLoyaltyPointQueryDto } from './dto/delete-loyalty-point-query.dto';
 import { DeleteLoyaltySchemeQueryDto } from './dto/delete-loyalty-scheme-query.dto';
-import { ListLoyaltyGiftQueryDto } from './dto/list-loyalty-gift-query.dto';
-import { ListLoyaltyPointQueryDto } from './dto/list-loyalty-point-query.dto';
-import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
 import { LoyaltyGiftIdQueryDto } from './dto/loyalty-gift-id-query.dto';
 import { LoyaltyPointIdQueryDto } from './dto/loyalty-point-id-query.dto';
 import { LoyaltySchemeIdQueryDto } from './dto/loyalty-scheme-id-query.dto';
 import {
   LoyaltyGiftSuccessDeleteDto,
-  LoyaltyGiftSuccessListDto,
   LoyaltyGiftSuccessSingleDto,
   LoyaltyPointSuccessDeleteDto,
-  LoyaltyPointSuccessListDto,
   LoyaltyPointSuccessSingleDto,
   LoyaltySchemeSuccessDeleteDto,
-  LoyaltySchemeSuccessListDto,
   LoyaltySchemeSuccessSingleDto,
   PromotionLoyaltyPointsErrorResponseDto,
 } from './dto/promotion-loyalty-points-response.dto';
@@ -45,7 +39,6 @@ import {
   LoyaltyPointPayload,
   LoyaltySchemeDeleteResult,
   LoyaltySchemePayload,
-  PromotionLoyaltyPointsListMeta,
   PromotionLoyaltyPointsSuccessResponse,
 } from './types/promotion-loyalty-points-api.types';
 
@@ -76,31 +69,6 @@ export class PromotionLoyaltyPointsController {
         ? 'Loyalty scheme updated successfully'
         : 'Loyalty scheme created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({
-    summary: 'List loyalty schemes with parties, points, and gifts in a single response',
-  })
-  @ApiOkResponse({
-    type: LoyaltySchemeSuccessListDto,
-    description: 'Each loyalty scheme includes nested parties, points, and gifts.',
-  })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async listSchemes(
-    @Query() queryDto: ListLoyaltySchemeQueryDto,
-  ): Promise<
-    PromotionLoyaltyPointsSuccessResponse<LoyaltySchemePayload[], PromotionLoyaltyPointsListMeta>
-  > {
-    const result = await this.promotionLoyaltyPointsService.listSchemes(queryDto);
-
-    return {
-      success: true,
-      message: 'Loyalty schemes fetched successfully',
-      data: result.items,
-      meta: result.meta,
     };
   }
 
@@ -169,29 +137,6 @@ export class PromotionLoyaltyPointsController {
     };
   }
 
-  @Get('points/list')
-  @Version('1')
-  @ApiOperation({
-    summary: 'Compatibility endpoint for loyalty point slabs',
-    deprecated: true,
-  })
-  @ApiOkResponse({ type: LoyaltyPointSuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async listPoints(
-    @Query() queryDto: ListLoyaltyPointQueryDto,
-  ): Promise<
-    PromotionLoyaltyPointsSuccessResponse<LoyaltyPointPayload[], PromotionLoyaltyPointsListMeta>
-  > {
-    const result = await this.promotionLoyaltyPointsService.listPoints(queryDto);
-
-    return {
-      success: true,
-      message: 'Loyalty points fetched successfully',
-      data: result.items,
-      meta: result.meta,
-    };
-  }
-
   @Get('points/get')
   @Version('1')
   @ApiOperation({
@@ -252,29 +197,6 @@ export class PromotionLoyaltyPointsController {
         ? 'Loyalty gift updated successfully'
         : 'Loyalty gift created successfully',
       data,
-    };
-  }
-
-  @Get('gifts/list')
-  @Version('1')
-  @ApiOperation({
-    summary: 'Compatibility endpoint for loyalty gift rules',
-    deprecated: true,
-  })
-  @ApiOkResponse({ type: LoyaltyGiftSuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async listGifts(
-    @Query() queryDto: ListLoyaltyGiftQueryDto,
-  ): Promise<
-    PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftPayload[], PromotionLoyaltyPointsListMeta>
-  > {
-    const result = await this.promotionLoyaltyPointsService.listGifts(queryDto);
-
-    return {
-      success: true,
-      message: 'Loyalty gifts fetched successfully',
-      data: result.items,
-      meta: result.meta,
     };
   }
 

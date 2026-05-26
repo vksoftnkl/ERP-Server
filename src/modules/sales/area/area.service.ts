@@ -1,18 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { AreaMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListAreaQueryDto } from './dto/list-area-query.dto';
 import { SaveAreaDto } from './dto/save-area.dto';
 import {
   AreaErrorDetail,
   AreaErrorResponse,
-  AreaListItem,
-  AreaListMeta,
   AreaPayload,
 } from './types/area-api.types';
 import {
@@ -28,7 +21,6 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
 const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
 const AREA_OPTIONAL_FIELDS = [
@@ -45,26 +37,12 @@ export class AreaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
     if (saveAreaDto.armId) {
       return this.updateArea(saveAreaDto);
     }
     return this.createArea(saveAreaDto);
-  }
-  async list(
-    queryDto: ListAreaQueryDto,
-  ): Promise<ConfiguredGridListResult<AreaListItem, AreaListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<AreaListItem>(
-      this.configuredGridSqlService,
-      { tableName: AREA_TABLE_NAME, alias: 'area_grid', search: queryDto.search, page, limit, skip },
-    );
-    if (!result) {
-      throwSalesBadRequest<AreaErrorDetail, AreaErrorResponse>('No configured grid found for area list', []);
-    }
-    return result;
   }
   async getById(armId: string): Promise<AreaPayload> {
     const record = await this.prisma.areaMaster.findFirst({

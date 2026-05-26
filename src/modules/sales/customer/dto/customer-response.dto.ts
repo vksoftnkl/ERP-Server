@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class CustomerErrorFieldDto {
   @ApiProperty({ example: 'cusStateCode' })
@@ -250,20 +249,6 @@ export class CustomerPayloadDto {
   cusModifiedBy!: string | null;
 }
 
-export class CustomerListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class CustomerDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   cusId!: string;
@@ -281,23 +266,6 @@ export class CustomerSuccessSingleDto {
 
   @ApiProperty({ type: CustomerPayloadDto })
   data!: CustomerPayloadDto;
-}
-
-export class CustomerSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Customers fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: CustomerPayloadDto, isArray: true })
-  data!: CustomerPayloadDto[];
-
-  @ApiProperty({ type: CustomerListMetaDto })
-  meta!: CustomerListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class CustomerSuccessDeleteDto {
