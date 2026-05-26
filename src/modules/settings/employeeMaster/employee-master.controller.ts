@@ -23,19 +23,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
-import { ListEmployeeMasterQueryDto } from './dto/list-employee-master-query.dto';
 import {
   EmployeeMasterErrorResponseDto,
   EmployeeMasterSuccessDeleteDto,
-  EmployeeMasterSuccessListDto,
   EmployeeMasterSuccessSingleDto,
 } from './dto/employee-master-response.dto';
 import { SaveEmployeeMasterDto } from './dto/save-employee-master.dto';
 import { EmployeeMasterExceptionFilter } from './employee-master-exception.filter';
 import { EmployeeMasterService } from './employee-master.service';
 import {
-  EmployeeMasterListItem,
-  EmployeeMasterListMeta,
   EmployeeMasterPayload,
   EmployeeMasterSuccessResponse,
 } from './types/employee-master-api.types';
@@ -70,25 +66,6 @@ export class EmployeeMasterController {
     };
   }
 
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List employees with filter/search/pagination' })
-  @ApiOkResponse({ type: EmployeeMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: EmployeeMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListEmployeeMasterQueryDto,
-  ): Promise<EmployeeMasterSuccessResponse<EmployeeMasterListItem[], EmployeeMasterListMeta>> {
-    const result = await this.employeeMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Employees fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      styles: result.styles ?? [],
-    };
-  }
-
   @Get('get')
   @Version('1')
   @ApiOperation({ summary: 'Get employee by id' })
@@ -99,16 +76,12 @@ export class EmployeeMasterController {
   async getById(
     @Query('empId', new ParseUUIDPipe({ version: '7' })) empId: string,
   ): Promise<EmployeeMasterSuccessResponse<EmployeeMasterPayload>> {
-    const [data, styles] = await Promise.all([
-      this.employeeMasterService.getById(empId),
-      this.employeeMasterService.getStyles(),
-    ]);
+    const data = await this.employeeMasterService.getById(empId);
 
     return {
       success: true,
       message: 'Employee fetched successfully',
       data,
-      styles,
     };
   }
 

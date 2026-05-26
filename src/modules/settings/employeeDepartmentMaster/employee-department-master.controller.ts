@@ -26,16 +26,12 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import {
   EmployeeDepartmentMasterErrorResponseDto,
   EmployeeDepartmentMasterSuccessDeleteDto,
-  EmployeeDepartmentMasterSuccessListDto,
   EmployeeDepartmentMasterSuccessSingleDto,
 } from './dto/employee-department-master-response.dto';
-import { ListEmployeeDepartmentMasterQueryDto } from './dto/list-employee-department-master-query.dto';
 import { SaveEmployeeDepartmentMasterDto } from './dto/save-employee-department-master.dto';
 import { EmployeeDepartmentMasterExceptionFilter } from './employee-department-master-exception.filter';
 import { EmployeeDepartmentMasterService } from './employee-department-master.service';
 import {
-  EmployeeDepartmentMasterListItem,
-  EmployeeDepartmentMasterListMeta,
   EmployeeDepartmentMasterPayload,
   EmployeeDepartmentMasterSuccessResponse,
 } from './types/employee-department-master-api.types';
@@ -46,9 +42,7 @@ import {
 @Controller('employee-department-masters')
 @UseFilters(EmployeeDepartmentMasterExceptionFilter)
 export class EmployeeDepartmentMasterController {
-  constructor(
-    private readonly employeeDepartmentMasterService: EmployeeDepartmentMasterService,
-  ) {}
+  constructor(private readonly employeeDepartmentMasterService: EmployeeDepartmentMasterService) {}
   @Post('create')
   @Version('1')
   @ApiOperation({ summary: 'Create or update employee department (by edptId presence)' })
@@ -66,28 +60,6 @@ export class EmployeeDepartmentMasterController {
         ? 'Employee department updated successfully'
         : 'Employee department created successfully',
       data,
-    };
-  }
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List employee departments with filter/search/pagination' })
-  @ApiOkResponse({ type: EmployeeDepartmentMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: EmployeeDepartmentMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListEmployeeDepartmentMasterQueryDto,
-  ): Promise<
-    EmployeeDepartmentMasterSuccessResponse<
-      EmployeeDepartmentMasterListItem[],
-      EmployeeDepartmentMasterListMeta
-    >
-  > {
-    const result = await this.employeeDepartmentMasterService.list(queryDto);
-    return {
-      success: true,
-      message: 'Employee departments fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
   @Get('get')

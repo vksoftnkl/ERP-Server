@@ -1,9 +1,15 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 export type GspCompanyServiceErrorDetail = ModuleApiErrorDetail;
 export type GspCompanyServiceErrorResponse = ModuleApiErrorResponse<GspCompanyServiceErrorDetail>;
-export type GspCompanyServiceSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-export type GspCompanyServiceListMeta = ModuleListMeta;
+export type GspCompanyServiceSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface GspCompanyServicePayload {
   csgCompanyServiceId: string;
@@ -26,4 +32,3 @@ export interface GspCompanyServicePayload {
   csgModifiedOn: string;
   csgModifiedBy: string | null;
 }
-export type GspCompanyServiceListItem = GspCompanyServicePayload | Record<string, unknown>;

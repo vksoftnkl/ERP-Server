@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 export class BranchMasterErrorFieldDto {
   @ApiProperty({ example: 'brName' })
   field!: string;
@@ -170,20 +169,6 @@ export class BranchMasterPayloadDto {
   brModifiedBy!: string | null;
 }
 
-export class BranchMasterListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class BranchMasterDeleteResultDto {
   @ApiProperty({ example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   brId!: string;
@@ -201,23 +186,6 @@ export class BranchMasterSuccessSingleDto {
 
   @ApiProperty({ type: BranchMasterPayloadDto })
   data!: BranchMasterPayloadDto;
-}
-
-export class BranchMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Branches fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: BranchMasterPayloadDto, isArray: true })
-  data!: BranchMasterPayloadDto[];
-
-  @ApiProperty({ type: BranchMasterListMetaDto })
-  meta!: BranchMasterListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class BranchMasterSuccessDeleteDto {

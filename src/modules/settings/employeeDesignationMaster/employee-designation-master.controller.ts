@@ -27,15 +27,11 @@ import { EmployeeDesignationMasterExceptionFilter } from './employee-designation
 import {
   EmployeeDesignationMasterErrorResponseDto,
   EmployeeDesignationMasterSuccessDeleteDto,
-  EmployeeDesignationMasterSuccessListDto,
   EmployeeDesignationMasterSuccessSingleDto,
 } from './dto/employee-designation-master-response.dto';
-import { ListEmployeeDesignationMasterQueryDto } from './dto/list-employee-designation-master-query.dto';
 import { SaveEmployeeDesignationMasterDto } from './dto/save-employee-designation-master.dto';
 import { EmployeeDesignationMasterService } from './employee-designation-master.service';
 import {
-  EmployeeDesignationMasterListItem,
-  EmployeeDesignationMasterListMeta,
   EmployeeDesignationMasterPayload,
   EmployeeDesignationMasterSuccessResponse,
 } from './types/employee-designation-master-api.types';
@@ -69,30 +65,6 @@ export class EmployeeDesignationMasterController {
         ? 'Employee designation updated successfully'
         : 'Employee designation created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List employee designations with filter/search/pagination' })
-  @ApiOkResponse({ type: EmployeeDesignationMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: EmployeeDesignationMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListEmployeeDesignationMasterQueryDto,
-  ): Promise<
-    EmployeeDesignationMasterSuccessResponse<
-      EmployeeDesignationMasterListItem[],
-      EmployeeDesignationMasterListMeta
-    >
-  > {
-    const result = await this.employeeDesignationMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Employee designations fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

@@ -57,7 +57,7 @@ export class SaveCompanyMasterDto {
   compAddr3?: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
-    compCity?: string | null;
+  compCity?: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   compDistrict?: string | null;

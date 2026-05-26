@@ -192,20 +192,6 @@ export class UserAdminPayloadDto {
   menus!: UserMenuPayloadDto[];
 }
 
-export class UserAdminListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 10 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class UserAdminDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   usrId!: string;
@@ -223,20 +209,6 @@ export class UserAdminSuccessSingleDto {
 
   @ApiProperty({ type: UserAdminPayloadDto })
   data!: UserAdminPayloadDto;
-}
-
-export class UserAdminSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Users fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: UserAdminPayloadDto, isArray: true })
-  data!: UserAdminPayloadDto[];
-
-  @ApiProperty({ type: UserAdminListMetaDto })
-  meta!: UserAdminListMetaDto;
 }
 
 export class UserAdminSuccessDeleteDto {

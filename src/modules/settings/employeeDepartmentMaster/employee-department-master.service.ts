@@ -1,21 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { EmployeeDepartment, Prisma } from '@prisma/client';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListEmployeeDepartmentMasterQueryDto } from './dto/list-employee-department-master-query.dto';
 import { SaveEmployeeDepartmentMasterDto } from './dto/save-employee-department-master.dto';
 import {
   EmployeeDepartmentMasterErrorDetail,
   EmployeeDepartmentMasterErrorResponse,
-  EmployeeDepartmentMasterListItem,
-  EmployeeDepartmentMasterListMeta,
   EmployeeDepartmentMasterPayload,
 } from './types/employee-department-master-api.types';
-import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -36,7 +28,6 @@ export class EmployeeDepartmentMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(
     saveEmployeeDepartmentMasterDto: SaveEmployeeDepartmentMasterDto,
@@ -45,36 +36,6 @@ export class EmployeeDepartmentMasterService {
       return this.updateDepartment(saveEmployeeDepartmentMasterDto);
     }
     return this.createDepartment(saveEmployeeDepartmentMasterDto);
-  }
-  async list(
-    queryDto: ListEmployeeDepartmentMasterQueryDto,
-  ): Promise<
-    ConfiguredGridListResult<EmployeeDepartmentMasterListItem, EmployeeDepartmentMasterListMeta>
-  > {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters = queryDto.edptIsActive !== undefined;
-    const where: Prisma.EmployeeDepartmentWhereInput = { edptIsDeleted: false };
-    if (queryDto.edptIsActive !== undefined) where.edptIsActive = queryDto.edptIsActive;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { edptName: { contains: search, mode: 'insensitive' } },
-        { edptCode: { contains: search, mode: 'insensitive' } },
-        { edptAlias: { contains: search, mode: 'insensitive' } },
-        { edptRemarks: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return runSettingsListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<EmployeeDepartmentMasterListItem>(
-        this.configuredGridSqlService,
-        { tableName: EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME, alias: 'employee_department_master_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.employeeDepartment.count({ where }),
-      findManyFn: () => this.prisma.employeeDepartment.findMany({ where, orderBy: [{ edptName: 'asc' }, { edptId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME),
-    });
   }
   async getById(edptId: string): Promise<EmployeeDepartmentMasterPayload> {
     const record = await this.prisma.employeeDepartment.findFirst({

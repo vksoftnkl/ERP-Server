@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 export class CompanyMasterErrorFieldDto {
   @ApiProperty({ example: 'compName' })
   field!: string;
@@ -44,7 +43,7 @@ export class CompanyMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   compFssaiNo!: string | null;
-  
+
   @ApiPropertyOptional({ nullable: true })
   compDrugLicenseNo!: string | null;
 
@@ -211,20 +210,6 @@ export class CompanyMasterPayloadDto {
   compModifiedBy!: string | null;
 }
 
-export class CompanyMasterListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class CompanyMasterDeleteResultDto {
   @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac1' })
   compId!: string;
@@ -242,23 +227,6 @@ export class CompanyMasterSuccessSingleDto {
 
   @ApiProperty({ type: CompanyMasterPayloadDto })
   data!: CompanyMasterPayloadDto;
-}
-
-export class CompanyMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Companies fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: CompanyMasterPayloadDto, isArray: true })
-  data!: CompanyMasterPayloadDto[];
-
-  @ApiProperty({ type: CompanyMasterListMetaDto })
-  meta!: CompanyMasterListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class CompanyMasterSuccessDeleteDto {

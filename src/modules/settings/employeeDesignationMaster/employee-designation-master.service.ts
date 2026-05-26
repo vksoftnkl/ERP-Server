@@ -1,21 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { EmployeeDesignation, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListEmployeeDesignationMasterQueryDto } from './dto/list-employee-designation-master-query.dto';
 import { SaveEmployeeDesignationMasterDto } from './dto/save-employee-designation-master.dto';
 import {
   EmployeeDesignationMasterErrorDetail,
   EmployeeDesignationMasterErrorResponse,
-  EmployeeDesignationMasterListItem,
-  EmployeeDesignationMasterListMeta,
   EmployeeDesignationMasterPayload,
 } from './types/employee-designation-master-api.types';
-import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -39,7 +31,6 @@ export class EmployeeDesignationMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(
@@ -50,38 +41,6 @@ export class EmployeeDesignationMasterService {
     }
 
     return this.createDesignation(saveEmployeeDesignationMasterDto);
-  }
-
-  async list(
-    queryDto: ListEmployeeDesignationMasterQueryDto,
-  ): Promise<
-    ConfiguredGridListResult<EmployeeDesignationMasterListItem, EmployeeDesignationMasterListMeta>
-  > {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.edIsActive !== undefined || queryDto.edIsDefault !== undefined;
-    const where: Prisma.EmployeeDesignationWhereInput = { edIsDeleted: false };
-    if (queryDto.edIsActive !== undefined) where.edIsActive = queryDto.edIsActive;
-    if (queryDto.edIsDefault !== undefined) where.edIsDefault = queryDto.edIsDefault;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { edName: { contains: search, mode: 'insensitive' } },
-        { edCode: { contains: search, mode: 'insensitive' } },
-        { edRemarks: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return runSettingsListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<EmployeeDesignationMasterListItem>(
-        this.configuredGridSqlService,
-        { tableName: EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME, alias: 'employee_designation_master_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.employeeDesignation.count({ where }),
-      findManyFn: () => this.prisma.employeeDesignation.findMany({ where, orderBy: [{ edIsDefault: 'desc' }, { edName: 'asc' }, { edId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME),
-    });
   }
 
   async getById(edId: string): Promise<EmployeeDesignationMasterPayload> {

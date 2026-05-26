@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class EmployeeMasterErrorFieldDto {
   @ApiProperty({ example: 'empName' })
@@ -184,20 +183,6 @@ export class EmployeeMasterPayloadDto {
   empModifiedBy!: string | null;
 }
 
-export class EmployeeMasterListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class EmployeeMasterDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   empId!: string;
@@ -215,23 +200,6 @@ export class EmployeeMasterSuccessSingleDto {
 
   @ApiProperty({ type: EmployeeMasterPayloadDto })
   data!: EmployeeMasterPayloadDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
-}
-
-export class EmployeeMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Employees fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: EmployeeMasterPayloadDto, isArray: true })
-  data!: EmployeeMasterPayloadDto[];
-
-  @ApiProperty({ type: EmployeeMasterListMetaDto })
-  meta!: EmployeeMasterListMetaDto;
 
   @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
   styles?: ConfiguredGridStyleDto[];

@@ -1,21 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { BranchMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListBranchMasterQueryDto } from './dto/list-branch-master-query.dto';
 import { SaveBranchMasterDto } from './dto/save-branch-master.dto';
 import {
   BranchMasterErrorDetail,
   BranchMasterErrorResponse,
-  BranchMasterListItem,
-  BranchMasterListMeta,
   BranchMasterPayload,
 } from './types/branch-master-api.types';
-import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -82,7 +74,6 @@ export class BranchMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveBranchMasterDto: SaveBranchMasterDto): Promise<BranchMasterPayload> {
@@ -91,47 +82,6 @@ export class BranchMasterService {
     }
 
     return this.createBranch(saveBranchMasterDto);
-  }
-  async list(
-    queryDto: ListBranchMasterQueryDto,
-   ): Promise<ConfiguredGridListResult<BranchMasterListItem, BranchMasterListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.compId !== undefined ||
-      queryDto.brStateCode !== undefined ||
-      queryDto.brIsActive !== undefined ||
-      queryDto.brIsDefault !== undefined;
-    const where: Prisma.BranchMasterWhereInput = { brIsDeleted: false };
-    if (queryDto.compId !== undefined) where.compId = queryDto.compId as string;
-    if (queryDto.brStateCode !== undefined) where.brStateCode = queryDto.brStateCode;
-    if (queryDto.brIsActive !== undefined) where.brIsActive = queryDto.brIsActive;
-    if (queryDto.brIsDefault !== undefined) where.brIsDefault = queryDto.brIsDefault;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { brCode: { contains: search, mode: 'insensitive' } },
-        { brName: { contains: search, mode: 'insensitive' } },
-        { brAlias: { contains: search, mode: 'insensitive' } },
-        { brShort: { contains: search, mode: 'insensitive' } },
-        { brCity: { contains: search, mode: 'insensitive' } },
-        { brDistrict: { contains: search, mode: 'insensitive' } },
-        { brState: { contains: search, mode: 'insensitive' } },
-        { brContactPerson: { contains: search, mode: 'insensitive' } },
-        { brPhone: { contains: search, mode: 'insensitive' } },
-        { brMail: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return runSettingsListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<BranchMasterListItem>(
-        this.configuredGridSqlService,
-        { tableName: BRANCH_MASTER_TABLE_NAME, alias: 'branch_master_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.branchMaster.count({ where }),
-      findManyFn: () => this.prisma.branchMaster.findMany({ where, orderBy: [{ brIsDefault: 'desc' }, { brName: 'asc' }, { brId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(BRANCH_MASTER_TABLE_NAME),
-    });
   }
   async getById(brId: string): Promise<BranchMasterPayload> {
     const record = await this.prisma.branchMaster.findFirst({

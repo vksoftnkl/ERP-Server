@@ -1,21 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { Company, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListCompanyMasterQueryDto } from './dto/list-company-master-query.dto';
 import { SaveCompanyMasterDto } from './dto/save-company-master.dto';
 import {
   CompanyMasterErrorDetail,
   CompanyMasterErrorResponse,
-  CompanyMasterListItem,
-  CompanyMasterListMeta,
   CompanyMasterPayload,
 } from './types/company-master-api.types';
-import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -95,52 +87,12 @@ export class CompanyMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload> {
     if (saveCompanyMasterDto.compId) {
       return this.updateCompany(saveCompanyMasterDto);
     }
     return this.createCompany(saveCompanyMasterDto);
-  }
-  async list(
-    queryDto: ListCompanyMasterQueryDto,
-  ): Promise<ConfiguredGridListResult<CompanyMasterListItem, CompanyMasterListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.compIsActive !== undefined ||
-      queryDto.compDefault !== undefined ||
-      queryDto.compStateCode !== undefined;
-    const where: Prisma.CompanyWhereInput = { compIsDeleted: false };
-    if (queryDto.compIsActive !== undefined) where.compIsActive = queryDto.compIsActive;
-    if (queryDto.compDefault !== undefined) where.compDefault = queryDto.compDefault;
-    if (queryDto.compStateCode !== undefined) where.compStateCode = queryDto.compStateCode;
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { compCode: { contains: search, mode: 'insensitive' } },
-        { compName: { contains: search, mode: 'insensitive' } },
-        { compShort: { contains: search, mode: 'insensitive' } },
-        { compLegalName: { contains: search, mode: 'insensitive' } },
-        { compGstinNo: { contains: search, mode: 'insensitive' } },
-        { compPanNo: { contains: search, mode: 'insensitive' } },
-        { compCity: { contains: search, mode: 'insensitive' } },
-        { compDistrict: { contains: search, mode: 'insensitive' } },
-        { compState: { contains: search, mode: 'insensitive' } },
-        { compMail: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return runSettingsListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<CompanyMasterListItem>(
-        this.configuredGridSqlService,
-        { tableName: COMPANY_MASTER_TABLE_NAME, alias: 'company_master_grid', search: queryDto.search, page, limit, skip, primaryTableSchema: COMPANY_MASTER_TABLE_SCHEMA },
-      ),
-      countFn: () => this.prisma.company.count({ where }),
-      findManyFn: () => this.prisma.company.findMany({ where, orderBy: [{ compDefault: 'desc' }, { compName: 'asc' }, { compId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(COMPANY_MASTER_TABLE_NAME),
-    });
   }
 
   async getById(compId: string): Promise<CompanyMasterPayload> {

@@ -23,22 +23,15 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
-import { ListUserAdministrationQueryDto } from './dto/list-user-administration-query.dto';
 import {
   UserAdminErrorResponseDto,
   UserAdminSuccessDeleteDto,
-  UserAdminSuccessListDto,
   UserAdminSuccessSingleDto,
 } from './dto/user-administration-response.dto';
 import { SaveUserAdministrationDto } from './dto/save-user-administration.dto';
 import { UserAdministrationExceptionFilter } from './user-administration-exception.filter';
 import { UserAdministrationService } from './user-administration.service';
-import {
-  UserAdminListItem,
-  UserAdminListMeta,
-  UserAdminPayload,
-  UserAdminSuccessResponse,
-} from './types/user-administration-api.types';
+import { UserAdminPayload, UserAdminSuccessResponse } from './types/user-administration-api.types';
 
 @ApiTags('User Administration')
 @ApiBearerAuth('access-token')
@@ -69,24 +62,6 @@ export class UserAdministrationController {
       success: true,
       message: dto.usrId ? 'User updated successfully' : 'User created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List users with filter/search/pagination (menus not included in list)' })
-  @ApiOkResponse({ type: UserAdminSuccessListDto })
-  @ApiBadRequestResponse({ type: UserAdminErrorResponseDto })
-  async list(
-    @Query() queryDto: ListUserAdministrationQueryDto,
-  ): Promise<UserAdminSuccessResponse<UserAdminListItem[], UserAdminListMeta>> {
-    const result = await this.userAdministrationService.list(queryDto);
-    return {
-      success: true,
-      message: 'Users fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      styles: result.styles ?? [],
     };
   }
 

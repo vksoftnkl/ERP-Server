@@ -1,9 +1,15 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 export type CompanyMasterErrorDetail = ModuleApiErrorDetail;
 export type CompanyMasterErrorResponse = ModuleApiErrorResponse<CompanyMasterErrorDetail>;
-export type CompanyMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-export type CompanyMasterListMeta = ModuleListMeta;
+export type CompanyMasterSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface CompanyMasterPayload {
   compId: string;
@@ -71,6 +77,3 @@ export interface CompanyMasterPayload {
   compModifiedOn: string;
   compModifiedBy: string | null;
 }
-
-export type CompanyMasterListItem = CompanyMasterPayload | Record<string, unknown>;
-

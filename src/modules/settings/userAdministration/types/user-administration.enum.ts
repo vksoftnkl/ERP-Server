@@ -5,5 +5,5 @@ export enum UserType {
   USER = 'USER',
   CASHIER = 'CASHIER',
   VIEWER = 'VIEWER',
-  SYSTEM = 'SYSTEM'
+  SYSTEM = 'SYSTEM',
 }

@@ -1,22 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { EmpMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListEmployeeMasterQueryDto } from './dto/list-employee-master-query.dto';
 import { SaveEmployeeMasterDto } from './dto/save-employee-master.dto';
 import {
   EmployeeMasterErrorDetail,
   EmployeeMasterErrorResponse,
-  EmployeeMasterListItem,
-  EmployeeMasterListMeta,
   EmployeeMasterPayload,
 } from './types/employee-master-api.types';
 import type { GridColumnItem } from '../../../common/configured-grid-sql/types/configured-grid-sql.types';
-import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -89,58 +81,12 @@ export class EmployeeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveEmployeeMasterDto: SaveEmployeeMasterDto): Promise<EmployeeMasterPayload> {
     if (saveEmployeeMasterDto.empId) {
       return this.updateEmployee(saveEmployeeMasterDto);
     }
     return this.createEmployee(saveEmployeeMasterDto);
-  }
-  async list(
-    queryDto: ListEmployeeMasterQueryDto,
-  ): Promise<ConfiguredGridListResult<EmployeeMasterListItem, EmployeeMasterListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.empCompanyId !== undefined ||
-      queryDto.empDepartmentId !== undefined ||
-      queryDto.empDesignationId !== undefined ||
-      queryDto.empIsActive !== undefined ||
-      queryDto.empStatus !== undefined ||
-      queryDto.empEmploymentType !== undefined;
-    const where: Prisma.EmpMasterWhereInput = { empIsDeleted: false };
-    if (queryDto.empCompanyId !== undefined) where.empCompanyId = queryDto.empCompanyId as string;
-    if (queryDto.empDepartmentId !== undefined) where.empDepartmentId = queryDto.empDepartmentId;
-    if (queryDto.empDesignationId !== undefined) where.empDesignationId = queryDto.empDesignationId;
-    if (queryDto.empIsActive !== undefined) where.empIsActive = queryDto.empIsActive;
-    if (queryDto.empStatus !== undefined) where.empStatus = { equals: queryDto.empStatus, mode: 'insensitive' };
-    if (queryDto.empEmploymentType !== undefined) where.empEmploymentType = { equals: queryDto.empEmploymentType, mode: 'insensitive' };
-    if (queryDto.search?.trim()) {
-      const search = queryDto.search.trim();
-      where.OR = [
-        { empCode: { contains: search, mode: 'insensitive' } },
-        { empName: { contains: search, mode: 'insensitive' } },
-        { empAlias: { contains: search, mode: 'insensitive' } },
-        { empMobile1: { contains: search, mode: 'insensitive' } },
-        { empMobile2: { contains: search, mode: 'insensitive' } },
-        { empEmail: { contains: search, mode: 'insensitive' } },
-        { empCity: { contains: search, mode: 'insensitive' } },
-        { empDistrict: { contains: search, mode: 'insensitive' } },
-        { empState: { contains: search, mode: 'insensitive' } },
-        { empStatus: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return runSettingsListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<EmployeeMasterListItem>(
-        this.configuredGridSqlService,
-        { tableName: EMPLOYEE_MASTER_TABLE_NAME, alias: 'employee_master_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.empMaster.count({ where }),
-      findManyFn: () => this.prisma.empMaster.findMany({ where, orderBy: [{ empName: 'asc' }, { empId: 'asc' }], skip, take: limit }),
-      toItemFn: (record) => this.toPayload(record),
-      loadStylesFn: () => this.configuredGridSqlService.loadPrimaryGridStyles(EMPLOYEE_MASTER_TABLE_NAME),
-    });
   }
   async getById(empId: string): Promise<EmployeeMasterPayload> {
     const record = await this.prisma.empMaster.findFirst({

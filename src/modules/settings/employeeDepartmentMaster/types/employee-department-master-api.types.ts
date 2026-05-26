@@ -1,9 +1,16 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 export type EmployeeDepartmentMasterErrorDetail = ModuleApiErrorDetail;
-export type EmployeeDepartmentMasterErrorResponse = ModuleApiErrorResponse<EmployeeDepartmentMasterErrorDetail>;
-export type EmployeeDepartmentMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-export type EmployeeDepartmentMasterListMeta = ModuleListMeta;
+export type EmployeeDepartmentMasterErrorResponse =
+  ModuleApiErrorResponse<EmployeeDepartmentMasterErrorDetail>;
+export type EmployeeDepartmentMasterSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface EmployeeDepartmentMasterPayload {
   edptId: string;
@@ -19,8 +26,3 @@ export interface EmployeeDepartmentMasterPayload {
   edptModifiedOn: string;
   edptModifiedBy: string | null;
 }
-
-export type EmployeeDepartmentMasterListItem =
-  | EmployeeDepartmentMasterPayload
-  | Record<string, unknown>;
-

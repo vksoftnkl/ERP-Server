@@ -27,15 +27,11 @@ import { CompanyMasterExceptionFilter } from './company-master-exception.filter'
 import {
   CompanyMasterErrorResponseDto,
   CompanyMasterSuccessDeleteDto,
-  CompanyMasterSuccessListDto,
   CompanyMasterSuccessSingleDto,
 } from './dto/company-master-response.dto';
-import { ListCompanyMasterQueryDto } from './dto/list-company-master-query.dto';
 import { SaveCompanyMasterDto } from './dto/save-company-master.dto';
 import { CompanyMasterService } from './company-master.service';
 import {
-  CompanyMasterListItem,
-  CompanyMasterListMeta,
   CompanyMasterPayload,
   CompanyMasterSuccessResponse,
 } from './types/company-master-api.types';
@@ -67,25 +63,6 @@ export class CompanyMasterController {
         ? 'Company updated successfully'
         : 'Company created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List companies with filter/search/pagination' })
-  @ApiOkResponse({ type: CompanyMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListCompanyMasterQueryDto,
-  ): Promise<CompanyMasterSuccessResponse<CompanyMasterListItem[], CompanyMasterListMeta>> {
-    const result = await this.companyMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Companies fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

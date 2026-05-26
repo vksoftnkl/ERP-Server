@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class EmployeeDesignationMasterErrorFieldDto {
   @ApiProperty({ example: 'edName' })
@@ -58,20 +57,6 @@ export class EmployeeDesignationMasterPayloadDto {
   edModifiedBy!: string | null;
 }
 
-export class EmployeeDesignationMasterListMetaDto {
-  @ApiProperty({ example: 1 })
-  page!: number;
-
-  @ApiProperty({ example: 20 })
-  limit!: number;
-
-  @ApiProperty({ example: 3 })
-  total!: number;
-
-  @ApiProperty({ example: 1 })
-  total_pages!: number;
-}
-
 export class EmployeeDesignationMasterDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   edId!: string;
@@ -89,23 +74,6 @@ export class EmployeeDesignationMasterSuccessSingleDto {
 
   @ApiProperty({ type: EmployeeDesignationMasterPayloadDto })
   data!: EmployeeDesignationMasterPayloadDto;
-}
-
-export class EmployeeDesignationMasterSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'Employee designations fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: EmployeeDesignationMasterPayloadDto, isArray: true })
-  data!: EmployeeDesignationMasterPayloadDto[];
-
-  @ApiProperty({ type: EmployeeDesignationMasterListMetaDto })
-  meta!: EmployeeDesignationMasterListMetaDto;
-
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class EmployeeDesignationMasterSuccessDeleteDto {

@@ -4,18 +4,12 @@ import { promisify } from 'node:util';
 import { Prisma, UserMaster, UserMenus } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
-import type { ConfiguredGridListResult } from '../../../common/configured-grid-sql/configured-grid-sql.service';
-import { ListUserAdministrationQueryDto } from './dto/list-user-administration-query.dto';
 import { SaveUserAdministrationDto, SaveUserMenuDto } from './dto/save-user-administration.dto';
 import {
   UserAdminErrorDetail,
-  UserAdminListItem,
-  UserAdminListMeta,
   UserAdminPayload,
   UserMenuPayload,
 } from './types/user-administration-api.types';
-import { resolvePagination, runConfiguredGridQuery, runSettingsListQuery } from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -39,7 +33,6 @@ export class UserAdministrationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(dto: SaveUserAdministrationDto): Promise<UserAdminPayload> {
@@ -47,40 +40,6 @@ export class UserAdministrationService {
       return this.updateUser(dto);
     }
     return this.createUser(dto);
-  }
-
-  async list(
-    queryDto: ListUserAdministrationQueryDto,
-  ): Promise<ConfiguredGridListResult<UserAdminListItem, UserAdminListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const hasStructuredFilters =
-      queryDto.usrCompanyId !== undefined ||
-      queryDto.usrIsActive !== undefined ||
-      queryDto.usrType !== undefined;
-    const where: Prisma.UserMasterWhereInput = { usrIsDeleted: false };
-    if (queryDto.usrCompanyId !== undefined) where.usrCompanyId = queryDto.usrCompanyId;
-    if (queryDto.usrIsActive !== undefined) where.usrIsActive = queryDto.usrIsActive;
-    if (queryDto.usrType !== undefined) where.usrType = { equals: queryDto.usrType, mode: 'insensitive' };
-    if (queryDto.search?.trim()) {
-      const s = queryDto.search.trim();
-      where.OR = [
-        { usrLoginName: { contains: s, mode: 'insensitive' } },
-        { usrDisplayName: { contains: s, mode: 'insensitive' } },
-        { usrFullName: { contains: s, mode: 'insensitive' } },
-        { usrEmail: { contains: s, mode: 'insensitive' } },
-        { usrMobileNo: { contains: s, mode: 'insensitive' } },
-      ];
-    }
-    return runSettingsListQuery({ page, limit }, {
-      hasStructuredFilters,
-      configuredGridFn: () => runConfiguredGridQuery<UserAdminListItem>(
-        this.configuredGridSqlService,
-        { tableName: USER_MASTER_TABLE_NAME, alias: 'user_admin_grid', search: queryDto.search, page, limit, skip },
-      ),
-      countFn: () => this.prisma.userMaster.count({ where }),
-      findManyFn: () => this.prisma.userMaster.findMany({ where, orderBy: [{ usrDisplayName: 'asc' }, { usrId: 'asc' }], skip, take: limit }),
-      toItemFn: (r) => this.toPayloadWithoutMenus(r),
-    });
   }
 
   async getById(usrId: string): Promise<UserAdminPayload> {
@@ -178,7 +137,13 @@ export class UserAdministrationService {
         this.applyOptionalUserFields(data, dto);
 
         const created = await tx.userMaster.create({ data });
-        const menus = await this.replaceUserMenus(created.usrId, dto.menus ?? [], DEFAULT_ACTOR, now, tx);
+        const menus = await this.replaceUserMenus(
+          created.usrId,
+          dto.menus ?? [],
+          DEFAULT_ACTOR,
+          now,
+          tx,
+        );
 
         const payload = this.toPayload(created, menus);
 
@@ -376,7 +341,8 @@ export class UserAdministrationService {
     if (dto.usrAvatarUrl !== undefined) data.usrAvatarUrl = dto.usrAvatarUrl;
     if (dto.usrTimezone !== undefined) data.usrTimezone = dto.usrTimezone;
     if (dto.usrLanguage !== undefined) data.usrLanguage = dto.usrLanguage;
-    if (dto.usrMustChangePassword !== undefined) data.usrMustChangePassword = dto.usrMustChangePassword;
+    if (dto.usrMustChangePassword !== undefined)
+      data.usrMustChangePassword = dto.usrMustChangePassword;
     if (dto.usrType !== undefined) data.usrType = dto.usrType;
     if (dto.usrEditDate !== undefined) data.usrEditDate = dto.usrEditDate;
     if (dto.usrEditEntry !== undefined) data.usrEditEntry = dto.usrEditEntry;

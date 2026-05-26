@@ -26,16 +26,12 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import {
   GspCompanyServiceErrorResponseDto,
   GspCompanyServiceSuccessDeleteDto,
-  GspCompanyServiceSuccessListDto,
   GspCompanyServiceSuccessSingleDto,
 } from './dto/gsp-company-service-response.dto';
-import { ListGspCompanyServiceQueryDto } from './dto/list-gsp-company-service-query.dto';
 import { SaveGspCompanyServiceDto } from './dto/save-gsp-company-service.dto';
 import { GspCompanyServiceExceptionFilter } from './gsp-company-service-exception.filter';
 import { GspCompanyServiceService } from './gsp-company-service.service';
 import {
-  GspCompanyServiceListItem,
-  GspCompanyServiceListMeta,
   GspCompanyServicePayload,
   GspCompanyServiceSuccessResponse,
 } from './types/gsp-company-service-api.types';
@@ -66,25 +62,6 @@ export class GspCompanyServiceController {
         ? 'GSP company service updated successfully'
         : 'GSP company service created successfully',
       data,
-    };
-  }
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List GSP company services with filter/search/pagination' })
-  @ApiOkResponse({ type: GspCompanyServiceSuccessListDto })
-  @ApiBadRequestResponse({ type: GspCompanyServiceErrorResponseDto })
-  async list(
-    @Query() queryDto: ListGspCompanyServiceQueryDto,
-  ): Promise<
-    GspCompanyServiceSuccessResponse<GspCompanyServiceListItem[], GspCompanyServiceListMeta>
-  > {
-    const result = await this.gspCompanyServiceService.list(queryDto);
-    return {
-      success: true,
-      message: 'GSP company services fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
   @Get('get')

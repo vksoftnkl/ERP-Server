@@ -1,11 +1,17 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 import { UserType } from './user-administration.enum';
 
 export type UserAdminErrorDetail = ModuleApiErrorDetail;
 export type UserAdminErrorResponse = ModuleApiErrorResponse<UserAdminErrorDetail>;
-export type UserAdminSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-export type UserAdminListMeta = ModuleListMeta;
+export type UserAdminSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface UserMenuPayload {
   umId: string;
@@ -68,5 +74,3 @@ export interface UserAdminPayload {
   usrModifiedBy: string | null;
   menus: UserMenuPayload[];
 }
-
-export type UserAdminListItem = Omit<UserAdminPayload, 'menus'> | Record<string, unknown>;

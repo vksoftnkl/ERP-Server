@@ -27,18 +27,11 @@ import { BranchMasterExceptionFilter } from './branch-master-exception.filter';
 import {
   BranchMasterErrorResponseDto,
   BranchMasterSuccessDeleteDto,
-  BranchMasterSuccessListDto,
   BranchMasterSuccessSingleDto,
 } from './dto/branch-master-response.dto';
-import { ListBranchMasterQueryDto } from './dto/list-branch-master-query.dto';
 import { SaveBranchMasterDto } from './dto/save-branch-master.dto';
 import { BranchMasterService } from './branch-master.service';
-import {
-  BranchMasterListItem,
-  BranchMasterListMeta,
-  BranchMasterPayload,
-  BranchMasterSuccessResponse,
-} from './types/branch-master-api.types';
+import { BranchMasterPayload, BranchMasterSuccessResponse } from './types/branch-master-api.types';
 
 @ApiTags('Branch Master')
 @ApiBearerAuth('access-token')
@@ -67,25 +60,6 @@ export class BranchMasterController {
         ? 'Branch updated successfully'
         : 'Branch created successfully',
       data,
-    };
-  }
-
-  @Get('list')
-  @Version('1')
-  @ApiOperation({ summary: 'List branches with filter/search/pagination' })
-  @ApiOkResponse({ type: BranchMasterSuccessListDto })
-  @ApiBadRequestResponse({ type: BranchMasterErrorResponseDto })
-  async list(
-    @Query() queryDto: ListBranchMasterQueryDto,
-  ): Promise<BranchMasterSuccessResponse<BranchMasterListItem[], BranchMasterListMeta>> {
-    const result = await this.branchMasterService.list(queryDto);
-
-    return {
-      success: true,
-      message: 'Branches fetched successfully',
-      data: result.items,
-      meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

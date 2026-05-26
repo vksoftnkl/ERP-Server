@@ -1,9 +1,16 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 export type EmployeeDesignationMasterErrorDetail = ModuleApiErrorDetail;
-export type EmployeeDesignationMasterErrorResponse = ModuleApiErrorResponse<EmployeeDesignationMasterErrorDetail>;
-export type EmployeeDesignationMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-export type EmployeeDesignationMasterListMeta = ModuleListMeta;
+export type EmployeeDesignationMasterErrorResponse =
+  ModuleApiErrorResponse<EmployeeDesignationMasterErrorDetail>;
+export type EmployeeDesignationMasterSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface EmployeeDesignationMasterPayload {
   edId: string;
@@ -19,8 +26,3 @@ export interface EmployeeDesignationMasterPayload {
   edModifiedOn: string;
   edModifiedBy: string | null;
 }
-
-export type EmployeeDesignationMasterListItem =
-  | EmployeeDesignationMasterPayload
-  | Record<string, unknown>;
-

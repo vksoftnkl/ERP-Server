@@ -1,9 +1,15 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
+import type {
+  ModuleApiErrorDetail,
+  ModuleApiErrorResponse,
+  ModuleApiSuccessResponse,
+} from 'src/common/types/module-api.types';
 export type BranchMasterErrorDetail = ModuleApiErrorDetail;
 export type BranchMasterErrorResponse = ModuleApiErrorResponse<BranchMasterErrorDetail>;
-export type BranchMasterSuccessResponse<T, TMeta = Record<string, unknown>, TStyles = unknown> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-export type BranchMasterListMeta = ModuleListMeta;
+export type BranchMasterSuccessResponse<
+  T,
+  TMeta = Record<string, unknown>,
+  TStyles = unknown,
+> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
 
 export interface BranchMasterPayload {
   brId: string;
@@ -58,6 +64,3 @@ export interface BranchMasterPayload {
   brModifiedOn: string;
   brModifiedBy: string | null;
 }
-
-export type BranchMasterListItem = BranchMasterPayload | Record<string, unknown>;
-

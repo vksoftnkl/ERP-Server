@@ -130,7 +130,8 @@ export class SaveUserAdministrationDto {
   usrLanguage?: string;
 
   @ApiPropertyOptional({
-    description: 'Plain-text password. Required on create; optional on update (omit to keep existing).',
+    description:
+      'Plain-text password. Required on create; optional on update (omit to keep existing).',
   })
   @IsOptional()
   @IsString()
@@ -143,7 +144,9 @@ export class SaveUserAdministrationDto {
 
   @ApiPropertyOptional({ enum: UserType, enumName: 'UserType', nullable: true })
   @IsOptional()
-  @Transform(({ value }) => (value === '' || value === undefined ? undefined : value === null ? null : value))
+  @Transform(({ value }) =>
+    value === '' || value === undefined ? undefined : value === null ? null : value,
+  )
   @ValidateIf((_, v) => v !== null && v !== undefined)
   @IsEnum(UserType)
   usrType?: UserType | null;
@@ -183,7 +186,8 @@ export class SaveUserAdministrationDto {
   @ApiPropertyOptional({
     type: SaveUserMenuDto,
     isArray: true,
-    description: 'Full replacement set of menu permissions. Existing menus not in this list are soft-deleted.',
+    description:
+      'Full replacement set of menu permissions. Existing menus not in this list are soft-deleted.',
   })
   @IsOptional()
   @IsArray()
