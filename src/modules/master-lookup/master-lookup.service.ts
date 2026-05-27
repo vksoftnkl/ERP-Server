@@ -815,10 +815,7 @@ export class MasterLookupService {
       this.resolveLikelyNameKey(rowKeys, idKey, false) ??
       this.resolveLikelyNameKey(configuredKeys, idKey, false);
     const nameValue = nameKey ? this.readLookupRowValue(row, nameKey) : undefined;
-    return {
-      ...this.toSerializableLookupRow(row),
-      ...this.toOption(idValue, nameValue, { fallbackNameToId: false }),
-    };
+    return this.toOption(idValue, nameValue, { fallbackNameToId: false });
   }
   private matchesConfiguredSearch(
     item: { row: LookupRow; option: NameIdOption },
@@ -928,24 +925,6 @@ export class MasterLookupService {
     if (typeof value === 'number' || typeof value === 'bigint') return String(value);
     if (value instanceof Date) return value.toISOString();
     if (typeof value === 'boolean') return value ? 'true' : 'false';
-    return undefined;
-  }
-  private toSerializableLookupRow(row: LookupRow): Record<string, string | number | boolean | null> {
-    return Object.fromEntries(
-      Object.entries(row)
-        .map(([key, value]) => [key, this.toSerializableLookupValue(value)] as const)
-        .filter((entry): entry is [string, string | number | boolean | null] => entry[1] !== undefined),
-    );
-  }
-  private toSerializableLookupValue(
-    value: unknown,
-  ): string | number | boolean | null | undefined {
-    if (value === null) return null;
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      return value;
-    }
-    if (typeof value === 'bigint') return String(value);
-    if (value instanceof Date) return value.toISOString();
     return undefined;
   }
   private isLikelyIdKey(value: string): boolean {
