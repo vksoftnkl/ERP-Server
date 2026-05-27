@@ -62,6 +62,8 @@ model UserMaster {
   usrCreatedBy           String?   @db.Uuid
   usrModifiedOn          DateTime? @db.Timestamptz()
   usrModifiedBy          String?   @db.Uuid
+  voucherHeaders         AccVoucherHeader[]
+  vouchers               AccVoucher[]
   userMenus              UserMenus[]
   deviceMasters          DeviceMaster[]
   // ── Indexes ────────────────────────────────────────────────────────────────

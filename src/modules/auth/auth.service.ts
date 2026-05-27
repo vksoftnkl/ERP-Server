@@ -166,6 +166,15 @@ export class AuthService {
     if (!existing) {
       throw new UnauthorizedException('Device not registered. Please contact administrator.');
     }
+    const isDesktopOrMobile = ['desktop', 'mobile'].includes(resolvedType.toLowerCase());
+    if (isDesktopOrMobile) {
+      if (existing.devIsBlocked) {
+        throw new UnauthorizedException(existing.devBlockReason ?? 'Device is blocked. Please contact administrator.');
+      }
+      if (!existing.devIsActive || existing.devIsDeleted) {
+        throw new UnauthorizedException('Device is not available. Please contact administrator.');
+      }
+    }
     return this.prisma.deviceMaster.update({
       where: { devDeviceUid: lookupUid },
       data: {
@@ -265,5 +274,4 @@ export class AuthService {
       return error.message.trim();
     }
     return 'unknown error';
-  }
-}
+  }}

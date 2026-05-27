@@ -101,7 +101,7 @@ model AccVoucherHeader {
   company                Company           @relation(fields: [avhCompanyId], references: [compId], map: "fk_acc_voucher_header_voucher_company")
   branch                 BranchMaster      @relation(fields: [avhBranchId], references: [brId], map: "fk_acc_voucher_header_voucher_branch")
   party                  AccLedgerMaster   @relation(fields: [avhPartyId], references: [ledId], map: "fk_acc_voucher_header_voucher_party")
-  user                   User              @relation(fields: [avhUserId], references: [user_id], map: "fk_acc_voucher_header_voucher_user")
+  user                   UserMaster        @relation(fields: [avhUserId], references: [usrId], map: "fk_acc_voucher_header_voucher_user")
   voucherBills           AccVoucherBill[]  @relation("VoucherBillHeader")
   againstVoucherBills    AccVoucherBill[]  @relation("VoucherBillAgainstHeader")
   voucherCheques         AccVoucherCheque[]

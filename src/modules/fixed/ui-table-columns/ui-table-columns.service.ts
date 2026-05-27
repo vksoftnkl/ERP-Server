@@ -22,7 +22,7 @@ import {
   throwFixedNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
+import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
 
 const UI_TABLE_COLUMNS_TABLE_NAME = 'ui table columns';
 const UI_TABLE_COLUMNS_AUDIT_SCREEN_NAME = 'UI Table Columns';
@@ -56,14 +56,36 @@ export class UiTableColumnsService {
     queryDto: ListUiTableColumnQueryDto,
   ): Promise<ConfiguredGridListResult<UiTableColumnListItem, UiTableColumnListMeta>> {
     const { page, limit, skip } = resolvePagination(queryDto);
-    const result = await runConfiguredGridQuery<UiTableColumnListItem>(
-      this.configuredGridSqlService,
-      { tableName: UI_TABLE_COLUMNS_TABLE_NAME, alias: 'ui_table_columns_grid', search: queryDto.search, page, limit, skip },
+    const tableId = queryDto.uiTblClmTableId
+      ? BigInt(queryDto.uiTblClmTableId)
+      : undefined;
+    const where = {
+      uiTblClmIsDeleted: false,
+      ...(tableId !== undefined && { uiTblClmTableId: tableId }),
+      ...(queryDto.uiTblClmIsActive !== undefined && { uiTblClmIsActive: queryDto.uiTblClmIsActive }),
+      ...(queryDto.uiTblClmColumnVisibility !== undefined && { uiTblClmColumnVisibility: queryDto.uiTblClmColumnVisibility }),
+      ...(queryDto.uiTblClmColumnFocus !== undefined && { uiTblClmColumnFocus: queryDto.uiTblClmColumnFocus }),
+      ...(queryDto.uiTblClmColumnNecessity !== undefined && { uiTblClmColumnNecessity: queryDto.uiTblClmColumnNecessity }),
+    };
+    return runFixedListQuery<UitableColumns, UiTableColumnListItem>(
+      { page, limit },
+      {
+        configuredGridFn: () =>
+          runConfiguredGridQuery<UiTableColumnListItem>(
+            this.configuredGridSqlService,
+            { tableName: UI_TABLE_COLUMNS_TABLE_NAME, alias: 'ui_table_columns_grid', search: queryDto.search, page, limit, skip },
+          ),
+        countFn: () => this.prisma.uitableColumns.count({ where }),
+        findManyFn: () =>
+          this.prisma.uitableColumns.findMany({
+            where,
+            orderBy: [{ uiTblClmNo: 'asc' }, { uiTblClmId: 'asc' }],
+            skip,
+            take: limit,
+          }),
+        toItemFn: (record) => this.toPayload(record),
+      },
     );
-    if (!result) {
-      throwFixedBadRequest<UiTableColumnErrorDetail, UiTableColumnErrorResponse>('No configured grid found for UI table columns list', []);
-    }
-    return result;
   }
 
   async getById(uiTblClmId: string): Promise<UiTableColumnPayload> {

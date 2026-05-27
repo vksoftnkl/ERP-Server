@@ -57,7 +57,7 @@ model AccVoucher {
   branch             BranchMaster     @relation(fields: [avBranchId], references: [brId], map: "fk_acc_vouchers_voucher_branch")
   ledger             AccLedgerMaster  @relation("AccVoucherLedger", fields: [avLedgerId], references: [ledId], map: "fk_acc_vouchers_voucher_ledger")
   oppositeLedger     AccLedgerMaster  @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], map: "fk_acc_vouchers_voucher_opp_ledger")
-  user               User             @relation(fields: [avUserId], references: [user_id], map: "fk_acc_vouchers_voucher_user")
+  user               UserMaster       @relation(fields: [avUserId], references: [usrId], map: "fk_acc_vouchers_voucher_user")
   @@map("acc_vouchers")
   @@schema("accounts")
   // Partial indexes idx_acc_vouchers_voucher_id and idx_acc_vouchers_ledger_id
