@@ -1,18 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
 import { AccVoucherHeader, DeviceType, Prisma, VoucherStatus } from '@prisma/client';
-import { RequestContextService } from '../../common/request-context/request-context.service';
-import { PrismaService } from '../../database/prisma/prisma.service';
-import { AuditLogService } from '../audit-log/audit-log.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import {
   createAccountVoucherHeader,
   softDeleteAccountVoucherHeader,
   updateAccountVoucherHeader,
-} from '../accountsModule/accountVoucherHeader/account-voucher-header.helper';
+} from '../../accountsModule/accountVoucherHeader/account-voucher-header.helper';
 import { SaveOpeningStockDto } from './dto/save-opening-stock.dto';
 import { ItemStockLedgerService } from './item-stock-ledger.service';
 import { OpeningStockStatus } from './opening-stock.enums';
 import { OpeningStockService } from './opening-stock.service';
-jest.mock('../accountsModule/accountVoucherHeader/account-voucher-header.helper', () => ({
+jest.mock('../../accountsModule/accountVoucherHeader/account-voucher-header.helper', () => ({
   createAccountVoucherHeader: jest.fn(),
   updateAccountVoucherHeader: jest.fn(),
   softDeleteAccountVoucherHeader: jest.fn(),
@@ -60,6 +60,9 @@ type OpeningStockTxMock = {
     findMany: jest.Mock;
   };
   user: {
+    findMany: jest.Mock;
+  };
+  userMaster: {
     findMany: jest.Mock;
   };
   unit: {
@@ -323,6 +326,9 @@ describe('OpeningStockService', () => {
       user: {
         findMany: jest.fn(),
       },
+      userMaster: {
+        findMany: jest.fn(),
+      },
       unit: {
         findMany: jest.fn(),
       },
@@ -383,9 +389,11 @@ describe('OpeningStockService', () => {
         ledId: PARTY_ID,
       },
     ]);
-    tx.user.findMany.mockResolvedValue([
+    tx.userMaster.findMany.mockResolvedValue([
       {
-        user_id: USER_ID,
+        usrId: USER_ID,
+        usrDisplayName: USER_NAME,
+        usrLoginName: USER_NAME,
       },
     ]);
     tx.unit.findMany.mockResolvedValue([
@@ -821,15 +829,7 @@ describe('OpeningStockService', () => {
         },
       },
       include: {
-        voucherHeader: {
-          include: {
-            user: {
-              select: {
-                user_name: true,
-              },
-            },
-          },
-        },
+        voucherHeader: true,
       },
       orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
     });
@@ -854,15 +854,7 @@ describe('OpeningStockService', () => {
     expect(prisma.openingStockHeader.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         include: {
-          voucherHeader: {
-            include: {
-              user: {
-                select: {
-                  user_name: true,
-                },
-              },
-            },
-          },
+          voucherHeader: true,
         },
         skip: 0,
         take: 20,
@@ -879,6 +871,27 @@ describe('OpeningStockService', () => {
       limit: 20,
       total: 1,
       total_pages: 1,
+    });
+  });
+
+  it('lists opening stock headers when the user display name is missing', async () => {
+    const voucherHeader = makeVoucherHeaderRecord();
+    tx.userMaster.findMany.mockResolvedValue([]);
+    prisma.openingStockHeader.count.mockResolvedValue(1);
+    prisma.openingStockHeader.findMany.mockResolvedValue([
+      makeOpeningHeaderWithVoucher(voucherHeader),
+    ]);
+
+    const result = await service.list({
+      page: 1,
+      limit: 20,
+    });
+
+    expect(result.items[0]).toMatchObject({
+      avh_user_id: USER_ID,
+      avh_user_name: null,
+      osh_user_id: USER_ID,
+      osh_user_name: null,
     });
   });
 

@@ -24,7 +24,13 @@ import {
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import { RequestContextService } from 'src/common/request-context/request-context.service';
-import { createAccountVoucherHeader, CreateAccountVoucherHeaderPayload, softDeleteAccountVoucherHeader, updateAccountVoucherHeader, UpdateAccountVoucherHeaderPayload } from 'src/modules/accountsModule/accountVoucherHeader/account-voucher-header.helper';
+import {
+  createAccountVoucherHeader,
+  CreateAccountVoucherHeaderPayload,
+  softDeleteAccountVoucherHeader,
+  updateAccountVoucherHeader,
+  UpdateAccountVoucherHeaderPayload,
+} from 'src/modules/accountsModule/accountVoucherHeader/account-voucher-header.helper';
 import { resolvePagination } from 'src/common/utils/module-list.utils';
 import {
   isForeignKeyConstraintError,
@@ -36,20 +42,13 @@ import {
 const OPENING_STOCK_HEADER_TABLE_NAME = 'opening stock header';
 const OPENING_STOCK_AUDIT_SCREEN_NAME = 'Opening Stock';
 const OPENING_STOCK_HEADER_INCLUDE = {
-  voucherHeader: {
-    include: {
-      user: {
-        select: {
-          user_name: true,
-        },
-      },
-    },
-  },
+  voucherHeader: true,
 } as const;
 type OpeningStockWriteClient = Prisma.TransactionClient | PrismaService;
 type OpeningStockHeaderWithVoucher = Prisma.OpeningStockHeaderGetPayload<{
   include: typeof OPENING_STOCK_HEADER_INCLUDE;
 }>;
+type UserNameLookup = Map<string, string>;
 type DetailLookupMaps = {
   itemsById: Map<string, { itemCode: string | null; itemNameEn: string | null }>;
   unitsById: Map<string, { unit_name: string }>;
@@ -148,8 +147,9 @@ export class OpeningStockService {
         take: limit,
       }),
     ]);
+    const userNames = await this.loadHeaderUserNames(this.prisma, records);
     return {
-      items: records.map((record) => this.toHeaderPayload(record)),
+      items: records.map((record) => this.toHeaderPayload(record, userNames)),
       meta: {
         page,
         limit,
@@ -668,12 +668,12 @@ export class OpeningStockService {
             },
           })
         : Promise.resolve([]),
-      tx.user.findMany({
+      tx.userMaster.findMany({
         where: {
-          user_id: { in: [context.openingUserId] },
+          usrId: { in: [context.openingUserId] },
         },
         select: {
-          user_id: true,
+          usrId: true,
         },
       }),
     ]);
@@ -702,7 +702,7 @@ export class OpeningStockService {
     this.throwMissingReferenceError(
       'osh_user_id',
       [context.openingUserId],
-      openingUsers.map((record) => record.user_id),
+      openingUsers.map((record) => record.usrId),
     );
   }
   private async validateDetailReferences(
@@ -987,16 +987,19 @@ export class OpeningStockService {
     client: OpeningStockWriteClient,
     openingHeader: OpeningStockHeaderWithVoucher,
   ): Promise<OpeningStockDocumentPayload> {
-    const details = await client.openingStockDetail.findMany({
-      where: {
-        oslVoucherId: openingHeader.oshVoucherId,
-        oslIsDeleted: false,
-      },
-      orderBy: [{ oslLineNo: 'asc' }, { oslId: 'asc' }],
-    });
+    const [details, userNames] = await Promise.all([
+      client.openingStockDetail.findMany({
+        where: {
+          oslVoucherId: openingHeader.oshVoucherId,
+          oslIsDeleted: false,
+        },
+        orderBy: [{ oslLineNo: 'asc' }, { oslId: 'asc' }],
+      }),
+      this.loadHeaderUserNames(client, [openingHeader]),
+    ]);
     const lookups = await this.loadDetailLookups(client, details);
     return {
-      header: this.toHeaderPayload(openingHeader),
+      header: this.toHeaderPayload(openingHeader, userNames),
       details: details.map((detail) => this.toDetailPayload(detail, lookups)),
     };
   }
@@ -1012,7 +1015,11 @@ export class OpeningStockService {
       include: OPENING_STOCK_HEADER_INCLUDE,
     });
     if (!header) {
-      throwNotFound<OpeningStockErrorDetail>('Opening stock document not found', 'avh_voucher_id', `No active opening stock document found with avh_voucher_id ${avhVoucherId}`);
+      throwNotFound<OpeningStockErrorDetail>(
+        'Opening stock document not found',
+        'avh_voucher_id',
+        `No active opening stock document found with avh_voucher_id ${avhVoucherId}`,
+      );
     }
     return header;
   }
@@ -1053,7 +1060,11 @@ export class OpeningStockService {
       orderBy: [{ oshVoucherDate: 'desc' }, { oshVoucherNo: 'desc' }, { oshId: 'desc' }],
     });
     if (!header) {
-      throwNotFound<OpeningStockErrorDetail>('Opening stock document not found', 'avh_voucher_refno', `No active opening stock document found with avh_voucher_refno ${avhVoucherRefno ?? ''}`);
+      throwNotFound<OpeningStockErrorDetail>(
+        'Opening stock document not found',
+        'avh_voucher_refno',
+        `No active opening stock document found with avh_voucher_refno ${avhVoucherRefno ?? ''}`,
+      );
     }
     return header;
   }
@@ -1159,15 +1170,43 @@ export class OpeningStockService {
       taxesById: new Map(taxes.map((tax) => [tax.taxId, { taxName: tax.taxName }])),
     };
   }
-  private toHeaderPayload(record: OpeningStockHeaderWithVoucher): OpeningStockHeaderPayload {
-    const userName = record.voucherHeader.user?.user_name ?? null;
+  private async loadHeaderUserNames(
+    client: OpeningStockWriteClient,
+    records: OpeningStockHeaderWithVoucher[],
+  ): Promise<UserNameLookup> {
+    const userIds = this.uniqueIds(
+      records.flatMap((record) => [record.voucherHeader.avhUserId, record.oshUserId]),
+    );
+    if (userIds.length === 0) {
+      return new Map();
+    }
+    const users = await client.userMaster.findMany({
+      where: {
+        usrId: {
+          in: userIds,
+        },
+      },
+      select: {
+        usrId: true,
+        usrDisplayName: true,
+        usrLoginName: true,
+      },
+    });
+    return new Map(users.map((user) => [user.usrId, user.usrDisplayName || user.usrLoginName]));
+  }
+  private toHeaderPayload(
+    record: OpeningStockHeaderWithVoucher,
+    userNames: UserNameLookup = new Map(),
+  ): OpeningStockHeaderPayload {
+    const voucherUserName = userNames.get(record.voucherHeader.avhUserId) ?? null;
+    const openingUserName = userNames.get(record.oshUserId) ?? null;
     return {
       avh_voucher_id: record.voucherHeader.avhVoucherId,
       avh_voucher_refno: record.voucherHeader.avhVoucherRefno,
       avh_voucher_type_id: record.voucherHeader.avhVoucherTypeId,
       avh_bill_refno: record.voucherHeader.avhBillRefno,
       avh_user_refno: record.voucherHeader.avhUserRefno,
-      avh_user_name: userName,
+      avh_user_name: voucherUserName,
       avh_bill_date: this.toNullableIsoString(record.voucherHeader.avhBillDate),
       avh_party_id: record.voucherHeader.avhPartyId,
       avh_opposite_ledger_id: record.voucherHeader.avhOppositeLedgerId,
@@ -1192,7 +1231,7 @@ export class OpeningStockService {
       osh_total_qty: toNumber(record.oshTotalQty),
       osh_total_value: toNumber(record.oshTotalValue),
       osh_status: record.oshStatus,
-      osh_user_name: userName,
+      osh_user_name: openingUserName,
       osh_user_id: record.oshUserId,
       osh_session_id: record.oshSessionId,
       osh_device_type: record.oshDeviceType,
