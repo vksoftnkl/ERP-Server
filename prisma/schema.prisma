@@ -3515,77 +3515,76 @@ model CustItemRate {
 // ----- prisma/public/userMaster.prisma -----
 model UserMaster {
   // ── Primary key ────────────────────────────────────────────────────────────
-  usrId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  usrId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("usr_id")
 
   // ── Multi-company ──────────────────────────────────────────────────────────
-  usrCompanyId           String?   @db.Uuid
-  usrBranchId            String?   @db.Uuid
-  usrEmployeeId          String?   @db.Uuid
+  usrCompanyId           String?   @db.Uuid @map("usr_company_id")
+  usrBranchId            String?   @db.Uuid @map("usr_branch_id")
+  usrEmployeeId          String?   @db.Uuid @map("usr_employee_id")
 
   // ── Identity ───────────────────────────────────────────────────────────────
-  usrLoginName           String    @db.VarChar(50)
-  usrDisplayName         String    @db.VarChar(100)
-  usrFullName            String?   @db.VarChar(150)
+  usrLoginName           String    @db.VarChar(50)  @map("usr_login_name")
+  usrDisplayName         String    @db.VarChar(100) @map("usr_display_name")
+  usrFullName            String?   @db.VarChar(150) @map("usr_full_name")
 
   // ── Contact ────────────────────────────────────────────────────────────────
-  usrMobileNo            String?   @db.VarChar(20)
-  usrEmail               String?   @db.VarChar(150)
+  usrMobileNo            String?   @db.VarChar(20)  @map("usr_mobile_no")
+  usrEmail               String?   @db.VarChar(150) @map("usr_email")
 
   // ── Profile ────────────────────────────────────────────────────────────────
-  usrAvatarUrl           String?   @db.VarChar(500)
-  usrTimezone            String    @default("UTC") @db.VarChar(60)
-  usrLanguage            String    @default("en") @db.VarChar(10)
+  usrAvatarUrl           String?   @db.VarChar(500) @map("usr_avatar_url")
+  usrTimezone            String    @default("UTC")  @db.VarChar(60) @map("usr_timezone")
+  usrLanguage            String    @default("en")   @db.VarChar(10) @map("usr_language")
 
   // ── Security ───────────────────────────────────────────────────────────────
-  usrPasswordHash        String
-  usrPinHash             String?
-  usrMustChangePassword  Boolean   @default(false)
-  usrPasswordExpiresOn   DateTime? @db.Timestamptz()
-  usrPasswordChangedOn   DateTime? @db.Timestamptz()
+  usrPasswordHash        String    @map("usr_password_hash")
+  usrPinHash             String?   @map("usr_pin_hash")
+  usrMustChangePassword  Boolean   @default(false)  @map("usr_must_change_password")
+  usrPasswordExpiresOn   DateTime? @db.Timestamptz() @map("usr_password_expires_on")
+  usrPasswordChangedOn   DateTime? @db.Timestamptz() @map("usr_password_changed_on")
 
   // ── User type ──────────────────────────────────────────────────────────────
-  usrType                String?  @default("USER")
+  usrType                String?   @default("USER") @map("usr_type")
 
   // ── Legacy permission flags ────────────────────────────────────────────────
-  usrEditDate            Boolean   @default(false)
-  usrEditEntry           Boolean   @default(false)
-  usrEditRate            Boolean   @default(false)
+  usrEditDate            Boolean   @default(false) @map("usr_edit_date")
+  usrEditEntry           Boolean   @default(false) @map("usr_edit_entry")
+  usrEditRate            Boolean   @default(false) @map("usr_edit_rate")
 
   // ── Login channels ─────────────────────────────────────────────────────────
-  usrDesktopLogin        Boolean   @default(true)
-  usrWebLogin            Boolean   @default(true)
-  usrMobileLogin         Boolean   @default(false)
+  usrDesktopLogin        Boolean   @default(true)  @map("usr_desktop_login")
+  usrWebLogin            Boolean   @default(true)  @map("usr_web_login")
+  usrMobileLogin         Boolean   @default(false) @map("usr_mobile_login")
 
   // ── Status & lockout ───────────────────────────────────────────────────────
-  usrIsActive            Boolean   @default(true)
-  usrIsLocked            Boolean   @default(false)
-  usrFailedLoginCount    Int       @default(0)
-  usrLastFailedLoginOn   DateTime? @db.Timestamptz()
-  usrLockedOn            DateTime? @db.Timestamptz()
-  usrLockedBy            String?   @db.Uuid
-  usrLastLoginOn         DateTime? @db.Timestamptz()
+  usrIsActive            Boolean   @default(true)  @map("usr_is_active")
+  usrIsLocked            Boolean   @default(false) @map("usr_is_locked")
+  usrFailedLoginCount    Int       @default(0)     @map("usr_failed_login_count")
+  usrLastFailedLoginOn   DateTime? @db.Timestamptz() @map("usr_last_failed_login_on")
+  usrLockedOn            DateTime? @db.Timestamptz() @map("usr_locked_on")
+  usrLockedBy            String?   @db.Uuid @map("usr_locked_by")
+  usrLastLoginOn         DateTime? @db.Timestamptz() @map("usr_last_login_on")
 
   // ── Soft delete ────────────────────────────────────────────────────────────
-  usrIsDeleted           Boolean   @default(false)
+  usrIsDeleted           Boolean   @default(false) @map("usr_is_deleted")
 
   // ── Admin notes ────────────────────────────────────────────────────────────
-  usrNotes               String?
+  usrNotes               String?   @map("usr_notes")
 
   // ── Audit ──────────────────────────────────────────────────────────────────
-  usrSyncDate            DateTime? @db.Timestamptz()
-  usrCreatedOn           DateTime  @default(now()) @db.Timestamptz()
-  usrCreatedBy           String?   @db.Uuid
-  usrModifiedOn          DateTime? @db.Timestamptz()
-  usrModifiedBy          String?   @db.Uuid
+  usrSyncDate            DateTime? @db.Timestamptz() @map("usr_sync_date")
+  usrCreatedOn           DateTime  @default(now()) @db.Timestamptz() @map("usr_created_on")
+  usrCreatedBy           String?   @db.Uuid @map("usr_created_by")
+  usrModifiedOn          DateTime? @db.Timestamptz() @map("usr_modified_on")
+  usrModifiedBy          String?   @db.Uuid @map("usr_modified_by")
+
+  // ── Relations ──────────────────────────────────────────────────────────────
   voucherHeaders         AccVoucherHeader[]
   vouchers               AccVoucher[]
   userMenus              UserMenus[]
   deviceMasters          DeviceMaster[]
+
   // ── Indexes ────────────────────────────────────────────────────────────────
-  // Partial unique index on login name for non-deleted users.
-  // Prisma does not support partial indexes natively; define them via a
-  // raw migration SQL file (see note below).
-  //
   //   CREATE UNIQUE INDEX uix_user_login_name
   //       ON public.user_master (usr_login_name)
   //       WHERE usr_is_deleted = false;
@@ -3594,65 +3593,50 @@ model UserMaster {
   //       ON public.user_master (usr_is_active)
   //       WHERE usr_is_deleted = false;
 
-   @@map("user_master")
-   @@schema("public")
+  @@map("user_master")
+  @@schema("public")
 }
 
 // ----- prisma/public/userMenus.prisma -----
 model UserMenus {
   // ── Primary key ────────────────────────────────────────────────────────────
-  umId            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  umId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("um_id")
 
   // ── References ─────────────────────────────────────────────────────────────
-  umUserId        String    @db.Uuid
-  umMenuId        Int
+  umUserId      String    @db.Uuid @map("um_user_id")
+  umMenuId      Int       @map("um_menu_id")
 
   // ── CRUD permissions (admin-assigned) ──────────────────────────────────────
-  umCanView       Boolean   @default(true)
-  umCanCreate     Boolean   @default(false)
-  umCanEdit       Boolean   @default(false)
-  umCanDelete     Boolean   @default(false)
-  umCanPrint      Boolean   @default(false)
-  umCanExport     Boolean   @default(false)
+  umCanView     Boolean   @default(true)  @map("um_can_view")
+  umCanCreate   Boolean   @default(false) @map("um_can_create")
+  umCanEdit     Boolean   @default(false) @map("um_can_edit")
+  umCanDelete   Boolean   @default(false) @map("um_can_delete")
+  umCanPrint    Boolean   @default(false) @map("um_can_print")
+  umCanExport   Boolean   @default(false) @map("um_can_export")
 
   // ── User preferences (user-controlled) ─────────────────────────────────────
-  umVisibility    Boolean   @default(true)
-  umIsFavourite   Boolean   @default(false)
-  umIsPinned      Boolean   @default(false)
-  umSortOrder     Int       @default(0)
+  umVisibility  Boolean   @default(true)  @map("um_visibility")
+  umIsFavourite Boolean   @default(false) @map("um_is_favourite")
+  umIsPinned    Boolean   @default(false) @map("um_is_pinned")
+  umSortOrder   Int       @default(0)     @map("um_sort_order")
 
   // ── Soft delete ────────────────────────────────────────────────────────────
-  umIsDeleted     Boolean   @default(false)
+  umIsDeleted   Boolean   @default(false) @map("um_is_deleted")
 
   // ── Audit ──────────────────────────────────────────────────────────────────
-  umSyncDate      DateTime? @db.Timestamptz()
-  umCreatedOn     DateTime  @default(now()) @db.Timestamptz()
-  umCreatedBy     String    @db.Uuid
-  umModifiedOn    DateTime? @db.Timestamptz()
-  umModifiedBy    String?   @db.Uuid
+  umSyncDate    DateTime? @db.Timestamptz() @map("um_sync_date")
+  umCreatedOn   DateTime  @default(now()) @db.Timestamptz() @map("um_created_on")
+  umCreatedBy   String    @db.Uuid @map("um_created_by")
+  umModifiedOn  DateTime? @db.Timestamptz() @map("um_modified_on")
+  umModifiedBy  String?   @db.Uuid @map("um_modified_by")
 
   // ── Relations ──────────────────────────────────────────────────────────────
-  user            UserMaster  @relation(fields: [umUserId], references: [usrId])
-  menu            Menu        @relation(fields: [umMenuId], references: [menuId])
+  user          UserMaster @relation(fields: [umUserId], references: [usrId])
+  menu          Menu       @relation(fields: [umMenuId], references: [menuId])
 
   // ── Constraints & indexes ──────────────────────────────────────────────────
-  // Composite unique: one row per (user, menu)
   @@unique([umUserId, umMenuId], name: "uq_user_menus_user_menu")
 
-  // Standard indexes (non-partial) — for the partial equivalents,
-  // add the WHERE clauses in a raw migration SQL file:
-  //
-  //   CREATE INDEX ix_user_menus_user_id
-  //       ON public.user_menus (um_user_id)
-  //       WHERE um_is_deleted = false;
-  //
-  //   CREATE INDEX ix_user_menus_user_accessible
-  //       ON public.user_menus (um_user_id, um_can_view, um_visibility)
-  //       WHERE um_is_deleted = false;
-  //
-  //   CREATE INDEX ix_user_menus_favourites
-  //       ON public.user_menus (um_user_id, um_is_favourite, um_is_pinned)
-  //       WHERE um_is_deleted = false;
   @@index([umUserId])
   @@index([umUserId, umCanView, umVisibility])
   @@index([umUserId, umIsFavourite, umIsPinned])

@@ -7,18 +7,6 @@ Project "Project Name" {
   Note: 'Test project description'
 }
 
-Table users {
-  user_id String [pk]
-  user_code String [unique, not null]
-  user_phone String [unique, not null]
-  user_name String [unique, not null]
-  user_password String [not null]
-  created_at DateTime [default: `now()`, not null]
-  updated_at DateTime [not null]
-  voucherHeaders acc_voucher_header [not null]
-  vouchers acc_vouchers [not null]
-}
-
 Table account_groups {
   accGroupId String [pk]
   accGroupCompanyId String
@@ -569,7 +557,7 @@ Table acc_voucher_header {
   company companys [not null]
   branch branch_master [not null]
   party acc_ledger_master [not null]
-  user users [not null]
+  user user_master [not null]
   voucherBills acc_voucher_bills [not null]
   againstVoucherBills acc_voucher_bills [not null]
   voucherCheques acc_voucher_cheques [not null]
@@ -619,7 +607,7 @@ Table acc_vouchers {
   branch branch_master [not null]
   ledger acc_ledger_master [not null]
   oppositeLedger acc_ledger_master [not null]
-  user users [not null]
+  user user_master [not null]
 }
 
 Table acc_voucher_seq {
@@ -2204,6 +2192,8 @@ Table user_master {
   usrCreatedBy String
   usrModifiedOn DateTime
   usrModifiedBy String
+  voucherHeaders acc_voucher_header [not null]
+  vouchers acc_vouchers [not null]
   userMenus user_menus [not null]
   deviceMasters device_master [not null]
 }
@@ -3123,7 +3113,7 @@ Ref: acc_voucher_header.avhBranchId > branch_master.brId
 
 Ref: acc_voucher_header.avhPartyId > acc_ledger_master.ledId
 
-Ref: acc_voucher_header.avhUserId > users.user_id
+Ref: acc_voucher_header.avhUserId > user_master.usrId
 
 Ref: acc_vouchers.avVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
 
@@ -3137,7 +3127,7 @@ Ref: acc_vouchers.avLedgerId > acc_ledger_master.ledId
 
 Ref: acc_vouchers.avOppLedgerId > acc_ledger_master.ledId
 
-Ref: acc_vouchers.avUserId > users.user_id
+Ref: acc_vouchers.avUserId > user_master.usrId
 
 Ref: acc_voucher_seq.vchrTypeId > acc_voucher_types.vchrTypeId
 

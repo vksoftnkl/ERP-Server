@@ -13,7 +13,7 @@ import {
   Query,
   Version,
 } from '@nestjs/common';
-import { User } from '@prisma/client';
+import { UserMaster } from '@prisma/client';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
@@ -94,14 +94,14 @@ export class UsersController {
   async remove(@Query('id', new ParseUUIDPipe()) id: string): Promise<void> {
     await this.usersService.remove(id);
   }
-  private toResponse(user: User): UserResponseDto {
+  private toResponse(user: UserMaster): UserResponseDto {
     return {
-      user_id: user.user_id,
-      user_code: user.user_code,
-      user_phone: user.user_phone,
-      user_name: user.user_name,
-      created_at: user.created_at.toISOString(),
-      updated_at: user.updated_at.toISOString(),
+      usrId: user.usrId,
+      usrLoginName: user.usrLoginName,
+      usrMobileNo: user.usrMobileNo,
+      usrIsActive: user.usrIsActive,
+      usrCreatedOn: user.usrCreatedOn.toISOString(),
+      usrModifiedOn: user.usrModifiedOn?.toISOString() ?? null,
     };
   }
 }

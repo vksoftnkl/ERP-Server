@@ -1,76 +1,75 @@
 model UserMaster {
   // ── Primary key ────────────────────────────────────────────────────────────
-  usrId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  usrId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("usr_id")
 
   // ── Multi-company ──────────────────────────────────────────────────────────
-  usrCompanyId           String?   @db.Uuid
-  usrBranchId            String?   @db.Uuid
-  usrEmployeeId          String?   @db.Uuid
+  usrCompanyId           String?   @db.Uuid @map("usr_company_id")
+  usrBranchId            String?   @db.Uuid @map("usr_branch_id")
+  usrEmployeeId          String?   @db.Uuid @map("usr_employee_id")
 
   // ── Identity ───────────────────────────────────────────────────────────────
-  usrLoginName           String    @db.VarChar(50)
-  usrDisplayName         String    @db.VarChar(100)
-  usrFullName            String?   @db.VarChar(150)
+  usrLoginName           String    @db.VarChar(50)  @map("usr_login_name")
+  usrDisplayName         String    @db.VarChar(100) @map("usr_display_name")
+  usrFullName            String?   @db.VarChar(150) @map("usr_full_name")
 
   // ── Contact ────────────────────────────────────────────────────────────────
-  usrMobileNo            String?   @db.VarChar(20)
-  usrEmail               String?   @db.VarChar(150)
+  usrMobileNo            String?   @db.VarChar(20)  @map("usr_mobile_no")
+  usrEmail               String?   @db.VarChar(150) @map("usr_email")
 
   // ── Profile ────────────────────────────────────────────────────────────────
-  usrAvatarUrl           String?   @db.VarChar(500)
-  usrTimezone            String    @default("UTC") @db.VarChar(60)
-  usrLanguage            String    @default("en") @db.VarChar(10)
+  usrAvatarUrl           String?   @db.VarChar(500) @map("usr_avatar_url")
+  usrTimezone            String    @default("UTC")  @db.VarChar(60) @map("usr_timezone")
+  usrLanguage            String    @default("en")   @db.VarChar(10) @map("usr_language")
 
   // ── Security ───────────────────────────────────────────────────────────────
-  usrPasswordHash        String
-  usrPinHash             String?
-  usrMustChangePassword  Boolean   @default(false)
-  usrPasswordExpiresOn   DateTime? @db.Timestamptz()
-  usrPasswordChangedOn   DateTime? @db.Timestamptz()
+  usrPasswordHash        String    @map("usr_password_hash")
+  usrPinHash             String?   @map("usr_pin_hash")
+  usrMustChangePassword  Boolean   @default(false)  @map("usr_must_change_password")
+  usrPasswordExpiresOn   DateTime? @db.Timestamptz() @map("usr_password_expires_on")
+  usrPasswordChangedOn   DateTime? @db.Timestamptz() @map("usr_password_changed_on")
 
   // ── User type ──────────────────────────────────────────────────────────────
-  usrType                String?  @default("USER")
+  usrType                String?   @default("USER") @map("usr_type")
 
   // ── Legacy permission flags ────────────────────────────────────────────────
-  usrEditDate            Boolean   @default(false)
-  usrEditEntry           Boolean   @default(false)
-  usrEditRate            Boolean   @default(false)
+  usrEditDate            Boolean   @default(false) @map("usr_edit_date")
+  usrEditEntry           Boolean   @default(false) @map("usr_edit_entry")
+  usrEditRate            Boolean   @default(false) @map("usr_edit_rate")
 
   // ── Login channels ─────────────────────────────────────────────────────────
-  usrDesktopLogin        Boolean   @default(true)
-  usrWebLogin            Boolean   @default(true)
-  usrMobileLogin         Boolean   @default(false)
+  usrDesktopLogin        Boolean   @default(true)  @map("usr_desktop_login")
+  usrWebLogin            Boolean   @default(true)  @map("usr_web_login")
+  usrMobileLogin         Boolean   @default(false) @map("usr_mobile_login")
 
   // ── Status & lockout ───────────────────────────────────────────────────────
-  usrIsActive            Boolean   @default(true)
-  usrIsLocked            Boolean   @default(false)
-  usrFailedLoginCount    Int       @default(0)
-  usrLastFailedLoginOn   DateTime? @db.Timestamptz()
-  usrLockedOn            DateTime? @db.Timestamptz()
-  usrLockedBy            String?   @db.Uuid
-  usrLastLoginOn         DateTime? @db.Timestamptz()
+  usrIsActive            Boolean   @default(true)  @map("usr_is_active")
+  usrIsLocked            Boolean   @default(false) @map("usr_is_locked")
+  usrFailedLoginCount    Int       @default(0)     @map("usr_failed_login_count")
+  usrLastFailedLoginOn   DateTime? @db.Timestamptz() @map("usr_last_failed_login_on")
+  usrLockedOn            DateTime? @db.Timestamptz() @map("usr_locked_on")
+  usrLockedBy            String?   @db.Uuid @map("usr_locked_by")
+  usrLastLoginOn         DateTime? @db.Timestamptz() @map("usr_last_login_on")
 
   // ── Soft delete ────────────────────────────────────────────────────────────
-  usrIsDeleted           Boolean   @default(false)
+  usrIsDeleted           Boolean   @default(false) @map("usr_is_deleted")
 
   // ── Admin notes ────────────────────────────────────────────────────────────
-  usrNotes               String?
+  usrNotes               String?   @map("usr_notes")
 
   // ── Audit ──────────────────────────────────────────────────────────────────
-  usrSyncDate            DateTime? @db.Timestamptz()
-  usrCreatedOn           DateTime  @default(now()) @db.Timestamptz()
-  usrCreatedBy           String?   @db.Uuid
-  usrModifiedOn          DateTime? @db.Timestamptz()
-  usrModifiedBy          String?   @db.Uuid
+  usrSyncDate            DateTime? @db.Timestamptz() @map("usr_sync_date")
+  usrCreatedOn           DateTime  @default(now()) @db.Timestamptz() @map("usr_created_on")
+  usrCreatedBy           String?   @db.Uuid @map("usr_created_by")
+  usrModifiedOn          DateTime? @db.Timestamptz() @map("usr_modified_on")
+  usrModifiedBy          String?   @db.Uuid @map("usr_modified_by")
+
+  // ── Relations ──────────────────────────────────────────────────────────────
   voucherHeaders         AccVoucherHeader[]
   vouchers               AccVoucher[]
   userMenus              UserMenus[]
   deviceMasters          DeviceMaster[]
+
   // ── Indexes ────────────────────────────────────────────────────────────────
-  // Partial unique index on login name for non-deleted users.
-  // Prisma does not support partial indexes natively; define them via a
-  // raw migration SQL file (see note below).
-  //
   //   CREATE UNIQUE INDEX uix_user_login_name
   //       ON public.user_master (usr_login_name)
   //       WHERE usr_is_deleted = false;
@@ -79,6 +78,6 @@ model UserMaster {
   //       ON public.user_master (usr_is_active)
   //       WHERE usr_is_deleted = false;
 
-   @@map("user_master")
-   @@schema("public")
+  @@map("user_master")
+  @@schema("public")
 }

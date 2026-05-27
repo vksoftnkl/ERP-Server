@@ -1260,18 +1260,18 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
     }
   }
   private async getUserNameByIds(userIds: readonly string[]): Promise<Map<string, string>> {
-    const users = await this.prisma.user.findMany({
+    const users = await this.prisma.userMaster.findMany({
       where: {
-        user_id: {
+        usrId: {
           in: [...userIds],
         },
       },
       select: {
-        user_id: true,
-        user_name: true,
+        usrId: true,
+        usrDisplayName: true,
       },
     });
-    return new Map(users.map((user) => [user.user_id, user.user_name]));
+    return new Map(users.map((user) => [user.usrId, user.usrDisplayName]));
   }
   private async getBranchNameByIds(branchIds: readonly string[]): Promise<Map<string, string>> {
     const branches = await this.prisma.branchMaster.findMany({
