@@ -32,6 +32,7 @@ import { ItemExceptionFilter } from './item-exception.filter';
 import { ItemsMasterService } from './items-master.service';
 import { ItemPayload, ItemSuccessResponse } from './types/item-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Items')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -41,7 +42,7 @@ import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 export class ItemsMasterController {
   constructor(private readonly itemsMasterService: ItemsMasterService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item (by item_id presence)' })
   @ApiCreatedResponse({ type: ItemSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemErrorResponseDto })
@@ -56,7 +57,7 @@ export class ItemsMasterController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item by id' })
   @ApiQuery({ name: 'item_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSuccessSingleDto })
@@ -73,7 +74,7 @@ export class ItemsMasterController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item by id' })
   @ApiQuery({ name: 'item_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSuccessDeleteDto })

@@ -32,6 +32,7 @@ import { SaveItemTaxDto } from './dto/save-item-tax.dto';
 import { ItemTaxExceptionFilter } from './item-tax-exception.filter';
 import { ItemsTaxMasterService } from './items-tax-master.service';
 import { ItemTaxPayload, ItemTaxSuccessResponse } from './types/item-tax-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Item Taxes')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -41,7 +42,7 @@ import { ItemTaxPayload, ItemTaxSuccessResponse } from './types/item-tax-api.typ
 export class ItemsTaxMasterController {
   constructor(private readonly itemsTaxMasterService: ItemsTaxMasterService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item tax slab (by tax_id presence)' })
   @ApiCreatedResponse({ type: ItemTaxSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemTaxErrorResponseDto })
@@ -60,7 +61,7 @@ export class ItemsTaxMasterController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item tax by id' })
   @ApiQuery({ name: 'tax_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxSuccessSingleDto })
@@ -77,7 +78,7 @@ export class ItemsTaxMasterController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item tax by id' })
   @ApiQuery({ name: 'tax_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxSuccessDeleteDto })

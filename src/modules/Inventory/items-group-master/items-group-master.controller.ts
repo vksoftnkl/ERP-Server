@@ -37,6 +37,7 @@ import { ItemGroupExceptionFilter } from './item-group-exception.filter';
 import { ItemsGroupMasterService } from './items-group-master.service';
 import { ItemGroupPayload, ItemGroupSuccessResponse } from './types/item-group-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 type UploadedPhotoFile = {
   buffer: Buffer;
@@ -52,7 +53,7 @@ export class ItemsGroupMasterController {
   constructor(private readonly itemsGroupMasterService: ItemsGroupMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('itg_photo'))
   @ApiConsumes('application/json', 'multipart/form-data')
   @ApiBody({ type: SaveItemGroupDto })
@@ -78,7 +79,7 @@ export class ItemsGroupMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item group by id' })
   @ApiQuery({ name: 'itg_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemGroupSuccessSingleDto })
@@ -97,7 +98,7 @@ export class ItemsGroupMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item group by id' })
   @ApiQuery({ name: 'itg_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemGroupSuccessDeleteDto })

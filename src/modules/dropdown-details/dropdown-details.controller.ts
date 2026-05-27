@@ -27,6 +27,7 @@ import {
   DropdownDetailPayload,
   DropdownDetailSuccessResponse,
 } from './types/dropdown-detail-api.types';
+import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Dropdown Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -36,7 +37,7 @@ import {
 export class DropdownDetailsController {
   constructor(private readonly dropdownDetailsService: DropdownDetailsService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update dropdown details (by dropdown_id presence)' })
   @ApiCreatedResponse({ type: DropdownDetailSuccessSingleDto })
   @ApiBadRequestResponse({ type: DropdownDetailErrorResponseDto })
@@ -54,7 +55,7 @@ export class DropdownDetailsController {
     };
   }
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List dropdown details with filter/search/pagination' })
   @ApiOkResponse({ type: DropdownDetailSuccessListDto })
   @ApiBadRequestResponse({ type: DropdownDetailErrorResponseDto })
@@ -70,7 +71,7 @@ export class DropdownDetailsController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get dropdown details by id' })
   @ApiQuery({ name: 'dropdown_id', description: 'Numeric dropdown id' })
   @ApiOkResponse({ type: DropdownDetailSuccessSingleDto })
@@ -87,7 +88,7 @@ export class DropdownDetailsController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Delete dropdown details by id' })
   @ApiQuery({ name: 'dropdown_id', description: 'Numeric dropdown id' })
   @ApiOkResponse({ type: DropdownDetailSuccessDeleteDto })

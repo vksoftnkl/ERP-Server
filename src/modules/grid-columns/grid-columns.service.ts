@@ -268,6 +268,10 @@ export class GridColumnsService {
     if (this.hasOwnProperty(saveGridColumnDto, 'grid_column_notes')) {
       data.gridColumnNotes = saveGridColumnDto.grid_column_notes;
     }
+
+    if (this.hasOwnProperty(saveGridColumnDto, 'grid_column_sql_field_name')) {
+      data.gridColumnSqlFieldName = saveGridColumnDto.grid_column_sql_field_name;
+    }
   }
 
   private toPayload(record: GridColumn): GridColumnPayload {
@@ -288,6 +292,7 @@ export class GridColumnsService {
       grid_column_data_type: record.gridColumnDataType,
       grid_column_color: record.gridColumnColor,
       grid_column_notes: record.gridColumnNotes,
+      grid_column_sql_field_name: record.gridColumnSqlFieldName,
       grid_column_is_deleted: record.gridColumnIsDeleted,
     };
   }

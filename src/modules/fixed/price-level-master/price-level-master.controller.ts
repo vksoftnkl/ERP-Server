@@ -21,6 +21,7 @@ import {
   PriceLevelMasterPayload,
   PriceLevelMasterSuccessResponse,
 } from './types/price-level-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Price Level Master')
 @ApiBearerAuth('access-token')
@@ -31,7 +32,7 @@ export class PriceLevelMasterController {
   constructor(private readonly priceLevelMasterService: PriceLevelMasterService) {}
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'Get price levels from fixed.price_levels by priceLvlId or filters. Defaults to active and non-deleted.',

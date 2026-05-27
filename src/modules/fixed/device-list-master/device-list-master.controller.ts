@@ -39,6 +39,7 @@ import {
   DeviceListMasterPayload,
   DeviceListMasterSuccessResponse,
 } from './types/device-list-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Device List Master')
 @ApiBearerAuth('access-token')
@@ -50,7 +51,7 @@ export class DeviceListMasterController {
   constructor(private readonly deviceListMasterService: DeviceListMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update device (by devId presence)' })
   @ApiCreatedResponse({ type: DeviceListMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: DeviceListMasterErrorResponseDto })
@@ -71,7 +72,7 @@ export class DeviceListMasterController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List devices with filter/search/pagination' })
   @ApiOkResponse({ type: DeviceListMasterSuccessListDto })
   @ApiBadRequestResponse({ type: DeviceListMasterErrorResponseDto })
@@ -92,7 +93,7 @@ export class DeviceListMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get device by id' })
   @ApiQuery({ name: 'devId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: DeviceListMasterSuccessSingleDto })
@@ -111,7 +112,7 @@ export class DeviceListMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete device by id' })
   @ApiQuery({ name: 'devId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: DeviceListMasterSuccessDeleteDto })

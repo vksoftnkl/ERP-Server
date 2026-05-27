@@ -32,6 +32,7 @@ import { SaveUserAdministrationDto } from './dto/save-user-administration.dto';
 import { UserAdministrationExceptionFilter } from './user-administration-exception.filter';
 import { UserAdministrationService } from './user-administration.service';
 import { UserAdminPayload, UserAdminSuccessResponse } from './types/user-administration-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('User Administration')
 @ApiBearerAuth('access-token')
@@ -43,7 +44,7 @@ export class UserAdministrationController {
   constructor(private readonly userAdministrationService: UserAdministrationService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update user with menu permissions (by usrId presence)',
     description:
@@ -66,7 +67,7 @@ export class UserAdministrationController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get user by id including all active menu permissions' })
   @ApiQuery({ name: 'usrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserAdminSuccessSingleDto })
@@ -84,7 +85,7 @@ export class UserAdministrationController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete user and all their menu assignments by usrId' })
   @ApiQuery({ name: 'usrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserAdminSuccessDeleteDto })

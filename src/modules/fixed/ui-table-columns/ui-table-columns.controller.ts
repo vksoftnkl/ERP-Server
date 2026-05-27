@@ -29,6 +29,7 @@ import {
   UiTableColumnPayload,
   UiTableColumnSuccessResponse,
 } from './types/ui-table-column-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('UI Table Columns')
 @ApiBearerAuth('access-token')
@@ -40,7 +41,7 @@ export class UiTableColumnsController {
   constructor(private readonly uiTableColumnsService: UiTableColumnsService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update UI table column (by uiTblClmId presence)' })
   @ApiCreatedResponse({ type: UiTableColumnSuccessSingleDto })
   @ApiBadRequestResponse({ type: UiTableColumnErrorResponseDto })
@@ -61,7 +62,7 @@ export class UiTableColumnsController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List UI table columns with filter/search/pagination' })
   @ApiOkResponse({ type: UiTableColumnSuccessListDto })
   @ApiBadRequestResponse({ type: UiTableColumnErrorResponseDto })
@@ -80,7 +81,7 @@ export class UiTableColumnsController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get UI table column by id' })
   @ApiQuery({ name: 'uiTblClmId', description: 'Numeric UI table column id', example: '1' })
   @ApiOkResponse({ type: UiTableColumnSuccessSingleDto })
@@ -99,7 +100,7 @@ export class UiTableColumnsController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete UI table column by id' })
   @ApiQuery({ name: 'uiTblClmId', description: 'Numeric UI table column id', example: '1' })
   @ApiOkResponse({ type: UiTableColumnSuccessDeleteDto })

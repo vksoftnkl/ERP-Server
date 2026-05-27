@@ -28,7 +28,7 @@ import {
   ItemPriceDetailPayload,
   ItemPriceDetailSuccessResponse,
 } from 'src/modules/Inventory/item-price-details/types/item-price-detail-api.types';
-
+import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Item Price Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -38,9 +38,8 @@ import {
 @UseFilters(ItemPriceDetailExceptionFilter)
 export class ItemPriceDetailsController {
   constructor(private readonly itemPriceDetailsService: ItemPriceDetailsService) { }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item with joined item price and item tax details' })
   @ApiQuery({
     name: 'item_id',
@@ -56,7 +55,6 @@ export class ItemPriceDetailsController {
       type: 'query',
     })) as GetItemPriceDetailQueryDto;
     const data = await this.itemPriceDetailsService.getByItemId(dto.item_id);
-
     return {
       success: true,
       message: 'Item price details fetched successfully',

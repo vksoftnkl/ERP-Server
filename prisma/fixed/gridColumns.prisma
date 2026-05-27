@@ -1,33 +1,26 @@
 
 model GridColumn {
   gridSerialId              BigInt   @id @default(autoincrement()) @map("grid_serialid")
-
   gridId                    BigInt   @map("grid_id")
   grid                      GridDetails @relation(fields: [gridId], references: [gridId], onDelete: Cascade, onUpdate: Cascade)
-
   gridColumnNumber          Int      @map("grid_column_number")
   gridColumnName            String   @db.Text @map("grid_column_name")
-
   gridColumnWidth           Decimal? @db.Decimal(12, 2) @map("grid_column_width")
   gridColumnAlignment       String?  @db.Text @map("grid_column_alignment")
   gridColumnVisibility      Boolean  @default(true)  @map("grid_column_visibility")
   gridColumnFilter          Boolean  @default(false) @map("grid_column_filter")
-
   gridColumnCondition       String?  @db.Text @map("grid_column_condition")
   gridColumnConditionColor  String?  @db.Text @map("grid_column_condition_color")
-
   gridColumnGroup           Boolean  @default(false) @map("grid_column_group")
   gridColumnTotal           Boolean  @default(false) @map("grid_column_total")
-
   gridColumnDataType        String?  @db.Text @map("grid_column_data_type")
   gridColumnColor           String?  @db.Text @map("grid_column_color")
   gridColumnNotes           String?  @db.Text @map("grid_column_notes")
-
   gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
   gridColumnPosition        Decimal? @db.Decimal(12, 2) @map("gridColumn_position")
+  gridColumnSqlFieldName    String?  @db.Text@map("gridColumn_sql_field_name")
   @@map("grid_columns")
   @@schema("fixed")
-
   @@index([gridId], map: "idx_grid_columns_grid_id")
   @@index([gridId, gridColumnFilter], map: "idx_grid_columns_filter")
   @@index([gridId, gridColumnIsDeleted], map: "idx_grid_columns_deleted")

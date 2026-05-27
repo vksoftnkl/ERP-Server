@@ -35,6 +35,7 @@ import {
   LedgerBankAccountPayload,
   LedgerBankAccountSuccessResponse,
 } from './types/ledger-bank-account-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Ledger Bank Accounts')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class LedgerBankAccountController {
   constructor(private readonly ledgerBankAccountService: LedgerBankAccountService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update ledger bank account (by lbaId presence)' })
   @ApiCreatedResponse({ type: LedgerBankAccountSuccessSingleDto })
   @ApiBadRequestResponse({ type: LedgerBankAccountErrorResponseDto })
@@ -67,7 +68,7 @@ export class LedgerBankAccountController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get ledger bank account by id' })
   @ApiQuery({ name: 'lbaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerBankAccountSuccessSingleDto })
@@ -86,7 +87,7 @@ export class LedgerBankAccountController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete ledger bank account by id' })
   @ApiQuery({ name: 'lbaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerBankAccountSuccessDeleteDto })

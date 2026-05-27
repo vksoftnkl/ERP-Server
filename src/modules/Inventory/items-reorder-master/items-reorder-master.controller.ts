@@ -49,6 +49,7 @@ import {
   validateDto,
   validateSingleOrArrayDto,
 } from 'src/common/utils/request-payload-validation.util';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Item Reorders')
 @ApiBearerAuth('access-token')
@@ -66,7 +67,7 @@ export class ItemsReorderMasterController {
   constructor(private readonly itemsReorderMasterService: ItemsReorderMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item reorder (by ir_id presence)' })
   @ApiBody({
     schema: {
@@ -102,7 +103,7 @@ export class ItemsReorderMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item reorder by id' })
   @ApiQuery({ name: 'ir_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemReorderSuccessSingleDto })
@@ -121,7 +122,7 @@ export class ItemsReorderMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item reorder by id' })
   @ApiQuery({ name: 'ir_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({

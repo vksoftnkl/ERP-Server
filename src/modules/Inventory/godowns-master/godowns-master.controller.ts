@@ -34,7 +34,7 @@ import { GodownExceptionFilter } from './godown-exception.filter';
 import { GodownsMasterService } from './godowns-master.service';
 import { GodownPayload, GodownSuccessResponse } from './types/godown-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
-
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Godowns')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -43,9 +43,8 @@ import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 @UseFilters(GodownExceptionFilter)
 export class GodownsMasterController {
   constructor(private readonly godownsMasterService: GodownsMasterService) {}
-
   @Post()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update godown location (by gdl_id presence in request body)',
   })
@@ -60,9 +59,7 @@ export class GodownsMasterController {
   ): Promise<GodownSuccessResponse<GodownPayload>> {
     const isUpdate = Boolean(saveGodownDto.gdl_id);
     response.status(isUpdate ? HttpStatus.OK : HttpStatus.CREATED);
-
     const data = await this.godownsMasterService.save(saveGodownDto);
-
     return {
       success: true,
       message: isUpdate
@@ -71,9 +68,8 @@ export class GodownsMasterController {
       data,
     };
   }
-
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update godown location (by gdl_id presence in request body)',
   })
@@ -88,9 +84,8 @@ export class GodownsMasterController {
   ): Promise<GodownSuccessResponse<GodownPayload>> {
     return this.save(saveGodownDto, response);
   }
-
   @Get()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Get godown location by gdl_id query parameter',
   })
@@ -107,9 +102,8 @@ export class GodownsMasterController {
       data,
     };
   }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get godown location by gdl_id query parameter' })
   @ApiOkResponse({ type: GodownSuccessSingleDto })
   @ApiBadRequestResponse({ type: GodownErrorResponseDto })
@@ -118,16 +112,14 @@ export class GodownsMasterController {
     @Query() queryDto: DeleteGodownQueryDto,
   ): Promise<GodownSuccessResponse<GodownPayload>> {
     const data = await this.godownsMasterService.getById(queryDto.gdl_id);
-
     return {
       success: true,
       message: 'Godown location fetched successfully',
       data,
     };
   }
-
   @Delete()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete godown location by gdl_id query parameter' })
   @ApiOkResponse({ type: GodownSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GodownErrorResponseDto })
@@ -136,16 +128,14 @@ export class GodownsMasterController {
     @Query() queryDto: DeleteGodownQueryDto,
   ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: true }>> {
     const data = await this.godownsMasterService.softDelete(queryDto.gdl_id);
-
     return {
       success: true,
       message: 'Godown location deleted successfully',
       data,
     };
   }
-
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete godown location by gdl_id query parameter' })
   @ApiOkResponse({ type: GodownSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GodownErrorResponseDto })

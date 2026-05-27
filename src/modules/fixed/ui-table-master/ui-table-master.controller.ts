@@ -29,6 +29,7 @@ import {
   UiTableMasterPayload,
   UiTableMasterSuccessResponse,
 } from './types/ui-table-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('UI Table Master')
 @ApiBearerAuth('access-token')
@@ -40,7 +41,7 @@ export class UiTableMasterController {
   constructor(private readonly uiTableMasterService: UiTableMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update UI table (by uiTblId presence)' })
   @ApiCreatedResponse({ type: UiTableMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
@@ -61,7 +62,7 @@ export class UiTableMasterController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List UI tables with filter/search/pagination' })
   @ApiOkResponse({ type: UiTableMasterSuccessListDto })
   @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
@@ -80,7 +81,7 @@ export class UiTableMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get UI table by id' })
   @ApiQuery({ name: 'uiTblId', description: 'Numeric UI table id', example: '1' })
   @ApiOkResponse({ type: UiTableMasterSuccessSingleDto })
@@ -99,7 +100,7 @@ export class UiTableMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete UI table by id' })
   @ApiQuery({ name: 'uiTblId', description: 'Numeric UI table id', example: '1' })
   @ApiOkResponse({ type: UiTableMasterSuccessDeleteDto })

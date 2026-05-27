@@ -13,13 +13,14 @@ import { AuthService } from './auth.service';
 import { LoginAuthDto } from './dto/login-auth.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
   @Public()
   @Post('login')
-  @Version('1')
+  @Version(API_VERSION)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login user and return access token' })
   @ApiOkResponse({ type: LoginResponseDto })
@@ -36,7 +37,7 @@ export class AuthController {
   }
   @Public()
   @Post('refresh')
-  @Version('1')
+  @Version(API_VERSION)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token' })
   @ApiOkResponse({ type: LoginResponseDto })

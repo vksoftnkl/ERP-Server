@@ -32,6 +32,7 @@ import {
 import { UnitExceptionFilter } from './unit-exception.filter';
 import { UnitPayload, UnitSuccessResponse } from './types/unit-api.types';
 import { UnitsMasterService } from './units-master.service';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Units')
 @ApiBearerAuth('access-token')
@@ -43,7 +44,7 @@ export class UnitsMasterController {
   constructor(private readonly unitsMasterService: UnitsMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update unit (by unit_id presence)' })
   @ApiCreatedResponse({ type: UnitSuccessSingleDto })
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
@@ -60,7 +61,7 @@ export class UnitsMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get unit by id' })
   @ApiQuery({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UnitSuccessSingleDto })
@@ -79,7 +80,7 @@ export class UnitsMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete unit by id' })
   @ApiQuery({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UnitSuccessDeleteDto })

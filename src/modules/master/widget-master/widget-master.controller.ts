@@ -39,6 +39,7 @@ import {
 } from './types/widget-master-api.types';
 import { WidgetMasterExceptionFilter } from './widget-master-exception.filter';
 import { WidgetMasterService } from './widget-master.service';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Widget Master')
 @ApiBearerAuth('access-token')
@@ -50,7 +51,7 @@ export class WidgetMasterController {
   constructor(private readonly widgetMasterService: WidgetMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update widget (by widgetNo presence)' })
   @ApiCreatedResponse({ type: WidgetMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
@@ -70,7 +71,7 @@ export class WidgetMasterController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List widgets with group/type filter, search, and pagination' })
   @ApiOkResponse({ type: WidgetMasterSuccessListDto })
   @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
@@ -88,7 +89,7 @@ export class WidgetMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get widget by id, optionally constrained by widgetType' })
   @ApiQuery({ name: 'widgetNo', type: Number, example: 1 })
   @ApiQuery({
@@ -115,7 +116,7 @@ export class WidgetMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Delete widget by id' })
   @ApiQuery({ name: 'widgetNo', type: Number, example: 1 })
   @ApiOkResponse({ type: WidgetMasterSuccessDeleteDto })

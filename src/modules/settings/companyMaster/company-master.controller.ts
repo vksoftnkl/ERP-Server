@@ -35,6 +35,7 @@ import {
   CompanyMasterPayload,
   CompanyMasterSuccessResponse,
 } from './types/company-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Company Master')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class CompanyMasterController {
   constructor(private readonly companyMasterService: CompanyMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update company (by compId presence)' })
   @ApiCreatedResponse({ type: CompanyMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: CompanyMasterErrorResponseDto })
@@ -67,7 +68,7 @@ export class CompanyMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get company by id' })
   @ApiQuery({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: CompanyMasterSuccessSingleDto })
@@ -86,7 +87,7 @@ export class CompanyMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete company by id' })
   @ApiQuery({ name: 'compId', type: String, example: '018e1b2c-3d4e-7f8a-9b0c-1d2e3f4a5b6c' })
   @ApiOkResponse({ type: CompanyMasterSuccessDeleteDto })

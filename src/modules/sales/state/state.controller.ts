@@ -35,6 +35,7 @@ import {
   StatePayload,
   StateSuccessResponse,
 } from './types/state-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('States')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class StateController {
   constructor(private readonly stateService: StateService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update state (by stmId presence)' })
   @ApiCreatedResponse({ type: StateSuccessSingleDto })
   @ApiBadRequestResponse({ type: StateErrorResponseDto })
@@ -63,7 +64,7 @@ export class StateController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get state by id' })
   @ApiQuery({ name: 'stmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: StateSuccessSingleDto })
@@ -82,7 +83,7 @@ export class StateController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete state by id' })
   @ApiQuery({ name: 'stmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: StateSuccessDeleteDto })

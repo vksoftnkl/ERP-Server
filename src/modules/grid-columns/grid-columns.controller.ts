@@ -28,6 +28,7 @@ import {
   GridColumnPayload,
   GridColumnSuccessResponse,
 } from './types/grid-column-api.types';
+import { API_VERSION } from '../../common/constants/api-version';
 
 @ApiTags('Grid Columns')
 @ApiBearerAuth('access-token')
@@ -39,7 +40,7 @@ export class GridColumnsController {
   constructor(private readonly gridColumnsService: GridColumnsService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update grid column (by grid_serialid presence)' })
   @ApiCreatedResponse({ type: GridColumnSuccessSingleDto })
   @ApiBadRequestResponse({ type: GridColumnErrorResponseDto })
@@ -60,7 +61,7 @@ export class GridColumnsController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List grid columns with filter/search/pagination' })
   @ApiOkResponse({ type: GridColumnSuccessListDto })
   @ApiBadRequestResponse({ type: GridColumnErrorResponseDto })
@@ -78,7 +79,7 @@ export class GridColumnsController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get grid column by id' })
   @ApiQuery({ name: 'grid_serialid', description: 'Numeric grid column id' })
   @ApiOkResponse({ type: GridColumnSuccessSingleDto })
@@ -97,7 +98,7 @@ export class GridColumnsController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete grid column by id' })
   @ApiQuery({ name: 'grid_serialid', description: 'Numeric grid column id' })
   @ApiOkResponse({ type: GridColumnSuccessDeleteDto })

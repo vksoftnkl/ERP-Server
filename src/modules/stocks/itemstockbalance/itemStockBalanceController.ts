@@ -24,6 +24,7 @@ import {
   ItemStockBalancePayload,
   ItemStockBalanceSuccessResponse,
 } from './types/item-stock-balance-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Item Stock Balance')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -33,7 +34,7 @@ import {
 export class ItemStockBalanceController {
   constructor(private readonly itemStockBalanceService: ItemStockBalanceService) {}
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'Get item stock balance by exact acc year, company, branch, godown, item, and unit scope',
@@ -53,7 +54,7 @@ export class ItemStockBalanceController {
   }
 
   @Get('batch-options')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'Search item batch stock options by exact acc year, company, branch, godown, item, and unit scope',

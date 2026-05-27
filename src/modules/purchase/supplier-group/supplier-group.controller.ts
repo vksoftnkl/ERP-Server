@@ -35,6 +35,7 @@ import {
   SupplierGroupPayload,
   SupplierGroupSuccessResponse,
 } from './types/supplier-group-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Supplier Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -44,7 +45,7 @@ import {
 export class SupplierGroupController {
   constructor(private readonly supplierGroupService: SupplierGroupService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update supplier group (by spgId presence)' })
   @ApiCreatedResponse({ type: SupplierGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: SupplierGroupErrorResponseDto })
@@ -63,7 +64,7 @@ export class SupplierGroupController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get supplier group by id' })
   @ApiQuery({ name: 'spgId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierGroupSuccessSingleDto })
@@ -80,7 +81,7 @@ export class SupplierGroupController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete supplier group by id' })
   @ApiQuery({ name: 'spgId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierGroupSuccessDeleteDto })

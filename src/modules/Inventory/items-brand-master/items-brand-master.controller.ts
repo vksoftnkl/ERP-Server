@@ -37,6 +37,7 @@ import { ItemBrandExceptionFilter } from './item-brand-exception.filter';
 import { ItemsBrandMasterService } from './items-brand-master.service';
 import { ItemBrandPayload, ItemBrandSuccessResponse } from './types/item-brand-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { API_VERSION } from '../../../common/constants/api-version';
 type UploadedPhotoFile = {
   buffer: Buffer;
 };
@@ -49,7 +50,7 @@ type UploadedPhotoFile = {
 export class ItemsBrandMasterController {
   constructor(private readonly itemsBrandMasterService: ItemsBrandMasterService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('brand_photo'))
   @ApiConsumes('application/json', 'multipart/form-data')
   @ApiBody({ type: SaveItemBrandDto })
@@ -73,7 +74,7 @@ export class ItemsBrandMasterController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item brand by id' })
   @ApiQuery({ name: 'brand_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemBrandSuccessSingleDto })
@@ -90,7 +91,7 @@ export class ItemsBrandMasterController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item brand by id' })
   @ApiQuery({ name: 'brand_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemBrandSuccessDeleteDto })

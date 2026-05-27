@@ -60,6 +60,9 @@ export class GridColumnPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   grid_column_notes!: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_sql_field_name!: string | null;
+
   @ApiProperty()
   grid_column_is_deleted!: boolean;
 }

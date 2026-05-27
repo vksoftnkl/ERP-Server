@@ -35,6 +35,7 @@ import {
   CompanyGroupMasterPayload,
   CompanyGroupMasterSuccessResponse,
 } from './types/company-group-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Company Group Master')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class CompanyGroupMasterController {
   constructor(private readonly companyGroupMasterService: CompanyGroupMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update company group (by cogGroupId presence)' })
   @ApiCreatedResponse({ type: CompanyGroupMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: CompanyGroupMasterErrorResponseDto })
@@ -67,7 +68,7 @@ export class CompanyGroupMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get company group by id' })
   @ApiQuery({ name: 'cogGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CompanyGroupMasterSuccessSingleDto })
@@ -86,7 +87,7 @@ export class CompanyGroupMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete company group by id' })
   @ApiQuery({ name: 'cogGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CompanyGroupMasterSuccessDeleteDto })

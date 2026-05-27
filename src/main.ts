@@ -1,3 +1,4 @@
+import './env.preload';
 import 'reflect-metadata';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -155,7 +156,7 @@ async function bootstrap(): Promise<void> {
   );
   app.enableVersioning({
     type: VersioningType.URI,
-    defaultVersion: '1',
+    defaultVersion: process.env.API_VERSION ?? '1',
   });
   const rawApiPrefix = configService.get<string>('app.apiPrefix', 'api');
   const apiPrefix = rawApiPrefix.replace(/^\/+|\/+$/g, '');

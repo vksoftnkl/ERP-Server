@@ -32,6 +32,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { UsersService } from './users.service';
+import { API_VERSION } from '../../common/constants/api-version';
 @Public()
 @ApiTags('Users')
 @CacheTTL(0)
@@ -39,7 +40,7 @@ import { UsersService } from './users.service';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
   @Post()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create user' })
   @ApiCreatedResponse({ type: UserResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
@@ -49,7 +50,7 @@ export class UsersController {
     return this.toResponse(user);
   }
   @Get()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List users' })
   @ApiOkResponse({ type: UserResponseDto, isArray: true })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
@@ -58,7 +59,7 @@ export class UsersController {
     return users.map((user) => this.toResponse(user));
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get user by id' })
   @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserResponseDto })
@@ -69,7 +70,7 @@ export class UsersController {
     return this.toResponse(user);
   }
   @Patch(':id')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Update user by id' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOkResponse({ type: UserResponseDto })
@@ -84,7 +85,7 @@ export class UsersController {
     return this.toResponse(user);
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete user by id' })
   @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })

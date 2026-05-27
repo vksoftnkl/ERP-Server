@@ -39,6 +39,7 @@ import {
   PhysicalStockSuccessResponse,
 } from './types/physical-stock-response.types';
 import { ListPhysicalStockQueryDto } from './dto/list-physical-stock-query.dto';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Physical Stock')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: PhysicalStockErrorResponseDto })
@@ -48,7 +49,7 @@ import { ListPhysicalStockQueryDto } from './dto/list-physical-stock-query.dto';
 export class PhysicalStockController {
   constructor(private readonly physicalStockService: PhysicalStockService) {}
   @Post()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update physical stock document by psId presence' })
   @ApiBody({ type: CreatePhysicalStockDto })
   @ApiCreatedResponse({ type: PhysicalStockSuccessSingleDto })
@@ -71,7 +72,7 @@ export class PhysicalStockController {
     };
   }
   @Get()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'List physical stock documents or get a single document when ps_id or ps_doc_refno is provided',
@@ -104,7 +105,7 @@ export class PhysicalStockController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get physical stock document by ps_id' })
   @ApiOkResponse({ type: PhysicalStockSuccessSingleDto })
   @ApiBadRequestResponse({ type: PhysicalStockErrorResponseDto })
@@ -120,7 +121,7 @@ export class PhysicalStockController {
     };
   }
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'List physical stock documents or get a single document when ps_id or ps_doc_refno is provided',
@@ -139,7 +140,7 @@ export class PhysicalStockController {
     return this.listOrGet(queryDto);
   }
   @Get(':id')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get physical stock document by physical stock header id' })
   @ApiParam({
     name: 'id',
@@ -159,7 +160,7 @@ export class PhysicalStockController {
     };
   }
   @Delete()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete physical stock document by ps_id' })
   @ApiOkResponse({ type: PhysicalStockSuccessDeleteDto })
   @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
@@ -169,7 +170,7 @@ export class PhysicalStockController {
     return this.remove(queryDto.ps_id ?? '');
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete physical stock document by ps_id' })
   @ApiOkResponse({ type: PhysicalStockSuccessDeleteDto })
   @ApiNotFoundResponse({ type: PhysicalStockErrorResponseDto })
@@ -179,7 +180,7 @@ export class PhysicalStockController {
     return this.remove(queryDto.ps_id ?? '');
   }
   @Delete(':id')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete physical stock document by physical stock header id' })
   @ApiParam({
     name: 'id',

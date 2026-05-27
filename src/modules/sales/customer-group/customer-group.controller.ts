@@ -35,6 +35,7 @@ import {
   CustomerGroupPayload,
   CustomerGroupSuccessResponse,
 } from './types/customer-group-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Customer Groups')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class CustomerGroupController {
   constructor(private readonly customerGroupService: CustomerGroupService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update customer group (by cgrId presence)' })
   @ApiCreatedResponse({ type: CustomerGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: CustomerGroupErrorResponseDto })
@@ -67,7 +68,7 @@ export class CustomerGroupController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get customer group by id' })
   @ApiQuery({ name: 'cgrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerGroupSuccessSingleDto })
@@ -86,7 +87,7 @@ export class CustomerGroupController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete customer group by id' })
   @ApiQuery({ name: 'cgrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerGroupSuccessDeleteDto })

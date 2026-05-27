@@ -35,6 +35,7 @@ import {
   EmployeeDesignationMasterPayload,
   EmployeeDesignationMasterSuccessResponse,
 } from './types/employee-designation-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Employee Designation Master')
 @ApiBearerAuth('access-token')
@@ -48,7 +49,7 @@ export class EmployeeDesignationMasterController {
   ) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update employee designation (by edId presence)' })
   @ApiCreatedResponse({ type: EmployeeDesignationMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: EmployeeDesignationMasterErrorResponseDto })
@@ -69,7 +70,7 @@ export class EmployeeDesignationMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get employee designation by id' })
   @ApiQuery({ name: 'edId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeDesignationMasterSuccessSingleDto })
@@ -88,7 +89,7 @@ export class EmployeeDesignationMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete employee designation by id' })
   @ApiQuery({ name: 'edId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeDesignationMasterSuccessDeleteDto })

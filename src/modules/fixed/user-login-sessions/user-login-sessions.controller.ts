@@ -39,6 +39,7 @@ import {
   UserLoginSessionsPayload,
   UserLoginSessionsSuccessResponse,
 } from './types/user-login-sessions-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('User Login Sessions')
 @ApiBearerAuth('access-token')
@@ -50,7 +51,7 @@ export class UserLoginSessionsController {
   constructor(private readonly userLoginSessionsService: UserLoginSessionsService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update user login session (by ulsId presence)' })
   @ApiCreatedResponse({ type: UserLoginSessionsSuccessSingleDto })
   @ApiBadRequestResponse({ type: UserLoginSessionsErrorResponseDto })
@@ -71,7 +72,7 @@ export class UserLoginSessionsController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List user login sessions with filter/search/pagination' })
   @ApiOkResponse({ type: UserLoginSessionsSuccessListDto })
   @ApiBadRequestResponse({ type: UserLoginSessionsErrorResponseDto })
@@ -92,7 +93,7 @@ export class UserLoginSessionsController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get user login session by id' })
   @ApiQuery({ name: 'ulsId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserLoginSessionsSuccessSingleDto })
@@ -111,7 +112,7 @@ export class UserLoginSessionsController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete user login session by id' })
   @ApiQuery({ name: 'ulsId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserLoginSessionsSuccessDeleteDto })

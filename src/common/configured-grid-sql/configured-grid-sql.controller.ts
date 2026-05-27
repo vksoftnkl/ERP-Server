@@ -19,6 +19,7 @@ import { HttpErrorResponseDto } from '../dto/http-error-response.dto';
 import { RunConfiguredGridQueryDto } from './dto/run-configured-grid-query.dto';
 import { ConfiguredGridRunResponseDto } from './dto/configured-grid-run-response.dto';
 import { ConfiguredGridSqlService } from './configured-grid-sql.service';
+import { API_VERSION } from '../constants/api-version';
 
 @ApiTags('Configured Grid SQL')
 @ApiBearerAuth('access-token')
@@ -28,7 +29,7 @@ export class ConfiguredGridSqlController {
   constructor(private readonly configuredGridSqlService: ConfiguredGridSqlService) {}
 
   @Get('run')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Run the base SQL for a grid and return rows + column styles' })
   @ApiOkResponse({ type: ConfiguredGridRunResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })

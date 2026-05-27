@@ -21,6 +21,7 @@ import {
   ItemBatchStockPayload,
   ItemBatchStockSuccessResponse,
 } from './types/item-batch-stock-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Item Batch Stock')
 @ApiBearerAuth('access-token')
@@ -32,7 +33,7 @@ export class ItemBatchStockController {
   constructor(private readonly itemBatchStockService: ItemBatchStockService) {}
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'Get item batch stock by exact acc year, company, branch, godown, item, and unit scope',

@@ -39,6 +39,7 @@ import {
   BankListPayload,
   BankListSuccessResponse,
 } from './types/bank-list-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Bank List')
 @ApiBearerAuth('access-token')
@@ -50,7 +51,7 @@ export class BankListController {
   constructor(private readonly bankListService: BankListService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update bank (by bnkId presence)' })
   @ApiCreatedResponse({ type: BankListSuccessSingleDto })
   @ApiBadRequestResponse({ type: BankListErrorResponseDto })
@@ -69,7 +70,7 @@ export class BankListController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List banks with filter/search/pagination' })
   @ApiOkResponse({ type: BankListSuccessListDto })
   @ApiBadRequestResponse({ type: BankListErrorResponseDto })
@@ -88,7 +89,7 @@ export class BankListController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get bank by id' })
   @ApiQuery({ name: 'bnkId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: BankListSuccessSingleDto })
@@ -107,7 +108,7 @@ export class BankListController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete bank by id' })
   @ApiQuery({ name: 'bnkId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: BankListSuccessDeleteDto })

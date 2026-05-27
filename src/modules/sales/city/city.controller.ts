@@ -35,6 +35,7 @@ import {
   CityPayload,
   CitySuccessResponse,
 } from './types/city-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Cities')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class CityController {
   constructor(private readonly cityService: CityService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update city (by ctmId presence)' })
   @ApiCreatedResponse({ type: CitySuccessSingleDto })
   @ApiBadRequestResponse({ type: CityErrorResponseDto })
@@ -62,7 +63,7 @@ export class CityController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get city by id' })
   @ApiQuery({ name: 'ctmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CitySuccessSingleDto })
@@ -81,7 +82,7 @@ export class CityController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete city by id' })
   @ApiQuery({ name: 'ctmId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CitySuccessDeleteDto })

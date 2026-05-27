@@ -35,6 +35,7 @@ import {
   LedgerShippingAddressPayload,
   LedgerShippingAddressSuccessResponse,
 } from './types/ledger-shipping-address-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Ledger Shipping Address')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class LedgerShippingAddressController {
   constructor(private readonly ledgerShippingAddressService: LedgerShippingAddressService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update ledger shipping address (by saaId presence)' })
   @ApiCreatedResponse({ type: LedgerShippingAddressSuccessSingleDto })
   @ApiBadRequestResponse({ type: LedgerShippingAddressErrorResponseDto })
@@ -67,7 +68,7 @@ export class LedgerShippingAddressController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get ledger shipping address by id' })
   @ApiQuery({ name: 'saaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerShippingAddressSuccessSingleDto })
@@ -86,7 +87,7 @@ export class LedgerShippingAddressController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete ledger shipping address by id' })
   @ApiQuery({ name: 'saaId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: LedgerShippingAddressSuccessDeleteDto })

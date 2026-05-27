@@ -28,6 +28,7 @@ import {
   ItemPriceDetailPayload,
   ItemPriceDetailSuccessResponse,
 } from './types/item-price-detail-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Item Price Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -38,7 +39,7 @@ import {
 export class ItemPriceDetailsController {
   constructor(private readonly itemPriceDetailsService: ItemPriceDetailsService) {}
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item with joined item price and item tax details' })
   @ApiQuery({
     name: 'item_id',

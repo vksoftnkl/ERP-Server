@@ -35,6 +35,7 @@ import {
   AccountLedgerMasterPayload,
   AccountLedgerMasterSuccessResponse,
 } from './types/account-ledger-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Account Ledger Masters')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class AccountLedgerMastersController {
   constructor(private readonly accountLedgerMastersService: AccountLedgerMastersService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update account ledger (by ledId presence)' })
   @ApiCreatedResponse({ type: AccountLedgerMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: AccountLedgerMasterErrorResponseDto })
@@ -67,7 +68,7 @@ export class AccountLedgerMastersController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get account ledger by id' })
   @ApiQuery({ name: 'ledId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountLedgerMasterSuccessSingleDto })
@@ -86,7 +87,7 @@ export class AccountLedgerMastersController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete account ledger by id' })
   @ApiQuery({ name: 'ledId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountLedgerMasterSuccessDeleteDto })

@@ -35,6 +35,7 @@ import {
   EmployeeDepartmentMasterPayload,
   EmployeeDepartmentMasterSuccessResponse,
 } from './types/employee-department-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Employee Department Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -44,7 +45,7 @@ import {
 export class EmployeeDepartmentMasterController {
   constructor(private readonly employeeDepartmentMasterService: EmployeeDepartmentMasterService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update employee department (by edptId presence)' })
   @ApiCreatedResponse({ type: EmployeeDepartmentMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: EmployeeDepartmentMasterErrorResponseDto })
@@ -63,7 +64,7 @@ export class EmployeeDepartmentMasterController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get employee department by id' })
   @ApiQuery({ name: 'edptId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeDepartmentMasterSuccessSingleDto })
@@ -80,7 +81,7 @@ export class EmployeeDepartmentMasterController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete employee department by id' })
   @ApiQuery({ name: 'edptId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeDepartmentMasterSuccessDeleteDto })

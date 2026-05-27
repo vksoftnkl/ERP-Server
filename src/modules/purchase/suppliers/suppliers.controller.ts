@@ -35,6 +35,7 @@ import {
   SupplierPayload,
   SupplierSuccessResponse,
 } from './types/supplier-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Suppliers')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update supplier (by supId presence)' })
   @ApiCreatedResponse({ type: SupplierSuccessSingleDto })
   @ApiBadRequestResponse({ type: SupplierErrorResponseDto })
@@ -67,7 +68,7 @@ export class SuppliersController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get supplier by id' })
   @ApiQuery({ name: 'supId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierSuccessSingleDto })
@@ -86,7 +87,7 @@ export class SuppliersController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete supplier by id' })
   @ApiQuery({ name: 'supId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SupplierSuccessDeleteDto })

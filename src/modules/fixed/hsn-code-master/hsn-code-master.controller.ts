@@ -21,6 +21,7 @@ import {
   HsnCodeMasterPayload,
   HsnCodeMasterSuccessResponse,
 } from './types/hsn-code-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('HSN Code Master')
 @ApiBearerAuth('access-token')
@@ -31,7 +32,7 @@ export class HsnCodeMasterController {
   constructor(private readonly hsnCodeMasterService: HsnCodeMasterService) {}
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'Get HSN code records from fixed.hsn_master by hsnId/hsnCode or filters. Defaults to active records only.',

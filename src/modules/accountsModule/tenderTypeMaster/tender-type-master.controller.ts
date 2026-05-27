@@ -35,6 +35,7 @@ import {
   TenderTypeMasterPayload,
   TenderTypeMasterSuccessResponse,
 } from './types/tender-type-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Tender Type Master')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class TenderTypeMasterController {
   constructor(private readonly tenderTypeMasterService: TenderTypeMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update tender type (by ttmTypeId presence)' })
   @ApiCreatedResponse({ type: TenderTypeMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: TenderTypeMasterErrorResponseDto })
@@ -67,7 +68,7 @@ export class TenderTypeMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get tender type by id' })
   @ApiQuery({ name: 'ttmTypeId', schema: { type: 'string', example: '1' } })
   @ApiOkResponse({ type: TenderTypeMasterSuccessSingleDto })
@@ -86,7 +87,7 @@ export class TenderTypeMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete tender type by id' })
   @ApiQuery({ name: 'ttmTypeId', schema: { type: 'string', example: '1' } })
   @ApiOkResponse({ type: TenderTypeMasterSuccessDeleteDto })

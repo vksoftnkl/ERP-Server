@@ -35,6 +35,7 @@ import {
   ItemTaxHistoryPayload,
   ItemTaxHistorySuccessResponse,
 } from './types/item-tax-history-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Item Tax History')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -44,7 +45,7 @@ import {
 export class ItemsTaxHistoryMasterController {
   constructor(private readonly itemsTaxHistoryMasterService: ItemsTaxHistoryMasterService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item tax history (by ith_id presence)' })
   @ApiCreatedResponse({ type: ItemTaxHistorySuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemTaxHistoryErrorResponseDto })
@@ -63,7 +64,7 @@ export class ItemsTaxHistoryMasterController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item tax history by id' })
   @ApiQuery({ name: 'ith_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxHistorySuccessSingleDto })
@@ -80,7 +81,7 @@ export class ItemsTaxHistoryMasterController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Delete item tax history by id' })
   @ApiQuery({ name: 'ith_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxHistorySuccessDeleteDto })

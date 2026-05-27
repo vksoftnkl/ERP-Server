@@ -1045,6 +1045,7 @@ Table grid_columns {
   gridColumnNotes String
   gridColumnIsDeleted Boolean [not null, default: false]
   gridColumnPosition Decimal
+  gridColumnSqlFieldName String
 }
 
 Table grid_details {

@@ -28,6 +28,7 @@ import {
   SequencePayload,
   SequenceSuccessResponse,
 } from './types/sequence-api.types';
+import { API_VERSION } from '../constants/api-version';
 @ApiTags('Sequence')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -36,7 +37,7 @@ import {
 export class SequenceController {
   constructor(private readonly sequenceService: SequenceService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update sequence (by id presence)' })
   @ApiCreatedResponse({ type: SequenceSuccessSingleDto })
   @ApiBadRequestResponse({ type: SequenceErrorResponseDto })
@@ -53,7 +54,7 @@ export class SequenceController {
     };
   }
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List sequences with filter/search/pagination' })
   @ApiOkResponse({ type: SequenceSuccessListDto })
   @ApiBadRequestResponse({ type: SequenceErrorResponseDto })
@@ -69,7 +70,7 @@ export class SequenceController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get sequence by id' })
   @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SequenceSuccessSingleDto })
@@ -86,7 +87,7 @@ export class SequenceController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete sequence by id' })
   @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: SequenceSuccessDeleteDto })

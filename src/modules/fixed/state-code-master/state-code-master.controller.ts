@@ -29,6 +29,7 @@ import {
   StateCodeMasterPayload,
   StateCodeMasterSuccessResponse,
 } from './types/state-code-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('State Code Master')
 @ApiBearerAuth('access-token')
@@ -40,7 +41,7 @@ export class StateCodeMasterController {
   constructor(private readonly stateCodeMasterService: StateCodeMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update state code' })
   @ApiCreatedResponse({ type: StateCodeMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: StateCodeMasterErrorResponseDto })
@@ -59,7 +60,7 @@ export class StateCodeMasterController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List state codes with filter/search/pagination' })
   @ApiOkResponse({ type: StateCodeMasterSuccessListDto })
   @ApiBadRequestResponse({ type: StateCodeMasterErrorResponseDto })
@@ -78,7 +79,7 @@ export class StateCodeMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get state code by code' })
   @ApiQuery({ name: 'stateCode', description: '2-character state code', example: 'MH' })
   @ApiOkResponse({ type: StateCodeMasterSuccessSingleDto })
@@ -97,7 +98,7 @@ export class StateCodeMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete state code by code' })
   @ApiQuery({ name: 'stateCode', description: '2-character state code', example: 'MH' })
   @ApiOkResponse({ type: StateCodeMasterSuccessDeleteDto })

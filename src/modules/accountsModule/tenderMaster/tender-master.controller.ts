@@ -32,6 +32,7 @@ import { SaveTenderMasterDto } from './dto/save-tender-master.dto';
 import { TenderMasterExceptionFilter } from './tender-master-exception.filter';
 import { TenderMasterService } from './tender-master.service';
 import { TenderMasterPayload, TenderMasterSuccessResponse } from './types/tender-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Tender Master')
 @ApiBearerAuth('access-token')
@@ -43,7 +44,7 @@ export class TenderMasterController {
   constructor(private readonly tenderMasterService: TenderMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update tender (by tndId presence)' })
   @ApiCreatedResponse({ type: TenderMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: TenderMasterErrorResponseDto })
@@ -64,7 +65,7 @@ export class TenderMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get tender by id' })
   @ApiQuery({ name: 'tndId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: TenderMasterSuccessSingleDto })
@@ -83,7 +84,7 @@ export class TenderMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete tender by id' })
   @ApiQuery({ name: 'tndId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: TenderMasterSuccessDeleteDto })

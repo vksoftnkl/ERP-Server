@@ -35,6 +35,7 @@ import {
   ItemQtywiseRateSuccessResponse,
 } from './types/item-qtywise-rate-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Item Qtywise Rates')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class ItemsQtywiseRatesMasterController {
   constructor(private readonly itemsQtywiseRatesMasterService: ItemsQtywiseRatesMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item qty-wise rate (by iqr_id presence)' })
   @ApiCreatedResponse({ type: ItemQtywiseRateSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemQtywiseRateErrorResponseDto })
@@ -67,7 +68,7 @@ export class ItemsQtywiseRatesMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item qty-wise rate by id' })
   @ApiQuery({ name: 'iqr_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemQtywiseRateSuccessSingleDto })
@@ -86,7 +87,7 @@ export class ItemsQtywiseRatesMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item qty-wise rate by id' })
   @ApiQuery({ name: 'iqr_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemQtywiseRateSuccessDeleteDto })

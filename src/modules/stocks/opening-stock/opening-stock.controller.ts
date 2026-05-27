@@ -43,6 +43,7 @@ import {
   OpeningStockSuccessResponse,
 } from './types/opening-stock-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Opening Stock')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -53,7 +54,7 @@ import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 export class OpeningStockController {
   constructor(private readonly openingStockService: OpeningStockService) {}
   @Post()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update opening stock document by avh_voucher_id presence',
   })
@@ -78,7 +79,7 @@ export class OpeningStockController {
     };
   }
   @Get()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'List opening stock documents or get a single document when avh_voucher_id or avh_voucher_refno is provided',
@@ -118,7 +119,7 @@ export class OpeningStockController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get opening stock document by avh_voucher_id' })
   @ApiOkResponse({ type: OpeningStockSuccessSingleDto })
   @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
@@ -134,7 +135,7 @@ export class OpeningStockController {
     };
   }
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'List opening stock documents or get a single document when avh_voucher_id or avh_voucher_refno is provided',
@@ -174,7 +175,7 @@ export class OpeningStockController {
     };
   }
   @Delete()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete opening stock by avh_voucher_id' })
   @ApiOkResponse({ type: OpeningStockSuccessDeleteDto })
   @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })
@@ -190,7 +191,7 @@ export class OpeningStockController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete opening stock by avh_voucher_id' })
   @ApiOkResponse({ type: OpeningStockSuccessDeleteDto })
   @ApiBadRequestResponse({ type: OpeningStockErrorResponseDto })

@@ -39,7 +39,7 @@ import {
   BatchPrefixPayload,
   BatchPrefixSuccessResponse,
 } from './types/batch-prefix-api.types';
-
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Batch Prefix')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -48,9 +48,8 @@ import {
 @UseFilters(BatchPrefixExceptionFilter)
 export class BatchPrefixController {
   constructor(private readonly batchPrefixService: BatchPrefixService) {}
-
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update batch prefix (by id presence)' })
   @ApiCreatedResponse({ type: BatchPrefixSuccessSingleDto })
   @ApiBadRequestResponse({ type: BatchPrefixErrorResponseDto })
@@ -60,7 +59,6 @@ export class BatchPrefixController {
     @Body() saveBatchPrefixDto: SaveBatchPrefixDto,
   ): Promise<BatchPrefixSuccessResponse<BatchPrefixPayload>> {
     const data = await this.batchPrefixService.save(saveBatchPrefixDto);
-
     return {
       success: true,
       message: saveBatchPrefixDto.id
@@ -69,9 +67,8 @@ export class BatchPrefixController {
       data,
     };
   }
-
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List batch prefixes with search and pagination' })
   @ApiOkResponse({ type: BatchPrefixSuccessListDto })
   @ApiBadRequestResponse({ type: BatchPrefixErrorResponseDto })
@@ -79,7 +76,6 @@ export class BatchPrefixController {
     @Query() queryDto: ListBatchPrefixQueryDto,
   ): Promise<BatchPrefixSuccessResponse<BatchPrefixListItem[], BatchPrefixListMeta>> {
     const result = await this.batchPrefixService.list(queryDto);
-
     return {
       success: true,
       message: 'Batch prefixes fetched successfully',
@@ -88,9 +84,8 @@ export class BatchPrefixController {
       ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get batch prefix by id' })
   @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: BatchPrefixSuccessSingleDto })
@@ -100,16 +95,14 @@ export class BatchPrefixController {
     @Query('id', new ParseUUIDPipe({ version: '7' })) id: string,
   ): Promise<BatchPrefixSuccessResponse<BatchPrefixPayload>> {
     const data = await this.batchPrefixService.getById(id);
-
     return {
       success: true,
       message: 'Batch prefix fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Delete batch prefix by id' })
   @ApiQuery({ name: 'id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: BatchPrefixSuccessDeleteDto })
@@ -119,7 +112,6 @@ export class BatchPrefixController {
     @Query('id', new ParseUUIDPipe({ version: '7' })) id: string,
   ): Promise<BatchPrefixSuccessResponse<{ id: string; deleted: true }>> {
     const data = await this.batchPrefixService.delete(id);
-
     return {
       success: true,
       message: 'Batch prefix deleted successfully',

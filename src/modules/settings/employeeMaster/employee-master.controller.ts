@@ -35,6 +35,7 @@ import {
   EmployeeMasterPayload,
   EmployeeMasterSuccessResponse,
 } from './types/employee-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Employee Master')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class EmployeeMasterController {
   constructor(private readonly employeeMasterService: EmployeeMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update employee (by empId presence)' })
   @ApiCreatedResponse({ type: EmployeeMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: EmployeeMasterErrorResponseDto })
@@ -67,7 +68,7 @@ export class EmployeeMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get employee by id' })
   @ApiQuery({ name: 'empId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeMasterSuccessSingleDto })
@@ -86,7 +87,7 @@ export class EmployeeMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete employee by id' })
   @ApiQuery({ name: 'empId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: EmployeeMasterSuccessDeleteDto })

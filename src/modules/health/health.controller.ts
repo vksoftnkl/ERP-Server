@@ -10,16 +10,15 @@ import { Public } from '../../common/decorators/public.decorator';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { HealthResponseDto } from './dto/health-response.dto';
 import { HealthService } from './health.service';
-
+import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Health')
 @CacheTTL(0)
 @Controller('health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
-
   @Public()
   @Get()
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get API health status' })
   @ApiOkResponse({ type: HealthResponseDto })
   @ApiServiceUnavailableResponse({ type: HttpErrorResponseDto })
@@ -30,11 +29,9 @@ export class HealthController {
     cache: { status: 'up' | 'down' | 'disabled' };
   }> {
     const status = await this.healthService.check();
-
     if (status.database.status === 'down' || status.cache.status === 'down') {
       throw new ServiceUnavailableException(status);
     }
-
     return status;
   }
 }

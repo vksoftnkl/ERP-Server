@@ -79,4 +79,8 @@ export class SaveGridColumnDto {
   @ApiPropertyOptional({ nullable: true, maxLength: 1000 })
   @NullableString(1000)
   grid_column_notes?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableString()
+  grid_column_sql_field_name?: string | null;
 }

@@ -35,6 +35,7 @@ import {
   GspCompanyServicePayload,
   GspCompanyServiceSuccessResponse,
 } from './types/gsp-company-service-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('GSP Company Service')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -44,7 +45,7 @@ import {
 export class GspCompanyServiceController {
   constructor(private readonly gspCompanyServiceService: GspCompanyServiceService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update GSP company service (by csgCompanyServiceId presence)',
   })
@@ -65,7 +66,7 @@ export class GspCompanyServiceController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get GSP company service by id' })
   @ApiQuery({ name: 'csgCompanyServiceId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspCompanyServiceSuccessSingleDto })
@@ -82,7 +83,7 @@ export class GspCompanyServiceController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete GSP company service by id' })
   @ApiQuery({ name: 'csgCompanyServiceId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspCompanyServiceSuccessDeleteDto })

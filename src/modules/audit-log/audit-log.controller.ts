@@ -17,6 +17,7 @@ import {
   AuditLogListMeta,
   AuditLogSuccessResponse,
 } from './types/audit-log-api.types';
+import { API_VERSION } from '../../common/constants/api-version';
 
 @ApiTags('Audit Logs')
 @ApiBearerAuth('access-token')
@@ -27,7 +28,7 @@ export class AuditLogController {
   constructor(private readonly auditLogService: AuditLogService) {}
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List audit logs with search and date filters' })
   @ApiOkResponse({ type: AuditLogSuccessListDto })
   @ApiBadRequestResponse({ type: AuditLogErrorResponseDto })

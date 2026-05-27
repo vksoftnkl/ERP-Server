@@ -37,11 +37,10 @@ import { ItemCategoryExceptionFilter } from './item-category-exception.filter';
 import { ItemsCategoryMasterService } from './items-category-master.service';
 import { ItemCategoryPayload, ItemCategorySuccessResponse } from './types/item-category-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
-
+import { API_VERSION } from '../../../common/constants/api-version';
 type UploadedPhotoFile = {
   buffer: Buffer;
 };
-
 @ApiTags('Item Categories')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -50,9 +49,8 @@ type UploadedPhotoFile = {
 @UseFilters(ItemCategoryExceptionFilter)
 export class ItemsCategoryMasterController {
   constructor(private readonly itemsCategoryMasterService: ItemsCategoryMasterService) {}
-
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('category_photo'))
   @ApiConsumes('application/json', 'multipart/form-data')
   @ApiBody({ type: SaveItemCategoryDto })
@@ -67,7 +65,6 @@ export class ItemsCategoryMasterController {
   ): Promise<ItemCategorySuccessResponse<ItemCategoryPayload>> {
     const payload = this.withUploadedPhoto(saveItemCategoryDto, categoryPhotoFile);
     const data = await this.itemsCategoryMasterService.save(payload);
-
     return {
       success: true,
       message: payload.category_id
@@ -76,9 +73,8 @@ export class ItemsCategoryMasterController {
       data,
     };
   }
-
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item category by id' })
   @ApiQuery({ name: 'category_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemCategorySuccessSingleDto })
@@ -88,16 +84,14 @@ export class ItemsCategoryMasterController {
     @Query('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
   ): Promise<ItemCategorySuccessResponse<ItemCategoryPayload>> {
     const data = await this.itemsCategoryMasterService.getById(categoryId);
-
     return {
       success: true,
       message: 'Item category fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item category by id' })
   @ApiQuery({ name: 'category_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemCategorySuccessDeleteDto })
@@ -107,14 +101,12 @@ export class ItemsCategoryMasterController {
     @Query('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
   ): Promise<ItemCategorySuccessResponse<{ category_id: string; deleted: true }>> {
     const data = await this.itemsCategoryMasterService.softDelete(categoryId);
-
     return {
       success: true,
       message: 'Item category deleted successfully',
       data,
     };
   }
-
   private withUploadedPhoto(
     saveItemCategoryDto: SaveItemCategoryDto,
     categoryPhotoFile?: UploadedPhotoFile,
@@ -122,7 +114,6 @@ export class ItemsCategoryMasterController {
     if (!categoryPhotoFile) {
       return saveItemCategoryDto;
     }
-
     return {
       ...saveItemCategoryDto,
       category_photo: categoryPhotoFile.buffer.toString('base64'),

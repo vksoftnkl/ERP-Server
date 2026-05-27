@@ -28,6 +28,7 @@ import {
   DropdownColumnPayload,
   DropdownColumnSuccessResponse,
 } from './types/dropdown-column-api.types';
+import { API_VERSION } from '../../common/constants/api-version';
 
 @ApiTags('Dropdown Columns')
 @ApiBearerAuth('access-token')
@@ -39,7 +40,7 @@ export class DropdownColumnsController {
   constructor(private readonly dropdownColumnsService: DropdownColumnsService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update dropdown column (by drop_columns_serial_id presence)' })
   @ApiCreatedResponse({ type: DropdownColumnSuccessSingleDto })
   @ApiBadRequestResponse({ type: DropdownColumnErrorResponseDto })
@@ -60,7 +61,7 @@ export class DropdownColumnsController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List dropdown columns with filter/search/pagination' })
   @ApiOkResponse({ type: DropdownColumnSuccessListDto })
   @ApiBadRequestResponse({ type: DropdownColumnErrorResponseDto })
@@ -78,7 +79,7 @@ export class DropdownColumnsController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get dropdown column by id' })
   @ApiQuery({ name: 'drop_columns_serial_id', description: 'Numeric dropdown column id' })
   @ApiOkResponse({ type: DropdownColumnSuccessSingleDto })
@@ -97,7 +98,7 @@ export class DropdownColumnsController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Delete dropdown column by id' })
   @ApiQuery({ name: 'drop_columns_serial_id', description: 'Numeric dropdown column id' })
   @ApiOkResponse({ type: DropdownColumnSuccessDeleteDto })

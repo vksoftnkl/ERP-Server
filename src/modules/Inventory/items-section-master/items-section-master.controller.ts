@@ -37,6 +37,7 @@ import { ItemSectionExceptionFilter } from './item-section-exception.filter';
 import { ItemsSectionMasterService } from './items-section-master.service';
 import { ItemSectionPayload, ItemSectionSuccessResponse } from './types/item-section-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 type UploadedPhotoFile = {
   buffer: Buffer;
@@ -52,7 +53,7 @@ export class ItemsSectionMasterController {
   constructor(private readonly itemsSectionMasterService: ItemsSectionMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('sec_photo'))
   @ApiConsumes('application/json', 'multipart/form-data')
   @ApiBody({ type: SaveItemSectionDto })
@@ -78,7 +79,7 @@ export class ItemsSectionMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item section by id' })
   @ApiQuery({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSectionSuccessSingleDto })
@@ -97,7 +98,7 @@ export class ItemsSectionMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item section by id' })
   @ApiQuery({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSectionSuccessDeleteDto })

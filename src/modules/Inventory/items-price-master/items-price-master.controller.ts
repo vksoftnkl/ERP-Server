@@ -55,6 +55,7 @@ import {
   validateDto,
   validateSingleOrArrayDto,
 } from 'src/common/utils/request-payload-validation.util';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Item Prices')
 @ApiBearerAuth('access-token')
@@ -76,7 +77,7 @@ export class ItemsPriceMasterController {
   constructor(private readonly itemsPriceMasterService: ItemsPriceMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item price (by ipm_id presence)' })
   @ApiBody({
     schema: {
@@ -131,7 +132,7 @@ export class ItemsPriceMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item price by id' })
   @ApiQuery({
     name: 'ipm_id',
@@ -184,7 +185,7 @@ export class ItemsPriceMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Delete item price by id' })
   @ApiQuery({
     name: 'ipm_id',

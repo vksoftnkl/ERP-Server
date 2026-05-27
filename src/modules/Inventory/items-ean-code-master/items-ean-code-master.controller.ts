@@ -50,6 +50,7 @@ import {
   validateDto,
   validateSingleOrArrayDto,
 } from 'src/common/utils/request-payload-validation.util';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Item EAN Codes')
 @ApiBearerAuth('access-token')
@@ -67,7 +68,7 @@ export class ItemsEanCodeMasterController {
   constructor(private readonly itemsEanCodeMasterService: ItemsEanCodeMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item EAN code (by ean_id presence)' })
   @ApiBody({
     schema: {
@@ -103,7 +104,7 @@ export class ItemsEanCodeMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get item EAN code by id' })
   @ApiQuery({ name: 'ean_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemEanCodeSuccessSingleDto })
@@ -122,7 +123,7 @@ export class ItemsEanCodeMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete item EAN code by id' })
   @ApiQuery({ name: 'ean_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({

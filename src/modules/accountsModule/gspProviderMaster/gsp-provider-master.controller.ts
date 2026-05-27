@@ -35,6 +35,7 @@ import {
   GspProviderMasterPayload,
   GspProviderMasterSuccessResponse,
 } from './types/gsp-provider-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('GSP Provider Master')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class GspProviderMasterController {
   constructor(private readonly gspProviderMasterService: GspProviderMasterService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update GSP provider (by gspProviderId presence)' })
   @ApiCreatedResponse({ type: GspProviderMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: GspProviderMasterErrorResponseDto })
@@ -67,7 +68,7 @@ export class GspProviderMasterController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get GSP provider by id' })
   @ApiQuery({ name: 'gspProviderId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspProviderMasterSuccessSingleDto })
@@ -86,7 +87,7 @@ export class GspProviderMasterController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete GSP provider by id' })
   @ApiQuery({ name: 'gspProviderId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: GspProviderMasterSuccessDeleteDto })

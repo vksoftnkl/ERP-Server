@@ -232,6 +232,7 @@ export class ConfiguredGridSqlService {
         gridColumnDataType: true,
         gridColumnColor: true,
         gridColumnNotes: true,
+        gridColumnSqlFieldName: true,
       },
     });
     return columns.map((col) => ({
@@ -250,6 +251,7 @@ export class ConfiguredGridSqlService {
       grid_column_data_type: col.gridColumnDataType,
       grid_column_color: col.gridColumnColor,
       grid_column_notes: col.gridColumnNotes,
+      grid_column_sql_field_name: col.gridColumnSqlFieldName,
     }));
   }
   async loadPrimaryGridStyles(tableName: string): Promise<GridColumnItem[] | undefined> {
@@ -265,20 +267,47 @@ export class ConfiguredGridSqlService {
     return this.deriveSearchableFieldNames(columns, baseSql);
   }
   private deriveSearchableFieldNames(columns: GridColumnItem[], baseSql: string): string[] {
-    const sqlFieldNames = this.extractSelectFieldNames(baseSql);
-    if (sqlFieldNames.length === 0) {
-      return [];
-    }
     const filterableColumns = columns
       .filter((col) => col.grid_column_filter)
       .sort((a, b) => a.grid_column_number - b.grid_column_number);
+
+    if (filterableColumns.length === 0) {
+      return [];
+    }
+
+    // Partition: columns with an explicit SQL field name vs. those needing heuristic matching
+    const explicitFieldNames: string[] = [];
+    const heuristicColumns: GridColumnItem[] = [];
+
+    for (const col of filterableColumns) {
+      const explicit = col.grid_column_sql_field_name?.trim();
+      if (explicit) {
+        if (!explicitFieldNames.includes(explicit)) {
+          explicitFieldNames.push(explicit);
+        }
+      } else {
+        heuristicColumns.push(col);
+      }
+    }
+
+    if (heuristicColumns.length === 0) {
+      return explicitFieldNames;
+    }
+
+    // Heuristic matching for columns without an explicit SQL field name
+    const sqlFieldNames = this.extractSelectFieldNames(baseSql);
+    if (sqlFieldNames.length === 0) {
+      return explicitFieldNames;
+    }
+
     const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
       fieldName,
       descriptor: this.describeSearchColumnName(fieldName),
     }));
     const usedSqlFieldIndexes = new Set<number>();
-    const matchedFieldNames: string[] = [];
-    for (const column of filterableColumns) {
+    const heuristicFieldNames: string[] = [];
+
+    for (const column of heuristicColumns) {
       const columnName = column.grid_column_name.trim();
       let matchedSqlFieldIndex = -1;
       const columnDescriptor = this.describeSearchColumnName(columnName);
@@ -329,9 +358,11 @@ export class ConfiguredGridSqlService {
       }
       if (matchedSqlFieldIndex !== -1) {
         usedSqlFieldIndexes.add(matchedSqlFieldIndex);
-        matchedFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
+        heuristicFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
       }
     }
+
+    const matchedFieldNames = [...explicitFieldNames, ...heuristicFieldNames];
     return matchedFieldNames;
   }
   buildSearchSql(options: BuildConfiguredGridSearchSqlOptions): {

@@ -32,6 +32,7 @@ import {
 import { SaveAccountGroupDto } from './dto/save-account-group.dto';
 import { AccountsGroupService } from './accounts-group.service';
 import { AccountGroupPayload, AccountGroupSuccessResponse } from './types/account-group-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Account Groups')
 @ApiBearerAuth('access-token')
@@ -43,7 +44,7 @@ export class AccountsGroupController {
   constructor(private readonly accountsGroupService: AccountsGroupService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update account group (by accGroupId presence)' })
   @ApiCreatedResponse({ type: AccountGroupSuccessSingleDto })
   @ApiBadRequestResponse({ type: AccountGroupErrorResponseDto })
@@ -64,7 +65,7 @@ export class AccountsGroupController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get account group by id' })
   @ApiQuery({ name: 'accGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountGroupSuccessSingleDto })
@@ -83,7 +84,7 @@ export class AccountsGroupController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete account group by id' })
   @ApiQuery({ name: 'accGroupId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AccountGroupSuccessDeleteDto })

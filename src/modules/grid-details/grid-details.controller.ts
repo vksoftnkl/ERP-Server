@@ -27,6 +27,7 @@ import {
   GridDetailPayload,
   GridDetailSuccessResponse,
 } from './types/grid-detail-api.types';
+import { API_VERSION } from '../../common/constants/api-version';
 
 @ApiTags('Grid Details')
 @ApiBearerAuth('access-token')
@@ -38,7 +39,7 @@ export class GridDetailsController {
   constructor(private readonly gridDetailsService: GridDetailsService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update grid details (by grid_id presence)' })
   @ApiCreatedResponse({ type: GridDetailSuccessSingleDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
@@ -58,7 +59,7 @@ export class GridDetailsController {
   }
 
   @Get('list')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'List grid details with filter/search/pagination' })
   @ApiOkResponse({ type: GridDetailSuccessListDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
@@ -76,7 +77,7 @@ export class GridDetailsController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get grid details by id' })
   @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
   @ApiOkResponse({ type: GridDetailSuccessSingleDto })
@@ -95,7 +96,7 @@ export class GridDetailsController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete grid details by id' })
   @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
   @ApiOkResponse({ type: GridDetailSuccessDeleteDto })

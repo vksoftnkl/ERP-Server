@@ -19,6 +19,7 @@ import {
 import { MasterLookupSuccessDto, NameIdOptionListSuccessDto } from './dto/master-lookup-response.dto';
 import { MasterLookupService } from './master-lookup.service';
 import { DropdownSqlQueryDto, MasterLookupQueryDto } from './dto/master-lookup-query.dto';
+import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Master Lookup')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -27,7 +28,7 @@ import { DropdownSqlQueryDto, MasterLookupQueryDto } from './dto/master-lookup-q
 export class MasterLookupController {
   constructor(private readonly masterLookupService: MasterLookupService) {}
   @Get('name-id/all-accounts-and-masters')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary:
       'Get id-name lookup data for all accounts/master modules, or one module via query parameter',
@@ -59,9 +60,8 @@ export class MasterLookupController {
       : 'Name-id data fetched successfully';
     return { success: true, message, data };
   }
-
   @Get('branches/by-company/:companyId')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get branches for a specific company' })
   @ApiParam({ name: 'companyId', type: String, description: 'UUID of the company' })
   @ApiQuery({ name: 'search', required: false, type: String, description: 'Case-insensitive search on branch name' })
@@ -74,9 +74,8 @@ export class MasterLookupController {
     const data = await this.masterLookupService.getBranchesByCompany(companyId, query.search, query.limit);
     return { success: true, message: `Branches fetched for company ${companyId}`, data };
   }
-
   @Get('dropdown/:dropdownId')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Run dropdown SQL query by dropdown ID and return results' })
   @ApiParam({ name: 'dropdownId', type: Number, description: 'ID of the dropdown to execute' })
   @ApiQuery({ name: 'search', required: false, type: String, description: 'Case-insensitive filter applied to results' })

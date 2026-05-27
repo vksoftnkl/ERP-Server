@@ -32,6 +32,7 @@ export default () => ({
     host: process.env.HOST ?? '0.0.0.0',
     port: parseNumber(process.env.PORT, 3010),
     apiPrefix: process.env.API_PREFIX ?? 'api',
+    apiVersion: process.env.API_VERSION ?? '1',
     requestBodyLimit: process.env.REQUEST_BODY_LIMIT ?? '10mb',
     logFilePath: process.env.LOG_FILE_PATH ?? 'logs/app.log',
     errorLogFilePath: process.env.ERROR_LOG_FILE_PATH ?? 'logs/error.log',

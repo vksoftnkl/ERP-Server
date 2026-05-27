@@ -35,6 +35,7 @@ import {
   AreaPayload,
   AreaSuccessResponse,
 } from './types/area-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Areas')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -44,7 +45,7 @@ import {
 export class AreaController {
   constructor(private readonly areaService: AreaService) {}
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update area (by armId presence)' })
   @ApiCreatedResponse({ type: AreaSuccessSingleDto })
   @ApiBadRequestResponse({ type: AreaErrorResponseDto })
@@ -59,7 +60,7 @@ export class AreaController {
     };
   }
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get area by id' })
   @ApiQuery({ name: 'armId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AreaSuccessSingleDto })
@@ -76,7 +77,7 @@ export class AreaController {
     };
   }
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete area by id' })
   @ApiQuery({ name: 'armId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: AreaSuccessDeleteDto })

@@ -41,6 +41,7 @@ import {
   LoyaltySchemePayload,
   PromotionLoyaltyPointsSuccessResponse,
 } from './types/promotion-loyalty-points-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Promotion Loyalty Points')
 @ApiBearerAuth('access-token')
@@ -52,7 +53,7 @@ export class PromotionLoyaltyPointsController {
   constructor(private readonly promotionLoyaltyPointsService: PromotionLoyaltyPointsService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update loyalty scheme by ls_id presence' })
   @ApiCreatedResponse({ type: LoyaltySchemeSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
@@ -73,7 +74,7 @@ export class PromotionLoyaltyPointsController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Get a full loyalty scheme graph by ls_id in a single response',
   })
@@ -96,7 +97,7 @@ export class PromotionLoyaltyPointsController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete loyalty scheme by ls_id' })
   @ApiOkResponse({ type: LoyaltySchemeSuccessDeleteDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
@@ -117,7 +118,7 @@ export class PromotionLoyaltyPointsController {
   }
 
   @Post('points/create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update loyalty point slab by lspt_id presence' })
   @ApiCreatedResponse({ type: LoyaltyPointSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
@@ -138,7 +139,7 @@ export class PromotionLoyaltyPointsController {
   }
 
   @Get('points/get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Compatibility endpoint for a single loyalty point slab',
     deprecated: true,
@@ -159,7 +160,7 @@ export class PromotionLoyaltyPointsController {
   }
 
   @Delete('points/delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete loyalty point slab by lspt_id' })
   @ApiOkResponse({ type: LoyaltyPointSuccessDeleteDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
@@ -180,7 +181,7 @@ export class PromotionLoyaltyPointsController {
   }
 
   @Post('gifts/create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update loyalty gift rule by lsg_id presence' })
   @ApiCreatedResponse({ type: LoyaltyGiftSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
@@ -201,7 +202,7 @@ export class PromotionLoyaltyPointsController {
   }
 
   @Get('gifts/get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Compatibility endpoint for a single loyalty gift rule',
     deprecated: true,
@@ -222,7 +223,7 @@ export class PromotionLoyaltyPointsController {
   }
 
   @Delete('gifts/delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete loyalty gift rule by lsg_id' })
   @ApiOkResponse({ type: LoyaltyGiftSuccessDeleteDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })

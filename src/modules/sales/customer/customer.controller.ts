@@ -35,6 +35,7 @@ import {
   CustomerPayload,
   CustomerSuccessResponse,
 } from './types/customer-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('Customers')
 @ApiBearerAuth('access-token')
@@ -46,7 +47,7 @@ export class CustomerController {
   constructor(private readonly customerService: CustomerService) {}
 
   @Post('create')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update customer (by cusId presence)' })
   @ApiCreatedResponse({ type: CustomerSuccessSingleDto })
   @ApiBadRequestResponse({ type: CustomerErrorResponseDto })
@@ -67,7 +68,7 @@ export class CustomerController {
   }
 
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Get customer by id' })
   @ApiQuery({ name: 'cusId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerSuccessSingleDto })
@@ -86,7 +87,7 @@ export class CustomerController {
   }
 
   @Delete('delete')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete customer by id' })
   @ApiQuery({ name: 'cusId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: CustomerSuccessDeleteDto })

@@ -23,6 +23,7 @@ import {
   MenuMasterPayload,
   MenuMasterSuccessResponse,
 } from './types/menu-master-api.types';
+import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Menu Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -31,7 +32,7 @@ import {
 export class MenuMasterController {
   constructor(private readonly menuMasterService: MenuMasterService) {}
   @Get('get')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Get menus for the authenticated user (filtered by UserMenus permissions).',
   })
@@ -52,7 +53,7 @@ export class MenuMasterController {
     };
   }
   @Patch('visibility')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({ summary: 'Update menu_visibility for one or more menus.' })
   @ApiOkResponse({ type: MenuMasterSuccessUpdateVisibilityDto })
   @ApiBadRequestResponse({ type: MenuMasterErrorResponseDto })
@@ -69,7 +70,7 @@ export class MenuMasterController {
   }
 
   @Get('all')
-  @Version('1')
+  @Version(API_VERSION)
   @ApiOperation({
     summary: 'Get all menus without user interaction (no UserMenus filtering, permissions: null).',
   })
