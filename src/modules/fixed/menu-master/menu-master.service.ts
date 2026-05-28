@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Menu } from '@prisma/client';
-import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { GetMenuQueryDto } from './dto/get-menu-query.dto';
 import {
@@ -41,36 +40,28 @@ type MenuRecord = BaseMenuFields & {
 };
 @Injectable()
 export class MenuMasterService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly requestContextService: RequestContextService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
   async get(
     queryDto: GetMenuQueryDto,
   ): Promise<{ items: MenuMasterPayload[]; meta: MenuMasterGetMeta }> {
-    // userId comes from the access token sub claim set by AccessTokenGuard
-    const userId = this.requestContextService.getUserId();
+    const userId = queryDto.userId ?? null;
     const includeChildren = queryDto.includeChildren ?? true;
     const activeOnly = queryDto.activeOnly ?? true;
-    const visibleOnly = queryDto.visibleOnly ?? true;
-    const empty = () =>
-      this.buildResponse(queryDto, [], includeChildren, activeOnly, visibleOnly, (r, bp) =>
-        this.toPayload(r, bp, includeChildren),
-      );
-    if (!userId) return empty();
+    const visibleOnly = queryDto.visibleOnly ?? false;
+    if (!userId) return this.getAll(queryDto);
     // Confirm the user from the token is active and logged in
     const activeUser = await this.prisma.userMaster.findUnique({
       where: { usrId: userId, usrIsActive: true, usrIsDeleted: false },
       select: { usrId: true },
     });
-    if (!activeUser) return empty();
+    if (!activeUser) return this.emptyResult(queryDto, includeChildren, activeOnly, visibleOnly);
     // Use the verified userId to get all umMenuIds assigned to this user
     const userMenuRows = await this.prisma.userMenus.findMany({
       where: { umUserId: activeUser.usrId, umIsDeleted: false },
       select: { umMenuId: true },
     });
     const assignedMenuIds = userMenuRows.map((r) => r.umMenuId);
-    if (assignedMenuIds.length === 0) return empty();
+    if (assignedMenuIds.length === 0) return this.emptyResult(queryDto, includeChildren, activeOnly, visibleOnly);
     // Fetch the menus for those IDs with this user's permission data attached
     const records = await this.prisma.menu.findMany({
       where: {
@@ -92,7 +83,7 @@ export class MenuMasterService {
         menuSeparator: true,
         menuIsActive: true,
         userMenus: {
-          where: { umIsDeleted: false },
+          where: { umUserId: activeUser.usrId, umIsDeleted: false },
           select: {
             umId: true,
             umUserId: true,
@@ -150,7 +141,7 @@ export class MenuMasterService {
   ): Promise<{ items: MenuMasterPayload[]; meta: MenuMasterGetMeta }> {
     const includeChildren = queryDto.includeChildren ?? true;
     const activeOnly = queryDto.activeOnly ?? true;
-    const visibleOnly = queryDto.visibleOnly ?? true;
+    const visibleOnly = queryDto.visibleOnly ?? false;
     const records = await this.prisma.menu.findMany({
       where: {
         ...(activeOnly ? { menuIsActive: true } : {}),
@@ -208,6 +199,24 @@ export class MenuMasterService {
         activeOnly,
         visibleOnly,
         count: items.length,
+      },
+    };
+  }
+  private emptyResult(
+    queryDto: GetMenuQueryDto,
+    includeChildren: boolean,
+    activeOnly: boolean,
+    visibleOnly: boolean,
+  ): { items: MenuMasterPayload[]; meta: MenuMasterGetMeta } {
+    return {
+      items: [],
+      meta: {
+        menuId: queryDto.menuId,
+        parentId: queryDto.parentId ?? null,
+        includeChildren,
+        activeOnly,
+        visibleOnly,
+        count: 0,
       },
     };
   }

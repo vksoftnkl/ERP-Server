@@ -1,7 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalInteger, OptionalQueryBoolean } from 'src/common/dto/dtoDecorators';
+import { OptionalInteger, OptionalQueryBoolean, OptionalTrimmedString } from 'src/common/dto/dtoDecorators';
 
 export class GetMenuQueryDto {
+  @ApiPropertyOptional({
+    description: 'User ID whose menus should be returned.',
+    example: 'usr_abc123',
+  })
+  @OptionalTrimmedString()
+  userId?: string;
+
   @ApiPropertyOptional({
     description: 'Fetch a specific menu id. If omitted, menus are returned by parentId.',
     minimum: 0,
@@ -36,8 +43,8 @@ export class GetMenuQueryDto {
 
   @ApiPropertyOptional({
     type: Boolean,
-    default: true,
-    description: 'Return only visible menus',
+    default: false,
+    description: 'Return only visible menus (default: false — returns all menus regardless of visibility)',
   })
   @OptionalQueryBoolean()
   visibleOnly?: boolean;

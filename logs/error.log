@@ -532,3 +532,35 @@ Foreign key constraint violated on the constraint: `fk_physical_stock_header_com
 2026-05-20T13:50:15.994Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
 2026-05-20T13:50:31.778Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
 2026-05-20T13:54:51.657Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
+2026-05-28T11:11:47.763Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/get?userId=usr_abc123&menuId=1&parentId=1&includeChildren=true&activeOnly=true&visibleOnly=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findUnique()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:57:53
+
+  54   );
+  55 if (!userId) return empty();
+  56 // Confirm the user from the token is active and logged in
+→ 57 const activeUser = await this.prisma.userMaster.findUnique(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `u` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.get (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:57:24)
+    at async MenuMasterController.get (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:45:20)
+2026-05-28T12:52:59.593Z ERROR [AllExceptionsFilter] GET /api/v1/menu-masters/get?userId=http%3A%2F%2F127.0.0.1%3A3010%2Fapi%2Fv1%2Fmenu-masters%2Fget%3FincludeChildren%3Dtrue%26activeOnly%3Dtrue%26visibleOnly%3Dtrue&includeChildren=true&activeOnly=true&visibleOnly=true
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.userMaster.findUnique()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:53:53
+
+  50 const visibleOnly = queryDto.visibleOnly ?? true;
+  51 if (!userId) return this.getAll(queryDto);
+  52 // Confirm the user from the token is active and logged in
+→ 53 const activeUser = await this.prisma.userMaster.findUnique(
+Inconsistent column data: Error creating UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `h` at 1
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MenuMasterService.get (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:53:24)
+    at async MenuMasterController.get (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:45:20)

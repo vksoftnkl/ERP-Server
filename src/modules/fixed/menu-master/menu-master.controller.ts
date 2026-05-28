@@ -68,26 +68,4 @@ export class MenuMasterController {
       data,
     };
   }
-
-  @Get('all')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Get all menus without user interaction (no UserMenus filtering, permissions: null).',
-  })
-  @ApiOkResponse({ type: MenuMasterSuccessGetDto })
-  @ApiBadRequestResponse({ type: MenuMasterErrorResponseDto })
-  @ApiNotFoundResponse({ type: MenuMasterErrorResponseDto })
-  async getAll(
-    @Query() queryDto: GetMenuQueryDto,
-  ): Promise<MenuMasterSuccessResponse<MenuMasterPayload[], MenuMasterGetMeta>> {
-    const result = await this.menuMasterService.getAll(queryDto);
-
-    return {
-      success: true,
-      message:
-        queryDto.menuId !== undefined ? 'Menu fetched successfully' : 'Menus fetched successfully',
-      data: result.items,
-      meta: result.meta,
-    };
-  }
 }
