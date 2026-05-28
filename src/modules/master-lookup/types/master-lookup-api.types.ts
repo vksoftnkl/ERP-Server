@@ -40,6 +40,7 @@ export interface MastersLookupPayload {
   customers: NameIdOption[];
   supplierGroups: NameIdOption[];
   suppliers: NameIdOption[];
+  userMasters: NameIdOption[];
 }
 export const ACCOUNT_LOOKUP_MODULE_KEYS = [
   'companies',
@@ -76,6 +77,7 @@ export const MASTER_LOOKUP_MODULE_KEYS = [
   'customers',
   'supplierGroups',
   'suppliers',
+  'userMasters',
 ] as const;
 export const LOOKUP_MODULE_KEYS = [
   ...ACCOUNT_LOOKUP_MODULE_KEYS,
@@ -317,6 +319,7 @@ export const LOOKUP_MODULE_ALIASES: Record<LookupModuleKey, readonly string[]> =
     'supplier_groups',
   ],
   suppliers: ['suppliers', 'supplier', 'suppliers master', 'supplier master', 'supplier-master'],
+  userMasters: ['user masters', 'user master', 'users', 'user', 'user-master', 'user_master'],
 } as const;
 export interface MasterLookupPayload {
   accounts: AccountsLookupPayload;

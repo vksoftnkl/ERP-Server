@@ -60,6 +60,7 @@ const MODULE_DROPDOWN_NAME_ALIASES: Record<LookupModuleKey, string[]> = {
   customers: ['customers', 'customer'],
   supplierGroups: ['supplier groups', 'supplier group'],
   suppliers: ['suppliers', 'supplier'],
+  userMasters: ['user masters', 'user master', 'users', 'user'],
 };
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ModuleFetcher = (search: string | undefined, take: number | undefined) => Promise<NameIdOption[]>;
@@ -157,6 +158,7 @@ export class MasterLookupService {
         customers: byModule.customers,
         supplierGroups: byModule.supplierGroups,
         suppliers: byModule.suppliers,
+        userMasters: byModule.userMasters,
       },
     };
   }
@@ -631,6 +633,20 @@ export class MasterLookupService {
             ...take,
           }),
         (row) => this.toOption(row.supId, row.supName),
+      ),
+      userMasters: this.simpleFetcher(
+        (c, take) =>
+          this.prisma.userMaster.findMany({
+            where: {
+              usrIsDeleted: false,
+              usrIsActive: true,
+              ...c({ OR: [{ usrDisplayName: true }, { usrLoginName: true }] }),
+            },
+            select: { usrId: true, usrDisplayName: true },
+            orderBy: [{ usrDisplayName: 'asc' }, { usrId: 'asc' }],
+            ...take,
+          }),
+        (row) => this.toOption(row.usrId, row.usrDisplayName),
       ),
     };
   }
