@@ -164,26 +164,15 @@ export class AuthService {
     const isDesktopOrMobile = ['desktop', 'mobile'].includes(resolvedType.toLowerCase());
 
     if (isWeb) {
-      return this.prisma.deviceMaster.upsert({
-        where: { devDeviceUid: lookupUid },
-        create: {
-          devDeviceUid: lookupUid,
-          devDeviceName: 'Web Browser',
-          devDeviceType: 'Web',
-          devUserId: user.usrId,
-          devCompanyId: user.usrCompanyId,
-          devBranchId: user.usrBranchId,
-          devLastIp: ip,
-          devLastLogin: now,
-          devCreatedBy: user.usrId,
-          devIsActive: true,
-          devIsDeleted: false,
-          devIsBlocked: false,
-        },
-        update: {
-          devUserId: user.usrId,
-          devCompanyId: user.usrCompanyId,
-          devBranchId: user.usrBranchId,
+      const webDevice = await this.prisma.deviceMaster.findFirst({
+        where: { devUserId: user.usrId, devDeviceType: 'Web' },
+      });
+      if (!webDevice) {
+        throw new UnauthorizedException('Device not registered. Please contact administrator.');
+      }
+      return this.prisma.deviceMaster.update({
+        where: { devId: webDevice.devId },
+        data: {
           devLastIp: ip,
           devLastLogin: now,
           devModifiedOn: now,
