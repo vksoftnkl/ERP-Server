@@ -179,9 +179,7 @@ export class AuthService {
           devModifiedBy: user.usrId,
         },
       });
-    }
-
-    const existing = await this.prisma.deviceMaster.findUnique({
+    }    const existing = await this.prisma.deviceMaster.findUnique({
       where: { devDeviceUid: lookupUid },
     });
     if (!existing) {
