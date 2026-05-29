@@ -3,7 +3,6 @@ export enum DeviceType {
   MOBILE = 'Mobile',
   WEB = 'Web',
 }
-
 export enum DevicePlatform {
   WINDOWS = 'Windows',
   MACOS = 'macOS',

@@ -2,7 +2,6 @@ export type { FixedErrorDetail as BankListErrorDetail } from 'src/common/types/m
 export type { FixedErrorResponse as BankListErrorResponse } from 'src/common/types/module-api.types';
 export type { FixedSuccessResponse as BankListSuccessResponse } from 'src/common/types/module-api.types';
 export type { FixedListMeta as BankListMeta } from 'src/common/types/module-list.types';
-
 export interface BankListPayload {
   bnkId: string;
   bnkName: string;
@@ -18,5 +17,4 @@ export interface BankListPayload {
   bnkModifiedOn: string;
   bnkModifiedBy: string | null;
 }
-
 export type BankListItem = BankListPayload | Record<string, unknown>;

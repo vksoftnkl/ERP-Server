@@ -160,13 +160,44 @@ export class AuthService {
     if (!lookupUid) {
       throw new UnauthorizedException('Device not registered');
     }
+    const isWeb = resolvedType.toLowerCase() === 'web';
+    const isDesktopOrMobile = ['desktop', 'mobile'].includes(resolvedType.toLowerCase());
+
+    if (isWeb) {
+      return this.prisma.deviceMaster.upsert({
+        where: { devDeviceUid: lookupUid },
+        create: {
+          devDeviceUid: lookupUid,
+          devDeviceName: 'Web Browser',
+          devDeviceType: 'Web',
+          devUserId: user.usrId,
+          devCompanyId: user.usrCompanyId,
+          devBranchId: user.usrBranchId,
+          devLastIp: ip,
+          devLastLogin: now,
+          devCreatedBy: user.usrId,
+          devIsActive: true,
+          devIsDeleted: false,
+          devIsBlocked: false,
+        },
+        update: {
+          devUserId: user.usrId,
+          devCompanyId: user.usrCompanyId,
+          devBranchId: user.usrBranchId,
+          devLastIp: ip,
+          devLastLogin: now,
+          devModifiedOn: now,
+          devModifiedBy: user.usrId,
+        },
+      });
+    }
+
     const existing = await this.prisma.deviceMaster.findUnique({
       where: { devDeviceUid: lookupUid },
     });
     if (!existing) {
       throw new UnauthorizedException('Device not registered. Please contact administrator.');
     }
-    const isDesktopOrMobile = ['desktop', 'mobile'].includes(resolvedType.toLowerCase());
     if (isDesktopOrMobile) {
       if (existing.devIsBlocked) {
         throw new UnauthorizedException(existing.devBlockReason ?? 'Device is blocked. Please contact administrator.');
@@ -185,8 +216,7 @@ export class AuthService {
         devLastLogin: now,
         devModifiedOn: now,
         devModifiedBy: user.usrId,
-        ...(opts.deviceType !== undefined &&
-          resolvedType.toLowerCase() !== 'web' && { devDeviceType: opts.deviceType }),
+        ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
       },
     });
   }

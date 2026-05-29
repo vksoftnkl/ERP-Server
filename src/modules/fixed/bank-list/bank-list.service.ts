@@ -24,11 +24,9 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
-
 const BANK_LIST_TABLE_NAME = 'bank master';
 const BANK_LIST_AUDIT_SCREEN_NAME = 'Bank List Master';
 const BANK_LIST_OPTIONAL_FIELDS = ['bnkShortName', 'bnkAlias', 'bnkRbiCode', 'bnkIbanSupported', 'bnkIsActive'];
-
 @Injectable()
 export class BankListService {
   constructor(
@@ -36,14 +34,12 @@ export class BankListService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveBankListDto: SaveBankListDto): Promise<BankListPayload> {
     if (saveBankListDto.bnkId) {
       return this.updateBank(saveBankListDto);
     }
     return this.createBank(saveBankListDto);
   }
-
   async list(
     queryDto: ListBankListQueryDto,
   ): Promise<ConfiguredGridListResult<BankListItem, BankListMeta>> {
@@ -57,7 +53,6 @@ export class BankListService {
     }
     return result;
   }
-
   async getById(bnkId: string): Promise<BankListPayload> {
     const record = await this.prisma.bankMaster.findFirst({
       where: { bnkId, bnkIsDeleted: false },
@@ -71,7 +66,6 @@ export class BankListService {
     }
     return this.toPayload(record);
   }
-
   async softDelete(bnkId: string): Promise<{ bnkId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.bankMaster.findFirst({
@@ -136,7 +130,6 @@ export class BankListService {
       return { bnkId, deleted: true };
     });
   }
-
   private async createBank(saveBankListDto: SaveBankListDto): Promise<BankListPayload> {
     const normalizedName = normalizeRequiredText<BankListErrorDetail, BankListErrorResponse>(
       saveBankListDto.bnkName,
@@ -184,7 +177,6 @@ export class BankListService {
       throw error;
     }
   }
-
   private async updateBank(saveBankListDto: SaveBankListDto): Promise<BankListPayload> {
     const bnkId = saveBankListDto.bnkId!;
     try {
@@ -238,7 +230,6 @@ export class BankListService {
       throw error;
     }
   }
-
   private async ensureNameIsUnique(
     tx: FixedWriteClient,
     bankName: string,
@@ -259,7 +250,6 @@ export class BankListService {
       );
     }
   }
-
   private toPayload(record: BankMaster): BankListPayload {
     return {
       bnkId: record.bnkId,

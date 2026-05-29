@@ -27,7 +27,6 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
-
 const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
 const DEVICE_TYPE_VALUES = Object.values(DeviceType);
@@ -49,11 +48,9 @@ const DEVICE_LIST_MASTER_OPTIONAL_FIELD_TRANSFORMS = {
   devDeviceType: normalizeDeviceType,
   devPlatform: normalizeDevicePlatform,
 };
-
 function isDeviceUidRequired(deviceType: DeviceType): boolean {
   return deviceType === DeviceType.DESKTOP || deviceType === DeviceType.MOBILE;
 }
-
 function normalizeDeviceType(value: unknown): DeviceType | undefined {
   if (value === undefined || value === null) {
     return undefined;
@@ -81,11 +78,9 @@ function normalizeDeviceType(value: unknown): DeviceType | undefined {
   }
   return normalized as DeviceType;
 }
-
 function buildGeneratedDeviceUid(deviceType: DeviceType): string {
   return `${deviceType.toUpperCase()}-${randomUUID()}`;
 }
-
 function normalizeDeviceUid(value: string | undefined, deviceType: DeviceType): string | undefined {
   if (isDeviceUidRequired(deviceType)) {
     return normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
@@ -97,7 +92,6 @@ function normalizeDeviceUid(value: string | undefined, deviceType: DeviceType): 
   const trimmed = value?.trim();
   return trimmed || undefined;
 }
-
 function normalizeDevicePlatform(value: unknown): DevicePlatform | null | undefined {
   if (value === undefined) {
     return undefined;
@@ -128,15 +122,12 @@ function normalizeDevicePlatform(value: unknown): DevicePlatform | null | undefi
   }
   return normalized as DevicePlatform;
 }
-
 function toDeviceType(value: string): DeviceType {
   return value as DeviceType;
 }
-
 function toDevicePlatform(value: string | null): DevicePlatform | null {
   return value === null ? null : (value as DevicePlatform);
 }
-
 @Injectable()
 export class DeviceListMasterService {
   constructor(
@@ -144,14 +135,12 @@ export class DeviceListMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveDeviceListMasterDto: SaveDeviceListMasterDto): Promise<DeviceListMasterPayload> {
     if (saveDeviceListMasterDto.devId) {
       return this.updateDevice(saveDeviceListMasterDto);
     }
     return this.createDevice(saveDeviceListMasterDto);
   }
-
   async list(
     queryDto: ListDeviceListMasterQueryDto,
   ): Promise<ConfiguredGridListResult<DeviceListMasterListItem, DeviceListMasterListMeta>> {

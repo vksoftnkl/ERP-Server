@@ -1,5 +1,4 @@
 import type { DevicePlatform, DeviceType } from './device-list-master-enum';
-
 export type { FixedErrorDetail as DeviceListMasterErrorDetail } from 'src/common/types/module-api.types';
 export type { FixedErrorResponse as DeviceListMasterErrorResponse } from 'src/common/types/module-api.types';
 export type { FixedSuccessResponse as DeviceListMasterSuccessResponse } from 'src/common/types/module-api.types';

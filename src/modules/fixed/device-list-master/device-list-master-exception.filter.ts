@@ -4,7 +4,6 @@ import {
   DeviceListMasterErrorDetail,
   DeviceListMasterErrorResponse,
 } from './types/device-list-master-api.types';
-
 @Catch()
 export class DeviceListMasterExceptionFilter extends FixedExceptionFilter<
   DeviceListMasterErrorDetail,

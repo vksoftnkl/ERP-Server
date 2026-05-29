@@ -40,7 +40,6 @@ import {
   BankListSuccessResponse,
 } from './types/bank-list-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Bank List')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -49,7 +48,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(BankListExceptionFilter)
 export class BankListController {
   constructor(private readonly bankListService: BankListService) {}
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update bank (by bnkId presence)' })
@@ -61,14 +59,12 @@ export class BankListController {
     @Body() saveBankListDto: SaveBankListDto,
   ): Promise<BankListSuccessResponse<BankListPayload>> {
     const data = await this.bankListService.save(saveBankListDto);
-
     return {
       success: true,
       message: saveBankListDto.bnkId ? 'Bank updated successfully' : 'Bank created successfully',
       data,
     };
   }
-
   @Get('list')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'List banks with filter/search/pagination' })
@@ -78,7 +74,6 @@ export class BankListController {
     @Query() queryDto: ListBankListQueryDto,
   ): Promise<BankListSuccessResponse<BankListItem[], BankListMeta>> {
     const result = await this.bankListService.list(queryDto);
-
     return {
       success: true,
       message: 'Banks fetched successfully',
@@ -87,7 +82,6 @@ export class BankListController {
       ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get bank by id' })
@@ -99,14 +93,12 @@ export class BankListController {
     @Query('bnkId', new ParseUUIDPipe({ version: '7' })) bnkId: string,
   ): Promise<BankListSuccessResponse<BankListPayload>> {
     const data = await this.bankListService.getById(bnkId);
-
     return {
       success: true,
       message: 'Bank fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete bank by id' })
@@ -118,7 +110,6 @@ export class BankListController {
     @Query('bnkId', new ParseUUIDPipe({ version: '7' })) bnkId: string,
   ): Promise<BankListSuccessResponse<{ bnkId: string; deleted: true }>> {
     const data = await this.bankListService.softDelete(bnkId);
-
     return {
       success: true,
       message: 'Bank deleted successfully',

@@ -40,7 +40,6 @@ import {
   DeviceListMasterSuccessResponse,
 } from './types/device-list-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Device List Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -49,7 +48,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(DeviceListMasterExceptionFilter)
 export class DeviceListMasterController {
   constructor(private readonly deviceListMasterService: DeviceListMasterService) {}
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update device (by devId presence)' })
@@ -61,7 +59,6 @@ export class DeviceListMasterController {
     @Body() saveDeviceListMasterDto: SaveDeviceListMasterDto,
   ): Promise<DeviceListMasterSuccessResponse<DeviceListMasterPayload>> {
     const data = await this.deviceListMasterService.save(saveDeviceListMasterDto);
-
     return {
       success: true,
       message: saveDeviceListMasterDto.devId
@@ -70,7 +67,6 @@ export class DeviceListMasterController {
       data,
     };
   }
-
   @Get('list')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'List devices with filter/search/pagination' })
@@ -82,7 +78,6 @@ export class DeviceListMasterController {
     DeviceListMasterSuccessResponse<DeviceListMasterListItem[], DeviceListMasterListMeta>
   > {
     const result = await this.deviceListMasterService.list(queryDto);
-
     return {
       success: true,
       message: 'Devices fetched successfully',
@@ -91,7 +86,6 @@ export class DeviceListMasterController {
       ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get device by id' })
@@ -103,14 +97,12 @@ export class DeviceListMasterController {
     @Query('devId', new ParseUUIDPipe({ version: '7' })) devId: string,
   ): Promise<DeviceListMasterSuccessResponse<DeviceListMasterPayload>> {
     const data = await this.deviceListMasterService.getById(devId);
-
     return {
       success: true,
       message: 'Device fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete device by id' })
@@ -122,7 +114,6 @@ export class DeviceListMasterController {
     @Query('devId', new ParseUUIDPipe({ version: '7' })) devId: string,
   ): Promise<DeviceListMasterSuccessResponse<{ devId: string; deleted: true }>> {
     const data = await this.deviceListMasterService.softDelete(devId);
-
     return {
       success: true,
       message: 'Device deleted successfully',
