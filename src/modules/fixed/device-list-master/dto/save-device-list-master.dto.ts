@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsIP, IsNotEmpty, ValidateIf } from 'class-validator';
-
 import {
   NullableString,
   NullableUuid,
@@ -61,17 +60,13 @@ export class SaveDeviceListMasterDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableString(250)
   devBlockReason?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'IPv4 or IPv6 address' })
-  @NullableString()
-  @IsIP()
-  devLastIp?: string | null;
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
   devIsActive?: boolean;
   @ApiPropertyOptional({ maxLength: 100, nullable: false })
   @NullableString(100)
-  devCreatedBy?: string | null;
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @NullableString(100)
-  devModifiedBy?: string | null;
+  devEntryBy?: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  devcreatedOrModifiedBy?: string | null;
 }

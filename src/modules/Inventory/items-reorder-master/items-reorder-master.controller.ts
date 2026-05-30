@@ -5,7 +5,6 @@ import {
   Controller,
   Delete,
   Get,
-  ParseUUIDPipe,
   Post,
   Query,
   UseFilters,
@@ -31,15 +30,19 @@ import {
   ItemReorderErrorResponseDto,
   ItemReorderPayloadDto,
   ItemReorderSuccessDeleteDto,
+  ItemReorderSuccessListDto,
   ItemReorderSuccessSaveDto,
   ItemReorderSuccessSingleDto,
 } from './dto/item-reorder-response.dto';
+import { GetItemReorderQueryDto } from './dto/get-item-reorder-query.dto';
 import { DeleteItemReorderDto } from './dto/delete-item-reorder.dto';
 import { SaveItemReorderDto } from './dto/save-item-reorder.dto';
 import { ItemReorderExceptionFilter } from './item-reorder-exception.filter';
 import { ItemsReorderMasterService } from './items-reorder-master.service';
 import {
   ItemReorderDeleteResult,
+  ItemReorderListItem,
+  ItemReorderListMeta,
   ItemReorderPayload,
   ItemReorderSuccessResponse,
 } from './types/item-reorder-api.types';
@@ -59,6 +62,8 @@ import { API_VERSION } from '../../../common/constants/api-version';
   DeleteItemReorderDto,
   ItemReorderPayloadDto,
   ItemReorderDeleteResultDto,
+  ItemReorderSuccessSingleDto,
+  ItemReorderSuccessListDto,
 )
 @CacheTTL(60)
 @Controller('item-reorders')
@@ -104,20 +109,41 @@ export class ItemsReorderMasterController {
 
   @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get item reorder by id' })
-  @ApiQuery({ name: 'ir_id', schema: { type: 'string', format: 'uuid' } })
-  @ApiOkResponse({ type: ItemReorderSuccessSingleDto })
+  @ApiOperation({
+    summary: 'Get item reorder by ir_id, or list with optional filters/pagination',
+  })
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(ItemReorderSuccessSingleDto) },
+        { $ref: getSchemaPath(ItemReorderSuccessListDto) },
+      ],
+    },
+  })
   @ApiBadRequestResponse({ type: ItemReorderErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemReorderErrorResponseDto })
   async getById(
-    @Query('ir_id', new ParseUUIDPipe({ version: '7' })) irId: string,
-  ): Promise<ItemReorderSuccessResponse<ItemReorderPayload>> {
-    const data = await this.itemsReorderMasterService.getById(irId);
+    @Query() query: Record<string, unknown>,
+  ): Promise<
+    | ItemReorderSuccessResponse<ItemReorderPayload>
+    | ItemReorderSuccessResponse<ItemReorderListItem[], ItemReorderListMeta>
+  > {
+    const queryDto = (await validateDto(query, GetItemReorderQueryDto, {
+      type: 'query',
+    })) as GetItemReorderQueryDto;
 
+    if (queryDto.ir_id) {
+      const data = await this.itemsReorderMasterService.getById(queryDto.ir_id);
+      return { success: true, message: 'Item reorder fetched successfully', data };
+    }
+
+    const result = await this.itemsReorderMasterService.list(queryDto);
     return {
       success: true,
-      message: 'Item reorder fetched successfully',
-      data,
+      message: 'Item reorders fetched successfully',
+      data: result.items,
+      meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

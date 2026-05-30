@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { ItemEanCode, Prisma } from '@prisma/client';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from 'src/common/configured-grid-sql/configured-grid-sql.service';
+import { GetItemEanCodeQueryDto } from './dto/get-item-ean-code-query.dto';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import {
   ItemEanCodeDeleteResult,
   ItemEanCodeErrorDetail,
+  ItemEanCodeListItem,
+  ItemEanCodeListMeta,
   ItemEanCodePayload,
 } from './types/item-ean-code-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
@@ -17,6 +24,11 @@ import {
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import {
+  resolvePagination,
+  runConfiguredGridQuery,
+  runInventoryListQuery,
+} from 'src/common/utils/module-list.utils';
 const ITEM_EAN_CODE_TABLE_NAME = 'item ean codes';
 const ITEM_EAN_CODE_AUDIT_SCREEN_NAME = 'Item EAN Code Master';
 
@@ -25,6 +37,7 @@ export class ItemsEanCodeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveItemEanCodeDto: SaveItemEanCodeDto): Promise<ItemEanCodePayload>;
@@ -54,6 +67,46 @@ export class ItemsEanCodeMasterService {
       throw error;
     }
   }
+  async list(
+    queryDto: GetItemEanCodeQueryDto,
+  ): Promise<ConfiguredGridListResult<ItemEanCodeListItem, ItemEanCodeListMeta>> {
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const where: Prisma.ItemEanCodeWhereInput = {
+      eanIsDeleted: false,
+      ...(queryDto.ean_item_id !== undefined && { eanItemId: queryDto.ean_item_id }),
+      ...(queryDto.ean_unit_id !== undefined && { eanUnitId: queryDto.ean_unit_id }),
+      ...(queryDto.ean_godown_id !== undefined && { eanGodownId: queryDto.ean_godown_id }),
+      ...(queryDto.ean_is_default !== undefined && { eanIsDefault: queryDto.ean_is_default }),
+      ...(queryDto.ean_is_active !== undefined && { eanIsActive: queryDto.ean_is_active }),
+    };
+    return runInventoryListQuery<ItemEanCode, ItemEanCodeListItem>(
+      { page, limit },
+      {
+        configuredGridFn: () =>
+          runConfiguredGridQuery<ItemEanCodeListItem>(
+            this.configuredGridSqlService,
+            {
+              tableName: ITEM_EAN_CODE_TABLE_NAME,
+              alias: 'item_ean_code_grid',
+              search: queryDto.search,
+              page,
+              limit,
+              skip,
+            },
+          ),
+        countFn: () => this.prisma.itemEanCode.count({ where }),
+        findManyFn: () =>
+          this.prisma.itemEanCode.findMany({
+            where,
+            orderBy: [{ eanItemId: 'asc' }, { eanId: 'asc' }],
+            skip,
+            take: limit,
+          }),
+        toItemFn: (record) => this.toPayload(record),
+      },
+    );
+  }
+
   async getById(eanId: string): Promise<ItemEanCodePayload> {
     const record = await this.prisma.itemEanCode.findFirst({
       where: {

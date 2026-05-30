@@ -1,11 +1,11 @@
 export type { InventoryErrorDetail as ItemReorderErrorDetail } from 'src/common/types/module-api.types';
 export type { InventoryErrorResponse as ItemReorderErrorResponse } from 'src/common/types/module-api.types';
 export type { InventorySuccessResponse as ItemReorderSuccessResponse } from 'src/common/types/module-api.types';
+export type { InventoryListMeta as ItemReorderListMeta } from 'src/common/utils/module-list.utils';
 export interface ItemReorderDeleteResult {
   ir_id: string;
   deleted: true;
 }
-
 export interface ItemReorderPayload {
   ir_id: string;
   ir_branch_id: string | null;
@@ -29,3 +29,4 @@ export interface ItemReorderPayload {
   ir_modified_on: string;
   ir_modified_by: string | null;
 }
+export type ItemReorderListItem = ItemReorderPayload | Record<string, unknown>;

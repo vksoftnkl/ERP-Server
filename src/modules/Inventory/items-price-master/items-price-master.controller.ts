@@ -29,6 +29,7 @@ import {
 import {
   ItemPriceDeleteResultDto,
   ItemPriceErrorResponseDto,
+  ItemPriceSuccessListDto,
   ItemUnitConversionDeleteResultDto,
   ItemPricePayloadDto,
   ItemUnitConversionPayloadDto,
@@ -36,6 +37,7 @@ import {
   ItemPriceSuccessSaveDto,
   ItemPriceSuccessSingleDto,
 } from './dto/item-price-response.dto';
+import { GetItemPriceQueryDto } from './dto/get-item-price-query.dto';
 import { DeleteItemPriceDto } from './dto/delete-item-price.dto';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import { DeleteItemUnitConversionDto } from './dto/delete-item-unit-conversion.dto';
@@ -44,8 +46,11 @@ import { ItemPriceExceptionFilter } from './item-price-exception.filter';
 import { ItemsPriceMasterService } from './items-price-master.service';
 import {
   ItemPriceDeleteResult,
+  ItemPriceListItem,
+  ItemPriceListMeta,
   ItemPricePayload,
   ItemUnitConversionDeleteResult,
+  ItemUnitConversionListItem,
   ItemUnitConversionPayload,
   ItemPriceSuccessResponse,
 } from './types/item-price-api.types';
@@ -69,6 +74,8 @@ import { API_VERSION } from '../../../common/constants/api-version';
   ItemUnitConversionPayloadDto,
   ItemPriceDeleteResultDto,
   ItemUnitConversionDeleteResultDto,
+  ItemPriceSuccessSingleDto,
+  ItemPriceSuccessListDto,
 )
 @CacheTTL(60)
 @Controller('item-prices')
@@ -133,54 +140,70 @@ export class ItemsPriceMasterController {
 
   @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get item price by id' })
-  @ApiQuery({
-    name: 'ipm_id',
-    required: false,
-    schema: { type: 'string', format: 'uuid' },
+  @ApiOperation({
+    summary:
+      'Get item price/unit-conversion by id, or list with optional filters/pagination. ' +
+      'Provide ipm_id for single price, iuc_id for single unit conversion, ' +
+      'ipm_item_id/* for price list, iuc_item_id/* for unit conversion list.',
   })
-  @ApiQuery({
-    name: 'iuc_id',
-    required: false,
-    schema: { type: 'string', format: 'uuid' },
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(ItemPriceSuccessSingleDto) },
+        { $ref: getSchemaPath(ItemPriceSuccessListDto) },
+      ],
+    },
   })
-  @ApiOkResponse({ type: ItemPriceSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemPriceErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemPriceErrorResponseDto })
   async getById(
     @Query() query: Record<string, unknown>,
-  ): Promise<ItemPriceSuccessResponse<ItemPricePayload | ItemUnitConversionPayload>> {
-    const hasPriceId = typeof query.ipm_id === 'string' && query.ipm_id.trim().length > 0;
-    const hasUnitConversionId = typeof query.iuc_id === 'string' && query.iuc_id.trim().length > 0;
+  ): Promise<
+    | ItemPriceSuccessResponse<ItemPricePayload | ItemUnitConversionPayload>
+    | ItemPriceSuccessResponse<ItemPriceListItem[], ItemPriceListMeta>
+    | ItemPriceSuccessResponse<ItemUnitConversionListItem[], ItemPriceListMeta>
+  > {
+    const queryDto = (await validateDto(query, GetItemPriceQueryDto, {
+      type: 'query',
+    })) as GetItemPriceQueryDto;
+
+    const hasPriceId = Boolean(queryDto.ipm_id);
+    const hasUnitConversionId = Boolean(queryDto.iuc_id);
 
     if (hasPriceId && hasUnitConversionId) {
-      throw new BadRequestException({
-        message: ['Provide either ipm_id or iuc_id, not both'],
-      });
+      throw new BadRequestException({ message: ['Provide either ipm_id or iuc_id, not both'] });
+    }
+
+    if (hasPriceId) {
+      const data = await this.itemsPriceMasterService.getById(queryDto.ipm_id!);
+      return { success: true, message: 'Item price fetched successfully', data };
     }
 
     if (hasUnitConversionId) {
-      const dto = (await validateDto({ iuc_id: query.iuc_id }, DeleteItemUnitConversionDto, {
-        type: 'query',
-      })) as DeleteItemUnitConversionDto;
-      const data = await this.itemsPriceMasterService.getItemUnitConversionById(dto.iuc_id);
+      const data = await this.itemsPriceMasterService.getItemUnitConversionById(queryDto.iuc_id!);
+      return { success: true, message: 'Item unit conversion fetched successfully', data };
+    }
 
+    const isUnitConversionList = Boolean(queryDto.iuc_item_id ?? queryDto.iuc_company_id);
+
+    if (isUnitConversionList) {
+      const result = await this.itemsPriceMasterService.listUnitConversions(queryDto);
       return {
         success: true,
-        message: 'Item unit conversion fetched successfully',
-        data,
+        message: 'Item unit conversions fetched successfully',
+        data: result.items,
+        meta: result.meta,
+        ...(result.styles !== undefined && { styles: result.styles }),
       };
     }
 
-    const dto = (await validateDto({ ipm_id: query.ipm_id }, DeleteItemPriceDto, {
-      type: 'query',
-    })) as DeleteItemPriceDto;
-    const data = await this.itemsPriceMasterService.getById(dto.ipm_id);
-
+    const result = await this.itemsPriceMasterService.listPrices(queryDto);
     return {
       success: true,
-      message: 'Item price fetched successfully',
-      data,
+      message: 'Item prices fetched successfully',
+      data: result.items,
+      meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

@@ -242,14 +242,13 @@ export class DeviceListMasterService {
       ? (saveDeviceListMasterDto.devCompanyId ?? null)
       : null;
     const now = new Date();
-    const createdBy = resolveActor(saveDeviceListMasterDto.devCreatedBy);
-    const modifiedBy = resolveActor(saveDeviceListMasterDto.devModifiedBy, createdBy);
+    const createdBy = resolveActor(saveDeviceListMasterDto.devEntryBy, DEFAULT_ACTOR);
     const data: Prisma.DeviceMasterUncheckedCreateInput = {
       devDeviceUid: normalizedDeviceUid,
       devCreatedOn: now,
       devCreatedBy: createdBy,
-      devModifiedOn: now,
-      devModifiedBy: modifiedBy,
+      devModifiedOn: null,
+      devModifiedBy: null,
     };
     applyPresentFields(
       data,
@@ -313,7 +312,7 @@ export class DeviceListMasterService {
         await this.ensureDeviceUidIsUnique(tx, nextDeviceUid, nextCompanyId, devId);
         const data: Prisma.DeviceMasterUncheckedUpdateInput = {
           devModifiedOn: new Date(),
-          devModifiedBy: resolveActor(saveDeviceListMasterDto.devModifiedBy),
+          devModifiedBy: resolveActor(saveDeviceListMasterDto.devEntryBy, DEFAULT_ACTOR),
         };
         if (normalizedDeviceUid !== undefined) {
           data.devDeviceUid = normalizedDeviceUid;
@@ -336,7 +335,7 @@ export class DeviceListMasterService {
             displayName: payload.devDeviceUid,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveDeviceListMasterDto.devModifiedBy),
+            userId: resolveActor(saveDeviceListMasterDto.devEntryBy, DEFAULT_ACTOR),
             notes: 'Device updated',
           },
           tx,

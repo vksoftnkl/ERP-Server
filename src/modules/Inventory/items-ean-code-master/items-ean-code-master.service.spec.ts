@@ -77,6 +77,7 @@ describe('ItemsEanCodeMasterService', () => {
     service = new ItemsEanCodeMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      configuredGridSqlService as never,
     );
   });
 

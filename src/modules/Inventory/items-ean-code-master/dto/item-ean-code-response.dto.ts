@@ -1,11 +1,14 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
+import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
 import {
   InventoryErrorFieldDto,
   InventoryErrorResponseDto,
+  InventoryListMetaDto,
 } from 'src/common/utils/module-response.dto';
 
 export { InventoryErrorFieldDto as ItemEanCodeErrorFieldDto };
 export { InventoryErrorResponseDto as ItemEanCodeErrorResponseDto };
+export { InventoryListMetaDto as ItemEanCodeListMetaDto };
 export class ItemEanCodePayloadDto {
   @ApiProperty({ format: 'uuid' })
   ean_id!: string;
@@ -85,6 +88,23 @@ export class ItemEanCodeSuccessSaveDto {
   })
   data!: ItemEanCodePayloadDto | ItemEanCodePayloadDto[];
 }
+export class ItemEanCodeSuccessListDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Item EAN codes fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: ItemEanCodePayloadDto, isArray: true })
+  data!: ItemEanCodePayloadDto[];
+
+  @ApiProperty({ type: InventoryListMetaDto })
+  meta!: InventoryListMetaDto;
+
+  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
+  styles?: ConfiguredGridStyleDto[];
+}
+
 export class ItemEanCodeSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

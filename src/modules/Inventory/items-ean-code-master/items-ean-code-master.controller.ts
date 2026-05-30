@@ -5,7 +5,6 @@ import {
   Controller,
   Delete,
   Get,
-  ParseUUIDPipe,
   Post,
   Query,
   UseFilters,
@@ -32,15 +31,19 @@ import {
   ItemEanCodeErrorResponseDto,
   ItemEanCodePayloadDto,
   ItemEanCodeSuccessDeleteDto,
+  ItemEanCodeSuccessListDto,
   ItemEanCodeSuccessSaveDto,
   ItemEanCodeSuccessSingleDto,
 } from './dto/item-ean-code-response.dto';
+import { GetItemEanCodeQueryDto } from './dto/get-item-ean-code-query.dto';
 import { DeleteItemEanCodeDto } from './dto/delete-item-ean-code.dto';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import { ItemEanCodeExceptionFilter } from './item-ean-code-exception.filter';
 import { ItemsEanCodeMasterService } from './items-ean-code-master.service';
 import {
   ItemEanCodeDeleteResult,
+  ItemEanCodeListItem,
+  ItemEanCodeListMeta,
   ItemEanCodePayload,
   ItemEanCodeSuccessResponse,
 } from './types/item-ean-code-api.types';
@@ -60,6 +63,8 @@ import { API_VERSION } from '../../../common/constants/api-version';
   DeleteItemEanCodeDto,
   ItemEanCodePayloadDto,
   ItemEanCodeDeleteResultDto,
+  ItemEanCodeSuccessSingleDto,
+  ItemEanCodeSuccessListDto,
 )
 @CacheTTL(300)
 @Controller('item-ean-codes')
@@ -105,20 +110,41 @@ export class ItemsEanCodeMasterController {
 
   @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get item EAN code by id' })
-  @ApiQuery({ name: 'ean_id', schema: { type: 'string', format: 'uuid' } })
-  @ApiOkResponse({ type: ItemEanCodeSuccessSingleDto })
+  @ApiOperation({
+    summary: 'Get item EAN code by ean_id, or list with optional filters/pagination',
+  })
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(ItemEanCodeSuccessSingleDto) },
+        { $ref: getSchemaPath(ItemEanCodeSuccessListDto) },
+      ],
+    },
+  })
   @ApiBadRequestResponse({ type: ItemEanCodeErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemEanCodeErrorResponseDto })
   async getById(
-    @Query('ean_id', new ParseUUIDPipe({ version: '7' })) eanId: string,
-  ): Promise<ItemEanCodeSuccessResponse<ItemEanCodePayload>> {
-    const data = await this.itemsEanCodeMasterService.getById(eanId);
+    @Query() query: Record<string, unknown>,
+  ): Promise<
+    | ItemEanCodeSuccessResponse<ItemEanCodePayload>
+    | ItemEanCodeSuccessResponse<ItemEanCodeListItem[], ItemEanCodeListMeta>
+  > {
+    const queryDto = (await validateDto(query, GetItemEanCodeQueryDto, {
+      type: 'query',
+    })) as GetItemEanCodeQueryDto;
 
+    if (queryDto.ean_id) {
+      const data = await this.itemsEanCodeMasterService.getById(queryDto.ean_id);
+      return { success: true, message: 'Item EAN code fetched successfully', data };
+    }
+
+    const result = await this.itemsEanCodeMasterService.list(queryDto);
     return {
       success: true,
-      message: 'Item EAN code fetched successfully',
-      data,
+      message: 'Item EAN codes fetched successfully',
+      data: result.items,
+      meta: result.meta,
+      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

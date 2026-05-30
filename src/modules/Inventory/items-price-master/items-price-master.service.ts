@@ -1,12 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { ItemPriceMaster, ItemUnitConversion, Prisma } from '@prisma/client';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from 'src/common/configured-grid-sql/configured-grid-sql.service';
+import { GetItemPriceQueryDto } from './dto/get-item-price-query.dto';
 import { SaveItemUnitConversionDto } from './dto/save-item-unit-conversion.dto';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import {
   ItemPriceDeleteResult,
   ItemPriceErrorDetail,
+  ItemPriceListItem,
+  ItemPriceListMeta,
   ItemPricePayload,
   ItemUnitConversionDeleteResult,
+  ItemUnitConversionListItem,
   ItemUnitConversionPayload,
 } from './types/item-price-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
@@ -19,6 +27,11 @@ import {
   throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import {
+  resolvePagination,
+  runConfiguredGridQuery,
+  runInventoryListQuery,
+} from 'src/common/utils/module-list.utils';
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_PRICE_TABLE_NAME = 'item price master';
 const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
@@ -50,6 +63,7 @@ export class ItemsPriceMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
   async save(saveItemPriceDto: SaveItemPriceDto): Promise<ItemPricePayload>;
   async save(saveItemPriceDto: SaveItemPriceDto[]): Promise<ItemPricePayload[]>;
@@ -114,6 +128,77 @@ export class ItemsPriceMasterService {
       throw error;
     }
   }
+  async listPrices(
+    queryDto: GetItemPriceQueryDto,
+  ): Promise<ConfiguredGridListResult<ItemPriceListItem, ItemPriceListMeta>> {
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const where: Prisma.ItemPriceMasterWhereInput = {
+      ipmIsDeleted: false,
+      ...(queryDto.ipm_item_id !== undefined && { ipmItemId: queryDto.ipm_item_id }),
+      ...(queryDto.ipm_company_id !== undefined && { ipmCompanyId: queryDto.ipm_company_id }),
+      ...(queryDto.ipm_branch_id !== undefined && { ipmBranchId: queryDto.ipm_branch_id }),
+      ...(queryDto.ipm_is_active !== undefined && { ipmIsActive: queryDto.ipm_is_active }),
+    };
+    return runInventoryListQuery<ItemPriceMaster, ItemPriceListItem>(
+      { page, limit },
+      {
+        configuredGridFn: () =>
+          runConfiguredGridQuery<ItemPriceListItem>(this.configuredGridSqlService, {
+            tableName: ITEM_PRICE_TABLE_NAME,
+            alias: 'item_price_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+          }),
+        countFn: () => this.prisma.itemPriceMaster.count({ where }),
+        findManyFn: () =>
+          this.prisma.itemPriceMaster.findMany({
+            where,
+            orderBy: [{ ipmItemId: 'asc' }, { ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+            skip,
+            take: limit,
+          }),
+        toItemFn: (record) => this.toPayload(record),
+      },
+    );
+  }
+
+  async listUnitConversions(
+    queryDto: GetItemPriceQueryDto,
+  ): Promise<ConfiguredGridListResult<ItemUnitConversionListItem, ItemPriceListMeta>> {
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const where: Prisma.ItemUnitConversionWhereInput = {
+      iucIsDeleted: false,
+      ...(queryDto.iuc_item_id !== undefined && { iucItemId: queryDto.iuc_item_id }),
+      ...(queryDto.iuc_company_id !== undefined && { iucCompanyId: queryDto.iuc_company_id }),
+      ...(queryDto.iuc_is_active !== undefined && { iucIsActive: queryDto.iuc_is_active }),
+    };
+    return runInventoryListQuery<ItemUnitConversion, ItemUnitConversionListItem>(
+      { page, limit },
+      {
+        configuredGridFn: () =>
+          runConfiguredGridQuery<ItemUnitConversionListItem>(this.configuredGridSqlService, {
+            tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
+            alias: 'item_unit_conversion_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+          }),
+        countFn: () => this.prisma.itemUnitConversion.count({ where }),
+        findManyFn: () =>
+          this.prisma.itemUnitConversion.findMany({
+            where,
+            orderBy: [{ iucItemId: 'asc' }, { iucUnitSlno: 'asc' }, { iucId: 'asc' }],
+            skip,
+            take: limit,
+          }),
+        toItemFn: (record) => this.toItemUnitConversionPayload(record),
+      },
+    );
+  }
+
   async getById(ipmId: string): Promise<ItemPricePayload> {
     const record = await this.prisma.itemPriceMaster.findFirst({
       where: {

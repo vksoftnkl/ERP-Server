@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { ItemReorder, Prisma } from '@prisma/client';
+import {
+  ConfiguredGridListResult,
+  ConfiguredGridSqlService,
+} from 'src/common/configured-grid-sql/configured-grid-sql.service';
+import { GetItemReorderQueryDto } from './dto/get-item-reorder-query.dto';
 import { SaveItemReorderDto } from './dto/save-item-reorder.dto';
 import {
   ItemReorderDeleteResult,
   ItemReorderErrorDetail,
+  ItemReorderListItem,
+  ItemReorderListMeta,
   ItemReorderPayload,
 } from './types/item-reorder-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
@@ -18,6 +25,11 @@ import {
   throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import {
+  resolvePagination,
+  runConfiguredGridQuery,
+  runInventoryListQuery,
+} from 'src/common/utils/module-list.utils';
 
 const ITEM_REORDER_TABLE_NAME = 'item reorders';
 const ITEM_REORDER_AUDIT_SCREEN_NAME = 'Item Reorder Master';
@@ -27,6 +39,7 @@ export class ItemsReorderMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveItemReorderDto: SaveItemReorderDto): Promise<ItemReorderPayload>;
@@ -52,6 +65,43 @@ export class ItemsReorderMasterService {
       throw error;
     }
   }
+  async list(
+    queryDto: GetItemReorderQueryDto,
+  ): Promise<ConfiguredGridListResult<ItemReorderListItem, ItemReorderListMeta>> {
+    const { page, limit, skip } = resolvePagination(queryDto);
+    const where: Prisma.ItemReorderWhereInput = {
+      irIsDeleted: false,
+      ...(queryDto.ir_item_id !== undefined && { irItemId: queryDto.ir_item_id }),
+      ...(queryDto.ir_branch_id !== undefined && { irBranchId: queryDto.ir_branch_id }),
+      ...(queryDto.ir_unit_id !== undefined && { irUnitId: queryDto.ir_unit_id }),
+      ...(queryDto.ir_godown_id !== undefined && { irGodownId: queryDto.ir_godown_id }),
+      ...(queryDto.ir_is_active !== undefined && { irIsActive: queryDto.ir_is_active }),
+    };
+    return runInventoryListQuery<ItemReorder, ItemReorderListItem>(
+      { page, limit },
+      {
+        configuredGridFn: () =>
+          runConfiguredGridQuery<ItemReorderListItem>(this.configuredGridSqlService, {
+            tableName: ITEM_REORDER_TABLE_NAME,
+            alias: 'item_reorder_grid',
+            search: queryDto.search,
+            page,
+            limit,
+            skip,
+          }),
+        countFn: () => this.prisma.itemReorder.count({ where }),
+        findManyFn: () =>
+          this.prisma.itemReorder.findMany({
+            where,
+            orderBy: [{ irItemId: 'asc' }, { irId: 'asc' }],
+            skip,
+            take: limit,
+          }),
+        toItemFn: (record) => this.toPayload(record),
+      },
+    );
+  }
+
   async getById(irId: string): Promise<ItemReorderPayload> {
     const record = await this.prisma.itemReorder.findFirst({
       where: { irId, irIsDeleted: false },
