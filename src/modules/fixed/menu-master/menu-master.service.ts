@@ -55,19 +55,25 @@ export class MenuMasterService {
       select: { usrId: true },
     });
     if (!activeUser) return this.emptyResult(queryDto, includeChildren, activeOnly, visibleOnly);
-    // Use the verified userId to get all umMenuIds assigned to this user
+    // Use the verified userId to get all umMenuIds assigned to this user.
+    // When visibleOnly is true, filter here on umVisibility (per-user) rather than
+    // the global menuVisibility column, since menuVisibility is the same for all users.
     const userMenuRows = await this.prisma.userMenus.findMany({
-      where: { umUserId: activeUser.usrId, umIsDeleted: false },
+      where: {
+        umUserId: activeUser.usrId,
+        umIsDeleted: false,
+        ...(visibleOnly ? { umVisibility: true } : {}),
+      },
       select: { umMenuId: true },
     });
     const assignedMenuIds = userMenuRows.map((r) => r.umMenuId);
     if (assignedMenuIds.length === 0) return this.emptyResult(queryDto, includeChildren, activeOnly, visibleOnly);
-    // Fetch the menus for those IDs with this user's permission data attached
+    // Fetch the menus for those IDs with this user's permission data attached.
+    // Visibility is already scoped per-user via the userMenuRows filter above.
     const records = await this.prisma.menu.findMany({
       where: {
         menuId: { in: assignedMenuIds },
         ...(activeOnly ? { menuIsActive: true } : {}),
-        ...(visibleOnly ? { menuVisibility: true } : {}),
       },
       orderBy: [{ menuParentId: 'asc' }, { menuPosition: 'asc' }, { menuId: 'asc' }],
       select: {
@@ -108,8 +114,34 @@ export class MenuMasterService {
   }
   async updateVisibility(
     items: { menuId: number; menuVisibility: boolean }[],
+    userId?: string | null,
   ): Promise<{ menuId: number; menuVisibility: boolean }[]> {
     const menuIds = items.map((i) => i.menuId);
+    if (userId) {
+      // Per-user visibility: update umVisibility in userMenus
+      const existing = await this.prisma.userMenus.findMany({
+        where: { umUserId: userId, umMenuId: { in: menuIds }, umIsDeleted: false },
+        select: { umMenuId: true },
+      });
+      const foundIds = new Set(existing.map((r) => r.umMenuId));
+      const missing = menuIds.filter((id) => !foundIds.has(id));
+      if (missing.length > 0) {
+        throw new NotFoundException(
+          `UserMenu assignment(s) not found for menuId(s): ${missing.join(', ')}`,
+        );
+      }
+      const updated = await this.prisma.$transaction(
+        items.map((item) =>
+          this.prisma.userMenus.update({
+            where: { uq_user_menus_user_menu: { umUserId: userId, umMenuId: item.menuId } },
+            data: { umVisibility: item.menuVisibility },
+            select: { umMenuId: true, umVisibility: true },
+          }),
+        ),
+      );
+      return updated.map((r) => ({ menuId: r.umMenuId, menuVisibility: r.umVisibility }));
+    }
+    // Global visibility: update menuVisibility on the menu table
     const existing = await this.prisma.menu.findMany({
       where: { menuId: { in: menuIds } },
       select: { menuId: true, menuIsActive: true },
@@ -272,7 +304,7 @@ export class MenuMasterService {
       menuParentId: record.menuParentId,
       menuName: record.menuName,
       menuAlias: record.menuAlias,
-      menuVisibility: record.menuVisibility,
+      menuVisibility: um ? um.umVisibility : record.menuVisibility,
       menuPosition: record.menuPosition?.toString() ?? null,
       menuIconLocationDesktop: record.menuIconLocationDesktop,
       menuIconLocationWeb: record.menuIconLocationWeb,

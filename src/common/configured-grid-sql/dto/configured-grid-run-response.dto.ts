@@ -1,5 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from './configured-grid-style.dto';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class ConfiguredGridRunMetaDto {
   @ApiProperty({ example: 1 })
@@ -18,9 +17,6 @@ export class ConfiguredGridRunDataDto {
 
   @ApiProperty({ type: ConfiguredGridRunMetaDto })
   meta!: ConfiguredGridRunMetaDto;
-
-  @ApiPropertyOptional({ type: [ConfiguredGridStyleDto] })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class ConfiguredGridRunResponseDto {

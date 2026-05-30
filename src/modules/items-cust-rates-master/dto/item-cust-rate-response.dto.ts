@@ -4,7 +4,6 @@ import {
   ModuleErrorResponseDto,
   ModuleListMetaDto,
 } from '../../../common/utils/module-response.dto';
-import { ConfiguredGridStyleDto } from '../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 export {
   ModuleErrorFieldDto as ItemCustRateErrorFieldDto,
   ModuleErrorResponseDto as ItemCustRateErrorResponseDto,
@@ -77,8 +76,6 @@ export class ItemCustRateSuccessListDto {
   data!: ItemCustRatePayloadDto[];
   @ApiProperty({ type: ModuleListMetaDto })
   meta!: ModuleListMetaDto;
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 export class ItemCustRateSuccessDeleteDto {
   @ApiProperty({ example: true })

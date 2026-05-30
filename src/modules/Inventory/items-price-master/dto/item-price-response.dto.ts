@@ -1,5 +1,4 @@
 import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from 'src/common/configured-grid-sql/dto/configured-grid-style.dto';
 import {
   InventoryErrorFieldDto,
   InventoryErrorResponseDto,
@@ -220,8 +219,6 @@ export class ItemPriceSuccessListDto {
   @ApiProperty({ type: InventoryListMetaDto })
   meta!: InventoryListMetaDto;
 
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class ItemPriceSuccessDeleteDto {

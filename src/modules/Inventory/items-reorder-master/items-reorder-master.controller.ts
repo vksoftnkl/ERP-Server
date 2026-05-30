@@ -143,7 +143,6 @@ export class ItemsReorderMasterController {
       message: 'Item reorders fetched successfully',
       data: result.items,
       meta: result.meta,
-      ...(result.styles !== undefined && { styles: result.styles }),
     };
   }
 

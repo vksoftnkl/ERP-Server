@@ -82,7 +82,6 @@ export class ConfiguredGridSqlController {
       data: {
         items: result.items,
         meta: { page, limit, total: result.total },
-         styles: result.styles,
       },
     };
   }

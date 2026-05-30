@@ -1,5 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ConfiguredGridStyleDto } from '../../../../common/configured-grid-sql/dto/configured-grid-style.dto';
 
 export class BatchPrefixErrorFieldDto {
   @ApiProperty({ example: 'prefixUsed' })
@@ -89,8 +88,6 @@ export class BatchPrefixSuccessListDto {
   @ApiProperty({ type: BatchPrefixListMetaDto })
   meta!: BatchPrefixListMetaDto;
 
-  @ApiPropertyOptional({ type: ConfiguredGridStyleDto, isArray: true })
-  styles?: ConfiguredGridStyleDto[];
 }
 
 export class BatchPrefixSuccessDeleteDto {

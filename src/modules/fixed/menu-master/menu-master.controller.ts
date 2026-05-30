@@ -61,7 +61,7 @@ export class MenuMasterController {
   async updateVisibility(
     @Body() body: UpdateMenuVisibilityDto,
   ): Promise<MenuMasterSuccessUpdateVisibilityDto> {
-    const data = await this.menuMasterService.updateVisibility(body.menus);
+    const data = await this.menuMasterService.updateVisibility(body.menus, body.userId);
     return {
       success: true,
       message: 'Menu visibility updated successfully',

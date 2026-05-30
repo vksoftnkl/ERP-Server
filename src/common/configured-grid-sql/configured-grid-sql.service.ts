@@ -188,22 +188,13 @@ export class ConfiguredGridSqlService {
     const rowsSql = `SELECT * FROM (${baseSql}) AS ${options.alias}_rows LIMIT $${params.length + 1
       } OFFSET $${params.length + 2}`;
 
-    const columnsPromise: Promise<GridColumnItem[] | undefined> =
-      preloadedColumns !== undefined
-        ? Promise.resolve(preloadedColumns)
-        : options.gridId !== undefined
-          ? this.loadGridColumns(options.gridId)
-          : Promise.resolve(undefined);
-
-    const [countResult, rows, styles] = await Promise.all([
+    const [countResult, rows] = await Promise.all([
       this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql, ...params),
       this.prisma.$queryRawUnsafe<TItem[]>(rowsSql, ...params, options.limit, options.skip),
-      columnsPromise,
     ]);
     return {
       items: rows,
       total: this.parseCountValue(countResult[0]?.total),
-      ...(styles !== undefined && { styles }),
     };
   }
   async assertBaseSqlExecutable(baseSql: string, alias: string): Promise<void> {

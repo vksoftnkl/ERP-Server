@@ -49,18 +49,16 @@ export interface RunConfiguredGridSqlPageOptions {
   search?: string;
   limit: number;
   skip: number;
-  /** When provided, grid column definitions are fetched in parallel and returned as `styles`. */
+  /** When provided, grid column definitions are used to derive searchable field names for search. */
   gridId?: bigint;
 }
 export interface RunConfiguredGridSqlPageResult<TItem> {
   items: TItem[];
   total: number;
-  styles?: GridColumnItem[];
 }
 export interface ConfiguredGridListResult<TItem, TMeta> {
   items: TItem[];
   meta: TMeta;
-  styles?: GridColumnItem[];
 }
 export interface BuildConfiguredGridSearchSqlOptions {
   baseSql: string;

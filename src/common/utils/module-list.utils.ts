@@ -98,7 +98,6 @@ export async function runConfiguredGridQuery<TItem>(
       return {
         items: result.items,
         meta: buildListMeta(page, limit, result.total),
-        styles: result.styles,
       };
     } catch {
       continue;
