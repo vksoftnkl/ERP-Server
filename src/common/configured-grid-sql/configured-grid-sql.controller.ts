@@ -16,6 +16,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../dto/http-error-response.dto';
+import { ConfiguredGridColumnsQueryDto } from './dto/configured-grid-columns-query.dto';
+import { ConfiguredGridColumnsResponseDto } from './dto/configured-grid-columns-response.dto';
 import { RunConfiguredGridQueryDto } from './dto/run-configured-grid-query.dto';
 import { ConfiguredGridRunResponseDto } from './dto/configured-grid-run-response.dto';
 import { ConfiguredGridSqlService } from './configured-grid-sql.service';
@@ -27,6 +29,23 @@ import { API_VERSION } from '../constants/api-version';
 @Controller('configured-grid-sql')
 export class ConfiguredGridSqlController {
   constructor(private readonly configuredGridSqlService: ConfiguredGridSqlService) {}
+
+  @Get('columns')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Fetch grid columns by grid id' })
+  @ApiOkResponse({ type: ConfiguredGridColumnsResponseDto })
+  @ApiBadRequestResponse({ type: HttpErrorResponseDto })
+  async columns(
+    @Query() query: ConfiguredGridColumnsQueryDto,
+  ): Promise<ConfiguredGridColumnsResponseDto> {
+    const data = await this.configuredGridSqlService.loadGridColumns(BigInt(query.grid_id));
+
+    return {
+      success: true,
+      message: 'Grid columns fetched successfully',
+      data,
+    };
+  }
 
   @Get('run')
   @Version(API_VERSION)
