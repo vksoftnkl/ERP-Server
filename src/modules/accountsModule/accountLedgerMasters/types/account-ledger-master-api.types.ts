@@ -2,7 +2,6 @@ import type { LedGstPartyRegType, LedObType } from '@prisma/client';
 export type { AccountsErrorDetail as AccountLedgerMasterErrorDetail } from 'src/common/types/module-api.types';
 export type { AccountsErrorResponse as AccountLedgerMasterErrorResponse } from 'src/common/types/module-api.types';
 export type { AccountsSuccessResponse as AccountLedgerMasterSuccessResponse } from 'src/common/types/module-api.types';
-
 export interface AccountLedgerMasterPayload {
   ledId: string;
   ledCompanyId: string | null;

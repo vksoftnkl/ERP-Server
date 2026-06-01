@@ -36,7 +36,6 @@ export class AccountLedgerMastersService {
     }
     return this.createLedger(saveAccountLedgerMasterDto);
   }
-
   async getById(ledId: string): Promise<AccountLedgerMasterPayload> {
     const record = await this.prisma.accLedgerMaster.findFirst({
       where: {

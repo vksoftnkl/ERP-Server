@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LedGstPartyRegType, LedObType } from '@prisma/client';
-
 export class AccountLedgerMasterErrorFieldDto {
   @ApiProperty({ example: 'ledName' })
   field!: string;
@@ -8,143 +7,99 @@ export class AccountLedgerMasterErrorFieldDto {
   @ApiProperty({ example: 'Duplicate ledName is not allowed for this company and group' })
   message!: string;
 }
-
 export class AccountLedgerMasterErrorResponseDto {
   @ApiProperty({ example: false })
   success!: false;
-
   @ApiProperty({ example: 'Validation failed' })
   message!: string;
-
   @ApiProperty({ type: AccountLedgerMasterErrorFieldDto, isArray: true })
   errors!: AccountLedgerMasterErrorFieldDto[];
 }
-
 export class AccountLedgerMasterPayloadDto {
   @ApiProperty({ format: 'uuid' })
   ledId!: string;
-
   @ApiPropertyOptional({ nullable: true })
   ledCompanyId!: string | null;
-
   @ApiProperty({ format: 'uuid' })
   ledBranchId!: string;
-
   @ApiProperty({ format: 'uuid' })
   ledGroupId!: string;
-
   @ApiProperty({ maxLength: 200 })
   ledName!: string;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   ledAlias!: string | null;
-
   @ApiPropertyOptional({ maxLength: 50, nullable: true })
   ledShort!: string | null;
-
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   ledTallyName!: string | null;
-
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   ledTallyGroupName!: string | null;
-
   @ApiPropertyOptional({ maxLength: 64, nullable: true })
   ledTallyGuid!: string | null;
-
   @ApiProperty()
   ledCategory!: string;
-
   @ApiProperty()
   ledIsBillByBill!: boolean;
-
   @ApiProperty()
   ledIsCostCenterReq!: boolean;
-
   @ApiProperty()
   ledIsInterestApplicable!: boolean;
-
   @ApiPropertyOptional({ nullable: true })
   ledInterestRate!: number | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledContactPerson!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledEmail!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledTel!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledPhone1!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledPhone2!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledWhatsappNo!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledAddr1!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledAddr2!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledAddr3!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledCity!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledDistrict!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledStateName!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledStateCode!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledPin!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledCountry!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionName!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionAddr1!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionAddr2!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionAddr3!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionCity!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionDistrict!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionStateName!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledRegionCountry!: string | null;
-
   @ApiPropertyOptional({
     enum: LedGstPartyRegType,
     enumName: 'LedGstPartyRegType',
     nullable: true,
   })
   ledGstPartyRegType!: LedGstPartyRegType | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledGstinNo!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   ledPanNo!: string | null;
 

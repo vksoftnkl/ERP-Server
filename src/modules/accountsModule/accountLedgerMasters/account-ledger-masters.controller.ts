@@ -36,7 +36,6 @@ import {
   AccountLedgerMasterSuccessResponse,
 } from './types/account-ledger-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Account Ledger Masters')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -45,7 +44,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(AccountLedgerMasterExceptionFilter)
 export class AccountLedgerMastersController {
   constructor(private readonly accountLedgerMastersService: AccountLedgerMastersService) {}
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update account ledger (by ledId presence)' })
@@ -57,7 +55,6 @@ export class AccountLedgerMastersController {
     @Body() saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
   ): Promise<AccountLedgerMasterSuccessResponse<AccountLedgerMasterPayload>> {
     const data = await this.accountLedgerMastersService.save(saveAccountLedgerMasterDto);
-
     return {
       success: true,
       message: saveAccountLedgerMasterDto.ledId
@@ -66,7 +63,6 @@ export class AccountLedgerMastersController {
       data,
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get account ledger by id' })
@@ -78,14 +74,12 @@ export class AccountLedgerMastersController {
     @Query('ledId', new ParseUUIDPipe({ version: '7' })) ledId: string,
   ): Promise<AccountLedgerMasterSuccessResponse<AccountLedgerMasterPayload>> {
     const data = await this.accountLedgerMastersService.getById(ledId);
-
     return {
       success: true,
       message: 'Account ledger fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete account ledger by id' })
@@ -97,7 +91,6 @@ export class AccountLedgerMastersController {
     @Query('ledId', new ParseUUIDPipe({ version: '7' })) ledId: string,
   ): Promise<AccountLedgerMasterSuccessResponse<{ ledId: string; deleted: true }>> {
     const data = await this.accountLedgerMastersService.softDelete(ledId);
-
     return {
       success: true,
       message: 'Account ledger deleted successfully',
