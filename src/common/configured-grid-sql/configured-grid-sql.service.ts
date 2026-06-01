@@ -722,6 +722,27 @@ export class ConfiguredGridSqlService {
     }
     return null;
   }
+  substituteGridPrm(sql: string, prm: Record<string, unknown>): string {
+    let result = sql;
+    for (const [key, value] of Object.entries(prm)) {
+      const literal = this.formatSqlLiteral(value);
+      const escapedKey = this.escapeRegex(key);
+      // Replace 'paramname' occurrences (param embedded inside single quotes in SQL)
+      result = result.replace(new RegExp(`'${escapedKey}'`, 'g'), literal);
+      // Replace bare paramname occurrences (whole-word, unquoted)
+      result = result.replace(new RegExp(`\\b${escapedKey}\\b`, 'g'), literal);
+    }
+    return result;
+  }
+
+  private formatSqlLiteral(value: unknown): string {
+    if (value === null || value === undefined) return 'NULL';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (typeof value === 'number') return String(value);
+    if (typeof value === 'string') return "'" + value.replace(/'/g, "''") + "'";
+    return 'NULL';
+  }
+
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }

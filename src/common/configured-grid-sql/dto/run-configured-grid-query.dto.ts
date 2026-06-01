@@ -1,7 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumberString, IsOptional } from 'class-validator';
-import { Transform } from 'class-transformer';
-import { toOptionalTrimmedString, toOptionalInteger } from '../../dto/DtoTransforms';
+import { IsNumberString, IsOptional, IsString } from 'class-validator';
 import { OptionalQueryInt, OptionalTrimmedString } from '../../dto/dtoDecorators';
 
 export class RunConfiguredGridQueryDto {
@@ -20,4 +18,12 @@ export class RunConfiguredGridQueryDto {
   @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })
   @OptionalQueryInt(1, 100)
   limit?: number;
+
+  @ApiPropertyOptional({
+    description: 'JSON parameters object to pass dynamic filter values',
+    example: '{"branch_id":1,"company_id":2}',
+  })
+  @IsOptional()
+  @IsString()
+  grid_param?: string;
 }

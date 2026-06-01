@@ -59,6 +59,32 @@ export class ConfiguredGridSqlController {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
 
+    let gridPrm: Record<string, unknown> | undefined;
+    if (query.grid_param!== undefined) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(query.grid_param);
+      } catch {
+        throw new BadRequestException('grid_param must be valid JSON');
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new BadRequestException('grid_param must be a JSON object');
+      }
+      gridPrm = parsed as Record<string, unknown>;
+
+      for (const [key, val] of Object.entries(gridPrm)) {
+        if (!/^[a-z_][a-z0-9_]*$/i.test(key)) {
+          throw new BadRequestException(`Invalid parameter name in grid_PRM: "${key}"`);
+        }
+        if (val !== null && val !== undefined && typeof val !== 'boolean' && typeof val !== 'number' && typeof val !== 'string') {
+          throw new BadRequestException(`Unsupported value type for grid_PRM.${key}: ${typeof val}`);
+        }
+        if (typeof val === 'number' && !Number.isFinite(val)) {
+          throw new BadRequestException(`Non-finite number for grid_PRM.${key}`);
+        }
+      }
+    }
+
     const candidates = await this.configuredGridSqlService.loadCandidates({
       tableName: '',
       fixedGridId: gridId,
@@ -86,8 +112,12 @@ export class ConfiguredGridSqlController {
       throw new BadRequestException(`Invalid grid SQL: ${validation.message}`);
     }
 
+    const finalSql = gridPrm
+      ? this.configuredGridSqlService.substituteGridPrm(validation.normalizedSql, gridPrm)
+      : validation.normalizedSql;
+
     const result = await this.configuredGridSqlService.runPagedQuery<Record<string, unknown>>({
-      baseSql: validation.normalizedSql,
+      baseSql: finalSql,
       alias: 'cgrid',
       search: query.search,
       limit,
