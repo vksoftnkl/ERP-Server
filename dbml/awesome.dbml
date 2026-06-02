@@ -1054,6 +1054,7 @@ Table grid_details {
   gridDescription String
   gridSortColumn String
   gridSortOrder String
+  gridDeviceType String
   gridSql String
   gridStatus Boolean [not null, default: true]
   gridIsDeleted Boolean [not null, default: false]

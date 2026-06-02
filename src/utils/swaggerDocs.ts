@@ -42,6 +42,7 @@ import { StateCodeMasterModule } from '../modules/fixed/state-code-master/state-
 import { UiTableColumnsModule } from '../modules/fixed/ui-table-columns/ui-table-columns.module';
 import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
+import { StockAdjReasonsModule } from '../modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
 import { PromotionLoyaltyPointsModule } from '../modules/sales/loyalty/promotion-loyalty-points.module';
 import { ItemsGroupMasterModule } from 'src/modules/Inventory/items-group-master/items-group-master.module';
 import { ItemsBrandMasterModule } from 'src/modules/Inventory/items-brand-master/items-brand-master.module';
@@ -419,6 +420,12 @@ export const swaggerModuleDocuments = [
     title: 'User Login Sessions API',
     description: 'User login sessions module endpoints',
     include: [UserLoginSessionsModule],
+  },
+  {
+    path: 'stock-adj-reasons',
+    title: 'Stock Adj Reasons API',
+    description: 'Stock adjustment reasons endpoints for fixed.stock_adj_reasons',
+    include: [StockAdjReasonsModule],
   },
   {
     path: 'audit-logs',

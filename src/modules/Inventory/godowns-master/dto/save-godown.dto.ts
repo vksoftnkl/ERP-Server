@@ -17,7 +17,6 @@ import {
   toTrimmedString,
 } from 'src/common/dto/dtoDecorators';
 import { resolveAliasValue } from 'src/common/dto/dto-transforms';
-
 export class SaveGodownDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -119,19 +118,15 @@ export class SaveGodownDto {
   @ApiHideProperty()
   @OptionalInteger()
   godown_sort?: number;
-
   @ApiHideProperty()
   @OptionalUuid()
   branch_id?: string;
-
   @ApiHideProperty()
   @NullableUuid()
   parent_id?: string | null;
-
   @ApiHideProperty()
   @OptionalBoolean()
   is_active?: boolean;
-
   @ApiHideProperty()
   @OptionalUuid()
   gdl_location_id?: string;

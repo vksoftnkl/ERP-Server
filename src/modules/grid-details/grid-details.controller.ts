@@ -28,7 +28,6 @@ import {
   GridDetailSuccessResponse,
 } from './types/grid-detail-api.types';
 import { API_VERSION } from '../../common/constants/api-version';
-
 @ApiTags('Grid Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -37,7 +36,6 @@ import { API_VERSION } from '../../common/constants/api-version';
 @UseFilters(GridDetailExceptionFilter)
 export class GridDetailsController {
   constructor(private readonly gridDetailsService: GridDetailsService) {}
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update grid details (by grid_id presence)' })
@@ -48,7 +46,6 @@ export class GridDetailsController {
     @Body() saveGridDetailDto: SaveGridDetailDto,
   ): Promise<GridDetailSuccessResponse<GridDetailPayload>> {
     const data = await this.gridDetailsService.save(saveGridDetailDto);
-
     return {
       success: true,
       message: saveGridDetailDto.grid_id
@@ -57,7 +54,6 @@ export class GridDetailsController {
       data,
     };
   }
-
   @Get('list')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'List grid details with filter/search/pagination' })
@@ -67,7 +63,6 @@ export class GridDetailsController {
     @Query() queryDto: ListGridDetailQueryDto,
   ): Promise<GridDetailSuccessResponse<GridDetailPayload[], GridDetailListMeta>> {
     const result = await this.gridDetailsService.list(queryDto);
-
     return {
       success: true,
       message: 'Grid details fetched successfully',
@@ -75,7 +70,6 @@ export class GridDetailsController {
       meta: result.meta,
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get grid details by id' })
@@ -94,7 +88,6 @@ export class GridDetailsController {
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete grid details by id' })
@@ -106,7 +99,6 @@ export class GridDetailsController {
     @Query('grid_id') gridId: string,
   ): Promise<GridDetailSuccessResponse<{ grid_id: string; deleted: true }>> {
     const data = await this.gridDetailsService.softDelete(gridId);
-
     return {
       success: true,
       message: 'Grid details deleted successfully',

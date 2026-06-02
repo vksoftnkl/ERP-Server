@@ -58,6 +58,7 @@ import { StateCodeMasterModule } from './modules/fixed/state-code-master/state-c
 import { UiTableColumnsModule } from './modules/fixed/ui-table-columns/ui-table-columns.module';
 import { UiTableMasterModule } from './modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
+import { StockAdjReasonsModule } from './modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
@@ -162,6 +163,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     UiTableColumnsModule,
     UiTableMasterModule,
     UserLoginSessionsModule,
+    StockAdjReasonsModule,
     MasterLookupModule,
     BatchPrefixModule,
     WidgetMasterModule,

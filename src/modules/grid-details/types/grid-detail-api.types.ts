@@ -4,7 +4,6 @@ export type GridDetailErrorDetail = ModuleApiErrorDetail;
 export type GridDetailErrorResponse = ModuleApiErrorResponse<GridDetailErrorDetail>;
 export type GridDetailSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
 export type GridDetailListMeta = ModuleListMeta;
-
 export interface GridDetailPayload {
   grid_id: string;
   grid_name: string;
@@ -13,5 +12,6 @@ export interface GridDetailPayload {
   grid_sort_order: string | null;
   grid_sql: string | null;
   grid_status: boolean;
+  grid_device_type: string | null;
   grid_is_deleted: boolean;
 }

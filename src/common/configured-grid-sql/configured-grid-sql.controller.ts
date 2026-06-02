@@ -4,6 +4,7 @@ import {
   Get,
   NotFoundException,
   Query,
+  UseInterceptors,
   Version,
 } from '@nestjs/common';
 import {
@@ -15,14 +16,17 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { CacheTTL } from '@nestjs/cache-manager';
 import { HttpErrorResponseDto } from '../dto/http-error-response.dto';
 import { ConfiguredGridColumnsQueryDto } from './dto/configured-grid-columns-query.dto';
 import { ConfiguredGridColumnsResponseDto } from './dto/configured-grid-columns-response.dto';
 import { RunConfiguredGridQueryDto } from './dto/run-configured-grid-query.dto';
 import { ConfiguredGridRunResponseDto } from './dto/configured-grid-run-response.dto';
 import { ConfiguredGridSqlService } from './configured-grid-sql.service';
+import { ConfiguredGridCacheInterceptor } from './utils/configured-sql-cache-interceptor';
 import { API_VERSION } from '../constants/api-version';
 
+@UseInterceptors(ConfiguredGridCacheInterceptor)
 @ApiTags('Configured Grid SQL')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -32,6 +36,7 @@ export class ConfiguredGridSqlController {
 
   @Get('columns')
   @Version(API_VERSION)
+  @CacheTTL(300) // columns are stable → cache 5 minutes
   @ApiOperation({ summary: 'Fetch grid columns by grid id' })
   @ApiOkResponse({ type: ConfiguredGridColumnsResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
@@ -49,6 +54,7 @@ export class ConfiguredGridSqlController {
 
   @Get('run')
   @Version(API_VERSION)
+  @CacheTTL(60) // rows incl. search/filter/pagination → cache 60s
   @ApiOperation({ summary: 'Run the base SQL for a grid and return rows + column styles' })
   @ApiOkResponse({ type: ConfiguredGridRunResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
@@ -60,7 +66,7 @@ export class ConfiguredGridSqlController {
     const skip = (page - 1) * limit;
 
     let gridPrm: Record<string, unknown> | undefined;
-    if (query.grid_param!== undefined) {
+    if (query.grid_param !== undefined) {
       let parsed: unknown;
       try {
         parsed = JSON.parse(query.grid_param);
@@ -76,8 +82,16 @@ export class ConfiguredGridSqlController {
         if (!/^[a-z_][a-z0-9_]*$/i.test(key)) {
           throw new BadRequestException(`Invalid parameter name in grid_PRM: "${key}"`);
         }
-        if (val !== null && val !== undefined && typeof val !== 'boolean' && typeof val !== 'number' && typeof val !== 'string') {
-          throw new BadRequestException(`Unsupported value type for grid_PRM.${key}: ${typeof val}`);
+        if (
+          val !== null &&
+          val !== undefined &&
+          typeof val !== 'boolean' &&
+          typeof val !== 'number' &&
+          typeof val !== 'string'
+        ) {
+          throw new BadRequestException(
+            `Unsupported value type for grid_PRM.${key}: ${typeof val}`,
+          );
         }
         if (typeof val === 'number' && !Number.isFinite(val)) {
           throw new BadRequestException(`Non-finite number for grid_PRM.${key}`);

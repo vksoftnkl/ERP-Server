@@ -6,6 +6,7 @@ import {
   OptionalNumberString,
   TrimmedString,
 } from '../../../common/dto/dtoDecorators';
+import { gridDeviceTypeEnum } from '../types/grid-detail-enum';
 
 export class SaveGridDetailDto {
   @ApiPropertyOptional({ description: 'When provided, request updates grid details' })
@@ -36,4 +37,8 @@ export class SaveGridDetailDto {
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
   grid_status?: boolean;
+  @ApiProperty({ maxLength: 200 })
+  @TrimmedString(200)
+  @IsNotEmpty()
+  grid_device_type!: gridDeviceTypeEnum;
 }

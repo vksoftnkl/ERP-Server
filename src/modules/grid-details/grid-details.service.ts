@@ -177,7 +177,10 @@ export class GridDetailsService {
     if (this.hasOwnProperty(saveGridDetailDto, 'grid_status')) {
       data.gridStatus = saveGridDetailDto.grid_status;
     }
-  }
+    if (this.hasOwnProperty(saveGridDetailDto, 'grid_device_type')) {
+      data.gridDeviceType = saveGridDetailDto.grid_device_type;
+    }
+  } 
   private async normalizeGridSql(gridSql: string | null | undefined): Promise<string | null | undefined> {
     if (gridSql === undefined || gridSql === null) {
       return gridSql;
@@ -235,6 +238,7 @@ export class GridDetailsService {
       grid_sort_order: record.gridSortOrder,
       grid_sql: record.gridSql,
       grid_status: record.gridStatus,
+      grid_device_type: record.gridDeviceType,
       grid_is_deleted: record.gridIsDeleted,
     };
   }

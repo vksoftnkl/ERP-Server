@@ -5,7 +5,7 @@ model GridDetails {
 
   gridSortColumn  String?     @map("grid_sort_column")
   gridSortOrder   String?     @map("grid_sort_order")
-
+  gridDeviceType  String?     @map("grid_device_type")
   gridSql         String?  @db.Text @map("grid_sql")
   gridStatus      Boolean  @default(true)  @map("grid_status")
   gridIsDeleted   Boolean  @default(false) @map("grid_is_deleted")
