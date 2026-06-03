@@ -566,3 +566,6 @@ Inconsistent column data: Error creating UUID, invalid character: expected an op
     at async MenuMasterController.get (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:45:20)
 2026-06-02T06:15:18.515Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3010
 2026-06-02T12:21:57.340Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-06-03T06:15:38.978Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-06-03T06:17:11.918Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-06-03T07:28:07.177Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
