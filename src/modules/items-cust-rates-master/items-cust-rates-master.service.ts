@@ -125,8 +125,6 @@ export class ItemsCustRatesMasterService {
       csrUnitRateId: saveItemCustRateDto.csr_unit_rate_id,
       csrCreatedOn: now,
       csrCreatedBy: createdBy,
-      csrModifiedOn: now,
-      csrModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveItemCustRateDto);
 

@@ -128,8 +128,6 @@ export class ItemsMasterService {
       itemPackingItemIds: saveItemDto.item_packing_item_ids ?? [],
       itemCreatedOn: now,
       itemCreatedBy: createdBy,
-      itemModifiedOn: now,
-      itemModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveItemDto);
     try {

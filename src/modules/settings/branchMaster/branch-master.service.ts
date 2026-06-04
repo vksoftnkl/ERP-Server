@@ -171,8 +171,6 @@ export class BranchMasterService {
           brStateCode: stateCode,
           brCreatedOn: now,
           brCreatedBy: DEFAULT_ACTOR,
-          brModifiedOn: now,
-          brModifiedBy: DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveBranchMasterDto);
         const created = await tx.branchMaster.create({ data });

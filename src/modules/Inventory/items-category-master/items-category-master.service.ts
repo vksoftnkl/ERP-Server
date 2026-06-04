@@ -122,8 +122,6 @@ export class ItemsCategoryMasterService {
           categoryName: saveItemCategoryDto.category_name.trim(),
           categoryCreatedOn: now,
           categoryCreatedBy: createdBy,
-          categoryModifiedOn: now,
-          categoryModifiedBy: modifiedBy,
         };
         this.applyOptionalFields(data, saveItemCategoryDto);
         const created = await tx.categoryMaster.create({ data });

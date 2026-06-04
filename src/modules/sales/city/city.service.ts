@@ -147,8 +147,6 @@ export class CityService {
       ctmStateId: saveCityDto.ctmStateId,
       ctmCreatedOn: now,
       ctmCreatedBy: createdBy,
-      ctmModifiedOn: now,
-      ctmModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveCityDto);
     try {

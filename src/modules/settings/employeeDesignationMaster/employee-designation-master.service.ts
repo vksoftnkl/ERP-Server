@@ -159,8 +159,6 @@ export class EmployeeDesignationMasterService {
           edName,
           edCreatedOn: now,
           edCreatedBy: DEFAULT_ACTOR,
-          edModifiedOn: now,
-          edModifiedBy: DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {

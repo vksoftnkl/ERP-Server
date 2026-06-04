@@ -154,8 +154,6 @@ export class UserLoginSessionsService {
       ulsUserId: saveUserLoginSessionDto.ulsUserId,
       ulsCreatedOn: now,
       ulsCreatedBy: createdBy,
-      ulsModifiedOn: now,
-      ulsModifiedBy: modifiedBy,
     };
     applyPresentFields(data, saveUserLoginSessionDto, USER_LOGIN_SESSION_OPTIONAL_FIELDS);
     try {

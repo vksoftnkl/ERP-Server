@@ -157,8 +157,6 @@ export class AreaService {
         : [],
       armCreatedOn: now,
       armCreatedBy: createdBy,
-      armModifiedOn: now,
-      armModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveAreaDto);
     try {

@@ -157,8 +157,6 @@ export class LedgerShippingAddressService {
           saaAddrType,
           saaCreatedOn: now,
           saaCreatedBy: DEFAULT_ACTOR,
-          saaModifiedOn: now,
-          saaModifiedBy: DEFAULT_ACTOR,
         };
 
         this.applyOptionalFields(data, saveLedgerShippingAddressDto);

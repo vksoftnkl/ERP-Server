@@ -147,8 +147,6 @@ export class TenderTypeMasterService {
           accttTypeShortName: this.buildShortName(ttmTypeName),
           accttTypeCreatedOn: now,
           accttTypeCreatedBy: DEFAULT_ACTOR,
-          accttTypeModifiedOn: now,
-          accttTypeModifiedBy: DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveTenderTypeMasterDto, 'ttmIsActive')) {
           data.accttTypeIsActive = saveTenderTypeMasterDto.ttmIsActive;

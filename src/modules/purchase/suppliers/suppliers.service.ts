@@ -110,8 +110,6 @@ export class SuppliersService {
       supBilledDate: now,
       supCreatedOn: now,
       supCreatedBy: createdBy,
-      supModifiedOn: now,
-      supModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveSupplierDto);
     try {

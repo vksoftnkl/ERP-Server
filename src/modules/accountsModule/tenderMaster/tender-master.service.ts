@@ -158,8 +158,6 @@ export class TenderMasterService {
           acctndMinAmount: tndMinAmount,
           acctndCreatedOn: now,
           acctndCreatedBy: DEFAULT_ACTOR,
-          acctndModifiedOn: now,
-          acctndModifiedBy: DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveTenderMasterDto, 'tndMaxAmount')) {

@@ -128,8 +128,6 @@ export class BatchPrefixService {
           syncDate: syncDate ?? null,
           createdBy: DEFAULT_ACTOR,
           createdOn: now,
-          modifiedBy: DEFAULT_ACTOR,
-          modifiedOn: now,
         };
         const created = await tx.batchPrefix.create({ data });
         const payload = this.toPayload(created);

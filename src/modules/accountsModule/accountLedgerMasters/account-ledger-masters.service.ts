@@ -193,8 +193,6 @@ export class AccountLedgerMastersService {
           ledName: normalizedName,
           ledCreatedOn: now,
           ledCreatedBy: createdBy,
-          ledModifiedOn: now,
-          ledModifiedBy: createdBy,
         };
         this.applyOptionalFields(data, saveAccountLedgerMasterDto);
         const created = await tx.accLedgerMaster.create({ data });

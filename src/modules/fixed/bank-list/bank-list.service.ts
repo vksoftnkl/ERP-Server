@@ -142,8 +142,6 @@ export class BankListService {
       bnkName: normalizedName,
       bnkCreatedOn: now,
       bnkCreatedBy: createdBy,
-      bnkModifiedOn: now,
-      bnkModifiedBy: modifiedBy,
     };
     applyPresentFields(data, saveBankListDto, BANK_LIST_OPTIONAL_FIELDS);
     try {

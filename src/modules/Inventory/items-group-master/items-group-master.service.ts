@@ -120,8 +120,6 @@ export class ItemsGroupMasterService {
           itgName: saveItemGroupDto.itg_name.trim(),
           itgCreatedOn: now,
           itgCreatedBy: createdBy,
-          itgModifiedOn: now,
-          itgModifiedBy: modifiedBy,
         };
         this.applyOptionalFields(data, saveItemGroupDto);
         const created = await tx.itemGroupMaster.create({ data });

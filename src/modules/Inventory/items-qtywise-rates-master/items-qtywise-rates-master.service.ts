@@ -125,8 +125,6 @@ export class ItemsQtywiseRatesMasterService {
       iqrEachQty: saveItemQtywiseRateDto.iqr_each_qty,
       iqrCreatedOn: now,
       iqrCreatedBy: createdBy,
-      iqrModifiedOn: now,
-      iqrModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveItemQtywiseRateDto);
 

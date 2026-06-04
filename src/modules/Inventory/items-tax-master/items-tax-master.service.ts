@@ -103,8 +103,6 @@ export class ItemsTaxMasterService {
       taxName,
       taxCreatedOn: now,
       taxCreatedBy: createdBy,
-      taxModifiedOn: now,
-      taxModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveItemTaxDto);
     try {

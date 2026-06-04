@@ -119,8 +119,6 @@ export class GodownsMasterService {
           gdlName,
           gdlCreatedOn: now,
           gdlCreatedBy: DEFAULT_ACTOR,
-          gdlModifiedOn: now,
-          gdlModifiedBy: DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveGodownDto);
 

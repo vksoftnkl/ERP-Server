@@ -135,8 +135,6 @@ export class EmployeeDepartmentMasterService {
           edptName,
           edptCreatedOn: now,
           edptCreatedBy: DEFAULT_ACTOR,
-          edptModifiedOn: now,
-          edptModifiedBy: DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
           data.edptCode = edptCode;

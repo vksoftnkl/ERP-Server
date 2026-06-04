@@ -300,8 +300,6 @@ export class PromotionLoyaltyPointsService {
       lsCode,
       lsCreatedOn: now,
       lsCreatedBy,
-      lsUpdatedOn: now,
-      lsUpdatedBy,
     };
 
     ensureDateRange(lsStartDate, lsEndDate);

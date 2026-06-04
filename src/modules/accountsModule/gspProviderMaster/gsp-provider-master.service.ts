@@ -175,8 +175,6 @@ export class GspProviderMasterService {
           gspUserPassword,
           gspCreatedOn: now,
           gspCreatedBy: DEFAULT_ACTOR,
-          gspModifiedOn: now,
-          gspModifiedBy: DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveGspProviderMasterDto, 'gspIsActive')) {
           data.gspIsActive = saveGspProviderMasterDto.gspIsActive;

@@ -145,14 +145,11 @@ export class StateCodeMasterService {
     );
     const now = new Date();
     const createdBy = resolveActor(saveStateCodeMasterDto.createdBy);
-    const modifiedBy = resolveActor(saveStateCodeMasterDto.modifiedBy, createdBy);
     const data: Prisma.StateCodeUncheckedCreateInput = {
       stateCode,
       stateName: normalizedName,
       createdOn: now,
       createdBy,
-      modifiedOn: now,
-      modifiedBy,
     };
     applyPresentFields(data, saveStateCodeMasterDto, STATE_CODE_MASTER_OPTIONAL_FIELDS);
     try {

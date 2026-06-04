@@ -155,8 +155,6 @@ export class GspCompanyServiceService {
           csgEuserPassword,
           csgCreatedOn: now,
           csgCreatedBy: DEFAULT_ACTOR,
-          csgModifiedOn: now,
-          csgModifiedBy: DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthToken')) {
           data.csgAuthToken = csgAuthToken;

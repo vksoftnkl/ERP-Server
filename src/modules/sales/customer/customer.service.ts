@@ -200,7 +200,7 @@ export class CustomerService {
     const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
     const now = new Date();
     const createdBy = resolveActor(saveCustomerDto.cusCreatedBy);
-    const modifiedBy = resolveActor(saveCustomerDto.cusModifiedBy, createdBy);
+ 
 
     const data: Prisma.CustomerUncheckedCreateInput = {
       cusStateName: normalizedStateName,
@@ -218,8 +218,6 @@ export class CustomerService {
       cusBilledCount: 1,
       cusCreatedOn: now,
       cusCreatedBy: createdBy,
-      cusModifiedOn: now,
-      cusModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveCustomerDto);
 

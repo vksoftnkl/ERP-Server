@@ -118,8 +118,6 @@ export class UnitsMasterService {
       unit_name: saveUnitDto.unit_name.trim(),
       unit_created_on: now,
       unit_created_by: createdBy,
-      unit_modified_on: now,
-      unit_modified_by: modifiedBy,
     };
     this.applyOptionalFields(data, saveUnitDto);
     try {

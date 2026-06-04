@@ -189,8 +189,6 @@ export class CompanyMasterService {
           compStylesheetId: saveCompanyMasterDto.compStylesheetId,
           compCreatedOn: now,
           compCreatedBy: DEFAULT_ACTOR,
-          compModifiedOn: now,
-          compModifiedBy: DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveCompanyMasterDto);
         const created = await tx.company.create({ data });

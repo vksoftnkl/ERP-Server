@@ -110,8 +110,6 @@ export class SupplierGroupService {
       spgName: normalizedName,
       spgCreatedOn: now,
       spgCreatedBy: createdBy,
-      spgModifiedOn: now,
-      spgModifiedBy: modifiedBy,
     };
     applyPresentFields(data, saveSupplierGroupDto, SUPPLIER_GROUP_OPTIONAL_FIELDS);
     try {

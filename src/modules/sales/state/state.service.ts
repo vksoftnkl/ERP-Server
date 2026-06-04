@@ -120,8 +120,6 @@ export class StateService {
       stmName: normalizedName,
       stmCreatedOn: now,
       stmCreatedBy: createdBy,
-      stmModifiedOn: now,
-      stmModifiedBy: modifiedBy,
     };
     applyStateOptionalFields(data, saveStateDto);
     try {

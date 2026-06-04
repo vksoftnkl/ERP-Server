@@ -120,8 +120,6 @@ export class ItemsBrandMasterService {
           brand_name: saveItemBrandDto.brand_name.trim(),
           brand_created_on: now,
           brand_created_by: createdBy,
-          brand_modified_on: now,
-          brand_modified_by: modifiedBy,
         };
         this.applyOptionalFields(data, saveItemBrandDto);
         const created = await tx.itemBrandMaster.create({ data });

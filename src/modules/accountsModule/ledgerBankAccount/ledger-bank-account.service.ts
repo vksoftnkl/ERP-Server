@@ -155,8 +155,6 @@ export class LedgerBankAccountService {
           lbaAccountNo: accountNo,
           lbaCreatedOn: now,
           lbaCreatedBy: DEFAULT_ACTOR,
-          lbaModifiedOn: now,
-          lbaModifiedBy: DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveLedgerBankAccountDto);
         const created = await tx.accLedgerBankAccount.create({ data });

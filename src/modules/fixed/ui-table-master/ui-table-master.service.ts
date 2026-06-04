@@ -144,8 +144,6 @@ export class UiTableMasterService {
       uiTblName: normalizedName,
       uiTblCreatedOn: now,
       uiTblCreatedBy: createdBy,
-      uiTblModifiedOn: now,
-      uiTblModifiedBy: modifiedBy,
     };
     applyPresentFields(data, saveUiTableMasterDto, UI_TABLE_MASTER_OPTIONAL_FIELDS);
     try {

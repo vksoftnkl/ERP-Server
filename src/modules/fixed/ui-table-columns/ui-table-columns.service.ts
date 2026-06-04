@@ -173,8 +173,6 @@ export class UiTableColumnsService {
       uiTblClmName: normalizedName,
       uiTblClmCreatedOn: now,
       uiTblClmCreatedBy: createdBy,
-      uiTblClmModifiedOn: now,
-      uiTblClmModifiedBy: modifiedBy,
     };
     applyPresentFields(data, saveUiTableColumnDto, UI_TABLE_COLUMN_OPTIONAL_FIELDS);
     try {

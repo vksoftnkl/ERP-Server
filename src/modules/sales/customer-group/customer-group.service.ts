@@ -178,7 +178,6 @@ export class CustomerGroupService {
         ? (saveCustomerGroupDto.cgrCollectionDays ?? [])
         : [],
       cgrCreatedOn: now,
-      cgrModifiedOn: now,
     };
     this.applyOptionalFields(data, saveCustomerGroupDto);
 

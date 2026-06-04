@@ -183,8 +183,6 @@ export class AccountsGroupService {
           accGroupChildIds: [],
           accGroupCreatedOn: now,
           accGroupCreatedBy: createdBy,
-          accGroupModifiedOn: now,
-          accGroupModifiedBy: createdBy,
         };
         this.applyOptionalFields(data, saveAccountGroupDto);
         const created = await tx.accountGroup.create({ data });

@@ -176,8 +176,6 @@ export class EmployeeMasterService {
           empSalaryType,
           empCreatedOn: now,
           empCreatedBy: DEFAULT_ACTOR,
-          empModifiedOn: now,
-          empModifiedBy: DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
         const created = await tx.empMaster.create({ data });

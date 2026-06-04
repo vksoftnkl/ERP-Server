@@ -147,8 +147,6 @@ export class CompanyGroupMasterService {
           cogCompanyIds: companyIds,
           cogCreatedOn: now,
           cogCreatedBy: DEFAULT_ACTOR,
-          cogModifiedOn: now,
-          cogModifiedBy: DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
