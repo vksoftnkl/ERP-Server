@@ -19,15 +19,19 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
+
 type AccountLedgerWriteClient = AccountsWriteClient;
+
 @Injectable()
 export class AccountLedgerMastersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
   ) {}
+
   async save(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
   ): Promise<AccountLedgerMasterPayload> {
@@ -36,22 +40,61 @@ export class AccountLedgerMastersService {
     }
     return this.createLedger(saveAccountLedgerMasterDto);
   }
-  async getById(ledId: string): Promise<AccountLedgerMasterPayload> {
-    const record = await this.prisma.accLedgerMaster.findFirst({
-      where: {
-        ledId,
-        ledIsDeleted: false,
-      },
-    });
-    if (!record) {
-      throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
-        'Account ledger not found',
-        'ledId',
-        `No active account ledger found with id ${ledId}`,
-      );
+
+  // Fetch a single ledger by id
+  async get(params: { ledId: string }): Promise<AccountLedgerMasterPayload>;
+  // Fetch a paginated list
+  async get(params: {
+    ledCompanyId: string;
+    ledIsActive?: boolean;
+    page: number;
+    limit: number;
+  }): Promise<{ data: AccountLedgerMasterPayload[]; total: number }>;
+  // Implementation
+  async get(params: {
+    ledId?: string;
+    ledCompanyId?: string;
+    ledIsActive?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<
+    AccountLedgerMasterPayload | { data: AccountLedgerMasterPayload[]; total: number }
+  > {
+    const { ledId, ledCompanyId, ledIsActive, page = 1, limit = 10 } = params;
+
+    // --- getById branch ---
+    if (ledId) {
+      const record = await this.prisma.accLedgerMaster.findFirst({
+        where: { ledId, ledIsDeleted: false },
+      });
+      if (!record) {
+        throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
+          'Account ledger not found',
+          'ledId',
+          `No active account ledger found with id ${ledId}`,
+        );
+      }
+      return this.toPayload(record);
     }
-    return this.toPayload(record);
+
+    // --- list branch ---
+    const where: Prisma.AccLedgerMasterWhereInput = {
+      ledCompanyId,
+      ledIsDeleted: false,
+      ...(ledIsActive !== undefined && { ledIsActive }),
+    };
+    const [records, total] = await Promise.all([
+      this.prisma.accLedgerMaster.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { ledName: 'asc' },
+      }),
+      this.prisma.accLedgerMaster.count({ where }),
+    ]);
+    return { data: records.map((r) => this.toPayload(r)), total };
   }
+
   async softDelete(ledId: string): Promise<{ ledId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.accLedgerMaster.findFirst({
@@ -116,6 +159,7 @@ export class AccountLedgerMastersService {
       };
     });
   }
+
   private async createLedger(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
   ): Promise<AccountLedgerMasterPayload> {
@@ -181,6 +225,7 @@ export class AccountLedgerMastersService {
       throw error;
     }
   }
+
   private async updateLedger(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
   ): Promise<AccountLedgerMasterPayload> {
@@ -259,6 +304,7 @@ export class AccountLedgerMastersService {
       throw error;
     }
   }
+
   private async ensureGroupExists(groupId: string, tx: AccountLedgerWriteClient): Promise<void> {
     const group = await tx.accountGroup.findFirst({
       where: {
@@ -278,6 +324,7 @@ export class AccountLedgerMastersService {
       ]);
     }
   }
+
   private async ensureNameIsUnique(
     tx: AccountLedgerWriteClient,
     ledgerName: string,
@@ -311,6 +358,7 @@ export class AccountLedgerMastersService {
       );
     }
   }
+
   private applyOptionalFields(
     data: Prisma.AccLedgerMasterUncheckedCreateInput | Prisma.AccLedgerMasterUncheckedUpdateInput,
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
@@ -490,6 +538,7 @@ export class AccountLedgerMastersService {
       data.ledRemarks = saveAccountLedgerMasterDto.ledRemarks;
     }
   }
+
   private toPayload(record: AccLedgerMaster): AccountLedgerMasterPayload {
     return {
       ledId: record.ledId,

@@ -117,15 +117,12 @@ export class ItemsSectionMasterService {
 
         const now = new Date();
         const createdBy = DEFAULT_ACTOR;
-        const modifiedBy = createdBy;
 
         const data: Prisma.ItemSectionMasterUncheckedCreateInput = {
           secName: saveItemSectionDto.sec_name.trim(),
           secLevel: this.resolveSectionLevel(saveItemSectionDto.sec_parent_id, parentLevel),
           secCreatedOn: now,
-          secCreatedBy: createdBy,
-          secModifiedOn: now,
-          secModifiedBy: modifiedBy,
+          secCreatedBy: createdBy,      
         };
 
         this.applyOptionalFields(data, saveItemSectionDto);

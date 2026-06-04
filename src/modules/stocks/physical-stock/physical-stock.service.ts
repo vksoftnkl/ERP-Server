@@ -7,6 +7,7 @@ import {
   throwNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import {
   CreatePhysicalStockBatchDetailDto,
@@ -15,6 +16,8 @@ import {
 } from './dto/create-physical-stock.dto';
 import { ListPhysicalStockQueryDto } from './dto/list-physical-stock-query.dto';
 import { UpdatePhysicalStockDto } from './dto/update-physical-stock.dto';
+import { StockTrackingType } from '../../utils/transaction.enums';
+
 import type {
   PhysicalStockDeleteResponse,
   PhysicalStockDocumentResponse,
@@ -23,6 +26,8 @@ import type {
   PhysicalStockListItem,
   PhysicalStockListMeta,
 } from './types/physical-stock-response.types';
+const PHYSICAL_STOCK_TABLE_NAME = 'physical_stock_header';
+const PHYSICAL_STOCK_AUDIT_SCREEN_NAME = 'Physical Stock';
 const PHYSICAL_STOCK_DOCUMENT_INCLUDE = {
   details: {
     where: {
@@ -90,7 +95,10 @@ type PhysicalStockBatchDetailCreateInputWithHeader =
 type PhysicalStockWriteClient = Prisma.TransactionClient | PrismaService;
 @Injectable()
 export class PhysicalStockService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
   async save(
     savePhysicalStockDto: CreatePhysicalStockDto,
   ): Promise<PhysicalStockDocumentResponse> {
@@ -167,19 +175,50 @@ export class PhysicalStockService {
             ),
           });
           for (const [batchIndex, batchDto] of (detailDto.batchDetails ?? []).entries()) {
-            await tx.physicalStockBatchDetail.create({
-              data: this.buildBatchDetailCreateInput(
-                batchDto,
-                detail.psdId,
-                header.psId,
-                batchIndex + 1,
-                detailDto,
-                createPhysicalStockDto,
-              ),
-            });
+            const batchInput = this.buildBatchDetailCreateInput(
+              batchDto,
+              detail.psdId,
+              header.psId,
+              batchIndex + 1,
+              detailDto,
+              createPhysicalStockDto,
+            );
+            await tx.physicalStockBatchDetail.create({ data: batchInput });
+            if (
+              detailDto.psdTrackingType === StockTrackingType.BATCH ||
+              detailDto.psdTrackingType === StockTrackingType.SERIAL
+            ) {
+              await this.adjustItemBatchStockForBatch(tx, {
+                accYear: batchInput.psbAccYear,
+                companyId: batchInput.psbCompanyId,
+                branchId: batchInput.psbBranchId,
+                godownId: batchInput.psbGodownId,
+                itemId: batchInput.psbItemId,
+                unitId: batchInput.psbBaseUnitId,
+                batchId: batchInput.psbBatchId ?? null,
+                newDiffBaseQty: Number(batchInput.psbDiffBaseQty ?? 0),
+                prevDiffBaseQty: 0,
+              });
+            }
           }
         }
-        return this.buildDocumentPayload(tx, header.psId);
+        const document = await this.buildDocumentPayload(tx, header.psId);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'New',
+            tableName: PHYSICAL_STOCK_TABLE_NAME,
+            screenName: PHYSICAL_STOCK_AUDIT_SCREEN_NAME,
+            screenType: 'transaction',
+            pk: header.psId,
+            displayName: document.header.psc_refno,
+            originalRecord: null,
+            modifiedRecord: document.header,
+            userId: createPhysicalStockDto.psCreatedBy,
+            branchId: createPhysicalStockDto.psBranchId,
+          },
+          tx,
+        );
+        return document;
       });
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -304,6 +343,16 @@ export class PhysicalStockService {
           batch.psbBaseUnitId,
           detail.psdBaseUnitId,
         );
+        if (
+          (detail.psdTrackingType === StockTrackingType.BATCH ||
+            detail.psdTrackingType === StockTrackingType.SERIAL) &&
+          !batch.psbBatchId
+        ) {
+          errors.push({
+            field: `${batchPath}.psbBatchId`,
+            message: `psbBatchId is required for ${detail.psdTrackingType}-tracked items`,
+          });
+        }
       }
     }
     if (errors.length > 0) {
@@ -908,6 +957,13 @@ export class PhysicalStockService {
     details: CreatePhysicalStockDetailDto[],
     header: CreatePhysicalStockDto,
   ): Promise<void> {
+    const existingBatchDetails = await tx.physicalStockBatchDetail.findMany({
+      where: { psbPshId: psId },
+      select: { psbId: true, psbDiffBaseQty: true },
+    });
+    const prevDiffBaseQtyByPsbId = new Map<string, number>(
+      existingBatchDetails.map((b) => [b.psbId, Number(b.psbDiffBaseQty ?? 0)]),
+    );
     const existingDetails = await tx.physicalStockDetail.findMany({
       where: {
         psdPscId: psId,
@@ -936,16 +992,35 @@ export class PhysicalStockService {
         data: this.buildDetailCreateInput(detailDto, psId, detailIndex + 1, header),
       });
       for (const [batchIndex, batchDto] of (detailDto.batchDetails ?? []).entries()) {
-        await tx.physicalStockBatchDetail.create({
-          data: this.buildBatchDetailCreateInput(
-            batchDto,
-            detail.psdId,
-            psId,
-            batchIndex + 1,
-            detailDto,
-            header,
-          ),
-        });
+        const batchInput = this.buildBatchDetailCreateInput(
+          batchDto,
+          detail.psdId,
+          psId,
+          batchIndex + 1,
+          detailDto,
+          header,
+        );
+        await tx.physicalStockBatchDetail.create({ data: batchInput });
+        if (
+          detailDto.psdTrackingType === StockTrackingType.BATCH ||
+          detailDto.psdTrackingType === StockTrackingType.SERIAL
+        ) {
+          const prevDiffBaseQty =
+            batchDto.psbId !== undefined && prevDiffBaseQtyByPsbId.has(batchDto.psbId)
+              ? prevDiffBaseQtyByPsbId.get(batchDto.psbId)!
+              : 0;
+          await this.adjustItemBatchStockForBatch(tx, {
+            accYear: batchInput.psbAccYear,
+            companyId: batchInput.psbCompanyId,
+            branchId: batchInput.psbBranchId,
+            godownId: batchInput.psbGodownId,
+            itemId: batchInput.psbItemId,
+            unitId: batchInput.psbBaseUnitId,
+            batchId: batchInput.psbBatchId ?? null,
+            newDiffBaseQty: Number(batchInput.psbDiffBaseQty ?? 0),
+            prevDiffBaseQty,
+          });
+        }
       }
     }
   }
@@ -1079,5 +1154,53 @@ export class PhysicalStockService {
     }
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
+  }
+  private async adjustItemBatchStockForBatch(
+    tx: Prisma.TransactionClient,
+    params: {
+      accYear: string;
+      companyId: string;
+      branchId: string;
+      godownId: string;
+      itemId: string;
+      unitId: string;
+      batchId: string | null;
+      newDiffBaseQty: number;
+      prevDiffBaseQty: number;
+    },
+  ): Promise<void> {
+    if (!params.batchId) return;
+    const delta = this.roundQuantity(params.newDiffBaseQty - params.prevDiffBaseQty);
+    if (delta === 0) return;
+    const scopeKey = {
+      ibsAccYear: params.accYear,
+      ibsCompanyId: params.companyId,
+      ibsBranchId: params.branchId,
+      ibsGodownId: params.godownId,
+      ibsItemId: params.itemId,
+      ibsBatchId: params.batchId,
+      ibsStockBucket: 'SALEABLE',
+    };
+    const incrData =
+      delta > 0
+        ? { ibsInQty: { increment: delta } }
+        : { ibsOutQty: { increment: -delta } };
+    const createQty =
+      delta > 0
+        ? { ibsInQty: delta, ibsOutQty: 0 }
+        : { ibsInQty: 0, ibsOutQty: -delta };
+    await tx.itemBatchStock.upsert({
+      where: {
+        ibsAccYear_ibsCompanyId_ibsBranchId_ibsGodownId_ibsItemId_ibsBatchId_ibsStockBucket: scopeKey,
+      },
+      create: {
+        ...scopeKey,
+        ibsUnitId: params.unitId,
+        ...createQty,
+        ibsIsActive: true,
+        ibsIsDeleted: false,
+      },
+      update: incrData,
+    });
   }
 }
