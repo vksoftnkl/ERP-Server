@@ -16,6 +16,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const LEDGER_SHIPPING_ADDRESS_TABLE_NAME = 'acc ship addrs';
 const LEDGER_SHIPPING_ADDRESS_AUDIT_SCREEN_NAME = 'Ledger Shipping Address';
 const DEFAULT_ADDR_TYPE = 'SHIP_TO';
@@ -26,6 +27,7 @@ export class LedgerShippingAddressService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(
@@ -84,7 +86,7 @@ export class LedgerShippingAddressService {
           saaIsDeleted: true,
           saaIsActive: false,
           saaModifiedOn: modifiedOn,
-          saaModifiedBy: DEFAULT_ACTOR,
+          saaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
 
@@ -102,7 +104,7 @@ export class LedgerShippingAddressService {
         saaIsDeleted: true,
         saaIsActive: false,
         saaModifiedOn: modifiedOn,
-        saaModifiedBy: DEFAULT_ACTOR,
+        saaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
 
       await this.auditLogService.logEntityChange(
@@ -115,7 +117,7 @@ export class LedgerShippingAddressService {
           displayName: this.resolveDisplayName(existing),
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Ledger shipping address soft deleted',
         },
         tx,
@@ -156,7 +158,7 @@ export class LedgerShippingAddressService {
           saaLedgerId: saveLedgerShippingAddressDto.saaLedgerId,
           saaAddrType,
           saaCreatedOn: now,
-          saaCreatedBy: DEFAULT_ACTOR,
+          saaCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         this.applyOptionalFields(data, saveLedgerShippingAddressDto);
@@ -174,7 +176,7 @@ export class LedgerShippingAddressService {
             displayName: this.resolveDisplayName(payload),
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Ledger shipping address created',
           },
           tx,
@@ -244,7 +246,7 @@ export class LedgerShippingAddressService {
           saaLedgerId: nextLedgerId,
           saaAddrType: nextAddrType,
           saaModifiedOn: new Date(),
-          saaModifiedBy: DEFAULT_ACTOR,
+          saaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         this.applyOptionalFields(data, saveLedgerShippingAddressDto);
@@ -267,7 +269,7 @@ export class LedgerShippingAddressService {
             displayName: this.resolveDisplayName(payload),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Ledger shipping address updated',
           },
           tx,
@@ -361,7 +363,7 @@ export class LedgerShippingAddressService {
       data: {
         saaIsDefault: false,
         saaModifiedOn: new Date(),
-        saaModifiedBy: DEFAULT_ACTOR,
+        saaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       },
     });
   }

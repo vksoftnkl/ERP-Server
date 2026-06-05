@@ -20,6 +20,7 @@ import {
   throwSettingsConflict,
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const EMPLOYEE_DESIGNATION_MASTER_TABLE_NAME = 'employee designations';
 const EMPLOYEE_DESIGNATION_MASTER_AUDIT_SCREEN_NAME = 'Employee Designation Master';
@@ -31,6 +32,7 @@ export class EmployeeDesignationMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(
@@ -97,7 +99,7 @@ export class EmployeeDesignationMasterService {
           edIsActive: false,
           edIsDefault: false,
           edModifiedOn: modifiedOn,
-          edModifiedBy: DEFAULT_ACTOR,
+          edModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
 
@@ -112,7 +114,7 @@ export class EmployeeDesignationMasterService {
         edIsActive: false,
         edIsDefault: false,
         edModifiedOn: modifiedOn,
-        edModifiedBy: DEFAULT_ACTOR,
+        edModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
 
       await this.auditLogService.logEntityChange(
@@ -125,7 +127,7 @@ export class EmployeeDesignationMasterService {
           displayName: existing.edName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Employee designation soft deleted',
         },
         tx,
@@ -158,7 +160,7 @@ export class EmployeeDesignationMasterService {
         const data: Prisma.EmployeeDesignationUncheckedCreateInput = {
           edName,
           edCreatedOn: now,
-          edCreatedBy: DEFAULT_ACTOR,
+          edCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {
@@ -187,7 +189,7 @@ export class EmployeeDesignationMasterService {
             displayName: payload.edName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Employee designation created',
           },
           tx,
@@ -233,7 +235,7 @@ export class EmployeeDesignationMasterService {
         const data: Prisma.EmployeeDesignationUncheckedUpdateInput = {
           edName,
           edModifiedOn: new Date(),
-          edModifiedBy: DEFAULT_ACTOR,
+          edModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveEmployeeDesignationMasterDto, 'edCode')) {
@@ -267,7 +269,7 @@ export class EmployeeDesignationMasterService {
             displayName: payload.edName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Employee designation updated',
           },
           tx,
@@ -380,7 +382,7 @@ export class EmployeeDesignationMasterService {
       data: {
         edIsDefault: false,
         edModifiedOn: new Date(),
-        edModifiedBy: DEFAULT_ACTOR,
+        edModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       },
     });
   }

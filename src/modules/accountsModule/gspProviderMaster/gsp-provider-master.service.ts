@@ -18,6 +18,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const GSP_PROVIDER_MASTER_TABLE_NAME = 'gsp provider master';
 const GSP_PROVIDER_MASTER_AUDIT_SCREEN_NAME = 'GSP Provider Master';
 type GspProviderMasterWriteClient = AccountsWriteClient;
@@ -26,6 +27,7 @@ export class GspProviderMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(
     saveGspProviderMasterDto: SaveGspProviderMasterDto,
@@ -93,7 +95,7 @@ export class GspProviderMasterService {
           gspIsDeleted: true,
           gspIsActive: false,
           gspModifiedOn: modifiedOn,
-          gspModifiedBy: DEFAULT_ACTOR,
+          gspModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -109,7 +111,7 @@ export class GspProviderMasterService {
         gspIsDeleted: true,
         gspIsActive: false,
         gspModifiedOn: modifiedOn,
-        gspModifiedBy: DEFAULT_ACTOR,
+        gspModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -121,7 +123,7 @@ export class GspProviderMasterService {
           displayName: existing.gspProviderName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'GSP provider soft deleted',
         },
         tx,
@@ -174,7 +176,7 @@ export class GspProviderMasterService {
           gspUserName,
           gspUserPassword,
           gspCreatedOn: now,
-          gspCreatedBy: DEFAULT_ACTOR,
+          gspCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveGspProviderMasterDto, 'gspIsActive')) {
           data.gspIsActive = saveGspProviderMasterDto.gspIsActive;
@@ -191,7 +193,7 @@ export class GspProviderMasterService {
             displayName: payload.gspProviderName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'GSP provider created',
           },
           tx,
@@ -267,7 +269,7 @@ export class GspProviderMasterService {
           gspUserName,
           gspUserPassword,
           gspModifiedOn: new Date(),
-          gspModifiedBy: DEFAULT_ACTOR,
+          gspModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveGspProviderMasterDto, 'gspIsActive')) {
           data.gspIsActive = saveGspProviderMasterDto.gspIsActive;
@@ -289,7 +291,7 @@ export class GspProviderMasterService {
             displayName: payload.gspProviderName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'GSP provider updated',
           },
           tx,

@@ -20,6 +20,7 @@ import {
   throwSettingsNotFound,
   toNullableNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const BRANCH_MASTER_TABLE_NAME = 'branch master';
 const BRANCH_MASTER_AUDIT_SCREEN_NAME = 'Branch Master';
@@ -74,6 +75,7 @@ export class BranchMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveBranchMasterDto: SaveBranchMasterDto): Promise<BranchMasterPayload> {
@@ -116,7 +118,7 @@ export class BranchMasterService {
           brIsDeleted: true,
           brIsActive: false,
           brModifiedOn: modifiedOn,
-          brModifiedBy: DEFAULT_ACTOR,
+          brModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -128,7 +130,7 @@ export class BranchMasterService {
         brIsDeleted: true,
         brIsActive: false,
         brModifiedOn: modifiedOn,
-        brModifiedBy: DEFAULT_ACTOR,
+        brModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -140,7 +142,7 @@ export class BranchMasterService {
           displayName: existing.brName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Branch soft deleted',
         },
         tx,
@@ -170,7 +172,7 @@ export class BranchMasterService {
           brName: normalizedName,
           brStateCode: stateCode,
           brCreatedOn: now,
-          brCreatedBy: DEFAULT_ACTOR,
+          brCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveBranchMasterDto);
         const created = await tx.branchMaster.create({ data });
@@ -185,7 +187,7 @@ export class BranchMasterService {
             displayName: payload.brName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Branch created',
           },
           tx,
@@ -225,7 +227,7 @@ export class BranchMasterService {
           brName: normalizedName,
           brStateCode: stateCode,
           brModifiedOn: new Date(),
-          brModifiedBy: DEFAULT_ACTOR,
+          brModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveBranchMasterDto);
         const updated = await tx.branchMaster.update({
@@ -245,7 +247,7 @@ export class BranchMasterService {
             displayName: payload.brName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Branch updated',
           },
           tx,
@@ -370,7 +372,7 @@ export class BranchMasterService {
       data: {
         brIsDefault: false,
         brModifiedOn: new Date(),
-        brModifiedBy: DEFAULT_ACTOR,
+        brModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       },
     });
   }

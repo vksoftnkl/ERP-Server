@@ -11,6 +11,7 @@ import {
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const ITEM_GROUP_TABLE_NAME = 'item group master';
 const ITEM_GROUP_AUDIT_SCREEN_NAME = 'Item Group Master';
 type ItemGroupWriteClient = Prisma.TransactionClient | PrismaService;
@@ -19,6 +20,7 @@ export class ItemsGroupMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload> {
     if (saveItemGroupDto.itg_id) {
@@ -68,7 +70,7 @@ export class ItemsGroupMasterService {
         data: {
           itgIsDeleted: true,
           itgModifiedOn: modifiedOn,
-          itgModifiedBy: DEFAULT_ACTOR,
+          itgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -84,7 +86,7 @@ export class ItemsGroupMasterService {
         ...existing,
         itgIsDeleted: true,
         itgModifiedOn: modifiedOn,
-        itgModifiedBy: DEFAULT_ACTOR,
+        itgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -96,7 +98,7 @@ export class ItemsGroupMasterService {
           displayName: existing.itgName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Item group soft deleted',
         },
         tx,
@@ -114,7 +116,7 @@ export class ItemsGroupMasterService {
           await this.ensureParentExists(saveItemGroupDto.itg_parent_id, tx);
         }
         const now = new Date();
-        const createdBy = DEFAULT_ACTOR;
+        const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
         const modifiedBy = createdBy;
         const data: Prisma.ItemGroupMasterUncheckedCreateInput = {
           itgName: saveItemGroupDto.itg_name.trim(),
@@ -152,7 +154,7 @@ export class ItemsGroupMasterService {
             displayName: payload.itg_name,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item group created',
           },
           tx,
@@ -204,7 +206,7 @@ export class ItemsGroupMasterService {
         const data: Prisma.ItemGroupMasterUncheckedUpdateInput = {
           itgName: saveItemGroupDto.itg_name.trim(),
           itgModifiedOn: new Date(),
-          itgModifiedBy: DEFAULT_ACTOR,
+          itgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveItemGroupDto);
         const updated = await tx.itemGroupMaster.update({
@@ -236,7 +238,7 @@ export class ItemsGroupMasterService {
             displayName: payload.itg_name,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item group updated',
           },
           tx,

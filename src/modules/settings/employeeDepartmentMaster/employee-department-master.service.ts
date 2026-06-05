@@ -20,6 +20,7 @@ import {
   throwSettingsConflict,
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const EMPLOYEE_DEPARTMENT_MASTER_TABLE_NAME = 'employee departments';
 const EMPLOYEE_DEPARTMENT_MASTER_AUDIT_SCREEN_NAME = 'Employee Department Master';
 type EmployeeDepartmentWriteClient = SettingsWriteClient;
@@ -28,6 +29,7 @@ export class EmployeeDepartmentMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(
     saveEmployeeDepartmentMasterDto: SaveEmployeeDepartmentMasterDto,
@@ -84,7 +86,7 @@ export class EmployeeDepartmentMasterService {
           edptIsDeleted: true,
           edptIsActive: false,
           edptModifiedOn: modifiedOn,
-          edptModifiedBy: DEFAULT_ACTOR,
+          edptModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -96,7 +98,7 @@ export class EmployeeDepartmentMasterService {
         edptIsDeleted: true,
         edptIsActive: false,
         edptModifiedOn: modifiedOn,
-        edptModifiedBy: DEFAULT_ACTOR,
+        edptModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -108,7 +110,7 @@ export class EmployeeDepartmentMasterService {
           displayName: existing.edptName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Employee department soft deleted',
         },
         tx,
@@ -134,7 +136,7 @@ export class EmployeeDepartmentMasterService {
         const data: Prisma.EmployeeDepartmentUncheckedCreateInput = {
           edptName,
           edptCreatedOn: now,
-          edptCreatedBy: DEFAULT_ACTOR,
+          edptCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
           data.edptCode = edptCode;
@@ -160,7 +162,7 @@ export class EmployeeDepartmentMasterService {
             displayName: payload.edptName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Employee department created',
           },
           tx,
@@ -196,7 +198,7 @@ export class EmployeeDepartmentMasterService {
         const data: Prisma.EmployeeDepartmentUncheckedUpdateInput = {
           edptName,
           edptModifiedOn: new Date(),
-          edptModifiedBy: DEFAULT_ACTOR,
+          edptModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveEmployeeDepartmentMasterDto, 'edptCode')) {
           data.edptCode = edptCode;
@@ -227,7 +229,7 @@ export class EmployeeDepartmentMasterService {
             displayName: payload.edptName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Employee department updated',
           },
           tx,

@@ -14,6 +14,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const TENDER_MASTER_TABLE_NAME = 'account tender master';
 const TENDER_MASTER_AUDIT_SCREEN_NAME = 'Tender Master';
 type TenderMasterWriteClient = AccountsWriteClient;
@@ -23,6 +24,7 @@ export class TenderMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveTenderMasterDto: SaveTenderMasterDto): Promise<TenderMasterPayload> {
@@ -79,7 +81,7 @@ export class TenderMasterService {
           acctndIsDeleted: true,
           acctndIsActive: false,
           acctndModifiedOn: modifiedOn,
-          acctndModifiedBy: DEFAULT_ACTOR,
+          acctndModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
 
@@ -97,7 +99,7 @@ export class TenderMasterService {
         acctndIsDeleted: true,
         acctndIsActive: false,
         acctndModifiedOn: modifiedOn,
-        acctndModifiedBy: DEFAULT_ACTOR,
+        acctndModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
 
       await this.auditLogService.logEntityChange(
@@ -110,7 +112,7 @@ export class TenderMasterService {
           displayName: existing.acctndName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Tender soft deleted',
         },
         tx,
@@ -157,7 +159,7 @@ export class TenderMasterService {
           acctndLedgerId: saveTenderMasterDto.tndLedgerId,
           acctndMinAmount: tndMinAmount,
           acctndCreatedOn: now,
-          acctndCreatedBy: DEFAULT_ACTOR,
+          acctndCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveTenderMasterDto, 'tndMaxAmount')) {
@@ -208,7 +210,7 @@ export class TenderMasterService {
             displayName: payload.tndName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Tender created',
           },
           tx,
@@ -274,7 +276,7 @@ export class TenderMasterService {
           acctndLedgerId: saveTenderMasterDto.tndLedgerId,
           acctndMinAmount: tndMinAmount,
           acctndModifiedOn: new Date(),
-          acctndModifiedBy: DEFAULT_ACTOR,
+          acctndModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveTenderMasterDto, 'tndMaxAmount')) {
@@ -330,7 +332,7 @@ export class TenderMasterService {
             displayName: payload.tndName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Tender updated',
           },
           tx,

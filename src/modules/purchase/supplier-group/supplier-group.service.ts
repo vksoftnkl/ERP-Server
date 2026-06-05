@@ -17,6 +17,7 @@ import {
   throwPurchaseConflict,
   throwPurchaseNotFound,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const SUPPLIER_GROUP_TABLE_NAME = 'supplier groups';
 const SUPPLIER_GROUP_AUDIT_SCREEN_NAME = 'Supplier Group Master';
@@ -29,6 +30,7 @@ export class SupplierGroupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveSupplierGroupDto: SaveSupplierGroupDto): Promise<SupplierGroupPayload> {
@@ -67,7 +69,7 @@ export class SupplierGroupService {
       const modifiedOn = new Date();
       const result = await tx.supplierGroup.updateMany({
         where: { spgId, spgIsDeleted: false },
-        data: { spgIsDeleted: true, spgIsActive: false, spgModifiedOn: modifiedOn, spgModifiedBy: DEFAULT_ACTOR },
+        data: { spgIsDeleted: true, spgIsActive: false, spgModifiedOn: modifiedOn, spgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR },
       });
       if (result.count === 0) {
         throwPurchaseNotFound('Supplier group not found', 'spgId', `No active supplier group found with id ${spgId}`);
@@ -78,7 +80,7 @@ export class SupplierGroupService {
         spgIsDeleted: true,
         spgIsActive: false,
         spgModifiedOn: modifiedOn,
-        spgModifiedBy: DEFAULT_ACTOR,
+        spgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -90,7 +92,7 @@ export class SupplierGroupService {
           displayName: existing.spgName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Supplier group soft deleted',
         },
         tx,
@@ -103,7 +105,7 @@ export class SupplierGroupService {
     saveSupplierGroupDto: SaveSupplierGroupDto,
   ): Promise<SupplierGroupPayload> {
     const now = new Date();
-    const createdBy = resolveActor(saveSupplierGroupDto.spgCreatedBy);
+    const createdBy = resolveActor(saveSupplierGroupDto.spgCreatedBy, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveSupplierGroupDto.spgModifiedBy, createdBy);
     const normalizedName = normalizeRequiredText(saveSupplierGroupDto.spgName, 'spgName');
     const data: Prisma.SupplierGroupUncheckedCreateInput = {
@@ -159,7 +161,7 @@ export class SupplierGroupService {
         const data: Prisma.SupplierGroupUncheckedUpdateInput = {
           spgName: normalizedName,
           spgModifiedOn: new Date(),
-          spgModifiedBy: resolveActor(saveSupplierGroupDto.spgModifiedBy),
+          spgModifiedBy: resolveActor(saveSupplierGroupDto.spgModifiedBy, this.requestContextService.getUserId()),
         };
         applyPresentFields(data, saveSupplierGroupDto, SUPPLIER_GROUP_OPTIONAL_FIELDS);
         const updated = await tx.supplierGroup.update({ where: { spgId }, data });

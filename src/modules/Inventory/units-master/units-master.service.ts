@@ -13,6 +13,7 @@ import {
   throwOnUniqueConstraintError,
   toNullableNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const UNIT_TABLE_NAME = 'item_unit_master';
 const UNIT_AUDIT_SCREEN_NAME = 'Units Master';
@@ -24,6 +25,7 @@ export class UnitsMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
@@ -65,7 +67,7 @@ export class UnitsMasterService {
         data: {
           unit_is_deleted: true,
           unit_modified_on: modifiedOn,
-          unit_modified_by: DEFAULT_ACTOR,
+          unit_modified_by: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -81,7 +83,7 @@ export class UnitsMasterService {
         ...existing,
         unit_is_deleted: true,
         unit_modified_on: modifiedOn,
-        unit_modified_by: DEFAULT_ACTOR,
+        unit_modified_by: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -93,7 +95,7 @@ export class UnitsMasterService {
           displayName: existing.unit_name,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Unit soft deleted',
         },
         tx,
@@ -112,7 +114,7 @@ export class UnitsMasterService {
       : null;
     this.validateConversionRules(baseUnitId, conversion);
     const now = new Date();
-    const createdBy = resolveActor(saveUnitDto.unit_created_by);
+    const createdBy = resolveActor(saveUnitDto.unit_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveUnitDto.unit_modified_by, createdBy);
     const data: Prisma.UnitUncheckedCreateInput = {
       unit_name: saveUnitDto.unit_name.trim(),
@@ -176,7 +178,7 @@ export class UnitsMasterService {
         const data: Prisma.UnitUncheckedUpdateInput = {
           unit_name: saveUnitDto.unit_name.trim(),
           unit_modified_on: new Date(),
-          unit_modified_by: resolveActor(saveUnitDto.unit_modified_by),
+          unit_modified_by: resolveActor(saveUnitDto.unit_modified_by, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveUnitDto);
         const updated = await tx.unit.update({ where: { unit_id: unitId }, data });

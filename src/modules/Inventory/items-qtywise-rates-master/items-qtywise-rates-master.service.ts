@@ -18,6 +18,7 @@ import {
   toNullableNumber,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const ITEM_QTYWISE_RATE_TABLE_NAME = 'item qtywise rates';
 const ITEM_QTYWISE_RATE_AUDIT_SCREEN_NAME = 'Item Qtywise Rate Master';
@@ -27,6 +28,7 @@ export class ItemsQtywiseRatesMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveItemQtywiseRateDto: SaveItemQtywiseRateDto): Promise<ItemQtywiseRatePayload> {
@@ -64,7 +66,7 @@ export class ItemsQtywiseRatesMasterService {
       }
 
       const modifiedOn = new Date();
-      const modifiedBy = DEFAULT_ACTOR;
+      const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       const result = await tx.itemQtywiseRate.updateMany({
         where: { iqrId, iqrIsDeleted: false },
         data: { iqrIsDeleted: true, iqrModifiedOn: modifiedOn, iqrModifiedBy: modifiedBy },
@@ -116,7 +118,7 @@ export class ItemsQtywiseRatesMasterService {
     );
 
     const now = new Date();
-    const createdBy = resolveActor(saveItemQtywiseRateDto.iqr_created_by);
+    const createdBy = resolveActor(saveItemQtywiseRateDto.iqr_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveItemQtywiseRateDto.iqr_modified_by, createdBy);
     const data: Prisma.ItemQtywiseRateUncheckedCreateInput = {
       iqrUnitRateId: saveItemQtywiseRateDto.iqr_unit_rate_id,
@@ -196,7 +198,7 @@ export class ItemsQtywiseRatesMasterService {
           iqrStartQty: saveItemQtywiseRateDto.iqr_start_qty,
           iqrEachQty: saveItemQtywiseRateDto.iqr_each_qty,
           iqrModifiedOn: new Date(),
-          iqrModifiedBy: resolveActor(saveItemQtywiseRateDto.iqr_modified_by),
+          iqrModifiedBy: resolveActor(saveItemQtywiseRateDto.iqr_modified_by, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveItemQtywiseRateDto);
 
@@ -213,7 +215,7 @@ export class ItemsQtywiseRatesMasterService {
             displayName: this.buildDisplayName(updated),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: payload.iqr_modified_by ?? DEFAULT_ACTOR,
+            userId: payload.iqr_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item qty-wise rate updated',
           },
           tx,

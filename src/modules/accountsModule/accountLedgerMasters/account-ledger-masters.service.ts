@@ -19,6 +19,7 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
@@ -30,6 +31,7 @@ export class AccountLedgerMastersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(
@@ -120,7 +122,7 @@ export class AccountLedgerMastersService {
           ledIsDeleted: true,
           ledIsActive: false,
           ledModifiedOn: modifiedOn,
-          ledModifiedBy: DEFAULT_ACTOR,
+          ledModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -136,7 +138,7 @@ export class AccountLedgerMastersService {
         ledIsDeleted: true,
         ledIsActive: false,
         ledModifiedOn: modifiedOn,
-        ledModifiedBy: DEFAULT_ACTOR,
+        ledModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -148,7 +150,7 @@ export class AccountLedgerMastersService {
           displayName: existing.ledName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Account ledger soft deleted',
         },
         tx,
@@ -185,7 +187,7 @@ export class AccountLedgerMastersService {
         const groupId = saveAccountLedgerMasterDto.ledGroupId;
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
         const now = new Date();
-        const createdBy = DEFAULT_ACTOR;
+        const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
         const data: Prisma.AccLedgerMasterUncheckedCreateInput = {
           ledCompanyId: companyId,
           ledBranchId: branchId,
@@ -207,7 +209,7 @@ export class AccountLedgerMastersService {
             displayName: payload.ledName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Account ledger created',
           },
           tx,
@@ -266,7 +268,7 @@ export class AccountLedgerMastersService {
           ledGroupId: nextGroupId,
           ledName: normalizedName,
           ledModifiedOn: new Date(),
-          ledModifiedBy: DEFAULT_ACTOR,
+          ledModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveAccountLedgerMasterDto);
         const updated = await tx.accLedgerMaster.update({
@@ -286,7 +288,7 @@ export class AccountLedgerMastersService {
             displayName: payload.ledName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Account ledger updated',
           },
           tx,

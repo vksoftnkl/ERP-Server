@@ -21,6 +21,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
 const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];
@@ -30,6 +31,7 @@ export class CityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveCityDto: SaveCityDto): Promise<CityPayload> {
     if (saveCityDto.ctmId) {
@@ -95,7 +97,7 @@ export class CityService {
           ctmIsDeleted: true,
           ctmIsActive: false,
           ctmModifiedOn: modifiedOn,
-          ctmModifiedBy: DEFAULT_ACTOR,
+          ctmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -111,7 +113,7 @@ export class CityService {
         ctmIsDeleted: true,
         ctmIsActive: false,
         ctmModifiedOn: modifiedOn,
-        ctmModifiedBy: DEFAULT_ACTOR,
+        ctmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -123,7 +125,7 @@ export class CityService {
           displayName: existing.ctmName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'City soft deleted',
         },
         tx,
@@ -140,7 +142,7 @@ export class CityService {
       'ctmName',
     );
     const now = new Date();
-    const createdBy = resolveActor(saveCityDto.ctmCreatedBy);
+    const createdBy = resolveActor(saveCityDto.ctmCreatedBy, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveCityDto.ctmModifiedBy, createdBy);
     const data: Prisma.CityMasterUncheckedCreateInput = {
       ctmName: normalizedName,
@@ -220,7 +222,7 @@ export class CityService {
           ctmName: normalizedName,
           ctmStateId: nextStateId,
           ctmModifiedOn: new Date(),
-          ctmModifiedBy: resolveActor(saveCityDto.ctmModifiedBy),
+          ctmModifiedBy: resolveActor(saveCityDto.ctmModifiedBy, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveCityDto);
 

@@ -16,6 +16,7 @@ import {
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const ITEM_TAX_HISTORY_TABLE_NAME = 'item tax history';
 const ITEM_TAX_HISTORY_AUDIT_SCREEN_NAME = 'Item Tax History';
@@ -25,6 +26,7 @@ export class ItemsTaxHistoryMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveItemTaxHistoryDto: SaveItemTaxHistoryDto): Promise<ItemTaxHistoryPayload> {
@@ -67,7 +69,7 @@ export class ItemsTaxHistoryMasterService {
             displayName: this.buildDisplayName(existing),
             originalRecord: this.toPayload(existing),
             modifiedRecord: null,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item tax history deleted',
           },
           tx,
@@ -92,7 +94,7 @@ export class ItemsTaxHistoryMasterService {
       'ith_effective_to',
     );
     this.validateDateRange(effectiveFrom, effectiveTo);
-    const createdBy = resolveActor(saveItemTaxHistoryDto.ith_created_by);
+    const createdBy = resolveActor(saveItemTaxHistoryDto.ith_created_by, this.requestContextService.getUserId());
     const data: Prisma.ItemTaxHistoryUncheckedCreateInput = {
       ithItemId: saveItemTaxHistoryDto.ith_item_id,
       ithTaxId: saveItemTaxHistoryDto.ith_tax_id,
@@ -169,7 +171,7 @@ export class ItemsTaxHistoryMasterService {
             displayName: this.buildDisplayName(updated),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item tax history updated',
           },
           tx,

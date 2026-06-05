@@ -105,17 +105,25 @@ export function normalizeNullableString(
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 }
-export function resolveActor(value: string | null | undefined, fallback = DEFAULT_ACTOR): string {
-  if (!value) {
-    return fallback;
+export function resolveActor(
+  value: string | null | undefined,
+  userId: string | null | undefined = null,
+): string {
+  if (value) {
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
   }
-  const trimmed = value.trim();
-  return trimmed || fallback;
+  if (userId) {
+    const trimmedUserId = userId.trim();
+    if (trimmedUserId) return trimmedUserId;
+  }
+  return DEFAULT_ACTOR;
 }
 export function toNumber(value: Prisma.Decimal | number): number {
   if (typeof value === 'number') {
     return value;
   }
+  
   return Number(value.toString());
 }
 export function toNullableNumber(value: Prisma.Decimal | number | null): number | null {

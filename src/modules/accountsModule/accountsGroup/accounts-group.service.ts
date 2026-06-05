@@ -15,6 +15,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const ACCOUNT_GROUP_TABLE_NAME = 'account groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
 type AccountGroupWriteClient = AccountsWriteClient;
@@ -27,6 +28,7 @@ export class AccountsGroupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveAccountGroupDto: SaveAccountGroupDto): Promise<AccountGroupPayload> {
     if (saveAccountGroupDto.accGroupId) {
@@ -111,7 +113,7 @@ export class AccountsGroupService {
           accGroupIsDeleted: true,
           accGroupIsActive: false,
           accGroupModifiedOn: modifiedOn,
-          accGroupModifiedBy: DEFAULT_ACTOR,
+          accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -128,7 +130,7 @@ export class AccountsGroupService {
         accGroupIsDeleted: true,
         accGroupIsActive: false,
         accGroupModifiedOn: modifiedOn,
-        accGroupModifiedBy: DEFAULT_ACTOR,
+        accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -140,7 +142,7 @@ export class AccountsGroupService {
           displayName: existing.accGroupName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Account group soft deleted',
         },
         tx,
@@ -175,7 +177,7 @@ export class AccountsGroupService {
         );
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
         const now = new Date();
-        const createdBy = DEFAULT_ACTOR;
+        const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
         const data: Prisma.AccountGroupUncheckedCreateInput = {
           accGroupCompanyId: companyId,
           accGroupName: normalizedName,
@@ -213,7 +215,7 @@ export class AccountsGroupService {
             displayName: payload.accGroupName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Account group created',
           },
           tx,
@@ -303,7 +305,7 @@ export class AccountsGroupService {
           accGroupName: normalizedName,
           accGroupTypeCode: normalizedTypeCode,
           accGroupModifiedOn: new Date(),
-          accGroupModifiedBy: DEFAULT_ACTOR,
+          accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveAccountGroupDto);
         const updated = await tx.accountGroup.update({
@@ -335,7 +337,7 @@ export class AccountsGroupService {
             displayName: payload.accGroupName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Account group updated',
           },
           tx,

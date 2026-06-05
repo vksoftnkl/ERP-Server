@@ -13,6 +13,7 @@ import {
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const ITEM_TABLE_NAME = 'item master';
 const ITEM_AUDIT_SCREEN_NAME = 'Item Master';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -21,6 +22,7 @@ export class ItemsMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     if (saveItemDto.item_id) {
@@ -60,7 +62,7 @@ export class ItemsMasterService {
         );
       }
       const modifiedOn = new Date();
-      const modifiedBy = DEFAULT_ACTOR;
+      const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       const result = await tx.itemMaster.updateMany({
         where: {
           itemId,
@@ -118,7 +120,7 @@ export class ItemsMasterService {
       ]);
     }
     const now = new Date();
-    const createdBy = resolveActor(saveItemDto.item_created_by);
+    const createdBy = resolveActor(saveItemDto.item_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveItemDto.item_modified_by, createdBy);
     const data: Prisma.ItemMasterUncheckedCreateInput = {
       itemCompanyId: saveItemDto.item_company_id,
@@ -187,7 +189,7 @@ export class ItemsMasterService {
           itemGroupId: saveItemDto.item_group_id,
           itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
           itemModifiedOn: new Date(),
-          itemModifiedBy: resolveActor(saveItemDto.item_modified_by),
+          itemModifiedBy: resolveActor(saveItemDto.item_modified_by, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveItemDto);
         const updated = await tx.itemMaster.update({
@@ -207,7 +209,7 @@ export class ItemsMasterService {
             displayName: payload.item_name_en,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: payload.item_modified_by ?? DEFAULT_ACTOR,
+            userId: payload.item_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item updated',
           },
           tx,

@@ -26,6 +26,7 @@ import {
   throwMasterConflict,
   throwMasterNotFound,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const BATCH_PREFIX_TABLE_NAME = 'batch prefix';
 const BATCH_PREFIX_AUDIT_SCREEN_NAME = 'Batch Prefix';
@@ -38,6 +39,7 @@ export class BatchPrefixService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveBatchPrefixDto: SaveBatchPrefixDto): Promise<BatchPrefixPayload> {
@@ -103,7 +105,7 @@ export class BatchPrefixService {
             displayName: this.buildDisplayName(existing),
             originalRecord: this.toPayload(existing),
             modifiedRecord: null,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Batch prefix deleted',
           },
           tx,
@@ -126,7 +128,7 @@ export class BatchPrefixService {
         const data: Prisma.BatchPrefixUncheckedCreateInput = {
           prefixUsed,
           syncDate: syncDate ?? null,
-          createdBy: DEFAULT_ACTOR,
+          createdBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           createdOn: now,
         };
         const created = await tx.batchPrefix.create({ data });
@@ -141,7 +143,7 @@ export class BatchPrefixService {
             displayName: this.buildDisplayName(created),
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Batch prefix created',
           },
           tx,
@@ -166,7 +168,7 @@ export class BatchPrefixService {
         await this.ensurePrefixIsUnique(tx, prefixUsed, id);
         const data: Prisma.BatchPrefixUncheckedUpdateInput = {
           prefixUsed,
-          modifiedBy: DEFAULT_ACTOR,
+          modifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           modifiedOn: new Date(),
         };
         if (hasOwnProperty(saveBatchPrefixDto, 'syncDate')) {
@@ -185,7 +187,7 @@ export class BatchPrefixService {
             displayName: this.buildDisplayName(updated),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Batch prefix updated',
           },
           tx,

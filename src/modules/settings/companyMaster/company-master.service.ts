@@ -21,6 +21,7 @@ import {
   toNullableNumber,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const COMPANY_MASTER_TABLE_NAME = 'companys';
 const COMPANY_MASTER_TABLE_SCHEMA = 'public';
@@ -87,6 +88,7 @@ export class CompanyMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveCompanyMasterDto: SaveCompanyMasterDto): Promise<CompanyMasterPayload> {
     if (saveCompanyMasterDto.compId) {
@@ -129,7 +131,7 @@ export class CompanyMasterService {
           compIsActive: false,
           compDefault: false,
           compModifiedOn: modifiedOn,
-          compModifiedBy: DEFAULT_ACTOR,
+          compModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -142,7 +144,7 @@ export class CompanyMasterService {
         compIsActive: false,
         compDefault: false,
         compModifiedOn: modifiedOn,
-        compModifiedBy: DEFAULT_ACTOR,
+        compModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -154,7 +156,7 @@ export class CompanyMasterService {
           displayName: existing.compName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Company soft deleted',
         },
         tx,
@@ -188,7 +190,7 @@ export class CompanyMasterService {
           compStateCode,
           compStylesheetId: saveCompanyMasterDto.compStylesheetId,
           compCreatedOn: now,
-          compCreatedBy: DEFAULT_ACTOR,
+          compCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveCompanyMasterDto);
         const created = await tx.company.create({ data });
@@ -203,7 +205,7 @@ export class CompanyMasterService {
             displayName: payload.compName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Company created',
           },
           tx,
@@ -247,7 +249,7 @@ export class CompanyMasterService {
           compStateCode,
           compStylesheetId: saveCompanyMasterDto.compStylesheetId,
           compModifiedOn: new Date(),
-          compModifiedBy: DEFAULT_ACTOR,
+          compModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveCompanyMasterDto);
         const updated = await tx.company.update({
@@ -267,7 +269,7 @@ export class CompanyMasterService {
             displayName: payload.compName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Company updated',
           },
           tx,
@@ -397,7 +399,7 @@ export class CompanyMasterService {
       data: {
         compDefault: false,
         compModifiedOn: new Date(),
-        compModifiedBy: DEFAULT_ACTOR,
+        compModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       },
     });
   }

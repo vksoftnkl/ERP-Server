@@ -18,6 +18,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const LEDGER_BANK_ACCOUNT_TABLE_NAME = 'acc ledger bank accounts';
 const LEDGER_BANK_ACCOUNT_AUDIT_SCREEN_NAME = 'Ledger Bank Account';
 type LedgerBankAccountWriteClient = AccountsWriteClient;
@@ -26,6 +27,7 @@ export class LedgerBankAccountService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(
     saveLedgerBankAccountDto: SaveLedgerBankAccountDto,
@@ -76,7 +78,7 @@ export class LedgerBankAccountService {
           lbaIsDeleted: true,
           lbaIsActive: false,
           lbaModifiedOn: modifiedOn,
-          lbaModifiedBy: DEFAULT_ACTOR,
+          lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -92,7 +94,7 @@ export class LedgerBankAccountService {
         lbaIsDeleted: true,
         lbaIsActive: false,
         lbaModifiedOn: modifiedOn,
-        lbaModifiedBy: DEFAULT_ACTOR,
+        lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -104,7 +106,7 @@ export class LedgerBankAccountService {
           displayName: existing.lbaAccountHolder,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Ledger bank account soft deleted',
         },
         tx,
@@ -154,7 +156,7 @@ export class LedgerBankAccountService {
           lbaBankName: bankName,
           lbaAccountNo: accountNo,
           lbaCreatedOn: now,
-          lbaCreatedBy: DEFAULT_ACTOR,
+          lbaCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveLedgerBankAccountDto);
         const created = await tx.accLedgerBankAccount.create({ data });
@@ -169,7 +171,7 @@ export class LedgerBankAccountService {
             displayName: payload.lbaAccountHolder,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Ledger bank account created',
           },
           tx,
@@ -247,7 +249,7 @@ export class LedgerBankAccountService {
           lbaBankName: bankName,
           lbaAccountNo: accountNo,
           lbaModifiedOn: new Date(),
-          lbaModifiedBy: DEFAULT_ACTOR,
+          lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveLedgerBankAccountDto);
         const updated = await tx.accLedgerBankAccount.update({
@@ -267,7 +269,7 @@ export class LedgerBankAccountService {
             displayName: payload.lbaAccountHolder,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Ledger bank account updated',
           },
           tx,
@@ -418,7 +420,7 @@ export class LedgerBankAccountService {
       data: {
         lbaIsDefault: false,
         lbaModifiedOn: new Date(),
-        lbaModifiedBy: DEFAULT_ACTOR,
+        lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       },
     });
   }

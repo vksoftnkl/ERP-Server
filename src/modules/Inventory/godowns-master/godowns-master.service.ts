@@ -14,6 +14,7 @@ import {
   throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const GODOWN_LOCATION_TABLE_NAME = 'godown locations';
 const GODOWN_LOCATION_AUDIT_SCREEN_NAME = 'Godown Location Master';
 type GodownLocationWriteClient = Prisma.TransactionClient | PrismaService;
@@ -22,6 +23,7 @@ export class GodownsMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
     const normalizedSaveGodownDto = this.normalizeLegacySaveGodownDto(saveGodownDto);
@@ -56,7 +58,7 @@ export class GodownsMasterService {
         data: {
           gdlIsDeleted: true,
           gdlModifiedOn: now,
-          gdlModifiedBy: DEFAULT_ACTOR,
+          gdlModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
 
@@ -75,7 +77,7 @@ export class GodownsMasterService {
         ...existing,
         gdlIsDeleted: true,
         gdlModifiedOn: now,
-        gdlModifiedBy: DEFAULT_ACTOR,
+        gdlModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
 
       await this.auditLogService.logEntityChange(
@@ -88,7 +90,7 @@ export class GodownsMasterService {
           displayName: existing.gdlName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Godown location soft deleted',
         },
         tx,
@@ -118,7 +120,7 @@ export class GodownsMasterService {
           gdlBranchId,
           gdlName,
           gdlCreatedOn: now,
-          gdlCreatedBy: DEFAULT_ACTOR,
+          gdlCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveGodownDto);
 
@@ -148,7 +150,7 @@ export class GodownsMasterService {
             displayName: payload.gdl_name,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Godown location created',
           },
           tx,
@@ -214,7 +216,7 @@ export class GodownsMasterService {
         }
 
         data.gdlModifiedOn = new Date();
-        data.gdlModifiedBy = DEFAULT_ACTOR;
+        data.gdlModifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
 
         const updated = await tx.godownLocation.update({
           where: {
@@ -243,7 +245,7 @@ export class GodownsMasterService {
             displayName: payload.gdl_name,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Godown location updated',
           },
           tx,

@@ -18,6 +18,7 @@ import {
   throwPurchaseNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const SUPPLIER_TABLE_NAME = 'suppliers';
 const SUPPLIER_AUDIT_SCREEN_NAME = 'Supplier Master';
@@ -29,6 +30,7 @@ export class SuppliersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
@@ -59,7 +61,7 @@ export class SuppliersService {
       const modifiedOn = new Date();
       const result = await tx.supplier.updateMany({
         where: { supId, supIsDeleted: false },
-        data: { supIsDeleted: true, supIsActive: false, supModifiedOn: modifiedOn, supModifiedBy: DEFAULT_ACTOR },
+        data: { supIsDeleted: true, supIsActive: false, supModifiedOn: modifiedOn, supModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR },
       });
       if (result.count === 0) {
         throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
@@ -70,7 +72,7 @@ export class SuppliersService {
         supIsDeleted: true,
         supIsActive: false,
         supModifiedOn: modifiedOn,
-        supModifiedBy: DEFAULT_ACTOR,
+        supModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -82,7 +84,7 @@ export class SuppliersService {
           displayName: existing.supName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Supplier soft deleted',
         },
         tx,
@@ -98,7 +100,7 @@ export class SuppliersService {
     const normalizedStateCode = this.normalizeStateCode(saveSupplierDto.supStateCode);
     const normalizedGstType = normalizeRequiredText(saveSupplierDto.supGstType, 'supGstType');
     const now = new Date();
-    const createdBy = resolveActor(saveSupplierDto.supCreatedBy);
+    const createdBy = resolveActor(saveSupplierDto.supCreatedBy, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveSupplierDto.supModifiedBy, createdBy);
     const data: Prisma.SupplierUncheckedCreateInput = {
       supGroupId: saveSupplierDto.supGroupId,
@@ -176,7 +178,7 @@ export class SuppliersService {
           supGstType: normalizedGstType,
           supBilledDate: now,
           supModifiedOn: now,
-          supModifiedBy: resolveActor(saveSupplierDto.supModifiedBy),
+          supModifiedBy: resolveActor(saveSupplierDto.supModifiedBy, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveSupplierDto);
         const updated = await tx.supplier.update({ where: { supId }, data });

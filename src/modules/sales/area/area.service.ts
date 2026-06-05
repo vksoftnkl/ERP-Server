@@ -21,6 +21,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const AREA_TABLE_NAME = 'area master';
 const AREA_AUDIT_SCREEN_NAME = 'Area Master';
 const AREA_OPTIONAL_FIELDS = [
@@ -37,6 +38,7 @@ export class AreaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
     if (saveAreaDto.armId) {
@@ -102,7 +104,7 @@ export class AreaService {
           armIsDeleted: true,
           armIsActive: false,
           armModifiedOn: modifiedOn,
-          armModifiedBy: DEFAULT_ACTOR,
+          armModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -118,7 +120,7 @@ export class AreaService {
         armIsDeleted: true,
         armIsActive: false,
         armModifiedOn: modifiedOn,
-        armModifiedBy: DEFAULT_ACTOR,
+        armModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -130,7 +132,7 @@ export class AreaService {
           displayName: existing.armName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Area soft deleted',
         },
         tx,
@@ -147,7 +149,7 @@ export class AreaService {
       'armName',
     );
     const now = new Date();
-    const createdBy = resolveActor(saveAreaDto.armCreatedBy);
+    const createdBy = resolveActor(saveAreaDto.armCreatedBy, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveAreaDto.armModifiedBy, createdBy);
     const data: Prisma.AreaMasterUncheckedCreateInput = {
       armName: normalizedName,
@@ -226,7 +228,7 @@ export class AreaService {
           armName: normalizedName,
           armCityId: nextCityId,
           armModifiedOn: new Date(),
-          armModifiedBy: resolveActor(saveAreaDto.armModifiedBy),
+          armModifiedBy: resolveActor(saveAreaDto.armModifiedBy, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveAreaDto);
         const updated = await tx.areaMaster.update({

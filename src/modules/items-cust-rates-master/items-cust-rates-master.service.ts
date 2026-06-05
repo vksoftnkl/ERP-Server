@@ -22,6 +22,7 @@ import {
   throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../common/request-context/request-context.service';
 
 const ITEM_CUST_RATE_TABLE_NAME = 'cust item rates';
 const ITEM_CUST_RATE_AUDIT_SCREEN_NAME = 'Item Customer Rate Master';
@@ -32,6 +33,7 @@ export class ItemsCustRatesMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveItemCustRateDto: SaveItemCustRateDto): Promise<ItemCustRatePayload> {
@@ -75,7 +77,7 @@ export class ItemsCustRatesMasterService {
       }
 
       const modifiedOn = new Date();
-      const modifiedBy = DEFAULT_ACTOR;
+      const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       const result = await tx.custItemRate.updateMany({
         where: { csrId, csrIsDeleted: false },
         data: { csrIsDeleted: true, csrModifiedOn: modifiedOn, csrModifiedBy: modifiedBy },
@@ -118,7 +120,7 @@ export class ItemsCustRatesMasterService {
     );
 
     const now = new Date();
-    const createdBy = resolveActor(saveItemCustRateDto.csr_created_by);
+    const createdBy = resolveActor(saveItemCustRateDto.csr_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveItemCustRateDto.csr_modified_by, createdBy);
     const data: Prisma.CustItemRateUncheckedCreateInput = {
       csrCustomerId: saveItemCustRateDto.csr_customer_id,
@@ -179,7 +181,7 @@ export class ItemsCustRatesMasterService {
           csrCustomerId: saveItemCustRateDto.csr_customer_id,
           csrUnitRateId: saveItemCustRateDto.csr_unit_rate_id,
           csrModifiedOn: new Date(),
-          csrModifiedBy: resolveActor(saveItemCustRateDto.csr_modified_by),
+          csrModifiedBy: resolveActor(saveItemCustRateDto.csr_modified_by, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveItemCustRateDto);
 
@@ -195,7 +197,7 @@ export class ItemsCustRatesMasterService {
             displayName: this.buildDisplayName(updated),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: payload.csr_modified_by ?? DEFAULT_ACTOR,
+            userId: payload.csr_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item customer rate updated',
           },
           tx,

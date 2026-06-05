@@ -21,6 +21,7 @@ import {
   toNullableNumber,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const EMPLOYEE_MASTER_TABLE_NAME = 'emp_master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';
@@ -80,6 +81,7 @@ export class EmployeeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveEmployeeMasterDto: SaveEmployeeMasterDto): Promise<EmployeeMasterPayload> {
     if (saveEmployeeMasterDto.empId) {
@@ -121,7 +123,7 @@ export class EmployeeMasterService {
           empIsDeleted: true,
           empIsActive: false,
           empModifiedOn: modifiedOn,
-          empModifiedBy: DEFAULT_ACTOR,
+          empModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -133,7 +135,7 @@ export class EmployeeMasterService {
         empIsDeleted: true,
         empIsActive: false,
         empModifiedOn: modifiedOn,
-        empModifiedBy: DEFAULT_ACTOR,
+        empModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -145,7 +147,7 @@ export class EmployeeMasterService {
           displayName: existing.empName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Employee soft deleted',
         },
         tx,
@@ -175,7 +177,7 @@ export class EmployeeMasterService {
           empName,
           empSalaryType,
           empCreatedOn: now,
-          empCreatedBy: DEFAULT_ACTOR,
+          empCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
         const created = await tx.empMaster.create({ data });
@@ -190,7 +192,7 @@ export class EmployeeMasterService {
             displayName: payload.empName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Employee created',
           },
           tx,
@@ -230,7 +232,7 @@ export class EmployeeMasterService {
           empName,
           empSalaryType,
           empModifiedOn: new Date(),
-          empModifiedBy: DEFAULT_ACTOR,
+          empModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
         const updated = await tx.empMaster.update({
@@ -250,7 +252,7 @@ export class EmployeeMasterService {
             displayName: payload.empName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Employee updated',
           },
           tx,

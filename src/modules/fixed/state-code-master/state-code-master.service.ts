@@ -24,6 +24,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const STATE_CODE_MASTER_TABLE_NAME = 'state codes';
 const STATE_CODE_MASTER_AUDIT_SCREEN_NAME = 'State Code Master';
@@ -35,6 +36,7 @@ export class StateCodeMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveStateCodeMasterDto: SaveStateCodeMasterDto): Promise<StateCodeMasterPayload> {
@@ -98,7 +100,7 @@ export class StateCodeMasterService {
           isDeleted: true,
           isActive: false,
           modifiedOn,
-          modifiedBy: DEFAULT_ACTOR,
+          modifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -114,7 +116,7 @@ export class StateCodeMasterService {
         isDeleted: true,
         isActive: false,
         modifiedOn,
-        modifiedBy: DEFAULT_ACTOR,
+        modifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -126,7 +128,7 @@ export class StateCodeMasterService {
           displayName: existing.stateName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'State code soft deleted',
         },
         tx,
@@ -144,7 +146,7 @@ export class StateCodeMasterService {
       'stateName',
     );
     const now = new Date();
-    const createdBy = resolveActor(saveStateCodeMasterDto.createdBy);
+    const createdBy = resolveActor(saveStateCodeMasterDto.createdBy, this.requestContextService.getUserId());
     const data: Prisma.StateCodeUncheckedCreateInput = {
       stateCode,
       stateName: normalizedName,
@@ -207,7 +209,7 @@ export class StateCodeMasterService {
           stateName: normalizedName,
           isDeleted: false,
           modifiedOn: new Date(),
-          modifiedBy: resolveActor(saveStateCodeMasterDto.modifiedBy),
+          modifiedBy: resolveActor(saveStateCodeMasterDto.modifiedBy, this.requestContextService.getUserId()),
         };
         applyPresentFields(data, saveStateCodeMasterDto, STATE_CODE_MASTER_OPTIONAL_FIELDS);
         const updated = await tx.stateCode.update({ where: { stateCode }, data });
@@ -222,7 +224,7 @@ export class StateCodeMasterService {
             displayName: payload.stateName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveStateCodeMasterDto.modifiedBy),
+            userId: resolveActor(saveStateCodeMasterDto.modifiedBy, this.requestContextService.getUserId()),
             notes: existing.isDeleted ? 'State code restored and updated' : 'State code updated',
           },
           tx,

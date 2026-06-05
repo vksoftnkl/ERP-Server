@@ -11,6 +11,7 @@ import {
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const ITEM_CATEGORY_TABLE_NAME = 'item category master';
 const ITEM_CATEGORY_AUDIT_SCREEN_NAME = 'Category Master';
 type ItemCategoryWriteClient = Prisma.TransactionClient | PrismaService;
@@ -19,6 +20,7 @@ export class ItemsCategoryMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveItemCategoryDto: SaveItemCategoryDto): Promise<ItemCategoryPayload> {
     if (saveItemCategoryDto.category_id) {
@@ -68,7 +70,7 @@ export class ItemsCategoryMasterService {
         data: {
           categoryIsDeleted: true,
           categoryModifiedOn: modifiedOn,
-          categoryModifiedBy: DEFAULT_ACTOR,
+          categoryModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -84,7 +86,7 @@ export class ItemsCategoryMasterService {
         ...existing,
         categoryIsDeleted: true,
         categoryModifiedOn: modifiedOn,
-        categoryModifiedBy: DEFAULT_ACTOR,
+        categoryModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -96,7 +98,7 @@ export class ItemsCategoryMasterService {
           displayName: existing.categoryName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Item category soft deleted',
         },
         tx,
@@ -116,7 +118,7 @@ export class ItemsCategoryMasterService {
           await this.ensureParentExists(saveItemCategoryDto.category_parent_id, tx);
         }
         const now = new Date();
-        const createdBy = DEFAULT_ACTOR;
+        const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
         const modifiedBy = createdBy;
         const data: Prisma.categoryMasterUncheckedCreateInput = {
           categoryName: saveItemCategoryDto.category_name.trim(),
@@ -154,7 +156,7 @@ export class ItemsCategoryMasterService {
             displayName: payload.category_name,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item category created',
           },
           tx,
@@ -211,7 +213,7 @@ export class ItemsCategoryMasterService {
         const data: Prisma.categoryMasterUncheckedUpdateInput = {
           categoryName: saveItemCategoryDto.category_name.trim(),
           categoryModifiedOn: new Date(),
-          categoryModifiedBy: DEFAULT_ACTOR,
+          categoryModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveItemCategoryDto);
         const updated = await tx.categoryMaster.update({
@@ -243,7 +245,7 @@ export class ItemsCategoryMasterService {
             displayName: payload.category_name,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item category updated',
           },
           tx,

@@ -13,6 +13,7 @@ import {
   throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const ITEM_TAX_TABLE_NAME = 'item tax master';
 const ITEM_TAX_AUDIT_SCREEN_NAME = 'Item Tax Master';
 @Injectable()
@@ -20,6 +21,7 @@ export class ItemsTaxMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveItemTaxDto: SaveItemTaxDto): Promise<ItemTaxPayload> {
     if (saveItemTaxDto.tax_id) {
@@ -55,7 +57,7 @@ export class ItemsTaxMasterService {
       const modifiedOn = new Date();
       const result = await tx.itemTaxMaster.updateMany({
         where: { taxId, taxIsDeleted: false },
-        data: { taxIsDeleted: true, taxModifiedOn: modifiedOn, taxModifiedBy: DEFAULT_ACTOR },
+        data: { taxIsDeleted: true, taxModifiedOn: modifiedOn, taxModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR },
       });
       if (result.count === 0) {
         throwInventoryNotFound<ItemTaxErrorDetail>(
@@ -69,7 +71,7 @@ export class ItemsTaxMasterService {
         ...existing,
         taxIsDeleted: true,
         taxModifiedOn: modifiedOn,
-        taxModifiedBy: DEFAULT_ACTOR,
+        taxModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -81,7 +83,7 @@ export class ItemsTaxMasterService {
           displayName: existing.taxName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Item tax soft deleted',
         },
         tx,
@@ -97,7 +99,7 @@ export class ItemsTaxMasterService {
       ]);
     }
     const now = new Date();
-    const createdBy = resolveActor(saveItemTaxDto.tax_created_by);
+    const createdBy = resolveActor(saveItemTaxDto.tax_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveItemTaxDto.tax_modified_by, createdBy);
     const data: Prisma.ItemTaxMasterUncheckedCreateInput = {
       taxName,
@@ -154,7 +156,7 @@ export class ItemsTaxMasterService {
         const data: Prisma.ItemTaxMasterUncheckedUpdateInput = {
           taxName,
           taxModifiedOn: new Date(),
-          taxModifiedBy: resolveActor(saveItemTaxDto.tax_modified_by),
+          taxModifiedBy: resolveActor(saveItemTaxDto.tax_modified_by, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveItemTaxDto);
         const updated = await tx.itemTaxMaster.update({ where: { taxId }, data });
@@ -169,7 +171,7 @@ export class ItemsTaxMasterService {
             displayName: payload.tax_name,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: payload.tax_modified_by ?? DEFAULT_ACTOR,
+            userId: payload.tax_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item tax updated',
           },
           tx,

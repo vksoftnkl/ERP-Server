@@ -27,6 +27,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const DEVICE_LIST_MASTER_TABLE_NAME = 'erp device master';
 const DEVICE_LIST_MASTER_AUDIT_SCREEN_NAME = 'Device List Master';
 const DEVICE_TYPE_VALUES = Object.values(DeviceType);
@@ -134,6 +135,7 @@ export class DeviceListMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveDeviceListMasterDto: SaveDeviceListMasterDto): Promise<DeviceListMasterPayload> {
     if (saveDeviceListMasterDto.devId) {
@@ -195,7 +197,7 @@ export class DeviceListMasterService {
           devIsDeleted: true,
           devIsActive: false,
           devModifiedOn: modifiedOn,
-          devModifiedBy: DEFAULT_ACTOR,
+          devModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -211,7 +213,7 @@ export class DeviceListMasterService {
         devIsDeleted: true,
         devIsActive: false,
         devModifiedOn: modifiedOn,
-        devModifiedBy: DEFAULT_ACTOR,
+        devModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -223,7 +225,7 @@ export class DeviceListMasterService {
           displayName: existing.devDeviceUid,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Device soft deleted',
         },
         tx,
@@ -242,7 +244,7 @@ export class DeviceListMasterService {
       ? (saveDeviceListMasterDto.devCompanyId ?? null)
       : null;
     const now = new Date();
-    const createdBy = resolveActor(saveDeviceListMasterDto.devEntryBy, DEFAULT_ACTOR);
+    const createdBy = resolveActor(saveDeviceListMasterDto.devEntryBy, this.requestContextService.getUserId() ?? DEFAULT_ACTOR);
     const data: Prisma.DeviceMasterUncheckedCreateInput = {
       devDeviceUid: normalizedDeviceUid,
       devCreatedOn: now,
@@ -312,7 +314,7 @@ export class DeviceListMasterService {
         await this.ensureDeviceUidIsUnique(tx, nextDeviceUid, nextCompanyId, devId);
         const data: Prisma.DeviceMasterUncheckedUpdateInput = {
           devModifiedOn: new Date(),
-          devModifiedBy: resolveActor(saveDeviceListMasterDto.devEntryBy, DEFAULT_ACTOR),
+          devModifiedBy: resolveActor(saveDeviceListMasterDto.devEntryBy, this.requestContextService.getUserId() ?? DEFAULT_ACTOR),
         };
         if (normalizedDeviceUid !== undefined) {
           data.devDeviceUid = normalizedDeviceUid;
@@ -335,7 +337,7 @@ export class DeviceListMasterService {
             displayName: payload.devDeviceUid,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveDeviceListMasterDto.devEntryBy, DEFAULT_ACTOR),
+            userId: resolveActor(saveDeviceListMasterDto.devEntryBy, this.requestContextService.getUserId() ?? DEFAULT_ACTOR),
             notes: 'Device updated',
           },
           tx,

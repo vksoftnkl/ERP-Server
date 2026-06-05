@@ -17,6 +17,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const COMPANY_GROUP_MASTER_TABLE_NAME = 'company group master';
 const COMPANY_GROUP_MASTER_AUDIT_SCREEN_NAME = 'Company Group Master';
 type CompanyGroupWriteClient = AccountsWriteClient;
@@ -26,6 +27,7 @@ export class CompanyGroupMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(
@@ -84,7 +86,7 @@ export class CompanyGroupMasterService {
           cogIsDeleted: true,
           cogIsActive: false,
           cogModifiedOn: modifiedOn,
-          cogModifiedBy: DEFAULT_ACTOR,
+          cogModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
 
@@ -102,7 +104,7 @@ export class CompanyGroupMasterService {
         cogIsDeleted: true,
         cogIsActive: false,
         cogModifiedOn: modifiedOn,
-        cogModifiedBy: DEFAULT_ACTOR,
+        cogModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
 
       await this.auditLogService.logEntityChange(
@@ -115,7 +117,7 @@ export class CompanyGroupMasterService {
           displayName: existing.cogGroupName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Company group soft deleted',
         },
         tx,
@@ -146,7 +148,7 @@ export class CompanyGroupMasterService {
           cogGroupName: groupName,
           cogCompanyIds: companyIds,
           cogCreatedOn: now,
-          cogCreatedBy: DEFAULT_ACTOR,
+          cogCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
@@ -166,7 +168,7 @@ export class CompanyGroupMasterService {
             displayName: payload.cogGroupName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Company group created',
           },
           tx,
@@ -218,7 +220,7 @@ export class CompanyGroupMasterService {
           cogGroupName: groupName,
           cogCompanyIds: companyIds,
           cogModifiedOn: new Date(),
-          cogModifiedBy: DEFAULT_ACTOR,
+          cogModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         if (hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
@@ -243,7 +245,7 @@ export class CompanyGroupMasterService {
             displayName: payload.cogGroupName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Company group updated',
           },
           tx,

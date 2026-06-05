@@ -30,6 +30,7 @@ import {
   runConfiguredGridQuery,
   runInventoryListQuery,
 } from 'src/common/utils/module-list.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const ITEM_REORDER_TABLE_NAME = 'item reorders';
 const ITEM_REORDER_AUDIT_SCREEN_NAME = 'Item Reorder Master';
@@ -40,6 +41,7 @@ export class ItemsReorderMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveItemReorderDto: SaveItemReorderDto): Promise<ItemReorderPayload>;
@@ -163,7 +165,7 @@ export class ItemsReorderMasterService {
     }
 
     const modifiedOn = new Date();
-    const modifiedBy = DEFAULT_ACTOR;
+    const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     const result = await tx.itemReorder.updateMany({
       where: { irId, irIsDeleted: false },
       data: { irIsDeleted: true, irModifiedOn: modifiedOn, irModifiedBy: modifiedBy },
@@ -209,7 +211,7 @@ export class ItemsReorderMasterService {
     this.validateReorderRange(saveItemReorderDto);
 
     const now = new Date();
-    const createdBy = resolveActor(saveItemReorderDto.ir_created_by);
+    const createdBy = resolveActor(saveItemReorderDto.ir_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveItemReorderDto.ir_modified_by, createdBy);
     const data: Prisma.ItemReorderUncheckedCreateInput = {
       irItemId: saveItemReorderDto.ir_item_id,
@@ -265,7 +267,7 @@ export class ItemsReorderMasterService {
       irItemId: saveItemReorderDto.ir_item_id,
       irUnitId: saveItemReorderDto.ir_unit_id ?? null,
       irModifiedOn: new Date(),
-      irModifiedBy: resolveActor(saveItemReorderDto.ir_modified_by),
+      irModifiedBy: resolveActor(saveItemReorderDto.ir_modified_by, this.requestContextService.getUserId()),
     };
     this.applyOptionalFields(data, saveItemReorderDto);
 
@@ -282,7 +284,7 @@ export class ItemsReorderMasterService {
         displayName: this.buildDisplayName(updated),
         originalRecord: this.toPayload(existing),
         modifiedRecord: payload,
-        userId: payload.ir_modified_by ?? DEFAULT_ACTOR,
+        userId: payload.ir_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         notes: 'Item reorder updated',
       },
       tx,

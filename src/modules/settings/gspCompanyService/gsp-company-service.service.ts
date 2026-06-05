@@ -20,6 +20,7 @@ import {
   throwSettingsBadRequest,
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const GSP_COMPANY_SERVICE_TABLE_NAME = 'gsp company service';
 const GSP_COMPANY_SERVICE_AUDIT_SCREEN_NAME = 'GSP Company Service';
@@ -38,6 +39,7 @@ export class GspCompanyServiceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(
     saveGspCompanyServiceDto: SaveGspCompanyServiceDto,
@@ -91,7 +93,7 @@ export class GspCompanyServiceService {
           csgIsDeleted: true,
           csgIsActive: false,
           csgModifiedOn: modifiedOn,
-          csgModifiedBy: DEFAULT_ACTOR,
+          csgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -103,7 +105,7 @@ export class GspCompanyServiceService {
         csgIsDeleted: true,
         csgIsActive: false,
         csgModifiedOn: modifiedOn,
-        csgModifiedBy: DEFAULT_ACTOR,
+        csgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -115,7 +117,7 @@ export class GspCompanyServiceService {
           displayName: this.buildDisplayName(existing),
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'GSP company service soft deleted',
         },
         tx,
@@ -154,7 +156,7 @@ export class GspCompanyServiceService {
           csgEuserName,
           csgEuserPassword,
           csgCreatedOn: now,
-          csgCreatedBy: DEFAULT_ACTOR,
+          csgCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthToken')) {
           data.csgAuthToken = csgAuthToken;
@@ -177,7 +179,7 @@ export class GspCompanyServiceService {
             displayName: this.buildDisplayName(created),
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'GSP company service created',
           },
           tx,
@@ -226,7 +228,7 @@ export class GspCompanyServiceService {
           csgEuserName,
           csgEuserPassword,
           csgModifiedOn: new Date(),
-          csgModifiedBy: DEFAULT_ACTOR,
+          csgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveGspCompanyServiceDto, 'csgAuthToken')) {
           data.csgAuthToken = csgAuthToken;
@@ -254,7 +256,7 @@ export class GspCompanyServiceService {
             displayName: this.buildDisplayName(updated),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'GSP company service updated',
           },
           tx,

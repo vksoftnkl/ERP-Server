@@ -24,6 +24,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const BANK_LIST_TABLE_NAME = 'bank master';
 const BANK_LIST_AUDIT_SCREEN_NAME = 'Bank List Master';
 const BANK_LIST_OPTIONAL_FIELDS = ['bnkShortName', 'bnkAlias', 'bnkRbiCode', 'bnkIbanSupported', 'bnkIsActive'];
@@ -33,6 +34,7 @@ export class BankListService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveBankListDto: SaveBankListDto): Promise<BankListPayload> {
     if (saveBankListDto.bnkId) {
@@ -94,7 +96,7 @@ export class BankListService {
           bnkIsDeleted: true,
           bnkIsActive: false,
           bnkModifiedOn: modifiedOn,
-          bnkModifiedBy: DEFAULT_ACTOR,
+          bnkModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -110,7 +112,7 @@ export class BankListService {
         bnkIsDeleted: true,
         bnkIsActive: false,
         bnkModifiedOn: modifiedOn,
-        bnkModifiedBy: DEFAULT_ACTOR,
+        bnkModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -122,7 +124,7 @@ export class BankListService {
           displayName: existing.bnkName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Bank soft deleted',
         },
         tx,
@@ -136,7 +138,7 @@ export class BankListService {
       'bnkName',
     );
     const now = new Date();
-    const createdBy = resolveActor(saveBankListDto.bnkCreatedBy);
+    const createdBy = resolveActor(saveBankListDto.bnkCreatedBy, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveBankListDto.bnkModifiedBy, createdBy);
     const data: Prisma.BankMasterUncheckedCreateInput = {
       bnkName: normalizedName,
@@ -197,7 +199,7 @@ export class BankListService {
         const data: Prisma.BankMasterUncheckedUpdateInput = {
           bnkName: normalizedName,
           bnkModifiedOn: new Date(),
-          bnkModifiedBy: resolveActor(saveBankListDto.bnkModifiedBy),
+          bnkModifiedBy: resolveActor(saveBankListDto.bnkModifiedBy, this.requestContextService.getUserId()),
         };
         applyPresentFields(data, saveBankListDto, BANK_LIST_OPTIONAL_FIELDS);
         const updated = await tx.bankMaster.update({ where: { bnkId }, data });
@@ -212,7 +214,7 @@ export class BankListService {
             displayName: payload.bnkName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveBankListDto.bnkModifiedBy),
+            userId: resolveActor(saveBankListDto.bnkModifiedBy, this.requestContextService.getUserId()),
             notes: 'Bank updated',
           },
           tx,

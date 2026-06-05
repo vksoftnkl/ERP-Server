@@ -89,9 +89,9 @@ export function toStatePayload(record: StateMaster): StatePayload {
 
 export function resolveStateActor(
   value: string | null | undefined,
-  fallback = DEFAULT_ACTOR,
+  userId: string | null | undefined = null,
 ): string {
-  return resolveActor(value, fallback);
+  return resolveActor(value, userId);
 }
 
 export function handleStateWriteError(error: unknown): void {

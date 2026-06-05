@@ -23,6 +23,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const UI_TABLE_COLUMNS_TABLE_NAME = 'ui table columns';
 const UI_TABLE_COLUMNS_AUDIT_SCREEN_NAME = 'UI Table Columns';
@@ -43,6 +44,7 @@ export class UiTableColumnsService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveUiTableColumnDto: SaveUiTableColumnDto): Promise<UiTableColumnPayload> {
@@ -123,7 +125,7 @@ export class UiTableColumnsService {
           uiTblClmIsDeleted: true,
           uiTblClmIsActive: false,
           uiTblClmModifiedOn: modifiedOn,
-          uiTblClmModifiedBy: DEFAULT_ACTOR,
+          uiTblClmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -139,7 +141,7 @@ export class UiTableColumnsService {
         uiTblClmIsDeleted: true,
         uiTblClmIsActive: false,
         uiTblClmModifiedOn: modifiedOn,
-        uiTblClmModifiedBy: DEFAULT_ACTOR,
+        uiTblClmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -151,7 +153,7 @@ export class UiTableColumnsService {
           displayName: this.resolveDisplayName(existing.uiTblClmName, uiTblClmId),
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'UI table column soft deleted',
         },
         tx,
@@ -167,7 +169,7 @@ export class UiTableColumnsService {
     const parsedUiTblClmNo = this.parseNullableBigIntId('uiTblClmNo', saveUiTableColumnDto.uiTblClmNo);
     const parsedUiTblClmTableId = this.parseNullableBigIntId('uiTblClmTableId', saveUiTableColumnDto.uiTblClmTableId);
     const now = new Date();
-    const createdBy = resolveActor(saveUiTableColumnDto.uiTblClmCreatedBy);
+    const createdBy = resolveActor(saveUiTableColumnDto.uiTblClmCreatedBy, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveUiTableColumnDto.uiTblClmModifiedBy, createdBy);
     const data: Prisma.UitableColumnsUncheckedCreateInput = {
       uiTblClmName: normalizedName,
@@ -238,7 +240,7 @@ export class UiTableColumnsService {
         const data: Prisma.UitableColumnsUncheckedUpdateInput = {
           uiTblClmName: normalizedName,
           uiTblClmModifiedOn: new Date(),
-          uiTblClmModifiedBy: resolveActor(saveUiTableColumnDto.uiTblClmModifiedBy),
+          uiTblClmModifiedBy: resolveActor(saveUiTableColumnDto.uiTblClmModifiedBy, this.requestContextService.getUserId()),
         };
         await this.ensureUiTableExists(parsedUiTblClmTableId, saveUiTableColumnDto.uiTblClmTableId, tx);
         applyPresentFields(data, saveUiTableColumnDto, UI_TABLE_COLUMN_OPTIONAL_FIELDS);
@@ -256,7 +258,7 @@ export class UiTableColumnsService {
             displayName: this.resolveDisplayName(payload.uiTblClmName, payload.uiTblClmId),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveUiTableColumnDto.uiTblClmModifiedBy),
+            userId: resolveActor(saveUiTableColumnDto.uiTblClmModifiedBy, this.requestContextService.getUserId()),
             notes: 'UI table column updated',
           },
           tx,

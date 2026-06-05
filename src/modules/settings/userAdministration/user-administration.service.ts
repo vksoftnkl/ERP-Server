@@ -18,6 +18,7 @@ import {
   throwSettingsNotFound,
 } from 'src/common/utils/module-service.utils';
 import { UserType } from './types/user-administration.enum';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const USER_MASTER_TABLE_NAME = 'user_master';
 const USER_ADMIN_AUDIT_SCREEN_NAME = 'User Administration';
@@ -33,6 +34,7 @@ export class UserAdministrationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(dto: SaveUserAdministrationDto): Promise<UserAdminPayload> {
@@ -78,7 +80,7 @@ export class UserAdministrationService {
             usrIsDeleted: true,
             usrIsActive: false,
             usrModifiedOn: now,
-            usrModifiedBy: DEFAULT_ACTOR,
+            usrModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           },
         }),
         tx.userMenus.updateMany({
@@ -86,7 +88,7 @@ export class UserAdministrationService {
           data: {
             umIsDeleted: true,
             umModifiedOn: now,
-            umModifiedBy: DEFAULT_ACTOR,
+            umModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           },
         }),
       ]);
@@ -102,7 +104,7 @@ export class UserAdministrationService {
           displayName: existing.usrDisplayName,
           originalRecord: originalPayload,
           modifiedRecord: { ...originalPayload, usrIsDeleted: true, usrIsActive: false },
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'User soft deleted along with all menu assignments',
         },
         tx,
@@ -131,7 +133,7 @@ export class UserAdministrationService {
           usrDisplayName: dto.usrDisplayName.trim(),
           usrPasswordHash: passwordHash,
           usrCreatedOn: now,
-          usrCreatedBy: DEFAULT_ACTOR,
+          usrCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         this.applyOptionalUserFields(data, dto);
@@ -140,7 +142,7 @@ export class UserAdministrationService {
         const menus = await this.replaceUserMenus(
           created.usrId,
           dto.menus ?? [],
-          DEFAULT_ACTOR,
+          this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           now,
           tx,
         );
@@ -157,7 +159,7 @@ export class UserAdministrationService {
             displayName: created.usrDisplayName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'User created with menu assignments',
           },
           tx,
@@ -190,7 +192,7 @@ export class UserAdministrationService {
           usrLoginName: dto.usrLoginName.trim(),
           usrDisplayName: dto.usrDisplayName.trim(),
           usrModifiedOn: now,
-          usrModifiedBy: DEFAULT_ACTOR,
+          usrModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
 
         if (dto.usrPassword?.trim()) {
@@ -205,7 +207,7 @@ export class UserAdministrationService {
 
         const menus =
           dto.menus !== undefined
-            ? await this.replaceUserMenus(usrId, dto.menus, DEFAULT_ACTOR, now, tx)
+            ? await this.replaceUserMenus(usrId, dto.menus, this.requestContextService.getUserId() ?? DEFAULT_ACTOR, now, tx)
             : await tx.userMenus.findMany({ where: { umUserId: usrId, umIsDeleted: false } });
 
         const payload = this.toPayload(updated, menus);
@@ -220,7 +222,7 @@ export class UserAdministrationService {
             displayName: updated.usrDisplayName,
             originalRecord: this.toPayloadWithoutMenus(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'User updated',
           },
           tx,

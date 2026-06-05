@@ -20,6 +20,7 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const CUSTOMER_TABLE_NAME = 'customers';
 const CUSTOMER_AUDIT_SCREEN_NAME = 'Customer Master';
 const CUSTOMER_OPTIONAL_FIELDS = [
@@ -92,6 +93,7 @@ export class CustomerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveCustomerDto: SaveCustomerDto): Promise<CustomerPayload> {
@@ -148,7 +150,7 @@ export class CustomerService {
           cusIsDeleted: true,
           cusIsActive: false,
           cusModifiedOn: modifiedOn,
-          cusModifiedBy: DEFAULT_ACTOR,
+          cusModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
 
@@ -166,7 +168,7 @@ export class CustomerService {
         cusIsDeleted: true,
         cusIsActive: false,
         cusModifiedOn: modifiedOn,
-        cusModifiedBy: DEFAULT_ACTOR,
+        cusModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
 
       await this.auditLogService.logEntityChange(
@@ -179,7 +181,7 @@ export class CustomerService {
           displayName: existing.cusName || cusId,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Customer soft deleted',
         },
         tx,
@@ -199,7 +201,7 @@ export class CustomerService {
     );
     const normalizedStateCode = this.normalizeStateCode(saveCustomerDto.cusStateCode);
     const now = new Date();
-    const createdBy = resolveActor(saveCustomerDto.cusCreatedBy);
+    const createdBy = resolveActor(saveCustomerDto.cusCreatedBy, this.requestContextService.getUserId());
  
 
     const data: Prisma.CustomerUncheckedCreateInput = {
@@ -318,7 +320,7 @@ export class CustomerService {
             increment: 1,
           },
           cusModifiedOn: now,
-          cusModifiedBy: resolveActor(saveCustomerDto.cusModifiedBy),
+          cusModifiedBy: resolveActor(saveCustomerDto.cusModifiedBy, this.requestContextService.getUserId()),
         };
         this.applyOptionalFields(data, saveCustomerDto);
 

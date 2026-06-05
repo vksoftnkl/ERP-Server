@@ -11,6 +11,7 @@ import {
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const ROOT_SECTION_LEVEL = 1;
 const ITEM_SECTION_TABLE_NAME = 'item section master';
@@ -22,6 +23,7 @@ export class ItemsSectionMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveItemSectionDto: SaveItemSectionDto): Promise<ItemSectionPayload> {
@@ -64,7 +66,7 @@ export class ItemsSectionMasterService {
       const modifiedOn = new Date();
       const result = await tx.itemSectionMaster.updateMany({
         where: { secId, secIsDeleted: false },
-        data: { secIsDeleted: true, secModifiedOn: modifiedOn, secModifiedBy: DEFAULT_ACTOR },
+        data: { secIsDeleted: true, secModifiedOn: modifiedOn, secModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR },
       });
 
       if (result.count === 0) {
@@ -82,7 +84,7 @@ export class ItemsSectionMasterService {
         ...existing,
         secIsDeleted: true,
         secModifiedOn: modifiedOn,
-        secModifiedBy: DEFAULT_ACTOR,
+        secModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -94,7 +96,7 @@ export class ItemsSectionMasterService {
           displayName: existing.secName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Item section soft deleted',
         },
         tx,
@@ -116,7 +118,7 @@ export class ItemsSectionMasterService {
         }
 
         const now = new Date();
-        const createdBy = DEFAULT_ACTOR;
+        const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
 
         const data: Prisma.ItemSectionMasterUncheckedCreateInput = {
           secName: saveItemSectionDto.sec_name.trim(),
@@ -153,7 +155,7 @@ export class ItemsSectionMasterService {
             displayName: payload.sec_name,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item section created',
           },
           tx,
@@ -210,7 +212,7 @@ export class ItemsSectionMasterService {
         const data: Prisma.ItemSectionMasterUncheckedUpdateInput = {
           secName: saveItemSectionDto.sec_name.trim(),
           secModifiedOn: new Date(),
-          secModifiedBy: DEFAULT_ACTOR,
+          secModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (isParentChanged) {
           data.secLevel = this.resolveSectionLevel(nextParentId, requestedParentLevel);
@@ -240,7 +242,7 @@ export class ItemsSectionMasterService {
             displayName: payload.sec_name,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item section updated',
           },
           tx,

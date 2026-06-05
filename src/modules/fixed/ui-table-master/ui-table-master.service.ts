@@ -23,6 +23,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const UI_TABLE_MASTER_TABLE_NAME = 'ui tables';
 const UI_TABLE_MASTER_AUDIT_SCREEN_NAME = 'UI Table Master';
 const UI_TABLE_MASTER_OPTIONAL_FIELDS = ['uiTblEditable', 'uiTblIsActive'];
@@ -32,6 +33,7 @@ export class UiTableMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveUiTableMasterDto: SaveUiTableMasterDto): Promise<UiTableMasterPayload> {
     if (saveUiTableMasterDto.uiTblId) {
@@ -97,7 +99,7 @@ export class UiTableMasterService {
           uiTblIsDeleted: true,
           uiTblIsActive: false,
           uiTblModifiedOn: modifiedOn,
-          uiTblModifiedBy: DEFAULT_ACTOR,
+          uiTblModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -113,7 +115,7 @@ export class UiTableMasterService {
         uiTblIsDeleted: true,
         uiTblIsActive: false,
         uiTblModifiedOn: modifiedOn,
-        uiTblModifiedBy: DEFAULT_ACTOR,
+        uiTblModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -125,7 +127,7 @@ export class UiTableMasterService {
           displayName: this.resolveDisplayName(existing.uiTblName, uiTblId),
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'UI table soft deleted',
         },
         tx,
@@ -138,7 +140,7 @@ export class UiTableMasterService {
   ): Promise<UiTableMasterPayload> {
     const normalizedName = this.normalizeRequiredName(saveUiTableMasterDto.uiTblName);
     const now = new Date();
-    const createdBy = resolveActor(saveUiTableMasterDto.uiTblCreatedBy);
+    const createdBy = resolveActor(saveUiTableMasterDto.uiTblCreatedBy, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveUiTableMasterDto.uiTblModifiedBy, createdBy);
     const data: Prisma.UitableUncheckedCreateInput = {
       uiTblName: normalizedName,
@@ -199,7 +201,7 @@ export class UiTableMasterService {
         const data: Prisma.UitableUncheckedUpdateInput = {
           uiTblName: normalizedName,
           uiTblModifiedOn: new Date(),
-          uiTblModifiedBy: resolveActor(saveUiTableMasterDto.uiTblModifiedBy),
+          uiTblModifiedBy: resolveActor(saveUiTableMasterDto.uiTblModifiedBy, this.requestContextService.getUserId()),
         };
         applyPresentFields(data, saveUiTableMasterDto, UI_TABLE_MASTER_OPTIONAL_FIELDS);
         const updated = await tx.uitable.update({ where: { uiTblId: parsedUiTableId }, data });
@@ -214,7 +216,7 @@ export class UiTableMasterService {
             displayName: this.resolveDisplayName(payload.uiTblName, payload.uiTblId),
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveUiTableMasterDto.uiTblModifiedBy),
+            userId: resolveActor(saveUiTableMasterDto.uiTblModifiedBy, this.requestContextService.getUserId()),
             notes: 'UI table updated',
           },
           tx,

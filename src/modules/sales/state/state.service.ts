@@ -17,11 +17,13 @@ import {
   throwStateNotFound,
   toStatePayload,
 } from './utils/state.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 @Injectable()
 export class StateService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveStateDto: SaveStateDto): Promise<StatePayload> {
     if (saveStateDto.stmId) {
@@ -76,7 +78,7 @@ export class StateService {
           stmIsDeleted: true,
           stmIsActive: false,
           stmModifiedOn: modifiedOn,
-          stmModifiedBy: DEFAULT_ACTOR,
+          stmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -88,7 +90,7 @@ export class StateService {
         stmIsDeleted: true,
         stmIsActive: false,
         stmModifiedOn: modifiedOn,
-        stmModifiedBy: DEFAULT_ACTOR,
+        stmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -100,7 +102,7 @@ export class StateService {
           displayName: existing.stmName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'State soft deleted',
         },
         tx,

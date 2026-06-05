@@ -20,6 +20,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import { resolvePagination, runConfiguredGridQuery } from 'src/common/utils/module-list.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const USER_LOGIN_SESSIONS_TABLE_NAME = 'user login sessions';
 const USER_LOGIN_SESSIONS_AUDIT_SCREEN_NAME = 'User Login Sessions';
@@ -46,6 +47,7 @@ export class UserLoginSessionsService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
+    private readonly requestContextService: RequestContextService,
   ) {}
 
   async save(saveUserLoginSessionDto: SaveUserLoginSessionDto): Promise<UserLoginSessionsPayload> {
@@ -103,7 +105,7 @@ export class UserLoginSessionsService {
           ulsIsActiveSession: false,
           ulsLogoutOn: logoutOn,
           ulsModifiedOn: modifiedOn,
-          ulsModifiedBy: DEFAULT_ACTOR,
+          ulsModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -121,7 +123,7 @@ export class UserLoginSessionsService {
         ulsIsActiveSession: false,
         ulsLogoutOn: logoutOn,
         ulsModifiedOn: modifiedOn,
-        ulsModifiedBy: DEFAULT_ACTOR,
+        ulsModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -133,7 +135,7 @@ export class UserLoginSessionsService {
           displayName: existing.ulsSessionId ?? existing.ulsId,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'User login session soft deleted',
         },
         tx,
@@ -146,7 +148,7 @@ export class UserLoginSessionsService {
     saveUserLoginSessionDto: SaveUserLoginSessionDto,
   ): Promise<UserLoginSessionsPayload> {
     const now = new Date();
-    const createdBy = resolveActor(saveUserLoginSessionDto.ulsCreatedBy);
+    const createdBy = resolveActor(saveUserLoginSessionDto.ulsCreatedBy, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveUserLoginSessionDto.ulsModifiedBy, createdBy);
     const data: Prisma.UserLoginSessionUncheckedCreateInput = {
       ulsCompanyId: saveUserLoginSessionDto.ulsCompanyId,
@@ -208,7 +210,7 @@ export class UserLoginSessionsService {
           ulsBranchId: saveUserLoginSessionDto.ulsBranchId,
           ulsUserId: saveUserLoginSessionDto.ulsUserId,
           ulsModifiedOn: new Date(),
-          ulsModifiedBy: resolveActor(saveUserLoginSessionDto.ulsModifiedBy),
+          ulsModifiedBy: resolveActor(saveUserLoginSessionDto.ulsModifiedBy, this.requestContextService.getUserId()),
         };
         applyPresentFields(data, saveUserLoginSessionDto, USER_LOGIN_SESSION_OPTIONAL_FIELDS);
         const updated = await tx.userLoginSession.update({ where: { ulsId }, data });
@@ -223,7 +225,7 @@ export class UserLoginSessionsService {
             displayName: payload.ulsSessionId ?? payload.ulsId,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: resolveActor(saveUserLoginSessionDto.ulsModifiedBy),
+            userId: resolveActor(saveUserLoginSessionDto.ulsModifiedBy, this.requestContextService.getUserId()),
             notes: 'User login session updated',
           },
           tx,

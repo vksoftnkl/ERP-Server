@@ -11,6 +11,7 @@ import {
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const ITEM_BRAND_TABLE_NAME = 'item brand master';
 const ITEM_BRAND_AUDIT_SCREEN_NAME = 'Item Brand Master';
 type ItemBrandWriteClient = Prisma.TransactionClient | PrismaService;
@@ -19,6 +20,7 @@ export class ItemsBrandMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveItemBrandDto: SaveItemBrandDto): Promise<ItemBrandPayload> {
     if (saveItemBrandDto.brand_id) {
@@ -68,7 +70,7 @@ export class ItemsBrandMasterService {
         data: {
           brand_is_deleted: true,
           brand_modified_on: modifiedOn,
-          brand_modified_by: DEFAULT_ACTOR,
+          brand_modified_by: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -84,7 +86,7 @@ export class ItemsBrandMasterService {
         ...existing,
         brand_is_deleted: true,
         brand_modified_on: modifiedOn,
-        brand_modified_by: DEFAULT_ACTOR,
+        brand_modified_by: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -96,7 +98,7 @@ export class ItemsBrandMasterService {
           displayName: existing.brand_name,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Item brand soft deleted',
         },
         tx,
@@ -114,7 +116,7 @@ export class ItemsBrandMasterService {
           await this.ensureParentExists(saveItemBrandDto.brand_parent_id, tx);
         }
         const now = new Date();
-        const createdBy = DEFAULT_ACTOR;
+        const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
         const modifiedBy = createdBy;
         const data: Prisma.ItemBrandMasterUncheckedCreateInput = {
           brand_name: saveItemBrandDto.brand_name.trim(),
@@ -150,7 +152,7 @@ export class ItemsBrandMasterService {
             displayName: payload.brand_name,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item brand created',
           },
           tx,
@@ -202,7 +204,7 @@ export class ItemsBrandMasterService {
         const data: Prisma.ItemBrandMasterUncheckedUpdateInput = {
           brand_name: saveItemBrandDto.brand_name.trim(),
           brand_modified_on: new Date(),
-          brand_modified_by: DEFAULT_ACTOR,
+          brand_modified_by: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveItemBrandDto);
         const updated = await tx.itemBrandMaster.update({
@@ -234,7 +236,7 @@ export class ItemsBrandMasterService {
             displayName: payload.brand_name,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Item brand updated',
           },
           tx,

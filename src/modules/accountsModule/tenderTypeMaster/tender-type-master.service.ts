@@ -17,6 +17,7 @@ import {
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 const TENDER_TYPE_MASTER_TABLE_NAME = 'tender type';
 const LEGACY_TENDER_TYPE_MASTER_TABLE_NAME = 'tender_type_master';
 const TENDER_TYPE_MASTER_AUDIT_SCREEN_NAME = 'Tender Type Master';
@@ -26,6 +27,7 @@ export class TenderTypeMasterService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
+    private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveTenderTypeMasterDto: SaveTenderTypeMasterDto): Promise<TenderTypeMasterPayload> {
     if (saveTenderTypeMasterDto.ttmTypeId) {
@@ -92,7 +94,7 @@ export class TenderTypeMasterService {
           accttTypeIsDeleted: true,
           accttTypeIsActive: false,
           accttTypeModifiedOn: modifiedOn,
-          accttTypeModifiedBy: DEFAULT_ACTOR,
+          accttTypeModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -108,7 +110,7 @@ export class TenderTypeMasterService {
         accttTypeIsDeleted: true,
         accttTypeIsActive: false,
         accttTypeModifiedOn: modifiedOn,
-        accttTypeModifiedBy: DEFAULT_ACTOR,
+        accttTypeModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -120,7 +122,7 @@ export class TenderTypeMasterService {
           displayName: existing.accttTypeName,
           originalRecord,
           modifiedRecord,
-          userId: DEFAULT_ACTOR,
+          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
           notes: 'Tender type soft deleted',
         },
         tx,
@@ -146,7 +148,7 @@ export class TenderTypeMasterService {
           accttTypeName: ttmTypeName,
           accttTypeShortName: this.buildShortName(ttmTypeName),
           accttTypeCreatedOn: now,
-          accttTypeCreatedBy: DEFAULT_ACTOR,
+          accttTypeCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveTenderTypeMasterDto, 'ttmIsActive')) {
           data.accttTypeIsActive = saveTenderTypeMasterDto.ttmIsActive;
@@ -163,7 +165,7 @@ export class TenderTypeMasterService {
             displayName: payload.ttmTypeName,
             originalRecord: null,
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Tender type created',
           },
           tx,
@@ -208,7 +210,7 @@ export class TenderTypeMasterService {
           accttTypeName: ttmTypeName,
           accttTypeShortName: this.buildShortName(ttmTypeName),
           accttTypeModifiedOn: new Date(),
-          accttTypeModifiedBy: DEFAULT_ACTOR,
+          accttTypeModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveTenderTypeMasterDto, 'ttmIsActive')) {
           data.accttTypeIsActive = saveTenderTypeMasterDto.ttmIsActive;
@@ -230,7 +232,7 @@ export class TenderTypeMasterService {
             displayName: payload.ttmTypeName,
             originalRecord: this.toPayload(existing),
             modifiedRecord: payload,
-            userId: DEFAULT_ACTOR,
+            userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Tender type updated',
           },
           tx,
