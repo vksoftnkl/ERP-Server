@@ -16,7 +16,7 @@ import { validateDto } from 'src/common/utils/request-payload-validation.util';
 import { ItemPayloadDto } from '../items-master/dto/item-response.dto';
 import { ItemPricePayloadDto } from '../items-price-master/dto/item-price-response.dto';
 import { ItemTaxPayloadDto } from '../items-tax-master/dto/item-tax-response.dto';
-import { GetItemPriceDetailQueryDto } from './dto/get-item-price-detail-query.dto';
+import { GetItemPriceDetailByBarcodeQueryDto, GetItemPriceDetailQueryDto } from './dto/get-item-price-detail-query.dto';
 import {
   ItemPriceDetailErrorResponseDto,
   ItemPriceDetailPayloadDto,
@@ -55,6 +55,26 @@ export class ItemPriceDetailsController {
       type: 'query',
     })) as GetItemPriceDetailQueryDto;
     const data = await this.itemPriceDetailsService.getByItemId(dto.item_id);
+    return {
+      success: true,
+      message: 'Item price details fetched successfully',
+      data,
+    };
+  }
+  @Get('get-by-barcode')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Get item price details by barcode' })
+  @ApiQuery({ name: 'barcode', schema: { type: 'string' } })
+  @ApiOkResponse({ type: ItemPriceDetailSuccessSingleDto })
+  @ApiBadRequestResponse({ type: ItemPriceDetailErrorResponseDto })
+  @ApiNotFoundResponse({ type: ItemPriceDetailErrorResponseDto })
+  async getByBarcode(
+    @Query() query: Record<string, unknown>,
+  ): Promise<ItemPriceDetailSuccessResponse<ItemPriceDetailPayload>> {
+    const dto = (await validateDto(query, GetItemPriceDetailByBarcodeQueryDto, {
+      type: 'query',
+    })) as GetItemPriceDetailByBarcodeQueryDto;
+    const data = await this.itemPriceDetailsService.getByBarcode(dto.barcode);
     return {
       success: true,
       message: 'Item price details fetched successfully',

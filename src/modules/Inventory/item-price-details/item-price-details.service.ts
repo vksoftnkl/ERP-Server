@@ -12,6 +12,22 @@ import { throwInventoryNotFound, toNumber } from 'src/common/utils/module-servic
 @Injectable()
 export class ItemPriceDetailsService {
   constructor(private readonly prisma: PrismaService) {}
+  async getByBarcode(barcode: string): Promise<ItemPriceDetailPayload> {
+    const itemRecord = await this.prisma.itemMaster.findFirst({
+      where: {
+        itemDefaultBarcode: barcode,
+        itemIsDeleted: false,
+      },
+    });
+    if (!itemRecord) {
+      throwInventoryNotFound<ItemPriceDetailErrorDetail>(
+        'Item not found',
+        'barcode',
+        `No active item found with barcode ${barcode}`,
+      );
+    }
+    return this.getByItemId(itemRecord!.itemId);
+  }
   async getByItemId(itemId: string): Promise<ItemPriceDetailPayload> {
     const itemRecord = await this.prisma.itemMaster.findFirst({
       where: {
