@@ -12,6 +12,7 @@ import {
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import { GetItemBatchStockOptionsQueryDto } from './dto/get-item-batch-stock-options-query.dto';
 import { GetItemStockBalanceQueryDto } from './dto/get-item-stock-balance-query.dto';
+import { GetBulkItemStockListQueryDto } from './dto/get-bulk-item-stock-list-query.dto';
 import {
   ItemBatchStockOptionSuccessListDto,
   ItemStockBalanceErrorResponseDto,
@@ -20,6 +21,7 @@ import {
 import { ItemStockBalanceExceptionFilter } from './itemStockBalanceExceptionFilter';
 import { ItemStockBalanceService } from './itemstockBalanceService';
 import {
+  BulkItemStockPayload,
   ItemBatchStockOptionPayload,
   ItemStockBalancePayload,
   ItemStockBalanceSuccessResponse,
@@ -49,6 +51,24 @@ export class ItemStockBalanceController {
     return {
       success: true,
       message: 'Item stock balance fetched successfully',
+      data,
+    };
+  }
+
+  @Get('bulk-list')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Bulk list item stock balances with optional filters for group, brand, section, category, godown, and stock type',
+  })
+  @ApiOkResponse({ description: 'Bulk item stock list fetched successfully' })
+  @ApiBadRequestResponse({ type: ItemStockBalanceErrorResponseDto })
+  async getBulkList(
+    @Query() queryDto: GetBulkItemStockListQueryDto,
+  ): Promise<ItemStockBalanceSuccessResponse<BulkItemStockPayload[]>> {
+    const data = await this.itemStockBalanceService.getBulkList(queryDto);
+    return {
+      success: true,
+      message: 'Bulk item stock list fetched successfully',
       data,
     };
   }

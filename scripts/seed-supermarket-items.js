@@ -9,9 +9,10 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const prisma = new PrismaClient();
 
-const ACTOR = 'seed-supermarket-items';
+const FALLBACK_ACTOR = 'seed-supermarket-items';
 const TARGET_ITEM_COUNT = 10000;
 const BATCH_SIZE = 500;
+const UPDATE_BATCH_SIZE = 100;
 
 const UNITS = [
   { name: 'Piece', alias: 'Pc', code: 'PCS', decimalCount: 0 },
@@ -441,7 +442,91 @@ const toPaddedNumber = (value, width) => String(value).padStart(width, '0');
 
 const buildBarcode = (index) => `890${toPaddedNumber(1000000000 + index, 10).slice(-10)}`;
 
-const findOrCreateCompany = async () => {
+const getCliOption = (name) => {
+  const equalsPrefix = `${name}=`;
+  const equalsArg = process.argv.find((arg) => arg.startsWith(equalsPrefix));
+  if (equalsArg) {
+    return equalsArg.slice(equalsPrefix.length).trim();
+  }
+
+  const index = process.argv.indexOf(name);
+  if (index !== -1 && process.argv[index + 1]) {
+    return process.argv[index + 1].trim();
+  }
+
+  return null;
+};
+
+const compact = (values) => values.filter((value) => typeof value === 'string' && value.trim());
+
+const resolveSeedActor = async () => {
+  const explicitActor = compact([
+    getCliOption('--user-id'),
+    process.env.SEED_USER_ID,
+    process.env.CURRENT_USER_ID,
+    process.env.X_USER_ID,
+  ])[0];
+
+  if (explicitActor) {
+    return { actor: explicitActor.trim(), source: 'explicit' };
+  }
+
+  const activeSession = await prisma.userLoginSession.findFirst({
+    where: {
+      ulsIsDeleted: false,
+      ulsIsActive: true,
+      ulsIsActiveSession: true,
+      ulsLogoutOn: null,
+      ulsLoginStatus: 'SUCCESS',
+    },
+    orderBy: { ulsLoginOn: 'desc' },
+    select: { ulsUserId: true },
+  });
+
+  if (activeSession) {
+    return { actor: activeSession.ulsUserId, source: 'latest active login session' };
+  }
+
+  const recentLoginUser = await prisma.userMaster.findFirst({
+    where: {
+      usrIsDeleted: false,
+      usrIsActive: true,
+      usrLastLoginOn: { not: null },
+    },
+    orderBy: { usrLastLoginOn: 'desc' },
+    select: { usrId: true },
+  });
+
+  if (recentLoginUser) {
+    return { actor: recentLoginUser.usrId, source: 'latest user last login' };
+  }
+
+  if (process.env.ALLOW_SEED_ACTOR_FALLBACK === '1') {
+    return { actor: FALLBACK_ACTOR, source: 'fallback' };
+  }
+
+  throw new Error(
+    'No active or recent login user found for created_by. Login first, or pass --user-id/SEED_USER_ID. Set ALLOW_SEED_ACTOR_FALLBACK=1 only for non-user seed runs.',
+  );
+};
+
+const auditCreatePatch = (fieldName, existingValue, actor) =>
+  existingValue === null || existingValue === FALLBACK_ACTOR ? { [fieldName]: actor } : {};
+
+const toShortCode = (value, maxLength = 12) => {
+  const initialCode = value
+    .split(/\s+/)
+    .map((part) => part.replace(/[^A-Za-z0-9]/g, '').charAt(0))
+    .join('')
+    .toUpperCase();
+  const compactCode = value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  return (initialCode || compactCode || value).slice(0, maxLength);
+};
+
+const uniqueSorted = (values) =>
+  [...new Set(values)].sort((left, right) => left.localeCompare(right));
+
+const findOrCreateCompany = async (actor) => {
   const existingDefault = await prisma.company.findFirst({
     where: { compIsDeleted: false, compDefault: true },
     select: { compId: true, compName: true },
@@ -472,37 +557,48 @@ const findOrCreateCompany = async () => {
       compDefault: true,
       compIsActive: true,
       compIsDeleted: false,
-      compCreatedBy: ACTOR,
-      compModifiedBy: ACTOR,
+      compCreatedBy: actor,
+      compModifiedBy: actor,
     },
     select: { compId: true, compName: true },
   });
 };
 
-const upsertUnits = async () => {
+const upsertUnits = async (actor) => {
   const entries = new Map();
 
   for (const unit of UNITS) {
     const existing = await prisma.unit.findUnique({
       where: { unit_name: unit.name },
-      select: { unit_id: true, unit_name: true },
+      select: { unit_id: true, unit_name: true, unit_created_by: true },
     });
-    const record =
-      existing ??
-      (await prisma.unit.create({
-        data: {
-          unit_name: unit.name,
-          unit_alias: unit.alias,
-          unit_code: unit.code,
-          unit_description: `${unit.name} supermarket seed unit`,
-          unit_decimal_count: unit.decimalCount,
-          unit_is_active: true,
-          unit_is_deleted: false,
-          unit_created_by: ACTOR,
-          unit_modified_by: ACTOR,
-        },
-        select: { unit_id: true, unit_name: true },
-      }));
+    const data = {
+      unit_alias: unit.alias,
+      unit_code: unit.code,
+      unit_description: `${unit.name} supermarket seed unit`,
+      unit_decimal_count: unit.decimalCount,
+      unit_is_active: true,
+      unit_is_deleted: false,
+      unit_modified_by: actor,
+      unit_modified_on: new Date(),
+    };
+    const record = existing
+      ? await prisma.unit.update({
+          where: { unit_id: existing.unit_id },
+          data: {
+            ...data,
+            unit_created_by: actor,
+          },
+          select: { unit_id: true, unit_name: true },
+        })
+      : await prisma.unit.create({
+          data: {
+            unit_name: unit.name,
+            unit_created_by: actor,
+            ...data,
+          },
+          select: { unit_id: true, unit_name: true },
+        });
 
     entries.set(record.unit_name, record.unit_id);
   }
@@ -510,35 +606,46 @@ const upsertUnits = async () => {
   return entries;
 };
 
-const upsertTaxes = async () => {
+const upsertTaxes = async (actor) => {
   const entries = new Map();
 
   for (const tax of TAXES) {
     const existing = await prisma.itemTaxMaster.findUnique({
       where: { taxName: tax.name },
-      select: { taxId: true, taxName: true },
+      select: { taxId: true, taxName: true, taxCreatedBy: true },
     });
-    const record =
-      existing ??
-      (await prisma.itemTaxMaster.create({
-        data: {
-          taxName: tax.name,
-          taxCode: tax.code,
-          taxTaxabilityType: tax.rate === 0 ? 'EXEMPT' : 'TAXABLE',
-          taxCgstPerc: tax.cgst,
-          taxSgstPerc: tax.sgst,
-          taxIgstPerc: tax.igst,
-          taxCgstPurPerc: tax.cgst,
-          taxSgstPurPerc: tax.sgst,
-          taxIgstPurPerc: tax.igst,
-          taxGstRateTotal: tax.rate,
-          taxIsActive: true,
-          taxIsDeleted: false,
-          taxCreatedBy: ACTOR,
-          taxModifiedBy: ACTOR,
-        },
-        select: { taxId: true, taxName: true },
-      }));
+    const data = {
+      taxCode: tax.code,
+      taxTaxabilityType: tax.rate === 0 ? 'EXEMPT' : 'TAXABLE',
+      taxCgstPerc: tax.cgst,
+      taxSgstPerc: tax.sgst,
+      taxIgstPerc: tax.igst,
+      taxCgstPurPerc: tax.cgst,
+      taxSgstPurPerc: tax.sgst,
+      taxIgstPurPerc: tax.igst,
+      taxGstRateTotal: tax.rate,
+      taxIsActive: true,
+      taxIsDeleted: false,
+      taxModifiedBy: actor,
+      taxModifiedOn: new Date(),
+    };
+    const record = existing
+      ? await prisma.itemTaxMaster.update({
+          where: { taxId: existing.taxId },
+          data: {
+            ...data,
+            ...auditCreatePatch('taxCreatedBy', existing.taxCreatedBy, actor),
+          },
+          select: { taxId: true, taxName: true },
+        })
+      : await prisma.itemTaxMaster.create({
+          data: {
+            taxName: tax.name,
+            taxCreatedBy: actor,
+            ...data,
+          },
+          select: { taxId: true, taxName: true },
+        });
 
     entries.set(record.taxName, record.taxId);
   }
@@ -546,7 +653,7 @@ const upsertTaxes = async () => {
   return entries;
 };
 
-const upsertGroups = async (unitMap, taxMap) => {
+const upsertGroups = async (unitMap, taxMap, actor) => {
   const entries = new Map();
 
   for (const [index, family] of FAMILIES.entries()) {
@@ -563,7 +670,8 @@ const upsertGroups = async (unitMap, taxMap) => {
         itgDefaultUomId: unitMap.get(family.unit) ?? null,
         itgIsActive: true,
         itgIsDeleted: false,
-        itgModifiedBy: ACTOR,
+        itgCreatedBy: actor,
+        itgModifiedBy: actor,
         itgModifiedOn: new Date(),
       },
       create: {
@@ -578,8 +686,8 @@ const upsertGroups = async (unitMap, taxMap) => {
         itgDefaultUomId: unitMap.get(family.unit) ?? null,
         itgIsActive: true,
         itgIsDeleted: false,
-        itgCreatedBy: ACTOR,
-        itgModifiedBy: ACTOR,
+        itgCreatedBy: actor,
+        itgModifiedBy: actor,
       },
       select: { itgId: true, itgName: true },
     });
@@ -595,7 +703,7 @@ const upsertGroups = async (unitMap, taxMap) => {
   return entries;
 };
 
-const upsertCategories = async () => {
+const upsertCategories = async (actor) => {
   const entries = new Map();
 
   for (const [index, family] of FAMILIES.entries()) {
@@ -609,7 +717,8 @@ const upsertCategories = async () => {
         categoryLevel: 0,
         categoryIsActive: true,
         categoryIsDeleted: false,
-        categoryModifiedBy: ACTOR,
+        categoryCreatedBy: actor,
+        categoryModifiedBy: actor,
         categoryModifiedOn: new Date(),
       },
       create: {
@@ -621,8 +730,8 @@ const upsertCategories = async () => {
         categoryLevel: 0,
         categoryIsActive: true,
         categoryIsDeleted: false,
-        categoryCreatedBy: ACTOR,
-        categoryModifiedBy: ACTOR,
+        categoryCreatedBy: actor,
+        categoryModifiedBy: actor,
       },
       select: { categoryId: true, categoryName: true },
     });
@@ -638,7 +747,134 @@ const upsertCategories = async () => {
   return entries;
 };
 
-const buildItem = (index, companyId, unitMap, taxMap, groupMap, categoryMap) => {
+const upsertBrands = async (actor) => {
+  const entries = new Map();
+  const brandNames = uniqueSorted(FAMILIES.flatMap((family) => family.brands));
+
+  for (const [index, brandName] of brandNames.entries()) {
+    const existing = await prisma.itemBrandMaster.findUnique({
+      where: { brand_name: brandName },
+      select: { brand_id: true, brand_name: true, brand_created_by: true },
+    });
+    const data = {
+      brand_alias: brandName,
+      brand_short: toShortCode(brandName),
+      brand_description: `${brandName} supermarket seed brand`,
+      brand_parent_id: null,
+      brand_sort: index + 1,
+      brand_level: 0,
+      brand_is_active: true,
+      brand_is_deleted: false,
+      brand_modified_by: actor,
+      brand_modified_on: new Date(),
+    };
+    const record = existing
+      ? await prisma.itemBrandMaster.update({
+          where: { brand_id: existing.brand_id },
+          data: {
+            ...data,
+            ...auditCreatePatch('brand_created_by', existing.brand_created_by, actor),
+          },
+          select: { brand_id: true, brand_name: true },
+        })
+      : await prisma.itemBrandMaster.create({
+          data: {
+            brand_name: brandName,
+            brand_created_by: actor,
+            ...data,
+          },
+          select: { brand_id: true, brand_name: true },
+        });
+
+    await prisma.itemBrandMaster.update({
+      where: { brand_id: record.brand_id },
+      data: { brand_path_ids: [record.brand_id] },
+    });
+
+    entries.set(record.brand_name, record.brand_id);
+  }
+
+  return entries;
+};
+
+const SECTION_STYLES = [
+  { color: '#2E7D32', icon: 'wheat' },
+  { color: '#1565C0', icon: 'shopping-basket' },
+  { color: '#C62828', icon: 'flame' },
+  { color: '#6A1B9A', icon: 'sparkles' },
+  { color: '#00838F', icon: 'droplets' },
+  { color: '#EF6C00', icon: 'package' },
+  { color: '#455A64', icon: 'boxes' },
+  { color: '#AD1457', icon: 'heart' },
+];
+
+const upsertSections = async (actor) => {
+  const entries = new Map();
+
+  for (const [index, family] of FAMILIES.entries()) {
+    const style = SECTION_STYLES[index % SECTION_STYLES.length];
+    const existing = await prisma.itemSectionMaster.findFirst({
+      where: {
+        secName: family.category,
+        secIsDeleted: false,
+      },
+      select: { secId: true, secName: true, secCreatedBy: true },
+    });
+    const data = {
+      secAlias: family.group,
+      secShort: family.code,
+      secDescription: `${family.category} supermarket seed section`,
+      secParentId: null,
+      secSort: index + 1,
+      secLevel: 1,
+      secPosition: index + 1,
+      secColorCode: style.color,
+      secIcon: style.icon,
+      secIsActive: true,
+      secIsDeleted: false,
+      secModifiedBy: actor,
+      secModifiedOn: new Date(),
+    };
+    const record = existing
+      ? await prisma.itemSectionMaster.update({
+          where: { secId: existing.secId },
+          data: {
+            ...data,
+            ...auditCreatePatch('secCreatedBy', existing.secCreatedBy, actor),
+          },
+          select: { secId: true, secName: true },
+        })
+      : await prisma.itemSectionMaster.create({
+          data: {
+            secName: family.category,
+            secCreatedBy: actor,
+            ...data,
+          },
+          select: { secId: true, secName: true },
+        });
+
+    await prisma.itemSectionMaster.update({
+      where: { secId: record.secId },
+      data: { secPathIds: [record.secId] },
+    });
+
+    entries.set(record.secName, record.secId);
+  }
+
+  return entries;
+};
+
+const buildItem = (
+  index,
+  companyId,
+  unitMap,
+  taxMap,
+  groupMap,
+  categoryMap,
+  brandMap,
+  sectionMap,
+  actor,
+) => {
   const family = FAMILIES[(index - 1) % FAMILIES.length];
   const codeNumber = toPaddedNumber(index, 5);
   const base = pick(family.bases, index - 1);
@@ -663,6 +899,8 @@ const buildItem = (index, companyId, unitMap, taxMap, groupMap, categoryMap) => 
     itemDefaultBarcode: buildBarcode(index),
     itemGroupId: groupMap.get(family.group),
     itemCategoryId: categoryMap.get(family.category) ?? null,
+    itemBrandId: brandMap.get(brand) ?? null,
+    itemSectionId: sectionMap.get(family.category) ?? null,
     itemBaseUnitId: unitMap.get(family.unit) ?? null,
     itemDefaultTaxId: taxMap.get(family.tax) ?? null,
     itemHsnCode: family.hsn,
@@ -691,11 +929,20 @@ const buildItem = (index, companyId, unitMap, taxMap, groupMap, categoryMap) => 
     itemPackingItemIds: [],
     itemIsActive: true,
     itemIsDeleted: false,
-    itemCreatedBy: ACTOR,
-    itemModifiedBy: ACTOR,
+    itemCreatedBy: actor,
+    itemModifiedBy: actor,
   };
 };
-const insertItems = async (companyId, unitMap, taxMap, groupMap, categoryMap) => {
+const insertItems = async (
+  companyId,
+  unitMap,
+  taxMap,
+  groupMap,
+  categoryMap,
+  brandMap,
+  sectionMap,
+  actor,
+) => {
   let created = 0;
 
   for (let start = 1; start <= TARGET_ITEM_COUNT; start += BATCH_SIZE) {
@@ -703,7 +950,19 @@ const insertItems = async (companyId, unitMap, taxMap, groupMap, categoryMap) =>
     const data = [];
 
     for (let index = start; index <= end; index += 1) {
-      data.push(buildItem(index, companyId, unitMap, taxMap, groupMap, categoryMap));
+      data.push(
+        buildItem(
+          index,
+          companyId,
+          unitMap,
+          taxMap,
+          groupMap,
+          categoryMap,
+          brandMap,
+          sectionMap,
+          actor,
+        ),
+      );
     }
 
     const result = await prisma.itemMaster.createMany({
@@ -718,28 +977,132 @@ const insertItems = async (companyId, unitMap, taxMap, groupMap, categoryMap) =>
   return created;
 };
 
+const repairExistingItems = async (
+  companyId,
+  unitMap,
+  taxMap,
+  groupMap,
+  categoryMap,
+  brandMap,
+  sectionMap,
+  actor,
+) => {
+  let updated = 0;
+
+  for (let start = 1; start <= TARGET_ITEM_COUNT; start += UPDATE_BATCH_SIZE) {
+    const end = Math.min(start + UPDATE_BATCH_SIZE - 1, TARGET_ITEM_COUNT);
+    const now = new Date();
+    const operations = [];
+
+    for (let index = start; index <= end; index += 1) {
+      const item = buildItem(
+        index,
+        companyId,
+        unitMap,
+        taxMap,
+        groupMap,
+        categoryMap,
+        brandMap,
+        sectionMap,
+        actor,
+      );
+
+      operations.push(
+        prisma.itemMaster.updateMany({
+          where: {
+            itemNameEn: item.itemNameEn,
+            itemCode: item.itemCode,
+            itemIsDeleted: false,
+          },
+          data: {
+            itemCompanyId: item.itemCompanyId,
+            itemGroupId: item.itemGroupId,
+            itemCategoryId: item.itemCategoryId,
+            itemBrandId: item.itemBrandId,
+            itemSectionId: item.itemSectionId,
+            itemBaseUnitId: item.itemBaseUnitId,
+            itemDefaultTaxId: item.itemDefaultTaxId,
+            itemHsnCode: item.itemHsnCode,
+            itemCreatedBy: actor,
+            itemModifiedBy: actor,
+            itemModifiedOn: now,
+          },
+        }),
+      );
+    }
+
+    const results = await prisma.$transaction(operations);
+    const batchUpdated = results.reduce((total, result) => total + result.count, 0);
+    updated += batchUpdated;
+    console.log(`Repaired items ${start}-${end}. updated_in_batch=${batchUpdated}`);
+  }
+
+  return updated;
+};
+
 async function main() {
-  const company = await findOrCreateCompany();
-  const [unitMap, taxMap] = await Promise.all([upsertUnits(), upsertTaxes()]);
-  const [groupMap, categoryMap] = await Promise.all([
-    upsertGroups(unitMap, taxMap),
-    upsertCategories(),
+  const { actor, source } = await resolveSeedActor();
+  console.log(`Using created_by actor "${actor}" from ${source}.`);
+
+  const company = await findOrCreateCompany(actor);
+  const [unitMap, taxMap] = await Promise.all([upsertUnits(actor), upsertTaxes(actor)]);
+  const [groupMap, categoryMap, brandMap, sectionMap] = await Promise.all([
+    upsertGroups(unitMap, taxMap, actor),
+    upsertCategories(actor),
+    upsertBrands(actor),
+    upsertSections(actor),
   ]);
 
-  const created = await insertItems(company.compId, unitMap, taxMap, groupMap, categoryMap);
+  const created = await insertItems(
+    company.compId,
+    unitMap,
+    taxMap,
+    groupMap,
+    categoryMap,
+    brandMap,
+    sectionMap,
+    actor,
+  );
+  const repaired = await repairExistingItems(
+    company.compId,
+    unitMap,
+    taxMap,
+    groupMap,
+    categoryMap,
+    brandMap,
+    sectionMap,
+    actor,
+  );
   const seededTotal = await prisma.itemMaster.count({
-    where: { itemCreatedBy: ACTOR },
+    where: { itemCode: { startsWith: 'SM-' }, itemCreatedBy: actor },
   });
   const tableTotal = await prisma.itemMaster.count();
+  const [brandTotal, sectionTotal, categoryTotal, unitTotal] = await Promise.all([
+    prisma.itemBrandMaster.count({
+      where: { brand_name: { in: [...brandMap.keys()] }, brand_created_by: actor },
+    }),
+    prisma.itemSectionMaster.count({
+      where: { secName: { in: [...sectionMap.keys()] }, secCreatedBy: actor },
+    }),
+    prisma.categoryMaster.count({
+      where: {
+        categoryName: { in: FAMILIES.map((family) => family.group) },
+        categoryCreatedBy: actor,
+      },
+    }),
+    prisma.unit.count({
+      where: { unit_name: { in: UNITS.map((unit) => unit.name) }, unit_created_by: actor },
+    }),
+  ]);
 
   console.log(
-    `Supermarket item seed complete. company="${company.compName}", created=${created}, seeded_total=${seededTotal}, item_master_total=${tableTotal}`,
+    `Supermarket item seed complete. company="${company.compName}", created=${created}, repaired=${repaired}, items_with_actor=${seededTotal}, item_master_total=${tableTotal}, brands_with_actor=${brandTotal}, sections_with_actor=${sectionTotal}, categories_with_actor=${categoryTotal}, units_with_actor=${unitTotal}`,
   );
 }
 
 main()
   .catch((error) => {
-    console.error('Failed to seed supermarket item_master products:', error);
+    console.error('Failed to seed supermarket master data:', error);
     process.exitCode = 1;
   })
   .finally(async () => {

@@ -42,6 +42,30 @@ export interface ItemStockBalancePayload {
   isb_updated_on: string | null;
   isb_updated_by: string | null;
 }
+export interface BulkItemStockPayload {
+  isb_item_id: string;
+  item_name: string;
+  item_code: string | null;
+  item_default_barcode: string | null;
+  isb_unit_id: string;
+  unit_name: string;
+  isb_base_unit_id: string | null;
+  isb_price_master_id: string | null;
+  isb_godown_id: string;
+  godown_name: string | null;
+  isb_to_base_factor: number;
+  book_qty: number;
+  book_base_qty: number;
+  book_free_qty: number;
+  book_free_base_qty: number;
+  avg_stock_rate: number;
+  avg_stock_rate_wot: number;
+  mrp: number;
+  cost_price: number;
+  cost_wot: number;
+  tracking_type: string;
+}
+
 export interface ItemBatchStockOptionPayload {
   ibs_id: string;
   ibs_acc_year: string;

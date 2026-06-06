@@ -4,7 +4,9 @@ import { PrismaService } from 'src/database/prisma/prisma.service';
 import type { ItemPricePayload } from 'src/modules/Inventory/items-price-master/types/item-price-api.types';
 import { GetItemBatchStockOptionsQueryDto } from './dto/get-item-batch-stock-options-query.dto';
 import { GetItemStockBalanceQueryDto } from './dto/get-item-stock-balance-query.dto';
+import { GetBulkItemStockListQueryDto } from './dto/get-bulk-item-stock-list-query.dto';
 import {
+  BulkItemStockPayload,
   ItemBatchStockOptionPayload,
   ItemStockBalanceErrorDetail,
   ItemStockBalanceErrorResponse,
@@ -56,6 +58,135 @@ export class ItemStockBalanceService {
       this.toPayload(record, this.getUnitFactorForStockUnit(record, queryDto, unitFactorsByUnitId)),
     );
   }
+  async getBulkList(queryDto: GetBulkItemStockListQueryDto): Promise<BulkItemStockPayload[]> {
+    const limit = Math.min(parseInt(queryDto.limit ?? '500', 10) || 500, 2000);
+
+    // Step 1: Resolve item IDs from item master filters first, so the stock
+    // balance query can use them directly (avoids the limit cutting off items
+    // that would have passed the filter).
+    const hasItemFilter =
+      queryDto.item_group_id ||
+      queryDto.item_brand_id ||
+      queryDto.item_section_id ||
+      queryDto.item_category_id;
+
+    let filteredItemIds: string[] | null = null;
+    if (hasItemFilter) {
+      const itemFilterWhere: Prisma.ItemMasterWhereInput = { itemIsDeleted: false };
+      if (queryDto.item_group_id) itemFilterWhere.itemGroupId = queryDto.item_group_id;
+      if (queryDto.item_brand_id) itemFilterWhere.itemBrandId = queryDto.item_brand_id;
+      if (queryDto.item_section_id) itemFilterWhere.itemSectionId = queryDto.item_section_id;
+      if (queryDto.item_category_id) itemFilterWhere.itemCategoryId = queryDto.item_category_id;
+      const matchedItems = await this.prisma.itemMaster.findMany({
+        where: itemFilterWhere,
+        select: { itemId: true },
+      });
+      if (matchedItems.length === 0) return [];
+      filteredItemIds = matchedItems.map((i) => i.itemId);
+    }
+
+    // Step 2: Query stock balances with resolved item IDs applied as a filter.
+    const isbWhere: Prisma.ItemStockBalanceWhereInput = {
+      isbAccYear: queryDto.isb_acc_year,
+      isbCompanyId: queryDto.isb_company_id,
+      isbBranchId: queryDto.isb_branch_id,
+    };
+    if (filteredItemIds) isbWhere.isbItemId = { in: filteredItemIds };
+    if (queryDto.isb_godown_id) isbWhere.isbGodownId = queryDto.isb_godown_id;
+    if (queryDto.isb_stock_bucket) isbWhere.isbStockBucket = queryDto.isb_stock_bucket;
+    if (queryDto.stock_type === 'ZERO') {
+      isbWhere.isbClosingQty = { equals: 0 };
+    } else if (queryDto.stock_type === 'NEGATIVE') {
+      isbWhere.isbClosingQty = { lt: 0 };
+    }
+    // ALL: no closing qty filter — all records for the resolved item IDs are returned
+
+    const stockBalances = await this.prisma.itemStockBalance.findMany({
+      where: isbWhere,
+      orderBy: [{ isbItemId: 'asc' }, { isbUnitId: 'asc' }],
+      take: limit,
+    });
+    if (stockBalances.length === 0) return [];
+
+    // Step 3: Fetch item details, units, godowns, price masters in parallel.
+    const allItemIds = [...new Set(stockBalances.map((s) => s.isbItemId))];
+    const allUnitIds = [...new Set(stockBalances.map((s) => s.isbUnitId))];
+    const allGodownIds = [...new Set(stockBalances.map((s) => s.isbGodownId))];
+
+    const [items, units, godowns, priceMasters] = await Promise.all([
+      this.prisma.itemMaster.findMany({
+        where: { itemId: { in: allItemIds }, itemIsDeleted: false },
+        select: { itemId: true, itemNameEn: true, itemCode: true, itemDefaultBarcode: true, itemBaseUnitId: true },
+      }),
+      this.prisma.unit.findMany({
+        where: { unit_id: { in: allUnitIds } },
+        select: { unit_id: true, unit_name: true },
+      }),
+      this.prisma.godownLocation.findMany({
+        where: { gdlId: { in: allGodownIds } },
+        select: { gdlId: true, gdlName: true },
+      }),
+      this.prisma.itemPriceMaster.findMany({
+        where: { ipmItemId: { in: allItemIds }, ipmIsDeleted: false },
+        select: { ipmItemId: true, ipmId: true, ipmUnitId: true, ipmGodownId: true, ipmBaseUnitId: true, ipmToBaseFactor: true, ipmUnitFactor: true, ipmCostPrice: true, ipmCostWot: true, ipmMaxPrice: true },
+      }),
+    ]);
+
+    if (items.length === 0) return [];
+
+    const itemsById = new Map(items.map((i) => [i.itemId, i]));
+    const unitsById = new Map(units.map((u) => [u.unit_id, u.unit_name]));
+    const godownsById = new Map(godowns.map((g) => [g.gdlId, g.gdlName]));
+
+    // Primary key: item + unit + godown (exact match); fallback: item + unit (any godown).
+    const priceByItemUnitGodown = new Map<string, (typeof priceMasters)[0]>();
+    const priceByItemUnit = new Map<string, (typeof priceMasters)[0]>();
+    for (const pm of priceMasters) {
+      const godownKey = `${pm.ipmItemId}:${pm.ipmUnitId}:${pm.ipmGodownId}`;
+      if (!priceByItemUnitGodown.has(godownKey)) priceByItemUnitGodown.set(godownKey, pm);
+      const fallbackKey = `${pm.ipmItemId}:${pm.ipmUnitId}`;
+      if (!priceByItemUnit.has(fallbackKey)) priceByItemUnit.set(fallbackKey, pm);
+    }
+
+    return stockBalances
+      .filter((s) => itemsById.has(s.isbItemId))
+      .map((balance) => {
+        const item = itemsById.get(balance.isbItemId)!;
+        const price =
+          priceByItemUnitGodown.get(`${balance.isbItemId}:${balance.isbUnitId}:${balance.isbGodownId}`) ??
+          priceByItemUnit.get(`${balance.isbItemId}:${balance.isbUnitId}`) ??
+          null;
+        const toBaseFactor = price
+          ? this.toNumber(price.ipmToBaseFactor) || this.toNumber(price.ipmUnitFactor) || 1
+          : 1;
+        const closingQty = this.toNumber(balance.isbClosingQty);
+        const freeClosingQty = this.toNumber(balance.isbFreeClosingQty);
+        return {
+          isb_item_id: balance.isbItemId,
+          item_name: item.itemNameEn,
+          item_code: item.itemCode ?? null,
+          item_default_barcode: item.itemDefaultBarcode ?? null,
+          isb_unit_id: balance.isbUnitId,
+          unit_name: unitsById.get(balance.isbUnitId) ?? '',
+          isb_base_unit_id: price?.ipmBaseUnitId ?? item.itemBaseUnitId ?? null,
+          isb_price_master_id: price?.ipmId ?? null,
+          isb_godown_id: balance.isbGodownId,
+          godown_name: godownsById.get(balance.isbGodownId) ?? null,
+          isb_to_base_factor: toBaseFactor,
+          book_qty: toBaseFactor > 0 ? closingQty / toBaseFactor : 0,
+          book_base_qty: closingQty,
+          book_free_qty: toBaseFactor > 0 ? freeClosingQty / toBaseFactor : 0,
+          book_free_base_qty: freeClosingQty,
+          avg_stock_rate: this.toNumber(balance.isbAvgStockRate),
+          avg_stock_rate_wot: this.toNumber(balance.isbAvgStockRateWot),
+          mrp: this.toNumber(price?.ipmMaxPrice ?? 0),
+          cost_price: this.toNumber(price?.ipmCostPrice ?? 0),
+          cost_wot: this.toNumber(price?.ipmCostWot ?? 0),
+          tracking_type: balance.isbTrackingType ?? 'NONE',
+        };
+      });
+  }
+
   async getBatchOptionsByScope(
     queryDto: GetItemBatchStockOptionsQueryDto,
   ): Promise<ItemBatchStockOptionPayload[]> {
