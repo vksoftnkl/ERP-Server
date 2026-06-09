@@ -1,12 +1,4 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  FixedErrorFieldDto,
-  FixedErrorResponseDto,
-  FixedListMetaDto,
-} from 'src/common/utils/module-response.dto';
-export { FixedErrorFieldDto as UiTableColumnErrorFieldDto };
-export { FixedErrorResponseDto as UiTableColumnErrorResponseDto };
-export { FixedListMetaDto as UiTableColumnListMetaDto };
 
 export class UiTableColumnPayloadDto {
   @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
@@ -18,11 +10,7 @@ export class UiTableColumnPayloadDto {
   @ApiPropertyOptional({ example: 'Item Name', nullable: true })
   uiTblClmName!: string | null;
 
-  @ApiPropertyOptional({
-    example: '1',
-    nullable: true,
-    description: 'Related UI table id serialized as string',
-  })
+  @ApiPropertyOptional({ example: '1', nullable: true, description: 'Related UI table id serialized as string' })
   uiTblClmTableId!: string | null;
 
   @ApiPropertyOptional({ example: 100, nullable: true })
@@ -52,12 +40,7 @@ export class UiTableColumnPayloadDto {
   @ApiProperty({ example: false })
   uiTblClmIsDeleted!: boolean;
 
-  @ApiPropertyOptional({
-    example: '2026-03-12T06:34:47.000Z',
-    nullable: true,
-    type: String,
-    format: 'date-time',
-  })
+  @ApiPropertyOptional({ example: '2026-03-12T06:34:47.000Z', nullable: true, type: String, format: 'date-time' })
   uiTblClmSyncDate!: string | null;
 
   @ApiProperty({ example: '2026-03-12T06:34:47.000Z', type: String, format: 'date-time' })
@@ -71,49 +54,4 @@ export class UiTableColumnPayloadDto {
 
   @ApiPropertyOptional({ example: 'system', nullable: true })
   uiTblClmModifiedBy!: string | null;
-}
-
-export class UiTableColumnDeleteResultDto {
-  @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
-  uiTblClmId!: string;
-
-  @ApiProperty({ example: true })
-  deleted!: true;
-}
-
-export class UiTableColumnSuccessSingleDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'UI table column fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: UiTableColumnPayloadDto })
-  data!: UiTableColumnPayloadDto;
-}
-
-export class UiTableColumnSuccessListDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'UI table columns fetched successfully' })
-  message!: string;
-
-  @ApiProperty({ type: UiTableColumnPayloadDto, isArray: true })
-  data!: UiTableColumnPayloadDto[];
-
-  @ApiProperty({ type: FixedListMetaDto })
-  meta!: FixedListMetaDto;
-
-}
-
-export class UiTableColumnSuccessDeleteDto {
-  @ApiProperty({ example: true })
-  success!: true;
-
-  @ApiProperty({ example: 'UI table column deleted successfully' })
-  message!: string;
-
-  @ApiProperty({ type: UiTableColumnDeleteResultDto })
-  data!: UiTableColumnDeleteResultDto;
 }

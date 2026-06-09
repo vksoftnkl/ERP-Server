@@ -20,7 +20,6 @@ import { HealthModule } from './modules/health/health.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { GridDetailsModule } from './modules/grid-details/grid-details.module';
-import { GridColumnsModule } from './modules/grid-columns/grid-columns.module';
 import { DropdownDetailsModule } from './modules/dropdown-details/dropdown-details.module';
 import { DropdownColumnsModule } from './modules/dropdown-columns/dropdown-columns.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
@@ -55,7 +54,6 @@ import { MenuMasterModule } from './modules/fixed/menu-master/menu-master.module
 import { PriceLevelMasterModule } from './modules/fixed/price-level-master/price-level-master.module';
 import { HsnCodeMasterModule } from './modules/fixed/hsn-code-master/hsn-code-master.module';
 import { StateCodeMasterModule } from './modules/fixed/state-code-master/state-code-master.module';
-import { UiTableColumnsModule } from './modules/fixed/ui-table-columns/ui-table-columns.module';
 import { UiTableMasterModule } from './modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from './modules/fixed/user-login-sessions/user-login-sessions.module';
 import { StockAdjReasonsModule } from './modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
@@ -160,7 +158,6 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     PriceLevelMasterModule,
     HsnCodeMasterModule,
     StateCodeMasterModule,
-    UiTableColumnsModule,
     UiTableMasterModule,
     UserLoginSessionsModule,
     StockAdjReasonsModule,
@@ -174,7 +171,6 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     PromotionLoyaltyPointsModule,
     GodownsMasterModule,
     GridDetailsModule,
-    GridColumnsModule,
     DropdownDetailsModule,
     DropdownColumnsModule,
     AuthModule,

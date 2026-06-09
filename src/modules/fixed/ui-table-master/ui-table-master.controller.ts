@@ -30,7 +30,6 @@ import {
   UiTableMasterSuccessResponse,
 } from './types/ui-table-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('UI Table Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -39,7 +38,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(UiTableMasterExceptionFilter)
 export class UiTableMasterController {
   constructor(private readonly uiTableMasterService: UiTableMasterService) {}
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update UI table (by uiTblId presence)' })
@@ -51,7 +49,6 @@ export class UiTableMasterController {
     @Body() saveUiTableMasterDto: SaveUiTableMasterDto,
   ): Promise<UiTableMasterSuccessResponse<UiTableMasterPayload>> {
     const data = await this.uiTableMasterService.save(saveUiTableMasterDto);
-
     return {
       success: true,
       message: saveUiTableMasterDto.uiTblId
@@ -60,8 +57,7 @@ export class UiTableMasterController {
       data,
     };
   }
-
-  @Get('list')
+  @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'List UI tables with filter/search/pagination' })
   @ApiOkResponse({ type: UiTableMasterSuccessListDto })
@@ -70,50 +66,11 @@ export class UiTableMasterController {
     @Query() queryDto: ListUiTableMasterQueryDto,
   ): Promise<UiTableMasterSuccessResponse<UiTableMasterListItem[], UiTableMasterListMeta>> {
     const result = await this.uiTableMasterService.list(queryDto);
-
     return {
       success: true,
       message: 'UI tables fetched successfully',
       data: result.items,
       meta: result.meta,
-    };
-  }
-
-  @Get('get')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get UI table by id' })
-  @ApiQuery({ name: 'uiTblId', description: 'Numeric UI table id', example: '1' })
-  @ApiOkResponse({ type: UiTableMasterSuccessSingleDto })
-  @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
-  @ApiNotFoundResponse({ type: UiTableMasterErrorResponseDto })
-  async getById(
-    @Query('uiTblId') uiTblId: string,
-  ): Promise<UiTableMasterSuccessResponse<UiTableMasterPayload>> {
-    const data = await this.uiTableMasterService.getById(uiTblId);
-
-    return {
-      success: true,
-      message: 'UI table fetched successfully',
-      data,
-    };
-  }
-
-  @Delete('delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete UI table by id' })
-  @ApiQuery({ name: 'uiTblId', description: 'Numeric UI table id', example: '1' })
-  @ApiOkResponse({ type: UiTableMasterSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
-  @ApiNotFoundResponse({ type: UiTableMasterErrorResponseDto })
-  async remove(
-    @Query('uiTblId') uiTblId: string,
-  ): Promise<UiTableMasterSuccessResponse<{ uiTblId: string; deleted: true }>> {
-    const data = await this.uiTableMasterService.softDelete(uiTblId);
-
-    return {
-      success: true,
-      message: 'UI table deleted successfully',
-      data,
     };
   }
 }

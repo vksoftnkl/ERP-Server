@@ -1183,6 +1183,7 @@ Table ui_tables {
   uiTblCreatedBy String
   uiTblModifiedOn DateTime [default: `now()`, not null]
   uiTblModifiedBy String
+  uiTblDeviceType String
   uiTableColumns ui_table_columns [not null]
 }
 

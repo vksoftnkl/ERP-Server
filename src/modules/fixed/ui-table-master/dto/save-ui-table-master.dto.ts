@@ -1,11 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsNotEmpty, IsOptional, ValidateIf, ValidateNested } from 'class-validator';
 import {
   NullableString,
   OptionalBoolean,
   OptionalNumberString,
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
+import { SaveUiTableColumnDto } from './save-ui-table-column.dto';
 
 export class SaveUiTableMasterDto {
   @ApiPropertyOptional({
@@ -17,6 +19,7 @@ export class SaveUiTableMasterDto {
 
   @ApiProperty({ description: 'UI table name', example: 'Item Master Grid' })
   @TrimmedString(500)
+  @ValidateIf((o) => !o.uiTblId)
   @IsNotEmpty()
   uiTblName!: string;
 
@@ -28,11 +31,17 @@ export class SaveUiTableMasterDto {
   @OptionalBoolean()
   uiTblIsActive?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @NullableString(100)
-  uiTblCreatedBy?: string | null;
+  @ApiPropertyOptional({ description: 'Device type for this UI table', nullable: true })
+  @NullableString(255)
+  uiTblDeviceType?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  @NullableString(100)
-  uiTblModifiedBy?: string | null;
+  @ApiPropertyOptional({
+    description: 'Array of columns to create or update for this table',
+    type: [SaveUiTableColumnDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaveUiTableColumnDto)
+  uiTblColumns?: SaveUiTableColumnDto[];
 }

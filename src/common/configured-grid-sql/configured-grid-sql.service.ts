@@ -185,7 +185,10 @@ export class ConfiguredGridSqlService {
     }
 
     const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS ${options.alias}_count`;
-    const rowsSql = `SELECT * FROM (${baseSql}) AS ${options.alias}_rows LIMIT $${params.length + 1
+    const orderByClause = options.sortBy
+      ? ` ORDER BY "${options.sortBy.replace(/"/g, '""')}" ${options.sortDir === 'desc' ? 'DESC' : 'ASC'}`
+      : '';
+    const rowsSql = `SELECT * FROM (${baseSql}) AS ${options.alias}_rows${orderByClause} LIMIT $${params.length + 1
       } OFFSET $${params.length + 2}`;
 
     const [countResult, rows] = await Promise.all([

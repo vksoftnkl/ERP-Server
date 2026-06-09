@@ -4,6 +4,7 @@ import {
   FixedErrorResponseDto,
   FixedListMetaDto,
 } from 'src/common/utils/module-response.dto';
+import { UiTableColumnPayloadDto } from './ui-table-column-response.dto';
 export { FixedErrorFieldDto as UiTableMasterErrorFieldDto };
 export { FixedErrorResponseDto as UiTableMasterErrorResponseDto };
 export { FixedListMetaDto as UiTableMasterListMetaDto };
@@ -43,6 +44,12 @@ export class UiTableMasterPayloadDto {
 
   @ApiPropertyOptional({ example: 'system', nullable: true })
   uiTblModifiedBy!: string | null;
+
+  @ApiPropertyOptional({ example: 'mobile', nullable: true })
+  uiTblDeviceType!: string | null;
+
+  @ApiProperty({ type: [UiTableColumnPayloadDto], description: 'Columns belonging to this UI table' })
+  columns!: UiTableColumnPayloadDto[];
 }
 
 export class UiTableMasterDeleteResultDto {

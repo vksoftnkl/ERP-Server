@@ -23,6 +23,7 @@ import { SaveGridDetailDto } from './dto/save-grid-detail.dto';
 import { GridDetailExceptionFilter } from './grid-detail-exception.filter';
 import { GridDetailsService } from './grid-details.service';
 import {
+  GridDetailListItem,
   GridDetailListMeta,
   GridDetailPayload,
   GridDetailSuccessResponse,
@@ -38,7 +39,7 @@ export class GridDetailsController {
   constructor(private readonly gridDetailsService: GridDetailsService) {}
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update grid details (by grid_id presence)' })
+  @ApiOperation({ summary: 'Create or update grid details with columns (by grid_id presence)' })
   @ApiCreatedResponse({ type: GridDetailSuccessSingleDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
@@ -54,55 +55,20 @@ export class GridDetailsController {
       data,
     };
   }
-  @Get('list')
+  @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'List grid details with filter/search/pagination' })
   @ApiOkResponse({ type: GridDetailSuccessListDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   async list(
     @Query() queryDto: ListGridDetailQueryDto,
-  ): Promise<GridDetailSuccessResponse<GridDetailPayload[], GridDetailListMeta>> {
+  ): Promise<GridDetailSuccessResponse<GridDetailListItem[], GridDetailListMeta>> {
     const result = await this.gridDetailsService.list(queryDto);
     return {
       success: true,
       message: 'Grid details fetched successfully',
       data: result.items,
       meta: result.meta,
-    };
-  }
-  @Get('get')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get grid details by id' })
-  @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
-  @ApiOkResponse({ type: GridDetailSuccessSingleDto })
-  @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
-  @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
-  async getById(
-    @Query('grid_id') gridId: string,
-  ): Promise<GridDetailSuccessResponse<GridDetailPayload>> {
-    const data = await this.gridDetailsService.getById(gridId);
-
-    return {
-      success: true,
-      message: 'Grid details fetched successfully',
-      data,
-    };
-  }
-  @Delete('delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete grid details by id' })
-  @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
-  @ApiOkResponse({ type: GridDetailSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
-  @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
-  async remove(
-    @Query('grid_id') gridId: string,
-  ): Promise<GridDetailSuccessResponse<{ grid_id: string; deleted: true }>> {
-    const data = await this.gridDetailsService.softDelete(gridId);
-    return {
-      success: true,
-      message: 'Grid details deleted successfully',
-      data,
     };
   }
 }

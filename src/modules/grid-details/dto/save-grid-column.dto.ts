@@ -1,5 +1,4 @@
-import { IsNotEmpty, IsNumberString } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsNotEmpty } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableNumber,
@@ -9,19 +8,11 @@ import {
   RequiredInteger,
   TrimmedString,
 } from '../../../common/dto/dtoDecorators';
-import { toOptionalIdString } from '../../../common/dto/DtoTransforms';
 
 export class SaveGridColumnDto {
-  @ApiPropertyOptional({
-    description: 'When provided, request updates grid column',
-  })
+  @ApiPropertyOptional({ description: 'When provided, request updates grid column' })
   @OptionalNumberString()
   grid_serialid?: string;
-
-  @ApiProperty({ description: 'Numeric grid id' })
-  @Transform(({ value }) => toOptionalIdString(value))
-  @IsNumberString({ no_symbols: true })
-  grid_id!: string;
 
   @ApiProperty({ minimum: 1 })
   @RequiredInteger(1)

@@ -20,7 +20,6 @@ import { AreaModule } from '../modules/sales/area/area.module';
 import { CityModule } from '../modules/sales/city/city.module';
 import { CustomerGroupModule } from '../modules/sales/customer-group/customer-group.module';
 import { CustomerModule } from '../modules/sales/customer/customer.module';
-import { GridColumnsModule } from '../modules/grid-columns/grid-columns.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
 import { DropdownColumnsModule } from '../modules/dropdown-columns/dropdown-columns.module';
@@ -39,7 +38,6 @@ import { MenuMasterModule } from '../modules/fixed/menu-master/menu-master.modul
 import { PriceLevelMasterModule } from '../modules/fixed/price-level-master/price-level-master.module';
 import { HsnCodeMasterModule } from '../modules/fixed/hsn-code-master/hsn-code-master.module';
 import { StateCodeMasterModule } from '../modules/fixed/state-code-master/state-code-master.module';
-import { UiTableColumnsModule } from '../modules/fixed/ui-table-columns/ui-table-columns.module';
 import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-master.module';
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
 import { StockAdjReasonsModule } from '../modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
@@ -302,12 +300,6 @@ export const swaggerModuleDocuments = [
     include: [GridDetailsModule],
   },
   {
-    path: 'grid-columns',
-    title: 'Grid Columns API',
-    description: 'Grid columns module endpoints',
-    include: [GridColumnsModule],
-  },
-  {
     path: 'dropdown-details',
     title: 'Dropdown Details API',
     description: 'Dropdown details module endpoints',
@@ -404,15 +396,9 @@ export const swaggerModuleDocuments = [
     include: [StateCodeMasterModule],
   },
   {
-    path: 'ui-table-columns',
-    title: 'UI Table Columns API',
-    description: 'UI table columns module endpoints',
-    include: [UiTableColumnsModule],
-  },
-  {
     path: 'ui-table-master',
     title: 'UI Table Master API',
-    description: 'UI table endpoints for fixed.ui_tables',
+    description: 'UI table master and columns endpoints',
     include: [UiTableMasterModule],
   },
   {

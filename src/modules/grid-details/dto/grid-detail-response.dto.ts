@@ -1,63 +1,144 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  ModuleErrorFieldDto,
-  ModuleErrorResponseDto,
-  ModuleListMetaDto,
+  FixedErrorFieldDto,
+  FixedErrorResponseDto,
+  FixedListMetaDto,
 } from '../../../common/utils/module-response.dto';
+
 export {
-  ModuleErrorFieldDto as GridDetailErrorFieldDto,
-  ModuleErrorResponseDto as GridDetailErrorResponseDto,
-  ModuleListMetaDto as GridDetailListMetaDto,
+  FixedErrorFieldDto as GridDetailErrorFieldDto,
+  FixedErrorResponseDto as GridDetailErrorResponseDto,
+  FixedListMetaDto as GridDetailListMetaDto,
 };
+
+export class GridColumnPayloadDto {
+  @ApiProperty({ example: '1' })
+  grid_serialid!: string;
+
+  @ApiProperty({ example: '1' })
+  grid_id!: string;
+
+  @ApiProperty()
+  grid_column_number!: number;
+
+  @ApiProperty()
+  grid_column_name!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_width!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_position!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_alignment!: string | null;
+
+  @ApiProperty()
+  grid_column_visibility!: boolean;
+
+  @ApiProperty()
+  grid_column_filter!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_condition!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_condition_color!: string | null;
+
+  @ApiProperty()
+  grid_column_group!: boolean;
+
+  @ApiProperty()
+  grid_column_total!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_data_type!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_color!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_notes!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_sql_field_name!: string | null;
+
+  @ApiProperty()
+  grid_column_is_deleted!: boolean;
+}
+
 export class GridDetailPayloadDto {
   @ApiProperty({ example: '1' })
   grid_id!: string;
+
   @ApiProperty()
   grid_name!: string;
+
   @ApiPropertyOptional({ nullable: true })
   grid_description!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   grid_sort_column!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   grid_sort_order!: string | null;
- @ApiPropertyOptional({ nullable: true })
+
+  @ApiPropertyOptional({ nullable: true })
   grid_device_type!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   grid_sql!: string | null;
+
   @ApiProperty()
   grid_status!: boolean;
+
   @ApiProperty()
   grid_is_deleted!: boolean;
+
+  @ApiProperty({ type: [GridColumnPayloadDto], description: 'Columns belonging to this grid' })
+  columns!: GridColumnPayloadDto[];
 }
+
 export class GridDetailDeleteResultDto {
   @ApiProperty({ example: '1' })
   grid_id!: string;
+
   @ApiProperty({ example: true })
   deleted!: true;
 }
+
 export class GridDetailSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
+
   @ApiProperty({ example: 'Grid details fetched successfully' })
   message!: string;
+
   @ApiProperty({ type: GridDetailPayloadDto })
   data!: GridDetailPayloadDto;
 }
+
 export class GridDetailSuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
+
   @ApiProperty({ example: 'Grid details fetched successfully' })
   message!: string;
+
   @ApiProperty({ type: GridDetailPayloadDto, isArray: true })
   data!: GridDetailPayloadDto[];
-  @ApiProperty({ type: ModuleListMetaDto })
-  meta!: ModuleListMetaDto;
+
+  @ApiProperty({ type: FixedListMetaDto })
+  meta!: FixedListMetaDto;
 }
+
 export class GridDetailSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
+
   @ApiProperty({ example: 'Grid details deleted successfully' })
   message!: string;
+
   @ApiProperty({ type: GridDetailDeleteResultDto })
   data!: GridDetailDeleteResultDto;
 }

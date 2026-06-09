@@ -137,6 +137,8 @@ export class ConfiguredGridSqlController {
       limit,
       skip,
       gridId,
+      sortBy: query.sort_by,
+      sortDir: query.sort_dir,
     });
 
     return {

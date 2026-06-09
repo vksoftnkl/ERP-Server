@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumberString, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNumberString, IsOptional, IsString, Matches } from 'class-validator';
 import { OptionalQueryInt, OptionalTrimmedString } from '../../dto/dtoDecorators';
 
 export class RunConfiguredGridQueryDto {
@@ -26,4 +26,15 @@ export class RunConfiguredGridQueryDto {
   @IsOptional()
   @IsString()
   grid_param?: string;
+
+  @ApiPropertyOptional({ description: 'Column field name to sort by', example: 'created_at' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z_][a-z0-9_$]*$/i, { message: 'sort_by must be a valid identifier' })
+  sort_by?: string;
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], description: 'Sort direction', default: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sort_dir?: 'asc' | 'desc';
 }

@@ -51,6 +51,8 @@ export interface RunConfiguredGridSqlPageOptions {
   skip: number;
   /** When provided, grid column definitions are used to derive searchable field names for search. */
   gridId?: bigint;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
 }
 export interface RunConfiguredGridSqlPageResult<TItem> {
   items: TItem[];

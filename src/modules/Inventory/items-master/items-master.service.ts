@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ItemMaster, Prisma } from '@prisma/client';
 import { SaveItemDto } from './dto/save-item.dto';
-import { ItemErrorDetail, ItemPayload } from './types/item-api.types';
+import { BulkLoadItemPayload, ItemErrorDetail, ItemPayload } from './types/item-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
+import { toNumber } from 'src/common/utils/module-service.utils';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
   DEFAULT_ACTOR,
@@ -45,6 +46,102 @@ export class ItemsMasterService {
       );
     }
     return this.toPayload(record);
+  }
+  async listForBulkLoad(params: {
+    itemCompanyId?: string;
+    itemBranchId?: string;
+    godownId?: string;
+    itemGroupId?: string;
+    itemBrandId?: string;
+    itemSectionId?: string;
+    itemCategoryId?: string;
+    limit?: number;
+    uiTableId?: string;
+    uiColumnId?: string;
+  }): Promise<BulkLoadItemPayload[]> {
+    const where: Prisma.ItemMasterWhereInput = {
+      itemIsDeleted: false,
+      itemIsActive: true,
+      ...(params.itemCompanyId ? { itemCompanyId: params.itemCompanyId } : {}),
+      ...(params.itemBranchId ? { itemBranchId: params.itemBranchId } : {}),
+      ...(params.itemGroupId ? { itemGroupId: params.itemGroupId } : {}),
+      ...(params.itemBrandId ? { itemBrandId: params.itemBrandId } : {}),
+      ...(params.itemSectionId ? { itemSectionId: params.itemSectionId } : {}),
+      ...(params.itemCategoryId ? { itemCategoryId: params.itemCategoryId } : {}),
+    };
+    const items = await this.prisma.itemMaster.findMany({
+      where,
+      include: {
+        prices: {
+          where: { ipmIsDeleted: false },
+          orderBy: [{ ipmIsDefaultUnit: 'desc' }, { ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+          include: { unit: true, godown: true },
+        },
+      },
+      orderBy: { itemNameEn: 'asc' },
+      take: params.limit ?? 500,
+    });
+    if (items.length === 0) return [];
+    const taxIds = Array.from(
+      new Set(items.map((i) => i.itemDefaultTaxId).filter((id): id is string => id !== null)),
+    );
+    const taxRecords = taxIds.length > 0
+      ? await this.prisma.itemTaxMaster.findMany({ where: { taxId: { in: taxIds }, taxIsDeleted: false } })
+      : [];
+    const taxById = new Map(taxRecords.map((t) => [t.taxId, t]));
+    return items.map((item): BulkLoadItemPayload => {
+      const p = (params.godownId
+        ? item.prices.find((r) => r.ipmGodownId === params.godownId)
+        : undefined)
+        ?? item.prices.find((r) => r.ipmIsDefaultUnit)
+        ?? item.prices[0]
+        ?? null;
+      const tax = item.itemDefaultTaxId ? (taxById.get(item.itemDefaultTaxId) ?? null) : null;
+      const trackingType =
+        item.itemBatchConfig === 1 ? 'MRP'
+        : item.itemBatchConfig === 2 || item.itemIsBatchBased || item.itemIsExpiryItem ? 'BATCH'
+        : 'NONE';
+      return {
+        item_id: item.itemId,
+        item_name: item.itemNameEn,
+        item_code: item.itemCode,
+        item_default_barcode: item.itemDefaultBarcode,
+        item_base_unit_id: item.itemBaseUnitId,
+        item_batch_config: item.itemBatchConfig,
+        price_master_id: p?.ipmId ?? null,
+        unit_id: p?.ipmUnitId ?? item.itemBaseUnitId ?? null,
+        unit_name: p?.unit.unit_name ?? null,
+        base_unit_id: p?.ipmBaseUnitId ?? item.itemBaseUnitId ?? null,
+        godown_id: p?.ipmGodownId ?? null,
+        godown_name: p?.godown?.gdlName ?? null,
+        to_base_factor: toNumber(p?.ipmToBaseFactor ?? 0) || 1,
+        cost_price: toNumber(p?.ipmCostPrice ?? 0),
+        cost_wot: toNumber(p?.ipmCostWot ?? 0),
+        mrp: toNumber(p?.ipmMaxPrice ?? 0),
+        min_price: toNumber(p?.ipmMinPrice ?? 0),
+        sales_price_a: toNumber(p?.ipmSalesPriceA ?? 0),
+        sales_price_b: toNumber(p?.ipmSalesPriceB ?? 0),
+        sales_price_c: toNumber(p?.ipmSalesPriceC ?? 0),
+        sales_price_d: toNumber(p?.ipmSalesPriceD ?? 0),
+        price_a_wot: toNumber(p?.ipmPriceAWot ?? 0),
+        price_b_wot: toNumber(p?.ipmPriceBWot ?? 0),
+        price_c_wot: toNumber(p?.ipmPriceCWot ?? 0),
+        price_d_wot: toNumber(p?.ipmPriceDWot ?? 0),
+        price_a_markup: toNumber(p?.ipmPriceAMarkupPerc ?? 0),
+        price_b_markup: toNumber(p?.ipmPriceBMarkupPerc ?? 0),
+        price_c_markup: toNumber(p?.ipmPriceCMarkupPerc ?? 0),
+        price_d_markup: toNumber(p?.ipmPriceDMarkupPerc ?? 0),
+        profit_type: p?.ipmProfitType ?? null,
+        round_off: toNumber(p?.ipmRoundOff ?? 0),
+        tax_id: item.itemDefaultTaxId ?? null,
+        tax_name: tax?.taxName ?? null,
+        tax_perc: toNumber(tax?.taxGstRateTotal ?? 0),
+        cess_type: tax?.taxCessType ?? 'NONE',
+        cess_perc: toNumber(tax?.taxCessPerc ?? 0),
+        cess_per_unit: toNumber(tax?.taxCessUnit ?? 0),
+        tracking_type: trackingType,
+      };
+    });
   }
   async softDelete(itemId: string): Promise<{ item_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -291,79 +388,60 @@ export class ItemsMasterService {
     if (hasOwnProperty(saveItemDto, 'item_allow_sales_return')) {
       data.itemAllowSalesReturn = saveItemDto.item_allow_sales_return;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_purchase')) {
       data.itemAllowPurchase = saveItemDto.item_allow_purchase;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_po')) {
       data.itemAllowPo = saveItemDto.item_allow_po;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_so')) {
       data.itemAllowSo = saveItemDto.item_allow_so;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_neg_stock')) {
       data.itemAllowNegStock = saveItemDto.item_allow_neg_stock;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_negative_so')) {
       data.itemAllowNegativeSo = saveItemDto.item_allow_negative_so;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_price_list')) {
       data.itemPriceList = saveItemDto.item_price_list;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_weigh_scale')) {
       data.itemWeighScale = saveItemDto.item_weigh_scale;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_retail_item')) {
       data.itemRetailItem = saveItemDto.item_retail_item;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_is_kit')) {
       data.itemIsKit = saveItemDto.item_is_kit;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_auto_break')) {
       data.itemAutoBreak = saveItemDto.item_auto_break;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_auto_make')) {
       data.itemAutoMake = saveItemDto.item_auto_make;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_loyalty')) {
       data.itemAllowLoyalty = saveItemDto.item_allow_loyalty;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_promo')) {
       data.itemAllowPromo = saveItemDto.item_allow_promo;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_has_offer')) {
       data.itemHasOffer = saveItemDto.item_has_offer;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_damagable_product')) {
       data.itemDamagableProduct = saveItemDto.item_damagable_product;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_is_demand')) {
       data.itemIsDemand = saveItemDto.item_is_demand;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_loading')) {
       data.itemAllowLoading = saveItemDto.item_allow_loading;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_allow_freight')) {
       data.itemAllowFreight = saveItemDto.item_allow_freight;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_random_stock')) {
       data.itemRandomStock = saveItemDto.item_random_stock;
     }
@@ -385,7 +463,6 @@ export class ItemsMasterService {
     if (hasOwnProperty(saveItemDto, 'item_sort_order')) {
       data.itemSortOrder = saveItemDto.item_sort_order;
     }
-
     if (hasOwnProperty(saveItemDto, 'item_photo')) {
       data.itemPhoto = this.decodePhoto(saveItemDto.item_photo);
     }

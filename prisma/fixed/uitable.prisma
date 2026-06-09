@@ -9,6 +9,7 @@ model Uitable {
   uiTblCreatedBy    String?    @db.VarChar(100) @map("ui_tbl_created_by")
   uiTblModifiedOn   DateTime   @default(now()) @db.Timestamptz(6) @map("ui_tbl_modified_on")
   uiTblModifiedBy   String?    @db.VarChar(100) @map("ui_tbl_modified_by")
+  uiTblDeviceType    String?    @db.Text @map("ui_tbl_device_type")
   // ← Back-relation field
   uiTableColumns    UitableColumns[]
   @@schema("fixed")
