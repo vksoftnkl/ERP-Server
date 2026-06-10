@@ -2,12 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   FixedErrorFieldDto,
   FixedErrorResponseDto,
-  FixedListMetaDto,
 } from 'src/common/utils/module-response.dto';
 import { UiTableColumnPayloadDto } from './ui-table-column-response.dto';
 export { FixedErrorFieldDto as UiTableMasterErrorFieldDto };
 export { FixedErrorResponseDto as UiTableMasterErrorResponseDto };
-export { FixedListMetaDto as UiTableMasterListMetaDto };
 
 export class UiTableMasterPayloadDto {
   @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
@@ -80,9 +78,6 @@ export class UiTableMasterSuccessListDto {
 
   @ApiProperty({ type: UiTableMasterPayloadDto, isArray: true })
   data!: UiTableMasterPayloadDto[];
-
-  @ApiProperty({ type: FixedListMetaDto })
-  meta!: FixedListMetaDto;
 }
 
 export class UiTableMasterSuccessDeleteDto {
@@ -94,4 +89,20 @@ export class UiTableMasterSuccessDeleteDto {
 
   @ApiProperty({ type: UiTableMasterDeleteResultDto })
   data!: UiTableMasterDeleteResultDto;
+}
+
+export class UiTableColumnUpdateResultDto {
+  @ApiProperty({ example: 2 })
+  updated!: number;
+}
+
+export class UiTableMasterSuccessColumnUpdateDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Column widths updated successfully' })
+  message!: string;
+
+  @ApiProperty({ type: UiTableColumnUpdateResultDto })
+  data!: UiTableColumnUpdateResultDto;
 }

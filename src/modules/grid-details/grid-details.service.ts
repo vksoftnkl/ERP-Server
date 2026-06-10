@@ -1,18 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { GridColumn, GridDetails, Prisma } from '@prisma/client';
-import { ConfiguredGridListResult, ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { ListGridDetailQueryDto } from './dto/list-grid-detail-query.dto';
 import { SaveGridDetailDto } from './dto/save-grid-detail.dto';
 import { SaveGridColumnDto } from './dto/save-grid-column.dto';
+import { SaveColumnWidthDto } from './dto/save-column-width.dto';
+import { SaveFilterSettingsDto } from './dto/save-filter-settings.dto';
+import { SaveVisibilitySettingsDto } from './dto/save-visibility-settings.dto';
 import {
   GridColumnPayload,
   GridDetailErrorDetail,
   GridDetailErrorResponse,
   GridDetailListItem,
-  GridDetailListMeta,
   GridDetailPayload,
 } from './types/grid-detail-api.types';
 import {
@@ -23,7 +25,6 @@ import {
   throwFixedNotFound,
   toNullableNumber,
 } from 'src/common/utils/module-service.utils';
-import { resolvePagination, runConfiguredGridQuery, runFixedListQuery } from 'src/common/utils/module-list.utils';
 
 const GRID_DETAIL_TABLE_NAME = 'grid details';
 const GRID_DETAIL_AUDIT_SCREEN_NAME = 'Grid Details';
@@ -45,55 +46,113 @@ export class GridDetailsService {
       : this.createGridDetails(saveGridDetailDto);
   }
 
-  async list(
-    queryDto: ListGridDetailQueryDto,
-  ): Promise<ConfiguredGridListResult<GridDetailListItem, GridDetailListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const fixedGridId = queryDto.gridId ? BigInt(queryDto.gridId) : undefined;
-    const fixedGridSerialId = queryDto.grid_serial_id ? BigInt(queryDto.grid_serial_id) : undefined;
+  async list(queryDto: ListGridDetailQueryDto): Promise<{ items: GridDetailListItem[] }> {
+    const requestedGridId = queryDto.gridId ?? queryDto.grid_id;
+    const fixedGridId = requestedGridId ? BigInt(requestedGridId) : undefined;
+    const search = queryDto.search?.trim();
     const where: Prisma.GridDetailsWhereInput = {
       gridIsDeleted: false,
       ...(fixedGridId !== undefined ? { gridId: fixedGridId } : {}),
-      ...(queryDto.grid_status !== undefined ? { gridStatus: queryDto.grid_status } : {}),
-    };
-    const columnWhere: Prisma.GridColumnWhereInput = {
-      gridColumnIsDeleted: false,
-      ...(fixedGridSerialId !== undefined ? { gridSerialId: fixedGridSerialId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { gridName: { contains: search, mode: 'insensitive' } },
+              { gridDescription: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
     };
 
-    return runFixedListQuery<GridDetailsWithColumns, GridDetailListItem>(
-      { page, limit },
-      {
-        configuredGridFn: () =>
-          runConfiguredGridQuery<GridDetailListItem>(
-            this.configuredGridSqlService,
-            {
-              tableName: GRID_DETAIL_TABLE_NAME,
-              alias: 'grid_detail_grid',
-              search: queryDto.search,
-              page,
-              limit,
-              skip,
-              fixedGridId,
-            },
-          ),
-        countFn: () => this.prisma.gridDetails.count({ where }),
-        findManyFn: () =>
-          this.prisma.gridDetails.findMany({
-            where,
-            orderBy: [{ gridSortOrder: 'asc' }, { gridName: 'asc' }],
-            include: {
-              columns: {
-                where: columnWhere,
-                orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
-              },
-            },
-            skip,
-            take: limit,
-          }) as unknown as Promise<GridDetailsWithColumns[]>,
-        toItemFn: (record) => this.toPayload(record),
+    const records = await this.prisma.gridDetails.findMany({
+      where,
+      orderBy: [{ gridSortOrder: 'asc' }, { gridName: 'asc' }],
+      include: {
+        columns: {
+          where: { gridColumnIsDeleted: false },
+          orderBy: [{ gridColumnNumber: 'asc' }, { gridSerialId: 'asc' }],
+        },
       },
-    );
+    }) as unknown as GridDetailsWithColumns[];
+
+    return { items: records.map((record) => this.toPayload(record)) };
+  }
+
+  async updateColumnWidths(dto: SaveColumnWidthDto): Promise<{ updated: number }> {
+    let count = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of dto.columns) {
+        const serialId = BigInt(item.grid_serialid);
+        const existing = await tx.gridColumn.findFirst({
+          where: { gridSerialId: serialId, gridColumnIsDeleted: false },
+          select: { gridSerialId: true },
+        });
+        if (!existing) {
+          throwFixedNotFound<GridDetailErrorDetail, GridDetailErrorResponse>(
+            'Grid column not found',
+            'grid_serialid',
+            `No active grid column found with id ${item.grid_serialid}`,
+          );
+        }
+        await tx.gridColumn.update({
+          where: { gridSerialId: serialId },
+          data: { gridColumnWidth: item.grid_column_width },
+        });
+        count++;
+      }
+    });
+    return { updated: count };
+  }
+
+  async updateFilterSettings(dto: SaveFilterSettingsDto): Promise<{ updated: number }> {
+    let count = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of dto.columns) {
+        const serialId = BigInt(item.grid_serialid);
+        const existing = await tx.gridColumn.findFirst({
+          where: { gridSerialId: serialId, gridColumnIsDeleted: false },
+          select: { gridSerialId: true },
+        });
+        if (!existing) {
+          throwFixedNotFound<GridDetailErrorDetail, GridDetailErrorResponse>(
+            'Grid column not found',
+            'grid_serialid',
+            `No active grid column found with id ${item.grid_serialid}`,
+          );
+        }
+        await tx.gridColumn.update({
+          where: { gridSerialId: serialId },
+          data: { gridColumnFilter: item.grid_column_filter },
+        });
+        count++;
+      }
+    });
+    return { updated: count };
+  }
+
+  async updateVisibilitySettings(dto: SaveVisibilitySettingsDto): Promise<{ updated: number }> {
+    let count = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of dto.columns) {
+        const serialId = BigInt(item.grid_serialid);
+        const existing = await tx.gridColumn.findFirst({
+          where: { gridSerialId: serialId, gridColumnIsDeleted: false },
+          select: { gridSerialId: true },
+        });
+        if (!existing) {
+          throwFixedNotFound<GridDetailErrorDetail, GridDetailErrorResponse>(
+            'Grid column not found',
+            'grid_serialid',
+            `No active grid column found with id ${item.grid_serialid}`,
+          );
+        }
+        await tx.gridColumn.update({
+          where: { gridSerialId: serialId },
+          data: { gridColumnVisibility: item.grid_column_visibility },
+        });
+        count++;
+      }
+    });
+    return { updated: count };
   }
 
   async getById(gridId: string): Promise<GridDetailPayload> {
@@ -238,17 +297,19 @@ export class GridDetailsService {
 
       if (saveGridDetailDto.grid_columns !== undefined) {
         await this.saveColumnsInTx(saveGridDetailDto.grid_columns, parsedGridId, tx);
-        const keptIds = saveGridDetailDto.grid_columns
-          .filter((col) => !!col.grid_serialid)
-          .map((col) => BigInt(col.grid_serialid!));
-        await tx.gridColumn.updateMany({
-          where: {
-            gridId: parsedGridId,
-            gridColumnIsDeleted: false,
-            ...(keptIds.length > 0 ? { gridSerialId: { notIn: keptIds } } : {}),
-          },
-          data: { gridColumnIsDeleted: true },
-        });
+        if (saveGridDetailDto.replace_columns === true) {
+          const keptIds = saveGridDetailDto.grid_columns
+            .filter((col) => !!col.grid_serialid)
+            .map((col) => BigInt(col.grid_serialid!));
+          await tx.gridColumn.updateMany({
+            where: {
+              gridId: parsedGridId,
+              gridColumnIsDeleted: false,
+              ...(keptIds.length > 0 ? { gridSerialId: { notIn: keptIds } } : {}),
+            },
+            data: { gridColumnIsDeleted: true },
+          });
+        }
       }
 
       const full = await tx.gridDetails.findFirstOrThrow({

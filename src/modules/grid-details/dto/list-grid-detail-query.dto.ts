@@ -1,17 +1,16 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalNumberString, OptionalQueryBoolean } from '../../../common/dto/dtoDecorators';
-import { FixedListQueryBaseDto } from '../../../common/utils/module-list-query.base.dto';
+import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OptionalNumberString, OptionalTrimmedString } from '../../../common/dto/dtoDecorators';
 
-export class ListGridDetailQueryDto extends FixedListQueryBaseDto {
-  @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })
-  @OptionalQueryBoolean()
-  grid_status?: boolean;
-
+export class ListGridDetailQueryDto {
   @ApiPropertyOptional({ description: 'Grid id — selects a specific configured grid for display' })
   @OptionalNumberString()
   gridId?: string;
 
-  @ApiPropertyOptional({ description: 'Grid serial id — filters columns to a specific column row' })
+  @ApiHideProperty()
   @OptionalNumberString()
-  grid_serial_id?: string;
+  grid_id?: string;
+
+  @ApiPropertyOptional({ maxLength: 255, description: 'Search by grid name or description' })
+  @OptionalTrimmedString(255)
+  search?: string;
 }

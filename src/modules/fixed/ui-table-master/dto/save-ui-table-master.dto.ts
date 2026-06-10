@@ -44,4 +44,12 @@ export class SaveUiTableMasterDto {
   @ValidateNested({ each: true })
   @Type(() => SaveUiTableColumnDto)
   uiTblColumns?: SaveUiTableColumnDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'When true, columns not present in uiTblColumns are soft deleted (full replace). When false or omitted, provided columns are only created/updated.',
+    default: false,
+  })
+  @OptionalBoolean()
+  replaceColumns?: boolean;
 }

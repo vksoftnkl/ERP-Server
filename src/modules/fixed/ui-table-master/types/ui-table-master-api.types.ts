@@ -1,7 +1,6 @@
 export type { FixedErrorDetail as UiTableMasterErrorDetail } from 'src/common/types/module-api.types';
 export type { FixedErrorResponse as UiTableMasterErrorResponse } from 'src/common/types/module-api.types';
 export type { FixedSuccessResponse as UiTableMasterSuccessResponse } from 'src/common/types/module-api.types';
-export type { FixedListMeta as UiTableMasterListMeta } from 'src/common/types/module-list.types';
 
 export interface UiTableColumnPayload {
   uiTblClmId: string;

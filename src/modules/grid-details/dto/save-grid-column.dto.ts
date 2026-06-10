@@ -10,28 +10,28 @@ import {
 } from '../../../common/dto/dtoDecorators';
 
 export class SaveGridColumnDto {
-  @ApiPropertyOptional({ description: 'When provided, request updates grid column' })
+  @ApiPropertyOptional({ description: 'When provided, request updates grid column', type: String })
   @OptionalNumberString()
   grid_serialid?: string;
 
-  @ApiProperty({ minimum: 1 })
+  @ApiProperty({ minimum: 1, type: Number })
   @RequiredInteger(1)
   grid_column_number!: number;
 
-  @ApiProperty({ maxLength: 200 })
+  @ApiProperty({ maxLength: 200, type: String })
   @TrimmedString(200)
   @IsNotEmpty()
   grid_column_name!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, type: Number })
   @NullableNumber()
   grid_column_width?: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, type: Number })
   @NullableNumber()
   grid_column_position?: number | null;
 
-  @ApiPropertyOptional({ nullable: true, maxLength: 100 })
+  @ApiPropertyOptional({ nullable: true, maxLength: 100, type: String })
   @NullableString(100)
   grid_column_alignment?: string | null;
 
@@ -43,11 +43,11 @@ export class SaveGridColumnDto {
   @OptionalBoolean()
   grid_column_filter?: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, type: String })
   @NullableString()
   grid_column_condition?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, maxLength: 100 })
+  @ApiPropertyOptional({ nullable: true, maxLength: 100, type: String })
   @NullableString(100)
   grid_column_condition_color?: string | null;
 
@@ -59,19 +59,19 @@ export class SaveGridColumnDto {
   @OptionalBoolean()
   grid_column_total?: boolean;
 
-  @ApiPropertyOptional({ nullable: true, maxLength: 100 })
+  @ApiPropertyOptional({ nullable: true, maxLength: 100, type: String })
   @NullableString(100)
   grid_column_data_type?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, maxLength: 100 })
+  @ApiPropertyOptional({ nullable: true, maxLength: 100, type: String })
   @NullableString(100)
   grid_column_color?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, maxLength: 1000 })
+  @ApiPropertyOptional({ nullable: true, maxLength: 1000, type: String })
   @NullableString(1000)
   grid_column_notes?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, type: String })
   @NullableString()
   grid_column_sql_field_name?: string | null;
 }

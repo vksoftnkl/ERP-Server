@@ -1,5 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import { Body, Controller, Delete, Get, Post, Query, UseFilters, Version } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Post, Put, Query, UseFilters, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -15,8 +15,11 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { ListUiTableMasterQueryDto } from './dto/list-ui-table-master-query.dto';
 import { SaveUiTableMasterDto } from './dto/save-ui-table-master.dto';
+import { SaveUiTableColumnWidthDto } from './dto/save-ui-table-column-width.dto';
+import { SaveUiTableVisibilitySettingsDto } from './dto/save-ui-table-visibility-settings.dto';
 import {
   UiTableMasterErrorResponseDto,
+  UiTableMasterSuccessColumnUpdateDto,
   UiTableMasterSuccessDeleteDto,
   UiTableMasterSuccessListDto,
   UiTableMasterSuccessSingleDto,
@@ -25,7 +28,6 @@ import { UiTableMasterExceptionFilter } from './ui-table-master-exception.filter
 import { UiTableMasterService } from './ui-table-master.service';
 import {
   UiTableMasterListItem,
-  UiTableMasterListMeta,
   UiTableMasterPayload,
   UiTableMasterSuccessResponse,
 } from './types/ui-table-master-api.types';
@@ -59,18 +61,57 @@ export class UiTableMasterController {
   }
   @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'List UI tables with filter/search/pagination' })
+  @ApiOperation({ summary: 'List UI tables with filters' })
   @ApiOkResponse({ type: UiTableMasterSuccessListDto })
   @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
   async list(
     @Query() queryDto: ListUiTableMasterQueryDto,
-  ): Promise<UiTableMasterSuccessResponse<UiTableMasterListItem[], UiTableMasterListMeta>> {
+  ): Promise<UiTableMasterSuccessResponse<UiTableMasterListItem[]>> {
     const result = await this.uiTableMasterService.list(queryDto);
     return {
       success: true,
       message: 'UI tables fetched successfully',
       data: result.items,
-      meta: result.meta,
     };
+  }
+
+  @Put('column-width')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Update column width for one or more UI table columns' })
+  @ApiOkResponse({ type: UiTableMasterSuccessColumnUpdateDto })
+  @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: UiTableMasterErrorResponseDto })
+  async updateColumnWidths(
+    @Body() dto: SaveUiTableColumnWidthDto,
+  ): Promise<UiTableMasterSuccessResponse<{ updated: number }>> {
+    const data = await this.uiTableMasterService.updateColumnWidths(dto);
+    return { success: true, message: 'Column widths updated successfully', data };
+  }
+
+  @Put('visibility-settings')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Update visibility setting for one or more UI table columns' })
+  @ApiOkResponse({ type: UiTableMasterSuccessColumnUpdateDto })
+  @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: UiTableMasterErrorResponseDto })
+  async updateVisibilitySettings(
+    @Body() dto: SaveUiTableVisibilitySettingsDto,
+  ): Promise<UiTableMasterSuccessResponse<{ updated: number }>> {
+    const data = await this.uiTableMasterService.updateVisibilitySettings(dto);
+    return { success: true, message: 'Visibility settings updated successfully', data };
+  }
+
+  @Delete('delete')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Soft delete UI table by id' })
+  @ApiQuery({ name: 'uiTblId', description: 'Numeric UI table id' })
+  @ApiOkResponse({ type: UiTableMasterSuccessDeleteDto })
+  @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: UiTableMasterErrorResponseDto })
+  async remove(
+    @Query('uiTblId') uiTblId?: string,
+  ): Promise<UiTableMasterSuccessResponse<{ uiTblId: string; deleted: true }>> {
+    const data = await this.uiTableMasterService.softDelete(uiTblId ?? '');
+    return { success: true, message: 'UI table deleted successfully', data };
   }
 }

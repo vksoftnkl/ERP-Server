@@ -1,7 +1,6 @@
 export type { FixedErrorDetail as GridDetailErrorDetail } from 'src/common/types/module-api.types';
 export type { FixedErrorResponse as GridDetailErrorResponse } from 'src/common/types/module-api.types';
 export type { FixedSuccessResponse as GridDetailSuccessResponse } from 'src/common/types/module-api.types';
-export type { FixedListMeta as GridDetailListMeta } from 'src/common/types/module-list.types';
 
 export interface GridColumnPayload {
   grid_serialid: string;

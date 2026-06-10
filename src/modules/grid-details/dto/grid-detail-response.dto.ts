@@ -2,13 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   FixedErrorFieldDto,
   FixedErrorResponseDto,
-  FixedListMetaDto,
 } from '../../../common/utils/module-response.dto';
 
 export {
   FixedErrorFieldDto as GridDetailErrorFieldDto,
   FixedErrorResponseDto as GridDetailErrorResponseDto,
-  FixedListMetaDto as GridDetailListMetaDto,
 };
 
 export class GridColumnPayloadDto {
@@ -127,9 +125,6 @@ export class GridDetailSuccessListDto {
 
   @ApiProperty({ type: GridDetailPayloadDto, isArray: true })
   data!: GridDetailPayloadDto[];
-
-  @ApiProperty({ type: FixedListMetaDto })
-  meta!: FixedListMetaDto;
 }
 
 export class GridDetailSuccessDeleteDto {
@@ -141,4 +136,20 @@ export class GridDetailSuccessDeleteDto {
 
   @ApiProperty({ type: GridDetailDeleteResultDto })
   data!: GridDetailDeleteResultDto;
+}
+
+export class GridDetailColumnUpdateResultDto {
+  @ApiProperty({ example: 2 })
+  updated!: number;
+}
+
+export class GridDetailSuccessColumnUpdateDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty()
+  message!: string;
+
+  @ApiProperty({ type: GridDetailColumnUpdateResultDto })
+  data!: GridDetailColumnUpdateResultDto;
 }
