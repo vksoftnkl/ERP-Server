@@ -27,6 +27,7 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 
 const UI_TABLE_MASTER_TABLE_NAME = 'ui tables';
+const UI_TABLE_COLUMN_TABLE_NAME = 'ui table columns';
 const UI_TABLE_MASTER_AUDIT_SCREEN_NAME = 'UI Table Master';
 const UI_TABLE_MASTER_OPTIONAL_FIELDS = ['uiTblEditable', 'uiTblIsActive', 'uiTblDeviceType'];
 
@@ -226,6 +227,55 @@ export class UiTableMasterService {
     });
   }
 
+  async softDeleteColumn(uiTblClmId: string): Promise<{ uiTblClmId: string; deleted: true }> {
+    const parsedColumnId = this.parseBigIntId('uiTblClmId', uiTblClmId);
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.uitableColumns.findFirst({
+        where: { uiTblClmId: parsedColumnId, uiTblClmIsDeleted: false },
+      });
+      if (!existing) {
+        throwFixedNotFound<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
+          'UI table column not found',
+          'uiTblClmId',
+          `No active UI table column found with id ${uiTblClmId}`,
+        );
+      }
+      const modifiedOn = new Date();
+      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      await tx.uitableColumns.update({
+        where: { uiTblClmId: parsedColumnId },
+        data: {
+          uiTblClmIsDeleted: true,
+          uiTblClmIsActive: false,
+          uiTblClmModifiedOn: modifiedOn,
+          uiTblClmModifiedBy: actor,
+        },
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: UI_TABLE_COLUMN_TABLE_NAME,
+          screenName: UI_TABLE_MASTER_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: uiTblClmId,
+          displayName: existing.uiTblClmName?.trim() || `UI table column ${uiTblClmId}`,
+          originalRecord: this.toColumnPayload(existing),
+          modifiedRecord: this.toColumnPayload({
+            ...existing,
+            uiTblClmIsDeleted: true,
+            uiTblClmIsActive: false,
+            uiTblClmModifiedOn: modifiedOn,
+            uiTblClmModifiedBy: actor,
+          }),
+          userId: actor,
+          notes: 'UI table column soft deleted',
+        },
+        tx,
+      );
+      return { uiTblClmId, deleted: true };
+    });
+  }
+
   private async createUiTable(
     saveUiTableMasterDto: SaveUiTableMasterDto,
   ): Promise<UiTableMasterPayload> {
@@ -312,11 +362,15 @@ export class UiTableMasterService {
         applyPresentFields(data, saveUiTableMasterDto, UI_TABLE_MASTER_OPTIONAL_FIELDS);
         await tx.uitable.update({ where: { uiTblId: parsedUiTableId }, data });
         if (saveUiTableMasterDto.uiTblColumns !== undefined) {
-          await this.saveColumnsInTx(saveUiTableMasterDto.uiTblColumns, parsedUiTableId, actor, tx);
+          // keptIds must include columns created in this request (they have no
+          // uiTblClmId in the DTO), otherwise the replace step wipes them too.
+          const keptIds = await this.saveColumnsInTx(
+            saveUiTableMasterDto.uiTblColumns,
+            parsedUiTableId,
+            actor,
+            tx,
+          );
           if (saveUiTableMasterDto.replaceColumns === true) {
-            const keptIds = saveUiTableMasterDto.uiTblColumns
-              .filter((col) => !!col.uiTblClmId)
-              .map((col) => BigInt(col.uiTblClmId!));
             await tx.uitableColumns.updateMany({
               where: {
                 uiTblClmTableId: parsedUiTableId,
@@ -374,10 +428,12 @@ export class UiTableMasterService {
     tableId: bigint,
     actor: string,
     tx: FixedWriteClient,
-  ): Promise<void> {
+  ): Promise<bigint[]> {
+    const savedIds: bigint[] = [];
     for (const colDto of columns) {
-      await this.upsertColumnInTx(colDto, tableId, actor, tx);
+      savedIds.push(await this.upsertColumnInTx(colDto, tableId, actor, tx));
     }
+    return savedIds;
   }
 
   private async upsertColumnInTx(
@@ -385,7 +441,7 @@ export class UiTableMasterService {
     tableId: bigint,
     actor: string,
     tx: FixedWriteClient,
-  ): Promise<void> {
+  ): Promise<bigint> {
     const normalizedName = colDto.uiTblClmName?.trim();
     if (!normalizedName) {
       throwFixedBadRequest<UiTableMasterErrorDetail, UiTableMasterErrorResponse>(
@@ -408,6 +464,7 @@ export class UiTableMasterService {
       }
       applyPresentFields(colData, colDto, UI_TABLE_COLUMN_OPTIONAL_FIELDS);
       await tx.uitableColumns.update({ where: { uiTblClmId: parsedId }, data: colData });
+      return parsedId;
     } else {
       const colData: Prisma.UitableColumnsUncheckedCreateInput = {
         uiTblClmName: normalizedName,
@@ -419,7 +476,8 @@ export class UiTableMasterService {
         colData.uiTblClmNo = BigInt(colDto.uiTblClmNo);
       }
       applyPresentFields(colData, colDto, UI_TABLE_COLUMN_OPTIONAL_FIELDS);
-      await tx.uitableColumns.create({ data: colData });
+      const created = await tx.uitableColumns.create({ data: colData });
+      return created.uiTblClmId;
     }
   }
 

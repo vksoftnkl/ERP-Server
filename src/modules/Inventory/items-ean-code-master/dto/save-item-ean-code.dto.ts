@@ -1,9 +1,10 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
   NullableUuid,
+  OptionalQueryBoolean,
   OptionalUuid,
   toTrimmedString,
 } from 'src/common/dto/dtoDecorators';
@@ -42,13 +43,11 @@ export class SaveItemEanCodeDto {
   ean_godown_id?: string | null;
 
   @ApiPropertyOptional({ default: false })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalQueryBoolean()
   ean_is_default?: boolean;
 
   @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @IsBoolean()
+  @OptionalQueryBoolean()
   ean_is_active?: boolean;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })

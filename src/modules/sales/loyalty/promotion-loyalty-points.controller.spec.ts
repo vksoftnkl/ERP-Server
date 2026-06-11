@@ -2,9 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DeleteLoyaltyGiftQueryDto } from './dto/delete-loyalty-gift-query.dto';
 import { DeleteLoyaltyPointQueryDto } from './dto/delete-loyalty-point-query.dto';
 import { DeleteLoyaltySchemeQueryDto } from './dto/delete-loyalty-scheme-query.dto';
-import { ListLoyaltyGiftQueryDto } from './dto/list-loyalty-gift-query.dto';
-import { ListLoyaltyPointQueryDto } from './dto/list-loyalty-point-query.dto';
-import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
 import { LoyaltyGiftIdQueryDto } from './dto/loyalty-gift-id-query.dto';
 import { LoyaltyPointIdQueryDto } from './dto/loyalty-point-id-query.dto';
 import { LoyaltySchemeIdQueryDto } from './dto/loyalty-scheme-id-query.dto';
@@ -69,12 +66,6 @@ const schemePayload = {
   gifts: [],
 };
 
-const schemeSummaryPayload = {
-  ...schemePayload,
-  points: undefined,
-  gifts: undefined,
-};
-
 const pointPayload = {
   lspt_id: POINT_ID,
   lspt_ls_id: SCHEME_ID,
@@ -119,15 +110,12 @@ describe('PromotionLoyaltyPointsController', () => {
 
   const serviceMock = {
     saveScheme: jest.fn(),
-    listSchemes: jest.fn(),
     getSchemeById: jest.fn(),
     softDeleteScheme: jest.fn(),
     savePoint: jest.fn(),
-    listPoints: jest.fn(),
     getPointById: jest.fn(),
     softDeletePoint: jest.fn(),
     saveGift: jest.fn(),
-    listGifts: jest.fn(),
     getGiftById: jest.fn(),
     softDeleteGift: jest.fn(),
   };
@@ -162,32 +150,6 @@ describe('PromotionLoyaltyPointsController', () => {
       success: true,
       message: 'Loyalty scheme created successfully',
       data: schemePayload,
-    });
-  });
-
-  it('wraps scheme list response', async () => {
-    serviceMock.listSchemes.mockResolvedValue({
-      items: [schemeSummaryPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListLoyaltySchemeQueryDto = { page: 1, limit: 20 };
-
-    await expect(controller.listSchemes(query)).resolves.toEqual({
-      success: true,
-      message: 'Loyalty schemes fetched successfully',
-      data: [schemeSummaryPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
     });
   });
 
@@ -231,32 +193,6 @@ describe('PromotionLoyaltyPointsController', () => {
     });
   });
 
-  it('wraps point list response', async () => {
-    serviceMock.listPoints.mockResolvedValue({
-      items: [pointPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
-    const query: ListLoyaltyPointQueryDto = { lspt_ls_id: SCHEME_ID, page: 1, limit: 20 };
-
-    await expect(controller.listPoints(query)).resolves.toEqual({
-      success: true,
-      message: 'Loyalty points fetched successfully',
-      data: [pointPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-  });
-
   it('wraps point get and delete responses', async () => {
     serviceMock.getPointById.mockResolvedValue(pointPayload);
     serviceMock.softDeletePoint.mockResolvedValue({ lspt_id: POINT_ID, deleted: true });
@@ -280,18 +216,8 @@ describe('PromotionLoyaltyPointsController', () => {
     });
   });
 
-  it('wraps gift create and list responses', async () => {
+  it('wraps gift create response', async () => {
     serviceMock.saveGift.mockResolvedValue(giftPayload);
-    serviceMock.listGifts.mockResolvedValue({
-      items: [giftPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
-    });
-
     const payload: SaveLoyaltyGiftDto = {
       lsg_ls_id: SCHEME_ID,
       lsg_item_id: ITEM_ID,
@@ -299,24 +225,10 @@ describe('PromotionLoyaltyPointsController', () => {
       lsg_item_qty: 1,
       lsg_redeem_points: 100,
     };
-    const query: ListLoyaltyGiftQueryDto = { lsg_ls_id: SCHEME_ID, page: 1, limit: 20 };
-
     await expect(controller.saveGift(payload)).resolves.toEqual({
       success: true,
       message: 'Loyalty gift created successfully',
       data: giftPayload,
-    });
-
-    await expect(controller.listGifts(query)).resolves.toEqual({
-      success: true,
-      message: 'Loyalty gifts fetched successfully',
-      data: [giftPayload],
-      meta: {
-        page: 1,
-        limit: 20,
-        total: 1,
-        total_pages: 1,
-      },
     });
   });
 

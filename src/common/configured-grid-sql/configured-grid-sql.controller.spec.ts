@@ -18,6 +18,7 @@ describe('ConfiguredGridSqlController', () => {
   it('fetches grid columns using only grid id', async () => {
     const columns = [
       {
+        grid_column_serial_id: '10',
         grid_column_number: 1,
         grid_column_name: 'unit_name',
         grid_column_width: 180,

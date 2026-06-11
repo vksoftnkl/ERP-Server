@@ -3,7 +3,6 @@ import { LoyaltyScheme, LoyaltySchemeGift, LoyaltySchemePoint, Prisma } from '@p
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
 import { SaveLoyaltyGiftDto } from './dto/save-loyalty-gift.dto';
 import { SaveLoyaltyPointDto } from './dto/save-loyalty-point.dto';
 import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
@@ -276,22 +275,6 @@ describe('PromotionLoyaltyPointsService', () => {
     };
 
     await expect(service.saveScheme(input)).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('lists schemes with decimal fields mapped to numbers', async () => {
-    prisma.loyaltyScheme.count.mockResolvedValueOnce(1);
-    prisma.loyaltyScheme.findMany.mockResolvedValueOnce([makeSchemeWithChildren()]);
-
-    const query: ListLoyaltySchemeQueryDto = {
-      page: 1,
-      limit: 20,
-    };
-
-    const result = await service.listSchemes(query);
-
-    expect(result.meta.total).toBe(1);
-    expect(result.items[0].ls_redeem_value_per_point).toBe(1.5);
-    expect(result.items[0].ls_min_redeem_points).toBe(100);
   });
 
   it('returns a scheme with nested active points and gifts', async () => {

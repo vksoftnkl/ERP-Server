@@ -1907,7 +1907,7 @@ model DeviceMaster {
 
 // ----- prisma/fixed/gridColumns.prisma -----
 model GridColumn {
-  gridSerialId              BigInt   @id @default(autoincrement()) @map("grid_serialid")
+  gridSerialId              String    @id @default(dbgenerated("uuidv7()")) @map("grid_serial_id")         @db.Uuid
   gridId                    BigInt   @map("grid_id")
   grid                      GridDetails @relation(fields: [gridId], references: [gridId], onDelete: Cascade, onUpdate: Cascade)
   gridColumnNumber          Int      @map("grid_column_number")
@@ -1924,8 +1924,8 @@ model GridColumn {
   gridColumnColor           String?  @db.Text @map("grid_column_color")
   gridColumnNotes           String?  @db.Text @map("grid_column_notes")
   gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
-  gridColumnPosition        Decimal? @db.Decimal(12, 2) @map("gridColumn_position")
-  gridColumnSqlFieldName    String?  @db.Text@map("gridColumn_sql_field_name")
+  gridColumnPosition        Decimal? @db.Decimal(12, 2) @map("grid_column_position")
+  gridColumnSqlFieldName    String?  @db.Text@map("grid_column_sql_field_name")
   @@map("grid_columns")
   @@schema("fixed")
   @@index([gridId], map: "idx_grid_columns_grid_id")

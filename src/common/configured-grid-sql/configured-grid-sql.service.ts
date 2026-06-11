@@ -196,7 +196,7 @@ export class ConfiguredGridSqlService {
       this.prisma.$queryRawUnsafe<TItem[]>(rowsSql, ...params, options.limit, options.skip),
     ]);
     return {
-      items: rows,
+      items: this.serializeRawQueryValue(rows) as TItem[],
       total: this.parseCountValue(countResult[0]?.total),
     };
   }
@@ -212,6 +212,7 @@ export class ConfiguredGridSqlService {
       },
       orderBy: { gridColumnNumber: 'asc' },
       select: {
+        gridSerialId: true,
         gridColumnNumber: true,
         gridColumnName: true,
         gridColumnWidth: true,
@@ -230,6 +231,7 @@ export class ConfiguredGridSqlService {
       },
     });
     return columns.map((col) => ({
+      grid_column_serial_id: col.gridSerialId.toString(),
       grid_column_number: col.gridColumnNumber,
       grid_column_name: col.gridColumnName,
       grid_column_width: col.gridColumnWidth !== null ? Number(col.gridColumnWidth) : null,
@@ -405,6 +407,30 @@ export class ConfiguredGridSqlService {
       return Number.isFinite(parsed) ? parsed : 0;
     }
     return 0;
+  }
+  private serializeRawQueryValue(value: unknown): unknown {
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => this.serializeRawQueryValue(item));
+    }
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    if (value instanceof Date) {
+      return value;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return value;
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        this.serializeRawQueryValue(item),
+      ]),
+    );
   }
   private prepareBaseSql(sql: string): string {
     return sql.trim().replace(/;+\s*$/g, '');

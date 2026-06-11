@@ -16,6 +16,7 @@ import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListGridDetailQueryDto } from './dto/list-grid-detail-query.dto';
 import {
   GridDetailErrorResponseDto,
+  GridDetailSuccessColumnDeleteDto,
   GridDetailSuccessColumnUpdateDto,
   GridDetailSuccessDeleteDto,
   GridDetailSuccessListDto,
@@ -45,7 +46,7 @@ const gridDetailsCreateExample = {
   grid_device_type: 'desktop',
   grid_columns: [
     {
-      grid_serialid: '1',
+      grid_serialid: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001',
       grid_column_number: 1,
       grid_column_name: 'Item Name',
       grid_column_width: 180,
@@ -157,6 +158,20 @@ export class GridDetailsController {
   ): Promise<GridDetailSuccessResponse<{ updated: number }>> {
     const data = await this.gridDetailsService.updateVisibilitySettings(dto);
     return { success: true, message: 'Visibility settings updated successfully', data };
+  }
+
+  @Delete('column-delete')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Soft delete a grid column by id' })
+  @ApiQuery({ name: 'grid_serialid', description: 'UUID grid column id' })
+  @ApiOkResponse({ type: GridDetailSuccessColumnDeleteDto })
+  @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
+  @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
+  async removeColumn(
+    @Query('grid_serialid') gridSerialId?: string,
+  ): Promise<GridDetailSuccessResponse<{ grid_serialid: string; deleted: true }>> {
+    const data = await this.gridDetailsService.softDeleteColumn(gridSerialId ?? '');
+    return { success: true, message: 'Grid column deleted successfully', data };
   }
 
   @Delete('delete')

@@ -4,6 +4,7 @@ export type MasterLookupSuccessResponse<TData> = ModuleApiSuccessResponse<TData,
 export interface NameIdOption {
   id: string;
   name: string;
+  [key: string]: unknown;
 }
 export interface AccountsLookupPayload {
   companies: NameIdOption[];

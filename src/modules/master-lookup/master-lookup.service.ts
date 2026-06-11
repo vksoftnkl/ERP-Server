@@ -4,6 +4,7 @@ import {
   ACCOUNT_LOOKUP_MODULE_KEYS,
   AccountsLookupModuleKey,
   LookupModuleKey,
+  LOOKUP_MODULE_ALIASES,
   LOOKUP_MODULE_KEYS,
   MasterLookupDataPayload,
   NameIdOption,
@@ -749,7 +750,11 @@ export class MasterLookupService {
     module: LookupModuleKey,
     records: DropdownRecord[],
   ): DropdownRecord | undefined {
-    const aliases = new Set<string>([module, ...MODULE_DROPDOWN_NAME_ALIASES[module]]);
+    const aliases = new Set<string>([
+      module,
+      ...MODULE_DROPDOWN_NAME_ALIASES[module],
+      ...LOOKUP_MODULE_ALIASES[module],
+    ]);
     const exactMatch = records.find((r) => aliases.has(r.dropdownName.trim()));
     if (exactMatch) return exactMatch;
     const normalizedAliases = Array.from(aliases).map((a) => this.normalizeLookupToken(a));
@@ -831,7 +836,33 @@ export class MasterLookupService {
       this.resolveLikelyNameKey(rowKeys, idKey, false) ??
       this.resolveLikelyNameKey(configuredKeys, idKey, false);
     const nameValue = nameKey ? this.readLookupRowValue(row, nameKey) : undefined;
-    return this.toOption(idValue, nameValue, { fallbackNameToId: false });
+    const option = this.toOption(idValue, nameValue, { fallbackNameToId: false });
+    return {
+      ...this.serializeLookupRow(row),
+      ...option,
+    };
+  }
+  private serializeLookupRow(row: LookupRow): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(row).map(([key, value]) => [key, this.serializeLookupValue(value)]),
+    );
+  }
+  private serializeLookupValue(value: unknown): unknown {
+    if (typeof value === 'bigint') return value.toString();
+    if (value instanceof Date) return value.toISOString();
+    if (Array.isArray(value)) return value.map((item) => this.serializeLookupValue(item));
+    if (value && typeof value === 'object') {
+      const prototype = Object.getPrototypeOf(value);
+      if (prototype === Object.prototype || prototype === null) {
+        return Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+            key,
+            this.serializeLookupValue(nested),
+          ]),
+        );
+      }
+    }
+    return value;
   }
   private matchesConfiguredSearch(
     item: { row: LookupRow; option: NameIdOption },

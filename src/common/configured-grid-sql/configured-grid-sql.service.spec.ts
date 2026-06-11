@@ -320,15 +320,56 @@ ORDER BY unit_name`,
     expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
   });
 
+  it('serializes bigint raw query row values before returning', async () => {
+    const createdAt = new Date('2026-06-11T00:00:00.000Z');
+    prisma.$queryRawUnsafe
+      .mockResolvedValueOnce([{ total: 1n }])
+      .mockResolvedValueOnce([
+        {
+          id: 34n,
+          name: 'Grid row',
+          nested: { version: 2n },
+          values: [3n, { child_id: 4n }],
+          createdAt,
+        },
+      ]);
+
+    const result = await service.runPagedQuery<Record<string, unknown>>({
+      baseSql: 'SELECT * FROM units',
+      alias: 'unit_grid',
+      params: [],
+      limit: 20,
+      skip: 0,
+    });
+
+    expect(result).toEqual({
+      items: [
+        {
+          id: '34',
+          name: 'Grid row',
+          nested: { version: '2' },
+          values: ['3', { child_id: '4' }],
+          createdAt,
+        },
+      ],
+      total: 1,
+    });
+    expect(() => JSON.stringify(result)).not.toThrow();
+  });
+
   it('maps filter-enabled grid columns to configured sql output fields', async () => {
     prisma.gridColumn.findMany.mockResolvedValue([
       {
+        gridSerialId: 101n,
         gridColumnName: 'Customer name',
         gridColumnNumber: 1,
+        gridColumnFilter: true,
       },
       {
+        gridSerialId: 102n,
         gridColumnName: 'Mobile',
         gridColumnNumber: 4,
+        gridColumnFilter: true,
       },
     ]);
 
@@ -342,7 +383,58 @@ ORDER BY unit_name`,
       expect.objectContaining({
         where: expect.objectContaining({
           gridId: 10n,
-          gridColumnFilter: true,
+          gridColumnIsDeleted: false,
+        }),
+      }),
+    );
+  });
+
+  it('loads grid columns with serial ids', async () => {
+    prisma.gridColumn.findMany.mockResolvedValue([
+      {
+        gridSerialId: 91n,
+        gridColumnNumber: 1,
+        gridColumnName: 'Item name',
+        gridColumnWidth: 180,
+        gridColumnPosition: 1,
+        gridColumnAlignment: 'left',
+        gridColumnVisibility: true,
+        gridColumnFilter: true,
+        gridColumnCondition: null,
+        gridColumnConditionColor: null,
+        gridColumnGroup: false,
+        gridColumnTotal: false,
+        gridColumnDataType: 'text',
+        gridColumnColor: null,
+        gridColumnNotes: null,
+        gridColumnSqlFieldName: 'item_name',
+      },
+    ]);
+
+    await expect(service.loadGridColumns(1n)).resolves.toEqual([
+      {
+        grid_column_serial_id: '91',
+        grid_column_number: 1,
+        grid_column_name: 'Item name',
+        grid_column_width: 180,
+        grid_column_position: 1,
+        grid_column_alignment: 'left',
+        grid_column_visibility: true,
+        grid_column_filter: true,
+        grid_column_condition: null,
+        grid_column_condition_color: null,
+        grid_column_group: false,
+        grid_column_total: false,
+        grid_column_data_type: 'text',
+        grid_column_color: null,
+        grid_column_notes: null,
+        grid_column_sql_field_name: 'item_name',
+      },
+    ]);
+    expect(prisma.gridColumn.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          gridSerialId: true,
         }),
       }),
     );
@@ -366,8 +458,10 @@ ORDER BY unit_name`,
     prisma.gridColumn.findMany
       .mockResolvedValueOnce([
         {
+          gridSerialId: 201n,
           gridColumnName: 'Customer name',
           gridColumnNumber: 1,
+          gridColumnFilter: true,
         },
       ])
       .mockResolvedValueOnce([]);
@@ -391,7 +485,6 @@ ORDER BY unit_name`,
     expect(result).toEqual({
       items: [{ cus_name: 'SUN ELECTRONICS G' }],
       total: 1,
-      styles: [],
     });
     expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
       1,

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { SaveItemEanCodeDto } from '../../modules/items-ean-code-master/dto/save-item-ean-code.dto';
+import { SaveItemEanCodeDto } from '../../modules/Inventory/items-ean-code-master/dto/save-item-ean-code.dto';
 import {
   hasRequestPayload,
   validateDto,

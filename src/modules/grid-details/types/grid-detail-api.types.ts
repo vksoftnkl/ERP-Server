@@ -3,7 +3,7 @@ export type { FixedErrorResponse as GridDetailErrorResponse } from 'src/common/t
 export type { FixedSuccessResponse as GridDetailSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface GridColumnPayload {
-  grid_serialid: string;
+  grid_serial_id: string;
   grid_id: string;
   grid_column_number: number;
   grid_column_name: string;

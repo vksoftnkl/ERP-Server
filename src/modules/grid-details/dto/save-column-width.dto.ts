@@ -1,13 +1,11 @@
-import { IsArray, IsNotEmpty, IsNumberString, ValidateNested } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { NullableNumber } from '../../../common/dto/dtoDecorators';
+import { NullableNumber, RequiredUuid } from '../../../common/dto/dtoDecorators';
 
 export class ColumnWidthItemDto {
   @ApiProperty({ type: String, description: 'Column serial id to update' })
-  @Transform(({ value }) => (value != null ? String(value).trim() : value))
-  @IsNotEmpty()
-  @IsNumberString({ no_symbols: true })
+  @RequiredUuid()
   grid_serialid!: string;
 
   @ApiProperty({ nullable: true, type: Number })

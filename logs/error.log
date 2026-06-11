@@ -569,3 +569,223 @@ Inconsistent column data: Error creating UUID, invalid character: expected an op
 2026-06-03T06:15:38.978Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-06-03T06:17:11.918Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-06-03T07:28:07.177Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-06-11T05:09:38.323Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=22
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:09:38.323Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=22|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:10:35.975Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=22
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:10:35.976Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=22|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:15:42.865Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=20&sort_dir=asc
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:15:42.866Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=20|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:16:13.582Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=20&sort_dir=asc
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:16:13.583Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=20|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:16:22.246Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=20
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:16:22.246Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=20|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:16:50.436Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=20
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:16:50.436Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=20|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:17:05.998Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=20
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:17:05.999Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=20|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:18:19.275Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=20
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:18:19.275Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=20|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:20:40.800Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=20
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:20:40.800Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=20|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-11T05:24:17.973Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=34&page=1&limit=20
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at stringify (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:1160:12)
+    at ServerResponse.json (/home/vk/Dev/erp/ERP server/node_modules/express/lib/response.js:271:14)
+    at ExpressAdapter.reply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/platform-express/adapters/express-adapter.js:62:62)
+    at RouterResponseController.apply (/home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-response-controller.js:15:36)
+    at /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:176:48
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-execution-context.js:47:13
+    at async /home/vk/Dev/erp/ERP server/node_modules/@nestjs/core/router/router-proxy.js:9:17
+2026-06-11T05:24:17.974Z ERROR [CacheInterceptor] An error has occurred when inserting "key: /api/v1/configured-grid-sql/run|grid_id=34|page=1|limit=20|search=|grid_param=", "value: [object Object]"
+TypeError: Do not know how to serialize a BigInt
+    at JSON.stringify (<anonymous>)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:66:15)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:58:14)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at _serialize (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:60:41)
+    at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
+    at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
+    at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)

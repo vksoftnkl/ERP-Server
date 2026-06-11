@@ -1,12 +1,11 @@
-import { IsArray, IsBoolean, IsNotEmpty, IsNumberString, ValidateNested } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { IsArray, IsBoolean, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { RequiredUuid } from "../../../common/dto/dtoDecorators";
 
 export class FilterSettingItemDto {
   @ApiProperty({ type: String, description: 'Column serial id to update' })
-  @Transform(({ value }) => (value != null ? String(value).trim() : value))
-  @IsNotEmpty()
-  @IsNumberString({ no_symbols: true })
+  @RequiredUuid()
   grid_serialid!: string;
 
   @ApiProperty({ type: Boolean })

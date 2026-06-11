@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
@@ -9,6 +9,7 @@ import {
   OptionalNumber,
   OptionalTrimmedString,
   OptionalUuid,
+  UUID_PATTERN,
   toNullableString,
   toNullableUuid,
   toOptionalBoolean,
@@ -24,17 +25,17 @@ export class SaveGodownDto {
   })
   @IsOptional()
   @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['gdl_location_id'])))
-  @IsUUID('all')
+  @Matches(UUID_PATTERN)
   gdl_id?: string;
   @ApiPropertyOptional({ format: 'uuid', description: 'Required for updateional for update' })
   @IsOptional()
   @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['godown_id'])))
-  @IsUUID('all')
+  @Matches(UUID_PATTERN)
   gdl_godown_id?: string;
   @ApiPropertyOptional({ format: 'uuid', description: 'Required for create, optional for update' })
   @IsOptional()
   @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['branch_id'])))
-  @IsUUID('all')
+  @Matches(UUID_PATTERN)
   gdl_branch_id?: string;
   @ApiPropertyOptional({ description: 'Required for create, optional for update' })
   @IsOptional()
@@ -62,7 +63,7 @@ export class SaveGodownDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @IsOptional()
   @Transform(({ value, obj }) => toNullableUuid(resolveAliasValue(value, obj, ['parent_id'])))
-  @IsUUID('all')
+  @Matches(UUID_PATTERN)
   gdl_parent_id?: string | null;
   @ApiPropertyOptional({ default: 0 })
   @IsOptional()

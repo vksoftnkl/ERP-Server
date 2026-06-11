@@ -4,14 +4,14 @@ import {
   NullableNumber,
   NullableString,
   OptionalBoolean,
-  OptionalNumberString,
+  OptionalUuid,
   RequiredInteger,
   TrimmedString,
 } from '../../../common/dto/dtoDecorators';
 
 export class SaveGridColumnDto {
-  @ApiPropertyOptional({ description: 'When provided, request updates grid column', type: String })
-  @OptionalNumberString()
+  @ApiPropertyOptional({ description: 'When provided, request updates grid column by UUID', type: String })
+  @OptionalUuid()
   grid_serialid?: string;
 
   @ApiProperty({ minimum: 1, type: Number })

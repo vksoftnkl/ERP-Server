@@ -19,6 +19,7 @@ import { SaveUiTableColumnWidthDto } from './dto/save-ui-table-column-width.dto'
 import { SaveUiTableVisibilitySettingsDto } from './dto/save-ui-table-visibility-settings.dto';
 import {
   UiTableMasterErrorResponseDto,
+  UiTableMasterSuccessColumnDeleteDto,
   UiTableMasterSuccessColumnUpdateDto,
   UiTableMasterSuccessDeleteDto,
   UiTableMasterSuccessListDto,
@@ -99,6 +100,20 @@ export class UiTableMasterController {
   ): Promise<UiTableMasterSuccessResponse<{ updated: number }>> {
     const data = await this.uiTableMasterService.updateVisibilitySettings(dto);
     return { success: true, message: 'Visibility settings updated successfully', data };
+  }
+
+  @Delete('column-delete')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Soft delete a UI table column by id' })
+  @ApiQuery({ name: 'uiTblClmId', description: 'Numeric UI table column id' })
+  @ApiOkResponse({ type: UiTableMasterSuccessColumnDeleteDto })
+  @ApiBadRequestResponse({ type: UiTableMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: UiTableMasterErrorResponseDto })
+  async removeColumn(
+    @Query('uiTblClmId') uiTblClmId?: string,
+  ): Promise<UiTableMasterSuccessResponse<{ uiTblClmId: string; deleted: true }>> {
+    const data = await this.uiTableMasterService.softDeleteColumn(uiTblClmId ?? '');
+    return { success: true, message: 'UI table column deleted successfully', data };
   }
 
   @Delete('delete')

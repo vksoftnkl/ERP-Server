@@ -91,6 +91,25 @@ export class UiTableMasterSuccessDeleteDto {
   data!: UiTableMasterDeleteResultDto;
 }
 
+export class UiTableColumnDeleteResultDto {
+  @ApiProperty({ example: '1', description: 'BigInt id serialized as string' })
+  uiTblClmId!: string;
+
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
+
+export class UiTableMasterSuccessColumnDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'UI table column deleted successfully' })
+  message!: string;
+
+  @ApiProperty({ type: UiTableColumnDeleteResultDto })
+  data!: UiTableColumnDeleteResultDto;
+}
+
 export class UiTableColumnUpdateResultDto {
   @ApiProperty({ example: 2 })
   updated!: number;

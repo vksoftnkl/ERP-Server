@@ -27,6 +27,7 @@ import {
 } from 'src/common/utils/module-service.utils';
 
 const GRID_DETAIL_TABLE_NAME = 'grid details';
+const GRID_COLUMN_TABLE_NAME = 'grid column';
 const GRID_DETAIL_AUDIT_SCREEN_NAME = 'Grid Details';
 
 type GridDetailsWithColumns = GridDetails & { columns: GridColumn[] };
@@ -81,7 +82,7 @@ export class GridDetailsService {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
       for (const item of dto.columns) {
-        const serialId = BigInt(item.grid_serialid);
+        const serialId = this.parseUuidId('grid_serialid', item.grid_serialid);
         const existing = await tx.gridColumn.findFirst({
           where: { gridSerialId: serialId, gridColumnIsDeleted: false },
           select: { gridSerialId: true },
@@ -107,7 +108,7 @@ export class GridDetailsService {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
       for (const item of dto.columns) {
-        const serialId = BigInt(item.grid_serialid);
+        const serialId = this.parseUuidId('grid_serialid', item.grid_serialid);
         const existing = await tx.gridColumn.findFirst({
           where: { gridSerialId: serialId, gridColumnIsDeleted: false },
           select: { gridSerialId: true },
@@ -133,7 +134,7 @@ export class GridDetailsService {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
       for (const item of dto.columns) {
-        const serialId = BigInt(item.grid_serialid);
+        const serialId = this.parseUuidId('grid_serialid', item.grid_serialid);
         const existing = await tx.gridColumn.findFirst({
           where: { gridSerialId: serialId, gridColumnIsDeleted: false },
           select: { gridSerialId: true },
@@ -231,6 +232,48 @@ export class GridDetailsService {
     });
   }
 
+  async softDeleteColumn(gridSerialId: string): Promise<{ grid_serialid: string; deleted: true }> {
+    const parsedSerialId = this.parseUuidId('grid_serialid', gridSerialId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.gridColumn.findFirst({
+        where: { gridSerialId: parsedSerialId, gridColumnIsDeleted: false },
+      });
+
+      if (!existing) {
+        throwFixedNotFound<GridDetailErrorDetail, GridDetailErrorResponse>(
+          'Grid column not found',
+          'grid_serialid',
+          `No active grid column found with id ${gridSerialId}`,
+        );
+      }
+
+      await tx.gridColumn.update({
+        where: { gridSerialId: parsedSerialId },
+        data: { gridColumnIsDeleted: true },
+      });
+
+      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: GRID_COLUMN_TABLE_NAME,
+          screenName: GRID_DETAIL_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: gridSerialId,
+          displayName: existing.gridColumnName ?? `Grid column ${gridSerialId}`,
+          originalRecord: this.toColumnPayload(existing),
+          modifiedRecord: this.toColumnPayload({ ...existing, gridColumnIsDeleted: true }),
+          userId: actor,
+          notes: 'Grid column soft deleted',
+        },
+        tx,
+      );
+
+      return { grid_serialid: gridSerialId, deleted: true };
+    });
+  }
+
   private async createGridDetails(saveGridDetailDto: SaveGridDetailDto): Promise<GridDetailPayload> {
     const data: Prisma.GridDetailsUncheckedCreateInput = {
       gridName: saveGridDetailDto.grid_name.trim(),
@@ -300,7 +343,7 @@ export class GridDetailsService {
         if (saveGridDetailDto.replace_columns === true) {
           const keptIds = saveGridDetailDto.grid_columns
             .filter((col) => !!col.grid_serialid)
-            .map((col) => BigInt(col.grid_serialid!));
+            .map((col) => this.parseUuidId('grid_serialid', col.grid_serialid!));
           await tx.gridColumn.updateMany({
             where: {
               gridId: parsedGridId,
@@ -366,7 +409,7 @@ export class GridDetailsService {
     }
 
     if (colDto.grid_serialid) {
-      const parsedId = BigInt(colDto.grid_serialid);
+      const parsedId = this.parseUuidId('grid_serialid', colDto.grid_serialid);
       const colData: Prisma.GridColumnUncheckedUpdateInput = {
         gridColumnName: normalizedName,
         gridId,
@@ -482,7 +525,7 @@ export class GridDetailsService {
 
   private toColumnPayload(record: GridColumn): GridColumnPayload {
     return {
-      grid_serialid: record.gridSerialId.toString(),
+      grid_serial_id: record.gridSerialId.toString(),
       grid_id: record.gridId.toString(),
       grid_column_number: record.gridColumnNumber,
       grid_column_name: record.gridColumnName,
@@ -501,6 +544,16 @@ export class GridDetailsService {
       grid_column_sql_field_name: record.gridColumnSqlFieldName,
       grid_column_is_deleted: record.gridColumnIsDeleted,
     };
+  }
+
+  private parseUuidId(field: string, value: string): string {
+    const normalized = value.trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+      throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>("Validation error", [
+        { field, message: `${field} must be a valid UUID` },
+      ]);
+    }
+    return normalized;
   }
 
   private parseBigIntId(field: string, value: string): bigint {

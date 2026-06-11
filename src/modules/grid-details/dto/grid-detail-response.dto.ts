@@ -138,6 +138,25 @@ export class GridDetailSuccessDeleteDto {
   data!: GridDetailDeleteResultDto;
 }
 
+export class GridColumnDeleteResultDto {
+  @ApiProperty({ example: '1' })
+  grid_serialid!: string;
+
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
+
+export class GridDetailSuccessColumnDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Grid column deleted successfully' })
+  message!: string;
+
+  @ApiProperty({ type: GridColumnDeleteResultDto })
+  data!: GridColumnDeleteResultDto;
+}
+
 export class GridDetailColumnUpdateResultDto {
   @ApiProperty({ example: 2 })
   updated!: number;
