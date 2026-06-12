@@ -40,11 +40,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Ledger Bank Accounts')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('ledger-bank-accounts')
 @UseFilters(LedgerBankAccountExceptionFilter)
 export class LedgerBankAccountController {
-  constructor(private readonly ledgerBankAccountService: LedgerBankAccountService) {}
+  constructor(private readonly ledgerBankAccountService: LedgerBankAccountService) { }
 
   @Post('create')
   @Version(API_VERSION)

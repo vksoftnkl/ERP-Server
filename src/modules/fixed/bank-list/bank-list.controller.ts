@@ -43,11 +43,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Bank List')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('bank-lists')
 @UseFilters(BankListExceptionFilter)
 export class BankListController {
-  constructor(private readonly bankListService: BankListService) {}
+  constructor(private readonly bankListService: BankListService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update bank (by bnkId presence)' })

@@ -40,11 +40,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('States')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('states')
 @UseFilters(StateExceptionFilter)
 export class StateController {
-  constructor(private readonly stateService: StateService) {}
+  constructor(private readonly stateService: StateService) { }
 
   @Post('create')
   @Version(API_VERSION)

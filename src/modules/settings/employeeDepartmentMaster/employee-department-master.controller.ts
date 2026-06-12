@@ -39,11 +39,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Employee Department Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('employee-department-masters')
 @UseFilters(EmployeeDepartmentMasterExceptionFilter)
 export class EmployeeDepartmentMasterController {
-  constructor(private readonly employeeDepartmentMasterService: EmployeeDepartmentMasterService) {}
+  constructor(private readonly employeeDepartmentMasterService: EmployeeDepartmentMasterService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update employee department (by edptId presence)' })

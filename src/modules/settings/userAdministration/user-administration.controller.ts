@@ -37,11 +37,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('User Administration')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('user-administration')
 @UseFilters(UserAdministrationExceptionFilter)
 export class UserAdministrationController {
-  constructor(private readonly userAdministrationService: UserAdministrationService) {}
+  constructor(private readonly userAdministrationService: UserAdministrationService) { }
 
   @Post('create')
   @Version(API_VERSION)

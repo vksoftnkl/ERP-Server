@@ -25,7 +25,6 @@ import { ConfiguredGridRunResponseDto } from './dto/configured-grid-run-response
 import { ConfiguredGridSqlService } from './configured-grid-sql.service';
 import { ConfiguredGridCacheInterceptor } from './utils/configured-sql-cache-interceptor';
 import { API_VERSION } from '../constants/api-version';
-
 @UseInterceptors(ConfiguredGridCacheInterceptor)
 @ApiTags('Configured Grid SQL')
 @ApiBearerAuth('access-token')
@@ -33,7 +32,6 @@ import { API_VERSION } from '../constants/api-version';
 @Controller('configured-grid-sql')
 export class ConfiguredGridSqlController {
   constructor(private readonly configuredGridSqlService: ConfiguredGridSqlService) {}
-
   @Get('columns')
   @Version(API_VERSION)
   @CacheTTL(1) // columns are stable → cache 5 minutes
@@ -44,14 +42,12 @@ export class ConfiguredGridSqlController {
     @Query() query: ConfiguredGridColumnsQueryDto,
   ): Promise<ConfiguredGridColumnsResponseDto> {
     const data = await this.configuredGridSqlService.loadGridColumns(BigInt(query.grid_id));
-
     return {
       success: true,
       message: 'Grid columns fetched successfully',
       data,
     };
   }
-
   @Get('run')
   @Version(API_VERSION)
   @CacheTTL(1) // rows incl. search/filter/pagination → cache 60s
@@ -64,7 +60,6 @@ export class ConfiguredGridSqlController {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
-
     let gridPrm: Record<string, unknown> | undefined;
     if (query.grid_param !== undefined) {
       let parsed: unknown;
@@ -77,7 +72,6 @@ export class ConfiguredGridSqlController {
         throw new BadRequestException('grid_param must be a JSON object');
       }
       gridPrm = parsed as Record<string, unknown>;
-
       for (const [key, val] of Object.entries(gridPrm)) {
         if (!/^[a-z_][a-z0-9_]*$/i.test(key)) {
           throw new BadRequestException(`Invalid parameter name in grid_PRM: "${key}"`);
@@ -98,38 +92,30 @@ export class ConfiguredGridSqlController {
         }
       }
     }
-
     const candidates = await this.configuredGridSqlService.loadCandidates({
       tableName: '',
       fixedGridId: gridId,
       applyTableNameFilter: false,
     });
-
     const candidate = candidates[0];
     if (!candidate) {
       throw new NotFoundException(`Grid with id ${query.grid_id} not found`);
     }
-
     if (!candidate.gridSql) {
       throw new BadRequestException(`Grid ${query.grid_id} has no configured SQL`);
     }
-
     const tableName =
       this.configuredGridSqlService.extractTopLevelFromTableName(candidate.gridSql) ?? '';
-
     const validation = this.configuredGridSqlService.validateBaseSql({
       sql: candidate.gridSql,
       tableName,
     });
-
     if (!validation.isValid) {
       throw new BadRequestException(`Invalid grid SQL: ${validation.message}`);
     }
-
     const finalSql = gridPrm
       ? this.configuredGridSqlService.substituteGridPrm(validation.normalizedSql, gridPrm)
       : validation.normalizedSql;
-
     const result = await this.configuredGridSqlService.runPagedQuery<Record<string, unknown>>({
       baseSql: finalSql,
       alias: 'cgrid',
@@ -140,7 +126,6 @@ export class ConfiguredGridSqlController {
       sortBy: query.sort_by,
       sortDir: query.sort_dir,
     });
-
     return {
       success: true,
       message: 'Grid data fetched successfully',

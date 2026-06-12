@@ -208,7 +208,7 @@ export class ConfiguredGridSqlService {
     const columns = await this.prisma.gridColumn.findMany({
       where: {
         gridId,
-        gridColumnIsDeleted: false,
+        gridColumnIsDeleted: false
       },
       orderBy: { gridColumnNumber: 'asc' },
       select: {

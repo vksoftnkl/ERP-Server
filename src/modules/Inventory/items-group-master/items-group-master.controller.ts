@@ -46,11 +46,11 @@ type UploadedPhotoFile = {
 @ApiTags('Item Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('item-groups')
 @UseFilters(ItemGroupExceptionFilter)
 export class ItemsGroupMasterController {
-  constructor(private readonly itemsGroupMasterService: ItemsGroupMasterService) {}
+  constructor(private readonly itemsGroupMasterService: ItemsGroupMasterService) { }
 
   @Post('create')
   @Version(API_VERSION)

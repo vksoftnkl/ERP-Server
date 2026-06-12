@@ -40,13 +40,13 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Employee Designation Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('employee-designation-masters')
 @UseFilters(EmployeeDesignationMasterExceptionFilter)
 export class EmployeeDesignationMasterController {
   constructor(
     private readonly employeeDesignationMasterService: EmployeeDesignationMasterService,
-  ) {}
+  ) { }
 
   @Post('create')
   @Version(API_VERSION)

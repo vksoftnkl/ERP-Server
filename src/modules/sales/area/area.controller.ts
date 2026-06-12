@@ -39,11 +39,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Areas')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('areas')
 @UseFilters(AreaExceptionFilter)
 export class AreaController {
-  constructor(private readonly areaService: AreaService) {}
+  constructor(private readonly areaService: AreaService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update area (by armId presence)' })

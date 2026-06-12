@@ -44,11 +44,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Widget Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('widget-masters')
 @UseFilters(WidgetMasterExceptionFilter)
 export class WidgetMasterController {
-  constructor(private readonly widgetMasterService: WidgetMasterService) {}
+  constructor(private readonly widgetMasterService: WidgetMasterService) { }
 
   @Post('create')
   @Version(API_VERSION)

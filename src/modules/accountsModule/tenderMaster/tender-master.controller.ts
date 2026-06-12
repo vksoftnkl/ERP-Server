@@ -37,11 +37,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Tender Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('tender-masters')
 @UseFilters(TenderMasterExceptionFilter)
 export class TenderMasterController {
-  constructor(private readonly tenderMasterService: TenderMasterService) {}
+  constructor(private readonly tenderMasterService: TenderMasterService) { }
 
   @Post('create')
   @Version(API_VERSION)

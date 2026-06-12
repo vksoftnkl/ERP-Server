@@ -38,11 +38,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Godowns')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('godowns')
 @UseFilters(GodownExceptionFilter)
 export class GodownsMasterController {
-  constructor(private readonly godownsMasterService: GodownsMasterService) {}
+  constructor(private readonly godownsMasterService: GodownsMasterService) { }
   @Post()
   @Version(API_VERSION)
   @ApiOperation({

@@ -37,11 +37,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Units')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('units')
 @UseFilters(UnitExceptionFilter)
 export class UnitsMasterController {
-  constructor(private readonly unitsMasterService: UnitsMasterService) {}
+  constructor(private readonly unitsMasterService: UnitsMasterService) { }
 
   @Post('create')
   @Version(API_VERSION)

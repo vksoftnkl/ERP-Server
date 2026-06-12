@@ -40,11 +40,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Cities')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('cities')
 @UseFilters(CityExceptionFilter)
 export class CityController {
-  constructor(private readonly cityService: CityService) {}
+  constructor(private readonly cityService: CityService) { }
 
   @Post('create')
   @Version(API_VERSION)

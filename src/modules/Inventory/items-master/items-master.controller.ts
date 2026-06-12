@@ -37,11 +37,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Items')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('items')
 @UseFilters(ItemExceptionFilter)
 export class ItemsMasterController {
-  constructor(private readonly itemsMasterService: ItemsMasterService) {}
+  constructor(private readonly itemsMasterService: ItemsMasterService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update item (by item_id presence)' })

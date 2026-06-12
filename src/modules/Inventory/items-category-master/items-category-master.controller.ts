@@ -44,11 +44,11 @@ type UploadedPhotoFile = {
 @ApiTags('Item Categories')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('item-categories')
 @UseFilters(ItemCategoryExceptionFilter)
 export class ItemsCategoryMasterController {
-  constructor(private readonly itemsCategoryMasterService: ItemsCategoryMasterService) {}
+  constructor(private readonly itemsCategoryMasterService: ItemsCategoryMasterService) { }
   @Post('create')
   @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('category_photo'))

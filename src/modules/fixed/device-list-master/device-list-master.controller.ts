@@ -43,11 +43,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Device List Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('device-list-masters')
 @UseFilters(DeviceListMasterExceptionFilter)
 export class DeviceListMasterController {
-  constructor(private readonly deviceListMasterService: DeviceListMasterService) {}
+  constructor(private readonly deviceListMasterService: DeviceListMasterService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update device (by devId presence)' })

@@ -39,11 +39,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('GSP Company Service')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('gsp-company-services')
 @UseFilters(GspCompanyServiceExceptionFilter)
 export class GspCompanyServiceController {
-  constructor(private readonly gspCompanyServiceService: GspCompanyServiceService) {}
+  constructor(private readonly gspCompanyServiceService: GspCompanyServiceService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({

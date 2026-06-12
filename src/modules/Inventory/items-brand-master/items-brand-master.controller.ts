@@ -44,11 +44,11 @@ type UploadedPhotoFile = {
 @ApiTags('Item Brands')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('item-brands')
 @UseFilters(ItemBrandExceptionFilter)
 export class ItemsBrandMasterController {
-  constructor(private readonly itemsBrandMasterService: ItemsBrandMasterService) {}
+  constructor(private readonly itemsBrandMasterService: ItemsBrandMasterService) { }
   @Post('create')
   @Version(API_VERSION)
   @UseInterceptors(FileInterceptor('brand_photo'))

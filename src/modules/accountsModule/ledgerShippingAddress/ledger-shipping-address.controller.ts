@@ -40,11 +40,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Ledger Shipping Address')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('ledger-shipping-addresses')
 @UseFilters(LedgerShippingAddressExceptionFilter)
 export class LedgerShippingAddressController {
-  constructor(private readonly ledgerShippingAddressService: LedgerShippingAddressService) {}
+  constructor(private readonly ledgerShippingAddressService: LedgerShippingAddressService) { }
 
   @Post('create')
   @Version(API_VERSION)

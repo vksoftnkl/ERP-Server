@@ -46,11 +46,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Promotion Loyalty Points')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('promotion-loyalty-points')
 @UseFilters(PromotionLoyaltyPointsExceptionFilter)
 export class PromotionLoyaltyPointsController {
-  constructor(private readonly promotionLoyaltyPointsService: PromotionLoyaltyPointsService) {}
+  constructor(private readonly promotionLoyaltyPointsService: PromotionLoyaltyPointsService) { }
 
   @Post('create')
   @Version(API_VERSION)

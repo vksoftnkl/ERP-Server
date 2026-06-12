@@ -37,7 +37,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Account Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('account-groups')
 @UseFilters(AccountGroupExceptionFilter)
 export class AccountsGroupController {

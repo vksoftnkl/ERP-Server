@@ -40,11 +40,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Company Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('company-masters')
 @UseFilters(CompanyMasterExceptionFilter)
 export class CompanyMasterController {
-  constructor(private readonly companyMasterService: CompanyMasterService) {}
+  constructor(private readonly companyMasterService: CompanyMasterService) { }
 
   @Post('create')
   @Version(API_VERSION)

@@ -36,11 +36,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('UI Table Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('ui-table-masters')
 @UseFilters(UiTableMasterExceptionFilter)
 export class UiTableMasterController {
-  constructor(private readonly uiTableMasterService: UiTableMasterService) {}
+  constructor(private readonly uiTableMasterService: UiTableMasterService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update UI table (by uiTblId presence)' })

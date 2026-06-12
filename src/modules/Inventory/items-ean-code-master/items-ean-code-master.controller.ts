@@ -66,11 +66,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
   ItemEanCodeSuccessSingleDto,
   ItemEanCodeSuccessListDto,
 )
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('item-ean-codes')
 @UseFilters(ItemEanCodeExceptionFilter)
 export class ItemsEanCodeMasterController {
-  constructor(private readonly itemsEanCodeMasterService: ItemsEanCodeMasterService) {}
+  constructor(private readonly itemsEanCodeMasterService: ItemsEanCodeMasterService) { }
 
   @Post('create')
   @Version(API_VERSION)

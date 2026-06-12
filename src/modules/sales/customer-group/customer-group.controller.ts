@@ -40,11 +40,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Customer Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('customer-groups')
 @UseFilters(CustomerGroupExceptionFilter)
 export class CustomerGroupController {
-  constructor(private readonly customerGroupService: CustomerGroupService) {}
+  constructor(private readonly customerGroupService: CustomerGroupService) { }
 
   @Post('create')
   @Version(API_VERSION)

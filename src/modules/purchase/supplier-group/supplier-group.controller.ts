@@ -39,11 +39,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Supplier Groups')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('supplier-groups')
 @UseFilters(SupplierGroupExceptionFilter)
 export class SupplierGroupController {
-  constructor(private readonly supplierGroupService: SupplierGroupService) {}
+  constructor(private readonly supplierGroupService: SupplierGroupService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update supplier group (by spgId presence)' })

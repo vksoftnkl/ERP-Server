@@ -32,7 +32,7 @@ import { API_VERSION } from '../constants/api-version';
 @ApiTags('Sequence')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(60)
+@CacheTTL(1)
 @Controller('sequences')
 export class SequenceController {
   constructor(private readonly sequenceService: SequenceService) {}

@@ -40,7 +40,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Company Group Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('company-group-masters')
 @UseFilters(CompanyGroupMasterExceptionFilter)
 export class CompanyGroupMasterController {

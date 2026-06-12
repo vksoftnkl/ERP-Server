@@ -34,11 +34,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('State Code Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('state-code-masters')
 @UseFilters(StateCodeMasterExceptionFilter)
 export class StateCodeMasterController {
-  constructor(private readonly stateCodeMasterService: StateCodeMasterService) {}
+  constructor(private readonly stateCodeMasterService: StateCodeMasterService) { }
 
   @Post('create')
   @Version(API_VERSION)

@@ -40,11 +40,11 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('GSP Provider Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(300)
+@CacheTTL(1)
 @Controller('gsp-provider-masters')
 @UseFilters(GspProviderMasterExceptionFilter)
 export class GspProviderMasterController {
-  constructor(private readonly gspProviderMasterService: GspProviderMasterService) {}
+  constructor(private readonly gspProviderMasterService: GspProviderMasterService) { }
 
   @Post('create')
   @Version(API_VERSION)
