@@ -10,8 +10,8 @@ export {
 };
 
 export class GridColumnPayloadDto {
-  @ApiProperty({ example: '1' })
-  grid_serialid!: string;
+  @ApiProperty({ example: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001' })
+  grid_column_id!: string;
 
   @ApiProperty({ example: '1' })
   grid_id!: string;
@@ -139,8 +139,8 @@ export class GridDetailSuccessDeleteDto {
 }
 
 export class GridColumnDeleteResultDto {
-  @ApiProperty({ example: '1' })
-  grid_serialid!: string;
+  @ApiProperty({ example: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001' })
+  grid_column_id!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;

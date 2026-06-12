@@ -26,7 +26,7 @@ export type ConfiguredGridSqlValidationResult =
     message: string;
   };
 export interface GridColumnItem {
-  grid_column_serial_id: string;
+  grid_column_id: string;
   grid_column_number: number;
   grid_column_name: string;
   grid_column_width: number | null;

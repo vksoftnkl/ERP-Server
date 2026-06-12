@@ -6,7 +6,7 @@ import { RequiredUuid } from "../../../common/dto/dtoDecorators";
 export class FilterSettingItemDto {
   @ApiProperty({ type: String, description: 'Column serial id to update' })
   @RequiredUuid()
-  grid_serialid!: string;
+  grid_column_id!: string;
 
   @ApiProperty({ type: Boolean })
   @IsBoolean()

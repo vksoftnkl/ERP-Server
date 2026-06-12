@@ -181,6 +181,7 @@ describe('ItemsPriceMasterService', () => {
     service = new ItemsPriceMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      configuredGridSqlService as never,
     );
   });
 

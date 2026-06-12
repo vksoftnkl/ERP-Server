@@ -65,6 +65,7 @@ describe('ItemsBrandMasterService', () => {
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
+  let requestContextService: { getUserId: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -199,9 +200,14 @@ describe('ItemsBrandMasterService', () => {
         ),
     };
 
+    requestContextService = {
+      getUserId: jest.fn().mockReturnValue(null),
+    };
+
     service = new ItemsBrandMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      requestContextService as never,
     );
   });
 

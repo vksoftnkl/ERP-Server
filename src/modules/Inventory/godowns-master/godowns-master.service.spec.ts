@@ -76,6 +76,7 @@ describe('GodownsMasterService', () => {
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
+  let requestContextService: { getUserId: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -219,9 +220,14 @@ describe('GodownsMasterService', () => {
         ),
     };
 
+    requestContextService = {
+      getUserId: jest.fn().mockReturnValue(null),
+    };
+
     service = new GodownsMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      requestContextService as never,
     );
   });
 

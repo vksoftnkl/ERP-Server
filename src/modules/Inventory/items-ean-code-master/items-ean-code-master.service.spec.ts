@@ -45,6 +45,7 @@ describe('ItemsEanCodeMasterService', () => {
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: { loadCandidates: jest.Mock; filterPrimaryFromTable: jest.Mock };
+  let requestContextService: { getUserId: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -73,11 +74,15 @@ describe('ItemsEanCodeMasterService', () => {
       loadCandidates: jest.fn().mockResolvedValue([]),
       filterPrimaryFromTable: jest.fn().mockReturnValue([]),
     };
+    requestContextService = {
+      getUserId: jest.fn().mockReturnValue(null),
+    };
 
     service = new ItemsEanCodeMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
       configuredGridSqlService as never,
+      requestContextService as never,
     );
   });
 

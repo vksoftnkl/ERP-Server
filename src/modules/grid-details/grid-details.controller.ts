@@ -34,7 +34,6 @@ import {
   GridDetailSuccessResponse,
 } from './types/grid-detail-api.types';
 import { API_VERSION } from '../../common/constants/api-version';
-
 const gridDetailsCreateExample = {
   grid_id: '17',
   grid_name: 'Item Master Grid',
@@ -46,7 +45,7 @@ const gridDetailsCreateExample = {
   grid_device_type: 'desktop',
   grid_columns: [
     {
-      grid_serialid: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001',
+      grid_column_id: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001',
       grid_column_number: 1,
       grid_column_name: 'Item Name',
       grid_column_width: 180,
@@ -65,7 +64,6 @@ const gridDetailsCreateExample = {
     },
   ],
 };
-
 @ApiTags('Grid Details')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -73,7 +71,7 @@ const gridDetailsCreateExample = {
 @Controller('grid-details')
 @UseFilters(GridDetailExceptionFilter)
 export class GridDetailsController {
-  constructor(private readonly gridDetailsService: GridDetailsService) {}
+  constructor(private readonly gridDetailsService: GridDetailsService) { }
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
@@ -120,7 +118,6 @@ export class GridDetailsController {
       data: result.items,
     };
   }
-
   @Put('column-width')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Update column width for one or more grid columns' })
@@ -133,7 +130,6 @@ export class GridDetailsController {
     const data = await this.gridDetailsService.updateColumnWidths(dto);
     return { success: true, message: 'Column widths updated successfully', data };
   }
-
   @Put('filter-settings')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Update filter setting for one or more grid columns' })
@@ -146,7 +142,6 @@ export class GridDetailsController {
     const data = await this.gridDetailsService.updateFilterSettings(dto);
     return { success: true, message: 'Filter settings updated successfully', data };
   }
-
   @Put('visibility-settings')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Update visibility setting for one or more grid columns' })
@@ -159,21 +154,19 @@ export class GridDetailsController {
     const data = await this.gridDetailsService.updateVisibilitySettings(dto);
     return { success: true, message: 'Visibility settings updated successfully', data };
   }
-
   @Delete('column-delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete a grid column by id' })
-  @ApiQuery({ name: 'grid_serialid', description: 'UUID grid column id' })
+  @ApiQuery({ name: 'grid_column_id', description: 'UUID grid column id' })
   @ApiOkResponse({ type: GridDetailSuccessColumnDeleteDto })
   @ApiBadRequestResponse({ type: GridDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: GridDetailErrorResponseDto })
   async removeColumn(
-    @Query('grid_serialid') gridSerialId?: string,
-  ): Promise<GridDetailSuccessResponse<{ grid_serialid: string; deleted: true }>> {
-    const data = await this.gridDetailsService.softDeleteColumn(gridSerialId ?? '');
+    @Query('grid_column_id') gridColumnId?: string,
+  ): Promise<GridDetailSuccessResponse<{ grid_column_id: string; deleted: true }>> {
+    const data = await this.gridDetailsService.softDeleteColumn(gridColumnId ?? '');
     return { success: true, message: 'Grid column deleted successfully', data };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete grid details by id' })

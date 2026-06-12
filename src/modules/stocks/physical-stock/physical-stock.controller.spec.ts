@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { PhysicalStockController } from './physical-stock.controller';
 import { PhysicalStockService } from './physical-stock.service';
 describe('PhysicalStockController', () => {
@@ -12,6 +13,10 @@ describe('PhysicalStockController', () => {
         {
           provide: PrismaService,
           useValue: {},
+        },
+        {
+          provide: AuditLogService,
+          useValue: { logEntityChange: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

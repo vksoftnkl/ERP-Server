@@ -360,13 +360,13 @@ ORDER BY unit_name`,
   it('maps filter-enabled grid columns to configured sql output fields', async () => {
     prisma.gridColumn.findMany.mockResolvedValue([
       {
-        gridSerialId: 101n,
+        grid_column_id: 101n,
         gridColumnName: 'Customer name',
         gridColumnNumber: 1,
         gridColumnFilter: true,
       },
       {
-        gridSerialId: 102n,
+        grid_column_id: 102n,
         gridColumnName: 'Mobile',
         gridColumnNumber: 4,
         gridColumnFilter: true,
@@ -392,7 +392,7 @@ ORDER BY unit_name`,
   it('loads grid columns with serial ids', async () => {
     prisma.gridColumn.findMany.mockResolvedValue([
       {
-        gridSerialId: 91n,
+        gridColumnId: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001',
         gridColumnNumber: 1,
         gridColumnName: 'Item name',
         gridColumnWidth: 180,
@@ -413,7 +413,7 @@ ORDER BY unit_name`,
 
     await expect(service.loadGridColumns(1n)).resolves.toEqual([
       {
-        grid_column_serial_id: '91',
+        grid_column_id: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001',
         grid_column_number: 1,
         grid_column_name: 'Item name',
         grid_column_width: 180,
@@ -434,7 +434,7 @@ ORDER BY unit_name`,
     expect(prisma.gridColumn.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         select: expect.objectContaining({
-          gridSerialId: true,
+          gridColumnId: true,
         }),
       }),
     );
@@ -458,7 +458,7 @@ ORDER BY unit_name`,
     prisma.gridColumn.findMany
       .mockResolvedValueOnce([
         {
-          gridSerialId: 201n,
+          grid_column_id: 201n,
           gridColumnName: 'Customer name',
           gridColumnNumber: 1,
           gridColumnFilter: true,

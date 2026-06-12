@@ -1027,7 +1027,7 @@ Table device_master {
 }
 
 Table grid_columns {
-  gridSerialId String [pk]
+  gridColumnId String [pk]
   gridId BigInt [not null]
   grid grid_details [not null]
   gridColumnNumber Int [not null]

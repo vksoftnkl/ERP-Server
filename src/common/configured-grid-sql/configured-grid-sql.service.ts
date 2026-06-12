@@ -133,7 +133,7 @@ export class ConfiguredGridSqlService {
       if (
         primaryRelation !== null &&
         this.normalizeRelationName(primaryRelation.tableName) ===
-          this.normalizeRelationName(options.tableName) &&
+        this.normalizeRelationName(options.tableName) &&
         primaryRelation.schemaName !== null &&
         primaryRelation.schemaName !== options.primaryTableSchema.toLowerCase()
       ) {
@@ -212,7 +212,7 @@ export class ConfiguredGridSqlService {
       },
       orderBy: { gridColumnNumber: 'asc' },
       select: {
-        gridSerialId: true,
+        gridColumnId: true,
         gridColumnNumber: true,
         gridColumnName: true,
         gridColumnWidth: true,
@@ -231,7 +231,7 @@ export class ConfiguredGridSqlService {
       },
     });
     return columns.map((col) => ({
-      grid_column_serial_id: col.gridSerialId.toString(),
+      grid_column_id: col.gridColumnId,
       grid_column_number: col.gridColumnNumber,
       grid_column_name: col.gridColumnName,
       grid_column_width: col.gridColumnWidth !== null ? Number(col.gridColumnWidth) : null,
@@ -378,10 +378,10 @@ export class ConfiguredGridSqlService {
           const valueParamIndex = params.length;
           searchConditions.push(
             `EXISTS (` +
-              `SELECT 1 FROM jsonb_each_text(row_to_json(${options.alias})::jsonb) AS grid_kv(key, value) ` +
-              `WHERE grid_kv.key = $${columnParamIndex} ` +
-              `AND grid_kv.value ILIKE $${valueParamIndex}` +
-              `)`,
+            `SELECT 1 FROM jsonb_each_text(row_to_json(${options.alias})::jsonb) AS grid_kv(key, value) ` +
+            `WHERE grid_kv.key = $${columnParamIndex} ` +
+            `AND grid_kv.value ILIKE $${valueParamIndex}` +
+            `)`,
           );
         }
         conditions.push(`(${searchConditions.join(' OR ')})`);

@@ -6,7 +6,7 @@ import { NullableNumber, RequiredUuid } from '../../../common/dto/dtoDecorators'
 export class ColumnWidthItemDto {
   @ApiProperty({ type: String, description: 'Column serial id to update' })
   @RequiredUuid()
-  grid_serialid!: string;
+  grid_column_id!: string;
 
   @ApiProperty({ nullable: true, type: Number })
   @NullableNumber()

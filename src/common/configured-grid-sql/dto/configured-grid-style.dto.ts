@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export class ConfiguredGridStyleDto {
   @ApiProperty({ example: '1' })
-  grid_column_serial_id!: string;
+  grid_column_id!: string;
 
   @ApiProperty({ example: 1 })
   grid_column_number!: number;

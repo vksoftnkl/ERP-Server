@@ -36,7 +36,7 @@ export class ConfiguredGridSqlController {
 
   @Get('columns')
   @Version(API_VERSION)
-  @CacheTTL(300) // columns are stable → cache 5 minutes
+  @CacheTTL(1) // columns are stable → cache 5 minutes
   @ApiOperation({ summary: 'Fetch grid columns by grid id' })
   @ApiOkResponse({ type: ConfiguredGridColumnsResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
@@ -54,7 +54,7 @@ export class ConfiguredGridSqlController {
 
   @Get('run')
   @Version(API_VERSION)
-  @CacheTTL(60) // rows incl. search/filter/pagination → cache 60s
+  @CacheTTL(1) // rows incl. search/filter/pagination → cache 60s
   @ApiOperation({ summary: 'Run the base SQL for a grid and return rows + column styles' })
   @ApiOkResponse({ type: ConfiguredGridRunResponseDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })

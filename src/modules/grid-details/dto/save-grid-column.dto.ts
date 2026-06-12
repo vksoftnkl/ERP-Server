@@ -12,7 +12,7 @@ import {
 export class SaveGridColumnDto {
   @ApiPropertyOptional({ description: 'When provided, request updates grid column by UUID', type: String })
   @OptionalUuid()
-  grid_serialid?: string;
+  grid_column_id?: string;
 
   @ApiProperty({ minimum: 1, type: Number })
   @RequiredInteger(1)

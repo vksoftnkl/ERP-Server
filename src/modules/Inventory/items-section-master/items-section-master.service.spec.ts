@@ -64,6 +64,7 @@ describe('ItemsSectionMasterService', () => {
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
+  let requestContextService: { getUserId: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -102,9 +103,14 @@ describe('ItemsSectionMasterService', () => {
       runPagedQuery: jest.fn(),
     };
 
+    requestContextService = {
+      getUserId: jest.fn().mockReturnValue(null),
+    };
+
     service = new ItemsSectionMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      requestContextService as never,
     );
   });
 

@@ -71,6 +71,7 @@ describe('ItemsGroupMasterService', () => {
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
+  let requestContextService: { getUserId: jest.Mock };
   beforeEach(() => {
     prisma = {
       itemGroupMaster: {
@@ -210,9 +211,14 @@ describe('ItemsGroupMasterService', () => {
         ),
     };
 
+    requestContextService = {
+      getUserId: jest.fn().mockReturnValue(null),
+    };
+
     service = new ItemsGroupMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
+      requestContextService as never,
     );
   });
   it('creates an item group when itg_id is not provided', async () => {

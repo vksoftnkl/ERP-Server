@@ -1,7 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { GridDetails } from '@prisma/client';
 import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
-import { CommonCrudService } from '../../common/common-crud/common-crud.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { GridDetailsService } from './grid-details.service';
 import { gridDeviceTypeEnum } from './types/grid-detail-enum';
@@ -66,7 +65,6 @@ describe('GridDetailsService', () => {
       configuredGridSqlService,
       makeAuditLogService() as never,
       makeRequestContextService() as never,
-      new CommonCrudService(),
     );
   });
 

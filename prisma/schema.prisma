@@ -1907,8 +1907,8 @@ model DeviceMaster {
 
 // ----- prisma/fixed/gridColumns.prisma -----
 model GridColumn {
-  gridSerialId              String    @id @default(dbgenerated("uuidv7()")) @map("grid_serial_id")         @db.Uuid
-  gridId                    BigInt   @map("grid_id")
+  gridColumnId              String    @id @default(dbgenerated("uuidv7()")) @map("grid_column_id")         @db.Uuid
+  gridId                     BigInt   @map("grid_id")
   grid                      GridDetails @relation(fields: [gridId], references: [gridId], onDelete: Cascade, onUpdate: Cascade)
   gridColumnNumber          Int      @map("grid_column_number")
   gridColumnName            String   @db.Text @map("grid_column_name")
