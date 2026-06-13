@@ -1824,6 +1824,8 @@ model DropdownColumns {
   dropdownColumnsSqlName   String? @db.Text @map("dropdown_columns_sql_name")
   dropdownColumnsCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("dropdown_columns_created_on")
   dropdownColumnsModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropdown_columns_modified_on")
+  dropdownColumnsCreatedBy String? @db.Text @map("dropdown_columns_created_by")
+  dropdownColumnsModifiedBy String? @db.Text @map("dropdown_columns_modified_by")
 
   @@index([dropdownColumnsDropdownId])
   @@index([dropdownColumnsDropdownId, dropdownColumnsNo])
@@ -1847,6 +1849,10 @@ model DropdownDetails {
   dropdownShowHeader      Boolean @default(true) @map("dropdown_show_header")
   dropdownWidth            Int?    @map("dropdown_width")
   dropdownDeviceType String? @db.Text        @map("dropdown_device_type")
+  dropdownCreatedOn DateTime @default(now()) @db.Timestamptz(6) @map("dropdown_created_on")
+  dropdownModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropdown_modified_on")
+  dropdownCreatedBy String? @db.Text @map("dropdown_created_by")
+  dropdownModifiedBy String? @db.Text @map("dropdown_modified_by")
   dropdownColumns         DropdownColumns[]
 
   @@map("dropdown_details")

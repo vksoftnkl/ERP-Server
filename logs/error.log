@@ -789,3 +789,55 @@ TypeError: Do not know how to serialize a BigInt
     at Keyv.defaultSerialize [as _serialize] (/home/vk/Dev/erp/ERP server/node_modules/@keyv/serialize/dist/index.cjs:69:10)
     at Keyv.serializeData (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:965:17)
     at Keyv.set (/home/vk/Dev/erp/ERP server/node_modules/keyv/dist/index.cjs:746:40)
+2026-06-13T08:10:30.362Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=1&page=1&limit=10&sort_by=tamil&sort_dir=asc
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42703`. Message: `column "tamil" does not exist`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:194:33)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:119:20)
+2026-06-13T08:10:34.968Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=1&page=1&limit=20&sort_by=tamil&sort_dir=asc
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42703`. Message: `column "tamil" does not exist`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:194:33)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:119:20)
+2026-06-13T08:10:37.571Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=1&page=1&limit=20&sort_by=tamil&sort_dir=asc
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42703`. Message: `column "tamil" does not exist`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:194:33)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:119:20)
+2026-06-13T08:10:39.562Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=1&page=1&limit=20&sort_by=tamil&sort_dir=asc
+PrismaClientKnownRequestError: 
+Invalid `prisma.$queryRawUnsafe()` invocation:
+
+
+Raw query failed. Code: `42703`. Message: `column "tamil" does not exist`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:194:33)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:119:20)

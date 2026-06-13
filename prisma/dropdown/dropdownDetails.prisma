@@ -13,6 +13,10 @@ model DropdownDetails {
   dropdownShowHeader      Boolean @default(true) @map("dropdown_show_header")
   dropdownWidth            Int?    @map("dropdown_width")
   dropdownDeviceType String? @db.Text        @map("dropdown_device_type")
+  dropdownCreatedOn DateTime @default(now()) @db.Timestamptz(6) @map("dropdown_created_on")
+  dropdownModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropdown_modified_on")
+  dropdownCreatedBy String? @db.Text @map("dropdown_created_by")
+  dropdownModifiedBy String? @db.Text @map("dropdown_modified_by")
   dropdownColumns         DropdownColumns[]
 
   @@map("dropdown_details")

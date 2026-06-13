@@ -17,6 +17,8 @@ model DropdownColumns {
   dropdownColumnsSqlName   String? @db.Text @map("dropdown_columns_sql_name")
   dropdownColumnsCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("dropdown_columns_created_on")
   dropdownColumnsModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropdown_columns_modified_on")
+  dropdownColumnsCreatedBy String? @db.Text @map("dropdown_columns_created_by")
+  dropdownColumnsModifiedBy String? @db.Text @map("dropdown_columns_modified_by")
 
   @@index([dropdownColumnsDropdownId])
   @@index([dropdownColumnsDropdownId, dropdownColumnsNo])

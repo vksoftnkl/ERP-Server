@@ -968,6 +968,8 @@ Table dropdown_columns {
   dropdownColumnsSqlName String
   dropdownColumnsCreatedOn DateTime [default: `now()`, not null]
   dropdownColumnsModifiedOn DateTime
+  dropdownColumnsCreatedBy String
+  dropdownColumnsModifiedBy String
 }
 
 Table dropdown_details {
@@ -983,6 +985,10 @@ Table dropdown_details {
   dropdownShowHeader Boolean [not null, default: true]
   dropdownWidth Int
   dropdownDeviceType String
+  dropdownCreatedOn DateTime [default: `now()`, not null]
+  dropdownModifiedOn DateTime
+  dropdownCreatedBy String
+  dropdownModifiedBy String
   dropdownColumns dropdown_columns [not null]
 }
 
