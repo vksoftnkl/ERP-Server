@@ -31,6 +31,7 @@ export interface UiTableMasterPayload {
   uiTblIsDeleted: boolean;
   uiTblDeviceType: string | null;
   uiTblSyncDate: string | null;
+  uiTblSyncOn: string | null;
   uiTblCreatedOn: string;
   uiTblCreatedBy: string | null;
   uiTblModifiedOn: string;

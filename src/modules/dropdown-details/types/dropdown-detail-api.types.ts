@@ -14,6 +14,11 @@ export interface DropdownColumnPayload {
   dropdown_columns_allignment: string | null;
   dropdown_columns_filter: boolean;
   dropdown_columns_sql_name: string | null;
+  dropdown_columns_created_on: string;
+  dropdown_columns_created_by: string | null;
+  dropdown_columns_modified_on: string | null;
+  dropdown_columns_modified_by: string | null;
+  dropdown_columns_sync_on: string | null;
 }
 
 export interface DropdownDetailPayload {
@@ -29,7 +34,23 @@ export interface DropdownDetailPayload {
   dropdown_show_header: boolean;
   dropdown_width: number | null;
   dropdown_device_type: string | null;
+  dropdown_created_on: string;
+  dropdown_created_by: string | null;
+  dropdown_modified_on: string | null;
+  dropdown_modified_by: string | null;
+  dropdown_sync_on: string | null;
   columns: DropdownColumnPayload[];
 }
 
 export type DropdownDetailListItem = DropdownDetailPayload | Record<string, unknown>;
+
+export interface DropdownRunMeta {
+  page: number;
+  limit: number;
+  total: number;
+}
+
+export interface DropdownRunResult {
+  items: Record<string, unknown>[];
+  meta: DropdownRunMeta;
+}

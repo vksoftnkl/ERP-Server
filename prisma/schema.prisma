@@ -1826,7 +1826,7 @@ model DropdownColumns {
   dropdownColumnsModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropdown_columns_modified_on")
   dropdownColumnsCreatedBy String? @db.Text @map("dropdown_columns_created_by")
   dropdownColumnsModifiedBy String? @db.Text @map("dropdown_columns_modified_by")
-
+  dropdownColumnsSyncOn     DateTime? @db.Timestamptz(6) @map("dropdown_columns_sync_on")
   @@index([dropdownColumnsDropdownId])
   @@index([dropdownColumnsDropdownId, dropdownColumnsNo])
   @@map("dropdown_columns")
@@ -1854,7 +1854,7 @@ model DropdownDetails {
   dropdownCreatedBy String? @db.Text @map("dropdown_created_by")
   dropdownModifiedBy String? @db.Text @map("dropdown_modified_by")
   dropdownColumns         DropdownColumns[]
-
+  dropdownSyncOn          DateTime? @db.Timestamptz(6) @map("dropdown_sync_on")
   @@map("dropdown_details")
   @@schema("fixed")
 }
@@ -1933,6 +1933,11 @@ model GridColumn {
   gridColumnIsDeleted       Boolean  @default(false) @map("grid_column_is_deleted")
   gridColumnPosition        Decimal? @db.Decimal(12, 2) @map("grid_column_position")
   gridColumnSqlFieldName    String?  @db.Text@map("grid_column_sql_field_name")
+  gridColumnCreatedOn       DateTime @default(now()) @db.Timestamptz(6) @map("grid_column_created_on")
+  gridColumnCreatedBy       String?  @db.Text @map("grid_column_created_by")
+  gridColumnModifiedOn      DateTime? @updatedAt      @db.Timestamptz(6) @map("grid_column_modified_on")
+  gridColumnModifiedBy      String?  @db.Text @map("grid_column_modified_by")
+  gridColumnSyncOn          DateTime? @db.Timestamptz(6) @map("grid_column_sync_on")
   @@map("grid_columns")
   @@schema("fixed")
   @@index([gridId], map: "idx_grid_columns_grid_id")
@@ -1952,7 +1957,11 @@ model GridDetails {
   gridSql         String?  @db.Text @map("grid_sql")
   gridStatus      Boolean  @default(true)  @map("grid_status")
   gridIsDeleted   Boolean  @default(false) @map("grid_is_deleted")
-
+  gridCreatedOn   DateTime @default(now()) @db.Timestamptz(6) @map("grid_created_on")
+  gridCreatedBy   String?  @db.Text @map("grid_created_by")
+  gridModifiedOn  DateTime? @updatedAt      @db.Timestamptz(6) @map("grid_modified_on")
+  gridModifiedBy  String?  @db.Text @map("grid_modified_by")
+  gridSyncOn      DateTime? @db.Timestamptz(6) @map("grid_sync_on")
   columns         GridColumn[]
 
   @@map("grid_details")
@@ -2124,6 +2133,7 @@ model Uitable {
   uiTblModifiedOn   DateTime   @default(now()) @db.Timestamptz(6) @map("ui_tbl_modified_on")
   uiTblModifiedBy   String?    @db.VarChar(100) @map("ui_tbl_modified_by")
   uiTblDeviceType    String?    @db.Text @map("ui_tbl_device_type")
+  uiTblSyncOn       DateTime? @db.Timestamptz(6) @map("ui_tbl_sync_on")
   // ← Back-relation field
   uiTableColumns    UitableColumns[]
   @@schema("fixed")

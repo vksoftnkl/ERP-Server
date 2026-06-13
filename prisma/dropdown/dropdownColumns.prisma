@@ -19,7 +19,7 @@ model DropdownColumns {
   dropdownColumnsModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropdown_columns_modified_on")
   dropdownColumnsCreatedBy String? @db.Text @map("dropdown_columns_created_by")
   dropdownColumnsModifiedBy String? @db.Text @map("dropdown_columns_modified_by")
-
+  dropdownColumnsSyncOn     DateTime? @db.Timestamptz(6) @map("dropdown_columns_sync_on")
   @@index([dropdownColumnsDropdownId])
   @@index([dropdownColumnsDropdownId, dropdownColumnsNo])
   @@map("dropdown_columns")

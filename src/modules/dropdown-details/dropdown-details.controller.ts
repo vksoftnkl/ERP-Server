@@ -24,6 +24,8 @@ import {
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import { ListDropdownDetailQueryDto } from './dto/list-dropdown-detail-query.dto';
+import { RunDropdownQueryDto } from './dto/run-dropdown-query.dto';
+import { DropdownRunResponseDto } from './dto/dropdown-run-response.dto';
 import {
   DropdownDetailErrorResponseDto,
   DropdownDetailSuccessColumnDeleteDto,
@@ -122,6 +124,20 @@ export class DropdownDetailsController {
       success: true,
       message: 'Dropdown details fetched successfully',
       data: result.items,
+    };
+  }
+  @Get('run')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Run the configured SQL for a dropdown and return paginated rows' })
+  @ApiOkResponse({ type: DropdownRunResponseDto })
+  @ApiBadRequestResponse({ type: DropdownDetailErrorResponseDto })
+  @ApiNotFoundResponse({ type: DropdownDetailErrorResponseDto })
+  async run(@Query() queryDto: RunDropdownQueryDto): Promise<DropdownRunResponseDto> {
+    const data = await this.dropdownDetailsService.run(queryDto);
+    return {
+      success: true,
+      message: 'Dropdown data fetched successfully',
+      data,
     };
   }
   @Put('column-width')

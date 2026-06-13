@@ -29,6 +29,11 @@ const makeRecord = (overrides: Partial<GridDetails> = {}): GridDetails => ({
   gridSql: 'SELECT brand_id FROM inventory.item_brand_master',
   gridStatus: true,
   gridIsDeleted: false,
+  gridCreatedOn: new Date('2026-06-13T10:00:00.000Z'),
+  gridCreatedBy: null,
+  gridModifiedOn: null,
+  gridModifiedBy: null,
+  gridSyncOn: null,
   ...overrides,
 });
 

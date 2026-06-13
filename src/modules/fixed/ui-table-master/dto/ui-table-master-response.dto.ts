@@ -31,6 +31,14 @@ export class UiTableMasterPayloadDto {
   })
   uiTblSyncDate!: string | null;
 
+  @ApiPropertyOptional({
+    example: '2026-03-12T06:34:47.000Z',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
+  uiTblSyncOn!: string | null;
+
   @ApiProperty({ example: '2026-03-12T06:34:47.000Z', type: String, format: 'date-time' })
   uiTblCreatedOn!: string;
 

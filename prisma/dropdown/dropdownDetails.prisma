@@ -18,7 +18,7 @@ model DropdownDetails {
   dropdownCreatedBy String? @db.Text @map("dropdown_created_by")
   dropdownModifiedBy String? @db.Text @map("dropdown_modified_by")
   dropdownColumns         DropdownColumns[]
-
+  dropdownSyncOn          DateTime? @db.Timestamptz(6) @map("dropdown_sync_on")
   @@map("dropdown_details")
   @@schema("fixed")
 }

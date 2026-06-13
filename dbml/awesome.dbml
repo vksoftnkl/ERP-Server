@@ -970,6 +970,7 @@ Table dropdown_columns {
   dropdownColumnsModifiedOn DateTime
   dropdownColumnsCreatedBy String
   dropdownColumnsModifiedBy String
+  dropdownColumnsSyncOn DateTime
 }
 
 Table dropdown_details {
@@ -990,6 +991,7 @@ Table dropdown_details {
   dropdownCreatedBy String
   dropdownModifiedBy String
   dropdownColumns dropdown_columns [not null]
+  dropdownSyncOn DateTime
 }
 
 Table bank_master {
@@ -1054,6 +1056,11 @@ Table grid_columns {
   gridColumnIsDeleted Boolean [not null, default: false]
   gridColumnPosition Decimal
   gridColumnSqlFieldName String
+  gridColumnCreatedOn DateTime [default: `now()`, not null]
+  gridColumnCreatedBy String
+  gridColumnModifiedOn DateTime
+  gridColumnModifiedBy String
+  gridColumnSyncOn DateTime
 }
 
 Table grid_details {
@@ -1066,6 +1073,11 @@ Table grid_details {
   gridSql String
   gridStatus Boolean [not null, default: true]
   gridIsDeleted Boolean [not null, default: false]
+  gridCreatedOn DateTime [default: `now()`, not null]
+  gridCreatedBy String
+  gridModifiedOn DateTime
+  gridModifiedBy String
+  gridSyncOn DateTime
   columns grid_columns [not null]
 }
 
@@ -1192,6 +1204,7 @@ Table ui_tables {
   uiTblModifiedOn DateTime [default: `now()`, not null]
   uiTblModifiedBy String
   uiTblDeviceType String
+  uiTblSyncOn DateTime
   uiTableColumns ui_table_columns [not null]
 }
 

@@ -63,6 +63,21 @@ export class GridColumnPayloadDto {
 
   @ApiProperty()
   grid_column_is_deleted!: boolean;
+
+  @ApiProperty({ example: '2026-06-13T10:00:00.000Z' })
+  grid_column_created_on!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_created_by!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '2026-06-13T10:00:00.000Z' })
+  grid_column_modified_on!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_column_modified_by!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '2026-06-13T10:00:00.000Z' })
+  grid_column_sync_on!: string | null;
 }
 
 export class GridDetailPayloadDto {
@@ -92,6 +107,21 @@ export class GridDetailPayloadDto {
 
   @ApiProperty()
   grid_is_deleted!: boolean;
+
+  @ApiProperty({ example: '2026-06-13T10:00:00.000Z' })
+  grid_created_on!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_created_by!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '2026-06-13T10:00:00.000Z' })
+  grid_modified_on!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  grid_modified_by!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: '2026-06-13T10:00:00.000Z' })
+  grid_sync_on!: string | null;
 
   @ApiProperty({ type: [GridColumnPayloadDto], description: 'Columns belonging to this grid' })
   columns!: GridColumnPayloadDto[];

@@ -17,8 +17,8 @@ export class SaveDropdownColumnDto {
   @OptionalUuid()
   dropdown_columns_id?: string;
 
-  @ApiProperty({ minimum: 1, type: Number })
-  @RequiredInteger(1)
+  @ApiProperty({ minimum: 0, type: Number })
+  @RequiredInteger(0)
   dropdown_columns_no!: number;
 
   @ApiProperty({ maxLength: 50, type: String })

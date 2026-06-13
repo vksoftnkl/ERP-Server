@@ -57,8 +57,8 @@ export class SaveDropdownDetailDto {
   @OptionalBoolean()
   dropdown_show_header?: boolean;
 
-  @ApiPropertyOptional({ nullable: true, minimum: 1 })
-  @NullableInteger(1)
+  @ApiPropertyOptional({ nullable: true, minimum: 0 })
+  @NullableInteger(0)
   dropdown_width?: number | null;
 
   @ApiPropertyOptional({ nullable: true, type: String })

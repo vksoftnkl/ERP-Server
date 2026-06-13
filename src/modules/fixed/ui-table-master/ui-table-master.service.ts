@@ -522,6 +522,7 @@ export class UiTableMasterService {
       uiTblIsDeleted: record.uiTblIsDeleted,
       uiTblDeviceType: (record as unknown as Record<string, unknown>)['uiTblDeviceType'] as string | null ?? null,
       uiTblSyncDate: record.uiTblSyncDate ? record.uiTblSyncDate.toISOString() : null,
+      uiTblSyncOn: record.uiTblSyncOn ? record.uiTblSyncOn.toISOString() : null,
       uiTblCreatedOn: record.uiTblCreatedOn.toISOString(),
       uiTblCreatedBy: record.uiTblCreatedBy,
       uiTblModifiedOn: record.uiTblModifiedOn.toISOString(),

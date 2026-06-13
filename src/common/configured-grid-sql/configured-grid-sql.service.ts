@@ -165,23 +165,26 @@ export class ConfiguredGridSqlService {
     let params = options.params ?? [];
     let preloadedColumns: GridColumnItem[] | undefined;
 
-    if (options.search?.trim() && options.gridId !== undefined) {
-      // Load columns once — reused for both searchable field derivation and styles response.
-      // This avoids a second gridColumn query that getSearchableFieldNames would otherwise make.
-      preloadedColumns = await this.loadGridColumns(options.gridId);
-      const searchableFieldNames = this.deriveSearchableFieldNames(
-        preloadedColumns,
-        options.baseSql,
-      );
-      const searchableSql = this.buildSearchSql({
-        baseSql: options.baseSql,
-        alias: options.alias,
-        search: options.search,
-        searchableFieldNames,
-        params,
-      });
-      baseSql = searchableSql.sql;
-      params = searchableSql.params;
+    if (options.search?.trim()) {
+      // Prefer caller-supplied field names (e.g. dropdown details); otherwise derive from grid columns.
+      let searchableFieldNames = options.searchableFieldNames;
+      if (searchableFieldNames === undefined && options.gridId !== undefined) {
+        // Load columns once — reused for both searchable field derivation and styles response.
+        // This avoids a second gridColumn query that getSearchableFieldNames would otherwise make.
+        preloadedColumns = await this.loadGridColumns(options.gridId);
+        searchableFieldNames = this.deriveSearchableFieldNames(preloadedColumns, options.baseSql);
+      }
+      if (searchableFieldNames !== undefined) {
+        const searchableSql = this.buildSearchSql({
+          baseSql: options.baseSql,
+          alias: options.alias,
+          search: options.search,
+          searchableFieldNames,
+          params,
+        });
+        baseSql = searchableSql.sql;
+        params = searchableSql.params;
+      }
     }
 
     const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS ${options.alias}_count`;
@@ -261,6 +264,40 @@ export class ConfiguredGridSqlService {
   async getSearchableFieldNames(gridId: bigint, baseSql: string): Promise<string[]> {
     const columns = await this.loadGridColumns(gridId);
     return this.deriveSearchableFieldNames(columns, baseSql);
+  }
+  /**
+   * Derive searchable field names from a caller-provided column list, reusing the same
+   * explicit-sql-name + heuristic matching used for grids. Lets non-grid modules (e.g. dropdown
+   * details) feed their own column metadata without depending on the grid_columns table.
+   */
+  deriveSearchableFieldNamesFromColumns(
+    columns: Array<{
+      filter: boolean;
+      sqlFieldName: string | null;
+      columnNumber: number;
+      columnName: string;
+    }>,
+    baseSql: string,
+  ): string[] {
+    const mapped: GridColumnItem[] = columns.map((col, index) => ({
+      grid_column_id: String(index),
+      grid_column_number: col.columnNumber,
+      grid_column_name: col.columnName,
+      grid_column_width: null,
+      grid_column_position: null,
+      grid_column_alignment: null,
+      grid_column_visibility: true,
+      grid_column_filter: col.filter,
+      grid_column_condition: null,
+      grid_column_condition_color: null,
+      grid_column_group: false,
+      grid_column_total: false,
+      grid_column_data_type: null,
+      grid_column_color: null,
+      grid_column_notes: null,
+      grid_column_sql_field_name: col.sqlFieldName,
+    }));
+    return this.deriveSearchableFieldNames(mapped, baseSql);
   }
   private deriveSearchableFieldNames(columns: GridColumnItem[], baseSql: string): string[] {
     const filterableColumns = columns

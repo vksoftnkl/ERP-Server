@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DropdownColumns, DropdownDetails, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { ConfiguredGridSqlService } from '../../common/configured-grid-sql/configured-grid-sql.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { RequestContextService } from '../../common/request-context/request-context.service';
 import { ListDropdownDetailQueryDto } from './dto/list-dropdown-detail-query.dto';
@@ -9,12 +10,14 @@ import { SaveDropdownColumnDto } from './dto/save-dropdown-column.dto';
 import { SaveColumnWidthDto } from './dto/save-column-width.dto';
 import { SaveFilterSettingsDto } from './dto/save-filter-settings.dto';
 import { SaveVisibilitySettingsDto } from './dto/save-visibility-settings.dto';
+import { RunDropdownQueryDto } from './dto/run-dropdown-query.dto';
 import {
   DropdownColumnPayload,
   DropdownDetailErrorDetail,
   DropdownDetailErrorResponse,
   DropdownDetailListItem,
   DropdownDetailPayload,
+  DropdownRunResult,
 } from './types/dropdown-detail-api.types';
 import {
   DEFAULT_ACTOR,
@@ -37,6 +40,7 @@ export class DropdownDetailsService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
 
   async save(saveDropdownDetailDto: SaveDropdownDetailDto): Promise<DropdownDetailPayload> {
@@ -73,6 +77,112 @@ export class DropdownDetailsService {
     })) as unknown as DropdownDetailsWithColumns[];
     return { items: records.map((record) => this.toPayload(record)) };
   }
+
+  async run(queryDto: RunDropdownQueryDto): Promise<DropdownRunResult> {
+    const dropdownId = this.parseIntId('dropdown_id', queryDto.dropdown_id);
+    const page = queryDto.page ?? 1;
+    const limit = queryDto.limit ?? 20;
+    const skip = (page - 1) * limit;
+    const dropdownPrm = this.parseDropdownParam(queryDto.dropdown_param);
+
+    const dropdown = await this.prisma.dropdownDetails.findFirst({
+      where: { dropdownId },
+      select: { dropdownId: true, dropdownSql: true },
+    });
+    if (!dropdown) {
+      throwFixedNotFound<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+        'Dropdown details not found',
+        'dropdown_id',
+        `No dropdown details found with id ${queryDto.dropdown_id}`,
+      );
+    }
+
+    const baseSql = dropdown.dropdownSql?.trim();
+    if (!baseSql) {
+      throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+        'Invalid dropdown SQL configuration',
+        [{ field: 'dropdown_sql', message: `Dropdown ${queryDto.dropdown_id} has no configured SQL` }],
+      );
+    }
+
+    const tableName = this.configuredGridSqlService.extractTopLevelFromTableName(baseSql) ?? '';
+    const validation = this.configuredGridSqlService.validateBaseSql({ sql: baseSql, tableName });
+    if (!validation.isValid) {
+      throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+        'Invalid dropdown SQL configuration',
+        [{ field: 'dropdown_sql', message: validation.message }],
+      );
+    }
+
+    const finalSql = dropdownPrm
+      ? this.configuredGridSqlService.substituteGridPrm(validation.normalizedSql, dropdownPrm)
+      : validation.normalizedSql;
+
+    let searchableFieldNames: string[] | undefined;
+    if (queryDto.search?.trim()) {
+      const columns = await this.prisma.dropdownColumns.findMany({
+        where: { dropdownColumnsDropdownId: dropdownId },
+        orderBy: { dropdownColumnsNo: 'asc' },
+        select: {
+          dropdownColumnsFilter: true,
+          dropdownColumnsSqlName: true,
+          dropdownColumnsNo: true,
+          dropdownColumnsName: true,
+        },
+      });
+      searchableFieldNames = this.configuredGridSqlService.deriveSearchableFieldNamesFromColumns(
+        columns.map((col) => ({
+          filter: col.dropdownColumnsFilter,
+          sqlFieldName: col.dropdownColumnsSqlName,
+          columnNumber: col.dropdownColumnsNo,
+          columnName: col.dropdownColumnsName,
+        })),
+        finalSql,
+      );
+    }
+
+    let result: { items: Record<string, unknown>[]; total: number };
+    try {
+      result = await this.configuredGridSqlService.runPagedQuery<Record<string, unknown>>({
+        baseSql: finalSql,
+        alias: 'cdropdown',
+        search: queryDto.search,
+        limit,
+        skip,
+        searchableFieldNames,
+      });
+    } catch (error: unknown) {
+      // dropdown_sql is not execution-validated at save time, so a malformed query
+      // surfaces here. Translate the raw DB failure into a clean 400 instead of a 500.
+      const rawMessage = this.extractErrorMessage(error);
+      throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+        'Invalid dropdown SQL configuration',
+        [
+          {
+            field: 'dropdown_sql',
+            message: rawMessage
+              ? `dropdown_sql could not be executed: ${rawMessage}`
+              : 'dropdown_sql could not be executed',
+          },
+        ],
+      );
+    }
+
+    return {
+      items: result.items,
+      meta: { page, limit, total: result.total },
+    };
+  }
+
+  private extractErrorMessage(error: unknown): string | null {
+    if (error instanceof Error) return error.message.replace(/\s+/g, ' ').trim();
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string') return message.replace(/\s+/g, ' ').trim();
+    }
+    return null;
+  }
+
   async updateColumnWidths(dto: SaveColumnWidthDto): Promise<{ updated: number }> {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
@@ -251,16 +361,24 @@ export class DropdownDetailsService {
   private async createDropdownDetails(
     saveDropdownDetailDto: SaveDropdownDetailDto,
   ): Promise<DropdownDetailPayload> {
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     const data: Prisma.DropdownDetailsUncheckedCreateInput = {
       dropdownName: saveDropdownDetailDto.dropdown_name.trim(),
       dropdownSql: saveDropdownDetailDto.dropdown_sql.trim(),
+      dropdownCreatedBy: actor,
+      dropdownModifiedBy: null,
     };
     this.applyOptionalDropdownFields(data, saveDropdownDetailDto);
 
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.dropdownDetails.create({ data });
       if (saveDropdownDetailDto.dropdown_columns?.length) {
-        await this.saveColumnsInTx(saveDropdownDetailDto.dropdown_columns, created.dropdownId, tx);
+        await this.saveColumnsInTx(
+          saveDropdownDetailDto.dropdown_columns,
+          created.dropdownId,
+          actor,
+          tx,
+        );
       }
       const full = await tx.dropdownDetails.findFirstOrThrow({
         where: { dropdownId: created.dropdownId },
@@ -271,7 +389,6 @@ export class DropdownDetailsService {
         },
       });
       const payload = this.toPayload(full as DropdownDetailsWithColumns);
-      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       await this.auditLogService.logEntityChange(
         {
           action: 'New',
@@ -296,6 +413,7 @@ export class DropdownDetailsService {
   ): Promise<DropdownDetailPayload> {
     const dropdownId = saveDropdownDetailDto.dropdown_id!;
     const parsedDropdownId = this.parseIntId('dropdown_id', dropdownId);
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
 
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.dropdownDetails.findFirst({
@@ -313,6 +431,7 @@ export class DropdownDetailsService {
       const data: Prisma.DropdownDetailsUncheckedUpdateInput = {
         dropdownName: saveDropdownDetailDto.dropdown_name.trim(),
         dropdownSql: saveDropdownDetailDto.dropdown_sql.trim(),
+        dropdownModifiedBy: actor,
       };
       this.applyOptionalDropdownFields(data, saveDropdownDetailDto);
       await tx.dropdownDetails.update({ where: { dropdownId: parsedDropdownId }, data });
@@ -333,7 +452,12 @@ export class DropdownDetailsService {
             },
           });
         }
-        await this.saveColumnsInTx(saveDropdownDetailDto.dropdown_columns, parsedDropdownId, tx);
+        await this.saveColumnsInTx(
+          saveDropdownDetailDto.dropdown_columns,
+          parsedDropdownId,
+          actor,
+          tx,
+        );
       }
 
       const full = await tx.dropdownDetails.findFirstOrThrow({
@@ -345,7 +469,6 @@ export class DropdownDetailsService {
         },
       });
       const payload = this.toPayload(full as DropdownDetailsWithColumns);
-      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       await this.auditLogService.logEntityChange(
         {
           action: 'update',
@@ -368,16 +491,18 @@ export class DropdownDetailsService {
   private async saveColumnsInTx(
     columns: SaveDropdownColumnDto[],
     dropdownId: number,
+    actor: string,
     tx: FixedWriteClient,
   ): Promise<void> {
     for (const colDto of columns) {
-      await this.upsertColumnInTx(colDto, dropdownId, tx);
+      await this.upsertColumnInTx(colDto, dropdownId, actor, tx);
     }
   }
 
   private async upsertColumnInTx(
     colDto: SaveDropdownColumnDto,
     dropdownId: number,
+    actor: string,
     tx: FixedWriteClient,
   ): Promise<void> {
     const normalizedName = colDto.dropdown_columns_name?.trim();
@@ -407,6 +532,7 @@ export class DropdownDetailsService {
         dropdownColumnsDropdownId: dropdownId,
         dropdownColumnsNo: colDto.dropdown_columns_no,
         dropdownColumnsDataType: normalizedDataType,
+        dropdownColumnsModifiedBy: actor,
       };
       this.applyOptionalColumnFields(colData, colDto);
       await tx.dropdownColumns.update({ where: { dropdownColumnsId: parsedId }, data: colData });
@@ -416,6 +542,8 @@ export class DropdownDetailsService {
         dropdownColumnsDropdownId: dropdownId,
         dropdownColumnsNo: colDto.dropdown_columns_no,
         dropdownColumnsDataType: normalizedDataType,
+        dropdownColumnsCreatedBy: actor,
+        dropdownColumnsModifiedBy: null,
       };
       this.applyOptionalColumnFields(colData, colDto);
       await tx.dropdownColumns.create({ data: colData });
@@ -477,6 +605,11 @@ export class DropdownDetailsService {
       dropdown_show_header: record.dropdownShowHeader,
       dropdown_width: record.dropdownWidth,
       dropdown_device_type: record.dropdownDeviceType,
+      dropdown_created_on: record.dropdownCreatedOn.toISOString(),
+      dropdown_created_by: record.dropdownCreatedBy,
+      dropdown_modified_on: record.dropdownModifiedOn?.toISOString() ?? null,
+      dropdown_modified_by: record.dropdownModifiedBy,
+      dropdown_sync_on: record.dropdownSyncOn?.toISOString() ?? null,
       columns: record.dropdownColumns.map((col) => this.toColumnPayload(col)),
     };
   }
@@ -494,7 +627,61 @@ export class DropdownDetailsService {
       dropdown_columns_allignment: record.dropdownColumnsAllignment,
       dropdown_columns_filter: record.dropdownColumnsFilter,
       dropdown_columns_sql_name: record.dropdownColumnsSqlName,
+      dropdown_columns_created_on: record.dropdownColumnsCreatedOn.toISOString(),
+      dropdown_columns_created_by: record.dropdownColumnsCreatedBy,
+      dropdown_columns_modified_on: record.dropdownColumnsModifiedOn?.toISOString() ?? null,
+      dropdown_columns_modified_by: record.dropdownColumnsModifiedBy,
+      dropdown_columns_sync_on: record.dropdownColumnsSyncOn?.toISOString() ?? null,
     };
+  }
+
+  private parseDropdownParam(raw: string | undefined): Record<string, unknown> | undefined {
+    if (raw === undefined) {
+      return undefined;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+        'Validation error',
+        [{ field: 'dropdown_param', message: 'dropdown_param must be valid JSON' }],
+      );
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+        'Validation error',
+        [{ field: 'dropdown_param', message: 'dropdown_param must be a JSON object' }],
+      );
+    }
+    const prm = parsed as Record<string, unknown>;
+    for (const [key, val] of Object.entries(prm)) {
+      if (!/^[a-z_][a-z0-9_]*$/i.test(key)) {
+        throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+          'Validation error',
+          [{ field: 'dropdown_param', message: `Invalid parameter name in dropdown_param: "${key}"` }],
+        );
+      }
+      if (
+        val !== null &&
+        val !== undefined &&
+        typeof val !== 'boolean' &&
+        typeof val !== 'number' &&
+        typeof val !== 'string'
+      ) {
+        throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+          'Validation error',
+          [{ field: 'dropdown_param', message: `Unsupported value type for dropdown_param.${key}: ${typeof val}` }],
+        );
+      }
+      if (typeof val === 'number' && !Number.isFinite(val)) {
+        throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
+          'Validation error',
+          [{ field: 'dropdown_param', message: `Non-finite number for dropdown_param.${key}` }],
+        );
+      }
+    }
+    return prm;
   }
 
   private parseUuidId(field: string, value: string): string {

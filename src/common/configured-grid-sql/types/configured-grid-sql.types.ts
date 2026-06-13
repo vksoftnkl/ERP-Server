@@ -52,6 +52,11 @@ export interface RunConfiguredGridSqlPageOptions {
   skip: number;
   /** When provided, grid column definitions are used to derive searchable field names for search. */
   gridId?: bigint;
+  /**
+   * Pre-derived searchable field names. When provided, these take precedence over `gridId`-based
+   * derivation, allowing non-grid callers (e.g. dropdown details) to reuse the paged query engine.
+   */
+  searchableFieldNames?: string[];
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
 }
