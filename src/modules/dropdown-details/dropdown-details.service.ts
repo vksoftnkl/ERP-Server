@@ -68,7 +68,7 @@ export class DropdownDetailsService {
       orderBy: [{ dropdownName: 'asc' }, { dropdownId: 'asc' }],
       include: {
         dropdownColumns: {
-          orderBy: [{ dropColumnsColumnNo: 'asc' }, { dropColumnsId: 'asc' }],
+          orderBy: [{ dropdownColumnsNo: 'asc' }, { dropdownColumnsId: 'asc' }],
         },
       },
     })) as unknown as DropdownDetailsWithColumns[];
@@ -80,21 +80,21 @@ export class DropdownDetailsService {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
       for (const item of dto.columns) {
-        const columnId = this.parseUuidId('drop_columns_id', item.drop_columns_id);
+        const columnId = this.parseUuidId('dropdown_columns_id', item.dropdown_columns_id);
         const existing = await tx.dropdownColumns.findFirst({
-          where: { dropColumnsId: columnId },
-          select: { dropColumnsId: true },
+          where: { dropdownColumnsId: columnId },
+          select: { dropdownColumnsId: true },
         });
         if (!existing) {
           throwFixedNotFound<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
             'Dropdown column not found',
-            'drop_columns_id',
-            `No dropdown column found with id ${item.drop_columns_id}`,
+            'dropdown_columns_id',
+            `No dropdown column found with id ${item.dropdown_columns_id}`,
           );
         }
         await tx.dropdownColumns.update({
-          where: { dropColumnsId: columnId },
-          data: { dropColumnsColumnWidth: item.drop_columns_column_width },
+          where: { dropdownColumnsId: columnId },
+          data: { dropdownColumnsWidth: item.dropdown_columns_width },
         });
         count++;
       }
@@ -106,21 +106,21 @@ export class DropdownDetailsService {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
       for (const item of dto.columns) {
-        const columnId = this.parseUuidId('drop_columns_id', item.drop_columns_id);
+        const columnId = this.parseUuidId('dropdown_columns_id', item.dropdown_columns_id);
         const existing = await tx.dropdownColumns.findFirst({
-          where: { dropColumnsId: columnId },
-          select: { dropColumnsId: true },
+          where: { dropdownColumnsId: columnId },
+          select: { dropdownColumnsId: true },
         });
         if (!existing) {
           throwFixedNotFound<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
             'Dropdown column not found',
-            'drop_columns_id',
-            `No dropdown column found with id ${item.drop_columns_id}`,
+            'dropdown_columns_id',
+            `No dropdown column found with id ${item.dropdown_columns_id}`,
           );
         }
         await tx.dropdownColumns.update({
-          where: { dropColumnsId: columnId },
-          data: { dropColumnsColumnFilter: item.drop_columns_column_filter },
+          where: { dropdownColumnsId: columnId },
+          data: { dropdownColumnsFilter: item.dropdown_columns_filter },
         });
         count++;
       }
@@ -132,21 +132,21 @@ export class DropdownDetailsService {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
       for (const item of dto.columns) {
-        const columnId = this.parseUuidId('drop_columns_id', item.drop_columns_id);
+        const columnId = this.parseUuidId('dropdown_columns_id', item.dropdown_columns_id);
         const existing = await tx.dropdownColumns.findFirst({
-          where: { dropColumnsId: columnId },
-          select: { dropColumnsId: true },
+          where: { dropdownColumnsId: columnId },
+          select: { dropdownColumnsId: true },
         });
         if (!existing) {
           throwFixedNotFound<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
             'Dropdown column not found',
-            'drop_columns_id',
-            `No dropdown column found with id ${item.drop_columns_id}`,
+            'dropdown_columns_id',
+            `No dropdown column found with id ${item.dropdown_columns_id}`,
           );
         }
         await tx.dropdownColumns.update({
-          where: { dropColumnsId: columnId },
-          data: { dropColumnsColumnVisiblity: item.drop_columns_column_visiblity },
+          where: { dropdownColumnsId: columnId },
+          data: { dropdownColumnsVisiblity: item.dropdown_columns_visiblity },
         });
         count++;
       }
@@ -160,7 +160,7 @@ export class DropdownDetailsService {
       where: { dropdownId: parsedDropdownId },
       include: {
         dropdownColumns: {
-          orderBy: [{ dropColumnsColumnNo: 'asc' }, { dropColumnsId: 'asc' }],
+          orderBy: [{ dropdownColumnsNo: 'asc' }, { dropdownColumnsId: 'asc' }],
         },
       },
     });
@@ -213,23 +213,23 @@ export class DropdownDetailsService {
     });
   }
 
-  async deleteColumn(drop_columns_id: string): Promise<{ drop_columns_id: string; deleted: true }> {
-    const parsedColumnId = this.parseUuidId('drop_columns_id', drop_columns_id);
+  async deleteColumn(dropdown_columns_id: string): Promise<{ dropdown_columns_id: string; deleted: true }> {
+    const parsedColumnId = this.parseUuidId('dropdown_columns_id', dropdown_columns_id);
 
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.dropdownColumns.findFirst({
-        where: { dropColumnsId: parsedColumnId },
+        where: { dropdownColumnsId: parsedColumnId },
       });
 
       if (!existing) {
         throwFixedNotFound<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
           'Dropdown column not found',
-          'drop_columns_id',
-          `No dropdown column found with id ${drop_columns_id}`,
+          'dropdown_columns_id',
+          `No dropdown column found with id ${dropdown_columns_id}`,
         );
       }
 
-      await tx.dropdownColumns.delete({ where: { dropColumnsId: parsedColumnId } });
+      await tx.dropdownColumns.delete({ where: { dropdownColumnsId: parsedColumnId } });
 
       const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       await this.auditLogService.logEntityChange(
@@ -238,8 +238,8 @@ export class DropdownDetailsService {
           tableName: DROPDOWN_COLUMN_TABLE_NAME,
           screenName: DROPDOWN_DETAIL_AUDIT_SCREEN_NAME,
           screenType: 'master',
-          pk: drop_columns_id,
-          displayName: existing.dropColumnsColumnName ?? `Dropdown column ${drop_columns_id}`,
+          pk: dropdown_columns_id,
+          displayName: existing.dropdownColumnsName ?? `Dropdown column ${dropdown_columns_id}`,
           originalRecord: this.toColumnPayload(existing),
           modifiedRecord: this.toColumnPayload(existing),
           userId: actor,
@@ -248,7 +248,7 @@ export class DropdownDetailsService {
         tx,
       );
 
-      return { drop_columns_id: drop_columns_id, deleted: true };
+      return { dropdown_columns_id: dropdown_columns_id, deleted: true };
     });
   }
 
@@ -270,7 +270,7 @@ export class DropdownDetailsService {
         where: { dropdownId: created.dropdownId },
         include: {
           dropdownColumns: {
-            orderBy: [{ dropColumnsColumnNo: 'asc' }, { dropColumnsId: 'asc' }],
+            orderBy: [{ dropdownColumnsNo: 'asc' }, { dropdownColumnsId: 'asc' }],
           },
         },
       });
@@ -322,25 +322,29 @@ export class DropdownDetailsService {
       await tx.dropdownDetails.update({ where: { dropdownId: parsedDropdownId }, data });
 
       if (saveDropdownDetailDto.dropdown_columns !== undefined) {
-        await this.saveColumnsInTx(saveDropdownDetailDto.dropdown_columns, parsedDropdownId, tx);
+        // Prune removed columns BEFORE upserting. New columns in the payload have
+        // no dropdown_columns_id yet, so they are absent from keptIds; deleting
+        // first ensures the cleanup only targets columns the user actually removed
+        // and never the rows that saveColumnsInTx is about to insert.
         if (saveDropdownDetailDto.replace_columns === true) {
           const keptIds = saveDropdownDetailDto.dropdown_columns
-            .filter((col) => !!col.drop_columns_id)
-            .map((col) => this.parseUuidId('drop_columns_id', col.drop_columns_id!));
+            .filter((col) => !!col.dropdown_columns_id)
+            .map((col) => this.parseUuidId('dropdown_columns_id', col.dropdown_columns_id!));
           await tx.dropdownColumns.deleteMany({
             where: {
-              dropColumnsDropdownId: parsedDropdownId,
-              ...(keptIds.length > 0 ? { dropColumnsId: { notIn: keptIds } } : {}),
+              dropdownColumnsDropdownId: parsedDropdownId,
+              ...(keptIds.length > 0 ? { dropdownColumnsId: { notIn: keptIds } } : {}),
             },
           });
         }
+        await this.saveColumnsInTx(saveDropdownDetailDto.dropdown_columns, parsedDropdownId, tx);
       }
 
       const full = await tx.dropdownDetails.findFirstOrThrow({
         where: { dropdownId: parsedDropdownId },
         include: {
           dropdownColumns: {
-            orderBy: [{ dropColumnsColumnNo: 'asc' }, { dropColumnsId: 'asc' }],
+            orderBy: [{ dropdownColumnsNo: 'asc' }, { dropdownColumnsId: 'asc' }],
           },
         },
       });
@@ -380,42 +384,42 @@ export class DropdownDetailsService {
     dropdownId: number,
     tx: FixedWriteClient,
   ): Promise<void> {
-    const normalizedName = colDto.drop_columns_column_name?.trim();
+    const normalizedName = colDto.dropdown_columns_name?.trim();
     if (!normalizedName) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Validation failed',
         [
           {
-            field: 'drop_columns_column_name',
-            message: 'drop_columns_column_name must not be empty',
+            field: 'dropdown_columns_name',
+            message: 'dropdown_columns_name must not be empty',
           },
         ],
       );
     }
-    const normalizedDataType = colDto.drop_columns_data_type?.trim();
+    const normalizedDataType = colDto.dropdown_columns_data_type?.trim();
     if (!normalizedDataType) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
         'Validation failed',
-        [{ field: 'drop_columns_data_type', message: 'drop_columns_data_type must not be empty' }],
+        [{ field: 'dropdown_columns_data_type', message: 'dropdown_columns_data_type must not be empty' }],
       );
     }
 
-    if (colDto.drop_columns_id) {
-      const parsedId = this.parseUuidId('drop_columns_id', colDto.drop_columns_id);
+    if (colDto.dropdown_columns_id) {
+      const parsedId = this.parseUuidId('dropdown_columns_id', colDto.dropdown_columns_id);
       const colData: Prisma.DropdownColumnsUncheckedUpdateInput = {
-        dropColumnsColumnName: normalizedName,
-        dropColumnsDropdownId: dropdownId,
-        dropColumnsColumnNo: colDto.drop_columns_column_no,
-        dropColumnsDataType: normalizedDataType,
+        dropdownColumnsName: normalizedName,
+        dropdownColumnsDropdownId: dropdownId,
+        dropdownColumnsNo: colDto.dropdown_columns_no,
+        dropdownColumnsDataType: normalizedDataType,
       };
       this.applyOptionalColumnFields(colData, colDto);
-      await tx.dropdownColumns.update({ where: { dropColumnsId: parsedId }, data: colData });
+      await tx.dropdownColumns.update({ where: { dropdownColumnsId: parsedId }, data: colData });
     } else {
       const colData: Prisma.DropdownColumnsUncheckedCreateInput = {
-        dropColumnsColumnName: normalizedName,
-        dropColumnsDropdownId: dropdownId,
-        dropColumnsColumnNo: colDto.drop_columns_column_no,
-        dropColumnsDataType: normalizedDataType,
+        dropdownColumnsName: normalizedName,
+        dropdownColumnsDropdownId: dropdownId,
+        dropdownColumnsNo: colDto.dropdown_columns_no,
+        dropdownColumnsDataType: normalizedDataType,
       };
       this.applyOptionalColumnFields(colData, colDto);
       await tx.dropdownColumns.create({ data: colData });
@@ -426,16 +430,16 @@ export class DropdownDetailsService {
     data: Prisma.DropdownColumnsUncheckedCreateInput | Prisma.DropdownColumnsUncheckedUpdateInput,
     dto: SaveDropdownColumnDto,
   ): void {
-    if (hasOwnProperty(dto, 'drop_columns_column_alias'))
-      data.dropColumnsColumnAlias = dto.drop_columns_column_alias;
-    if (hasOwnProperty(dto, 'drop_columns_column_width'))
-      data.dropColumnsColumnWidth = dto.drop_columns_column_width;
-    if (hasOwnProperty(dto, 'drop_columns_column_visiblity'))
-      data.dropColumnsColumnVisiblity = dto.drop_columns_column_visiblity;
-    if (hasOwnProperty(dto, 'drop_columns_column_allignment'))
-      data.dropColumnsColumnAllignment = dto.drop_columns_column_allignment;
-    if (hasOwnProperty(dto, 'drop_columns_column_filter'))
-      data.dropColumnsColumnFilter = dto.drop_columns_column_filter;
+    if (hasOwnProperty(dto, 'dropdown_columns_alias'))
+      data.dropdownColumnsAlias = dto.dropdown_columns_alias;
+    if (hasOwnProperty(dto, 'dropdown_columns_width'))
+      data.dropdownColumnsWidth = dto.dropdown_columns_width;
+    if (hasOwnProperty(dto, 'dropdown_columns_visiblity'))
+      data.dropdownColumnsVisiblity = dto.dropdown_columns_visiblity;
+    if (hasOwnProperty(dto, 'dropdown_columns_allignment'))
+      data.dropdownColumnsAllignment = dto.dropdown_columns_allignment;
+    if (hasOwnProperty(dto, 'dropdown_columns_filter'))
+      data.dropdownColumnsFilter = dto.dropdown_columns_filter;
   }
 
   private applyOptionalDropdownFields(
@@ -457,6 +461,8 @@ export class DropdownDetailsService {
     if (hasOwnProperty(dto, 'dropdown_show_header'))
       data.dropdownShowHeader = dto.dropdown_show_header;
     if (hasOwnProperty(dto, 'dropdown_width')) data.dropdownWidth = dto.dropdown_width;
+    if (hasOwnProperty(dto, 'dropdown_device_type'))
+      data.dropdownDeviceType = dto.dropdown_device_type;
   }
 
   private toPayload(record: DropdownDetailsWithColumns): DropdownDetailPayload {
@@ -472,22 +478,23 @@ export class DropdownDetailsService {
       dropdown_max_visible_items: record.dropdownMaxVisibleItems,
       dropdown_show_header: record.dropdownShowHeader,
       dropdown_width: record.dropdownWidth,
+      dropdown_device_type: record.dropdownDeviceType,
       columns: record.dropdownColumns.map((col) => this.toColumnPayload(col)),
     };
   }
 
   private toColumnPayload(record: DropdownColumns): DropdownColumnPayload {
     return {
-      drop_columns_id: record.dropColumnsId,
-      dropdown_id: String(record.dropColumnsDropdownId),
-      drop_columns_column_no: record.dropColumnsColumnNo,
-      drop_columns_data_type: record.dropColumnsDataType,
-      drop_columns_column_name: record.dropColumnsColumnName,
-      drop_columns_column_alias: record.dropColumnsColumnAlias,
-      drop_columns_column_width: toNullableNumber(record.dropColumnsColumnWidth),
-      drop_columns_column_visiblity: record.dropColumnsColumnVisiblity,
-      drop_columns_column_allignment: record.dropColumnsColumnAllignment,
-      drop_columns_column_filter: record.dropColumnsColumnFilter,
+      dropdown_columns_id: record.dropdownColumnsId,
+      dropdown_columns_dropdown_id: String(record.dropdownColumnsDropdownId),
+      dropdown_columns_no: record.dropdownColumnsNo,
+      dropdown_columns_data_type: record.dropdownColumnsDataType,
+      dropdown_columns_name: record.dropdownColumnsName,
+      dropdown_columns_alias: record.dropdownColumnsAlias,
+      dropdown_columns_width: toNullableNumber(record.dropdownColumnsWidth),
+      dropdown_columns_visiblity: record.dropdownColumnsVisiblity,
+      dropdown_columns_allignment: record.dropdownColumnsAllignment,
+      dropdown_columns_filter: record.dropdownColumnsFilter,
     };
   }
 

@@ -61,6 +61,10 @@ export class SaveDropdownDetailDto {
   @NullableInteger(1)
   dropdown_width?: number | null;
 
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @NullableString()
+  dropdown_device_type?: string | null;
+
   @ApiPropertyOptional({
     description: 'Array of columns to create or update for this dropdown',
     type: [SaveDropdownColumnDto],

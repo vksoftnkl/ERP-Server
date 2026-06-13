@@ -3,16 +3,16 @@ export type { FixedErrorResponse as DropdownDetailErrorResponse } from 'src/comm
 export type { FixedSuccessResponse as DropdownDetailSuccessResponse } from 'src/common/types/module-api.types';
 
 export interface DropdownColumnPayload {
-  drop_columns_id: string;
-  dropdown_id: string;
-  drop_columns_column_no: number;
-  drop_columns_data_type: string;
-  drop_columns_column_name: string;
-  drop_columns_column_alias: string | null;
-  drop_columns_column_width: number | null;
-  drop_columns_column_visiblity: boolean;
-  drop_columns_column_allignment: string | null;
-  drop_columns_column_filter: boolean;
+  dropdown_columns_id: string;
+  dropdown_columns_dropdown_id: string;
+  dropdown_columns_no: number;
+  dropdown_columns_data_type: string;
+  dropdown_columns_name: string;
+  dropdown_columns_alias: string | null;
+  dropdown_columns_width: number | null;
+  dropdown_columns_visiblity: boolean;
+  dropdown_columns_allignment: string | null;
+  dropdown_columns_filter: boolean;
 }
 
 export interface DropdownDetailPayload {
@@ -27,6 +27,7 @@ export interface DropdownDetailPayload {
   dropdown_max_visible_items: number;
   dropdown_show_header: boolean;
   dropdown_width: number | null;
+  dropdown_device_type: string | null;
   columns: DropdownColumnPayload[];
 }
 

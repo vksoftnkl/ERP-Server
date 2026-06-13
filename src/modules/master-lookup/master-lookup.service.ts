@@ -89,11 +89,11 @@ type DropdownRecord = {
   dropdownSortColumn: string | null;
   dropdownSortOrder: string | null;
   dropdownColumns: Array<{
-    dropColumnsColumnNo: number;
-    dropColumnsColumnName: string;
-    dropColumnsColumnAlias: string | null;
-    dropColumnsColumnFilter: boolean;
-    dropColumnsColumnVisiblity: boolean;
+    dropdownColumnsNo: number;
+    dropdownColumnsName: string;
+    dropdownColumnsAlias: string | null;
+    dropdownColumnsFilter: boolean;
+    dropdownColumnsVisiblity: boolean;
   }>;
 };
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ export class MasterLookupService {
   async getDropdownSqlData(dropdownId: number, search?: string, limit?: number): Promise<NameIdOption[]> {
     const record = await this.prisma.dropdownDetails.findUnique({
       where: { dropdownId },
-      include: { dropdownColumns: { orderBy: [{ dropColumnsColumnNo: 'asc' }] } },
+      include: { dropdownColumns: { orderBy: [{ dropdownColumnsNo: 'asc' }] } },
     });
     if (!record) return [];
     const config: DropdownLookupConfig = {
@@ -194,11 +194,11 @@ export class MasterLookupService {
       dropdownSortColumn: record.dropdownSortColumn,
       dropdownSortOrder: record.dropdownSortOrder,
       dropdownColumns: record.dropdownColumns
-        .filter((col) => col.dropColumnsColumnVisiblity)
-        .map((col) => ({
-          name: col.dropColumnsColumnName,
-          alias: col.dropColumnsColumnAlias,
-          filter: col.dropColumnsColumnFilter,
+        .filter((col: any) => col.dropdownColumnsVisiblity)
+        .map((col: any) => ({
+          name: col.dropdownColumnsName,
+          alias: col.dropdownColumnsAlias,
+          filter: col.dropdownColumnsFilter,
           visible: true,
         })),
     };
@@ -720,7 +720,7 @@ export class MasterLookupService {
   private async loadLookupDropdownConfigs(): Promise<Map<LookupModuleKey, DropdownLookupConfig>> {
     const records = await this.prisma.dropdownDetails.findMany({
       include: {
-        dropdownColumns: { orderBy: [{ dropColumnsColumnNo: 'asc' }] },
+        dropdownColumns: { orderBy: [{ dropdownColumnsNo: 'asc' }] },
       },
     });
     const configs = new Map<LookupModuleKey, DropdownLookupConfig>();
@@ -735,11 +735,11 @@ export class MasterLookupService {
         dropdownSortColumn: record.dropdownSortColumn,
         dropdownSortOrder: record.dropdownSortOrder,
         dropdownColumns: record.dropdownColumns
-          .filter((col) => col.dropColumnsColumnVisiblity)
+          .filter((col) => col.dropdownColumnsVisiblity)
           .map((col) => ({
-            name: col.dropColumnsColumnName,
-            alias: col.dropColumnsColumnAlias,
-            filter: col.dropColumnsColumnFilter,
+            name: col.dropdownColumnsName,
+            alias: col.dropdownColumnsAlias,
+            filter: col.dropdownColumnsFilter,
             visible: true,
           })),
       });

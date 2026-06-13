@@ -54,17 +54,18 @@ const dropdownDetailsCreateExample = {
   dropdown_max_visible_items: 10,
   dropdown_show_header: true,
   dropdown_width: 300,
+  dropdown_device_type: 'desktop',
   dropdown_columns: [
     {
-      drop_columns_id: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001',
-      drop_columns_column_no: 1,
-      drop_columns_data_type: 'string',
-      drop_columns_column_name: 'item_name',
-      drop_columns_column_alias: 'Item Name',
-      drop_columns_column_width: 180,
-      drop_columns_column_visiblity: true,
-      drop_columns_column_allignment: 'left',
-      drop_columns_column_filter: false,
+      dropdown_columns_id: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001',
+      dropdown_columns_no: 1,
+      dropdown_columns_data_type: 'string',
+      dropdown_columns_name: 'item_name',
+      dropdown_columns_alias: 'Item Name',
+      dropdown_columns_width: 180,
+      dropdown_columns_visiblity: true,
+      dropdown_columns_allignment: 'left',
+      dropdown_columns_filter: false,
     },
   ],
 };
@@ -161,14 +162,14 @@ export class DropdownDetailsController {
   @Delete('column-delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Delete a dropdown column by id' })
-  @ApiQuery({ name: 'drop_columns_id', description: 'UUID dropdown column id' })
+  @ApiQuery({ name: 'dropdown_columns_id', description: 'UUID dropdown column id' })
   @ApiOkResponse({ type: DropdownDetailSuccessColumnDeleteDto })
   @ApiBadRequestResponse({ type: DropdownDetailErrorResponseDto })
   @ApiNotFoundResponse({ type: DropdownDetailErrorResponseDto })
   async removeColumn(
-    @Query('drop_columns_id') dropColumnsId?: string,
-  ): Promise<DropdownDetailSuccessResponse<{ drop_columns_id: string; deleted: true }>> {
-    const data = await this.dropdownDetailsService.deleteColumn(dropColumnsId ?? '');
+    @Query('dropdown_columns_id') dropdownColumnsId?: string,
+  ): Promise<DropdownDetailSuccessResponse<{ dropdown_columns_id: string; deleted: true }>> {
+    const data = await this.dropdownDetailsService.deleteColumn(dropdownColumnsId ?? '');
     return { success: true, message: 'Dropdown column deleted successfully', data };
   }
   @Delete('delete')

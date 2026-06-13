@@ -11,34 +11,34 @@ export {
 
 export class DropdownColumnPayloadDto {
   @ApiProperty({ example: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001' })
-  drop_columns_id!: string;
+  dropdown_columns_id!: string;
 
   @ApiProperty({ example: '1' })
-  dropdown_id!: string;
+  dropdown_columns_dropdown_id!: string;
 
   @ApiProperty()
-  drop_columns_column_no!: number;
+  dropdown_columns_no!: number;
 
   @ApiProperty()
-  drop_columns_data_type!: string;
+  dropdown_columns_data_type!: string;
 
   @ApiProperty()
-  drop_columns_column_name!: string;
+  dropdown_columns_name!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  drop_columns_column_alias!: string | null;
+  dropdown_columns_alias!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  drop_columns_column_width!: number | null;
+  dropdown_columns_width!: number | null;
 
   @ApiProperty()
-  drop_columns_column_visiblity!: boolean;
+  dropdown_columns_visiblity!: boolean;
 
   @ApiPropertyOptional({ nullable: true })
-  drop_columns_column_allignment!: string | null;
+  dropdown_columns_allignment!: string | null;
 
   @ApiProperty()
-  drop_columns_column_filter!: boolean;
+  dropdown_columns_filter!: boolean;
 }
 
 export class DropdownDetailPayloadDto {
@@ -74,6 +74,9 @@ export class DropdownDetailPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   dropdown_width!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  dropdown_device_type!: string | null;
 
   @ApiProperty({
     type: [DropdownColumnPayloadDto],
@@ -125,7 +128,7 @@ export class DropdownDetailSuccessDeleteDto {
 
 export class DropdownColumnDeleteResultDto {
   @ApiProperty({ example: '018f2c9a-6cf2-7b6a-8f1c-4c9478c60001' })
-  drop_columns_id!: string;
+  dropdown_columns_id!: string;
 
   @ApiProperty({ example: true })
   deleted!: true;

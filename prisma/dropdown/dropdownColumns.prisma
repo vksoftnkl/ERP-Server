@@ -23,5 +23,3 @@ model DropdownColumns {
   @@map("dropdown_columns")
   @@schema("fixed")
 }
-
-

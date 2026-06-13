@@ -6,11 +6,11 @@ import { RequiredUuid } from '../../../common/dto/dtoDecorators';
 export class FilterSettingItemDto {
   @ApiProperty({ type: String, description: 'Dropdown column id to update' })
   @RequiredUuid()
-  drop_columns_id!: string;
+  dropdown_columns_id!: string;
 
   @ApiProperty({ type: Boolean })
   @IsBoolean()
-  drop_columns_column_filter!: boolean;
+  dropdown_columns_filter!: boolean;
 }
 
 export class SaveFilterSettingsDto {

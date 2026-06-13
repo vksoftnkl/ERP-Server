@@ -11,6 +11,6 @@ export class DropdownDetailExceptionFilter extends FixedExceptionFilter<
   DropdownDetailErrorResponse
 > {
   constructor() {
-    super(/\b((?:dropdown|drop_columns)_[a-z0-9_]+)\b/i);
+    super(/\b(dropdown_[a-z0-9_]+)\b/i);
   }
 }
