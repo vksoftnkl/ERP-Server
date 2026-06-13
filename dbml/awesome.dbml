@@ -954,19 +954,19 @@ Table user_login_sessions {
 }
 
 Table dropdown_columns {
-  dropColumnsSerialId BigInt [pk, increment]
-  dropColumnsDropdownId Int [not null]
+  dropdownColumnsId String [pk]
+  dropdownColumnsDropdownId Int [not null]
   dropdown dropdown_details [not null]
-  dropColumnsColumnNo Int [not null]
-  dropColumnsDataType String [not null]
-  dropColumnsColumnName String [not null]
-  dropColumnsColumnAlias String
-  dropColumnsColumnWidth Decimal
-  dropColumnsColumnVisiblity Boolean [not null, default: true]
-  dropColumnsColumnAllignment String
-  dropColumnsColumnFilter Boolean [not null, default: false]
-  dropColumnsCreatedOn DateTime [default: `now()`, not null]
-  dropColumnsModifiedOn DateTime
+  dropdownColumnsColumnNo Int [not null]
+  dropdownColumnsDataType String [not null]
+  dropdownColumnsColumnName String [not null]
+  dropdownColumnsColumnAlias String
+  dropdownColumnsColumnWidth Decimal
+  dropdownColumnsColumnVisiblity Boolean [not null, default: true]
+  dropdownColumnsColumnAllignment String
+  dropdownColumnsColumnFilter Boolean [not null, default: false]
+  dropdownColumnsCreatedOn DateTime [default: `now()`, not null]
+  dropdownColumnsModifiedOn DateTime
 }
 
 Table dropdown_details {
@@ -981,6 +981,7 @@ Table dropdown_details {
   dropdownMaxVisibleItems Int [not null, default: 10]
   dropdownShowHeader Boolean [not null, default: true]
   dropdownWidth Int
+  dropdownDeviceType String
   dropdownColumns dropdown_columns [not null]
 }
 
@@ -3172,7 +3173,7 @@ Ref: audit_log.logScreenId > audit_screen.screenId [delete: Restrict]
 
 Ref: user_login_sessions.ulsCompanyId > companys.compId [delete: Restrict]
 
-Ref: dropdown_columns.dropColumnsDropdownId > dropdown_details.dropdownId [delete: Cascade]
+Ref: dropdown_columns.dropdownColumnsDropdownId > dropdown_details.dropdownId [delete: Cascade]
 
 Ref: device_master.devCompanyId > companys.compId
 

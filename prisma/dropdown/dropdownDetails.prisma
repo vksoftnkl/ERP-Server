@@ -12,6 +12,7 @@ model DropdownDetails {
   dropdownMaxVisibleItems Int     @default(10)   @map("dropdown_max_visible_items")
   dropdownShowHeader      Boolean @default(true) @map("dropdown_show_header")
   dropdownWidth            Int?    @map("dropdown_width")
+  dropdownDeviceType String? @db.Text        @map("dropdown_device_type")
   dropdownColumns         DropdownColumns[]
 
   @@map("dropdown_details")

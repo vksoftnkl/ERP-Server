@@ -22,7 +22,6 @@ import { CustomerGroupModule } from '../modules/sales/customer-group/customer-gr
 import { CustomerModule } from '../modules/sales/customer/customer.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
-import { DropdownColumnsModule } from '../modules/dropdown-columns/dropdown-columns.module';
 import { HealthModule } from '../modules/health/health.module';
 import { ItemsCustRatesMasterModule } from '../modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemPriceDetailsModule } from '../modules/Inventory/item-price-details/item-price-details.module';
@@ -224,7 +223,8 @@ export const swaggerModuleDocuments = [
   {
     path: 'user-administration',
     title: 'User Administration API',
-    description: 'User administration module endpoints — manages UserMaster and UserMenus in a single call',
+    description:
+      'User administration module endpoints — manages UserMaster and UserMenus in a single call',
     include: [UserAdministrationModule],
   },
   {
@@ -304,12 +304,6 @@ export const swaggerModuleDocuments = [
     title: 'Dropdown Details API',
     description: 'Dropdown details module endpoints',
     include: [DropdownDetailsModule],
-  },
-  {
-    path: 'dropdown-columns',
-    title: 'Dropdown Columns API',
-    description: 'Dropdown columns module endpoints',
-    include: [DropdownColumnsModule],
   },
   {
     path: 'master-lookups',

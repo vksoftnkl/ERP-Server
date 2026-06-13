@@ -21,7 +21,6 @@ import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { GridDetailsModule } from './modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from './modules/dropdown-details/dropdown-details.module';
-import { DropdownColumnsModule } from './modules/dropdown-columns/dropdown-columns.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
 import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
@@ -172,7 +171,6 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     GodownsMasterModule,
     GridDetailsModule,
     DropdownDetailsModule,
-    DropdownColumnsModule,
     AuthModule,
   ],
   providers: [

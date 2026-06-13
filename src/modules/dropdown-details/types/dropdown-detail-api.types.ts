@@ -1,9 +1,20 @@
-import type { ModuleApiErrorDetail, ModuleApiErrorResponse, ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
-import type { ModuleListMeta } from 'src/common/types/module-list.types';
-export type DropdownDetailErrorDetail = ModuleApiErrorDetail;
-export type DropdownDetailErrorResponse = ModuleApiErrorResponse<DropdownDetailErrorDetail>;
-export type DropdownDetailSuccessResponse<T, TMeta = Record<string, unknown>> = ModuleApiSuccessResponse<T, TMeta, never>;
-export type DropdownDetailListMeta = ModuleListMeta;
+export type { FixedErrorDetail as DropdownDetailErrorDetail } from 'src/common/types/module-api.types';
+export type { FixedErrorResponse as DropdownDetailErrorResponse } from 'src/common/types/module-api.types';
+export type { FixedSuccessResponse as DropdownDetailSuccessResponse } from 'src/common/types/module-api.types';
+
+export interface DropdownColumnPayload {
+  drop_columns_id: string;
+  dropdown_id: string;
+  drop_columns_column_no: number;
+  drop_columns_data_type: string;
+  drop_columns_column_name: string;
+  drop_columns_column_alias: string | null;
+  drop_columns_column_width: number | null;
+  drop_columns_column_visiblity: boolean;
+  drop_columns_column_allignment: string | null;
+  drop_columns_column_filter: boolean;
+}
+
 export interface DropdownDetailPayload {
   dropdown_id: string;
   dropdown_name: string;
@@ -16,4 +27,7 @@ export interface DropdownDetailPayload {
   dropdown_max_visible_items: number;
   dropdown_show_header: boolean;
   dropdown_width: number | null;
+  columns: DropdownColumnPayload[];
 }
+
+export type DropdownDetailListItem = DropdownDetailPayload | Record<string, unknown>;

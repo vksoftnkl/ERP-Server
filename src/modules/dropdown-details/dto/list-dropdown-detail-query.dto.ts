@@ -1,9 +1,16 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalQueryBoolean } from '../../../common/dto/dtoDecorators';
-import { ModuleListQueryBaseDto } from '../../../common/utils/module-list-query.base.dto';
+import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OptionalNumberString, OptionalTrimmedString } from '../../../common/dto/dtoDecorators';
 
-export class ListDropdownDetailQueryDto extends ModuleListQueryBaseDto {
-  @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })
-  @OptionalQueryBoolean()
-  dropdown_show_header?: boolean;
+export class ListDropdownDetailQueryDto {
+  @ApiPropertyOptional({ description: 'Dropdown id — selects a specific configured dropdown' })
+  @OptionalNumberString()
+  dropdownId?: string;
+
+  @ApiHideProperty()
+  @OptionalNumberString()
+  dropdown_id?: string;
+
+  @ApiPropertyOptional({ maxLength: 255, description: 'Search by dropdown name or description' })
+  @OptionalTrimmedString(255)
+  search?: string;
 }
