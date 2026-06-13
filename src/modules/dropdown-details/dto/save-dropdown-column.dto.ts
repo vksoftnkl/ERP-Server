@@ -50,4 +50,8 @@ export class SaveDropdownColumnDto {
   @ApiPropertyOptional({ default: false })
   @OptionalBoolean()
   dropdown_columns_filter?: boolean;
+
+  @ApiPropertyOptional({ nullable: true, type: String })
+  @NullableString()
+  dropdown_columns_sql_name?: string | null;
 }

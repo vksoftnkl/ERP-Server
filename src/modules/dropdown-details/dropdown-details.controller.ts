@@ -66,6 +66,7 @@ const dropdownDetailsCreateExample = {
       dropdown_columns_visiblity: true,
       dropdown_columns_allignment: 'left',
       dropdown_columns_filter: false,
+      dropdown_columns_sql_name: 'item_name',
     },
   ],
 };

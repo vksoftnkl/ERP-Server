@@ -13,6 +13,7 @@ export interface DropdownColumnPayload {
   dropdown_columns_visiblity: boolean;
   dropdown_columns_allignment: string | null;
   dropdown_columns_filter: boolean;
+  dropdown_columns_sql_name: string | null;
 }
 
 export interface DropdownDetailPayload {

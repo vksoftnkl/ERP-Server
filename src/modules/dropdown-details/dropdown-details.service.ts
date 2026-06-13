@@ -62,7 +62,6 @@ export class DropdownDetailsService {
           }
         : {}),
     };
-
     const records = (await this.prisma.dropdownDetails.findMany({
       where,
       orderBy: [{ dropdownName: 'asc' }, { dropdownId: 'asc' }],
@@ -72,10 +71,8 @@ export class DropdownDetailsService {
         },
       },
     })) as unknown as DropdownDetailsWithColumns[];
-
     return { items: records.map((record) => this.toPayload(record)) };
   }
-
   async updateColumnWidths(dto: SaveColumnWidthDto): Promise<{ updated: number }> {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
@@ -101,7 +98,6 @@ export class DropdownDetailsService {
     });
     return { updated: count };
   }
-
   async updateFilterSettings(dto: SaveFilterSettingsDto): Promise<{ updated: number }> {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
@@ -440,6 +436,8 @@ export class DropdownDetailsService {
       data.dropdownColumnsAllignment = dto.dropdown_columns_allignment;
     if (hasOwnProperty(dto, 'dropdown_columns_filter'))
       data.dropdownColumnsFilter = dto.dropdown_columns_filter;
+    if (hasOwnProperty(dto, 'dropdown_columns_sql_name'))
+      data.dropdownColumnsSqlName = dto.dropdown_columns_sql_name;
   }
 
   private applyOptionalDropdownFields(
@@ -495,6 +493,7 @@ export class DropdownDetailsService {
       dropdown_columns_visiblity: record.dropdownColumnsVisiblity,
       dropdown_columns_allignment: record.dropdownColumnsAllignment,
       dropdown_columns_filter: record.dropdownColumnsFilter,
+      dropdown_columns_sql_name: record.dropdownColumnsSqlName,
     };
   }
 

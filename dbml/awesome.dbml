@@ -965,6 +965,7 @@ Table dropdown_columns {
   dropdownColumnsVisiblity Boolean [not null, default: true]
   dropdownColumnsAllignment String
   dropdownColumnsFilter Boolean [not null, default: false]
+  dropdownColumnsSqlName String
   dropdownColumnsCreatedOn DateTime [default: `now()`, not null]
   dropdownColumnsModifiedOn DateTime
 }

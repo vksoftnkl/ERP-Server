@@ -39,6 +39,9 @@ export class DropdownColumnPayloadDto {
 
   @ApiProperty()
   dropdown_columns_filter!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  dropdown_columns_sql_name!: string | null;
 }
 
 export class DropdownDetailPayloadDto {

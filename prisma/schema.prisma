@@ -1821,7 +1821,7 @@ model DropdownColumns {
   dropdownColumnsVisiblity Boolean @default(true) @map("dropdown_columns_visiblity") // kept your spelling
   dropdownColumnsAllignment String? @db.VarChar(30) @map("dropdown_columns_allignment")
   dropdownColumnsFilter     Boolean @default(false) @map("dropdown_columns_filter")
-
+  dropdownColumnsSqlName   String? @db.Text @map("dropdown_columns_sql_name")
   dropdownColumnsCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("dropdown_columns_created_on")
   dropdownColumnsModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("dropdown_columns_modified_on")
 
