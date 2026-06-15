@@ -1430,6 +1430,17 @@ Table item_group_master {
   itgModifiedBy String
 }
 
+Table ItemGstUnits {
+  itemGstUnit Int [pk, increment]
+  itemGstUnitCode String
+  itemGstUnitName String
+  itemGstUnitCreatedOn DateTime [default: `now()`, not null]
+  itemGstUnitCreatedBy String
+  itemGstUnitModifiedOn DateTime [default: `now()`, not null]
+  itemGstUnitModifiedBy String
+  itemGstUnitSyncDate DateTime [default: `now()`, not null]
+}
+
 Table item_master {
   itemId String [pk]
   itemCompanyId String [not null]
