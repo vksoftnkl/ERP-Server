@@ -1430,15 +1430,16 @@ Table item_group_master {
   itgModifiedBy String
 }
 
-Table ItemGstUnits {
-  itemGstUnit Int [pk, increment]
-  itemGstUnitCode String
+Table item_gst_units {
+  itemGstUnitId Int [pk, increment]
+  itemGstUnitCode String [unique]
   itemGstUnitName String
   itemGstUnitCreatedOn DateTime [default: `now()`, not null]
   itemGstUnitCreatedBy String
   itemGstUnitModifiedOn DateTime [default: `now()`, not null]
   itemGstUnitModifiedBy String
   itemGstUnitSyncDate DateTime [default: `now()`, not null]
+  units item_unit_master [not null]
 }
 
 Table item_master {
@@ -1833,6 +1834,7 @@ Table item_unit_master {
   unit_name String [unique, not null]
   unit_alias String
   unit_code String
+  gstUnit item_gst_units
   unit_description String
   unit_decimal_count Int [not null, default: 0]
   unit_weight Decimal
@@ -3273,6 +3275,8 @@ Ref: item_unit_conversion.iucUnitId > item_unit_master.unit_id [delete: Restrict
 Ref: item_unit_conversion.iucBaseUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: item_unit_conversion.iucCompanyId > companys.compId [delete: Restrict]
+
+Ref: item_unit_master.unit_code > item_gst_units.itemGstUnitCode [delete: Set Null]
 
 Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Restrict]
 

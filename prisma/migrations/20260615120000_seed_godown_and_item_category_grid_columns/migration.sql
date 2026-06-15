@@ -11,14 +11,21 @@
 -- This seeds a clean, well-defined column set whose grid_column_sql_field_name values bind to
 -- each grid's base SQL. Idempotent: only seeds when the grid has no live (non-deleted) columns,
 -- and clears the leftover soft-deleted rows first so the grid starts from a clean slate.
+--
+-- Guarded on the parent fixed.grid_details row existing: grids 9 and 11 are seeded outside of
+-- migrations (the master grids were created in grid.grid_details by 20260228113000 and dropped by
+-- the 20260318132503 schema move, so they never exist on a freshly replayed database). Without the
+-- guard the grid_columns insert would violate grid_columns_grid_id_fkey on the shadow database. When
+-- the grid is absent this migration is simply a no-op.
 
 DO $$
 BEGIN
   -- Godown master (grid 9): SELECT gdl_id, gdl_name, gdl_code, gdl_short, ... gdl_is_active.
-  IF NOT EXISTS (
-    SELECT 1 FROM fixed.grid_columns
-    WHERE grid_id = 9 AND grid_column_is_deleted = false
-  ) THEN
+  IF EXISTS (SELECT 1 FROM fixed.grid_details WHERE grid_id = 9)
+     AND NOT EXISTS (
+       SELECT 1 FROM fixed.grid_columns
+       WHERE grid_id = 9 AND grid_column_is_deleted = false
+     ) THEN
     DELETE FROM fixed.grid_columns WHERE grid_id = 9;
     INSERT INTO fixed.grid_columns
       (grid_id, grid_column_number, grid_column_name, grid_column_width, grid_column_alignment,
@@ -33,10 +40,11 @@ BEGIN
 
   -- Item category master (grid 11): SELECT category_id, category_name, category_alias,
   -- category_short, ... category_is_active.
-  IF NOT EXISTS (
-    SELECT 1 FROM fixed.grid_columns
-    WHERE grid_id = 11 AND grid_column_is_deleted = false
-  ) THEN
+  IF EXISTS (SELECT 1 FROM fixed.grid_details WHERE grid_id = 11)
+     AND NOT EXISTS (
+       SELECT 1 FROM fixed.grid_columns
+       WHERE grid_id = 11 AND grid_column_is_deleted = false
+     ) THEN
     DELETE FROM fixed.grid_columns WHERE grid_id = 11;
     INSERT INTO fixed.grid_columns
       (grid_id, grid_column_number, grid_column_name, grid_column_width, grid_column_alignment,
