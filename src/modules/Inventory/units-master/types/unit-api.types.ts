@@ -16,6 +16,7 @@ export interface UnitPayload {
   unit_attach_charge: number | null;
   unit_is_pack_unit: boolean;
   unit_base_unit_id: string | null;
+  unit_base_unit_name: string | null;
   unit_conversion: number | null;
   unit_is_active: boolean;
   unit_is_deleted: boolean;

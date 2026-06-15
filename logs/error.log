@@ -841,3 +841,4 @@ Raw query failed. Code: `42703`. Message: `column "tamil" does not exist`
     at async Promise.all (index 1)
     at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:194:33)
     at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:119:20)
+2026-06-15T12:17:56.261Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

@@ -47,6 +47,9 @@ export class UnitPayloadDto {
   })
   unit_base_unit_id!: string | null;
 
+  @ApiPropertyOptional({ maxLength: 50, nullable: true, example: 'Box' })
+  unit_base_unit_name!: string | null;
+
   @ApiPropertyOptional({ nullable: true, example: 10 })
   unit_conversion!: number | null;
 

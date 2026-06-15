@@ -37,6 +37,7 @@ export class UnitsMasterService {
   async getById(unitId: string): Promise<UnitPayload> {
     const record = await this.prisma.unit.findFirst({
       where: { unit_id: unitId, unit_is_deleted: false },
+      include: { baseUnit: { select: { unit_name: true } } },
     });
     if (!record) {
       throwInventoryNotFound<UnitErrorDetail>(
@@ -45,9 +46,8 @@ export class UnitsMasterService {
         `No active unit found with id ${unitId}`,
       );
     }
-    return this.toPayload(record);
+    return this.toPayload(record, record.baseUnit?.unit_name ?? null);
   }
-
   async softDelete(unitId: string): Promise<{ unit_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.unit.findFirst({
@@ -60,7 +60,6 @@ export class UnitsMasterService {
           `No active unit found with id ${unitId}`,
         );
       }
-
       const modifiedOn = new Date();
       const result = await tx.unit.updateMany({
         where: { unit_id: unitId, unit_is_deleted: false },
@@ -77,7 +76,6 @@ export class UnitsMasterService {
           `No active unit found with id ${unitId}`,
         );
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -100,11 +98,9 @@ export class UnitsMasterService {
         },
         tx,
       );
-
       return { unit_id: unitId, deleted: true };
     });
   }
-
   private async createUnit(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
     const baseUnitId = hasOwnProperty(saveUnitDto, 'unit_base_unit_id')
       ? (saveUnitDto.unit_base_unit_id ?? null)
@@ -148,7 +144,6 @@ export class UnitsMasterService {
       throw error;
     }
   }
-
   private async updateUnit(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {
     const unitId = saveUnitDto.unit_id!;
     try {
@@ -222,7 +217,6 @@ export class UnitsMasterService {
       }
     }
   }
-
   private applyOptionalFields(
     data: Prisma.UnitUncheckedCreateInput | Prisma.UnitUncheckedUpdateInput,
     saveUnitDto: SaveUnitDto,
@@ -249,7 +243,7 @@ export class UnitsMasterService {
       data.unit_is_active = saveUnitDto.unit_is_active;
   }
 
-  private toPayload(record: Unit): UnitPayload {
+  private toPayload(record: Unit, baseUnitName: string | null = null): UnitPayload {
     return {
       unit_id: record.unit_id,
       unit_name: record.unit_name,
@@ -263,6 +257,7 @@ export class UnitsMasterService {
       unit_attach_charge: toNullableNumber(record.unit_attach_charge),
       unit_is_pack_unit: record.unit_is_pack_unit,
       unit_base_unit_id: record.unit_base_unit_id,
+      unit_base_unit_name: baseUnitName,
       unit_conversion: toNullableNumber(record.unit_conversion),
       unit_is_active: record.unit_is_active,
       unit_is_deleted: record.unit_is_deleted,

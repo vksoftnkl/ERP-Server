@@ -145,14 +145,14 @@ async function main() {
         itemGstUnitCode: unit.uqc,
       },
       select: {
-        itemGstUnit: true,
+        itemGstUnitId: true,
       },
     });
 
     if (existingUnit) {
       await prisma.itemGstUnits.update({
         where: {
-          itemGstUnit: existingUnit.itemGstUnit,
+          itemGstUnitId: existingUnit.itemGstUnitId,
         },
         data: {
           itemGstUnitName: unit.unit,

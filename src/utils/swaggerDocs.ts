@@ -53,6 +53,7 @@ import { ItemsReorderMasterModule } from 'src/modules/Inventory/items-reorder-ma
 import { ItemsTaxHistoryMasterModule } from 'src/modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from 'src/modules/Inventory/items-master/items-master.module';
 import { ItemsEanCodeMasterModule } from 'src/modules/Inventory/items-ean-code-master/items-ean-code-master.module';
+import { ItemsGstUnitsMasterModule } from 'src/modules/Inventory/items-gst-units-master/items-gst-units-master.module';
 import { GodownsMasterModule } from 'src/modules/Inventory/godowns-master/godowns-master.module';
 import { OpeningStockModule } from 'src/modules/stocks/opening-stock/opening-stock.module';
 import { ItemStockBalanceModule } from 'src/modules/stocks/itemstockbalance/itemStockBalanceModule';
@@ -262,6 +263,12 @@ export const swaggerModuleDocuments = [
     title: 'Item EAN Code API',
     description: 'Item EAN code module endpoints',
     include: [ItemsEanCodeMasterModule],
+  },
+  {
+    path: 'items-gst-units-master',
+    title: 'Item GST Units API',
+    description: 'Item GST units module endpoints',
+    include: [ItemsGstUnitsMasterModule],
   },
   {
     path: 'godowns-master',
