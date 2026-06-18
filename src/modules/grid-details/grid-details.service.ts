@@ -432,7 +432,11 @@ export class GridDetailsService {
     gridSql: string | null | undefined,
   ): Promise<string | null | undefined> {
     if (gridSql === undefined || gridSql === null) return gridSql;
-    const normalized = gridSql.trim();
+    // Strip SQL comments up front so configured queries containing inline `--`/`/* */` notes
+    // (e.g. "-- your acc year") are accepted and stored clean, rather than rejected by
+    // validateBaseSql. Stripping also avoids a trailing `-- ...` commenting out the closing
+    // paren when the stored SQL is later wrapped as `SELECT * FROM (<grid_sql>) AS ...`.
+    const normalized = this.configuredGridSqlService.stripSqlComments(gridSql).trim();
     if (!normalized) return null;
     const topLevelTableName = this.configuredGridSqlService.extractTopLevelFromTableName(normalized);
     if (!topLevelTableName) {
@@ -451,25 +455,9 @@ export class GridDetailsService {
         [{ field: 'grid_sql', message: validation.message }],
       );
     }
-    try {
-      await this.configuredGridSqlService.assertBaseSqlExecutable(
-        validation.normalizedSql,
-        'grid_sql_validation',
-      );
-    } catch (error: unknown) {
-      const rawMessage = this.extractErrorMessage(error);
-      throwFixedBadRequest<GridDetailErrorDetail, GridDetailErrorResponse>(
-        'Invalid grid_sql configuration',
-        [
-          {
-            field: 'grid_sql',
-            message: rawMessage
-              ? `grid_sql could not be executed: ${rawMessage}`
-              : 'grid_sql could not be executed',
-          },
-        ],
-      );
-        }
+    // Persist the raw SELECT as-is. We intentionally do NOT execute it against the database
+    // here (no LIMIT 0 probe), so a query referencing columns/tables that don't yet exist in
+    // this environment can still be saved instead of failing with Postgres 42703.
     return validation.normalizedSql;
   }
   private toPayload(record: GridDetailsWithColumns): GridDetailPayload {
@@ -535,13 +523,5 @@ export class GridDetailsService {
       ]);
     }
     return BigInt(normalized);
-  }
-  private extractErrorMessage(error: unknown): string | null {
-    if (error instanceof Error) return error.message.replace(/\s+/g, ' ').trim();
-    if (typeof error === 'object' && error !== null && 'message' in error) {
-      const message = (error as { message?: unknown }).message;
-      if (typeof message === 'string') return message.replace(/\s+/g, ' ').trim();
-    }
-    return null;
   }
 }

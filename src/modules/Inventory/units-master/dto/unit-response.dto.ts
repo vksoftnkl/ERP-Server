@@ -19,6 +19,9 @@ export class UnitPayloadDto {
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   unit_code!: string | null;
 
+  @ApiPropertyOptional({ nullable: true, example: 'Kilograms', description: 'GST unit name resolved from unit_code' })
+  unit_code_name!: string | null;
+
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   unit_description!: string | null;
 
@@ -55,24 +58,6 @@ export class UnitPayloadDto {
 
   @ApiProperty({ example: true })
   unit_is_active!: boolean;
-
-  @ApiProperty({ example: false })
-  unit_is_deleted!: boolean;
-
-  @ApiPropertyOptional({ nullable: true })
-  unit_sync_date!: string | null;
-
-  @ApiProperty()
-  unit_created_on!: string;
-
-  @ApiPropertyOptional({ nullable: true })
-  unit_created_by!: string | null;
-
-  @ApiProperty()
-  unit_modified_on!: string;
-
-  @ApiPropertyOptional({ nullable: true })
-  unit_modified_by!: string | null;
 }
 
 export class UnitGridStyleDto {

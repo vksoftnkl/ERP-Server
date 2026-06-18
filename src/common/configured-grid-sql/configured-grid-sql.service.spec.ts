@@ -1,4 +1,5 @@
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { PgService } from '../../database/pg/pg.service';
 import { ConfiguredGridSqlService } from './configured-grid-sql.service';
 type PrismaMock = {
   gridDetails: {
@@ -7,11 +8,14 @@ type PrismaMock = {
   gridColumn: {
     findMany: jest.Mock;
   };
-  $queryRawUnsafe: jest.Mock;
+};
+type PgMock = {
+  query: jest.Mock;
 };
 describe('ConfiguredGridSqlService', () => {
   let service: ConfiguredGridSqlService;
   let prisma: PrismaMock;
+  let pg: PgMock;
   beforeEach(() => {
     prisma = {
       gridDetails: {
@@ -20,9 +24,14 @@ describe('ConfiguredGridSqlService', () => {
       gridColumn: {
         findMany: jest.fn(),
       },
-      $queryRawUnsafe: jest.fn(),
     };
-    service = new ConfiguredGridSqlService(prisma as unknown as PrismaService);
+    pg = {
+      query: jest.fn(),
+    };
+    service = new ConfiguredGridSqlService(
+      prisma as unknown as PrismaService,
+      pg as unknown as PgService,
+    );
   });
   it('loads configured candidates by table name', async () => {
     prisma.gridDetails.findMany.mockResolvedValue([
@@ -256,6 +265,29 @@ describe('ConfiguredGridSqlService', () => {
     });
   });
 
+  it('strips line and block comments but preserves comment-like text inside string literals', () => {
+    const sql = `SELECT item_code, -- code column
+       '-- not a comment' AS note, /* inline */ item_name
+FROM inventory.item_master -- trailing`;
+
+    const stripped = service.stripSqlComments(sql);
+
+    expect(stripped).not.toMatch(/--\s*code column|--\s*trailing|\/\* inline \*\//);
+    expect(stripped).toContain("'-- not a comment'");
+    expect(stripped).toContain('FROM inventory.item_master');
+  });
+
+  it('produces a comment-free query that passes validateBaseSql', () => {
+    const stripped = service.stripSqlComments(
+      'SELECT item_code -- the code\nFROM inventory.item_master /* primary */ WHERE item_is_active = true',
+    );
+
+    expect(service.validateBaseSql({ sql: stripped, tableName: 'item_master' })).toEqual({
+      isValid: true,
+      normalizedSql: stripped.trim(),
+    });
+  });
+
   it('preserves valid raw sql formatting apart from trimming a trailing semicolon', () => {
     const result = service.validateBaseSql({
       sql: `  SELECT unit_id,
@@ -294,16 +326,17 @@ ORDER BY unit_name`,
   });
 
   it('runs paged query and returns rows + total', async () => {
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([
-        {
-          total: '3',
-        },
-      ])
-      .mockResolvedValueOnce([
-        { id: 1 },
-        { id: 2 },
-      ]);
+    pg.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            total: '3',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 1 }, { id: 2 }],
+      });
 
     const result = await service.runPagedQuery<{ id: number }>({
       baseSql: 'SELECT * FROM units',
@@ -317,22 +350,24 @@ ORDER BY unit_name`,
       items: [{ id: 1 }, { id: 2 }],
       total: 3,
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+    expect(pg.query).toHaveBeenCalledTimes(2);
   });
 
   it('serializes bigint raw query row values before returning', async () => {
     const createdAt = new Date('2026-06-11T00:00:00.000Z');
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([{ total: 1n }])
-      .mockResolvedValueOnce([
-        {
-          id: 34n,
-          name: 'Grid row',
-          nested: { version: 2n },
-          values: [3n, { child_id: 4n }],
-          createdAt,
-        },
-      ]);
+    pg.query
+      .mockResolvedValueOnce({ rows: [{ total: 1n }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: 34n,
+            name: 'Grid row',
+            nested: { version: 2n },
+            values: [3n, { child_id: 4n }],
+            createdAt,
+          },
+        ],
+      });
 
     const result = await service.runPagedQuery<Record<string, unknown>>({
       baseSql: 'SELECT * FROM units',
@@ -465,13 +500,15 @@ ORDER BY unit_name`,
         },
       ])
       .mockResolvedValueOnce([]);
-    prisma.$queryRawUnsafe
-      .mockResolvedValueOnce([
-        {
-          total: '1',
-        },
-      ])
-      .mockResolvedValueOnce([{ cus_name: 'SUN ELECTRONICS G' }]);
+    pg.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            total: '1',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ cus_name: 'SUN ELECTRONICS G' }] });
 
     const result = await service.runPagedQuery<{ cus_name: string }>({
       baseSql: 'SELECT cus_name, cus_code FROM sales.customers',
@@ -486,22 +523,64 @@ ORDER BY unit_name`,
       items: [{ cus_name: 'SUN ELECTRONICS G' }],
       total: 1,
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenNthCalledWith(
+    expect(pg.query).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('grid_kv.value ILIKE $2'),
-      'cus_name',
-      '%sun%',
+      ['cus_name', '%sun%'],
     );
   });
 
+  it('binds named grid_param placeholder tokens into positional parameters', () => {
+    const result = service.bindGridParams(
+      "SELECT * FROM sales.loyalty_sch_list ls WHERE ls.ls_comp_id = p_comp_id::uuid " +
+        "AND (NULLIF(p_branch_id, '') IS NULL OR ls.ls_branch_id = NULLIF(p_branch_id, '')::uuid)",
+      { p_comp_id: 'c1', p_branch_id: 'b1' },
+    );
+
+    expect(result.params).toEqual(['c1', 'b1']);
+    expect(result.sql).toContain('ls.ls_comp_id = $1::uuid');
+    expect(result.sql).toContain("NULLIF($2, '')");
+    // The bare placeholder tokens must be fully replaced, leaving no unbound identifier behind.
+    expect(result.sql).not.toMatch(/\bp_comp_id\b|\bp_branch_id\b/);
+  });
+
+  it('replaces quoted placeholder tokens and reuses one $N for repeated occurrences', () => {
+    const result = service.bindGridParams(
+      "SELECT * FROM units WHERE company_code = 'p_company' OR fallback_code = p_company",
+      { p_company: 'ACME' },
+    );
+
+    expect(result.params).toEqual(['ACME']);
+    expect(result.sql).toBe(
+      'SELECT * FROM units WHERE company_code = $1 OR fallback_code = $1',
+    );
+  });
+
+  it('leaves base sql unchanged and binds no params for an empty grid_param map', () => {
+    expect(service.bindGridParams('SELECT * FROM units', {})).toEqual({
+      sql: 'SELECT * FROM units',
+      params: [],
+    });
+  });
+
+  it('skips grid_param keys that do not appear in the base sql', () => {
+    const result = service.bindGridParams('SELECT * FROM units WHERE branch_id = p_branch_id', {
+      p_branch_id: 5,
+      p_unused: 9,
+    });
+
+    expect(result.params).toEqual([5]);
+    expect(result.sql).toBe('SELECT * FROM units WHERE branch_id = $1');
+  });
+
   it('checks whether a configured query is executable', async () => {
-    prisma.$queryRawUnsafe.mockResolvedValue([]);
+    pg.query.mockResolvedValue({ rows: [] });
 
     await expect(service.assertBaseSqlExecutable('SELECT * FROM units', 'unit_grid')).resolves.toBe(
       undefined,
     );
 
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+    expect(pg.query).toHaveBeenCalledWith(
       'SELECT * FROM (SELECT * FROM units) AS unit_grid LIMIT 0',
     );
   });

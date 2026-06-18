@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
+import { PgService } from '../../database/pg/pg.service';
 import {
+  BuildConfiguredGridFilterSqlOptions,
   BuildConfiguredGridSearchSqlOptions,
   ConfiguredGridSqlCandidate,
   ConfiguredGridSqlValidationResult,
@@ -28,7 +30,10 @@ type SearchColumnDescriptor = {
 };
 @Injectable()
 export class ConfiguredGridSqlService {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pg: PgService,
+  ) { }
   private normalizeRelationName(value: string): string {
     return value.trim().toLowerCase().replace(/[\s-]+/g, '_');
   }
@@ -164,7 +169,6 @@ export class ConfiguredGridSqlService {
     let baseSql = options.baseSql;
     let params = options.params ?? [];
     let preloadedColumns: GridColumnItem[] | undefined;
-
     if (options.search?.trim()) {
       // Prefer caller-supplied field names (e.g. dropdown details); otherwise derive from grid columns.
       let searchableFieldNames = options.searchableFieldNames;
@@ -186,26 +190,24 @@ export class ConfiguredGridSqlService {
         params = searchableSql.params;
       }
     }
-
     const countSql = `SELECT COUNT(*)::bigint AS total FROM (${baseSql}) AS ${options.alias}_count`;
     const orderByClause = options.sortBy
       ? ` ORDER BY "${options.sortBy.replace(/"/g, '""')}" ${options.sortDir === 'desc' ? 'DESC' : 'ASC'}`
       : '';
     const rowsSql = `SELECT * FROM (${baseSql}) AS ${options.alias}_rows${orderByClause} LIMIT $${params.length + 1
       } OFFSET $${params.length + 2}`;
-
-    const [countResult, rows] = await Promise.all([
-      this.prisma.$queryRawUnsafe<Array<{ total: bigint | number | string }>>(countSql, ...params),
-      this.prisma.$queryRawUnsafe<TItem[]>(rowsSql, ...params, options.limit, options.skip),
+    const [countResult, rowsResult] = await Promise.all([
+      this.pg.query<{ total: bigint | number | string }>(countSql, params),
+      this.pg.query(rowsSql, [...params, options.limit, options.skip]),
     ]);
     return {
-      items: this.serializeRawQueryValue(rows) as TItem[],
-      total: this.parseCountValue(countResult[0]?.total),
+      items: this.serializeRawQueryValue(rowsResult.rows) as TItem[],
+      total: this.parseCountValue(countResult.rows[0]?.total),
     };
   }
   async assertBaseSqlExecutable(baseSql: string, alias: string): Promise<void> {
     const validationSql = `SELECT * FROM (${baseSql}) AS ${alias} LIMIT 0`;
-    await this.prisma.$queryRawUnsafe(validationSql);
+    await this.pg.query(validationSql);
   }
   async loadGridColumns(gridId: bigint): Promise<GridColumnItem[]> {
     const columns = await this.prisma.gridColumn.findMany({
@@ -307,11 +309,9 @@ export class ConfiguredGridSqlService {
     if (filterableColumns.length === 0) {
       return [];
     }
-
     // Partition: columns with an explicit SQL field name vs. those needing heuristic matching
     const explicitFieldNames: string[] = [];
     const heuristicColumns: GridColumnItem[] = [];
-
     for (const col of filterableColumns) {
       const explicit = col.grid_column_sql_field_name?.trim();
       if (explicit) {
@@ -322,24 +322,20 @@ export class ConfiguredGridSqlService {
         heuristicColumns.push(col);
       }
     }
-
     if (heuristicColumns.length === 0) {
       return explicitFieldNames;
     }
-
     // Heuristic matching for columns without an explicit SQL field name
     const sqlFieldNames = this.extractSelectFieldNames(baseSql);
     if (sqlFieldNames.length === 0) {
       return explicitFieldNames;
     }
-
     const normalizedSqlFields = sqlFieldNames.map((fieldName) => ({
       fieldName,
       descriptor: this.describeSearchColumnName(fieldName),
     }));
     const usedSqlFieldIndexes = new Set<number>();
     const heuristicFieldNames: string[] = [];
-
     for (const column of heuristicColumns) {
       const columnName = column.grid_column_name.trim();
       let matchedSqlFieldIndex = -1;
@@ -394,7 +390,6 @@ export class ConfiguredGridSqlService {
         heuristicFieldNames.push(normalizedSqlFields[matchedSqlFieldIndex].fieldName);
       }
     }
-
     const matchedFieldNames = [...explicitFieldNames, ...heuristicFieldNames];
     return matchedFieldNames;
   }
@@ -431,6 +426,74 @@ export class ConfiguredGridSqlService {
       sql: `SELECT * FROM (${options.baseSql}) AS ${options.alias}${whereClause}`,
       params,
     };
+  }
+  /**
+   * Wrap the base SQL in an equality filter built from a parameter map. Each key is treated as an
+   * output-column name and bound to its value via a positional placeholder ($N), so values are sent
+   * to PostgreSQL as bound parameters — never string-concatenated into the SQL. Keys with
+   * null/undefined values (or an empty map) add no constraint, so omitting a param returns all rows.
+   */
+  buildFilterSql(options: BuildConfiguredGridFilterSqlOptions): {
+    sql: string;
+    params: unknown[];
+  } {
+    const params = [...(options.params ?? [])];
+    const conditions: string[] = [];
+    for (const [key, value] of Object.entries(options.filters)) {
+      if (value === null || value === undefined) {
+        continue;
+      }
+      const quotedKey = `"${key.replace(/"/g, '""')}"`;
+      params.push(value);
+      conditions.push(`${quotedKey} = $${params.length}`);
+    }
+    if (conditions.length === 0) {
+      return { sql: options.baseSql, params };
+    }
+    return {
+      sql: `SELECT * FROM (${options.baseSql}) AS ${options.alias}_filter WHERE ${conditions.join(' AND ')}`,
+      params,
+    };
+  }
+  /**
+   * Bind grid_param values into the base SQL by replacing each named placeholder token with a
+   * PostgreSQL positional parameter ($1, $2, …), returning the values in a separate params array.
+   *
+   * Convention (detected from the stored fixed.grid_details.grid_sql rows): the configured SQL
+   * embeds parameters as bare identifiers — e.g. `p_comp_id`, `p_branch_id` — and occasionally as
+   * quoted tokens (`'p_comp_id'`). The grid_param JSON keys match those token names; the `p_` prefix
+   * keeps them distinct from real output columns (`ls_comp_id`, …). This is the secure, parameterized
+   * counterpart of substituteGridPrm: values are NEVER concatenated into the SQL, so the result must
+   * be executed via a bound query (pg.query / $queryRawUnsafe with the params array).
+   *
+   * Binding order is deterministic — placeholders are numbered in grid_param key order. A token may
+   * appear many times in the SQL; every occurrence is bound to the same $N. Keys that never appear
+   * in the SQL contribute no parameter (so an extra/unused param adds no constraint).
+   */
+  bindGridParams(
+    sql: string,
+    prm: Record<string, unknown>,
+  ): { sql: string; params: unknown[] } {
+    let boundSql = sql;
+    const params: unknown[] = [];
+    for (const [key, value] of Object.entries(prm)) {
+      const escapedKey = this.escapeRegex(key);
+      const placeholder = `$${params.length + 1}`;
+      let matched = false;
+      const replaceToken = (pattern: RegExp): void => {
+        boundSql = boundSql.replace(pattern, () => {
+          matched = true;
+          return placeholder;
+        });
+      };
+      // Replace 'paramname' (token wrapped in single quotes) then the bare paramname token.
+      replaceToken(new RegExp(`'${escapedKey}'`, 'g'));
+      replaceToken(new RegExp(`\\b${escapedKey}\\b`, 'g'));
+      if (matched) {
+        params.push(value);
+      }
+    }
+    return { sql: boundSql, params };
   }
   parseCountValue(value: bigint | number | string | undefined): number {
     if (typeof value === 'bigint') {
@@ -471,6 +534,78 @@ export class ConfiguredGridSqlService {
   }
   private prepareBaseSql(sql: string): string {
     return sql.trim().replace(/;+\s*$/g, '');
+  }
+  /**
+   * Remove SQL line (`--`) and block (`/* *​/`) comments while preserving any `--` or `/*`
+   * sequences that appear inside single- or double-quoted string literals. Line comments are
+   * dropped up to (but not including) the line break, and block comments are replaced with a
+   * single space, so adjacent tokens stay separated. Callers that forbid comments outright
+   * should keep using validateBaseSql; this is for inputs we want to accept and sanitize.
+   */
+  stripSqlComments(sql: string): string {
+    let result = '';
+    let insideSingleQuote = false;
+    let insideDoubleQuote = false;
+    for (let index = 0; index < sql.length; index += 1) {
+      const current = sql[index];
+      const next = sql[index + 1];
+      if (insideSingleQuote) {
+        result += current;
+        if (current === "'" && next === "'") {
+          result += next;
+          index += 1;
+          continue;
+        }
+        if (current === "'") {
+          insideSingleQuote = false;
+        }
+        continue;
+      }
+      if (insideDoubleQuote) {
+        result += current;
+        if (current === '"' && next === '"') {
+          result += next;
+          index += 1;
+          continue;
+        }
+        if (current === '"') {
+          insideDoubleQuote = false;
+        }
+        continue;
+      }
+      if (current === "'") {
+        insideSingleQuote = true;
+        result += current;
+        continue;
+      }
+      if (current === '"') {
+        insideDoubleQuote = true;
+        result += current;
+        continue;
+      }
+      if (current === '-' && next === '-') {
+        index += 2;
+        while (index < sql.length && sql[index] !== '\n') {
+          index += 1;
+        }
+        // Step back so the loop's increment lands on the line break (kept as a separator).
+        index -= 1;
+        result += ' ';
+        continue;
+      }
+      if (current === '/' && next === '*') {
+        index += 2;
+        while (index < sql.length && !(sql[index] === '*' && sql[index + 1] === '/')) {
+          index += 1;
+        }
+        // Skip the closing '*'; the loop's increment moves past the '/'.
+        index += 1;
+        result += ' ';
+        continue;
+      }
+      result += current;
+    }
+    return result;
   }
   extractTopLevelFromTableName(sql: string): string | null {
     return this.extractTopLevelFromRelation(sql)?.tableName ?? null;
@@ -800,7 +935,6 @@ export class ConfiguredGridSqlService {
     }
     return result;
   }
-
   private formatSqlLiteral(value: unknown): string {
     if (value === null || value === undefined) return 'NULL';
     if (typeof value === 'boolean') return value ? 'true' : 'false';
@@ -808,7 +942,6 @@ export class ConfiguredGridSqlService {
     if (typeof value === 'string') return "'" + value.replace(/'/g, "''") + "'";
     return 'NULL';
   }
-
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }

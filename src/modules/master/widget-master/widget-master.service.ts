@@ -1,296 +1,408 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Widget, WidgetPlatform } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { ListWidgetQueryDto } from './dto/list-widget-query.dto';
-import { SaveWidgetDto } from './dto/save-widget.dto';
+import { WidgetConfigQueryDto } from './dto/widget-config-query.dto';
+import { UpdateWidgetVisibilityDto } from './dto/update-widget-visibility.dto';
+import { SaveWidgetDto, SaveWidgetFieldDto } from './dto/save-widget.dto';
 import {
+  WidgetFieldPayload,
   WidgetMasterErrorDetail,
-  WidgetMasterListMeta,
   WidgetMasterPayload,
+  WidgetPlatform,
 } from './types/widget-master-api.types';
-import { resolvePagination } from 'src/common/utils/module-list.utils';
 import {
+  DEFAULT_ACTOR,
   hasOwnProperty,
   throwMasterBadRequest,
   throwMasterNotFound,
+  throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
-
+const FIELD_ORDER_BY: Prisma.FormFieldOrderByWithRelationInput[] = [
+  { fieldPosition: 'asc' },
+  { fieldId: 'asc' },
+];
+type SectionWithFields = Prisma.FormSectionGetPayload<{ include: { fields: true } }>;
 @Injectable()
 export class WidgetMasterService {
-  constructor(private readonly prisma: PrismaService) {}
-
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly requestContextService: RequestContextService,
+  ) {}
   async save(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
-    if (saveWidgetDto.widgetNo !== undefined) {
-      return this.updateWidget(saveWidgetDto);
+    if (saveWidgetDto.sectionId !== undefined) {
+      return this.updateSection(saveWidgetDto);
     }
-
-    return this.createWidget(saveWidgetDto);
+    return this.createSection(saveWidgetDto);
   }
-
-  async list(
-    queryDto: ListWidgetQueryDto,
-  ): Promise<{ items: WidgetMasterPayload[]; meta: WidgetMasterListMeta }> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const where: Prisma.WidgetWhereInput = {};
+  async list(queryDto: ListWidgetQueryDto): Promise<WidgetMasterPayload[]> {
     const search = queryDto.search?.trim() ?? '';
-    const widgetGroupId = this.getWidgetGroupId(queryDto);
-
-    if (queryDto.widgetType !== undefined) {
-      where.widgetType = queryDto.widgetType;
+    const where: Prisma.FormSectionWhereInput = {};
+    if (queryDto.sectionId !== undefined) {
+      where.sectionId = queryDto.sectionId;
     }
-
-    if (queryDto.widgetVisibility !== undefined) {
-      where.widgetVisibility = queryDto.widgetVisibility;
+    if (queryDto.sectionPlatform !== undefined) {
+      where.sectionPlatform = queryDto.sectionPlatform;
     }
-
-    if (widgetGroupId === undefined) {
-      if (search) {
-        where.OR = this.buildSearchConditions(search);
-      }
-
-      const [total, records] = await Promise.all([
-        this.prisma.widget.count({ where }),
-        this.prisma.widget.findMany({
-          where,
-          orderBy: [
-            { widgetType: 'asc' },
-            { widgetGroupId: 'asc' },
-            { widgetPosition: 'asc' },
-            { widgetNo: 'asc' },
-          ],
-          skip,
-          take: limit,
-        }),
-      ]);
-
-      return {
-        items: records.map((record) => this.toPayload(record)),
-        meta: {
-          page,
-          limit,
-          total,
-          total_pages: Math.ceil(total / limit),
-        },
-      };
+    if (search) {
+      where.OR = this.buildSearchConditions(search);
     }
-
-    const records = await this.prisma.widget.findMany({
+    const records = await this.prisma.formSection.findMany({
       where,
-      orderBy: [
-        { widgetType: 'asc' },
-        { widgetGroupId: 'asc' },
-        { widgetPosition: 'asc' },
-        { widgetNo: 'asc' },
-      ],
+      orderBy: [{ sectionPosition: 'asc' }, { sectionId: 'asc' }],
+      include: { fields: { orderBy: FIELD_ORDER_BY } },
     });
-
-    const groupedRecords = this.collectWidgetGroupBranch(records, widgetGroupId);
-    const filteredRecords = search
-      ? groupedRecords.filter((record) => this.matchesSearch(record, search))
-      : groupedRecords;
-    const total = filteredRecords.length;
-    const paginatedRecords = filteredRecords.slice(skip, skip + limit);
-
-    return {
-      items: paginatedRecords.map((record) => this.toPayload(record)),
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit),
+    return records.map((record) => this.toPayload(record));
+  }
+  /**
+   * Return a menu's widget config. When `visibility` is provided, only sections whose
+   * `sectionVisibility` matches the flag are returned, each carrying only the fields whose
+   * `fieldVisibility` matches the same flag. When `visibility` is omitted, both visible and
+   * hidden sections (and their fields) are returned.
+   */
+  async getConfig(queryDto: WidgetConfigQueryDto): Promise<WidgetMasterPayload[]> {
+    const filterByVisibility = queryDto.visibility !== undefined;
+    const records = await this.prisma.formSection.findMany({
+      where: {
+        sectionMenuId: queryDto.menu_id,
+        ...(filterByVisibility && { sectionVisibility: queryDto.visibility }),
       },
-    };
+      orderBy: [{ sectionPosition: 'asc' }, { sectionId: 'asc' }],
+      include: {
+        fields: {
+          where: filterByVisibility ? { fieldVisibility: queryDto.visibility } : undefined,
+          orderBy: FIELD_ORDER_BY,
+        },
+      },
+    });
+    return records.map((record) => this.toPayload(record));
   }
-  async getById(widgetNo: number, widgetType?: WidgetPlatform): Promise<WidgetMasterPayload> {
-    const normalizedWidgetNo = this.normalizeWidgetNo(widgetNo);
-    const where: Prisma.WidgetWhereInput = {
-      widgetNo: normalizedWidgetNo,
-    };
-    if (widgetType !== undefined) {
-      where.widgetType = widgetType;
-    }
-    const record = await this.prisma.widget.findFirst({ where });
-    if (!record) {
-      this.throwNotFound(normalizedWidgetNo, widgetType);
-    }
-    return this.toPayload(record);
+  /**
+   * Bulk-update the visibility config for a set of sections and their fields in one transaction:
+   * each section's `sectionVisibility` / `sectionGuiName` and each field's `fieldVisibility` /
+   * `fieldSecondaryText` are updated by id. Any missing id aborts and rolls back the whole batch.
+   */
+  async updateVisibility(dto: UpdateWidgetVisibilityDto): Promise<WidgetMasterPayload[]> {
+    const actor = this.getActor();
+    const now = new Date();
+    const sectionIds = dto.data.map((section) => this.normalizeSectionId(section.sectionId));
+    return this.prisma.$transaction(async (tx) => {
+      for (const section of dto.data) {
+        const sectionId = this.normalizeSectionId(section.sectionId);
+        const existing = await tx.formSection.findUnique({
+          where: { sectionId },
+          select: { sectionId: true },
+        });
+        if (!existing) {
+          this.throwNotFound(sectionId);
+        }
+        await tx.formSection.update({
+          where: { sectionId },
+          data: {
+            sectionGuiName: section.sectionGuiName.trim(),
+            sectionVisibility: section.sectionVisibility,
+            sectionUpdatedBy: actor,
+            sectionUpdatedOn: now,
+          },
+        });
+        for (const field of section.fields) {
+          const fieldId = this.normalizeFieldId(field.fieldId);
+          const existingField = await tx.formField.findUnique({
+            where: { fieldId },
+            select: { fieldSectionId: true },
+          });
+          if (!existingField || existingField.fieldSectionId !== sectionId) {
+            this.throwFieldNotFound(fieldId, sectionId);
+          }
+          await tx.formField.update({
+            where: { fieldId },
+            data: {
+              fieldSecondaryText: field.fieldSecondaryText.trim(),
+              fieldVisibility: field.fieldVisibility,
+              fieldUpdatedBy: actor,
+              fieldUpdatedOn: now,
+            },
+          });
+        }
+      }
+      const updated = await tx.formSection.findMany({
+        where: { sectionId: { in: sectionIds } },
+        orderBy: [{ sectionPosition: 'asc' }, { sectionId: 'asc' }],
+        include: { fields: { orderBy: FIELD_ORDER_BY } },
+      });
+      return updated.map((record) => this.toPayload(record));
+    });
   }
-  async delete(widgetNo: number): Promise<{ widgetNo: number; deleted: true }> {
-    const normalizedWidgetNo = this.normalizeWidgetNo(widgetNo);
+  async delete(sectionId: number): Promise<{ sectionId: number; deleted: true }> {
+    const normalizedSectionId = this.normalizeSectionId(sectionId);
     const deleted = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.widget.findUnique({
+      const existing = await tx.formSection.findUnique({
         where: {
-          widgetNo: normalizedWidgetNo,
+          sectionId: normalizedSectionId,
         },
         select: {
-          widgetNo: true,
+          sectionId: true,
         },
       });
       if (!existing) {
         return false;
       }
-      await tx.widget.delete({
+      // Child fields cascade-delete via the form_field FK (onDelete: Cascade).
+      await tx.formSection.delete({
         where: {
-          widgetNo: normalizedWidgetNo,
+          sectionId: normalizedSectionId,
         },
       });
       return true;
     });
     if (!deleted) {
-      this.throwNotFound(normalizedWidgetNo);
+      this.throwNotFound(normalizedSectionId);
     }
     return {
-      widgetNo: normalizedWidgetNo,
+      sectionId: normalizedSectionId,
       deleted: true,
     };
   }
-  private async createWidget(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
-    const data: Record<string, unknown> = {
-      widgetGroupId: saveWidgetDto.widgetGroupId,
-      widgetName: saveWidgetDto.widgetName.trim(),
-      widgetPosition: saveWidgetDto.widgetPosition ?? 0,
-      widgetVisibility: saveWidgetDto.widgetVisibility ?? true,
-      widgetType: saveWidgetDto.widgetType,
+  private async createSection(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
+    const actor = this.getActor();
+    const data: Prisma.FormSectionUncheckedCreateInput = {
+      sectionMenuId: saveWidgetDto.sectionMenuId,
+      sectionName: saveWidgetDto.sectionName.trim(),
+      sectionGuiName: saveWidgetDto.sectionGuiName.trim(),
+      sectionPosition: saveWidgetDto.sectionPosition ?? 0,
+      sectionVisibility: saveWidgetDto.sectionVisibility ?? true,
+      sectionPlatform: saveWidgetDto.sectionPlatform,
+      sectionCreatedOn: new Date(),
+      sectionCreatedBy: actor,
     };
-    this.applyOptionalFields(data, saveWidgetDto);
-    const created = await this.prisma.widget.create({
-      data: data as Prisma.WidgetUncheckedCreateInput,
-    });
-    return this.toPayload(created);
-  }
-  private async updateWidget(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
-    const widgetNo = this.normalizeWidgetNo(saveWidgetDto.widgetNo!);
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.widget.findUnique({
-        where: {
-          widgetNo,
-        },
-      });
-      if (!existing) {
-        this.throwNotFound(widgetNo);
-      }
-      const data: Record<string, unknown> = {
-        widgetGroupId: saveWidgetDto.widgetGroupId,
-        widgetName: saveWidgetDto.widgetName.trim(),
-        widgetPosition: saveWidgetDto.widgetPosition ?? existing.widgetPosition,
-        widgetVisibility: saveWidgetDto.widgetVisibility ?? existing.widgetVisibility,
-        widgetType: saveWidgetDto.widgetType,
+    if (saveWidgetDto.fields !== undefined) {
+      data.fields = {
+        create: saveWidgetDto.fields.map((field) => this.buildFieldCreateData(field, actor)),
       };
-      this.applyOptionalFields(data, saveWidgetDto);
-      const updated = await tx.widget.update({
-        where: {
-          widgetNo,
-        },
-        data: data as Prisma.WidgetUncheckedUpdateInput,
+    }
+    try {
+      const created = await this.prisma.formSection.create({
+        data,
+        include: { fields: { orderBy: FIELD_ORDER_BY } },
       });
-      return this.toPayload(updated);
+      return this.toPayload(created);
+    } catch (error) {
+      this.throwOnConflict(error);
+      throw error;
+    }
+  }
+  private async updateSection(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
+    const sectionId = this.normalizeSectionId(saveWidgetDto.sectionId!);
+    const actor = this.getActor();
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.formSection.findUnique({
+          where: { sectionId },
+        });
+        if (!existing) {
+          this.throwNotFound(sectionId);
+        }
+        const data: Prisma.FormSectionUncheckedUpdateInput = {
+          sectionMenuId: saveWidgetDto.sectionMenuId,
+          sectionName: saveWidgetDto.sectionName.trim(),
+          sectionGuiName: saveWidgetDto.sectionGuiName.trim(),
+          sectionPosition: saveWidgetDto.sectionPosition ?? existing.sectionPosition,
+          sectionVisibility: saveWidgetDto.sectionVisibility ?? existing.sectionVisibility,
+          sectionPlatform: saveWidgetDto.sectionPlatform,
+          sectionUpdatedBy: actor,
+          sectionUpdatedOn: new Date(),
+        };
+        await tx.formSection.update({
+          where: { sectionId },
+          data,
+        });
+
+        // `fields` omitted => leave existing fields untouched; provided (even []) => full sync.
+        if (saveWidgetDto.fields !== undefined) {
+          await this.syncFields(tx, sectionId, saveWidgetDto.fields, actor);
+        }
+        const updated = await tx.formSection.findUniqueOrThrow({
+          where: { sectionId },
+          include: { fields: { orderBy: FIELD_ORDER_BY } },
+        });
+        return this.toPayload(updated);
+      });
+    } catch (error) {
+      this.throwOnConflict(error);
+      throw error;
+    }
+  }
+  /** Reconcile the section's fields against the desired set: delete removed, update existing, create new. */
+  private async syncFields(
+    tx: Prisma.TransactionClient,
+    sectionId: number,
+    fields: SaveWidgetFieldDto[],
+    actor: string,
+  ): Promise<void> {
+    const existing = await tx.formField.findMany({
+      where: { fieldSectionId: sectionId },
+      select: { fieldId: true },
     });
-  }
-  private applyOptionalFields(
-    data: Record<string, unknown>,
-    saveWidgetDto: SaveWidgetDto,
-  ): void {
-    if (hasOwnProperty(saveWidgetDto, 'widgetGuiName')) {
-      data.widgetGuiName = saveWidgetDto.widgetGuiName ?? null;
-    }
-    if (hasOwnProperty(saveWidgetDto, 'widgetSecondaryText')) {
-      data.widgetSecondaryText = saveWidgetDto.widgetSecondaryText ?? null;
-    }
-  }
-  private buildSearchConditions(search: string): Prisma.WidgetWhereInput[] {
-    const searchConditions: Prisma.WidgetWhereInput[] = [
-      { widgetName: { contains: search, mode: 'insensitive' } },
-      { widgetGuiName: { contains: search, mode: 'insensitive' } },
-      { widgetSecondaryText: { contains: search, mode: 'insensitive' } },
-    ];
-    if (/^\d+$/.test(search)) {
-      searchConditions.push({ widgetGroupId: Number(search) });
-    }
-    return searchConditions;
-  }
-  private getWidgetGroupId(queryDto: ListWidgetQueryDto): number | undefined {
-    const value = (queryDto as Record<string, unknown>).widgetGroupId;
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
-      return Number(value);
-    }
-    return undefined;
-  }
-  private matchesSearch(record: Widget, search: string): boolean {
-    const normalizedSearch = search.toLowerCase();
-    return (
-      record.widgetName.toLowerCase().includes(normalizedSearch) ||
-      (record.widgetGuiName?.toLowerCase().includes(normalizedSearch) ?? false) ||
-      (record.widgetSecondaryText?.toLowerCase().includes(normalizedSearch) ?? false) ||
-      (/^\d+$/.test(search) && record.widgetGroupId === Number(search))
-    );
-  }
-  private collectWidgetGroupBranch(records: Widget[], widgetGroupId: number): Widget[] {
-    if (records.length === 0) {
-      return [];
-    }
-    const childrenByGroupId = new Map<number, Widget[]>();
-    const recordsByWidgetNo = new Map<number, Widget>();
-    for (const record of records) {
-      recordsByWidgetNo.set(record.widgetNo, record);
-      const siblings = childrenByGroupId.get(record.widgetGroupId) ?? [];
-      siblings.push(record);
-      childrenByGroupId.set(record.widgetGroupId, siblings);
-    }
-    const ordered: Widget[] = [];
-    const visited = new Set<number>();
-    const visit = (record: Widget): void => {
-      if (visited.has(record.widgetNo)) {
-        return;
+    const existingIds = new Set(existing.map((field) => field.fieldId));
+    const keepIds = new Set<number>();
+    for (const field of fields) {
+      if (field.fieldId !== undefined && existingIds.has(field.fieldId)) {
+        keepIds.add(field.fieldId);
       }
-      visited.add(record.widgetNo);
-      ordered.push(record);
-      for (const child of childrenByGroupId.get(record.widgetNo) ?? []) {
-        visit(child);
+    }
+    const toDelete = [...existingIds].filter((id) => !keepIds.has(id));
+    if (toDelete.length > 0) {
+      await tx.formField.deleteMany({ where: { fieldId: { in: toDelete } } });
+    }
+    for (const field of fields) {
+      if (field.fieldId !== undefined && existingIds.has(field.fieldId)) {
+        await tx.formField.update({
+          where: { fieldId: field.fieldId },
+          data: this.buildFieldUpdateData(field, actor),
+        });
+      } else {
+        await tx.formField.create({
+          data: { ...this.buildFieldCreateData(field, actor), fieldSectionId: sectionId },
+        });
       }
-    };
-    const exactRoot = recordsByWidgetNo.get(widgetGroupId);
-    if (exactRoot) {
-      visit(exactRoot);
     }
-    for (const root of childrenByGroupId.get(widgetGroupId) ?? []) {
-      visit(root);
-    }
-    return ordered;
   }
-  private toPayload(record: Widget): WidgetMasterPayload {
+  private buildFieldCreateData(
+    field: SaveWidgetFieldDto,
+    actor: string,
+  ): Prisma.FormFieldCreateWithoutSectionInput {
     return {
-      widgetNo: record.widgetNo,
-      widgetGroupId: record.widgetGroupId,
-      widgetName: record.widgetName,
-      widgetPosition: record.widgetPosition,
-      widgetVisibility: record.widgetVisibility,
-      widgetGuiName: record.widgetGuiName,
-      widgetType: record.widgetType,
-      widgetSecondaryText: record.widgetSecondaryText,
+      fieldName: field.fieldName.trim(),
+      fieldGuiName: field.fieldGuiName ?? null,
+      fieldSecondaryText: field.fieldSecondaryText ?? null,
+      fieldPosition: field.fieldPosition ?? 0,
+      fieldVisibility: field.fieldVisibility ?? true,
+      fieldCreatedBy: actor,
+      fieldUpdatedBy: null,
     };
   }
-  private normalizeWidgetNo(widgetNo: number): number {
-    if (!Number.isInteger(widgetNo) || widgetNo <= 0) {
+  private buildFieldUpdateData(
+    field: SaveWidgetFieldDto,
+    actor: string,
+  ): Prisma.FormFieldUncheckedUpdateInput {
+    const data: Prisma.FormFieldUncheckedUpdateInput = {
+      fieldName: field.fieldName.trim(),
+      fieldUpdatedBy: actor,
+      fieldUpdatedOn: new Date(),
+    };
+    if (hasOwnProperty(field, 'fieldGuiName')) {
+      data.fieldGuiName = field.fieldGuiName ?? null;
+    }
+    if (hasOwnProperty(field, 'fieldSecondaryText')) {
+      data.fieldSecondaryText = field.fieldSecondaryText ?? null;
+    }
+    if (field.fieldPosition !== undefined) {
+      data.fieldPosition = field.fieldPosition;
+    }
+    if (field.fieldVisibility !== undefined) {
+      data.fieldVisibility = field.fieldVisibility;
+    }
+    return data;
+  }
+  private buildSearchConditions(search: string): Prisma.FormSectionWhereInput[] {
+    return [
+      { sectionName: { contains: search, mode: 'insensitive' } },
+      { sectionGuiName: { contains: search, mode: 'insensitive' } },
+      { fields: { some: { fieldName: { contains: search, mode: 'insensitive' } } } },
+      { fields: { some: { fieldGuiName: { contains: search, mode: 'insensitive' } } } },
+      { fields: { some: { fieldSecondaryText: { contains: search, mode: 'insensitive' } } } },
+    ];
+  }
+  private toPayload(record: SectionWithFields): WidgetMasterPayload {
+    return {
+      sectionId: record.sectionId,
+      sectionMenuId: record.sectionMenuId,
+      sectionName: record.sectionName,
+      sectionGuiName: record.sectionGuiName,
+      sectionPosition: record.sectionPosition,
+      sectionVisibility: record.sectionVisibility,
+      sectionPlatform: record.sectionPlatform as WidgetPlatform,
+      sectionSyncDate: record.sectionSyncDate.toISOString(),
+      sectionCreatedOn: record.sectionCreatedOn.toISOString(),
+      sectionCreatedBy: record.sectionCreatedBy,
+      sectionUpdatedOn: record.sectionUpdatedOn.toISOString(),
+      sectionUpdatedBy: record.sectionUpdatedBy,
+      fields: record.fields.map((field) => this.toFieldPayload(field)),
+    };
+  }
+  private toFieldPayload(field: SectionWithFields['fields'][number]): WidgetFieldPayload {
+    return {
+      fieldId: field.fieldId,
+      fieldSectionId: field.fieldSectionId,
+      fieldName: field.fieldName,
+      fieldGuiName: field.fieldGuiName,
+      fieldSecondaryText: field.fieldSecondaryText,
+      fieldPosition: field.fieldPosition,
+      fieldVisibility: field.fieldVisibility,
+      fieldSyncDate: field.fieldSyncDate.toISOString(),
+      fieldCreatedOn: field.fieldCreatedOn.toISOString(),
+      fieldCreatedBy: field.fieldCreatedBy,
+      fieldUpdatedOn: field.fieldUpdatedOn.toISOString(),
+      fieldUpdatedBy: field.fieldUpdatedBy,
+    };
+  }
+  /** Current request's user id, falling back to the system actor for unauthenticated/background calls. */
+  private getActor(): string {
+    return this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+  }
+  private normalizeSectionId(sectionId: number): number {
+    if (!Number.isInteger(sectionId) || sectionId <= 0) {
       this.throwBadRequest('Validation failed', [
         {
-          field: 'widgetNo',
-          message: 'widgetNo must be a positive integer',
+          field: 'sectionId',
+          message: 'sectionId must be a positive integer',
         },
       ]);
     }
-    return widgetNo;
+    return sectionId;
   }
-  private throwNotFound(widgetNo: number, widgetType?: WidgetPlatform): never {
-    const suffix = widgetType !== undefined ? ` with widgetType ${widgetType}` : '';
-    throwMasterNotFound<WidgetMasterErrorDetail>(
-      'Widget not found',
-      'widgetNo',
-      `No widget found with widgetNo ${widgetNo}${suffix}`,
+  private normalizeFieldId(fieldId: number): number {
+    if (!Number.isInteger(fieldId) || fieldId <= 0) {
+      this.throwBadRequest('Validation failed', [
+        {
+          field: 'fieldId',
+          message: 'fieldId must be a positive integer',
+        },
+      ]);
+    }
+    return fieldId;
+  }
+  private throwOnConflict(error: unknown): void {
+    throwOnUniqueConstraintError<WidgetMasterErrorDetail>(
+      error,
+      'Section already exists',
+      [
+        {
+          field: 'sectionName',
+          message:
+            'A section with the same name already exists for this menu and platform, or a field name is duplicated within the section',
+        },
+      ],
     );
   }
+
+  private throwNotFound(sectionId: number): never {
+    throwMasterNotFound<WidgetMasterErrorDetail>(
+      'Section not found',
+      'sectionId',
+      `No section found with sectionId ${sectionId}`,
+    );
+  }
+
+  private throwFieldNotFound(fieldId: number, sectionId: number): never {
+    throwMasterNotFound<WidgetMasterErrorDetail>(
+      'Field not found',
+      'fieldId',
+      `No field found with fieldId ${fieldId} under sectionId ${sectionId}`,
+    );
+  }
+
   private throwBadRequest(message: string, errors: WidgetMasterErrorDetail[]): never {
     throwMasterBadRequest<WidgetMasterErrorDetail>(message, errors);
   }

@@ -16,6 +16,7 @@ import { SequenceModule } from './common/Sequence/sequence.module';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './database/prisma/prisma.module';
+import { PgModule } from './database/pg/pg.module';
 import { HealthModule } from './modules/health/health.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -113,6 +114,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
       },
     ]),
     PrismaModule,
+    PgModule,
     AuditLogModule,
     HealthModule,
     UsersModule,

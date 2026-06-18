@@ -18,6 +18,7 @@ model Menu {
   menuModifiedOn DateTime? @updatedAt      @db.Timestamptz(6) @map("menu_modified_on")
   menuSyncDate   DateTime?               @db.Timestamptz(6) @map("menu_sync_date")
   userMenus              UserMenus[]
+  sections               FormSection[]
   @@index([menuParentId])
   @@index([menuPosition])
   @@map("menu_master")

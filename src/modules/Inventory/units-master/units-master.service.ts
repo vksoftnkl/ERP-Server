@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Unit } from '@prisma/client';
 import { SaveUnitDto } from './dto/save-unit.dto';
-import { UnitErrorDetail, UnitPayload } from './types/unit-api.types';
+import { UnitDetailPayload, UnitErrorDetail, UnitPayload } from './types/unit-api.types';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
 import {
@@ -34,10 +34,13 @@ export class UnitsMasterService {
     }
     return this.createUnit(saveUnitDto);
   }
-  async getById(unitId: string): Promise<UnitPayload> {
+  async getById(unitId: string): Promise<UnitDetailPayload> {
     const record = await this.prisma.unit.findFirst({
       where: { unit_id: unitId, unit_is_deleted: false },
-      include: { baseUnit: { select: { unit_name: true } } },
+      include: {
+        baseUnit: { select: { unit_name: true } },
+        gstUnit: { select: { itemGstUnitName: true } },
+      },
     });
     if (!record) {
       throwInventoryNotFound<UnitErrorDetail>(
@@ -46,7 +49,30 @@ export class UnitsMasterService {
         `No active unit found with id ${unitId}`,
       );
     }
-    return this.toPayload(record, record.baseUnit?.unit_name ?? null);
+    const payload = this.toPayload(
+      record,
+      record.baseUnit?.unit_name ?? null,
+      record.gstUnit?.itemGstUnitName ?? null,
+    );
+    // Soft-delete/sync/audit columns are persisted but intentionally not exposed on GET.
+    return {
+      unit_id: payload.unit_id,
+      unit_name: payload.unit_name,
+      unit_alias: payload.unit_alias,
+      unit_code: payload.unit_code,
+      unit_code_name: payload.unit_code_name,
+      unit_description: payload.unit_description,
+      unit_decimal_count: payload.unit_decimal_count,
+      unit_weight: payload.unit_weight,
+      unit_loading: payload.unit_loading,
+      unit_unloading: payload.unit_unloading,
+      unit_attach_charge: payload.unit_attach_charge,
+      unit_is_pack_unit: payload.unit_is_pack_unit,
+      unit_base_unit_id: payload.unit_base_unit_id,
+      unit_base_unit_name: payload.unit_base_unit_name,
+      unit_conversion: payload.unit_conversion,
+      unit_is_active: payload.unit_is_active,
+    };
   }
   async softDelete(unitId: string): Promise<{ unit_id: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -243,12 +269,17 @@ export class UnitsMasterService {
       data.unit_is_active = saveUnitDto.unit_is_active;
   }
 
-  private toPayload(record: Unit, baseUnitName: string | null = null): UnitPayload {
+  private toPayload(
+    record: Unit,
+    baseUnitName: string | null = null,
+    unitCodeName: string | null = null,
+  ): UnitPayload {
     return {
       unit_id: record.unit_id,
       unit_name: record.unit_name,
       unit_alias: record.unit_alias,
       unit_code: record.unit_code,
+      unit_code_name: unitCodeName,
       unit_description: record.unit_description,
       unit_decimal_count: record.unit_decimal_count,
       unit_weight: toNullableNumber(record.unit_weight),

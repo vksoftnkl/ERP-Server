@@ -8,6 +8,7 @@ export interface UnitPayload {
   unit_name: string;
   unit_alias: string | null;
   unit_code: string | null;
+  unit_code_name: string | null;
   unit_description: string | null;
   unit_decimal_count: number;
   unit_weight: number | null;
@@ -26,3 +27,17 @@ export interface UnitPayload {
   unit_modified_on: string;
   unit_modified_by: string | null;
 }
+
+/**
+ * Public "get detail" shape — excludes the soft-delete/sync/audit columns that are
+ * persisted but not surfaced on the GET endpoint (matches UnitPayloadDto in Swagger).
+ */
+export type UnitDetailPayload = Omit<
+  UnitPayload,
+  | 'unit_is_deleted'
+  | 'unit_sync_date'
+  | 'unit_created_on'
+  | 'unit_created_by'
+  | 'unit_modified_on'
+  | 'unit_modified_by'
+>;

@@ -61,10 +61,13 @@ export class ConfiguredGridSqlController {
     const limit = query.limit ?? 20;
     const skip = (page - 1) * limit;
     let gridPrm: Record<string, unknown> | undefined;
-    if (query.grid_param !== undefined) {
+    // Workflow B: a missing, empty, or whitespace grid_param means "no parameters" — run the base
+    // SQL as-is. Only attempt to parse when there is actual content (Workflow A).
+    const rawGridParam = query.grid_param?.trim();
+    if (rawGridParam) {
       let parsed: unknown;
       try {
-        parsed = JSON.parse(query.grid_param);
+        parsed = JSON.parse(rawGridParam);
       } catch {
         throw new BadRequestException('grid_param must be valid JSON');
       }
@@ -113,11 +116,19 @@ export class ConfiguredGridSqlController {
     if (!validation.isValid) {
       throw new BadRequestException(`Invalid grid SQL: ${validation.message}`);
     }
-    const finalSql = gridPrm
-      ? this.configuredGridSqlService.substituteGridPrm(validation.normalizedSql, gridPrm)
-      : validation.normalizedSql;
+    let baseSql = validation.normalizedSql;
+    let params: unknown[] = [];
+    if (gridPrm) {
+      // Bind grid_param values into the named placeholder tokens embedded in the stored SQL
+      // (e.g. p_comp_id, p_branch_id) as positional parameters ($N). Values are passed to Postgres
+      // as bound params — never string-concatenated into the SQL.
+      const bound = this.configuredGridSqlService.bindGridParams(baseSql, gridPrm);
+      baseSql = bound.sql;
+      params = bound.params;
+    }
     const result = await this.configuredGridSqlService.runPagedQuery<Record<string, unknown>>({
-      baseSql: finalSql,
+      baseSql,
+      params,
       alias: 'cgrid',
       search: query.search,
       limit,

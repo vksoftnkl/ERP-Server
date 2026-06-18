@@ -50,7 +50,7 @@ const DEVICE_LIST_MASTER_OPTIONAL_FIELD_TRANSFORMS = {
   devPlatform: normalizeDevicePlatform,
 };
 function isDeviceUidRequired(deviceType: DeviceType): boolean {
-  return deviceType === DeviceType.DESKTOP || deviceType === DeviceType.MOBILE;
+  return deviceType === DeviceType.DESKTOP;
 }
 function normalizeDeviceType(value: unknown): DeviceType | undefined {
   if (value === undefined || value === null) {
@@ -87,7 +87,7 @@ function normalizeDeviceUid(value: string | undefined, deviceType: DeviceType): 
     return normalizeRequiredText<DeviceListMasterErrorDetail, DeviceListMasterErrorResponse>(
       value ?? '',
       'devDeviceUid',
-      'devDeviceUid is required when devDeviceType is Desktop or Mobile',
+      'devDeviceUid is required when devDeviceType is Desktop',
     );
   }
   const trimmed = value?.trim();

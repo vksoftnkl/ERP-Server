@@ -76,3 +76,13 @@ export interface BuildConfiguredGridSearchSqlOptions {
   params?: unknown[];
   conditions?: string[];
 }
+export interface BuildConfiguredGridFilterSqlOptions {
+  baseSql: string;
+  alias: string;
+  /**
+   * Map of output-column name → value to equality-filter on. Keys must match columns produced by
+   * `baseSql`. Entries with `null`/`undefined` values are ignored (no constraint added).
+   */
+  filters: Record<string, unknown>;
+  params?: unknown[];
+}

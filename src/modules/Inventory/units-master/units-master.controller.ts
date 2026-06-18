@@ -30,7 +30,7 @@ import {
   UnitSuccessSingleDto,
 } from './dto/unit-response.dto';
 import { UnitExceptionFilter } from './unit-exception.filter';
-import { UnitPayload, UnitSuccessResponse } from './types/unit-api.types';
+import { UnitDetailPayload, UnitPayload, UnitSuccessResponse } from './types/unit-api.types';
 import { UnitsMasterService } from './units-master.service';
 import { API_VERSION } from '../../../common/constants/api-version';
 
@@ -69,7 +69,7 @@ export class UnitsMasterController {
   @ApiNotFoundResponse({ type: UnitErrorResponseDto })
   async getById(
     @Query('unit_id', new ParseUUIDPipe({ version: '7' })) unitId: string,
-  ): Promise<UnitSuccessResponse<UnitPayload>> {
+  ): Promise<UnitSuccessResponse<UnitDetailPayload>> {
     const data = await this.unitsMasterService.getById(unitId);
 
     return {

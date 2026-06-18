@@ -4,8 +4,8 @@ import {
   Controller,
   Delete,
   Get,
-  ParseEnumPipe,
   ParseIntPipe,
+  Patch,
   Post,
   Query,
   UseFilters,
@@ -14,6 +14,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiCreatedResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -22,9 +23,10 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { WidgetPlatform } from '@prisma/client';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { ListWidgetQueryDto } from './dto/list-widget-query.dto';
+import { WidgetConfigQueryDto } from './dto/widget-config-query.dto';
+import { UpdateWidgetVisibilityDto } from './dto/update-widget-visibility.dto';
 import { SaveWidgetDto } from './dto/save-widget.dto';
 import {
   WidgetMasterErrorResponseDto,
@@ -33,14 +35,13 @@ import {
   WidgetMasterSuccessSingleDto,
 } from './dto/widget-master-response.dto';
 import {
-  WidgetMasterListMeta,
   WidgetMasterPayload,
   WidgetMasterSuccessResponse,
+  WidgetPlatform,
 } from './types/widget-master-api.types';
 import { WidgetMasterExceptionFilter } from './widget-master-exception.filter';
 import { WidgetMasterService } from './widget-master.service';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Widget Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -49,10 +50,72 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(WidgetMasterExceptionFilter)
 export class WidgetMasterController {
   constructor(private readonly widgetMasterService: WidgetMasterService) { }
-
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update widget (by widgetNo presence)' })
+  @ApiOperation({
+    summary: 'Create or update a widget section with its fields',
+    description: [
+      'Upserts a single form section (heading row) together with its nested fields.',
+      '',
+      '- Omit `sectionId` to create a new section; include it to update the existing one.',
+      '- `fields` is a full-sync of the section\'s children: fields with a `fieldId` are updated, fields without one are created, and any existing field not present in the array is deleted.',
+      '- Omit `fields` entirely to leave the existing fields untouched; send `[]` to remove all fields.',
+      '- `(sectionMenuId, sectionPlatform, sectionName)` must be unique, and `fieldName` must be unique within a section — violations return 409.',
+    ].join('\n'),
+  })
+  @ApiBody({
+    type: SaveWidgetDto,
+    examples: {
+      createWithFields: {
+        summary: 'Create a section with two fields',
+        value: {
+          sectionMenuId: 10,
+          sectionName: 'Primary Information',
+          sectionPosition: 0,
+          sectionVisibility: true,
+          sectionPlatform: WidgetPlatform.Web,
+          fields: [
+            {
+              fieldName: 'item_name',
+              fieldGuiName: 'English Name',
+              fieldSecondaryText: 'Secondary text',
+              fieldPosition: 0,
+              fieldVisibility: true,
+            },
+            {
+              fieldName: 'item_code',
+              fieldGuiName: 'Code',
+              fieldPosition: 1,
+              fieldVisibility: true,
+            },
+          ],
+        },
+      },
+      createSectionOnly: {
+        summary: 'Create a section without any fields',
+        value: {
+          sectionMenuId: 10,
+          sectionName: 'Price Details',
+          sectionPlatform: WidgetPlatform.Desktop,
+        },
+      },
+      updateWithFieldSync: {
+        summary: 'Update a section and sync its fields (update one, add one, drop the rest)',
+        value: {
+          sectionId: 1,
+          sectionMenuId: 10,
+          sectionName: 'Primary Information',
+          sectionPosition: 0,
+          sectionVisibility: true,
+          sectionPlatform: WidgetPlatform.Web,
+          fields: [
+            { fieldId: 5, fieldName: 'item_name', fieldGuiName: 'English Name', fieldPosition: 0 },
+            { fieldName: 'item_barcode', fieldGuiName: 'Barcode', fieldPosition: 1 },
+          ],
+        },
+      },
+    },
+  })
   @ApiCreatedResponse({ type: WidgetMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: WidgetMasterErrorResponseDto })
@@ -63,73 +126,124 @@ export class WidgetMasterController {
 
     return {
       success: true,
-      message: saveWidgetDto.widgetNo
-        ? 'Widget updated successfully'
-        : 'Widget created successfully',
+      message: saveWidgetDto.sectionId
+        ? 'Widget section updated successfully'
+        : 'Widget section created successfully',
       data,
     };
   }
-
-  @Get('list')
+  @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'List widgets with group/type filter, search, and pagination' })
+  @ApiOperation({
+    summary: 'Get widget section by id',
+    description: [
+      'Returns sections (each with its `fields[]` ordered by position), without pagination.',
+      'Optional filters: `sectionId` (screen) and `sectionPlatform`.',
+      '`search` matches the section name or any of its field names (name / GUI name / secondary text), case-insensitive.',
+    ].join('\n'),
+  })
   @ApiOkResponse({ type: WidgetMasterSuccessListDto })
   @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
   async list(
     @Query() queryDto: ListWidgetQueryDto,
-  ): Promise<WidgetMasterSuccessResponse<WidgetMasterPayload[], WidgetMasterListMeta>> {
-    const result = await this.widgetMasterService.list(queryDto);
-
+  ): Promise<WidgetMasterSuccessResponse<WidgetMasterPayload[]>> {
+    const data = await this.widgetMasterService.list(queryDto);
     return {
       success: true,
       message: 'Widgets fetched successfully',
-      data: result.items,
-      meta: result.meta,
-    };
-  }
-
-  @Get('get')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get widget by id, optionally constrained by widgetType' })
-  @ApiQuery({ name: 'widgetNo', type: Number, example: 1 })
-  @ApiQuery({
-    name: 'widgetType',
-    enum: WidgetPlatform,
-    enumName: 'WidgetPlatform',
-    required: false,
-  })
-  @ApiOkResponse({ type: WidgetMasterSuccessSingleDto })
-  @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
-  @ApiNotFoundResponse({ type: WidgetMasterErrorResponseDto })
-  async getById(
-    @Query('widgetNo', ParseIntPipe) widgetNo: number,
-    @Query('widgetType', new ParseEnumPipe(WidgetPlatform, { optional: true }))
-    widgetType?: WidgetPlatform,
-  ): Promise<WidgetMasterSuccessResponse<WidgetMasterPayload>> {
-    const data = await this.widgetMasterService.getById(widgetNo, widgetType);
-
-    return {
-      success: true,
-      message: 'Widget fetched successfully',
       data,
     };
   }
-
+  @Get('config')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: "Get a menu's widget config, optionally filtered by visibility",
+    description: [
+      'Returns the sections (each with its `fields[]` ordered by position) for `menu_id`.',
+      'The optional `visibility` flag is applied to both section and field visibility:',
+      '- `visibility=true` returns only visible sections, each carrying only its visible fields.',
+      '- `visibility=false` returns only hidden sections, each carrying only its hidden fields.',
+      '- omit `visibility` to return both visible and hidden sections (and their fields).',
+    ].join('\n'),
+  })
+  @ApiOkResponse({ type: WidgetMasterSuccessListDto })
+  @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
+  async getConfig(
+    @Query() queryDto: WidgetConfigQueryDto,
+  ): Promise<WidgetMasterSuccessResponse<WidgetMasterPayload[]>> {
+    const data = await this.widgetMasterService.getConfig(queryDto);
+    return {
+      success: true,
+      message: 'Widget config fetched successfully',
+      data,
+    };
+  }
+  @Patch('visibility')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Update section and field visibility config in bulk',
+    description: [
+      'Updates the visibility configuration for one or more sections together with their fields.',
+      '',
+      "- Each section's `sectionVisibility` / `sectionGuiName` is updated by `sectionId`.",
+      "- Each field's `fieldVisibility` / `fieldSecondaryText` is updated by `fieldId` (the field must belong to its section).",
+      '- All updates run in a single transaction: if any `sectionId`/`fieldId` is missing, nothing is changed (404).',
+    ].join('\n'),
+  })
+  @ApiBody({
+    type: UpdateWidgetVisibilityDto,
+    examples: {
+      updateVisibility: {
+        summary: 'Update one section and one of its fields',
+        value: {
+          data: [
+            {
+              sectionId: 1,
+              sectionGuiName: 'Primary Information',
+              sectionVisibility: true,
+              fields: [
+                {
+                  fieldId: 1,
+                  fieldSecondaryText: 'Secondary text',
+                  fieldVisibility: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  })
+  @ApiOkResponse({ type: WidgetMasterSuccessListDto })
+  @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: WidgetMasterErrorResponseDto })
+  async updateVisibility(
+    @Body() updateWidgetVisibilityDto: UpdateWidgetVisibilityDto,
+  ): Promise<WidgetMasterSuccessResponse<WidgetMasterPayload[]>> {
+    const data = await this.widgetMasterService.updateVisibility(updateWidgetVisibilityDto);
+    return {
+      success: true,
+      message: 'Widget visibility updated successfully',
+      data,
+    };
+  }
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Delete widget by id' })
-  @ApiQuery({ name: 'widgetNo', type: Number, example: 1 })
+  @ApiOperation({
+    summary: 'Delete a widget section by id',
+    description: 'Deletes the section identified by `sectionId`. All of its fields are removed automatically via the database cascade.',
+  })
+  @ApiQuery({ name: 'sectionId', type: Number, example: 1 })
   @ApiOkResponse({ type: WidgetMasterSuccessDeleteDto })
   @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: WidgetMasterErrorResponseDto })
   async remove(
-    @Query('widgetNo', ParseIntPipe) widgetNo: number,
-  ): Promise<WidgetMasterSuccessResponse<{ widgetNo: number; deleted: true }>> {
-    const data = await this.widgetMasterService.delete(widgetNo);
-
+    @Query('sectionId', ParseIntPipe) sectionId: number,
+  ): Promise<WidgetMasterSuccessResponse<{ sectionId: number; deleted: true }>> {
+    const data = await this.widgetMasterService.delete(sectionId);
     return {
       success: true,
-      message: 'Widget deleted successfully',
+      message: 'Widget section deleted successfully',
       data,
     };
   }

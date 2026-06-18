@@ -1036,6 +1036,47 @@ Table device_master {
   devModifiedBy String
 }
 
+Table form_section {
+  sectionId Int [pk, increment]
+  sectionMenuId Int [not null]
+  sectionName String [not null]
+  sectionGuiName String [not null]
+  sectionPosition Int [not null, default: 0]
+  sectionVisibility Boolean [not null, default: true]
+  sectionPlatform String [not null]
+  sectionSyncDate DateTime [default: `now()`, not null]
+  sectionCreatedOn DateTime [default: `now()`, not null]
+  sectionCreatedBy String
+  sectionUpdatedOn DateTime [default: `now()`, not null]
+  sectionUpdatedBy String
+  fields form_field [not null]
+  menu menu_master [not null]
+
+  indexes {
+    (sectionMenuId, sectionPlatform, sectionName) [unique]
+  }
+}
+
+Table form_field {
+  fieldId Int [pk, increment]
+  fieldSectionId Int [not null]
+  section form_section [not null]
+  fieldName String [not null]
+  fieldGuiName String
+  fieldSecondaryText String
+  fieldPosition Int [not null, default: 0]
+  fieldVisibility Boolean [not null, default: true]
+  fieldSyncDate DateTime [default: `now()`, not null]
+  fieldCreatedOn DateTime [default: `now()`, not null]
+  fieldCreatedBy String
+  fieldUpdatedOn DateTime [default: `now()`, not null]
+  fieldUpdatedBy String
+
+  indexes {
+    (fieldSectionId, fieldName) [unique]
+  }
+}
+
 Table grid_columns {
   gridColumnId String [pk]
   gridId BigInt [not null]
@@ -1146,6 +1187,7 @@ Table menu_master {
   menuModifiedOn DateTime
   menuSyncDate DateTime
   userMenus user_menus [not null]
+  sections form_section [not null]
 }
 
 Table price_levels {
@@ -2263,17 +2305,6 @@ Table user_menus {
   }
 }
 
-Table widget {
-  widgetNo Int [pk, increment]
-  widgetGroupId Int [not null]
-  widgetName String [not null]
-  widgetPosition Int [not null, default: 0]
-  widgetVisibility Boolean [not null, default: true]
-  widgetGuiName String
-  widgetType WidgetPlatform [not null]
-  widgetSecondaryText String
-}
-
 Table suppliers {
   supId String [pk]
   supCompanyId String
@@ -3078,12 +3109,6 @@ Enum AuditScreenType {
   other
 }
 
-Enum WidgetPlatform {
-  mobile
-  desktop
-  web
-}
-
 Ref: account_groups.accGroupParentId - account_groups.accGroupId
 
 Ref: account_groups.accGroupCompanyId > companys.compId [delete: Restrict]
@@ -3213,6 +3238,10 @@ Ref: device_master.devCompanyId > companys.compId
 Ref: device_master.devBranchId > branch_master.brId
 
 Ref: device_master.devUserId > user_master.usrId
+
+Ref: form_section.sectionMenuId > menu_master.menuId [delete: Cascade]
+
+Ref: form_field.fieldSectionId > form_section.sectionId [delete: Cascade]
 
 Ref: grid_columns.gridId > grid_details.gridId [delete: Cascade]
 
