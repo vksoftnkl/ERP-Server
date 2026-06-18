@@ -106,13 +106,15 @@ export class ItemsGroupMasterController {
   @ApiNotFoundResponse({ type: ItemGroupErrorResponseDto })
   async remove(
     @Query('itg_id', new ParseUUIDPipe({ version: '7' })) itgId: string,
-  ): Promise<ItemGroupSuccessResponse<{ itg_id: string; deleted: true }>> {
-    const data = await this.itemsGroupMasterService.softDelete(itgId);
+  ): Promise<ItemGroupSuccessResponse<{ itg_id: string }>> {
+    const { itg_id, deleted } = await this.itemsGroupMasterService.toggleDelete(itgId);
 
     return {
       success: true,
-      message: 'Item group deleted successfully',
-      data,
+      message: deleted
+        ? 'Item group deleted successfully'
+        : 'Item group restored successfully',
+      data: { itg_id },
     };
   }
 

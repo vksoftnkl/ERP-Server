@@ -160,10 +160,10 @@ export class WidgetMasterController {
     summary: "Get a menu's widget config, optionally filtered by visibility",
     description: [
       'Returns the sections (each with its `fields[]` ordered by position) for `menu_id`.',
-      'The optional `visibility` flag is applied to both section and field visibility:',
-      '- `visibility=true` returns only visible sections, each carrying only its visible fields.',
-      '- `visibility=false` returns only hidden sections, each carrying only its hidden fields.',
-      '- omit `visibility` to return both visible and hidden sections (and their fields).',
+      'The optional `visibility` filter accepts `false` or `all`:',
+      '- `visibility=false` returns only hidden sections, each carrying its hidden fields plus any field that has secondary text (even when that field is itself visible).',
+      '- `visibility=all` (or omitting it) returns both visible and hidden sections (and their fields).',
+      'The optional `platform` filter restricts results to sections scoped to that platform; omit it to return all platforms.',
     ].join('\n'),
   })
   @ApiOkResponse({ type: WidgetMasterSuccessListDto })

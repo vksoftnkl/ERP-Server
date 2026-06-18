@@ -77,9 +77,6 @@ export class ItemGroupPayloadDto {
 export class ItemGroupDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   itg_id!: string;
-
-  @ApiProperty({ example: true })
-  deleted!: true;
 }
 
 export class ItemGroupSuccessSingleDto {

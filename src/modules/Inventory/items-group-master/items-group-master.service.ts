@@ -42,73 +42,94 @@ export class ItemsGroupMasterService {
         `No active item group found with id ${itgId}`,
       );
     }
-    return this.toPayload(record);
+    const parentName = await this.resolveParentName(record.itgParentId);
+    return this.toPayload(record, parentName);
   }
-  async softDelete(itgId: string): Promise<{ itg_id: string; deleted: true }> {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.itemGroupMaster.findFirst({
-        where: {
-          itgId,
-          itgIsDeleted: false,
-        },
-      });
-      if (!existing) {
-        throwInventoryNotFound<ItemGroupErrorDetail>(
-          'Item group not found',
-          'itg_id',
-          `No active item group found with id ${itgId}`,
-        );
-      }
-      const subtreeIds = await this.getActiveSubtreeIds(tx, itgId);
-      const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
-      const modifiedOn = new Date();
-      const result = await tx.itemGroupMaster.updateMany({
-        where: {
-          itgId,
-          itgIsDeleted: false,
-        },
-        data: {
-          itgIsDeleted: true,
-          itgModifiedOn: modifiedOn,
-          itgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-        },
-      });
-      if (result.count === 0) {
-        throwInventoryNotFound<ItemGroupErrorDetail>(
-          'Item group not found',
-          'itg_id',
-          `No active item group found with id ${itgId}`,
-        );
-      }
-      await this.removePathIds(tx, ancestorIds, subtreeIds);
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        itgIsDeleted: true,
-        itgModifiedOn: modifiedOn,
-        itgModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: ITEM_GROUP_TABLE_NAME,
-          screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
-          screenType: 'master',
-          pk: itgId,
-          displayName: existing.itgName,
-          originalRecord,
-          modifiedRecord,
-          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'Item group soft deleted',
-        },
-        tx,
-      );
-      return {
-        itg_id: itgId,
-        deleted: true,
-      };
+  private async resolveParentName(parentId: string | null): Promise<string | null> {
+    if (!parentId) {
+      return null;
+    }
+    const parent = await this.prisma.itemGroupMaster.findFirst({
+      where: { itgId: parentId },
+      select: { itgName: true },
     });
+    return parent?.itgName ?? null;
   }
+ async toggleDelete(itgId: string): Promise<{ itg_id: string; deleted: boolean }> {
+  return this.prisma.$transaction(async (tx) => {
+    // Find regardless of current deleted state
+    const existing = await tx.itemGroupMaster.findFirst({
+      where: { itgId },
+    });
+
+    if (!existing) {
+      throwInventoryNotFound<ItemGroupErrorDetail>(
+        'Item group not found',
+        'itg_id',
+        `No item group found with id ${itgId}`,
+      );
+    }
+
+    const wasDeleted = existing.itgIsDeleted;       // current state
+    const nextDeleted = !wasDeleted;                // flip it
+    const modifiedOn = new Date();
+    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+
+    const subtreeIds = await this.getActiveSubtreeIds(tx, itgId);
+    const ancestorIds = await this.getAncestorIds(tx, existing.itgParentId);
+
+    // Guarded update: only flips if state hasn't changed since the read
+    const result = await tx.itemGroupMaster.updateMany({
+      where: { itgId, itgIsDeleted: wasDeleted },
+      data: {
+        itgIsDeleted: nextDeleted,
+        itgModifiedOn: modifiedOn,
+        itgModifiedBy: userId,
+      },
+    });
+
+    if (result.count === 0) {
+      // Lost a race, or row vanished between read and write
+      throwInventoryNotFound<ItemGroupErrorDetail>(
+        'Item group not found',
+        'itg_id',
+        `No item group found with id ${itgId}`,
+      );
+    }
+
+    if (nextDeleted) {
+      await this.removePathIds(tx, ancestorIds, subtreeIds);
+    } else {
+      await this.appendPathIds(tx, ancestorIds, subtreeIds); // inverse op
+    }
+
+    const originalRecord = this.toPayload(existing);
+    const modifiedRecord = this.toPayload({
+      ...existing,
+      itgIsDeleted: nextDeleted,
+      itgModifiedOn: modifiedOn,
+      itgModifiedBy: userId,
+    });
+
+    await this.auditLogService.logEntityChange(
+      {
+        action: nextDeleted ? 'cancel' : 'update',
+        tableName: ITEM_GROUP_TABLE_NAME,
+        screenName: ITEM_GROUP_AUDIT_SCREEN_NAME,
+        screenType: 'master',
+        pk: itgId,
+        displayName: existing.itgName,
+        originalRecord,
+        modifiedRecord,
+        userId,
+        notes: nextDeleted ? 'Item group soft deleted' : 'Item group restored',
+      },
+      tx,
+    );
+
+    return { itg_id: itgId, deleted: nextDeleted };
+  });
+}
   private async createItemGroup(saveItemGroupDto: SaveItemGroupDto): Promise<ItemGroupPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -519,7 +540,10 @@ export class ItemsGroupMasterService {
     }
     return new Uint8Array(Buffer.from(normalized, 'base64'));
   }
-  private toPayload(record: ItemGroupMaster): ItemGroupPayload {
+  private toPayload(
+    record: ItemGroupMaster,
+    parentName: string | null = null,
+  ): ItemGroupPayload {
     return {
       itg_id: record.itgId,
       itg_name: record.itgName,
@@ -527,6 +551,7 @@ export class ItemsGroupMasterService {
       itg_short: record.itgShort,
       itg_description: record.itgDescription,
       itg_parent_id: record.itgParentId,
+      itg_parent_name: parentName,
       itg_sort: record.itgSort,
       itg_level: record.itgLevel,
       itg_path_ids_cache: record.itgPathIdsCache,

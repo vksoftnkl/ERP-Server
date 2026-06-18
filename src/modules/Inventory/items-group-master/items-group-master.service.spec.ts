@@ -570,7 +570,7 @@ describe('ItemsGroupMasterService', () => {
       }),
     );
 
-    await expect(service.softDelete(ITEM_GROUP_ID)).resolves.toEqual({
+    await expect(service.toggleDelete(ITEM_GROUP_ID)).resolves.toEqual({
       itg_id: ITEM_GROUP_ID,
       deleted: true,
     });

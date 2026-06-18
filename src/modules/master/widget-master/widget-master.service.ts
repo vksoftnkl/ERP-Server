@@ -11,6 +11,7 @@ import {
   WidgetMasterErrorDetail,
   WidgetMasterPayload,
   WidgetPlatform,
+  WidgetVisibilityFilter,
 } from './types/widget-master-api.types';
 import {
   DEFAULT_ACTOR,
@@ -42,6 +43,9 @@ export class WidgetMasterService {
     if (queryDto.sectionId !== undefined) {
       where.sectionId = queryDto.sectionId;
     }
+    if (queryDto.sectionMenuId !== undefined) {
+      where.sectionMenuId = queryDto.sectionMenuId;
+    }
     if (queryDto.sectionPlatform !== undefined) {
       where.sectionPlatform = queryDto.sectionPlatform;
     }
@@ -56,22 +60,26 @@ export class WidgetMasterService {
     return records.map((record) => this.toPayload(record));
   }
   /**
-   * Return a menu's widget config. When `visibility` is provided, only sections whose
-   * `sectionVisibility` matches the flag are returned, each carrying only the fields whose
-   * `fieldVisibility` matches the same flag. When `visibility` is omitted, both visible and
-   * hidden sections (and their fields) are returned.
+   * Return a menu's widget config.
+   * - `visibility=false`: only hidden sections (`sectionVisibility = false`), each carrying its
+   *   hidden fields plus any field that has secondary text (even when that field is itself visible).
+   * - `visibility=all` (or omitted): both visible and hidden sections (and all their fields).
+   * - `platform`, when provided, restricts results to sections scoped to that platform.
    */
   async getConfig(queryDto: WidgetConfigQueryDto): Promise<WidgetMasterPayload[]> {
-    const filterByVisibility = queryDto.visibility !== undefined;
+    const onlyHidden = queryDto.visibility === WidgetVisibilityFilter.False;
     const records = await this.prisma.formSection.findMany({
       where: {
         sectionMenuId: queryDto.menu_id,
-        ...(filterByVisibility && { sectionVisibility: queryDto.visibility }),
+        ...(queryDto.platform !== undefined && { sectionPlatform: queryDto.platform }),
+        ...(onlyHidden && { sectionVisibility: false }),
       },
       orderBy: [{ sectionPosition: 'asc' }, { sectionId: 'asc' }],
       include: {
         fields: {
-          where: filterByVisibility ? { fieldVisibility: queryDto.visibility } : undefined,
+          where: onlyHidden
+            ? { OR: [{ fieldVisibility: false }, { fieldSecondaryText: { not: null } }] }
+            : undefined,
           orderBy: FIELD_ORDER_BY,
         },
       },

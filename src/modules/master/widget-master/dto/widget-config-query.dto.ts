@@ -1,11 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, Min } from 'class-validator';
-import { toOptionalBoolean, toOptionalInteger } from 'src/common/dto/dto-transforms';
+import { IsEnum, IsInt, IsOptional, Min } from 'class-validator';
+import { toOptionalInteger } from 'src/common/dto/dto-transforms';
+import { WidgetPlatform, WidgetVisibilityFilter } from '../types/widget-master-api.types';
 
 /**
- * Fetch a menu's widget config. When `visibility` is provided, only sections and fields whose
- * visibility matches the flag are returned; when it is omitted, both visible and hidden are returned.
+ * Fetch a menu's widget config.
+ * - `visibility=false` returns only hidden sections, each carrying its hidden fields plus any field
+ *   that has secondary text (even when that field is itself visible).
+ * - `visibility=all` (or omitting it) returns both visible and hidden sections and fields.
+ * - `platform`, when provided, restricts results to sections scoped to that platform.
  */
 export class WidgetConfigQueryDto {
   @ApiProperty({
@@ -18,19 +22,22 @@ export class WidgetConfigQueryDto {
   @Min(1)
   menu_id!: number;
 
-  @ApiProperty({
-    type: Boolean,
-    example: true,
-    required: false,
+  @ApiPropertyOptional({
+    enum: WidgetVisibilityFilter,
+    enumName: 'WidgetVisibilityFilter',
     description:
-      'Optional flag applied to both section and field visibility. Omit it to return both visible and hidden sections/fields.',
+      '`false` returns only hidden sections (their hidden fields, plus any field that has secondary text); `all` returns both visible and hidden. Omit it to return all.',
   })
   @IsOptional()
-  // Read the raw query value from `obj` rather than `value`: the global ValidationPipe runs with
-  // `enableImplicitConversion: true`, which coerces the string via `Boolean(value)` BEFORE this
-  // transform runs — and `Boolean('false') === true`, so `visibility=false` would otherwise be
-  // read as `true`. Parsing the untouched raw string preserves the intended true/false.
-  @Transform(({ obj, key }) => toOptionalBoolean(obj[key]))
-  @IsBoolean()
-  visibility?: boolean;
+  @IsEnum(WidgetVisibilityFilter)
+  visibility?: WidgetVisibilityFilter;
+
+  @ApiPropertyOptional({
+    enum: WidgetPlatform,
+    enumName: 'WidgetPlatform',
+    description: 'Optional platform filter; returns only sections scoped to this platform.',
+  })
+  @IsOptional()
+  @IsEnum(WidgetPlatform)
+  platform?: WidgetPlatform;
 }

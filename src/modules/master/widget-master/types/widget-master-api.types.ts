@@ -15,6 +15,17 @@ export enum WidgetPlatform {
   Web = 'Web',
 }
 
+/**
+ * Visibility filter for the widget config endpoint.
+ * - `False`: return only hidden sections, each carrying its hidden fields plus any field that has
+ *   secondary text (even when that field is itself visible).
+ * - `All`: return both visible and hidden sections (and their fields).
+ */
+export enum WidgetVisibilityFilter {
+  False = 'false',
+  All = 'all',
+}
+
 /** One field row under a section ("field" in `fixed.form_field`). */
 export interface WidgetFieldPayload {
   fieldId: number;

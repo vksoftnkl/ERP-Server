@@ -8,6 +8,7 @@ export interface ItemGroupPayload {
   itg_short: string | null;
   itg_description: string | null;
   itg_parent_id: string | null;
+  itg_parent_name: string | null;
   itg_sort: number | null;
   itg_level: number | null;
   itg_path_ids_cache: string[];
