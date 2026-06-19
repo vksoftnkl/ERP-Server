@@ -8,6 +8,7 @@ export interface ItemSectionPayload {
   sec_short: string | null;
   sec_description: string | null;
   sec_parent_id: string | null;
+  sec_parent_name: string | null;
   sec_sort: number | null;
   sec_level: number | null;
   sec_path_ids: string[];

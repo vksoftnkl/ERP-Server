@@ -25,6 +25,13 @@ export class ItemCategoryPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   category_parent_id!: string | null;
 
+  @ApiPropertyOptional({
+    maxLength: 150,
+    nullable: true,
+    description: 'Name of the parent category',
+  })
+  category_parent_name!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   category_sort!: number | null;
 

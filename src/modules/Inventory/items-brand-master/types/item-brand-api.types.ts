@@ -10,6 +10,7 @@ export interface ItemBrandPayload {
   brand_photo: string | null;
   brand_photo_url: string | null;
   brand_parent_id: string | null;
+  brand_parent_name: string | null;
   brand_sort: number | null;
   brand_level: number | null;
   brand_path_ids: string[];

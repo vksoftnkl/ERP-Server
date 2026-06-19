@@ -44,7 +44,17 @@ export class ItemsSectionMasterService {
         `No active item section found with id ${secId}`,
       );
     }
-    return this.toPayload(record);
+    const parentName = await this.getParentName(record.secParentId);
+    return this.toPayload(record, parentName);
+  }
+
+  private async getParentName(parentId: string | null): Promise<string | null> {
+    if (!parentId) return null;
+    const parent = await this.prisma.itemSectionMaster.findFirst({
+      where: { secId: parentId },
+      select: { secName: true },
+    });
+    return parent?.secName ?? null;
   }
 
   async toggleDelete(secId: string): Promise<{ sec_id: string; deleted: boolean }> {
@@ -488,7 +498,7 @@ export class ItemsSectionMasterService {
     return new Uint8Array(Buffer.from(normalized, 'base64'));
   }
 
-  private toPayload(record: ItemSectionMaster): ItemSectionPayload {
+  private toPayload(record: ItemSectionMaster, parentName: string | null = null): ItemSectionPayload {
     return {
       sec_id: record.secId,
       sec_name: record.secName,
@@ -496,6 +506,7 @@ export class ItemsSectionMasterService {
       sec_short: record.secShort,
       sec_description: record.secDescription,
       sec_parent_id: record.secParentId,
+      sec_parent_name: parentName,
       sec_sort: record.secSort,
       sec_level: record.secLevel,
       sec_path_ids: record.secPathIds,

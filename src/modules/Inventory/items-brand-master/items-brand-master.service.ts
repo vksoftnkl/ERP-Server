@@ -42,7 +42,16 @@ export class ItemsBrandMasterService {
         `No active item brand found with id ${brandId}`,
       );
     }
-    return this.toPayload(record);
+    const parentName = await this.getParentName(record.brand_parent_id);
+    return this.toPayload(record, parentName);
+  }
+  private async getParentName(parentId: string | null): Promise<string | null> {
+    if (!parentId) return null;
+    const parent = await this.prisma.itemBrandMaster.findFirst({
+      where: { brand_id: parentId },
+      select: { brand_name: true },
+    });
+    return parent?.brand_name ?? null;
   }
   async toggleDelete(brandId: string): Promise<{ brand_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
@@ -510,7 +519,7 @@ export class ItemsBrandMasterService {
     }
     return new Uint8Array(Buffer.from(normalized, 'base64'));
   }
-  private toPayload(record: ItemBrandMaster): ItemBrandPayload {
+  private toPayload(record: ItemBrandMaster, parentName: string | null = null): ItemBrandPayload {
     return {
       brand_id: record.brand_id,
       brand_name: record.brand_name,
@@ -520,6 +529,7 @@ export class ItemsBrandMasterService {
       brand_photo: record.brand_photo ? Buffer.from(record.brand_photo).toString('base64') : null,
       brand_photo_url: record.brand_photo_url,
       brand_parent_id: record.brand_parent_id,
+      brand_parent_name: parentName,
       brand_sort: record.brand_sort,
       brand_level: record.brand_level,
       brand_path_ids: record.brand_path_ids,

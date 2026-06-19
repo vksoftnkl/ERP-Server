@@ -31,6 +31,9 @@ export class ItemBrandPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   brand_parent_id!: string | null;
 
+  @ApiPropertyOptional({ maxLength: 150, nullable: true, description: 'Name of the parent brand' })
+  brand_parent_name!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   brand_sort!: number | null;
 

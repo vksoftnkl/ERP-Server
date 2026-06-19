@@ -8,6 +8,7 @@ export interface ItemCategoryPayload {
   category_short: string | null;
   category_description: string | null;
   category_parent_id: string | null;
+  category_parent_name: string | null;
   category_sort: number | null;
   category_level: number | null;
   category_path_ids_cache: string[];

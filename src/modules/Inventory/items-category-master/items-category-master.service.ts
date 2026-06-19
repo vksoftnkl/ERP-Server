@@ -42,7 +42,16 @@ export class ItemsCategoryMasterService {
         `No active item category found with id ${categoryId}`,
       );
     }
-    return this.toPayload(record);
+    const parentName = await this.getParentName(record.categoryParentId);
+    return this.toPayload(record, parentName);
+  }
+  private async getParentName(parentId: string | null): Promise<string | null> {
+    if (!parentId) return null;
+    const parent = await this.prisma.categoryMaster.findFirst({
+      where: { categoryId: parentId },
+      select: { categoryName: true },
+    });
+    return parent?.categoryName ?? null;
   }
   async toggleDelete(categoryId: string): Promise<{ category_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
@@ -523,7 +532,7 @@ export class ItemsCategoryMasterService {
     }
     return new Uint8Array(Buffer.from(normalized, 'base64'));
   }
-  private toPayload(record: categoryMaster): ItemCategoryPayload {
+  private toPayload(record: categoryMaster, parentName: string | null = null): ItemCategoryPayload {
     return {
       category_id: record.categoryId,
       category_name: record.categoryName,
@@ -531,6 +540,7 @@ export class ItemsCategoryMasterService {
       category_short: record.categoryShort,
       category_description: record.categoryDescription,
       category_parent_id: record.categoryParentId,
+      category_parent_name: parentName,
       category_sort: record.categorySort,
       category_level: record.categoryLevel,
       category_path_ids_cache: record.categoryPathIdsCache,
