@@ -3794,18 +3794,18 @@ model Supplier {
 
 // ----- prisma/purchase/suppliersGroup.prisma -----
 model SupplierGroup {
-  spgId         String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  spgName       String
-  spgAlias      String?
-  spgShort      String?    @db.VarChar(50)
-  spgDesc       String?
-  spgIsActive   Boolean    @default(true)
-  spgIsDeleted  Boolean    @default(false)
-  spgSyncDate   DateTime?  @db.Timestamptz
-  spgCreatedOn  DateTime   @default(now()) @db.Timestamptz
-  spgCreatedBy  String?    @db.VarChar(100)
-  spgModifiedOn DateTime   @default(now()) @db.Timestamptz
-  spgModifiedBy String?    @db.VarChar(100)
+  spgId         String     @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("spg_id")
+  spgName       String @map("spg_name")
+  spgAlias      String? @map("spg_alias")
+  spgShort      String?    @db.VarChar(50) @map("spg_short")
+  spgDesc       String? @map("spg_desc")
+  spgIsActive   Boolean    @default(true) @map("spg_is_active")
+  spgIsDeleted  Boolean    @default(false) @map("spg_is_deleted")
+  spgSyncDate   DateTime?  @db.Timestamptz @map("spg_sync_date")
+  spgCreatedOn  DateTime   @default(now()) @db.Timestamptz @map("spg_created_on")
+  spgCreatedBy  String?    @db.VarChar(100) @map("spg_created_by")
+  spgModifiedOn DateTime   @default(now()) @db.Timestamptz @map("spg_modified_on")
+  spgModifiedBy String?    @db.VarChar(100) @map("spg_modified_by")
   // Relations
   suppliers     Supplier[]
   @@index([spgIsActive], name: "idx_spg_active")

@@ -149,7 +149,7 @@ export class ItemsEanCodeMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item EAN code by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item EAN code by id' })
   @ApiQuery({ name: 'ean_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
     required: false,
@@ -172,17 +172,32 @@ export class ItemsEanCodeMasterController {
   ): Promise<ItemEanCodeSuccessResponse<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>> {
     const deleteItemEanCodeDto = await this.resolveDeletePayload(body, eanId);
     const isArray = Array.isArray(deleteItemEanCodeDto);
-    const data = await this.itemsEanCodeMasterService.softDelete(
+    const data = await this.itemsEanCodeMasterService.toggleDelete(
       isArray ? deleteItemEanCodeDto.map((item) => item.ean_id) : deleteItemEanCodeDto.ean_id,
     );
 
     return {
       success: true,
-      message: isArray
-        ? 'Item EAN codes deleted successfully'
-        : 'Item EAN code deleted successfully',
+      message: this.buildToggleDeleteMessage(data),
       data,
     };
+  }
+
+  private buildToggleDeleteMessage(
+    data: ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[],
+  ): string {
+    if (Array.isArray(data)) {
+      if (data.every((item) => item.deleted)) {
+        return 'Item EAN codes deleted successfully';
+      }
+      if (data.every((item) => !item.deleted)) {
+        return 'Item EAN codes restored successfully';
+      }
+      return 'Item EAN codes updated successfully';
+    }
+    return data.deleted
+      ? 'Item EAN code deleted successfully'
+      : 'Item EAN code restored successfully';
   }
 
   private async resolveDeletePayload(

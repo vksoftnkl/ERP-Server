@@ -99,20 +99,20 @@ export class ItemsSectionMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item section by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item section by id' })
   @ApiQuery({ name: 'sec_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSectionSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemSectionErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemSectionErrorResponseDto })
   async remove(
     @Query('sec_id', new ParseUUIDPipe({ version: '7' })) secId: string,
-  ): Promise<ItemSectionSuccessResponse<{ sec_id: string; deleted: true }>> {
-    const data = await this.itemsSectionMasterService.softDelete(secId);
+  ): Promise<ItemSectionSuccessResponse<{ sec_id: string; deleted: boolean }>> {
+    const { sec_id, deleted } = await this.itemsSectionMasterService.toggleDelete(secId);
 
     return {
       success: true,
-      message: 'Item section deleted successfully',
-      data,
+      message: deleted ? 'Item section deleted successfully' : 'Item section restored successfully',
+      data: { sec_id, deleted },
     };
   }
 

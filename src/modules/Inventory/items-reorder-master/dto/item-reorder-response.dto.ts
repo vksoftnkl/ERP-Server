@@ -54,8 +54,11 @@ export class ItemReorderPayloadDto {
 export class ItemReorderDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   ir_id!: string;
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({
+    example: true,
+    description: 'true when the item reorder was soft deleted, false when it was restored',
+  })
+  deleted!: boolean;
 }
 export class ItemReorderSuccessSingleDto {
   @ApiProperty({ example: true })

@@ -207,7 +207,7 @@ export class ItemsPriceMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Delete item price by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item price / unit conversion by id' })
   @ApiQuery({
     name: 'ipm_id',
     required: false,
@@ -250,7 +250,6 @@ export class ItemsPriceMasterController {
     >
   > {
     const deletePayload = await this.resolveDeletePayload(body, query);
-    const isArray = Array.isArray(deletePayload.payload);
     let data:
       | ItemPriceDeleteResult
       | ItemPriceDeleteResult[]
@@ -259,14 +258,14 @@ export class ItemsPriceMasterController {
 
     if (deletePayload.kind === 'item_unit_conversion') {
       const payload = deletePayload.payload;
-      data = await this.itemsPriceMasterService.deleteItemUnitConversions(
+      data = await this.itemsPriceMasterService.toggleDeleteItemUnitConversions(
         Array.isArray(payload)
           ? payload.map((item: DeleteItemUnitConversionDto) => item.iuc_id)
           : payload.iuc_id,
       );
     } else {
       const payload = deletePayload.payload;
-      data = await this.itemsPriceMasterService.delete(
+      data = await this.itemsPriceMasterService.toggleDelete(
         Array.isArray(payload)
           ? payload.map((item: DeleteItemPriceDto) => item.ipm_id)
           : payload.ipm_id,
@@ -275,7 +274,7 @@ export class ItemsPriceMasterController {
 
     return {
       success: true,
-      message: this.buildDeleteSuccessMessage(deletePayload.kind, isArray),
+      message: this.buildToggleDeleteMessage(deletePayload.kind, data),
       data,
     };
   }
@@ -409,16 +408,31 @@ export class ItemsPriceMasterController {
       : 'Item price created successfully';
   }
 
-  private buildDeleteSuccessMessage(
+  private buildToggleDeleteMessage(
     kind: 'item_price' | 'item_unit_conversion',
-    isArray: boolean,
+    data:
+      | ItemPriceDeleteResult
+      | ItemPriceDeleteResult[]
+      | ItemUnitConversionDeleteResult
+      | ItemUnitConversionDeleteResult[],
   ): string {
-    if (kind === 'item_unit_conversion') {
-      return isArray
-        ? 'Item unit conversions deleted successfully'
-        : 'Item unit conversion deleted successfully';
+    const nouns =
+      kind === 'item_unit_conversion'
+        ? { single: 'Item unit conversion', plural: 'Item unit conversions' }
+        : { single: 'Item price', plural: 'Item prices' };
+
+    if (Array.isArray(data)) {
+      if (data.every((item) => item.deleted)) {
+        return `${nouns.plural} deleted successfully`;
+      }
+      if (data.every((item) => !item.deleted)) {
+        return `${nouns.plural} restored successfully`;
+      }
+      return `${nouns.plural} updated successfully`;
     }
 
-    return isArray ? 'Item prices deleted successfully' : 'Item price deleted successfully';
+    return data.deleted
+      ? `${nouns.single} deleted successfully`
+      : `${nouns.single} restored successfully`;
   }
 }

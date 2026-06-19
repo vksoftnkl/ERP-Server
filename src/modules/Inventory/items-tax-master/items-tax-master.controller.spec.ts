@@ -47,7 +47,7 @@ describe('ItemsTaxMasterController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    softDelete: jest.fn(),
+    toggleDelete: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -104,7 +104,7 @@ describe('ItemsTaxMasterController', () => {
   });
 
   it('returns wrapped soft delete response', async () => {
-    serviceMock.softDelete.mockResolvedValue({
+    serviceMock.toggleDelete.mockResolvedValue({
       tax_id: TAX_ID,
       deleted: true,
     });
@@ -115,6 +115,22 @@ describe('ItemsTaxMasterController', () => {
       data: {
         tax_id: TAX_ID,
         deleted: true,
+      },
+    });
+  });
+
+  it('returns wrapped restore response', async () => {
+    serviceMock.toggleDelete.mockResolvedValue({
+      tax_id: TAX_ID,
+      deleted: false,
+    });
+
+    await expect(controller.remove(TAX_ID)).resolves.toEqual({
+      success: true,
+      message: 'Item tax restored successfully',
+      data: {
+        tax_id: TAX_ID,
+        deleted: false,
       },
     });
   });

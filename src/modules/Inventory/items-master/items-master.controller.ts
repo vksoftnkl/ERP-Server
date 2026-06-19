@@ -117,19 +117,19 @@ export class ItemsMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item by id' })
   @ApiQuery({ name: 'item_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemErrorResponseDto })
   async remove(
     @Query('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
-  ): Promise<ItemSuccessResponse<{ item_id: string; deleted: true }>> {
-    const data = await this.itemsMasterService.softDelete(itemId);
+  ): Promise<ItemSuccessResponse<{ item_id: string; deleted: boolean }>> {
+    const { item_id, deleted } = await this.itemsMasterService.toggleDelete(itemId);
     return {
       success: true,
-      message: 'Item deleted successfully',
-      data,
+      message: deleted ? 'Item deleted successfully' : 'Item restored successfully',
+      data: { item_id, deleted },
     };
   }
 }

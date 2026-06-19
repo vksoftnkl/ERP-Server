@@ -4,7 +4,7 @@ export type { InventorySuccessResponse as ItemReorderSuccessResponse } from 'src
 export type { InventoryListMeta as ItemReorderListMeta } from 'src/common/utils/module-list.utils';
 export interface ItemReorderDeleteResult {
   ir_id: string;
-  deleted: true;
+  deleted: boolean;
 }
 export interface ItemReorderPayload {
   ir_id: string;

@@ -707,10 +707,33 @@ describe('ItemsPriceMasterService', () => {
     );
 
     await expect(
-      service.deleteItemUnitConversions('019c6f6c-be87-7a11-8905-36092c46fd12'),
+      service.toggleDeleteItemUnitConversions('019c6f6c-be87-7a11-8905-36092c46fd12'),
     ).resolves.toEqual({
       iuc_id: '019c6f6c-be87-7a11-8905-36092c46fd12',
       deleted: true,
     });
+  });
+
+  it('restores a previously deleted item unit conversion through the item price service', async () => {
+    prisma.itemUnitConversion.findFirst.mockResolvedValue(
+      makeItemUnitConversionRecord({ iucIsDeleted: true }),
+    );
+    prisma.itemUnitConversion.update.mockResolvedValue(
+      makeItemUnitConversionRecord({
+        iucIsDeleted: false,
+        iucUpdatedOn: new Date('2026-03-25T11:00:00.000Z'),
+        iucUpdatedBy: USER_ID,
+      }),
+    );
+
+    await expect(
+      service.toggleDeleteItemUnitConversions('019c6f6c-be87-7a11-8905-36092c46fd12'),
+    ).resolves.toEqual({
+      iuc_id: '019c6f6c-be87-7a11-8905-36092c46fd12',
+      deleted: false,
+    });
+
+    const updateArgs = prisma.itemUnitConversion.update.mock.calls[0][0];
+    expect(updateArgs.data.iucIsDeleted).toBe(false);
   });
 });

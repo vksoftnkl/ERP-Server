@@ -232,12 +232,12 @@ describe('ItemsEanCodeMasterService', () => {
     expect(findFirstArgs.where?.eanId).toBe(EAN_ID);
     expect(findFirstArgs.where?.eanIsDeleted).toBe(false);
   });
-  it('soft delete updates ean_is_deleted and audit fields', async () => {
+  it('toggleDelete updates ean_is_deleted and audit fields', async () => {
     const existing = makeRecord();
     prisma.itemEanCode.findFirst.mockResolvedValue(existing);
     prisma.itemEanCode.updateMany.mockResolvedValue({ count: 1 });
 
-    await expect(service.softDelete(EAN_ID)).resolves.toEqual({
+    await expect(service.toggleDelete(EAN_ID)).resolves.toEqual({
       ean_id: EAN_ID,
       deleted: true,
     });
@@ -250,7 +250,22 @@ describe('ItemsEanCodeMasterService', () => {
     expect(updateManyArgs.data.eanModifiedBy).toBe('system');
   });
 
-  it('soft deletes multiple item ean codes from an array payload', async () => {
+  it('toggleDelete restores a previously deleted item ean code', async () => {
+    prisma.itemEanCode.findFirst.mockResolvedValue(makeRecord({ eanIsDeleted: true }));
+    prisma.itemEanCode.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.toggleDelete(EAN_ID)).resolves.toEqual({
+      ean_id: EAN_ID,
+      deleted: false,
+    });
+
+    const updateManyArgs = prisma.itemEanCode.updateMany.mock.calls[0][0];
+    expect(updateManyArgs.where?.eanId).toBe(EAN_ID);
+    expect(updateManyArgs.where?.eanIsDeleted).toBe(true);
+    expect(updateManyArgs.data.eanIsDeleted).toBe(false);
+  });
+
+  it('toggles multiple item ean codes from an array payload', async () => {
     prisma.itemEanCode.findFirst.mockResolvedValueOnce(makeRecord()).mockResolvedValueOnce(
       makeRecord({
         eanId: '019c6f6c-be87-7a11-8905-36092c46fd10',
@@ -260,7 +275,7 @@ describe('ItemsEanCodeMasterService', () => {
     prisma.itemEanCode.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(
-      service.softDelete([EAN_ID, '019c6f6c-be87-7a11-8905-36092c46fd10']),
+      service.toggleDelete([EAN_ID, '019c6f6c-be87-7a11-8905-36092c46fd10']),
     ).resolves.toEqual([
       {
         ean_id: EAN_ID,

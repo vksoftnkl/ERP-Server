@@ -53,6 +53,7 @@ const dropdownDetailsCreateExample = {
   dropdown_sql: 'SELECT item_id, item_name FROM inventory.item_master',
   dropdown_sort_order: 'asc',
   dropdown_sort_column: 'item_name',
+  dropdown_completion: 'item_name',
   dropdown_max_visible_items: 10,
   dropdown_show_header: true,
   dropdown_width: 300,

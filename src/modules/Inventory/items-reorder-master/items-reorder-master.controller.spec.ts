@@ -37,7 +37,7 @@ describe('ItemsReorderMasterController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    softDelete: jest.fn(),
+    toggleDelete: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -97,7 +97,7 @@ describe('ItemsReorderMasterController', () => {
   });
 
   it('supports delete with body arrays', async () => {
-    serviceMock.softDelete.mockResolvedValue([
+    serviceMock.toggleDelete.mockResolvedValue([
       {
         ir_id: REORDER_ID,
         deleted: true,
@@ -111,6 +111,26 @@ describe('ItemsReorderMasterController', () => {
         {
           ir_id: REORDER_ID,
           deleted: true,
+        },
+      ],
+    });
+  });
+
+  it('reports a restored message when all array items were restored', async () => {
+    serviceMock.toggleDelete.mockResolvedValue([
+      {
+        ir_id: REORDER_ID,
+        deleted: false,
+      },
+    ]);
+
+    await expect(controller.remove([{ ir_id: REORDER_ID }])).resolves.toEqual({
+      success: true,
+      message: 'Item reorders restored successfully',
+      data: [
+        {
+          ir_id: REORDER_ID,
+          deleted: false,
         },
       ],
     });

@@ -74,44 +74,49 @@ export class UnitsMasterService {
       unit_is_active: payload.unit_is_active,
     };
   }
-  async softDelete(unitId: string): Promise<{ unit_id: string; deleted: true }> {
+  async toggleDelete(unitId: string): Promise<{ unit_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
+      // Find regardless of current deleted state
       const existing = await tx.unit.findFirst({
-        where: { unit_id: unitId, unit_is_deleted: false },
+        where: { unit_id: unitId },
       });
       if (!existing) {
         throwInventoryNotFound<UnitErrorDetail>(
           'Unit not found',
           'unit_id',
-          `No active unit found with id ${unitId}`,
+          `No unit found with id ${unitId}`,
         );
       }
+      const wasDeleted = existing.unit_is_deleted;
+      const nextDeleted = !wasDeleted;
       const modifiedOn = new Date();
+      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      // Guarded update: only flips if state hasn't changed since the read
       const result = await tx.unit.updateMany({
-        where: { unit_id: unitId, unit_is_deleted: false },
+        where: { unit_id: unitId, unit_is_deleted: wasDeleted },
         data: {
-          unit_is_deleted: true,
+          unit_is_deleted: nextDeleted,
           unit_modified_on: modifiedOn,
-          unit_modified_by: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          unit_modified_by: userId,
         },
       });
       if (result.count === 0) {
         throwInventoryNotFound<UnitErrorDetail>(
           'Unit not found',
           'unit_id',
-          `No active unit found with id ${unitId}`,
+          `No unit found with id ${unitId}`,
         );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        unit_is_deleted: true,
+        unit_is_deleted: nextDeleted,
         unit_modified_on: modifiedOn,
-        unit_modified_by: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        unit_modified_by: userId,
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'cancel',
+          action: nextDeleted ? 'cancel' : 'update',
           tableName: UNIT_TABLE_NAME,
           screenName: UNIT_AUDIT_SCREEN_NAME,
           screenType: 'master',
@@ -119,12 +124,12 @@ export class UnitsMasterService {
           displayName: existing.unit_name,
           originalRecord,
           modifiedRecord,
-          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'Unit soft deleted',
+          userId,
+          notes: nextDeleted ? 'Unit soft deleted' : 'Unit restored',
         },
         tx,
       );
-      return { unit_id: unitId, deleted: true };
+      return { unit_id: unitId, deleted: nextDeleted };
     });
   }
   private async createUnit(saveUnitDto: SaveUnitDto): Promise<UnitPayload> {

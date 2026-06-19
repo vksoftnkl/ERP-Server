@@ -128,24 +128,24 @@ export class ItemsEanCodeMasterService {
     return this.toPayload(record);
   }
 
-  async softDelete(eanId: string): Promise<ItemEanCodeDeleteResult>;
-  async softDelete(eanId: string[]): Promise<ItemEanCodeDeleteResult[]>;
-  async softDelete(
+  async toggleDelete(eanId: string): Promise<ItemEanCodeDeleteResult>;
+  async toggleDelete(eanId: string[]): Promise<ItemEanCodeDeleteResult[]>;
+  async toggleDelete(
     eanId: string | string[],
   ): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>;
-  async softDelete(
+  async toggleDelete(
     eanId: string | string[],
   ): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]> {
-    const deleteIds = Array.isArray(eanId) ? eanId : [eanId];
+    const toggleIds = Array.isArray(eanId) ? eanId : [eanId];
 
     const results = await this.prisma.$transaction(async (tx) => {
-      const deletedItems: ItemEanCodeDeleteResult[] = [];
+      const toggledItems: ItemEanCodeDeleteResult[] = [];
 
-      for (const deleteId of deleteIds) {
-        deletedItems.push(await this.softDeleteItemEanCode(tx, deleteId));
+      for (const toggleId of toggleIds) {
+        toggledItems.push(await this.toggleDeleteItemEanCode(tx, toggleId));
       }
 
-      return deletedItems;
+      return toggledItems;
     });
 
     return Array.isArray(eanId) ? results : results[0];
@@ -162,33 +162,36 @@ export class ItemsEanCodeMasterService {
     return this.createItemEanCode(tx, saveItemEanCodeDto);
   }
 
-  private async softDeleteItemEanCode(
+  private async toggleDeleteItemEanCode(
     tx: Prisma.TransactionClient,
     eanId: string,
   ): Promise<ItemEanCodeDeleteResult> {
+    // Find regardless of current deleted state
     const existing = await tx.itemEanCode.findFirst({
       where: {
         eanId,
-        eanIsDeleted: false,
       },
     });
     if (!existing) {
       throwInventoryNotFound<ItemEanCodeErrorDetail>(
         'Item EAN code not found',
         'ean_id',
-        `No active item EAN code found with id ${eanId}`,
+        `No item EAN code found with id ${eanId}`,
       );
     }
 
+    const wasDeleted = existing.eanIsDeleted;
+    const nextDeleted = !wasDeleted;
     const modifiedOn = new Date();
     const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    // Guarded update: only flips if state hasn't changed since the read
     const result = await tx.itemEanCode.updateMany({
       where: {
         eanId,
-        eanIsDeleted: false,
+        eanIsDeleted: wasDeleted,
       },
       data: {
-        eanIsDeleted: true,
+        eanIsDeleted: nextDeleted,
         eanModifiedOn: modifiedOn,
         eanModifiedBy: modifiedBy,
       },
@@ -197,20 +200,20 @@ export class ItemsEanCodeMasterService {
       throwInventoryNotFound<ItemEanCodeErrorDetail>(
         'Item EAN code not found',
         'ean_id',
-        `No active item EAN code found with id ${eanId}`,
+        `No item EAN code found with id ${eanId}`,
       );
     }
 
     const originalRecord = this.toPayload(existing);
     const modifiedRecord = this.toPayload({
       ...existing,
-      eanIsDeleted: true,
+      eanIsDeleted: nextDeleted,
       eanModifiedOn: modifiedOn,
       eanModifiedBy: modifiedBy,
     });
     await this.auditLogService.logEntityChange(
       {
-        action: 'cancel',
+        action: nextDeleted ? 'cancel' : 'update',
         tableName: ITEM_EAN_CODE_TABLE_NAME,
         screenName: ITEM_EAN_CODE_AUDIT_SCREEN_NAME,
         screenType: 'master',
@@ -219,14 +222,14 @@ export class ItemsEanCodeMasterService {
         originalRecord,
         modifiedRecord,
         userId: modifiedBy,
-        notes: 'Item EAN code soft deleted',
+        notes: nextDeleted ? 'Item EAN code soft deleted' : 'Item EAN code restored',
       },
       tx,
     );
 
     return {
       ean_id: eanId,
-      deleted: true,
+      deleted: nextDeleted,
     };
   }
 

@@ -74,8 +74,11 @@ export class ItemSectionDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   sec_id!: string;
 
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({
+    example: true,
+    description: 'true when the item section was soft deleted, false when it was restored',
+  })
+  deleted!: boolean;
 }
 
 export class ItemSectionSuccessSingleDto {

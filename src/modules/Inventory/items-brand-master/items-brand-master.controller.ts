@@ -92,19 +92,19 @@ export class ItemsBrandMasterController {
   }
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item brand by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item brand by id' })
   @ApiQuery({ name: 'brand_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemBrandSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemBrandErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemBrandErrorResponseDto })
   async remove(
     @Query('brand_id', new ParseUUIDPipe({ version: '7' })) brandId: string,
-  ): Promise<ItemBrandSuccessResponse<{ brand_id: string; deleted: true }>> {
-    const data = await this.itemsBrandMasterService.softDelete(brandId);
+  ): Promise<ItemBrandSuccessResponse<{ brand_id: string; deleted: boolean }>> {
+    const { brand_id, deleted } = await this.itemsBrandMasterService.toggleDelete(brandId);
     return {
       success: true,
-      message: 'Item brand deleted successfully',
-      data,
+      message: deleted ? 'Item brand deleted successfully' : 'Item brand restored successfully',
+      data: { brand_id, deleted },
     };
   }
   private withUploadedPhoto(

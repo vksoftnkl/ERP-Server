@@ -78,8 +78,11 @@ export class ItemQtywiseRateDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   iqr_id!: string;
 
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({
+    example: true,
+    description: 'true when the qty-wise rate was soft deleted, false when it was restored',
+  })
+  deleted!: boolean;
 }
 
 export class ItemQtywiseRateSuccessSingleDto {

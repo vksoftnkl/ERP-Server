@@ -91,8 +91,8 @@ describe('ItemsPriceMasterController', () => {
     listItemUnitConversions: jest.fn(),
     getById: jest.fn(),
     getItemUnitConversionById: jest.fn(),
-    delete: jest.fn(),
-    deleteItemUnitConversions: jest.fn(),
+    toggleDelete: jest.fn(),
+    toggleDeleteItemUnitConversions: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -200,7 +200,7 @@ describe('ItemsPriceMasterController', () => {
   });
 
   it('supports delete with body arrays', async () => {
-    serviceMock.delete.mockResolvedValue([
+    serviceMock.toggleDelete.mockResolvedValue([
       {
         ipm_id: ITEM_PRICE_ID,
         deleted: true,
@@ -219,8 +219,28 @@ describe('ItemsPriceMasterController', () => {
     });
   });
 
+  it('reports a restored message when prices were restored', async () => {
+    serviceMock.toggleDelete.mockResolvedValue([
+      {
+        ipm_id: ITEM_PRICE_ID,
+        deleted: false,
+      },
+    ]);
+
+    await expect(controller.remove([{ ipm_id: ITEM_PRICE_ID }], {})).resolves.toEqual({
+      success: true,
+      message: 'Item prices restored successfully',
+      data: [
+        {
+          ipm_id: ITEM_PRICE_ID,
+          deleted: false,
+        },
+      ],
+    });
+  });
+
   it('supports unit conversion delete with body arrays', async () => {
-    serviceMock.deleteItemUnitConversions.mockResolvedValue([
+    serviceMock.toggleDeleteItemUnitConversions.mockResolvedValue([
       {
         iuc_id: UNIT_CONVERSION_ID,
         deleted: true,

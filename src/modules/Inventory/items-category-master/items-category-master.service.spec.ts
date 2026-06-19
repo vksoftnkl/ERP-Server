@@ -436,7 +436,7 @@ describe('ItemsCategoryMasterService', () => {
     expect(findFirstArgs.where?.categoryId).toBe(ITEM_CATEGORY_ID);
     expect(findFirstArgs.where?.categoryIsDeleted).toBe(false);
   });
-  it('soft delete removes subtree ids from ancestor caches', async () => {
+  it('toggleDelete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       categoryId: PARENT_CATEGORY_ID,
       categoryParentId: null,
@@ -471,7 +471,7 @@ describe('ItemsCategoryMasterService', () => {
       }),
     );
 
-    await expect(service.softDelete(ITEM_CATEGORY_ID)).resolves.toEqual({
+    await expect(service.toggleDelete(ITEM_CATEGORY_ID)).resolves.toEqual({
       category_id: ITEM_CATEGORY_ID,
       deleted: true,
     });
@@ -490,6 +490,26 @@ describe('ItemsCategoryMasterService', () => {
     const ancestorUpdateArgs = prisma.categoryMaster.update.mock.calls[0][0];
     expect(ancestorUpdateArgs.where.categoryId).toBe(PARENT_CATEGORY_ID);
     expect(ancestorUpdateArgs.data.categoryPathIdsCache).toEqual([PARENT_CATEGORY_ID]);
+  });
+
+  it('toggleDelete restores a previously deleted category', async () => {
+    prisma.categoryMaster.findFirst
+      .mockResolvedValueOnce(makeRecord({ categoryIsDeleted: true, categoryParentId: null }))
+      .mockResolvedValueOnce(null);
+    prisma.categoryMaster.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.toggleDelete(ITEM_CATEGORY_ID)).resolves.toEqual({
+      category_id: ITEM_CATEGORY_ID,
+      deleted: false,
+    });
+
+    const updateManyArgs = prisma.categoryMaster.updateMany.mock.calls[0][0];
+    if (!updateManyArgs.where) {
+      throw new Error('Expected updateMany where clause');
+    }
+    expect(updateManyArgs.where.categoryId).toBe(ITEM_CATEGORY_ID);
+    expect(updateManyArgs.where.categoryIsDeleted).toBe(true);
+    expect(updateManyArgs.data.categoryIsDeleted).toBe(false);
   });
 
   it('rejects invalid base64 image input', async () => {

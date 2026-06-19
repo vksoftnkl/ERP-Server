@@ -37,7 +37,7 @@ describe('ItemsCategoryMasterController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    softDelete: jest.fn(),
+    toggleDelete: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -94,7 +94,7 @@ describe('ItemsCategoryMasterController', () => {
   });
 
   it('returns wrapped soft delete response', async () => {
-    serviceMock.softDelete.mockResolvedValue({
+    serviceMock.toggleDelete.mockResolvedValue({
       category_id: ITEM_CATEGORY_ID,
       deleted: true,
     });
@@ -105,6 +105,22 @@ describe('ItemsCategoryMasterController', () => {
       data: {
         category_id: ITEM_CATEGORY_ID,
         deleted: true,
+      },
+    });
+  });
+
+  it('returns wrapped restore response', async () => {
+    serviceMock.toggleDelete.mockResolvedValue({
+      category_id: ITEM_CATEGORY_ID,
+      deleted: false,
+    });
+
+    await expect(controller.remove(ITEM_CATEGORY_ID)).resolves.toEqual({
+      success: true,
+      message: 'Item category restored successfully',
+      data: {
+        category_id: ITEM_CATEGORY_ID,
+        deleted: false,
       },
     });
   });

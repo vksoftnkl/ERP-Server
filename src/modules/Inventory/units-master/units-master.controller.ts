@@ -81,20 +81,20 @@ export class UnitsMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete unit by id' })
+  @ApiOperation({ summary: 'Soft delete or restore unit by id' })
   @ApiQuery({ name: 'unit_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UnitSuccessDeleteDto })
   @ApiBadRequestResponse({ type: UnitErrorResponseDto })
   @ApiNotFoundResponse({ type: UnitErrorResponseDto })
   async remove(
     @Query('unit_id', new ParseUUIDPipe({ version: '7' })) unitId: string,
-  ): Promise<UnitSuccessResponse<{ unit_id: string; deleted: true }>> {
-    const data = await this.unitsMasterService.softDelete(unitId);
+  ): Promise<UnitSuccessResponse<{ unit_id: string; deleted: boolean }>> {
+    const { unit_id, deleted } = await this.unitsMasterService.toggleDelete(unitId);
 
     return {
       success: true,
-      message: 'Unit deleted successfully',
-      data,
+      message: deleted ? 'Unit deleted successfully' : 'Unit restored successfully',
+      data: { unit_id, deleted },
     };
   }
 }

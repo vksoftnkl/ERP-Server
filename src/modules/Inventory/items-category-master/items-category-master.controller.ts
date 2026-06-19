@@ -92,19 +92,21 @@ export class ItemsCategoryMasterController {
   }
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item category by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item category by id' })
   @ApiQuery({ name: 'category_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemCategorySuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemCategoryErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemCategoryErrorResponseDto })
   async remove(
     @Query('category_id', new ParseUUIDPipe({ version: '7' })) categoryId: string,
-  ): Promise<ItemCategorySuccessResponse<{ category_id: string; deleted: true }>> {
-    const data = await this.itemsCategoryMasterService.softDelete(categoryId);
+  ): Promise<ItemCategorySuccessResponse<{ category_id: string; deleted: boolean }>> {
+    const { category_id, deleted } = await this.itemsCategoryMasterService.toggleDelete(categoryId);
     return {
       success: true,
-      message: 'Item category deleted successfully',
-      data,
+      message: deleted
+        ? 'Item category deleted successfully'
+        : 'Item category restored successfully',
+      data: { category_id, deleted },
     };
   }
   private withUploadedPhoto(

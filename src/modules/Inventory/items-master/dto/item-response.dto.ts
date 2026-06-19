@@ -136,8 +136,11 @@ export class ItemPayloadDto {
 export class ItemDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({
+    example: true,
+    description: 'true when the item was soft deleted, false when it was restored',
+  })
+  deleted!: boolean;
 }
 export class ItemSuccessSingleDto {
   @ApiProperty({ example: true })

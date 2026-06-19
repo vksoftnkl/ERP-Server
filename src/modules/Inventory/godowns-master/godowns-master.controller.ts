@@ -120,29 +120,31 @@ export class GodownsMasterController {
   }
   @Delete()
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete godown location by gdl_id query parameter' })
+  @ApiOperation({ summary: 'Soft delete or restore godown location by gdl_id query parameter' })
   @ApiOkResponse({ type: GodownSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GodownErrorResponseDto })
   @ApiNotFoundResponse({ type: GodownErrorResponseDto })
   async remove(
     @Query() queryDto: DeleteGodownQueryDto,
-  ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: true }>> {
-    const data = await this.godownsMasterService.softDelete(queryDto.gdl_id);
+  ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: boolean }>> {
+    const { gdl_id, deleted } = await this.godownsMasterService.toggleDelete(queryDto.gdl_id);
     return {
       success: true,
-      message: 'Godown location deleted successfully',
-      data,
+      message: deleted
+        ? 'Godown location deleted successfully'
+        : 'Godown location restored successfully',
+      data: { gdl_id, deleted },
     };
   }
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete godown location by gdl_id query parameter' })
+  @ApiOperation({ summary: 'Soft delete or restore godown location by gdl_id query parameter' })
   @ApiOkResponse({ type: GodownSuccessDeleteDto })
   @ApiBadRequestResponse({ type: GodownErrorResponseDto })
   @ApiNotFoundResponse({ type: GodownErrorResponseDto })
   async removeByQuery(
     @Query() queryDto: DeleteGodownQueryDto,
-  ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: true }>> {
+  ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: boolean }>> {
     return this.remove(queryDto);
   }
 }

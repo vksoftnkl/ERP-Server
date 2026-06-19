@@ -47,48 +47,57 @@ export class ItemsSectionMasterService {
     return this.toPayload(record);
   }
 
-  async softDelete(secId: string): Promise<{ sec_id: string; deleted: true }> {
+  async toggleDelete(secId: string): Promise<{ sec_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
+      // Find regardless of current deleted state
       const existing = await tx.itemSectionMaster.findFirst({
-        where: { secId, secIsDeleted: false },
+        where: { secId },
       });
 
       if (!existing) {
         throwInventoryNotFound<ItemSectionErrorDetail>(
           'Item section not found',
           'sec_id',
-          `No active item section found with id ${secId}`,
+          `No item section found with id ${secId}`,
         );
       }
 
+      const wasDeleted = existing.secIsDeleted;
+      const nextDeleted = !wasDeleted;
       const subtreeIds = await this.getActiveSubtreeIds(tx, secId);
       const ancestorIds = await this.getAncestorIds(tx, existing.secParentId);
       const modifiedOn = new Date();
+      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      // Guarded update: only flips if state hasn't changed since the read
       const result = await tx.itemSectionMaster.updateMany({
-        where: { secId, secIsDeleted: false },
-        data: { secIsDeleted: true, secModifiedOn: modifiedOn, secModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR },
+        where: { secId, secIsDeleted: wasDeleted },
+        data: { secIsDeleted: nextDeleted, secModifiedOn: modifiedOn, secModifiedBy: userId },
       });
 
       if (result.count === 0) {
         throwInventoryNotFound<ItemSectionErrorDetail>(
           'Item section not found',
           'sec_id',
-          `No active item section found with id ${secId}`,
+          `No item section found with id ${secId}`,
         );
       }
 
-      await this.removePathIds(tx, ancestorIds, subtreeIds);
+      if (nextDeleted) {
+        await this.removePathIds(tx, ancestorIds, subtreeIds);
+      } else {
+        await this.appendPathIds(tx, ancestorIds, subtreeIds);
+      }
 
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        secIsDeleted: true,
+        secIsDeleted: nextDeleted,
         secModifiedOn: modifiedOn,
-        secModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        secModifiedBy: userId,
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'cancel',
+          action: nextDeleted ? 'cancel' : 'update',
           tableName: ITEM_SECTION_TABLE_NAME,
           screenName: ITEM_SECTION_AUDIT_SCREEN_NAME,
           screenType: 'master',
@@ -96,13 +105,13 @@ export class ItemsSectionMasterService {
           displayName: existing.secName,
           originalRecord,
           modifiedRecord,
-          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'Item section soft deleted',
+          userId,
+          notes: nextDeleted ? 'Item section soft deleted' : 'Item section restored',
         },
         tx,
       );
 
-      return { sec_id: secId, deleted: true };
+      return { sec_id: secId, deleted: nextDeleted };
     });
   }
 

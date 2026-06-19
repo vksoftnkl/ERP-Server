@@ -148,7 +148,7 @@ export class ItemsReorderMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item reorder by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item reorder by id' })
   @ApiQuery({ name: 'ir_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiBody({
     required: false,
@@ -171,15 +171,32 @@ export class ItemsReorderMasterController {
   ): Promise<ItemReorderSuccessResponse<ItemReorderDeleteResult | ItemReorderDeleteResult[]>> {
     const deleteItemReorderDto = await this.resolveDeletePayload(body, irId);
     const isArray = Array.isArray(deleteItemReorderDto);
-    const data = await this.itemsReorderMasterService.softDelete(
+    const data = await this.itemsReorderMasterService.toggleDelete(
       isArray ? deleteItemReorderDto.map((item) => item.ir_id) : deleteItemReorderDto.ir_id,
     );
 
     return {
       success: true,
-      message: isArray ? 'Item reorders deleted successfully' : 'Item reorder deleted successfully',
+      message: this.buildToggleDeleteMessage(data),
       data,
     };
+  }
+
+  private buildToggleDeleteMessage(
+    data: ItemReorderDeleteResult | ItemReorderDeleteResult[],
+  ): string {
+    if (Array.isArray(data)) {
+      if (data.every((item) => item.deleted)) {
+        return 'Item reorders deleted successfully';
+      }
+      if (data.every((item) => !item.deleted)) {
+        return 'Item reorders restored successfully';
+      }
+      return 'Item reorders updated successfully';
+    }
+    return data.deleted
+      ? 'Item reorder deleted successfully'
+      : 'Item reorder restored successfully';
   }
 
   private async resolveDeletePayload(

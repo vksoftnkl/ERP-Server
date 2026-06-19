@@ -79,19 +79,19 @@ export class ItemsTaxMasterController {
   }
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item tax by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item tax by id' })
   @ApiQuery({ name: 'tax_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemTaxSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemTaxErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemTaxErrorResponseDto })
   async remove(
     @Query('tax_id', new ParseUUIDPipe({ version: '7' })) taxId: string,
-  ): Promise<ItemTaxSuccessResponse<{ tax_id: string; deleted: true }>> {
-    const data = await this.itemsTaxMasterService.softDelete(taxId);
+  ): Promise<ItemTaxSuccessResponse<{ tax_id: string; deleted: boolean }>> {
+    const { tax_id, deleted } = await this.itemsTaxMasterService.toggleDelete(taxId);
     return {
       success: true,
-      message: 'Item tax deleted successfully',
-      data,
+      message: deleted ? 'Item tax deleted successfully' : 'Item tax restored successfully',
+      data: { tax_id, deleted },
     };
   }
 }

@@ -33,7 +33,7 @@ describe('ItemsBrandMasterController', () => {
     save: jest.fn(),
     list: jest.fn(),
     getById: jest.fn(),
-    softDelete: jest.fn(),
+    toggleDelete: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -90,7 +90,7 @@ describe('ItemsBrandMasterController', () => {
   });
 
   it('returns wrapped soft delete response', async () => {
-    serviceMock.softDelete.mockResolvedValue({
+    serviceMock.toggleDelete.mockResolvedValue({
       brand_id: BRAND_ID,
       deleted: true,
     });
@@ -101,6 +101,22 @@ describe('ItemsBrandMasterController', () => {
       data: {
         brand_id: BRAND_ID,
         deleted: true,
+      },
+    });
+  });
+
+  it('returns wrapped restore response', async () => {
+    serviceMock.toggleDelete.mockResolvedValue({
+      brand_id: BRAND_ID,
+      deleted: false,
+    });
+
+    await expect(controller.remove(BRAND_ID)).resolves.toEqual({
+      success: true,
+      message: 'Item brand restored successfully',
+      data: {
+        brand_id: BRAND_ID,
+        deleted: false,
       },
     });
   });

@@ -105,8 +105,11 @@ export class ItemPricePayloadDto {
 export class ItemPriceDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   ipm_id!: string;
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({
+    example: true,
+    description: 'true when the item price was soft deleted, false when it was restored',
+  })
+  deleted!: boolean;
 }
 export class ItemUnitConversionPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -153,8 +156,11 @@ export class ItemUnitConversionPayloadDto {
 export class ItemUnitConversionDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   iuc_id!: string;
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({
+    example: true,
+    description: 'true when the item unit conversion was soft deleted, false when it was restored',
+  })
+  deleted!: boolean;
 }
 export class ItemPriceSuccessSingleDto {
   @ApiProperty({ example: true })

@@ -4,7 +4,7 @@ export type { InventorySuccessResponse as ItemEanCodeSuccessResponse } from 'src
 export type { InventoryListMeta as ItemEanCodeListMeta } from 'src/common/utils/module-list.utils';
 export interface ItemEanCodeDeleteResult {
   ean_id: string;
-  deleted: true;
+  deleted: boolean;
 }
 
 export interface ItemEanCodePayload {

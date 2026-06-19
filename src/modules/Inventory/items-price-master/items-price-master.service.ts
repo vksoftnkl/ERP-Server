@@ -231,18 +231,22 @@ export class ItemsPriceMasterService {
     }
     return this.toItemUnitConversionPayload(record);
   }
-  async delete(ipmId: string): Promise<ItemPriceDeleteResult>;
-  async delete(ipmId: string[]): Promise<ItemPriceDeleteResult[]>;
-  async delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
-  async delete(ipmId: string | string[]): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]> {
-    const deleteIds = Array.isArray(ipmId) ? ipmId : [ipmId];
+  async toggleDelete(ipmId: string): Promise<ItemPriceDeleteResult>;
+  async toggleDelete(ipmId: string[]): Promise<ItemPriceDeleteResult[]>;
+  async toggleDelete(
+    ipmId: string | string[],
+  ): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
+  async toggleDelete(
+    ipmId: string | string[],
+  ): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]> {
+    const toggleIds = Array.isArray(ipmId) ? ipmId : [ipmId];
     try {
       const results = await this.prisma.$transaction(async (tx) => {
-        const deletedItems: ItemPriceDeleteResult[] = [];
-        for (const deleteId of deleteIds) {
-          deletedItems.push(await this.deleteItemPrice(tx, deleteId));
+        const toggledItems: ItemPriceDeleteResult[] = [];
+        for (const toggleId of toggleIds) {
+          toggledItems.push(await this.toggleDeleteItemPrice(tx, toggleId));
         }
-        return deletedItems;
+        return toggledItems;
       });
       return Array.isArray(ipmId) ? results : results[0];
     } catch (error: unknown) {
@@ -250,22 +254,22 @@ export class ItemsPriceMasterService {
       throw error;
     }
   }
-  async deleteItemUnitConversions(iucId: string): Promise<ItemUnitConversionDeleteResult>;
-  async deleteItemUnitConversions(iucId: string[]): Promise<ItemUnitConversionDeleteResult[]>;
-  async deleteItemUnitConversions(
+  async toggleDeleteItemUnitConversions(iucId: string): Promise<ItemUnitConversionDeleteResult>;
+  async toggleDeleteItemUnitConversions(iucId: string[]): Promise<ItemUnitConversionDeleteResult[]>;
+  async toggleDeleteItemUnitConversions(
     iucId: string | string[],
   ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]>;
-  async deleteItemUnitConversions(
+  async toggleDeleteItemUnitConversions(
     iucId: string | string[],
   ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]> {
-    const deleteIds = Array.isArray(iucId) ? iucId : [iucId];
+    const toggleIds = Array.isArray(iucId) ? iucId : [iucId];
     try {
       const results = await this.prisma.$transaction(async (tx) => {
-        const deletedItems: ItemUnitConversionDeleteResult[] = [];
-        for (const deleteId of deleteIds) {
-          deletedItems.push(await this.deleteItemUnitConversion(tx, deleteId));
+        const toggledItems: ItemUnitConversionDeleteResult[] = [];
+        for (const toggleId of toggleIds) {
+          toggledItems.push(await this.toggleDeleteItemUnitConversion(tx, toggleId));
         }
-        return deletedItems;
+        return toggledItems;
       });
       return Array.isArray(iucId) ? results : results[0];
     } catch (error: unknown) {
@@ -282,14 +286,14 @@ export class ItemsPriceMasterService {
     }
     return this.createItemPrice(tx, saveItemPriceDto);
   }
-  private async deleteItemPrice(
+  private async toggleDeleteItemPrice(
     tx: Prisma.TransactionClient,
     ipmId: string,
   ): Promise<ItemPriceDeleteResult> {
+    // Find regardless of current deleted state
     const existing = await tx.itemPriceMaster.findFirst({
       where: {
         ipmId,
-        ipmIsDeleted: false,
       },
     });
     if (!existing) {
@@ -299,19 +303,20 @@ export class ItemsPriceMasterService {
         `No item price found with id ${ipmId}`,
       );
     }
-    const deletedOn = new Date();
+    const nextDeleted = !existing.ipmIsDeleted;
+    const updatedOn = new Date();
     const updated = await tx.itemPriceMaster.update({
       where: {
         ipmId,
       },
       data: {
-        ipmIsDeleted: true,
-        ipmUpdatedOn: deletedOn,
+        ipmIsDeleted: nextDeleted,
+        ipmUpdatedOn: updatedOn,
       },
     });
     await this.auditLogService.logEntityChange(
       {
-        action: 'cancel',
+        action: nextDeleted ? 'cancel' : 'update',
         tableName: ITEM_PRICE_TABLE_NAME,
         screenName: ITEM_PRICE_AUDIT_SCREEN_NAME,
         screenType: 'master',
@@ -320,13 +325,13 @@ export class ItemsPriceMasterService {
         originalRecord: this.toPayload(existing),
         modifiedRecord: this.toPayload(updated),
         userId: this.resolveAuditActor(updated.ipmUpdatedBy),
-        notes: 'Item price soft deleted',
+        notes: nextDeleted ? 'Item price soft deleted' : 'Item price restored',
       },
       tx,
     );
     return {
       ipm_id: ipmId,
-      deleted: true,
+      deleted: nextDeleted,
     };
   }
   private async saveItemUnitConversion(
@@ -436,14 +441,14 @@ export class ItemsPriceMasterService {
 
     return payload;
   }
-  private async deleteItemUnitConversion(
+  private async toggleDeleteItemUnitConversion(
     tx: Prisma.TransactionClient,
     iucId: string,
   ): Promise<ItemUnitConversionDeleteResult> {
+    // Find regardless of current deleted state
     const existing = await tx.itemUnitConversion.findFirst({
       where: {
         iucId,
-        iucIsDeleted: false,
       },
     });
     if (!existing) {
@@ -453,19 +458,20 @@ export class ItemsPriceMasterService {
         `No item unit conversion found with id ${iucId}`,
       );
     }
-    const deletedOn = new Date();
+    const nextDeleted = !existing.iucIsDeleted;
+    const updatedOn = new Date();
     const updated = await tx.itemUnitConversion.update({
       where: {
         iucId,
       },
       data: {
-        iucIsDeleted: true,
-        iucUpdatedOn: deletedOn,
+        iucIsDeleted: nextDeleted,
+        iucUpdatedOn: updatedOn,
       },
     });
     await this.auditLogService.logEntityChange(
       {
-        action: 'cancel',
+        action: nextDeleted ? 'cancel' : 'update',
         tableName: ITEM_UNIT_CONVERSION_TABLE_NAME,
         screenName: ITEM_UNIT_CONVERSION_AUDIT_SCREEN_NAME,
         screenType: 'master',
@@ -474,13 +480,13 @@ export class ItemsPriceMasterService {
         originalRecord: this.toItemUnitConversionPayload(existing),
         modifiedRecord: this.toItemUnitConversionPayload(updated),
         userId: this.resolveAuditActor(updated.iucUpdatedBy),
-        notes: 'Item unit conversion soft deleted',
+        notes: nextDeleted ? 'Item unit conversion soft deleted' : 'Item unit conversion restored',
       },
       tx,
     );
     return {
       iuc_id: iucId,
-      deleted: true,
+      deleted: nextDeleted,
     };
   }
   private async createItemPrice(

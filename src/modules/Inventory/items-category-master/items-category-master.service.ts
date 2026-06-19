@@ -44,53 +44,61 @@ export class ItemsCategoryMasterService {
     }
     return this.toPayload(record);
   }
-  async softDelete(categoryId: string): Promise<{ category_id: string; deleted: true }> {
+  async toggleDelete(categoryId: string): Promise<{ category_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
+      // Find regardless of current deleted state
       const existing = await tx.categoryMaster.findFirst({
         where: {
           categoryId,
-          categoryIsDeleted: false,
         },
       });
       if (!existing) {
         throwInventoryNotFound<ItemCategoryErrorDetail>(
           'Item category not found',
           'category_id',
-          `No active item category found with id ${categoryId}`,
+          `No item category found with id ${categoryId}`,
         );
       }
+      const wasDeleted = existing.categoryIsDeleted;
+      const nextDeleted = !wasDeleted;
       const subtreeIds = await this.getActiveSubtreeIds(tx, categoryId);
       const ancestorIds = await this.getAncestorIds(tx, existing.categoryParentId);
       const modifiedOn = new Date();
+      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      // Guarded update: only flips if state hasn't changed since the read
       const result = await tx.categoryMaster.updateMany({
         where: {
           categoryId,
-          categoryIsDeleted: false,
+          categoryIsDeleted: wasDeleted,
         },
         data: {
-          categoryIsDeleted: true,
+          categoryIsDeleted: nextDeleted,
           categoryModifiedOn: modifiedOn,
-          categoryModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          categoryModifiedBy: userId,
         },
       });
       if (result.count === 0) {
         throwInventoryNotFound<ItemCategoryErrorDetail>(
           'Item category not found',
           'category_id',
-          `No active item category found with id ${categoryId}`,
+          `No item category found with id ${categoryId}`,
         );
       }
-      await this.removePathIds(tx, ancestorIds, subtreeIds);
+      if (nextDeleted) {
+        await this.removePathIds(tx, ancestorIds, subtreeIds);
+      } else {
+        await this.appendPathIds(tx, ancestorIds, subtreeIds);
+      }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        categoryIsDeleted: true,
+        categoryIsDeleted: nextDeleted,
         categoryModifiedOn: modifiedOn,
-        categoryModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        categoryModifiedBy: userId,
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'cancel',
+          action: nextDeleted ? 'cancel' : 'update',
           tableName: ITEM_CATEGORY_TABLE_NAME,
           screenName: ITEM_CATEGORY_AUDIT_SCREEN_NAME,
           screenType: 'master',
@@ -98,14 +106,14 @@ export class ItemsCategoryMasterService {
           displayName: existing.categoryName,
           originalRecord,
           modifiedRecord,
-          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'Item category soft deleted',
+          userId,
+          notes: nextDeleted ? 'Item category soft deleted' : 'Item category restored',
         },
         tx,
       );
       return {
         category_id: categoryId,
-        deleted: true,
+        deleted: nextDeleted,
       };
     });
   }

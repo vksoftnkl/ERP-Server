@@ -532,7 +532,7 @@ describe('ItemsBrandMasterService', () => {
     expect(findFirstArgs.where?.brand_id).toBe(BRAND_ID);
     expect(findFirstArgs.where?.brand_is_deleted).toBe(false);
   });
-  it('soft delete removes subtree ids from ancestor caches', async () => {
+  it('toggleDelete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       brand_id: PARENT_BRAND_ID,
       brand_parent_id: null,
@@ -567,7 +567,7 @@ describe('ItemsBrandMasterService', () => {
       }),
     );
 
-    await expect(service.softDelete(BRAND_ID)).resolves.toEqual({
+    await expect(service.toggleDelete(BRAND_ID)).resolves.toEqual({
       brand_id: BRAND_ID,
       deleted: true,
     });
@@ -586,6 +586,26 @@ describe('ItemsBrandMasterService', () => {
     const ancestorUpdateArgs = prisma.itemBrandMaster.update.mock.calls[0][0];
     expect(ancestorUpdateArgs.where.brand_id).toBe(PARENT_BRAND_ID);
     expect(ancestorUpdateArgs.data.brand_path_ids).toEqual([PARENT_BRAND_ID]);
+  });
+
+  it('toggleDelete restores a previously deleted brand', async () => {
+    prisma.itemBrandMaster.findFirst
+      .mockResolvedValueOnce(makeRecord({ brand_is_deleted: true, brand_parent_id: null }))
+      .mockResolvedValueOnce(null);
+    prisma.itemBrandMaster.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(service.toggleDelete(BRAND_ID)).resolves.toEqual({
+      brand_id: BRAND_ID,
+      deleted: false,
+    });
+
+    const updateManyArgs = prisma.itemBrandMaster.updateMany.mock.calls[0][0];
+    if (!updateManyArgs.where) {
+      throw new Error('Expected updateMany where clause');
+    }
+    expect(updateManyArgs.where.brand_id).toBe(BRAND_ID);
+    expect(updateManyArgs.where.brand_is_deleted).toBe(true);
+    expect(updateManyArgs.data.brand_is_deleted).toBe(false);
   });
 
   it('rejects invalid base64 image input', async () => {

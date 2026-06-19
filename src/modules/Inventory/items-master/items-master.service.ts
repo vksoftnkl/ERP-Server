@@ -143,30 +143,33 @@ export class ItemsMasterService {
       };
     });
   }
-  async softDelete(itemId: string): Promise<{ item_id: string; deleted: true }> {
+  async toggleDelete(itemId: string): Promise<{ item_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
+      // Find regardless of current deleted state
       const existing = await tx.itemMaster.findFirst({
         where: {
           itemId,
-          itemIsDeleted: false,
         },
       });
       if (!existing) {
         throwInventoryNotFound<ItemErrorDetail>(
           'Item not found',
           'item_id',
-          `No active item found with id ${itemId}`,
+          `No item found with id ${itemId}`,
         );
       }
+      const wasDeleted = existing.itemIsDeleted;
+      const nextDeleted = !wasDeleted;
       const modifiedOn = new Date();
       const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      // Guarded update: only flips if state hasn't changed since the read
       const result = await tx.itemMaster.updateMany({
         where: {
           itemId,
-          itemIsDeleted: false,
+          itemIsDeleted: wasDeleted,
         },
         data: {
-          itemIsDeleted: true,
+          itemIsDeleted: nextDeleted,
           itemModifiedOn: modifiedOn,
           itemModifiedBy: modifiedBy,
         },
@@ -175,19 +178,19 @@ export class ItemsMasterService {
         throwInventoryNotFound<ItemErrorDetail>(
           'Item not found',
           'item_id',
-          `No active item found with id ${itemId}`,
+          `No item found with id ${itemId}`,
         );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        itemIsDeleted: true,
+        itemIsDeleted: nextDeleted,
         itemModifiedOn: modifiedOn,
         itemModifiedBy: modifiedBy,
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'cancel',
+          action: nextDeleted ? 'cancel' : 'update',
           tableName: ITEM_TABLE_NAME,
           screenName: ITEM_AUDIT_SCREEN_NAME,
           screenType: 'master',
@@ -196,13 +199,13 @@ export class ItemsMasterService {
           originalRecord,
           modifiedRecord,
           userId: modifiedBy,
-          notes: 'Item soft deleted',
+          notes: nextDeleted ? 'Item soft deleted' : 'Item restored',
         },
         tx,
       );
       return {
         item_id: itemId,
-        deleted: true,
+        deleted: nextDeleted,
       };
     });
   }

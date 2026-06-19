@@ -53,8 +53,11 @@ export class ItemEanCodeDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   ean_id!: string;
 
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({
+    example: true,
+    description: 'true when the item EAN code was soft deleted, false when it was restored',
+  })
+  deleted!: boolean;
 }
 
 export class ItemEanCodeSuccessSingleDto {

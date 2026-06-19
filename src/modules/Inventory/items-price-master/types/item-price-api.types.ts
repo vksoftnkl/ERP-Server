@@ -4,12 +4,12 @@ export type { InventorySuccessResponse as ItemPriceSuccessResponse } from 'src/c
 export type { InventoryListMeta as ItemPriceListMeta } from 'src/common/utils/module-list.utils';
 export interface ItemPriceDeleteResult {
   ipm_id: string;
-  deleted: true;
+  deleted: boolean;
 }
 
 export interface ItemUnitConversionDeleteResult {
   iuc_id: string;
-  deleted: true;
+  deleted: boolean;
 }
 
 export interface ItemPricePayload {

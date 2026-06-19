@@ -42,40 +42,45 @@ export class ItemsTaxMasterService {
     }
     return this.toPayload(record);
   }
-  async softDelete(taxId: string): Promise<{ tax_id: string; deleted: true }> {
+  async toggleDelete(taxId: string): Promise<{ tax_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
+      // Find regardless of current deleted state
       const existing = await tx.itemTaxMaster.findFirst({
-        where: { taxId, taxIsDeleted: false },
+        where: { taxId },
       });
       if (!existing) {
         throwInventoryNotFound<ItemTaxErrorDetail>(
           'Item tax not found',
           'tax_id',
-          `No active item tax found with id ${taxId}`,
+          `No item tax found with id ${taxId}`,
         );
       }
+      const wasDeleted = existing.taxIsDeleted;
+      const nextDeleted = !wasDeleted;
       const modifiedOn = new Date();
+      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      // Guarded update: only flips if state hasn't changed since the read
       const result = await tx.itemTaxMaster.updateMany({
-        where: { taxId, taxIsDeleted: false },
-        data: { taxIsDeleted: true, taxModifiedOn: modifiedOn, taxModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR },
+        where: { taxId, taxIsDeleted: wasDeleted },
+        data: { taxIsDeleted: nextDeleted, taxModifiedOn: modifiedOn, taxModifiedBy: userId },
       });
       if (result.count === 0) {
         throwInventoryNotFound<ItemTaxErrorDetail>(
           'Item tax not found',
           'tax_id',
-          `No active item tax found with id ${taxId}`,
+          `No item tax found with id ${taxId}`,
         );
       }
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        taxIsDeleted: true,
+        taxIsDeleted: nextDeleted,
         taxModifiedOn: modifiedOn,
-        taxModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        taxModifiedBy: userId,
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'cancel',
+          action: nextDeleted ? 'cancel' : 'update',
           tableName: ITEM_TAX_TABLE_NAME,
           screenName: ITEM_TAX_AUDIT_SCREEN_NAME,
           screenType: 'master',
@@ -83,12 +88,12 @@ export class ItemsTaxMasterService {
           displayName: existing.taxName,
           originalRecord,
           modifiedRecord,
-          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'Item tax soft deleted',
+          userId,
+          notes: nextDeleted ? 'Item tax soft deleted' : 'Item tax restored',
         },
         tx,
       );
-      return { tax_id: taxId, deleted: true };
+      return { tax_id: taxId, deleted: nextDeleted };
     });
   }
   private async createItemTax(saveItemTaxDto: SaveItemTaxDto): Promise<ItemTaxPayload> {

@@ -118,22 +118,22 @@ export class ItemsReorderMasterService {
     return this.toPayload(record);
   }
 
-  async softDelete(irId: string): Promise<ItemReorderDeleteResult>;
-  async softDelete(irId: string[]): Promise<ItemReorderDeleteResult[]>;
-  async softDelete(
+  async toggleDelete(irId: string): Promise<ItemReorderDeleteResult>;
+  async toggleDelete(irId: string[]): Promise<ItemReorderDeleteResult[]>;
+  async toggleDelete(
     irId: string | string[],
   ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;
-  async softDelete(
+  async toggleDelete(
     irId: string | string[],
   ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]> {
-    const deleteIds = Array.isArray(irId) ? irId : [irId];
+    const toggleIds = Array.isArray(irId) ? irId : [irId];
 
     const results = await this.prisma.$transaction(async (tx) => {
-      const deletedItems: ItemReorderDeleteResult[] = [];
-      for (const deleteId of deleteIds) {
-        deletedItems.push(await this.softDeleteItemReorder(tx, deleteId));
+      const toggledItems: ItemReorderDeleteResult[] = [];
+      for (const toggleId of toggleIds) {
+        toggledItems.push(await this.toggleDeleteItemReorder(tx, toggleId));
       }
-      return deletedItems;
+      return toggledItems;
     });
 
     return Array.isArray(irId) ? results : results[0];
@@ -149,45 +149,49 @@ export class ItemsReorderMasterService {
     return this.createItemReorder(tx, saveItemReorderDto);
   }
 
-  private async softDeleteItemReorder(
+  private async toggleDeleteItemReorder(
     tx: Prisma.TransactionClient,
     irId: string,
   ): Promise<ItemReorderDeleteResult> {
+    // Find regardless of current deleted state
     const existing = await tx.itemReorder.findFirst({
-      where: { irId, irIsDeleted: false },
+      where: { irId },
     });
     if (!existing) {
       throwInventoryNotFound<ItemReorderErrorDetail>(
         'Item reorder not found',
         'ir_id',
-        `No active item reorder found with id ${irId}`,
+        `No item reorder found with id ${irId}`,
       );
     }
 
+    const wasDeleted = existing.irIsDeleted;
+    const nextDeleted = !wasDeleted;
     const modifiedOn = new Date();
     const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    // Guarded update: only flips if state hasn't changed since the read
     const result = await tx.itemReorder.updateMany({
-      where: { irId, irIsDeleted: false },
-      data: { irIsDeleted: true, irModifiedOn: modifiedOn, irModifiedBy: modifiedBy },
+      where: { irId, irIsDeleted: wasDeleted },
+      data: { irIsDeleted: nextDeleted, irModifiedOn: modifiedOn, irModifiedBy: modifiedBy },
     });
     if (result.count === 0) {
       throwInventoryNotFound<ItemReorderErrorDetail>(
         'Item reorder not found',
         'ir_id',
-        `No active item reorder found with id ${irId}`,
+        `No item reorder found with id ${irId}`,
       );
     }
 
     const originalRecord = this.toPayload(existing);
     const modifiedRecord = this.toPayload({
       ...existing,
-      irIsDeleted: true,
+      irIsDeleted: nextDeleted,
       irModifiedOn: modifiedOn,
       irModifiedBy: modifiedBy,
     });
     await this.auditLogService.logEntityChange(
       {
-        action: 'cancel',
+        action: nextDeleted ? 'cancel' : 'update',
         tableName: ITEM_REORDER_TABLE_NAME,
         screenName: ITEM_REORDER_AUDIT_SCREEN_NAME,
         screenType: 'master',
@@ -196,12 +200,12 @@ export class ItemsReorderMasterService {
         originalRecord,
         modifiedRecord,
         userId: modifiedBy,
-        notes: 'Item reorder soft deleted',
+        notes: nextDeleted ? 'Item reorder soft deleted' : 'Item reorder restored',
       },
       tx,
     );
 
-    return { ir_id: irId, deleted: true };
+    return { ir_id: irId, deleted: nextDeleted };
   }
 
   private async createItemReorder(

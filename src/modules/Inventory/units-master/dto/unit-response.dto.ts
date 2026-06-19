@@ -105,8 +105,11 @@ export class UnitDeleteResultDto {
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
   unit_id!: string;
 
-  @ApiProperty({ example: true })
-  deleted!: true;
+  @ApiProperty({
+    example: true,
+    description: 'true when the unit was soft deleted, false when it was restored',
+  })
+  deleted!: boolean;
 }
 
 export class UnitSuccessSingleDto {

@@ -288,10 +288,10 @@ describe('ItemsTaxMasterService', () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(null);
     await expect(service.getById(TAX_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
-  it('softDelete marks tax as deleted', async () => {
+  it('toggleDelete marks an active tax as deleted', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(makeRecord());
     prisma.itemTaxMaster.updateMany.mockResolvedValue({ count: 1 });
-    const result = await service.softDelete(TAX_ID);
+    const result = await service.toggleDelete(TAX_ID);
     expect(prisma.itemTaxMaster.updateMany).toHaveBeenCalledTimes(1);
     const updateManyArgs = prisma.itemTaxMaster.updateMany.mock.calls[0][0];
     expect(updateManyArgs.where).toEqual({
@@ -309,8 +309,27 @@ describe('ItemsTaxMasterService', () => {
       deleted: true,
     });
   });
-  it('softDelete throws not found when tax does not exist', async () => {
+  it('toggleDelete restores a previously deleted tax', async () => {
+    prisma.itemTaxMaster.findFirst.mockResolvedValue(makeRecord({ taxIsDeleted: true }));
+    prisma.itemTaxMaster.updateMany.mockResolvedValue({ count: 1 });
+    const result = await service.toggleDelete(TAX_ID);
+    const updateManyArgs = prisma.itemTaxMaster.updateMany.mock.calls[0][0];
+    expect(updateManyArgs.where).toEqual({
+      taxId: TAX_ID,
+      taxIsDeleted: true,
+    });
+    expect(updateManyArgs.data).toEqual(
+      expect.objectContaining({
+        taxIsDeleted: false,
+      }),
+    );
+    expect(result).toEqual({
+      tax_id: TAX_ID,
+      deleted: false,
+    });
+  });
+  it('toggleDelete throws not found when tax does not exist', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(null);
-    await expect(service.softDelete(TAX_ID)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.toggleDelete(TAX_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

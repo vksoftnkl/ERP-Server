@@ -88,20 +88,22 @@ export class ItemsQtywiseRatesMasterController {
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete item qty-wise rate by id' })
+  @ApiOperation({ summary: 'Soft delete or restore item qty-wise rate by id' })
   @ApiQuery({ name: 'iqr_id', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: ItemQtywiseRateSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemQtywiseRateErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemQtywiseRateErrorResponseDto })
   async remove(
     @Query('iqr_id', new ParseUUIDPipe({ version: '7' })) iqrId: string,
-  ): Promise<ItemQtywiseRateSuccessResponse<{ iqr_id: string; deleted: true }>> {
-    const data = await this.itemsQtywiseRatesMasterService.softDelete(iqrId);
+  ): Promise<ItemQtywiseRateSuccessResponse<{ iqr_id: string; deleted: boolean }>> {
+    const { iqr_id, deleted } = await this.itemsQtywiseRatesMasterService.toggleDelete(iqrId);
 
     return {
       success: true,
-      message: 'Item qty-wise rate deleted successfully',
-      data,
+      message: deleted
+        ? 'Item qty-wise rate deleted successfully'
+        : 'Item qty-wise rate restored successfully',
+      data: { iqr_id, deleted },
     };
   }
 }

@@ -488,11 +488,11 @@ describe('GodownsMasterService', () => {
     await expect(service.getById(GDL_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('softDelete marks location as deleted', async () => {
+  it('toggleDelete marks an active location as deleted', async () => {
     prisma.godownLocation.findFirst.mockResolvedValue(makeRecord());
     prisma.godownLocation.updateMany.mockResolvedValue({ count: 1 });
 
-    const result = await service.softDelete(GDL_ID);
+    const result = await service.toggleDelete(GDL_ID);
 
     expect(prisma.godownLocation.updateMany).toHaveBeenCalledTimes(1);
     const updateManyArgs = prisma.godownLocation.updateMany.mock.calls[0][0];
@@ -512,7 +512,31 @@ describe('GodownsMasterService', () => {
     });
   });
 
-  it('softDelete removes subtree ids from ancestor caches', async () => {
+  it('toggleDelete restores a previously deleted location', async () => {
+    prisma.godownLocation.findFirst
+      .mockResolvedValueOnce(makeRecord({ gdlIsDeleted: true, gdlParentId: null }))
+      .mockResolvedValueOnce(null);
+    prisma.godownLocation.updateMany.mockResolvedValue({ count: 1 });
+
+    const result = await service.toggleDelete(GDL_ID);
+
+    const updateManyArgs = prisma.godownLocation.updateMany.mock.calls[0][0];
+    expect(updateManyArgs.where).toEqual({
+      gdlId: GDL_ID,
+      gdlIsDeleted: true,
+    });
+    expect(updateManyArgs.data).toEqual(
+      expect.objectContaining({
+        gdlIsDeleted: false,
+      }),
+    );
+    expect(result).toEqual({
+      gdl_id: GDL_ID,
+      deleted: false,
+    });
+  });
+
+  it('toggleDelete removes subtree ids from ancestor caches', async () => {
     const parent = makeRecord({
       gdlId: PARENT_ID,
       gdlParentId: null,
@@ -547,7 +571,7 @@ describe('GodownsMasterService', () => {
       }),
     );
 
-    await expect(service.softDelete(GDL_ID)).resolves.toEqual({
+    await expect(service.toggleDelete(GDL_ID)).resolves.toEqual({
       gdl_id: GDL_ID,
       deleted: true,
     });
@@ -558,9 +582,9 @@ describe('GodownsMasterService', () => {
     expect(ancestorUpdateArgs.data.gdlPathIdsCache).toEqual([PARENT_ID]);
   });
 
-  it('softDelete throws not found when location does not exist', async () => {
+  it('toggleDelete throws not found when location does not exist', async () => {
     prisma.godownLocation.findFirst.mockResolvedValue(null);
 
-    await expect(service.softDelete(GDL_ID)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.toggleDelete(GDL_ID)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

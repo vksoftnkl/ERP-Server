@@ -52,43 +52,47 @@ export class ItemsQtywiseRatesMasterService {
     return this.toPayload(record);
   }
 
-  async softDelete(iqrId: string): Promise<{ iqr_id: string; deleted: true }> {
+  async toggleDelete(iqrId: string): Promise<{ iqr_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
+      // Find regardless of current deleted state
       const existing = await tx.itemQtywiseRate.findFirst({
-        where: { iqrId, iqrIsDeleted: false },
+        where: { iqrId },
       });
       if (!existing) {
         throwInventoryNotFound<ItemQtywiseRateErrorDetail>(
           'Item qty-wise rate not found',
           'iqr_id',
-          `No active item qty-wise rate found with id ${iqrId}`,
+          `No item qty-wise rate found with id ${iqrId}`,
         );
       }
 
+      const wasDeleted = existing.iqrIsDeleted;
+      const nextDeleted = !wasDeleted;
       const modifiedOn = new Date();
       const modifiedBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      // Guarded update: only flips if state hasn't changed since the read
       const result = await tx.itemQtywiseRate.updateMany({
-        where: { iqrId, iqrIsDeleted: false },
-        data: { iqrIsDeleted: true, iqrModifiedOn: modifiedOn, iqrModifiedBy: modifiedBy },
+        where: { iqrId, iqrIsDeleted: wasDeleted },
+        data: { iqrIsDeleted: nextDeleted, iqrModifiedOn: modifiedOn, iqrModifiedBy: modifiedBy },
       });
       if (result.count === 0) {
         throwInventoryNotFound<ItemQtywiseRateErrorDetail>(
           'Item qty-wise rate not found',
           'iqr_id',
-          `No active item qty-wise rate found with id ${iqrId}`,
+          `No item qty-wise rate found with id ${iqrId}`,
         );
       }
 
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        iqrIsDeleted: true,
+        iqrIsDeleted: nextDeleted,
         iqrModifiedOn: modifiedOn,
         iqrModifiedBy: modifiedBy,
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'cancel',
+          action: nextDeleted ? 'cancel' : 'update',
           tableName: ITEM_QTYWISE_RATE_TABLE_NAME,
           screenName: ITEM_QTYWISE_RATE_AUDIT_SCREEN_NAME,
           screenType: 'master',
@@ -97,12 +101,12 @@ export class ItemsQtywiseRatesMasterService {
           originalRecord,
           modifiedRecord,
           userId: modifiedBy,
-          notes: 'Item qty-wise rate soft deleted',
+          notes: nextDeleted ? 'Item qty-wise rate soft deleted' : 'Item qty-wise rate restored',
         },
         tx,
       );
 
-      return { iqr_id: iqrId, deleted: true };
+      return { iqr_id: iqrId, deleted: nextDeleted };
     });
   }
 

@@ -43,22 +43,37 @@ export class GodownsMasterService {
     }
     return this.toPayload(record);
   }
-  async softDelete(gdlId: string): Promise<{ gdl_id: string; deleted: true }> {
+  async toggleDelete(gdlId: string): Promise<{ gdl_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
-      const existing = await this.getActiveLocationOrThrow(tx, gdlId);
+      // Find regardless of current deleted state
+      const existing = await tx.godownLocation.findFirst({
+        where: { gdlId },
+      });
+      if (!existing) {
+        throwInventoryNotFound<GodownErrorDetail>(
+          'Godown location not found',
+          'gdl_id',
+          `No godown location found with id ${gdlId}`,
+        );
+      }
+
+      const wasDeleted = existing.gdlIsDeleted;
+      const nextDeleted = !wasDeleted;
       const now = new Date();
+      const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       const subtreeIds = await this.getActiveSubtreeIds(tx, gdlId);
       const ancestorIds = await this.getAncestorIds(tx, existing.gdlParentId);
 
+      // Guarded update: only flips if state hasn't changed since the read
       const result = await tx.godownLocation.updateMany({
         where: {
           gdlId,
-          gdlIsDeleted: false,
+          gdlIsDeleted: wasDeleted,
         },
         data: {
-          gdlIsDeleted: true,
+          gdlIsDeleted: nextDeleted,
           gdlModifiedOn: now,
-          gdlModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          gdlModifiedBy: userId,
         },
       });
 
@@ -66,23 +81,27 @@ export class GodownsMasterService {
         throwInventoryNotFound<GodownErrorDetail>(
           'Godown location not found',
           'gdl_id',
-          `No active godown location found with id ${gdlId}`,
+          `No godown location found with id ${gdlId}`,
         );
       }
 
-      await this.removePathIds(tx, ancestorIds, subtreeIds);
+      if (nextDeleted) {
+        await this.removePathIds(tx, ancestorIds, subtreeIds);
+      } else {
+        await this.appendPathIds(tx, ancestorIds, subtreeIds);
+      }
 
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        gdlIsDeleted: true,
+        gdlIsDeleted: nextDeleted,
         gdlModifiedOn: now,
-        gdlModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        gdlModifiedBy: userId,
       });
 
       await this.auditLogService.logEntityChange(
         {
-          action: 'cancel',
+          action: nextDeleted ? 'cancel' : 'update',
           tableName: GODOWN_LOCATION_TABLE_NAME,
           screenName: GODOWN_LOCATION_AUDIT_SCREEN_NAME,
           screenType: 'master',
@@ -90,15 +109,15 @@ export class GodownsMasterService {
           displayName: existing.gdlName,
           originalRecord,
           modifiedRecord,
-          userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-          notes: 'Godown location soft deleted',
+          userId,
+          notes: nextDeleted ? 'Godown location soft deleted' : 'Godown location restored',
         },
         tx,
       );
 
       return {
         gdl_id: gdlId,
-        deleted: true,
+        deleted: nextDeleted,
       };
     });
   }
