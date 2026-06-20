@@ -28,6 +28,7 @@ import { ListWidgetQueryDto } from './dto/list-widget-query.dto';
 import { WidgetConfigQueryDto } from './dto/widget-config-query.dto';
 import { UpdateWidgetVisibilityDto } from './dto/update-widget-visibility.dto';
 import { SaveWidgetDto } from './dto/save-widget.dto';
+import { SaveBulkWidgetDto } from './dto/save-bulk-widget.dto';
 import {
   WidgetMasterErrorResponseDto,
   WidgetMasterSuccessDeleteDto,
@@ -129,6 +130,62 @@ export class WidgetMasterController {
       message: saveWidgetDto.sectionId
         ? 'Widget section updated successfully'
         : 'Widget section created successfully',
+      data,
+    };
+  }
+  @Post('create-bulk')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Create or update multiple widget sections with their fields in one request',
+    description: [
+      'Upserts a non-empty array of form sections (each with its nested fields) in a single transaction.',
+      '',
+      '- Each section in `data` follows the same rules as `create`: omit `sectionId` to create, include it to update.',
+      '- `fields` per section is a full-sync (update by `fieldId`, create when absent, delete the rest); omit it to leave fields untouched, send `[]` to clear them.',
+      '- All-or-nothing: if any section fails (duplicate name 409, missing id 404, …) the whole batch is rolled back and nothing is persisted.',
+    ].join('\n'),
+  })
+  @ApiBody({
+    type: SaveBulkWidgetDto,
+    examples: {
+      createMultiple: {
+        summary: 'Create two sections in one request',
+        value: {
+          data: [
+            {
+              sectionMenuId: 10,
+              sectionName: 'Primary Information',
+              sectionGuiName: 'Primary Information',
+              sectionPosition: 0,
+              sectionPlatform: WidgetPlatform.Web,
+              fields: [
+                { fieldName: 'item_name', fieldGuiName: 'English Name', fieldPosition: 0 },
+                { fieldName: 'item_code', fieldGuiName: 'Code', fieldPosition: 1 },
+              ],
+            },
+            {
+              sectionMenuId: 10,
+              sectionName: 'Price Details',
+              sectionGuiName: 'Price Details',
+              sectionPosition: 1,
+              sectionPlatform: WidgetPlatform.Web,
+            },
+          ],
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({ type: WidgetMasterSuccessListDto })
+  @ApiBadRequestResponse({ type: WidgetMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: WidgetMasterErrorResponseDto })
+  async saveBulk(
+    @Body() saveBulkWidgetDto: SaveBulkWidgetDto,
+  ): Promise<WidgetMasterSuccessResponse<WidgetMasterPayload[]>> {
+    const data = await this.widgetMasterService.saveBulk(saveBulkWidgetDto);
+
+    return {
+      success: true,
+      message: 'Widget sections saved successfully',
       data,
     };
   }

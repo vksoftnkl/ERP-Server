@@ -2165,6 +2165,11 @@ Table companys {
   compCreatedBy String
   compModifiedOn DateTime [default: `now()`, not null]
   compModifiedBy String
+  compTanNo String
+  compCinNo String
+  compRegionName String
+  compBooksLockDate DateTime
+  compAuthorizeSignature String
   branches branch_master [not null]
   accountGroups account_groups [not null]
   ledgers acc_ledger_master [not null]

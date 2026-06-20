@@ -6,6 +6,7 @@ import { ListWidgetQueryDto } from './dto/list-widget-query.dto';
 import { WidgetConfigQueryDto } from './dto/widget-config-query.dto';
 import { UpdateWidgetVisibilityDto } from './dto/update-widget-visibility.dto';
 import { SaveWidgetDto, SaveWidgetFieldDto } from './dto/save-widget.dto';
+import { SaveBulkWidgetDto } from './dto/save-bulk-widget.dto';
 import {
   WidgetFieldPayload,
   WidgetMasterErrorDetail,
@@ -32,10 +33,33 @@ export class WidgetMasterService {
     private readonly requestContextService: RequestContextService,
   ) {}
   async save(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
-    if (saveWidgetDto.sectionId !== undefined) {
-      return this.updateSection(saveWidgetDto);
+    const actor = this.getActor();
+    try {
+      return await this.prisma.$transaction((tx) => this.saveSectionTx(tx, saveWidgetDto, actor));
+    } catch (error) {
+      this.throwOnConflict(error);
+      throw error;
     }
-    return this.createSection(saveWidgetDto);
+  }
+  /**
+   * Upsert several sections (each with its nested fields) in a single transaction. Each section
+   * follows the same create/update rules as {@link save}; if any one fails (duplicate name, missing
+   * id, …) the whole batch is rolled back.
+   */
+  async saveBulk(saveBulkWidgetDto: SaveBulkWidgetDto): Promise<WidgetMasterPayload[]> {
+    const actor = this.getActor();
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const results: WidgetMasterPayload[] = [];
+        for (const section of saveBulkWidgetDto.data) {
+          results.push(await this.saveSectionTx(tx, section, actor));
+        }
+        return results;
+      });
+    } catch (error) {
+      this.throwOnConflict(error);
+      throw error;
+    }
   }
   async list(queryDto: ListWidgetQueryDto): Promise<WidgetMasterPayload[]> {
     const search = queryDto.search?.trim() ?? '';
@@ -172,8 +196,22 @@ export class WidgetMasterService {
       deleted: true,
     };
   }
-  private async createSection(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
-    const actor = this.getActor();
+  /** Route a single section to create or update within an existing transaction. */
+  private async saveSectionTx(
+    tx: Prisma.TransactionClient,
+    saveWidgetDto: SaveWidgetDto,
+    actor: string,
+  ): Promise<WidgetMasterPayload> {
+    if (saveWidgetDto.sectionId !== undefined) {
+      return this.updateSectionTx(tx, saveWidgetDto, actor);
+    }
+    return this.createSectionTx(tx, saveWidgetDto, actor);
+  }
+  private async createSectionTx(
+    tx: Prisma.TransactionClient,
+    saveWidgetDto: SaveWidgetDto,
+    actor: string,
+  ): Promise<WidgetMasterPayload> {
     const data: Prisma.FormSectionUncheckedCreateInput = {
       sectionMenuId: saveWidgetDto.sectionMenuId,
       sectionName: saveWidgetDto.sectionName.trim(),
@@ -189,57 +227,48 @@ export class WidgetMasterService {
         create: saveWidgetDto.fields.map((field) => this.buildFieldCreateData(field, actor)),
       };
     }
-    try {
-      const created = await this.prisma.formSection.create({
-        data,
-        include: { fields: { orderBy: FIELD_ORDER_BY } },
-      });
-      return this.toPayload(created);
-    } catch (error) {
-      this.throwOnConflict(error);
-      throw error;
-    }
+    const created = await tx.formSection.create({
+      data,
+      include: { fields: { orderBy: FIELD_ORDER_BY } },
+    });
+    return this.toPayload(created);
   }
-  private async updateSection(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
+  private async updateSectionTx(
+    tx: Prisma.TransactionClient,
+    saveWidgetDto: SaveWidgetDto,
+    actor: string,
+  ): Promise<WidgetMasterPayload> {
     const sectionId = this.normalizeSectionId(saveWidgetDto.sectionId!);
-    const actor = this.getActor();
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.formSection.findUnique({
-          where: { sectionId },
-        });
-        if (!existing) {
-          this.throwNotFound(sectionId);
-        }
-        const data: Prisma.FormSectionUncheckedUpdateInput = {
-          sectionMenuId: saveWidgetDto.sectionMenuId,
-          sectionName: saveWidgetDto.sectionName.trim(),
-          sectionGuiName: saveWidgetDto.sectionGuiName.trim(),
-          sectionPosition: saveWidgetDto.sectionPosition ?? existing.sectionPosition,
-          sectionVisibility: saveWidgetDto.sectionVisibility ?? existing.sectionVisibility,
-          sectionPlatform: saveWidgetDto.sectionPlatform,
-          sectionUpdatedBy: actor,
-          sectionUpdatedOn: new Date(),
-        };
-        await tx.formSection.update({
-          where: { sectionId },
-          data,
-        });
-
-        // `fields` omitted => leave existing fields untouched; provided (even []) => full sync.
-        if (saveWidgetDto.fields !== undefined) {
-          await this.syncFields(tx, sectionId, saveWidgetDto.fields, actor);
-        }
-        const updated = await tx.formSection.findUniqueOrThrow({
-          where: { sectionId },
-          include: { fields: { orderBy: FIELD_ORDER_BY } },
-        });
-        return this.toPayload(updated);
-      });
-    } catch (error) {
-      this.throwOnConflict(error);
-      throw error;
+    const existing = await tx.formSection.findUnique({
+      where: { sectionId },
+    });
+    if (!existing) {
+      this.throwNotFound(sectionId);
     }
+    const data: Prisma.FormSectionUncheckedUpdateInput = {
+      sectionMenuId: saveWidgetDto.sectionMenuId,
+      sectionName: saveWidgetDto.sectionName.trim(),
+      sectionGuiName: saveWidgetDto.sectionGuiName.trim(),
+      sectionPosition: saveWidgetDto.sectionPosition ?? existing.sectionPosition,
+      sectionVisibility: saveWidgetDto.sectionVisibility ?? existing.sectionVisibility,
+      sectionPlatform: saveWidgetDto.sectionPlatform,
+      sectionUpdatedBy: actor,
+      sectionUpdatedOn: new Date(),
+    };
+    await tx.formSection.update({
+      where: { sectionId },
+      data,
+    });
+
+    // `fields` omitted => leave existing fields untouched; provided (even []) => full sync.
+    if (saveWidgetDto.fields !== undefined) {
+      await this.syncFields(tx, sectionId, saveWidgetDto.fields, actor);
+    }
+    const updated = await tx.formSection.findUniqueOrThrow({
+      where: { sectionId },
+      include: { fields: { orderBy: FIELD_ORDER_BY } },
+    });
+    return this.toPayload(updated);
   }
   /** Reconcile the section's fields against the desired set: delete removed, update existing, create new. */
   private async syncFields(
