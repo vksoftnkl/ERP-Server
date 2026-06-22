@@ -20,6 +20,8 @@ export interface CompanyMasterPayload {
   compGstinNo: string | null;
   compGstRegType: string | null;
   compPanNo: string | null;
+  compTanNo: string | null;
+  compCinNo: string | null;
   compFssaiNo: string | null;
   compDrugLicenseNo: string | null;
   compAddr1: string | null;
@@ -38,6 +40,7 @@ export interface CompanyMasterPayload {
   compRegionDistrict: string | null;
   compRegionState: string | null;
   compRegionCountry: string | null;
+  compRegionName: string | null;
   compTel: string | null;
   compPhone: string | null;
   compMail: string | null;
@@ -47,6 +50,7 @@ export interface CompanyMasterPayload {
   compFinYearFrom: string | null;
   compFinYearTo: string | null;
   compBooksBeginFrom: string | null;
+  compBooksLockDate: string | null;
   compGstApplicable: boolean;
   compTcsApplicable: boolean;
   compSmsApplicable: boolean;
@@ -70,6 +74,7 @@ export interface CompanyMasterPayload {
   compCurrencySymbol: string | null;
   compLocaleCode: string;
   compRemarks: string | null;
+  compAuthorizeSignature: string | null;
   compIsDeleted: boolean;
   compSyncDate: string | null;
   compCreatedOn: string;

@@ -48,6 +48,7 @@ const BRANCH_MASTER_OPTIONAL_FIELDS = [
   'brRegionDistrict',
   'brRegionState',
   'brRegionCountry',
+  'brRegionName',
   'brContactPerson',
   'brTel',
   'brPhone',
@@ -66,10 +67,11 @@ const BRANCH_MASTER_OPTIONAL_FIELDS = [
   'brFssaiNo',
   'brFssaiLicenseType',
   'brFssaiValidUpto',
+  'brGstinNo',
+  'brGstRegType',
+  'brPanNo',
 ];
-
 type BranchMasterWriteClient = SettingsWriteClient;
-
 @Injectable()
 export class BranchMasterService {
   constructor(
@@ -77,12 +79,10 @@ export class BranchMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
   ) {}
-
   async save(saveBranchMasterDto: SaveBranchMasterDto): Promise<BranchMasterPayload> {
     if (saveBranchMasterDto.brId) {
       return this.updateBranch(saveBranchMasterDto);
     }
-
     return this.createBranch(saveBranchMasterDto);
   }
   async getById(brId: string): Promise<BranchMasterPayload> {
@@ -426,6 +426,7 @@ export class BranchMasterService {
       brRegionDistrict: record.brRegionDistrict,
       brRegionState: record.brRegionState,
       brRegionCountry: record.brRegionCountry,
+      brRegionName: record.brRegionName,
       brContactPerson: record.brContactPerson,
       brTel: record.brTel,
       brPhone: record.brPhone,
@@ -444,6 +445,9 @@ export class BranchMasterService {
       brFssaiNo: record.brFssaiNo,
       brFssaiLicenseType: record.brFssaiLicenseType,
       brFssaiValidUpto: record.brFssaiValidUpto ? record.brFssaiValidUpto.toISOString() : null,
+      brGstinNo: record.brGstinNo,
+      brGstRegType: record.brGstRegType,
+      brPanNo: record.brPanNo,
       brIsDeleted: record.brIsDeleted,
       brSyncDate: record.brSyncDate ? record.brSyncDate.toISOString() : null,
       brCreatedOn: record.brCreatedOn.toISOString(),

@@ -2046,7 +2046,7 @@ Table branch_master {
   brDistrict String
   brState String
   brStateCode String [not null]
-  brPin String
+  brPin Int
   brCountry String [not null, default: 'India']
   brLandmark String
   brRegionAddr1 String
@@ -2080,6 +2080,10 @@ Table branch_master {
   brCreatedBy String
   brModifiedOn DateTime [default: `now()`, not null]
   brModifiedBy String
+  brRegionName String
+  brGstinNo String
+  brGstRegType String
+  brPanNo String
   company companys [not null]
   accountLedgerMaster acc_ledger_master [not null]
   voucherBills acc_voucher_bills [not null]
@@ -2147,7 +2151,7 @@ Table companys {
   compEwayIntraLimit Decimal [not null, default: 0]
   compEinvoiceDate DateTime
   compEinvoiceInclEway Boolean
-  compStylesheetId String
+  compStylesheetId Int
   compBankId String
   compPriceFixing String
   compPrefixCode String
@@ -2170,6 +2174,7 @@ Table companys {
   compRegionName String
   compBooksLockDate DateTime
   compAuthorizeSignature String
+  compTdsApplicable String
   branches branch_master [not null]
   accountGroups account_groups [not null]
   ledgers acc_ledger_master [not null]

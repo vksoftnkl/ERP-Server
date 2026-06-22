@@ -29,7 +29,7 @@ export interface BranchMasterPayload {
   brDistrict: string | null;
   brState: string | null;
   brStateCode: string;
-  brPin: string | null;
+  brPin: number | null;
   brCountry: string;
   brLandmark: string | null;
   brRegionAddr1: string | null;
@@ -39,6 +39,7 @@ export interface BranchMasterPayload {
   brRegionDistrict: string | null;
   brRegionState: string | null;
   brRegionCountry: string | null;
+  brRegionName: string | null;
   brContactPerson: string | null;
   brTel: string | null;
   brPhone: string | null;
@@ -57,6 +58,9 @@ export interface BranchMasterPayload {
   brFssaiNo: string | null;
   brFssaiLicenseType: string | null;
   brFssaiValidUpto: string | null;
+  brGstinNo: string | null;
+  brGstRegType: string | null;
+  brPanNo: string | null;
   brIsDeleted: boolean;
   brSyncDate: string | null;
   brCreatedOn: string;

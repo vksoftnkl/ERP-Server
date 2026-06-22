@@ -67,7 +67,7 @@ export class BranchMasterPayloadDto {
   brStateCode!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  brPin!: string | null;
+  brPin!: number | null;
 
   @ApiProperty()
   brCountry!: string;
@@ -95,6 +95,9 @@ export class BranchMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   brRegionCountry!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  brRegionName!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   brContactPerson!: string | null;
@@ -149,6 +152,15 @@ export class BranchMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   brFssaiValidUpto!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  brGstinNo!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  brGstRegType!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  brPanNo!: string | null;
 
   @ApiProperty()
   brIsDeleted!: boolean;

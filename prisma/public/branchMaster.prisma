@@ -18,7 +18,7 @@ model BranchMaster {
   brDistrict            String?   @db.VarChar(100)                                 @map("br_district")
   brState               String?   @db.VarChar(100)                                 @map("br_state")
   brStateCode           String    @db.Char(2)                                      @map("br_state_code")
-  brPin                 String?   @db.VarChar(10)                                  @map("br_pin")
+  brPin                 Int?                                  @map("br_pin")
   brCountry             String    @default("India") @db.VarChar(60)               @map("br_country")
   brLandmark            String?   @db.VarChar(150)                                 @map("br_landmark")
   // 4) Region Address
@@ -58,6 +58,11 @@ model BranchMaster {
   brCreatedBy           String?   @db.VarChar(100)                                 @map("br_created_by")
   brModifiedOn          DateTime  @default(now()) @db.Timestamp                    @map("br_modified_on")
   brModifiedBy          String?   @db.VarChar(100)                                 @map("br_modified_by")
+  brRegionName          String?   @db.Text                                        @map("br_region_name")
+  brGstinNo             String?   @db.VarChar(15)                                  @map("br_gstin_no")
+  brGstRegType          String?   @db.VarChar(30)                                  @map("br_gst_reg_type")
+  brPanNo               String?   @db.VarChar(10)                                  @map("br_pan_no")
+  
   // Relations
   company               Company   @relation(fields: [compId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]

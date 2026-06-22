@@ -33,7 +33,10 @@ const COMPANY_MASTER_OPTIONAL_FIELDS = [
   'compGstinNo',
   'compGstRegType',
   'compPanNo',
+  'compTanNo',
+  'compCinNo',
   'compFssaiNo',
+  'compDrugLicenseNo',
   'compAddr1',
   'compAddr2',
   'compAddr3',
@@ -49,6 +52,7 @@ const COMPANY_MASTER_OPTIONAL_FIELDS = [
   'compRegionDistrict',
   'compRegionState',
   'compRegionCountry',
+  'compRegionName',
   'compTel',
   'compPhone',
   'compMail',
@@ -58,6 +62,7 @@ const COMPANY_MASTER_OPTIONAL_FIELDS = [
   'compFinYearFrom',
   'compFinYearTo',
   'compBooksBeginFrom',
+  'compBooksLockDate',
   'compGstApplicable',
   'compTcsApplicable',
   'compSmsApplicable',
@@ -80,6 +85,7 @@ const COMPANY_MASTER_OPTIONAL_FIELDS = [
   'compCurrencySymbol',
   'compLocaleCode',
   'compRemarks',
+  'compAuthorizeSignature',
 ];
 
 type CompanyWriteClient = SettingsWriteClient;
@@ -434,6 +440,8 @@ export class CompanyMasterService {
       compGstinNo: record.compGstinNo,
       compGstRegType: record.compGstRegType,
       compPanNo: record.compPanNo,
+      compTanNo: record.compTanNo,
+      compCinNo: record.compCinNo,
       compFssaiNo: record.compFssaiNo,
       compDrugLicenseNo: record.compDrugLicenseNo,
       compAddr1: record.compAddr1,
@@ -452,6 +460,7 @@ export class CompanyMasterService {
       compRegionDistrict: record.compRegionDistrict,
       compRegionState: record.compRegionState,
       compRegionCountry: record.compRegionCountry,
+      compRegionName: record.compRegionName,
       compTel: record.compTel,
       compPhone: record.compPhone,
       compMail: record.compMail,
@@ -462,6 +471,9 @@ export class CompanyMasterService {
       compFinYearTo: record.compFinYearTo ? record.compFinYearTo.toISOString() : null,
       compBooksBeginFrom: record.compBooksBeginFrom
         ? record.compBooksBeginFrom.toISOString()
+        : null,
+      compBooksLockDate: record.compBooksLockDate
+        ? record.compBooksLockDate.toISOString()
         : null,
       compGstApplicable: record.compGstApplicable,
       compTcsApplicable: record.compTcsApplicable,
@@ -486,6 +498,7 @@ export class CompanyMasterService {
       compCurrencySymbol: record.compCurrencySymbol,
       compLocaleCode: record.compLocaleCode,
       compRemarks: record.compRemarks,
+      compAuthorizeSignature: record.compAuthorizeSignature,
       compIsDeleted: record.compIsDeleted,
       compSyncDate: record.compSyncDate ? record.compSyncDate.toISOString() : null,
       compCreatedOn: record.compCreatedOn.toISOString(),

@@ -54,7 +54,7 @@ model Company {
   compEinvoiceDate      DateTime? @db.Date                                          @map("comp_einvoice_date")
   compEinvoiceInclEway  Boolean?                                                    @map("comp_einvoice_incl_eway")
   // 9) System Settings
-  compStylesheetId      String?   @db.VarChar                                       @map("comp_stylesheet_id")
+  compStylesheetId      Int?                                                        @map("comp_stylesheet_id")
   compBankId            String?   @db.Uuid                                          @map("comp_bank_id")
   compPriceFixing       String?   @db.VarChar(50)                                   @map("comp_price_fixing")
   compPrefixCode        String?   @db.VarChar(20)                                   @map("comp_prefix_code")
@@ -77,7 +77,8 @@ model Company {
   compCinNo             String?   @db.Text                                          @map("comp_cin_no")
   compRegionName        String?   @db.Text                                          @map("comp_region_name")
   compBooksLockDate     DateTime? @db.Date                                          @map("comp_books_lock_date")
-  compAuthorizeSignature String?   @db.Text                                         @map("comp_authorize_signature")
+  compAuthorizeSignature String?  @db.Text                                         @map("comp_authorize_signature")
+  compTdsApplicable     String?   @db.Text                                    @map("comp_tds_applicable")
   // Relations
   branches              BranchMaster[]
   accountGroups         AccountGroup[]

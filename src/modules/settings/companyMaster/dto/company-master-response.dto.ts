@@ -42,6 +42,12 @@ export class CompanyMasterPayloadDto {
   compPanNo!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
+  compTanNo!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  compCinNo!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   compFssaiNo!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
@@ -96,6 +102,9 @@ export class CompanyMasterPayloadDto {
   compRegionCountry!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
+  compRegionName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   compTel!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
@@ -121,6 +130,9 @@ export class CompanyMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   compBooksBeginFrom!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  compBooksLockDate!: string | null;
 
   @ApiProperty()
   compGstApplicable!: boolean;
@@ -190,6 +202,9 @@ export class CompanyMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   compRemarks!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  compAuthorizeSignature!: string | null;
 
   @ApiProperty()
   compIsDeleted!: boolean;

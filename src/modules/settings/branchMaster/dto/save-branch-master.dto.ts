@@ -1,10 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import {
   NullableDate,
   NullableEmail,
   NullableNumber,
   NullableString,
+  NullableUpperString,
   NullableUuid,
   OptionalBoolean,
   UpperString,
@@ -68,9 +70,11 @@ export class SaveBranchMasterDto {
   @ApiProperty({ maxLength: 2 })
   @UpperString(2)
   brStateCode!: string;
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @NullableString(10)
-  brPin?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  brPin?: number;
   @ApiPropertyOptional({ maxLength: 60 })
   @IsOptional()
   @IsString()
@@ -100,6 +104,9 @@ export class SaveBranchMasterDto {
   @ApiPropertyOptional({ maxLength: 60, nullable: true })
   @NullableString(60)
   brRegionCountry?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @NullableString()
+  brRegionName?: string | null;
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @NullableString(150)
   brContactPerson?: string | null;
@@ -154,4 +161,13 @@ export class SaveBranchMasterDto {
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   @NullableDate()
   brFssaiValidUpto?: Date | null;
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  @NullableUpperString(15)
+  brGstinNo?: string | null;
+  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  @NullableString(30)
+  brGstRegType?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableUpperString(10)
+  brPanNo?: string | null;
 }

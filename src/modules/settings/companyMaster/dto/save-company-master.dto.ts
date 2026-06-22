@@ -40,6 +40,12 @@ export class SaveCompanyMasterDto {
   @ApiPropertyOptional({ maxLength: 10, nullable: true })
   @NullableUpperString(10)
   compPanNo?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @NullableUpperString()
+  compTanNo?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @NullableUpperString()
+  compCinNo?: string | null;
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableString(20)
   compFssaiNo?: string | null;
@@ -108,6 +114,10 @@ export class SaveCompanyMasterDto {
   @NullableString(60)
   compRegionCountry?: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  @NullableString()
+  compRegionName?: string | null;
+
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableString(20)
   compTel?: string | null;
@@ -143,6 +153,10 @@ export class SaveCompanyMasterDto {
   @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
   @NullableDate()
   compBooksBeginFrom?: Date | null;
+
+  @ApiPropertyOptional({ type: String, format: 'date', nullable: true })
+  @NullableDate()
+  compBooksLockDate?: Date | null;
 
   @ApiPropertyOptional()
   @OptionalBoolean()
@@ -243,4 +257,8 @@ export class SaveCompanyMasterDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compRemarks?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableString()
+  compAuthorizeSignature?: string | null;
 }
