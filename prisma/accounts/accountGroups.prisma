@@ -12,7 +12,7 @@ model AccountGroup {
   accGroupTallyName           String?        @db.VarChar(150)                               @map("acc_group_tally_name")
   accGroupPrimaryName         String?        @db.VarChar(150)                               @map("acc_group_primary_name")
   accGroupNature              String?        @db.VarChar(20)                                @map("acc_group_nature")
-
+  accLedgerProfile            String         @default("General") @db.VarChar(16)            @map("acc_ledger_profile")
   // Tally identity (sync round-trip)
   accGroupTallyGuid           String?        @db.VarChar(64)                                @map("acc_group_tally_guid")
   accGroupTallyMasterId       BigInt?                                                       @map("acc_group_tally_master_id")
@@ -57,7 +57,10 @@ model AccountGroup {
   @@index([accGroupParentId],  name: "idx_acc_group_parent_id")
   @@index([accGroupType],      name: "idx_acc_group_type")
   // Partial unique index uq_acc_group_tally_guid (WHERE acc_group_tally_guid IS NOT NULL)
-  // and the chk_* CHECK constraints are managed in raw SQL — Prisma can't express either.
+  // is managed in raw SQL — Prisma can't express it. Allowed-value validation for
+  // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer
+  // (accountsGroup enums); the old chk_* CHECK constraints were dropped in migration
+  // 20260623100000_remove_acc_group_check_constraints_to_app_layer.
   @@map("account_groups")
   @@schema("accounts")
 }

@@ -16,7 +16,7 @@ import {
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import { AccountGroupType } from './types/account-group-enum';
+import { AccLedgerProfile, AccountGroupNature, AccountGroupType } from './types/account-group-enum';
 const ACCOUNT_GROUP_TABLE_NAME = 'account groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
 type AccountGroupWriteClient = AccountsWriteClient;
@@ -24,6 +24,8 @@ type AccountGroupParentRecord = {
   accGroupId: string;
   accGroupCompanyId: string | null;
   accGroupType: string;
+  accLedgerProfile: string;
+  accGroupNature: string | null;
 };
 @Injectable()
 export class AccountsGroupService {
@@ -38,7 +40,6 @@ export class AccountsGroupService {
     }
     return this.createAccountGroup(saveAccountGroupDto);
   }
-
   async getById(accGroupId: string): Promise<AccountGroupPayload> {
     const record = await this.prisma.accountGroup.findFirst({
       where: {
@@ -181,7 +182,8 @@ export class AccountsGroupService {
             },
           ]);
         }
-        // Type and company are inherited from the parent — never supplied by the client.
+        // Type, company, ledger profile, and nature are inherited from the parent —
+        // never supplied by the client.
         const parent = await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx);
         const companyId = parent.accGroupCompanyId;
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
@@ -191,6 +193,8 @@ export class AccountsGroupService {
           accGroupCompanyId: companyId,
           accGroupName: normalizedName,
           accGroupType: parent.accGroupType,
+          accLedgerProfile: parent.accLedgerProfile,
+          accGroupNature: parent.accGroupNature,
           accGroupChildIds: [],
           accGroupCreatedOn: now,
           accGroupCreatedBy: createdBy,
@@ -305,7 +309,8 @@ export class AccountsGroupService {
           ]);
         }
         const parent = nextParentId ? await this.ensureParentExists(nextParentId, tx) : null;
-        // Company follows the parent (root keeps its existing company); type is immutable post-create.
+        // Company, type, ledger profile, and nature all mirror the effective parent — never
+        // supplied by the client. A root (no parent) keeps its existing values for all four.
         const nextCompanyId = parent ? parent.accGroupCompanyId : existing.accGroupCompanyId;
         await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, accGroupId);
         const oldAncestorIds = isParentChanged
@@ -317,6 +322,12 @@ export class AccountsGroupService {
           accGroupModifiedOn: new Date(),
           accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
+        if (parent) {
+          // Inherited from the effective parent; left untouched for roots.
+          data.accGroupType = parent.accGroupType;
+          data.accLedgerProfile = parent.accLedgerProfile;
+          data.accGroupNature = parent.accGroupNature;
+        }
         this.applyOptionalFields(data, saveAccountGroupDto);
         const updated = await tx.accountGroup.update({
           where: {
@@ -385,6 +396,8 @@ export class AccountsGroupService {
         accGroupId: true,
         accGroupCompanyId: true,
         accGroupType: true,
+        accLedgerProfile: true,
+        accGroupNature: true,
       },
     });
     if (!parent) {
@@ -671,7 +684,8 @@ export class AccountsGroupService {
       accGroupDescription: record.accGroupDescription,
       accGroupTallyName: record.accGroupTallyName,
       accGroupPrimaryName: record.accGroupPrimaryName,
-      accGroupNature: record.accGroupNature,
+      accGroupNature: record.accGroupNature as AccountGroupNature | null,
+      accLedgerProfile: record.accLedgerProfile as AccLedgerProfile,
       accGroupTallyGuid: record.accGroupTallyGuid,
       accGroupTallyMasterId: record.accGroupTallyMasterId?.toString() ?? null,
       accGroupTallyAlterId: record.accGroupTallyAlterId?.toString() ?? null,

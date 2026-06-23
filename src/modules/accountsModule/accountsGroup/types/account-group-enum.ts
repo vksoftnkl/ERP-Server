@@ -1,6 +1,7 @@
-// Mirrors the CHECK constraints on accounts.account_groups:
-//   chk_acc_group_type   -> acc_group_type IN ('BALANCESHEET', 'PROFITANDLOSS')
-//   chk_acc_group_nature -> acc_group_nature IN ('Assets', 'Liabilities', 'Income', 'Expenses')
+// Allowed-value validation for accounts.account_groups lives here in the app
+// layer. The equivalent DB CHECK constraints (chk_acc_group_type,
+// chk_acc_group_nature, chk_acc_ledger_profile) were dropped in migration
+// 20260623100000_remove_acc_group_check_constraints_to_app_layer.
 export enum AccountGroupType {
   BALANCE_SHEET = 'BALANCESHEET',
   PROFIT_AND_LOSS = 'PROFITANDLOSS',
@@ -11,4 +12,13 @@ export enum AccountGroupNature {
   LIABILITIES = 'Liabilities',
   INCOME = 'Income',
   EXPENSES = 'Expenses',
+}
+
+export enum AccLedgerProfile {
+  GENERAL = 'General',
+  TAX = 'Tax',
+  BANK = 'Bank',
+  PARTY = 'Party',
+  SALES_PURCHASE = 'SalesPurchase',
+  CASH = 'Cash',
 }

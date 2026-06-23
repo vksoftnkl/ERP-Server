@@ -1,6 +1,8 @@
 import { Type } from 'class-transformer';
-import { LedGstPartyRegType, LedObType } from '@prisma/client';
+import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
+import { LedgerBankAccountItemDto } from './ledger-bank-account-item.dto';
 import {
+  IsArray,
   IsDate,
   IsEmail,
   IsEnum,
@@ -9,6 +11,7 @@ import {
   IsOptional,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
@@ -383,4 +386,19 @@ export class SaveAccountLedgerMasterDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableString(250)
   ledRemarks?: string | null;
+
+  @ApiPropertyOptional({
+    type: LedgerBankAccountItemDto,
+    isArray: true,
+    description:
+      'Bank accounts to persist alongside the ledger. On create every item is inserted; ' +
+      'on update an item with `lbaId` updates that row, an item without `lbaId` is inserted. ' +
+      'Omitting the array (or sending an empty one) leaves existing bank accounts untouched — ' +
+      'use the dedicated delete endpoint to remove them.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LedgerBankAccountItemDto)
+  ledgerBankAccount?: LedgerBankAccountItemDto[];
 }

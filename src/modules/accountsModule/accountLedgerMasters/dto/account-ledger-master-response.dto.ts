@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { LedGstPartyRegType, LedObType } from '@prisma/client';
+import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
+import { LedgerBankAccountPayloadDto } from '../../ledgerBankAccount/dto/ledger-bank-account-response.dto';
 export class AccountLedgerMasterErrorFieldDto {
   @ApiProperty({ example: 'ledName' })
   field!: string;
@@ -241,6 +242,9 @@ export class AccountLedgerMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   ledModifiedBy!: string | null;
+
+  @ApiProperty({ type: LedgerBankAccountPayloadDto, isArray: true })
+  ledgerBankAccount!: LedgerBankAccountPayloadDto[];
 }
 
 export class AccountLedgerMasterDeleteResultDto {
@@ -271,4 +275,64 @@ export class AccountLedgerMasterSuccessDeleteDto {
 
   @ApiProperty({ type: AccountLedgerMasterDeleteResultDto })
   data!: AccountLedgerMasterDeleteResultDto;
+}
+
+export class AccountLedgerMasterSuccessListDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Account ledgers saved successfully' })
+  message!: string;
+
+  @ApiProperty({ type: AccountLedgerMasterPayloadDto, isArray: true })
+  data!: AccountLedgerMasterPayloadDto[];
+}
+
+export class AccountLedgerMasterBankAccountSingleDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Ledger bank account fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: LedgerBankAccountPayloadDto })
+  data!: LedgerBankAccountPayloadDto;
+}
+
+export class AccountLedgerMasterBankAccountListDataDto {
+  @ApiProperty({ type: LedgerBankAccountPayloadDto, isArray: true })
+  data!: LedgerBankAccountPayloadDto[];
+
+  @ApiProperty({ example: 2, description: 'Number of active bank accounts for the ledger' })
+  total!: number;
+}
+
+export class AccountLedgerMasterBankAccountListDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Ledger bank accounts fetched successfully' })
+  message!: string;
+
+  @ApiProperty({ type: AccountLedgerMasterBankAccountListDataDto })
+  data!: AccountLedgerMasterBankAccountListDataDto;
+}
+
+export class AccountLedgerMasterBankAccountsDeleteResultDto {
+  @ApiProperty({ format: 'uuid' })
+  lbaId!: string;
+
+  @ApiProperty({ example: true })
+  deleted!: true;
+}
+
+export class AccountLedgerMasterBankAccountsDeleteDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Ledger bank account deleted successfully' })
+  message!: string;
+
+  @ApiProperty({ type: AccountLedgerMasterBankAccountsDeleteResultDto })
+  data!: AccountLedgerMasterBankAccountsDeleteResultDto;
 }

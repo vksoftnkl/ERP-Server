@@ -92,6 +92,9 @@ export class AccountGroupPayloadDto {
   @ApiProperty()
   accGroupIsDefault!: boolean;
 
+  @ApiProperty()
+  accLedgerProfile!: string;
+
 
 }
 

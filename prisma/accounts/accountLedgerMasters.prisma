@@ -1,14 +1,3 @@
-enum LedGstPartyRegType {
-  REGULAR
-  COMPOSITION
-  UNREGISTERED
-  @@schema("accounts")
-}
-enum LedObType {
-  DR
-  CR
-  @@schema("accounts")
-}
 model AccLedgerMaster {
   ledId                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("led_id")
   ledCompanyId             String    @db.Uuid                                        @map("led_company_id")
@@ -58,7 +47,9 @@ model AccLedgerMaster {
   ledRegionStateName       String?   @db.VarChar(100)                                 @map("led_region_state_name")
   ledRegionCountry         String?   @default("India") @db.VarChar(60)                @map("led_region_country")
   // 6) GST / Statutory
-  ledGstPartyRegType       LedGstPartyRegType?                                         @map("led_gst_party_reg_type")
+  // Allowed values (REGULAR/COMPOSITION/UNREGISTERED) validated in the app layer
+  // (accountLedgerMasters LedGstPartyRegType enum), not a DB enum type.
+  ledGstPartyRegType       String?   @db.VarChar(20)                                  @map("led_gst_party_reg_type")
   ledGstinNo               String?   @db.VarChar(15)                                  @map("led_gstin_no")
   ledPanNo                 String?   @db.VarChar(10)                                  @map("led_pan_no")
   ledAadharNo              String?   @db.VarChar(20)                                  @map("led_aadhar_no")
@@ -85,7 +76,9 @@ model AccLedgerMaster {
   ledIsTcsApplicable       Boolean   @default(false)                                   @map("led_is_tcs_applicable")
   // 9) Opening / Running Balance
   ledObAmount              Decimal   @default(0) @db.Decimal                          @map("led_ob_amount")
-  ledObType                LedObType @default(DR)                                      @map("led_ob_type")
+  // Allowed values (DR/CR) validated in the app layer (accountLedgerMasters
+  // LedObType enum), not a DB enum type.
+  ledObType                String    @default("DR") @db.VarChar(2)                     @map("led_ob_type")
   ledObAsOn                DateTime? @db.Date                                          @map("led_ob_as_on")
   ledTotalDr               Decimal   @default(0) @db.Decimal                          @map("led_total_dr")
   ledTotalCr               Decimal   @default(0) @db.Decimal                          @map("led_total_cr")

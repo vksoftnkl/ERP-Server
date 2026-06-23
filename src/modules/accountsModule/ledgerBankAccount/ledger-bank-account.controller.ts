@@ -13,6 +13,7 @@ import {
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -44,11 +45,48 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('ledger-bank-accounts')
 @UseFilters(LedgerBankAccountExceptionFilter)
 export class LedgerBankAccountController {
-  constructor(private readonly ledgerBankAccountService: LedgerBankAccountService) { }
+  constructor(private readonly ledgerBankAccountService: LedgerBankAccountService) {}
 
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update ledger bank account (by lbaId presence)' })
+  @ApiBody({
+    type: SaveLedgerBankAccountDto,
+    examples: {
+      createBankAccount: {
+        summary: 'Create a new bank account for a ledger',
+        value: {
+          lbaLedgerId: '0199b3a4-1c2d-7e3f-8a9b-0c1d2e3f4a5b',
+          lbaCompanyId: '0199b3a4-1111-7222-8333-444455556666',
+          lbaAccountHolder: 'Acme Industries Pvt Ltd',
+          lbaBankName: 'HDFC Bank',
+          lbaBranchName: 'MG Road',
+          lbaAccountNo: '50100123456789',
+          lbaIfscCode: 'HDFC0001234',
+          lbaMicrCode: '560240002',
+          lbaAccountType: 'CURRENT',
+          lbaUpiId: 'acme@hdfcbank',
+          lbaChequeName: 'Acme Industries',
+          lbaIsDefault: true,
+          lbaIsActive: true,
+          lbaRemarks: 'Primary settlement account',
+        },
+      },
+      updateBankAccount: {
+        summary: 'Update an existing bank account (include lbaId)',
+        value: {
+          lbaId: '0199b3a4-7777-7888-8999-aaaabbbbcccc',
+          lbaLedgerId: '0199b3a4-1c2d-7e3f-8a9b-0c1d2e3f4a5b',
+          lbaAccountHolder: 'Acme Industries Pvt Ltd',
+          lbaBankName: 'HDFC Bank',
+          lbaBranchName: 'Indiranagar',
+          lbaAccountNo: '50100123456789',
+          lbaIfscCode: 'HDFC0005678',
+          lbaIsDefault: false,
+        },
+      },
+    },
+  })
   @ApiCreatedResponse({ type: LedgerBankAccountSuccessSingleDto })
   @ApiBadRequestResponse({ type: LedgerBankAccountErrorResponseDto })
   @ApiConflictResponse({ type: LedgerBankAccountErrorResponseDto })

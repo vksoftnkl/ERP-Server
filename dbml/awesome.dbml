@@ -17,6 +17,7 @@ Table account_groups {
   accGroupTallyName String
   accGroupPrimaryName String
   accGroupNature String
+  accLedgerProfile String [not null, default: 'General']
   accGroupTallyGuid String
   accGroupTallyMasterId BigInt
   accGroupTallyAlterId BigInt
@@ -86,7 +87,7 @@ Table acc_ledger_master {
   ledRegionDistrict String
   ledRegionStateName String
   ledRegionCountry String [default: 'India']
-  ledGstPartyRegType LedGstPartyRegType
+  ledGstPartyRegType String
   ledGstinNo String
   ledPanNo String
   ledAadharNo String
@@ -110,7 +111,7 @@ Table acc_ledger_master {
   ledTdsNatureOfPayment String
   ledIsTcsApplicable Boolean [not null, default: false]
   ledObAmount Decimal [not null, default: 0]
-  ledObType LedObType [not null, default: 'DR']
+  ledObType String [not null, default: 'DR']
   ledObAsOn DateTime
   ledTotalDr Decimal [not null, default: 0]
   ledTotalCr Decimal [not null, default: 0]
@@ -2849,17 +2850,6 @@ Table physical_stock_header {
   godown godown_locations [not null]
   details physical_stock_detail [not null]
   batchDetails physical_stock_batch_detail [not null]
-}
-
-Enum LedGstPartyRegType {
-  REGULAR
-  COMPOSITION
-  UNREGISTERED
-}
-
-Enum LedObType {
-  DR
-  CR
 }
 
 Enum VoucherBillRefType {
