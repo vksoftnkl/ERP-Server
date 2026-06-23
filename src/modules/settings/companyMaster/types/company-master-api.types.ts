@@ -5,12 +5,8 @@ import type {
 } from 'src/common/types/module-api.types';
 export type CompanyMasterErrorDetail = ModuleApiErrorDetail;
 export type CompanyMasterErrorResponse = ModuleApiErrorResponse<CompanyMasterErrorDetail>;
-export type CompanyMasterSuccessResponse<
-  T,
-  TMeta = Record<string, unknown>,
-  TStyles = unknown,
-> = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-
+export type CompanyMasterSuccessResponse<T,TMeta = Record<string, unknown>, TStyles = unknown> =
+ModuleApiSuccessResponse<T,TMeta,TStyles>;
 export interface CompanyMasterPayload {
   compId: string;
   compCode: string | null;
@@ -62,7 +58,7 @@ export interface CompanyMasterPayload {
   compEwayIntraLimit: number;
   compEinvoiceDate: string | null;
   compEinvoiceInclEway: boolean | null;
-  compStylesheetId: string | null;
+  compStylesheetId: number | null;
   compBankId: string | null;
   compPriceFixing: string | null;
   compPrefixCode: string | null;

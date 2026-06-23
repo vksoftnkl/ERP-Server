@@ -1,13 +1,10 @@
 import { CacheTTL } from '@nestjs/cache-manager';
 import {
-  BadRequestException,
   Body,
   Controller,
   DefaultValuePipe,
   Delete,
   Get,
-  ParseBoolPipe,
-  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Query,
@@ -73,28 +70,16 @@ export class AccountLedgerMastersController {
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Get account ledger by id, or list account ledgers by company',
-    description:
-      'Pass ledId to fetch a single ledger. Otherwise pass ledCompanyId (with optional ' +
-      'ledIsActive/page/limit) to fetch a paginated list.',
+    summary: 'Get account ledger by id, or list all account ledgers',
+    description: 'Pass ledId to fetch a single ledger. Otherwise returns all account ledgers.',
   })
   @ApiQuery({ name: 'ledId', schema: { type: 'string', format: 'uuid' }, required: false })
-  @ApiQuery({ name: 'ledCompanyId', schema: { type: 'string', format: 'uuid' }, required: false })
-  @ApiQuery({ name: 'ledIsActive', schema: { type: 'boolean' }, required: false })
-  @ApiQuery({ name: 'page', schema: { type: 'integer', default: 1 }, required: false })
-  @ApiQuery({ name: 'limit', schema: { type: 'integer', default: 100 }, required: false })
   @ApiOkResponse({ type: AccountLedgerMasterSuccessSingleDto })
   @ApiBadRequestResponse({ type: AccountLedgerMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: AccountLedgerMasterErrorResponseDto })
   async get(
     @Query('ledId', new DefaultValuePipe(undefined), new ParseUUIDPipe({ version: '7', optional: true }))
     ledId: string | undefined,
-    @Query('ledCompanyId', new DefaultValuePipe(undefined), new ParseUUIDPipe({ version: '7', optional: true }))
-    ledCompanyId: string | undefined,
-    @Query('ledIsActive', new DefaultValuePipe(undefined), new ParseBoolPipe({ optional: true }))
-    ledIsActive: boolean | undefined,
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
   ): Promise<
     AccountLedgerMasterSuccessResponse<
       AccountLedgerMasterPayload | { data: AccountLedgerMasterPayload[]; total: number }
@@ -109,16 +94,7 @@ export class AccountLedgerMastersController {
       };
     }
 
-    if (!ledCompanyId) {
-      throw new BadRequestException('Either ledId or ledCompanyId must be provided');
-    }
-
-    const data = await this.accountLedgerMastersService.get({
-      ledCompanyId,
-      ledIsActive,
-      page,
-      limit,
-    });
+    const data = await this.accountLedgerMastersService.get();
     return {
       success: true,
       message: 'Account ledgers fetched successfully',

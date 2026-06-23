@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { AccountGroupNature, AccountGroupType } from '../types/account-group-enum';
 
 export class AccountGroupErrorFieldDto {
   @ApiProperty({ example: 'accGroupName' })
@@ -44,11 +45,40 @@ export class AccountGroupPayloadDto {
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   accGroupPrimaryName!: string | null;
 
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @ApiPropertyOptional({
+    enum: AccountGroupNature,
+    enumName: 'AccountGroupNature',
+    maxLength: 20,
+    nullable: true,
+  })
   accGroupNature!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 64, nullable: true })
+  accGroupTallyGuid!: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Tally master id (BigInt serialized as string)',
+  })
+  accGroupTallyMasterId!: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Tally alter id (BigInt serialized as string)',
+  })
+  accGroupTallyAlterId!: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   accGroupParentId!: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 150,
+    nullable: true,
+    description: 'Name of the parent account group',
+  })
+  accGroupParentName!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   accGroupSort!: number | null;
@@ -56,44 +86,13 @@ export class AccountGroupPayloadDto {
   @ApiProperty({ type: [String], example: [] })
   accGroupChildIds!: string[];
 
-  @ApiProperty({ minLength: 2, maxLength: 2 })
-  accGroupTypeCode!: string;
+  @ApiProperty({ enum: AccountGroupType, enumName: 'AccountGroupType', maxLength: 20 })
+  accGroupType!: string;
 
   @ApiProperty()
   accGroupIsDefault!: boolean;
 
-  @ApiProperty()
-  accGroupBehaveAsSubledger!: boolean;
 
-  @ApiProperty()
-  accGroupNetDebitCredit!: boolean;
-
-  @ApiProperty()
-  accGroupUsedForCalculation!: boolean;
-
-  @ApiProperty()
-  accGroupAffectsGrossProfit!: boolean;
-
-  @ApiProperty()
-  accGroupIsActive!: boolean;
-
-  @ApiProperty()
-  accGroupIsDeleted!: boolean;
-
-  @ApiPropertyOptional({ nullable: true })
-  accGroupSyncDate!: string | null;
-
-  @ApiProperty()
-  accGroupCreatedOn!: string;
-
-  @ApiPropertyOptional({ nullable: true })
-  accGroupCreatedBy!: string | null;
-
-  @ApiProperty()
-  accGroupModifiedOn!: string;
-
-  @ApiPropertyOptional({ nullable: true })
-  accGroupModifiedBy!: string | null;
 }
 
 export class AccountGroupDeleteResultDto {

@@ -207,10 +207,10 @@ export class SaveCompanyMasterDto {
   @OptionalBoolean()
   compEinvoiceInclEway?: boolean | null;
 
-  @ApiProperty({ type: String, format: 'color', nullable: true })
-  @Type(() => String)
-  @IsString()
-  compStylesheetId!: string | null;
+  @ApiProperty({ type: Number, format: 'color', nullable: true })
+  @Type(() => Number)
+  @IsNumber()
+  compStylesheetId!: number | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
@@ -257,8 +257,4 @@ export class SaveCompanyMasterDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compRemarks?: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  @NullableString()
-  compAuthorizeSignature?: string | null;
 }

@@ -20,10 +20,16 @@ export class AccountLedgerMasterPayloadDto {
   ledId!: string;
   @ApiPropertyOptional({ nullable: true })
   ledCompanyId!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the company' })
+  ledCompanyName!: string | null;
   @ApiProperty({ format: 'uuid' })
   ledBranchId!: string;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the branch' })
+  ledBranchName!: string | null;
   @ApiProperty({ format: 'uuid' })
   ledGroupId!: string;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the account group' })
+  ledGroupName!: string | null;
   @ApiProperty({ maxLength: 200 })
   ledName!: string;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
@@ -36,8 +42,24 @@ export class AccountLedgerMasterPayloadDto {
   ledTallyGroupName!: string | null;
   @ApiPropertyOptional({ maxLength: 64, nullable: true })
   ledTallyGuid!: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Tally master id (BigInt serialized as string)',
+  })
+  ledTallyMasterId!: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'Tally alter id (BigInt serialized as string)',
+  })
+  ledTallyAlterId!: string | null;
   @ApiProperty()
   ledCategory!: string;
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  ledLedgerType!: string | null;
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  ledMailingName!: string | null;
   @ApiProperty()
   ledIsBillByBill!: boolean;
   @ApiProperty()
@@ -112,23 +134,56 @@ export class AccountLedgerMasterPayloadDto {
   @ApiProperty()
   ledIsSez!: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
-  ledChequeName!: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  ledTypeOfSupply!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  ledHsnSac!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  ledBankName!: string | null;
+  ledGstRate!: number | null;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  ledTaxability!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  ledGstPartyType!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  ledTanNo!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 21, nullable: true })
+  ledCin!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 25, nullable: true })
+  ledUdyamNo!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  ledMsmeType!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  ledGstDutyHead!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  ledBankBranch!: string | null;
+  ledTaxRate!: number | null;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  ledRoundingMethod!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  ledBankAcNo!: string | null;
+  ledRoundingLimit!: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  ledBankIfsc!: string | null;
+  @ApiProperty()
+  ledIsTdsApplicable!: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
-  ledUpiId!: string | null;
+  @ApiPropertyOptional({ maxLength: 40, nullable: true })
+  ledTdsDeducteeType!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 80, nullable: true })
+  ledTdsNatureOfPayment!: string | null;
+
+  @ApiProperty()
+  ledIsTcsApplicable!: boolean;
 
   @ApiProperty()
   ledObAmount!: number;
@@ -150,6 +205,9 @@ export class AccountLedgerMasterPayloadDto {
 
   @ApiProperty()
   ledTotalBalance!: number;
+
+  @ApiPropertyOptional({ nullable: true })
+  ledSortOrder!: number | null;
 
   @ApiProperty()
   ledIsActive!: boolean;

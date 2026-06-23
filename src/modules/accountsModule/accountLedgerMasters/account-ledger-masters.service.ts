@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AccLedgerMaster, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveAccountLedgerMasterDto } from './dto/save-account-ledger-master.dto';
@@ -24,6 +24,17 @@ import { RequestContextService } from '../../../common/request-context/request-c
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 
+// Related master names resolved alongside the ledger payload.
+const ACCOUNT_LEDGER_MASTER_RELATIONS = {
+  company: { select: { compName: true } },
+  branches: { select: { brName: true } },
+  accountGroup: { select: { accGroupName: true } },
+} satisfies Prisma.AccLedgerMasterInclude;
+
+type AccLedgerMasterWithRelations = Prisma.AccLedgerMasterGetPayload<{
+  include: typeof ACCOUNT_LEDGER_MASTER_RELATIONS;
+}>;
+
 type AccountLedgerWriteClient = AccountsWriteClient;
 
 @Injectable()
@@ -45,29 +56,19 @@ export class AccountLedgerMastersService {
 
   // Fetch a single ledger by id
   async get(params: { ledId: string }): Promise<AccountLedgerMasterPayload>;
-  // Fetch a paginated list
-  async get(params: {
-    ledCompanyId: string;
-    ledIsActive?: boolean;
-    page: number;
-    limit: number;
-  }): Promise<{ data: AccountLedgerMasterPayload[]; total: number }>;
+  // Fetch the full list
+  async get(): Promise<{ data: AccountLedgerMasterPayload[]; total: number }>;
   // Implementation
-  async get(params: {
-    ledId?: string;
-    ledCompanyId?: string;
-    ledIsActive?: boolean;
-    page?: number;
-    limit?: number;
-  }): Promise<
+  async get(params: { ledId?: string } = {}): Promise<
     AccountLedgerMasterPayload | { data: AccountLedgerMasterPayload[]; total: number }
   > {
-    const { ledId, ledCompanyId, ledIsActive, page = 1, limit = 10 } = params;
+    const { ledId } = params;
 
     // --- getById branch ---
     if (ledId) {
       const record = await this.prisma.accLedgerMaster.findFirst({
         where: { ledId, ledIsDeleted: false },
+        include: ACCOUNT_LEDGER_MASTER_RELATIONS,
       });
       if (!record) {
         throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
@@ -80,17 +81,12 @@ export class AccountLedgerMastersService {
     }
 
     // --- list branch ---
-    const where: Prisma.AccLedgerMasterWhereInput = {
-      ledCompanyId,
-      ledIsDeleted: false,
-      ...(ledIsActive !== undefined && { ledIsActive }),
-    };
+    const where: Prisma.AccLedgerMasterWhereInput = { ledIsDeleted: false };
     const [records, total] = await Promise.all([
       this.prisma.accLedgerMaster.findMany({
         where,
-        skip: (page - 1) * limit,
-        take: limit,
         orderBy: { ledName: 'asc' },
+        include: ACCOUNT_LEDGER_MASTER_RELATIONS,
       }),
       this.prisma.accLedgerMaster.count({ where }),
     ]);
@@ -104,6 +100,7 @@ export class AccountLedgerMastersService {
           ledId,
           ledIsDeleted: false,
         },
+        include: ACCOUNT_LEDGER_MASTER_RELATIONS,
       });
       if (!existing) {
         throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
@@ -197,7 +194,10 @@ export class AccountLedgerMastersService {
           ledCreatedBy: createdBy,
         };
         this.applyOptionalFields(data, saveAccountLedgerMasterDto);
-        const created = await tx.accLedgerMaster.create({ data });
+        const created = await tx.accLedgerMaster.create({
+          data,
+          include: ACCOUNT_LEDGER_MASTER_RELATIONS,
+        });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
           {
@@ -237,6 +237,7 @@ export class AccountLedgerMastersService {
             ledId,
             ledIsDeleted: false,
           },
+          include: ACCOUNT_LEDGER_MASTER_RELATIONS,
         });
         if (!existing) {
           throwAccountsNotFound<AccountLedgerMasterErrorDetail>(
@@ -276,6 +277,7 @@ export class AccountLedgerMastersService {
             ledId,
           },
           data,
+          include: ACCOUNT_LEDGER_MASTER_RELATIONS,
         });
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
@@ -387,6 +389,12 @@ export class AccountLedgerMastersService {
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledCategory')) {
       data.ledCategory = saveAccountLedgerMasterDto.ledCategory;
     }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledLedgerType')) {
+      data.ledLedgerType = saveAccountLedgerMasterDto.ledLedgerType;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledMailingName')) {
+      data.ledMailingName = saveAccountLedgerMasterDto.ledMailingName;
+    }
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsBillByBill')) {
       data.ledIsBillByBill = saveAccountLedgerMasterDto.ledIsBillByBill;
     }
@@ -486,23 +494,56 @@ export class AccountLedgerMastersService {
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsSez')) {
       data.ledIsSez = saveAccountLedgerMasterDto.ledIsSez;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledChequeName')) {
-      data.ledHolderName = saveAccountLedgerMasterDto.ledChequeName;
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTypeOfSupply')) {
+      data.ledTypeOfSupply = saveAccountLedgerMasterDto.ledTypeOfSupply;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankName')) {
-      data.ledBankName = saveAccountLedgerMasterDto.ledBankName;
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledHsnSac')) {
+      data.ledHsnSac = saveAccountLedgerMasterDto.ledHsnSac;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankBranch')) {
-      data.ledBankBranch = saveAccountLedgerMasterDto.ledBankBranch;
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledGstRate')) {
+      data.ledGstRate = saveAccountLedgerMasterDto.ledGstRate;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankAcNo')) {
-      data.ledBankAcNo = saveAccountLedgerMasterDto.ledBankAcNo;
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTaxability')) {
+      data.ledTaxability = saveAccountLedgerMasterDto.ledTaxability;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledBankIfsc')) {
-      data.ledBankIfsc = saveAccountLedgerMasterDto.ledBankIfsc;
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledGstPartyType')) {
+      data.ledGstPartyType = saveAccountLedgerMasterDto.ledGstPartyType;
     }
-    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledUpiId')) {
-      data.ledUpiId = saveAccountLedgerMasterDto.ledUpiId;
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTanNo')) {
+      data.ledTanNo = saveAccountLedgerMasterDto.ledTanNo;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledCin')) {
+      data.ledCin = saveAccountLedgerMasterDto.ledCin;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledUdyamNo')) {
+      data.ledUdyamNo = saveAccountLedgerMasterDto.ledUdyamNo;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledMsmeType')) {
+      data.ledMsmeType = saveAccountLedgerMasterDto.ledMsmeType;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledGstDutyHead')) {
+      data.ledGstDutyHead = saveAccountLedgerMasterDto.ledGstDutyHead;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTaxRate')) {
+      data.ledTaxRate = saveAccountLedgerMasterDto.ledTaxRate;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledRoundingMethod')) {
+      data.ledRoundingMethod = saveAccountLedgerMasterDto.ledRoundingMethod;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledRoundingLimit')) {
+      data.ledRoundingLimit = saveAccountLedgerMasterDto.ledRoundingLimit;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsTdsApplicable')) {
+      data.ledIsTdsApplicable = saveAccountLedgerMasterDto.ledIsTdsApplicable;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTdsDeducteeType')) {
+      data.ledTdsDeducteeType = saveAccountLedgerMasterDto.ledTdsDeducteeType;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTdsNatureOfPayment')) {
+      data.ledTdsNatureOfPayment = saveAccountLedgerMasterDto.ledTdsNatureOfPayment;
+    }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsTcsApplicable')) {
+      data.ledIsTcsApplicable = saveAccountLedgerMasterDto.ledIsTcsApplicable;
     }
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledObAmount')) {
       data.ledObAmount = saveAccountLedgerMasterDto.ledObAmount;
@@ -522,6 +563,9 @@ export class AccountLedgerMastersService {
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledTotalBalance')) {
       data.ledTotalBalance = saveAccountLedgerMasterDto.ledTotalBalance;
     }
+    if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledSortOrder')) {
+      data.ledSortOrder = saveAccountLedgerMasterDto.ledSortOrder;
+    }
     if (hasOwnProperty(saveAccountLedgerMasterDto, 'ledIsActive')) {
       data.ledIsActive = saveAccountLedgerMasterDto.ledIsActive;
     }
@@ -539,19 +583,26 @@ export class AccountLedgerMastersService {
     }
   }
 
-  private toPayload(record: AccLedgerMaster): AccountLedgerMasterPayload {
+  private toPayload(record: AccLedgerMasterWithRelations): AccountLedgerMasterPayload {
     return {
       ledId: record.ledId,
       ledCompanyId: record.ledCompanyId,
+      ledCompanyName: record.company?.compName ?? null,
       ledBranchId: record.ledBranchId,
+      ledBranchName: record.branches?.brName ?? null,
       ledGroupId: record.ledGroupId,
+      ledGroupName: record.accountGroup?.accGroupName ?? null,
       ledName: record.ledName,
       ledAlias: record.ledAlias,
       ledShort: record.ledShort,
       ledTallyName: record.ledTallyName,
       ledTallyGroupName: record.ledTallyGroupName,
       ledTallyGuid: record.ledTallyGuid,
+      ledTallyMasterId: record.ledTallyMasterId?.toString() ?? null,
+      ledTallyAlterId: record.ledTallyAlterId?.toString() ?? null,
       ledCategory: record.ledCategory,
+      ledLedgerType: record.ledLedgerType,
+      ledMailingName: record.ledMailingName,
       ledIsBillByBill: record.ledIsBillByBill,
       ledIsCostCenterReq: record.ledIsCostCenterReq,
       ledIsInterestApplicable: record.ledIsInterestApplicable,
@@ -585,18 +636,30 @@ export class AccountLedgerMastersService {
       ledAadharNo: record.ledAadharNo,
       ledEcommerceGstin: record.ledEcommerceGstin,
       ledIsSez: record.ledIsSez,
-      ledChequeName: record.ledHolderName,
-      ledBankName: record.ledBankName,
-      ledBankBranch: record.ledBankBranch,
-      ledBankAcNo: record.ledBankAcNo,
-      ledBankIfsc: record.ledBankIfsc,
-      ledUpiId: record.ledUpiId,
+      ledTypeOfSupply: record.ledTypeOfSupply,
+      ledHsnSac: record.ledHsnSac,
+      ledGstRate: toNullableNumber(record.ledGstRate),
+      ledTaxability: record.ledTaxability,
+      ledGstPartyType: record.ledGstPartyType,
+      ledTanNo: record.ledTanNo,
+      ledCin: record.ledCin,
+      ledUdyamNo: record.ledUdyamNo,
+      ledMsmeType: record.ledMsmeType,
+      ledGstDutyHead: record.ledGstDutyHead,
+      ledTaxRate: toNullableNumber(record.ledTaxRate),
+      ledRoundingMethod: record.ledRoundingMethod,
+      ledRoundingLimit: toNullableNumber(record.ledRoundingLimit),
+      ledIsTdsApplicable: record.ledIsTdsApplicable,
+      ledTdsDeducteeType: record.ledTdsDeducteeType,
+      ledTdsNatureOfPayment: record.ledTdsNatureOfPayment,
+      ledIsTcsApplicable: record.ledIsTcsApplicable,
       ledObAmount: toNumber(record.ledObAmount),
       ledObType: record.ledObType,
       ledObAsOn: record.ledObAsOn ? record.ledObAsOn.toISOString() : null,
       ledTotalDr: toNumber(record.ledTotalDr),
       ledTotalCr: toNumber(record.ledTotalCr),
       ledTotalBalance: toNumber(record.ledTotalBalance),
+      ledSortOrder: record.ledSortOrder,
       ledIsActive: record.ledIsActive,
       ledIsDeleted: record.ledIsDeleted,
       ledAllowEdit: record.ledAllowEdit,

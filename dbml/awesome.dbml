@@ -17,11 +17,15 @@ Table account_groups {
   accGroupTallyName String
   accGroupPrimaryName String
   accGroupNature String
+  accGroupTallyGuid String
+  accGroupTallyMasterId BigInt
+  accGroupTallyAlterId BigInt
   accGroupParentId String
   accGroupSort Int
   accGroupChildIds String[] [not null]
-  accGroupTypeCode String [not null]
+  accGroupType String [not null]
   accGroupIsDefault Boolean [not null, default: false]
+  accGroupIsReserved Boolean [not null, default: false]
   accGroupBehaveAsSubledger Boolean [not null, default: false]
   accGroupNetDebitCredit Boolean [not null, default: false]
   accGroupUsedForCalculation Boolean [not null, default: false]
@@ -50,7 +54,11 @@ Table acc_ledger_master {
   ledTallyName String
   ledTallyGroupName String
   ledTallyGuid String
+  ledTallyMasterId BigInt
+  ledTallyAlterId BigInt
   ledCategory String [not null, default: 'GENERAL']
+  ledLedgerType String
+  ledMailingName String
   ledIsBillByBill Boolean [not null, default: false]
   ledIsCostCenterReq Boolean [not null, default: false]
   ledIsInterestApplicable Boolean [not null, default: false]
@@ -84,18 +92,30 @@ Table acc_ledger_master {
   ledAadharNo String
   ledEcommerceGstin String
   ledIsSez Boolean [not null, default: false]
-  ledHolderName String
-  ledBankName String
-  ledBankBranch String
-  ledBankAcNo String
-  ledBankIfsc String
-  ledUpiId String
+  ledTypeOfSupply String
+  ledHsnSac String
+  ledGstRate Decimal
+  ledTaxability String
+  ledGstPartyType String
+  ledTanNo String
+  ledCin String
+  ledUdyamNo String
+  ledMsmeType String
+  ledGstDutyHead String
+  ledTaxRate Decimal
+  ledRoundingMethod String
+  ledRoundingLimit Decimal
+  ledIsTdsApplicable Boolean [not null, default: false]
+  ledTdsDeducteeType String
+  ledTdsNatureOfPayment String
+  ledIsTcsApplicable Boolean [not null, default: false]
   ledObAmount Decimal [not null, default: 0]
   ledObType LedObType [not null, default: 'DR']
   ledObAsOn DateTime
   ledTotalDr Decimal [not null, default: 0]
   ledTotalCr Decimal [not null, default: 0]
   ledTotalBalance Decimal [not null, default: 0]
+  ledSortOrder Int
   ledIsActive Boolean [not null, default: true]
   ledIsDeleted Boolean [not null, default: false]
   ledAllowEdit Boolean [not null, default: false]

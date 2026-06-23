@@ -16,6 +16,7 @@ import {
   NullableDate,
   NullableString,
   OptionalBoolean,
+  OptionalInteger,
   OptionalUuid,
   RequiredUuid,
   SkipOnNullish,
@@ -71,6 +72,14 @@ export class SaveAccountLedgerMasterDto {
   @IsOptional()
   @TrimmedString(30)
   ledCategory?: string;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableString(20)
+  ledLedgerType?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 200, nullable: true })
+  @NullableString(200)
+  ledMailingName?: string | null;
 
   @ApiPropertyOptional()
   @OptionalBoolean()
@@ -227,32 +236,88 @@ export class SaveAccountLedgerMasterDto {
   @OptionalBoolean()
   ledIsSez?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 80, nullable: true })
-  @NullableString(80)
-  ledChequeName?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableString(10)
+  ledTypeOfSupply?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @NullableString(120)
-  ledBankName?: string | null;
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableString(10)
+  ledHsnSac?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 120, nullable: true })
-  @NullableString(120)
-  ledBankBranch?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 40, nullable: true })
-  @NullableString(40)
-  ledBankAcNo?: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledGstRate?: number;
 
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  @NullableString(15)
+  ledTaxability?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 30, nullable: true })
+  @NullableString(30)
+  ledGstPartyType?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
   @IsOptional()
   @Transform(({ value }) => toNullableUpperString(value))
   @SkipOnNullish()
-  @TrimmedString(15)
-  ledBankIfsc?: string | null;
+  @TrimmedString(10)
+  ledTanNo?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 21, nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(21)
+  ledCin?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 25, nullable: true })
+  @IsOptional()
+  @Transform(({ value }) => toNullableUpperString(value))
+  @SkipOnNullish()
+  @TrimmedString(25)
+  ledUdyamNo?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @NullableString(10)
+  ledMsmeType?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableString(20)
+  ledGstDutyHead?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledTaxRate?: number;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  @NullableString(15)
+  ledRoundingMethod?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  ledRoundingLimit?: number;
+
+  @ApiPropertyOptional()
+  @OptionalBoolean()
+  ledIsTdsApplicable?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 40, nullable: true })
+  @NullableString(40)
+  ledTdsDeducteeType?: string | null;
 
   @ApiPropertyOptional({ maxLength: 80, nullable: true })
   @NullableString(80)
-  ledUpiId?: string | null;
+  ledTdsNatureOfPayment?: string | null;
+
+  @ApiPropertyOptional()
+  @OptionalBoolean()
+  ledIsTcsApplicable?: boolean;
 
   @ApiPropertyOptional({ minimum: 0, default: 0 })
   @IsOptional()
@@ -294,6 +359,10 @@ export class SaveAccountLedgerMasterDto {
   @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   ledTotalBalance?: number;
+
+  @ApiPropertyOptional()
+  @OptionalInteger()
+  ledSortOrder?: number;
 
   @ApiPropertyOptional()
   @OptionalBoolean()

@@ -16,12 +16,14 @@ import {
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AccountGroupType } from './types/account-group-enum';
 const ACCOUNT_GROUP_TABLE_NAME = 'account groups';
 const ACCOUNT_GROUP_AUDIT_SCREEN_NAME = 'Account Group Master';
 type AccountGroupWriteClient = AccountsWriteClient;
 type AccountGroupParentRecord = {
   accGroupId: string;
   accGroupCompanyId: string | null;
+  accGroupType: string;
 };
 @Injectable()
 export class AccountsGroupService {
@@ -51,7 +53,8 @@ export class AccountsGroupService {
         `No active account group found with id ${accGroupId}`,
       );
     }
-    return this.toPayload(record);
+    const parentName = await this.getParentName(record.accGroupParentId);
+    return this.toPayload(record, parentName);
   }
   async softDelete(accGroupId: string): Promise<{ accGroupId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -67,6 +70,14 @@ export class AccountsGroupService {
           'accGroupId',
           `No active account group found with id ${accGroupId}`,
         );
+      }
+      if (existing.accGroupIsReserved) {
+        throwAccountsBadRequest<AccountGroupErrorDetail>('Reserved account group cannot be deleted', [
+          {
+            field: 'accGroupId',
+            message: `Account group ${accGroupId} is reserved and cannot be deleted`,
+          },
+        ]);
       }
       const hasChildren = await tx.accountGroup.count({
         where: {
@@ -162,26 +173,24 @@ export class AccountsGroupService {
           saveAccountGroupDto.accGroupName,
           'accGroupName',
         );
-        const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
-        const parent = saveAccountGroupDto.accGroupParentId
-          ? await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx)
-          : null;
-        const requestedCompanyId = hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
-          ? (saveAccountGroupDto.accGroupCompanyId ?? null)
-          : undefined;
-        const companyId = await this.resolveCompanyId(
-          requestedCompanyId,
-          null,
-          parent?.accGroupCompanyId ?? null,
-          tx,
-        );
+        if (!saveAccountGroupDto.accGroupParentId) {
+          throwAccountsBadRequest<AccountGroupErrorDetail>('Parent account group is required', [
+            {
+              field: 'accGroupParentId',
+              message: 'accGroupParentId is required to create an account group',
+            },
+          ]);
+        }
+        // Type and company are inherited from the parent — never supplied by the client.
+        const parent = await this.ensureParentExists(saveAccountGroupDto.accGroupParentId, tx);
+        const companyId = parent.accGroupCompanyId;
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
         const now = new Date();
         const createdBy = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
         const data: Prisma.AccountGroupUncheckedCreateInput = {
           accGroupCompanyId: companyId,
           accGroupName: normalizedName,
-          accGroupTypeCode: normalizedTypeCode,
+          accGroupType: parent.accGroupType,
           accGroupChildIds: [],
           accGroupCreatedOn: now,
           accGroupCreatedBy: createdBy,
@@ -199,12 +208,14 @@ export class AccountsGroupService {
             accGroupIsDeleted: false,
           },
         });
-        const payload = !refreshed
-          ? this.toPayload({
-              ...created,
-              accGroupChildIds: this.mergeChildIds(created.accGroupChildIds, [created.accGroupId]),
-            })
-          : this.toPayload(refreshed);
+        const finalRecord =
+          refreshed ??
+          ({
+            ...created,
+            accGroupChildIds: this.mergeChildIds(created.accGroupChildIds, [created.accGroupId]),
+          } as AccountGroup);
+        const parentName = await this.getParentName(finalRecord.accGroupParentId, tx);
+        const payload = this.toPayload(finalRecord, parentName);
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -256,11 +267,18 @@ export class AccountsGroupService {
             `No active account group found with id ${accGroupId}`,
           );
         }
+        if (existing.accGroupIsReserved) {
+          throwAccountsBadRequest<AccountGroupErrorDetail>('Reserved account group cannot be edited', [
+            {
+              field: 'accGroupId',
+              message: `Account group ${accGroupId} is reserved and cannot be edited`,
+            },
+          ]);
+        }
         const normalizedName = normalizeRequiredText<AccountGroupErrorDetail>(
           saveAccountGroupDto.accGroupName,
           'accGroupName',
         );
-        const normalizedTypeCode = this.normalizeTypeCode(saveAccountGroupDto.accGroupTypeCode);
         if (saveAccountGroupDto.accGroupParentId === accGroupId) {
           throwAccountsBadRequest<AccountGroupErrorDetail>(
             'Account group cannot be its own parent',
@@ -287,15 +305,8 @@ export class AccountsGroupService {
           ]);
         }
         const parent = nextParentId ? await this.ensureParentExists(nextParentId, tx) : null;
-        const requestedCompanyId = hasOwnProperty(saveAccountGroupDto, 'accGroupCompanyId')
-          ? (saveAccountGroupDto.accGroupCompanyId ?? null)
-          : undefined;
-        const nextCompanyId = await this.resolveCompanyId(
-          requestedCompanyId,
-          existing.accGroupCompanyId,
-          parent?.accGroupCompanyId ?? null,
-          tx,
-        );
+        // Company follows the parent (root keeps its existing company); type is immutable post-create.
+        const nextCompanyId = parent ? parent.accGroupCompanyId : existing.accGroupCompanyId;
         await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, accGroupId);
         const oldAncestorIds = isParentChanged
           ? await this.getAncestorIds(tx, existing.accGroupParentId)
@@ -303,7 +314,6 @@ export class AccountsGroupService {
         const data: Prisma.AccountGroupUncheckedUpdateInput = {
           accGroupCompanyId: nextCompanyId,
           accGroupName: normalizedName,
-          accGroupTypeCode: normalizedTypeCode,
           accGroupModifiedOn: new Date(),
           accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
@@ -326,7 +336,10 @@ export class AccountsGroupService {
             accGroupIsDeleted: false,
           },
         });
-        const payload = this.toPayload(refreshed ?? updated);
+        const finalRecord = refreshed ?? updated;
+        const originalParentName = await this.getParentName(existing.accGroupParentId, tx);
+        const parentName = await this.getParentName(finalRecord.accGroupParentId, tx);
+        const payload = this.toPayload(finalRecord, parentName);
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -335,7 +348,7 @@ export class AccountsGroupService {
             screenType: 'master',
             pk: accGroupId,
             displayName: payload.accGroupName,
-            originalRecord: this.toPayload(existing),
+            originalRecord: this.toPayload(existing, originalParentName),
             modifiedRecord: payload,
             userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
             notes: 'Account group updated',
@@ -371,6 +384,7 @@ export class AccountsGroupService {
       select: {
         accGroupId: true,
         accGroupCompanyId: true,
+        accGroupType: true,
       },
     });
     if (!parent) {
@@ -382,49 +396,6 @@ export class AccountsGroupService {
       ]);
     }
     return parent;
-  }
-  private async ensureCompanyExists(compId: string, tx: AccountGroupWriteClient): Promise<void> {
-    const company = await tx.company.findFirst({
-      where: {
-        compId,
-        compIsDeleted: false,
-      },
-      select: {
-        compId: true,
-      },
-    });
-    if (!company) {
-      throwAccountsBadRequest<AccountGroupErrorDetail>('Company does not exist', [
-        {
-          field: 'accGroupCompanyId',
-          message: `No active company found with id ${compId}`,
-        },
-      ]);
-    }
-  }
-  private async resolveCompanyId(
-    requestedCompanyId: string | null | undefined,
-    fallbackCompanyId: string | null,
-    parentCompanyId: string | null,
-    tx: AccountGroupWriteClient,
-  ): Promise<string | null> {
-    let companyId = requestedCompanyId === undefined ? fallbackCompanyId : requestedCompanyId;
-    if (parentCompanyId !== null) {
-      if (companyId === null) {
-        companyId = parentCompanyId;
-      } else if (companyId !== parentCompanyId) {
-        throwAccountsBadRequest<AccountGroupErrorDetail>('Parent/company mismatch', [
-          {
-            field: 'accGroupCompanyId',
-            message: `accGroupCompanyId ${companyId} must match parent company id ${parentCompanyId}`,
-          },
-        ]);
-      }
-    }
-    if (companyId !== null) {
-      await this.ensureCompanyExists(companyId, tx);
-    }
-    return companyId;
   }
   private async ensureNameIsUnique(
     tx: AccountGroupWriteClient,
@@ -477,41 +448,11 @@ export class AccountsGroupService {
     if (hasOwnProperty(saveAccountGroupDto, 'accGroupDescription')) {
       data.accGroupDescription = saveAccountGroupDto.accGroupDescription;
     }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupTallyName')) {
-      data.accGroupTallyName = saveAccountGroupDto.accGroupTallyName;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupPrimaryName')) {
-      data.accGroupPrimaryName = saveAccountGroupDto.accGroupPrimaryName;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupNature')) {
-      data.accGroupNature = saveAccountGroupDto.accGroupNature;
-    }
     if (hasOwnProperty(saveAccountGroupDto, 'accGroupParentId')) {
       data.accGroupParentId = saveAccountGroupDto.accGroupParentId;
     }
     if (hasOwnProperty(saveAccountGroupDto, 'accGroupSort')) {
       data.accGroupSort = saveAccountGroupDto.accGroupSort;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupIsDefault')) {
-      data.accGroupIsDefault = saveAccountGroupDto.accGroupIsDefault;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupBehaveAsSubledger')) {
-      data.accGroupBehaveAsSubledger = saveAccountGroupDto.accGroupBehaveAsSubledger;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupNetDebitCredit')) {
-      data.accGroupNetDebitCredit = saveAccountGroupDto.accGroupNetDebitCredit;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupUsedForCalculation')) {
-      data.accGroupUsedForCalculation = saveAccountGroupDto.accGroupUsedForCalculation;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupAffectsGrossProfit')) {
-      data.accGroupAffectsGrossProfit = saveAccountGroupDto.accGroupAffectsGrossProfit;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupIsActive')) {
-      data.accGroupIsActive = saveAccountGroupDto.accGroupIsActive;
-    }
-    if (hasOwnProperty(saveAccountGroupDto, 'accGroupSyncDate')) {
-      data.accGroupSyncDate = saveAccountGroupDto.accGroupSyncDate;
     }
   }
   private async getAncestorIds(
@@ -699,19 +640,28 @@ export class AccountsGroupService {
     }
     return true;
   }
-  private normalizeTypeCode(typeCode: string): string {
-    const normalized = typeCode.trim().toUpperCase();
-    if (normalized.length !== 2) {
-      throwAccountsBadRequest<AccountGroupErrorDetail>('Validation failed', [
-        {
-          field: 'accGroupTypeCode',
-          message: 'accGroupTypeCode must be exactly 2 characters',
-        },
-      ]);
+  private async getParentName(
+    parentId: string | null,
+    client: AccountGroupWriteClient = this.prisma,
+  ): Promise<string | null> {
+    if (!parentId) {
+      return null;
     }
-    return normalized;
+    const parent = await client.accountGroup.findFirst({
+      where: {
+        accGroupId: parentId,
+        accGroupIsDeleted: false,
+      },
+      select: {
+        accGroupName: true,
+      },
+    });
+    return parent?.accGroupName ?? null;
   }
-  private toPayload(record: AccountGroup): AccountGroupPayload {
+  private toPayload(
+    record: AccountGroup,
+    accGroupParentName: string | null = null,
+  ): AccountGroupPayload {
     return {
       accGroupId: record.accGroupId,
       accGroupCompanyId: record.accGroupCompanyId,
@@ -722,11 +672,16 @@ export class AccountsGroupService {
       accGroupTallyName: record.accGroupTallyName,
       accGroupPrimaryName: record.accGroupPrimaryName,
       accGroupNature: record.accGroupNature,
+      accGroupTallyGuid: record.accGroupTallyGuid,
+      accGroupTallyMasterId: record.accGroupTallyMasterId?.toString() ?? null,
+      accGroupTallyAlterId: record.accGroupTallyAlterId?.toString() ?? null,
       accGroupParentId: record.accGroupParentId,
+      accGroupParentName,
       accGroupSort: record.accGroupSort,
       accGroupChildIds: record.accGroupChildIds,
-      accGroupTypeCode: record.accGroupTypeCode,
+      accGroupType: record.accGroupType as AccountGroupType,
       accGroupIsDefault: record.accGroupIsDefault,
+      accGroupIsReserved: record.accGroupIsReserved,
       accGroupBehaveAsSubledger: record.accGroupBehaveAsSubledger,
       accGroupNetDebitCredit: record.accGroupNetDebitCredit,
       accGroupUsedForCalculation: record.accGroupUsedForCalculation,
