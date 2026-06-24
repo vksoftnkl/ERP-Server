@@ -46,8 +46,8 @@ Table account_groups {
 
 Table acc_ledger_master {
   ledId String [pk]
-  ledCompanyId String [not null]
-  ledBranchId String [not null]
+  ledCompanyId String
+  ledBranchId String
   ledGroupId String [not null]
   ledName String [not null]
   ledAlias String
@@ -128,9 +128,9 @@ Table acc_ledger_master {
   ledCreatedBy String
   ledModifiedOn DateTime [default: `now()`, not null]
   ledModifiedBy String
-  company companys [not null]
+  company companys
   accountGroup account_groups [not null]
-  branches branch_master [not null]
+  branches branch_master
   bankAccounts acc_ledger_bank_accounts [not null]
   shipAddrs acc_ship_addrs [not null]
   tenders account_tender_master [not null]
@@ -855,25 +855,26 @@ Table emp_master {
 Table acc_ship_addrs {
   saaId String [pk]
   saaCompanyId String
+  saaBranchId String
   saaLedgerId String [not null]
   saaAddrType String [not null, default: 'SHIP_TO']
   saaIsDefault Boolean [not null, default: false]
   saaSort Int [not null, default: 0]
-  saaTrdnm String
+  saaTradeName String
   saaContactName String
   saaAddr1 String
   saaAddr2 String
   saaAddr3 String
-  saaLoc String
+  saaLocation String
   saaPin String
   saaStateCode String
   saaStateName String
+  saaCountryCode String [not null, default: 'IN']
   saaDistanceKm Int
   saaPhone String
   saaEmail String
-  saaGstin String
-  saaPan String
-  saaSyncDate DateTime
+  saaGstin String [not null]
+  saaSyncedOn DateTime
   saaIsActive Boolean [not null, default: true]
   saaIsDeleted Boolean [not null, default: false]
   saaCreatedOn DateTime [default: `now()`, not null]
@@ -882,6 +883,7 @@ Table acc_ship_addrs {
   saaModifiedBy String
   saaRemarks String
   company companys [note: 'Relations']
+  branches branch_master
   ledger acc_ledger_master [not null]
 }
 
@@ -2107,6 +2109,7 @@ Table branch_master {
   brPanNo String
   company companys [not null]
   accountLedgerMaster acc_ledger_master [not null]
+  shipAddrs acc_ship_addrs [not null]
   voucherBills acc_voucher_bills [not null]
   voucherCheques acc_voucher_cheques [not null]
   voucherDocDetails acc_voucher_doc_detail [not null]
@@ -3240,6 +3243,8 @@ Ref: emp_master.empDesignationId > employee_designations.edId
 Ref: emp_master.empDepartmentId > employee_departments.edptId
 
 Ref: acc_ship_addrs.saaCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_ship_addrs.saaBranchId > branch_master.brId [delete: Restrict]
 
 Ref: acc_ship_addrs.saaLedgerId > acc_ledger_master.ledId [delete: Restrict]
 

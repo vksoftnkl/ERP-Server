@@ -306,7 +306,7 @@ export class MasterLookupService {
             ...(contains
               ? {
                   OR: [
-                    { saaTrdnm: contains },
+                    { saaTradeName: contains },
                     { saaContactName: contains },
                     { ledger: { is: { ledName: contains } } },
                   ],
@@ -315,7 +315,7 @@ export class MasterLookupService {
           },
           select: {
             saaId: true,
-            saaTrdnm: true,
+            saaTradeName: true,
             saaContactName: true,
             ledger: { select: { ledName: true } },
           },
@@ -323,7 +323,7 @@ export class MasterLookupService {
           ...(take ? { take } : {}),
         });
         return rows.map((row) =>
-          this.toOption(row.saaId, row.saaTrdnm ?? row.saaContactName ?? row.ledger?.ledName ?? row.saaId),
+          this.toOption(row.saaId, row.saaTradeName ?? row.saaContactName ?? row.ledger?.ledName ?? row.saaId),
         );
       },
       employeeDepartments: this.simpleFetcher(

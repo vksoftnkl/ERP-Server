@@ -26,6 +26,9 @@ export class LedgerShippingAddressPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   saaCompanyId!: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  saaBranchId!: string | null;
+
   @ApiProperty({ format: 'uuid' })
   saaLedgerId!: string;
 
@@ -39,7 +42,7 @@ export class LedgerShippingAddressPayloadDto {
   saaSort!: number;
 
   @ApiPropertyOptional({ nullable: true })
-  saaTrdnm!: string | null;
+  saaTradeName!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   saaContactName!: string | null;
@@ -54,7 +57,7 @@ export class LedgerShippingAddressPayloadDto {
   saaAddr3!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  saaLoc!: string | null;
+  saaLocation!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   saaPin!: string | null;
@@ -65,6 +68,9 @@ export class LedgerShippingAddressPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   saaStateName!: string | null;
 
+  @ApiProperty()
+  saaCountryCode!: string;
+
   @ApiPropertyOptional({ nullable: true })
   saaDistanceKm!: number | null;
 
@@ -74,14 +80,11 @@ export class LedgerShippingAddressPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   saaEmail!: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  saaGstin!: string | null;
+  @ApiProperty()
+  saaGstin!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  saaPan!: string | null;
-
-  @ApiPropertyOptional({ nullable: true })
-  saaSyncDate!: string | null;
+  saaSyncedOn!: string | null;
 
   @ApiProperty()
   saaIsActive!: boolean;

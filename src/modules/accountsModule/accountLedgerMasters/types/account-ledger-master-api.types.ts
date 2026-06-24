@@ -1,4 +1,5 @@
 import type { LedGstPartyRegType, LedObType } from './account-ledger-master-enum';
+import type { AccLedgerProfile } from '../../accountsGroup/types/account-group-enum';
 import type { LedgerBankAccountPayload } from '../../ledgerBankAccount/types/ledger-bank-account-api.types';
 export type { AccountsErrorDetail as AccountLedgerMasterErrorDetail } from 'src/common/types/module-api.types';
 export type { AccountsErrorResponse as AccountLedgerMasterErrorResponse } from 'src/common/types/module-api.types';
@@ -9,10 +10,11 @@ export interface AccountLedgerMasterPayload {
   ledId: string;
   ledCompanyId: string | null;
   ledCompanyName: string | null;
-  ledBranchId: string;
+  ledBranchId: string | null;
   ledBranchName: string | null;
   ledGroupId: string;
   ledGroupName: string | null;
+  ledGroupLedgerProfile: AccLedgerProfile | null;
   ledName: string;
   ledAlias: string | null;
   ledShort: string | null;

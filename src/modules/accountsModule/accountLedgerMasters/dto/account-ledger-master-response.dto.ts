@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
+import { AccLedgerProfile } from '../../accountsGroup/types/account-group-enum';
 import { LedgerBankAccountPayloadDto } from '../../ledgerBankAccount/dto/ledger-bank-account-response.dto';
 export class AccountLedgerMasterErrorFieldDto {
   @ApiProperty({ example: 'ledName' })
@@ -23,14 +24,21 @@ export class AccountLedgerMasterPayloadDto {
   ledCompanyId!: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the company' })
   ledCompanyName!: string | null;
-  @ApiProperty({ format: 'uuid' })
-  ledBranchId!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ledBranchId!: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the branch' })
   ledBranchName!: string | null;
   @ApiProperty({ format: 'uuid' })
   ledGroupId!: string;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the account group' })
   ledGroupName!: string | null;
+  @ApiPropertyOptional({
+    enum: AccLedgerProfile,
+    enumName: 'AccLedgerProfile',
+    nullable: true,
+    description: 'Ledger profile inherited from the account group',
+  })
+  ledGroupLedgerProfile!: AccLedgerProfile | null;
   @ApiProperty({ maxLength: 200 })
   ledName!: string;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })

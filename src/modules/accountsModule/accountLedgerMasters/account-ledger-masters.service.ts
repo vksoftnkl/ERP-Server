@@ -24,6 +24,7 @@ import {
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { AccLedgerProfile } from '../accountsGroup/types/account-group-enum';
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const LEDGER_BANK_ACCOUNT_TABLE_NAME = 'acc_ledger_bank_accounts';
@@ -37,7 +38,7 @@ const LEDGER_BANK_ACCOUNT_ORDER_BY: Prisma.AccLedgerBankAccountOrderByWithRelati
 const ACCOUNT_LEDGER_MASTER_RELATIONS = {
   company: { select: { compName: true } },
   branches: { select: { brName: true } },
-  accountGroup: { select: { accGroupName: true } },
+  accountGroup: { select: { accGroupName: true, accLedgerProfile: true } },
   bankAccounts: {
     where: { lbaIsDeleted: false },
     orderBy: LEDGER_BANK_ACCOUNT_ORDER_BY,
@@ -213,16 +214,8 @@ export class AccountLedgerMastersService {
       'ledName',
     );
     await this.ensureGroupExists(saveAccountLedgerMasterDto.ledGroupId, tx);
-    const companyId = saveAccountLedgerMasterDto.ledCompanyId?.trim();
-    if (!companyId) {
-      throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('Validation failed', [
-        {
-          field: 'ledCompanyId',
-          message: 'ledCompanyId is required',
-        },
-      ]);
-    }
-    const branchId = saveAccountLedgerMasterDto.ledBranchId;
+    const companyId = saveAccountLedgerMasterDto.ledCompanyId ?? null;
+    const branchId = saveAccountLedgerMasterDto.ledBranchId ?? null;
     const groupId = saveAccountLedgerMasterDto.ledGroupId;
     await this.ensureNameIsUnique(tx, normalizedName, companyId);
     const now = new Date();
@@ -307,16 +300,8 @@ export class AccountLedgerMastersService {
     const nextGroupId = saveAccountLedgerMasterDto.ledGroupId;
     await this.ensureGroupExists(nextGroupId, tx);
     const nextCompanyId = hasOwnProperty(saveAccountLedgerMasterDto, 'ledCompanyId')
-      ? saveAccountLedgerMasterDto.ledCompanyId?.trim()
+      ? (saveAccountLedgerMasterDto.ledCompanyId ?? null)
       : existing.ledCompanyId;
-    if (!nextCompanyId) {
-      throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('Validation failed', [
-        {
-          field: 'ledCompanyId',
-          message: 'ledCompanyId is required',
-        },
-      ]);
-    }
     await this.ensureNameIsUnique(tx, normalizedName, nextCompanyId, ledId);
     const data: Prisma.AccLedgerMasterUncheckedUpdateInput = {
       ledBranchId: saveAccountLedgerMasterDto.ledBranchId,
@@ -380,7 +365,7 @@ export class AccountLedgerMastersService {
   private async ensureNameIsUnique(
     tx: AccountLedgerWriteClient,
     ledgerName: string,
-    companyId: string,
+    companyId: string | null,
     excludeId?: string,
   ): Promise<void> {
     const existing = await tx.accLedgerMaster.findFirst({
@@ -640,6 +625,8 @@ export class AccountLedgerMastersService {
       ledBranchName: record.branches?.brName ?? null,
       ledGroupId: record.ledGroupId,
       ledGroupName: record.accountGroup?.accGroupName ?? null,
+      ledGroupLedgerProfile:
+        (record.accountGroup?.accLedgerProfile as AccLedgerProfile | null) ?? null,
       ledName: record.ledName,
       ledAlias: record.ledAlias,
       ledShort: record.ledShort,
@@ -722,9 +709,7 @@ export class AccountLedgerMastersService {
       ledgerBankAccount: record.bankAccounts.map((account) => this.toBankAccountPayload(account)),
     };
   }
-
   // ----- Nested ledger bank accounts -----
-
   // Fetch a single bank account by its own id (lba_id)
   async getBankAccounts(params: { lbaId: string }): Promise<LedgerBankAccountPayload>;
   // Fetch all active bank accounts for a ledger (led_id)
@@ -787,7 +772,6 @@ export class AccountLedgerMastersService {
       { field: 'ledId', message: 'Provide either lbaId or ledId' },
     ]);
   }
-
   // Soft delete a single bank account by its own id (lba_id). GST/audit retention means
   // we never hard delete: the row is flagged deleted/inactive and cleared as default so
   // the partial unique index stays clean for any future default.
@@ -810,7 +794,6 @@ export class AccountLedgerMastersService {
         data: {
           lbaIsDeleted: true,
           lbaIsActive: false,
-          lbaIsDefault: false,
           lbaModifiedOn: modifiedOn,
           lbaModifiedBy: actor,
         },
@@ -847,7 +830,6 @@ export class AccountLedgerMastersService {
       return { lbaId, deleted: true };
     });
   }
-
   // Persist the nested bank accounts of a ledger inside the ledger's transaction.
   // An undefined or empty array leaves existing rows untouched (non-destructive) —
   // deletions go through deleteBankAccountById. Each item with an lbaId updates
@@ -855,20 +837,15 @@ export class AccountLedgerMastersService {
   private async syncBankAccounts(
     tx: AccountLedgerWriteClient,
     ledId: string,
-    ledCompanyId: string,
+    ledCompanyId: string | null,
     items: LedgerBankAccountItemDto[] | undefined,
   ): Promise<void> {
     if (!items || items.length === 0) {
       return;
     }
-    this.assertSingleDefault(items);
+    this.assertNoDefaultBankAccount(items);
     const now = new Date();
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-    // When the payload marks a (single) account default, drop the existing default
-    // first so the partial unique index never trips while we re-set it below.
-    if (items.some((item) => item.lbaIsDefault === true)) {
-      await this.clearDefaultBankAccounts(tx, ledId);
-    }
     for (const item of items) {
       const accountHolder = normalizeRequiredText<AccountLedgerMasterErrorDetail>(
         item.lbaAccountHolder,
@@ -926,34 +903,18 @@ export class AccountLedgerMastersService {
       }
     }
   }
-
-  private assertSingleDefault(items: LedgerBankAccountItemDto[]): void {
-    const defaults = items.filter((item) => item.lbaIsDefault === true);
-    if (defaults.length > 1) {
+  // A ledger's bank accounts cannot be marked default through the ledger master
+  // save flow — defaulting is managed only via the dedicated bank account endpoint.
+  private assertNoDefaultBankAccount(items: LedgerBankAccountItemDto[]): void {
+    if (items.some((item) => item.lbaIsDefault === true)) {
       throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('Validation failed', [
         {
-          field: 'ledgerBankAccount',
-          message: 'Only one bank account can be marked as default per ledger',
+          field: 'lbaIsDefault',
+          message: 'A bank account cannot be marked as default while creating or updating a ledger',
         },
       ]);
     }
   }
-
-  private async clearDefaultBankAccounts(
-    tx: AccountLedgerWriteClient,
-    ledId: string,
-  ): Promise<void> {
-    await tx.accLedgerBankAccount.updateMany({
-      where: { lbaLedgerId: ledId, lbaIsDeleted: false, lbaIsDefault: true },
-      data: {
-        lbaIsDefault: false,
-        lbaIsDeleted: true,
-        lbaModifiedOn: new Date(),
-        lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-      },
-    });
-  }
-
   private async ensureBankAccountNumberIsUnique(
     tx: AccountLedgerWriteClient,
     ledId: string,
@@ -981,7 +942,6 @@ export class AccountLedgerMastersService {
       );
     }
   }
-
   private applyBankAccountOptionalFields(
     data:
       | Prisma.AccLedgerBankAccountUncheckedCreateInput
@@ -1016,7 +976,6 @@ export class AccountLedgerMastersService {
       data.lbaRemarks = item.lbaRemarks;
     }
   }
-
   private loadBankAccounts(
     tx: AccountLedgerWriteClient,
     ledId: string,
@@ -1026,7 +985,6 @@ export class AccountLedgerMastersService {
       orderBy: LEDGER_BANK_ACCOUNT_ORDER_BY,
     });
   }
-
   private toBankAccountPayload(record: AccLedgerBankAccount): LedgerBankAccountPayload {
     return {
       lbaId: record.lbaId,

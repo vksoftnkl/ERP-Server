@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional } from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableDate,
@@ -8,6 +8,7 @@ import {
   NullableUuid,
   OptionalBoolean,
   OptionalInteger,
+  OptionalUpperString,
   OptionalUuid,
   RequiredUuid,
   SkipOnNullish,
@@ -15,6 +16,7 @@ import {
 import { Transform } from 'class-transformer';
 import { IsString } from 'class-validator';
 import { toUpperTrimmed } from 'src/common/dto/DtoTransforms';
+import { SaaAddrType } from '../types/ledger-shipping-address-enum';
 
 export class SaveLedgerShippingAddressDto {
   @ApiPropertyOptional({
@@ -28,15 +30,23 @@ export class SaveLedgerShippingAddressDto {
   @NullableUuid()
   saaCompanyId?: string | null;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  saaBranchId?: string | null;
+
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   saaLedgerId!: string;
 
-  @ApiPropertyOptional({ maxLength: 20 })
+  @ApiPropertyOptional({
+    enum: SaaAddrType,
+    enumName: 'SaaAddrType',
+    description: 'Allowed values: SHIP_TO, BILL_TO, BOTH (defaults to SHIP_TO)',
+  })
   @IsOptional()
   @Transform(({ value }) => toUpperTrimmed(value))
-  @IsString()
-  saaAddrType?: string;
+  @IsEnum(SaaAddrType)
+  saaAddrType?: SaaAddrType;
 
   @ApiPropertyOptional()
   @OptionalBoolean()
@@ -48,7 +58,7 @@ export class SaveLedgerShippingAddressDto {
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @NullableString(200)
-  saaTrdnm?: string | null;
+  saaTradeName?: string | null;
 
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @NullableString(150)
@@ -68,19 +78,36 @@ export class SaveLedgerShippingAddressDto {
 
   @ApiPropertyOptional({ maxLength: 200, nullable: true })
   @NullableString(200)
-  saaLoc?: string | null;
+  saaLocation?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    description: 'PIN code; must be 6 digits when the country is India',
+  })
   @NullableString(10)
   saaPin?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 2, minLength: 2, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 2,
+    minLength: 2,
+    nullable: true,
+    description: '2-digit GST numeric state code',
+  })
   @NullableUpperString(2)
   saaStateCode?: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   saaStateName?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 2,
+    minLength: 2,
+    description: 'ISO country code (defaults to IN)',
+  })
+  @OptionalUpperString(2)
+  saaCountryCode?: string;
 
   @ApiPropertyOptional({ minimum: 0, nullable: true })
   @NullableInteger(0)
@@ -96,17 +123,18 @@ export class SaveLedgerShippingAddressDto {
   @IsEmail()
   saaEmail?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  @NullableString(15)
-  saaGstin?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 10, minLength: 10, nullable: true })
-  @NullableUpperString(10)
-  saaPan?: string | null;
+  @ApiProperty({
+    maxLength: 15,
+    description: 'Mandatory 15-character GSTIN',
+  })
+  @Transform(({ value }) => toUpperTrimmed(value))
+  @IsString()
+  @IsNotEmpty()
+  saaGstin!: string;
 
   @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
   @NullableDate()
-  saaSyncDate?: Date | null;
+  saaSyncedOn?: Date | null;
 
   @ApiPropertyOptional()
   @OptionalBoolean()

@@ -17,9 +17,17 @@ import {
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { SaaAddrType } from './types/ledger-shipping-address-enum';
+import {
+  DEFAULT_COUNTRY_CODE,
+  assertSaaAddrType,
+  assertSaaGstin,
+  assertSaaPin,
+  assertSaaStateCode,
+} from './ledger-shipping-address.validation';
 const LEDGER_SHIPPING_ADDRESS_TABLE_NAME = 'acc ship addrs';
 const LEDGER_SHIPPING_ADDRESS_AUDIT_SCREEN_NAME = 'Ledger Shipping Address';
-const DEFAULT_ADDR_TYPE = 'SHIP_TO';
+const DEFAULT_ADDR_TYPE = SaaAddrType.SHIP_TO;
 type LedgerShippingAddressWriteClient = AccountsWriteClient;
 
 @Injectable()
@@ -135,9 +143,13 @@ export class LedgerShippingAddressService {
   ): Promise<LedgerShippingAddressPayload> {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const saaAddrType = this.normalizeAddressType(
+        const saaAddrType = assertSaaAddrType(
           saveLedgerShippingAddressDto.saaAddrType ?? DEFAULT_ADDR_TYPE,
         );
+        const saaCountryCode = this.resolveCountryCode(saveLedgerShippingAddressDto.saaCountryCode);
+        const saaGstin = assertSaaGstin(saveLedgerShippingAddressDto.saaGstin);
+        assertSaaStateCode(saveLedgerShippingAddressDto.saaStateCode);
+        assertSaaPin(saveLedgerShippingAddressDto.saaPin, saaCountryCode);
 
         await this.ensureLedgerExists(saveLedgerShippingAddressDto.saaLedgerId, tx);
 
@@ -149,6 +161,14 @@ export class LedgerShippingAddressService {
           await this.ensureCompanyExists(saveLedgerShippingAddressDto.saaCompanyId, tx);
         }
 
+        if (
+          hasOwnProperty(saveLedgerShippingAddressDto, 'saaBranchId') &&
+          saveLedgerShippingAddressDto.saaBranchId !== null &&
+          saveLedgerShippingAddressDto.saaBranchId !== undefined
+        ) {
+          await this.ensureBranchExists(saveLedgerShippingAddressDto.saaBranchId, tx);
+        }
+
         if (saveLedgerShippingAddressDto.saaIsDefault === true) {
           await this.clearDefaultAddress(tx, saveLedgerShippingAddressDto.saaLedgerId, saaAddrType);
         }
@@ -157,6 +177,8 @@ export class LedgerShippingAddressService {
         const data: Prisma.AccShipAddrUncheckedCreateInput = {
           saaLedgerId: saveLedgerShippingAddressDto.saaLedgerId,
           saaAddrType,
+          saaCountryCode,
+          saaGstin,
           saaCreatedOn: now,
           saaCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
@@ -221,13 +243,22 @@ export class LedgerShippingAddressService {
           );
         }
 
-        const nextAddrType = this.normalizeAddressType(
+        const nextAddrType = assertSaaAddrType(
           saveLedgerShippingAddressDto.saaAddrType ?? existing.saaAddrType,
         );
         const nextLedgerId = saveLedgerShippingAddressDto.saaLedgerId;
         const nextCompanyId = hasOwnProperty(saveLedgerShippingAddressDto, 'saaCompanyId')
           ? (saveLedgerShippingAddressDto.saaCompanyId ?? null)
           : existing.saaCompanyId;
+        const nextBranchId = hasOwnProperty(saveLedgerShippingAddressDto, 'saaBranchId')
+          ? (saveLedgerShippingAddressDto.saaBranchId ?? null)
+          : existing.saaBranchId;
+        const nextCountryCode = this.resolveCountryCode(
+          saveLedgerShippingAddressDto.saaCountryCode ?? existing.saaCountryCode,
+        );
+        const nextGstin = assertSaaGstin(saveLedgerShippingAddressDto.saaGstin);
+        assertSaaStateCode(saveLedgerShippingAddressDto.saaStateCode);
+        assertSaaPin(saveLedgerShippingAddressDto.saaPin, nextCountryCode);
         const nextIsDefault = hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsDefault')
           ? (saveLedgerShippingAddressDto.saaIsDefault ?? false)
           : existing.saaIsDefault;
@@ -238,6 +269,10 @@ export class LedgerShippingAddressService {
           await this.ensureCompanyExists(nextCompanyId, tx);
         }
 
+        if (nextBranchId !== null) {
+          await this.ensureBranchExists(nextBranchId, tx);
+        }
+
         if (nextIsDefault) {
           await this.clearDefaultAddress(tx, nextLedgerId, nextAddrType, saaId);
         }
@@ -245,6 +280,8 @@ export class LedgerShippingAddressService {
         const data: Prisma.AccShipAddrUncheckedUpdateInput = {
           saaLedgerId: nextLedgerId,
           saaAddrType: nextAddrType,
+          saaCountryCode: nextCountryCode,
+          saaGstin: nextGstin,
           saaModifiedOn: new Date(),
           saaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
@@ -340,6 +377,30 @@ export class LedgerShippingAddressService {
     }
   }
 
+  private async ensureBranchExists(
+    branchId: string,
+    tx: LedgerShippingAddressWriteClient,
+  ): Promise<void> {
+    const branch = await tx.branchMaster.findFirst({
+      where: {
+        brId: branchId,
+        brIsDeleted: false,
+      },
+      select: {
+        brId: true,
+      },
+    });
+
+    if (!branch) {
+      throwAccountsBadRequest<LedgerShippingAddressErrorDetail>('Branch does not exist', [
+        {
+          field: 'saaBranchId',
+          message: `No active branch found with id ${branchId}`,
+        },
+      ]);
+    }
+  }
+
   private async clearDefaultAddress(
     tx: LedgerShippingAddressWriteClient,
     ledgerId: string,
@@ -376,6 +437,10 @@ export class LedgerShippingAddressService {
       data.saaCompanyId = saveLedgerShippingAddressDto.saaCompanyId;
     }
 
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaBranchId')) {
+      data.saaBranchId = saveLedgerShippingAddressDto.saaBranchId;
+    }
+
     if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsDefault')) {
       data.saaIsDefault = saveLedgerShippingAddressDto.saaIsDefault;
     }
@@ -384,8 +449,8 @@ export class LedgerShippingAddressService {
       data.saaSort = saveLedgerShippingAddressDto.saaSort;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaTrdnm')) {
-      data.saaTrdnm = saveLedgerShippingAddressDto.saaTrdnm;
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaTradeName')) {
+      data.saaTradeName = saveLedgerShippingAddressDto.saaTradeName;
     }
 
     if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaContactName')) {
@@ -404,8 +469,8 @@ export class LedgerShippingAddressService {
       data.saaAddr3 = saveLedgerShippingAddressDto.saaAddr3;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaLoc')) {
-      data.saaLoc = saveLedgerShippingAddressDto.saaLoc;
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaLocation')) {
+      data.saaLocation = saveLedgerShippingAddressDto.saaLocation;
     }
 
     if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaPin')) {
@@ -432,16 +497,8 @@ export class LedgerShippingAddressService {
       data.saaEmail = saveLedgerShippingAddressDto.saaEmail;
     }
 
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaGstin')) {
-      data.saaGstin = saveLedgerShippingAddressDto.saaGstin;
-    }
-
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaPan')) {
-      data.saaPan = saveLedgerShippingAddressDto.saaPan;
-    }
-
-    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaSyncDate')) {
-      data.saaSyncDate = saveLedgerShippingAddressDto.saaSyncDate;
+    if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaSyncedOn')) {
+      data.saaSyncedOn = saveLedgerShippingAddressDto.saaSyncedOn;
     }
 
     if (hasOwnProperty(saveLedgerShippingAddressDto, 'saaIsActive')) {
@@ -453,51 +510,43 @@ export class LedgerShippingAddressService {
     }
   }
 
-  private normalizeAddressType(value: string): string {
-    const normalized = value.trim().toUpperCase();
-    if (!normalized) {
-      throwAccountsBadRequest<LedgerShippingAddressErrorDetail>('Validation failed', [
-        {
-          field: 'saaAddrType',
-          message: 'saaAddrType must not be empty',
-        },
-      ]);
-    }
-
-    return normalized;
+  private resolveCountryCode(value: string | null | undefined): string {
+    const normalized = (value ?? DEFAULT_COUNTRY_CODE).trim().toUpperCase();
+    return normalized || DEFAULT_COUNTRY_CODE;
   }
 
   private resolveDisplayName(
     record:
-      | Pick<AccShipAddr, 'saaId' | 'saaTrdnm' | 'saaContactName'>
+      | Pick<AccShipAddr, 'saaId' | 'saaTradeName' | 'saaContactName'>
       | LedgerShippingAddressPayload,
   ): string {
-    return record.saaTrdnm ?? record.saaContactName ?? record.saaId;
+    return record.saaTradeName ?? record.saaContactName ?? record.saaId;
   }
 
   private toPayload(record: AccShipAddr): LedgerShippingAddressPayload {
     return {
       saaId: record.saaId,
       saaCompanyId: record.saaCompanyId,
+      saaBranchId: record.saaBranchId,
       saaLedgerId: record.saaLedgerId,
       saaAddrType: record.saaAddrType,
       saaIsDefault: record.saaIsDefault,
       saaSort: record.saaSort,
-      saaTrdnm: record.saaTrdnm,
+      saaTradeName: record.saaTradeName,
       saaContactName: record.saaContactName,
       saaAddr1: record.saaAddr1,
       saaAddr2: record.saaAddr2,
       saaAddr3: record.saaAddr3,
-      saaLoc: record.saaLoc,
+      saaLocation: record.saaLocation,
       saaPin: record.saaPin,
       saaStateCode: record.saaStateCode,
       saaStateName: record.saaStateName,
+      saaCountryCode: record.saaCountryCode,
       saaDistanceKm: record.saaDistanceKm,
       saaPhone: record.saaPhone,
       saaEmail: record.saaEmail,
       saaGstin: record.saaGstin,
-      saaPan: record.saaPan,
-      saaSyncDate: record.saaSyncDate ? record.saaSyncDate.toISOString() : null,
+      saaSyncedOn: record.saaSyncedOn ? record.saaSyncedOn.toISOString() : null,
       saaIsActive: record.saaIsActive,
       saaIsDeleted: record.saaIsDeleted,
       saaCreatedOn: record.saaCreatedOn.toISOString(),

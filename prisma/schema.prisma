@@ -93,8 +93,8 @@ model AccountGroup {
 // ----- prisma/accounts/accountLedgerMasters.prisma -----
 model AccLedgerMaster {
   ledId                    String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("led_id")
-  ledCompanyId             String    @db.Uuid                                        @map("led_company_id")
-  ledBranchId              String    @db.Uuid                                        @map("led_branch_id")
+  ledCompanyId             String?   @db.Uuid                                        @map("led_company_id")
+  ledBranchId              String?   @db.Uuid                                        @map("led_branch_id")
   ledGroupId               String    @db.Uuid                                        @map("led_group_id")
   // 1) Identity / Reference
   ledName                  String    @db.VarChar(200)                                 @map("led_name")
@@ -191,9 +191,9 @@ model AccLedgerMaster {
   ledModifiedOn            DateTime  @default(now()) @db.Timestamptz                  @map("led_modified_on")
   ledModifiedBy            String?   @db.VarChar(100)                                 @map("led_modified_by")
   // Relations
-  company                  Company                @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  company                  Company?               @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   accountGroup             AccountGroup           @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
-  branches                 BranchMaster           @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
+  branches                 BranchMaster?          @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
   bankAccounts             AccLedgerBankAccount[]
   shipAddrs                AccShipAddr[]
   tenders                  AccountTenderMaster[]
@@ -1573,32 +1573,40 @@ model EmpMaster {
 model AccShipAddr {
   saaId          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("saa_id")
   saaCompanyId   String?  @db.Uuid                               @map("saa_company_id")
+  saaBranchId    String?  @db.Uuid                               @map("saa_branch_id")
   saaLedgerId    String   @db.Uuid @map("saa_ledger_id")
 
+  // Allowed values (SHIP_TO/BILL_TO/BOTH) validated in the app layer
+  // (ledgerShippingAddress SaaAddrType enum + ledger-shipping-address.validation),
+  // not a DB CHECK constraint. See migration
+  // 20260624130000_restructure_acc_ship_addrs_and_move_checks_to_app_layer.
   saaAddrType    String   @default("SHIP_TO") @db.VarChar(20) @map("saa_addr_type")
   saaIsDefault   Boolean  @default(false) @map("saa_is_default")
   saaSort        Int      @default(0) @map("saa_sort")
 
-  saaTrdnm       String?  @db.VarChar(200) @map("saa_trdnm")
+  saaTradeName   String?  @db.VarChar(200) @map("saa_trade_name")
   saaContactName String?  @db.VarChar(150) @map("saa_contact_name")
 
   saaAddr1       String?  @db.VarChar(250) @map("saa_addr1")
   saaAddr2       String?  @db.VarChar(250) @map("saa_addr2")
   saaAddr3       String?  @db.VarChar(250) @map("saa_addr3")
-  saaLoc         String?  @db.VarChar(200) @map("saa_loc")
+  saaLocation    String?  @db.VarChar(200) @map("saa_location")
+  // saa_pin / saa_state_code / saa_gstin format checks (acc_ship_addrs_pin_chk,
+  // acc_ship_addrs_state_code_chk, acc_ship_addrs_gstin_chk) live in the app layer
+  // (ledger-shipping-address.validation), not DB CHECK constraints.
   saaPin         String?  @db.VarChar(10)  @map("saa_pin")
   saaStateCode   String?  @db.Char(2)      @map("saa_state_code")
   saaStateName   String?  @db.VarChar(100) @map("saa_state_name")
+  saaCountryCode String   @default("IN") @db.Char(2) @map("saa_country_code")
 
   saaDistanceKm  Int?     @map("saa_distance_km")
 
   saaPhone       String?  @db.VarChar(20)  @map("saa_phone")
   saaEmail       String?  @db.VarChar(120) @map("saa_email")
 
-  saaGstin       String?  @db.VarChar(15)  @map("saa_gstin")
-  saaPan         String?  @db.VarChar(10)  @map("saa_pan")
+  saaGstin       String   @db.VarChar(15)  @map("saa_gstin")
 
-  saaSyncDate    DateTime? @db.Timestamptz(6) @map("saa_sync_date")
+  saaSyncedOn    DateTime? @db.Timestamptz(6) @map("saa_synced_on")
   saaIsActive    Boolean   @default(true) @map("saa_is_active")
   saaIsDeleted   Boolean   @default(false) @map("saa_is_deleted")
 
@@ -1610,11 +1618,13 @@ model AccShipAddr {
   saaRemarks     String?   @db.VarChar(250) @map("saa_remarks")
 
   /// Relations
-  company Company? @relation(fields: [saaCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  ledger  AccLedgerMaster @relation(fields: [saaLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict)
+  company  Company?        @relation(fields: [saaCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  branches BranchMaster?   @relation(fields: [saaBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
+  ledger   AccLedgerMaster @relation(fields: [saaLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict)
 
   @@map("acc_ship_addrs")
   @@index([saaCompanyId], map: "idx_saa_company")
+  @@index([saaBranchId], map: "idx_saa_branch")
   @@index([saaLedgerId], map: "idx_saa_ledger")
   @@index([saaLedgerId, saaIsDefault], map: "idx_saa_ledger_default")
   @@schema("accounts")
@@ -3443,6 +3453,7 @@ model BranchMaster {
   // Relations
   company               Company   @relation(fields: [compId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]
+  shipAddrs             AccShipAddr[]
   voucherBills          AccVoucherBill[]
   voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]

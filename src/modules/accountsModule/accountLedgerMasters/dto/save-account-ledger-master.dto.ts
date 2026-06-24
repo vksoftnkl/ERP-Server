@@ -4,7 +4,6 @@ import { LedgerBankAccountItemDto } from './ledger-bank-account-item.dto';
 import {
   IsArray,
   IsDate,
-  IsEmail,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -17,6 +16,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   NullableDate,
+  NullableEmail,
   NullableString,
   OptionalBoolean,
   OptionalInteger,
@@ -26,6 +26,31 @@ import {
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
 import { toNullableUpperString, toUpperTrimmed } from 'src/common/dto/DtoTransforms';
+// A bank-account entry is "blank" when it is null/undefined, not an object, or an
+// object whose every value is null/undefined/empty string (e.g. an untouched grid row).
+// Such entries are dropped so a stray {} or null doesn't fail validation or insert garbage.
+const isBlankBankAccountItem = (item: unknown): boolean => {
+  if (item === null || item === undefined || typeof item !== 'object') {
+    return true;
+  }
+  return Object.values(item as Record<string, unknown>).every(
+    (value) => value === null || value === undefined || (typeof value === 'string' && value.trim() === ''),
+  );
+};
+
+const normalizeBankAccountItems = (value: unknown): unknown => {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  if (typeof value === 'string' && value.trim() === '') {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    return value;
+  }
+  return value.filter((item) => !isBlankBankAccountItem(item));
+};
+
 export class SaveAccountLedgerMasterDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -38,9 +63,9 @@ export class SaveAccountLedgerMasterDto {
   @OptionalUuid()
   ledCompanyId?: string;
 
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  ledBranchId!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @OptionalUuid()
+  ledBranchId?: string;
 
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
@@ -107,9 +132,7 @@ export class SaveAccountLedgerMasterDto {
   ledContactPerson?: string | null;
 
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
-  @IsOptional()
-  @SkipOnNullish()
-  @IsEmail()
+  @NullableEmail(150)
   ledEmail?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
@@ -397,6 +420,7 @@ export class SaveAccountLedgerMasterDto {
       'use the dedicated delete endpoint to remove them.',
   })
   @IsOptional()
+  @Transform(({ value }) => normalizeBankAccountItems(value))
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => LedgerBankAccountItemDto)
