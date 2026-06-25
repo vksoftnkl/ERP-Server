@@ -14,7 +14,9 @@ export type EmployeeMasterSuccessResponse<
 export interface EmployeeMasterPayload {
   empId: string;
   empCompanyId: string;
+  empCompanyName?: string | null;
   empBranchId: string | null;
+  empBranchName?: string | null;
   empCode: string | null;
   empName: string;
   empAlias: string | null;
@@ -33,7 +35,9 @@ export interface EmployeeMasterPayload {
   empBloodGroup: string | null;
   empDob: string | null;
   empDepartmentId: string | null;
+  empDepartmentName?: string | null;
   empDesignationId: string | null;
+  empDesignationName?: string | null;
   empEmploymentType: string | null;
   empStatus: string | null;
   empJoinedOn: string | null;

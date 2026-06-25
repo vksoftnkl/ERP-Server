@@ -14,6 +14,7 @@ export type BranchMasterSuccessResponse<
 export interface BranchMasterPayload {
   brId: string;
   compId: string;
+  compName?: string | null;
   brCode: string | null;
   brName: string;
   brMailingName: string | null;
@@ -55,6 +56,7 @@ export interface BranchMasterPayload {
   brAllowNegativeStock: boolean;
   brSmsApplicable: boolean;
   brBankId: string | null;
+  brBankName?: string | null;
   brFssaiNo: string | null;
   brFssaiLicenseType: string | null;
   brFssaiValidUpto: string | null;

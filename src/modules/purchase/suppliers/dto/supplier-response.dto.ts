@@ -19,10 +19,28 @@ export class SupplierPayloadDto {
   supId!: string;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   supCompanyId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  supCompanyName?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   supBranchId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Branch',
+    description: 'Name of the linked branch (resolved on the get endpoint)',
+  })
+  supBranchName?: string | null;
   @ApiProperty({ format: 'uuid' })
   supGroupId!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Wholesale Suppliers',
+    description: 'Name of the linked supplier group (resolved on the get endpoint)',
+  })
+  supGroupName?: string | null;
   @ApiProperty()
   supPurchaseType!: string;
   @ApiProperty({ maxLength: 200 })

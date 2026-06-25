@@ -171,7 +171,13 @@ export class CompanyMasterPayloadDto {
   compStylesheetId!: number;
 
   @ApiPropertyOptional({ nullable: true })
+  compStylesheetName!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
   compBankId!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  compBankName!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   compPriceFixing!: string | null;

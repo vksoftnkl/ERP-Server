@@ -3371,6 +3371,17 @@ model OpeningStockHeader {
   @@schema("stock")
 }
 
+// ----- prisma/public/appThemeMaster.prisma -----
+model AppThemeMaster {
+  thmId           Int    @id  @map("thm_id")
+  thmName         String @db.VarChar(100) @map("thm_name") 
+  thmIsActive     Boolean @default(true) @map("thm_is_active")
+  thmIsDeleted    Boolean @default(false) @map("thm_is_deleted")
+  company       Company[] @relation("CompanyStylesheet")
+  @@map("app_theme_master")
+  @@schema("public")
+}
+
 // ----- prisma/public/batch.prisma -----
 model BatchPrefix {
   id           String    @id @default(uuid(7)) @db.Uuid
@@ -3387,7 +3398,7 @@ model BatchPrefix {
 // ----- prisma/public/branchMaster.prisma -----
 model BranchMaster {
   brId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("br_id")
-  compId                String    @db.Uuid                                         @map("comp_id")
+  brCompId                String    @db.Uuid                                         @map("br_comp_id")
   // 1) Identity / Reference
   brCode                String?   @unique @db.VarChar(20)                          @map("br_code")
   brName                String    @db.VarChar(150)                                 @map("br_name")
@@ -3451,7 +3462,7 @@ model BranchMaster {
   brPanNo               String?   @db.VarChar(10)                                  @map("br_pan_no")
   
   // Relations
-  company               Company   @relation(fields: [compId], references: [compId])
+  company               Company   @relation(fields: [brCompId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]
   shipAddrs             AccShipAddr[]
   voucherBills          AccVoucherBill[]
@@ -3470,7 +3481,7 @@ model BranchMaster {
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
-  @@index([compId],      name: "idx_branch_comp_id")
+  @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
   @@schema("public")
@@ -3559,6 +3570,7 @@ model Company {
   compAuthorizeSignature String?  @db.Text                                         @map("comp_authorize_signature")
   compTdsApplicable     String?   @db.Text                                    @map("comp_tds_applicable")
   // Relations
+  stylesheet            AppThemeMaster? @relation("CompanyStylesheet", fields: [compStylesheetId], references: [thmId])
   branches              BranchMaster[]
   accountGroups         AccountGroup[]
   ledgers               AccLedgerMaster[]

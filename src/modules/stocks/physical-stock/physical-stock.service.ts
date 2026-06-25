@@ -243,7 +243,7 @@ export class PhysicalStockService {
       tx.branchMaster.findFirst({
         where: {
           brId: dto.psBranchId,
-          compId: dto.psCompanyId,
+          brCompId: dto.psCompanyId,
           brIsActive: true,
           brIsDeleted: false,
         },

@@ -53,7 +53,9 @@ export class CityService {
         `No active city found with id ${ctmId}`,
       );
     }
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    payload.ctmStateName = await this.getStateName(this.prisma, record.ctmStateId);
+    return payload;
   }
   async softDelete(ctmId: string): Promise<{ ctmId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -265,6 +267,17 @@ export class CityService {
       );
       throw error;
     }
+  }
+
+  private async getStateName(client: CityWriteClient, stateId: string): Promise<string | null> {
+    if (!stateId) {
+      return null;
+    }
+    const state = await client.stateMaster.findFirst({
+      where: { stmId: stateId },
+      select: { stmName: true },
+    });
+    return state?.stmName ?? null;
   }
 
   private async ensureStateExists(tx: CityWriteClient, stateId: string): Promise<void> {

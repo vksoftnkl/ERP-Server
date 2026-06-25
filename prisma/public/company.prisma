@@ -80,6 +80,7 @@ model Company {
   compAuthorizeSignature String?  @db.Text                                         @map("comp_authorize_signature")
   compTdsApplicable     String?   @db.Text                                    @map("comp_tds_applicable")
   // Relations
+  stylesheet            AppThemeMaster? @relation("CompanyStylesheet", fields: [compStylesheetId], references: [thmId])
   branches              BranchMaster[]
   accountGroups         AccountGroup[]
   ledgers               AccLedgerMaster[]

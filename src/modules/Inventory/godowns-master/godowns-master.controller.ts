@@ -43,7 +43,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(GodownExceptionFilter)
 export class GodownsMasterController {
   constructor(private readonly godownsMasterService: GodownsMasterService) { }
-  @Post()
+   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Create or update godown location (by gdl_id presence in request body)',
@@ -68,23 +68,7 @@ export class GodownsMasterController {
       data,
     };
   }
-  @Post('create')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Create or update godown location (by gdl_id presence in request body)',
-  })
-  @ApiCreatedResponse({ type: GodownSuccessSingleDto })
-  @ApiOkResponse({ type: GodownSuccessSingleDto })
-  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
-  @ApiConflictResponse({ type: GodownErrorResponseDto })
-  @ApiNotFoundResponse({ type: GodownErrorResponseDto })
-  async create(
-    @Body() saveGodownDto: SaveGodownDto,
-    @Res({ passthrough: true }) response: Response,
-  ): Promise<GodownSuccessResponse<GodownPayload>> {
-    return this.save(saveGodownDto, response);
-  }
-  @Get()
+  @Get('get')
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Get godown location by gdl_id query parameter',
@@ -102,23 +86,7 @@ export class GodownsMasterController {
       data,
     };
   }
-  @Get('get')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get godown location by gdl_id query parameter' })
-  @ApiOkResponse({ type: GodownSuccessSingleDto })
-  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
-  @ApiNotFoundResponse({ type: GodownErrorResponseDto })
-  async getByIdByQuery(
-    @Query() queryDto: DeleteGodownQueryDto,
-  ): Promise<GodownSuccessResponse<GodownPayload>> {
-    const data = await this.godownsMasterService.getById(queryDto.gdl_id);
-    return {
-      success: true,
-      message: 'Godown location fetched successfully',
-      data,
-    };
-  }
-  @Delete()
+  @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete or restore godown location by gdl_id query parameter' })
   @ApiOkResponse({ type: GodownSuccessDeleteDto })
@@ -135,16 +103,5 @@ export class GodownsMasterController {
         : 'Godown location restored successfully',
       data: { gdl_id, deleted },
     };
-  }
-  @Delete('delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore godown location by gdl_id query parameter' })
-  @ApiOkResponse({ type: GodownSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
-  @ApiNotFoundResponse({ type: GodownErrorResponseDto })
-  async removeByQuery(
-    @Query() queryDto: DeleteGodownQueryDto,
-  ): Promise<GodownSuccessResponse<{ gdl_id: string; deleted: boolean }>> {
-    return this.remove(queryDto);
   }
 }

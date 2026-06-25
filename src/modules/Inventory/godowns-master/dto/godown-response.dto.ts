@@ -22,6 +22,12 @@ export class GodownPayloadDto {
   gdl_type!: string;
   @ApiPropertyOptional({ nullable: true, format: 'uuid' })
   gdl_parent_id!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Warehouse',
+    description: 'Name of the parent godown location (resolved on the get endpoint)',
+  })
+  gdl_parent_name?: string | null;
   @ApiProperty({ example: 1 })
   gdl_sort!: number;
   @ApiProperty({ example: 0 })

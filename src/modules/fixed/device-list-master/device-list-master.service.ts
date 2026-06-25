@@ -167,7 +167,44 @@ export class DeviceListMasterService {
         `No active device found with id ${devId}`,
       );
     }
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    const relatedNames = await this.resolveRelatedNames(this.prisma, record);
+    return { ...payload, ...relatedNames };
+  }
+  private async resolveRelatedNames(
+    client: FixedWriteClient,
+    record: Pick<DeviceMaster, 'devCompanyId' | 'devBranchId' | 'devUserId'>,
+  ): Promise<{
+    devCompanyName: string | null;
+    devBranchName: string | null;
+    devUserName: string | null;
+  }> {
+    const [company, branch, user] = await Promise.all([
+      record.devCompanyId
+        ? client.company.findFirst({
+            where: { compId: record.devCompanyId },
+            select: { compName: true },
+          })
+        : null,
+      record.devBranchId
+        ? client.branchMaster.findFirst({
+            where: { brId: record.devBranchId },
+            select: { brName: true },
+          })
+        : null,
+      record.devUserId
+        ? client.userMaster.findFirst({
+            where: { usrId: record.devUserId },
+            select: { usrDisplayName: true },
+          })
+        : null,
+    ]);
+
+    return {
+      devCompanyName: company?.compName ?? null,
+      devBranchName: branch?.brName ?? null,
+      devUserName: user?.usrDisplayName ?? null,
+    };
   }
   async softDelete(devId: string): Promise<{ devId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {

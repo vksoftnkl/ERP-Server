@@ -2041,6 +2041,14 @@ Table opening_stock_header {
   }
 }
 
+Table app_theme_master {
+  thmId Int [pk]
+  thmName String [not null]
+  thmIsActive Boolean [not null, default: true]
+  thmIsDeleted Boolean [not null, default: false]
+  company companys [not null]
+}
+
 Table batches_prefix {
   id String [pk]
   prefixUsed String
@@ -2053,7 +2061,7 @@ Table batches_prefix {
 
 Table branch_master {
   brId String [pk]
-  compId String [not null]
+  brCompId String [not null]
   brCode String [unique]
   brName String [not null]
   brMailingName String
@@ -2199,6 +2207,7 @@ Table companys {
   compBooksLockDate DateTime
   compAuthorizeSignature String
   compTdsApplicable String
+  stylesheet app_theme_master
   branches branch_master [not null]
   accountGroups account_groups [not null]
   ledgers acc_ledger_master [not null]
@@ -3356,7 +3365,9 @@ Ref: opening_stock_header.oshCompanyId > companys.compId
 
 Ref: opening_stock_header.oshBranchId > branch_master.brId
 
-Ref: branch_master.compId > companys.compId
+Ref: branch_master.brCompId > companys.compId
+
+Ref: companys.compStylesheetId > app_theme_master.thmId
 
 Ref: user_menus.umUserId > user_master.usrId
 

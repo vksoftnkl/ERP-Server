@@ -47,7 +47,9 @@ export class SuppliersService {
     if (!record) {
       throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
     }
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    const relatedNames = await this.resolveRelatedNames(this.prisma, record);
+    return { ...payload, ...relatedNames };
   }
 
   async softDelete(supId: string): Promise<{ supId: string; deleted: true }> {
@@ -206,6 +208,42 @@ export class SuppliersService {
       ]);
       throw error;
     }
+  }
+
+  private async resolveRelatedNames(
+    client: SupplierWriteClient,
+    record: Pick<Supplier, 'supCompanyId' | 'supBranchId' | 'supGroupId'>,
+  ): Promise<{
+    supCompanyName: string | null;
+    supBranchName: string | null;
+    supGroupName: string | null;
+  }> {
+    const [company, branch, group] = await Promise.all([
+      record.supCompanyId
+        ? client.company.findFirst({
+            where: { compId: record.supCompanyId },
+            select: { compName: true },
+          })
+        : null,
+      record.supBranchId
+        ? client.branchMaster.findFirst({
+            where: { brId: record.supBranchId },
+            select: { brName: true },
+          })
+        : null,
+      record.supGroupId
+        ? client.supplierGroup.findFirst({
+            where: { spgId: record.supGroupId },
+            select: { spgName: true },
+          })
+        : null,
+    ]);
+
+    return {
+      supCompanyName: company?.compName ?? null,
+      supBranchName: branch?.brName ?? null,
+      supGroupName: group?.spgName ?? null,
+    };
   }
 
   private async ensureSupplierGroupExists(tx: SupplierWriteClient, supGroupId: string): Promise<void> {

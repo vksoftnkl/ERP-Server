@@ -59,7 +59,34 @@ export class UserAdministrationService {
       this.throwNotFound(usrId);
     }
 
-    return this.toPayload(record, record.userMenus);
+    const payload = this.toPayload(record, record.userMenus);
+    const relatedNames = await this.resolveRelatedNames(this.prisma, record);
+    return { ...payload, ...relatedNames };
+  }
+
+  private async resolveRelatedNames(
+    client: UserAdminWriteClient,
+    record: Pick<UserMaster, 'usrCompanyId' | 'usrBranchId'>,
+  ): Promise<{ usrCompanyName: string | null; usrBranchName: string | null }> {
+    const [company, branch] = await Promise.all([
+      record.usrCompanyId
+        ? client.company.findFirst({
+            where: { compId: record.usrCompanyId },
+            select: { compName: true },
+          })
+        : null,
+      record.usrBranchId
+        ? client.branchMaster.findFirst({
+            where: { brId: record.usrBranchId },
+            select: { brName: true },
+          })
+        : null,
+    ]);
+
+    return {
+      usrCompanyName: company?.compName ?? null,
+      usrBranchName: branch?.brName ?? null,
+    };
   }
 
   async softDelete(usrId: string): Promise<{ usrId: string; deleted: true }> {

@@ -843,9 +843,15 @@ export class AccountLedgerMastersService {
     if (!items || items.length === 0) {
       return;
     }
-    this.assertNoDefaultBankAccount(items);
+    this.assertSingleDefault(items);
     const now = new Date();
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    // When the payload marks a (single) account default, clear the ledger's current
+    // default flag first so the partial unique index (one active default per ledger)
+    // never trips while we set the new default below.
+    if (items.some((item) => item.lbaIsDefault === true)) {
+      await this.clearDefaultBankAccounts(tx, ledId);
+    }
     for (const item of items) {
       const accountHolder = normalizeRequiredText<AccountLedgerMasterErrorDetail>(
         item.lbaAccountHolder,
@@ -903,17 +909,31 @@ export class AccountLedgerMastersService {
       }
     }
   }
-  // A ledger's bank accounts cannot be marked default through the ledger master
-  // save flow — defaulting is managed only via the dedicated bank account endpoint.
-  private assertNoDefaultBankAccount(items: LedgerBankAccountItemDto[]): void {
-    if (items.some((item) => item.lbaIsDefault === true)) {
+  private assertSingleDefault(items: LedgerBankAccountItemDto[]): void {
+    const defaults = items.filter((item) => item.lbaIsDefault === true);
+    if (defaults.length > 1) {
       throwAccountsBadRequest<AccountLedgerMasterErrorDetail>('Validation failed', [
         {
           field: 'lbaIsDefault',
-          message: 'A bank account cannot be marked as default while creating or updating a ledger',
+          message: 'Only one bank account can be marked as default per ledger',
         },
       ]);
     }
+  }
+  // Clear the ledger's current default by flipping the flag off (NOT deleting the
+  // rows) so a newly marked default satisfies the partial unique index.
+  private async clearDefaultBankAccounts(
+    tx: AccountLedgerWriteClient,
+    ledId: string,
+  ): Promise<void> {
+    await tx.accLedgerBankAccount.updateMany({
+      where: { lbaLedgerId: ledId, lbaIsDeleted: false, lbaIsDefault: true },
+      data: {
+        lbaIsDefault: false,
+        lbaModifiedOn: new Date(),
+        lbaModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+      },
+    });
   }
   private async ensureBankAccountNumberIsUnique(
     tx: AccountLedgerWriteClient,

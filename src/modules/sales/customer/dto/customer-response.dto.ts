@@ -218,11 +218,32 @@ export class CustomerPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   cusCompanyId!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  cusCompanyName?: string | null;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   cusBranchId!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Branch',
+    description: 'Name of the linked branch (resolved on the get endpoint)',
+  })
+  cusBranchName?: string | null;
+
   @ApiProperty({ format: 'uuid' })
   cusAreaId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Downtown',
+    description: 'Name of the linked area (resolved on the get endpoint)',
+  })
+  cusAreaName?: string | null;
 
   @ApiProperty({ format: 'uuid' })
   cusGroupId!: string;

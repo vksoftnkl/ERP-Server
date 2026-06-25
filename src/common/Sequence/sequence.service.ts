@@ -443,7 +443,7 @@ export class SequenceService {
       client.branchMaster.findFirst({
         where: {
           brId: scope.branchId,
-          compId: scope.companyId,
+          brCompId: scope.companyId,
           brIsDeleted: false,
         },
         select: {

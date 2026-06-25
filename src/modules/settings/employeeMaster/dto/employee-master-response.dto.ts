@@ -26,8 +26,22 @@ export class EmployeeMasterPayloadDto {
   @ApiProperty({ example: 1 })
   empCompanyId!: number;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  empCompanyName?: string | null;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   empBranchId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Branch',
+    description: 'Name of the linked branch (resolved on the get endpoint)',
+  })
+  empBranchName?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   empCode!: string | null;
@@ -83,8 +97,22 @@ export class EmployeeMasterPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   empDepartmentId!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Accounts',
+    description: 'Name of the linked department (resolved on the get endpoint)',
+  })
+  empDepartmentName?: string | null;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   empDesignationId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Senior Accountant',
+    description: 'Name of the linked designation (resolved on the get endpoint)',
+  })
+  empDesignationName?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   empEmploymentType!: string | null;

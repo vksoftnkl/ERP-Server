@@ -21,6 +21,13 @@ export class BranchMasterPayloadDto {
   @ApiProperty({ example: '019cc885-d0f4-771b-a7d1-7c98f9ff3ac1' })
   compId!: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  compName?: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   brCode!: string | null;
 
@@ -143,6 +150,13 @@ export class BranchMasterPayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   brBankId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'HDFC Bank',
+    description: 'Name of the linked bank (resolved on the get endpoint)',
+  })
+  brBankName?: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   brFssaiNo!: string | null;

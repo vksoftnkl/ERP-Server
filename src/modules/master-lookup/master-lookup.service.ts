@@ -169,7 +169,7 @@ export class MasterLookupService {
     const contains = normalizedSearch ? this.buildContainsFilter(normalizedSearch) : undefined;
     const rows = await this.prisma.branchMaster.findMany({
       where: {
-        compId: companyId,
+        brCompId: companyId,
         brIsDeleted: false,
         brIsActive: true,
         ...(contains ? { brName: contains } : {}),

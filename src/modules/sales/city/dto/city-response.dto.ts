@@ -18,6 +18,12 @@ export class CityPayloadDto {
   ctmShort!: string | null;
   @ApiProperty({ format: 'uuid' })
   ctmStateId!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Tamil Nadu',
+    description: 'Name of the linked state (resolved on the get endpoint)',
+  })
+  ctmStateName?: string | null;
   @ApiProperty({ example: 0 })
   ctmOrder!: number;
   @ApiProperty({ example: true })

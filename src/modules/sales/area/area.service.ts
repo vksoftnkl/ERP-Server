@@ -60,7 +60,9 @@ export class AreaService {
         `No active area found with id ${armId}`,
       );
     }
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    payload.armCityName = await this.getCityName(this.prisma, record.armCityId);
+    return payload;
   }
   async softDelete(armId: string): Promise<{ armId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -269,6 +271,17 @@ export class AreaService {
       throw error;
     }
   }
+  private async getCityName(client: AreaWriteClient, cityId: string): Promise<string | null> {
+    if (!cityId) {
+      return null;
+    }
+    const city = await client.cityMaster.findFirst({
+      where: { ctmId: cityId },
+      select: { ctmName: true },
+    });
+    return city?.ctmName ?? null;
+  }
+
   private async ensureCityExists(tx: AreaWriteClient, cityId: string): Promise<void> {
     const city = await tx.cityMaster.findFirst({
       where: {

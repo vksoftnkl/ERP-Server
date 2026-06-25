@@ -70,8 +70,11 @@ export interface CustomerPayload {
   cusBilledCount: number;
   cusNotes: string | null;
   cusCompanyId: string | null;
+  cusCompanyName?: string | null;
   cusBranchId: string | null;
+  cusBranchName?: string | null;
   cusAreaId: string;
+  cusAreaName?: string | null;
   cusGroupId: string;
   cusIsActive: boolean;
   cusIsDeleted: boolean;

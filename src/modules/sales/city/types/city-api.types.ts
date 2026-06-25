@@ -7,6 +7,7 @@ export interface CityPayload {
   ctmAlias: string | null;
   ctmShort: string | null;
   ctmStateId: string;
+  ctmStateName?: string | null;
   ctmOrder: number;
   ctmIsActive: boolean;
   ctmIsDeleted: boolean;

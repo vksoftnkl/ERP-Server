@@ -13,10 +13,28 @@ export class DeviceListMasterPayloadDto {
   devId!: string;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   devCompanyId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  devCompanyName?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   devBranchId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Branch',
+    description: 'Name of the linked branch (resolved on the get endpoint)',
+  })
+  devBranchName?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   devUserId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'John Doe',
+    description: 'Display name of the linked user (resolved on the get endpoint)',
+  })
+  devUserName?: string | null;
   @ApiProperty({ maxLength: 120 })
   devDeviceUid!: string;
   @ApiPropertyOptional({ maxLength: 120, nullable: true })

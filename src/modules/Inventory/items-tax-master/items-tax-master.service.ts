@@ -40,7 +40,55 @@ export class ItemsTaxMasterService {
         `No active item tax found with id ${taxId}`,
       );
     }
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    const ledgerNames = await this.loadLedgerNameMap(record);
+    payload.tax_sales_ledger_name = this.ledgerName(ledgerNames, record.taxSalesLedgerId);
+    payload.tax_sales_return_ledger_name = this.ledgerName(ledgerNames, record.taxSalesReturnLedgerId);
+    payload.tax_purchase_ledger_name = this.ledgerName(ledgerNames, record.taxPurchaseLedgerId);
+    payload.tax_purchase_return_ledger_name = this.ledgerName(
+      ledgerNames,
+      record.taxPurchaseReturnLedgerId,
+    );
+    payload.tax_cgst_output_ledger_name = this.ledgerName(ledgerNames, record.taxCgstOutputLedgerId);
+    payload.tax_sgst_output_ledger_name = this.ledgerName(ledgerNames, record.taxSgstOutputLedgerId);
+    payload.tax_igst_output_ledger_name = this.ledgerName(ledgerNames, record.taxIgstOutputLedgerId);
+    payload.tax_cess_output_ledger_name = this.ledgerName(ledgerNames, record.taxCessOutputLedgerId);
+    payload.tax_cgst_input_ledger_name = this.ledgerName(ledgerNames, record.taxCgstInputLedgerId);
+    payload.tax_sgst_input_ledger_name = this.ledgerName(ledgerNames, record.taxSgstInputLedgerId);
+    payload.tax_igst_input_ledger_name = this.ledgerName(ledgerNames, record.taxIgstInputLedgerId);
+    payload.tax_cess_input_ledger_name = this.ledgerName(ledgerNames, record.taxCessInputLedgerId);
+    return payload;
+  }
+
+  private async loadLedgerNameMap(record: ItemTaxMaster): Promise<Map<string, string>> {
+    const ids = [
+      record.taxSalesLedgerId,
+      record.taxSalesReturnLedgerId,
+      record.taxPurchaseLedgerId,
+      record.taxPurchaseReturnLedgerId,
+      record.taxCgstOutputLedgerId,
+      record.taxSgstOutputLedgerId,
+      record.taxIgstOutputLedgerId,
+      record.taxCessOutputLedgerId,
+      record.taxCgstInputLedgerId,
+      record.taxSgstInputLedgerId,
+      record.taxIgstInputLedgerId,
+      record.taxCessInputLedgerId,
+    ].filter((id): id is string => Boolean(id));
+
+    if (ids.length === 0) {
+      return new Map();
+    }
+
+    const ledgers = await this.prisma.accLedgerMaster.findMany({
+      where: { ledId: { in: [...new Set(ids)] } },
+      select: { ledId: true, ledName: true },
+    });
+    return new Map(ledgers.map((ledger) => [ledger.ledId, ledger.ledName]));
+  }
+
+  private ledgerName(nameById: Map<string, string>, ledgerId: string | null): string | null {
+    return ledgerId ? (nameById.get(ledgerId) ?? null) : null;
   }
   async toggleDelete(taxId: string): Promise<{ tax_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {

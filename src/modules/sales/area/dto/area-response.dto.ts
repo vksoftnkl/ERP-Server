@@ -18,6 +18,12 @@ export class AreaPayloadDto {
   armShort!: string | null;
   @ApiProperty({ format: 'uuid' })
   armCityId!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Coimbatore',
+    description: 'Name of the linked city (resolved on the get endpoint)',
+  })
+  armCityName?: string | null;
   @ApiProperty({ example: 0 })
   armSort!: number;
   @ApiPropertyOptional({ nullable: true, example: 10 })

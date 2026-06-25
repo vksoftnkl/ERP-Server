@@ -109,11 +109,23 @@ export class CompanyMasterService {
         compId,
         compIsDeleted: false,
       },
+      include: {
+        stylesheet: { select: { thmName: true } },
+      },
     });
     if (!record) {
       this.throwNotFound(compId);
     }
-    return this.toPayload(record);
+    const bankLedger = record.compBankId
+      ? await this.prisma.accLedgerMaster.findUnique({
+          where: { ledId: record.compBankId },
+          select: { ledName: true },
+        })
+      : null;
+    return this.toPayload(record, {
+      compStylesheetName: record.stylesheet?.thmName ?? null,
+      compBankName: bankLedger?.ledName ?? null,
+    });
   }
   async softDelete(compId: string): Promise<{ compId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -430,7 +442,13 @@ export class CompanyMasterService {
     }
     return normalized;
   }
-  private toPayload(record: Company): CompanyMasterPayload {
+  private toPayload(
+    record: Company,
+    related: { compStylesheetName: string | null; compBankName: string | null } = {
+      compStylesheetName: null,
+      compBankName: null,
+    },
+  ): CompanyMasterPayload {
     return {
       compId: record.compId,
       compCode: record.compCode,
@@ -487,7 +505,9 @@ export class CompanyMasterService {
       compEinvoiceDate: record.compEinvoiceDate ? record.compEinvoiceDate.toISOString() : null,
       compEinvoiceInclEway: record.compEinvoiceInclEway,
       compStylesheetId: record.compStylesheetId,
+      compStylesheetName: related.compStylesheetName,
       compBankId: record.compBankId,
+      compBankName: related.compBankName,
       compPriceFixing: record.compPriceFixing,
       compPrefixCode: record.compPrefixCode,
       compBillGreeting: record.compBillGreeting,

@@ -59,7 +59,9 @@ export interface CompanyMasterPayload {
   compEinvoiceDate: string | null;
   compEinvoiceInclEway: boolean | null;
   compStylesheetId: number | null;
+  compStylesheetName: string | null;
   compBankId: string | null;
+  compBankName: string | null;
   compPriceFixing: string | null;
   compPrefixCode: string | null;
   compBillGreeting: string | null;

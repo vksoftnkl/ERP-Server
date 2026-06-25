@@ -1,6 +1,6 @@
 model BranchMaster {
   brId                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("br_id")
-  compId                String    @db.Uuid                                         @map("comp_id")
+  brCompId                String    @db.Uuid                                         @map("br_comp_id")
   // 1) Identity / Reference
   brCode                String?   @unique @db.VarChar(20)                          @map("br_code")
   brName                String    @db.VarChar(150)                                 @map("br_name")
@@ -64,7 +64,7 @@ model BranchMaster {
   brPanNo               String?   @db.VarChar(10)                                  @map("br_pan_no")
   
   // Relations
-  company               Company   @relation(fields: [compId], references: [compId])
+  company               Company   @relation(fields: [brCompId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]
   shipAddrs             AccShipAddr[]
   voucherBills          AccVoucherBill[]
@@ -83,7 +83,7 @@ model BranchMaster {
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
-  @@index([compId],      name: "idx_branch_comp_id")
+  @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
   @@schema("public")

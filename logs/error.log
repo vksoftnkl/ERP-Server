@@ -2296,3 +2296,235 @@ error: column "wantdelete" does not exist
     at async Promise.all (index 1)
     at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
     at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-24T13:13:17.024Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/branches/by-company/019c8ea6-19e9-78a8-b15f-749e1cde7292
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.branchMaster.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:49
+
+  167 const normalizedSearch = this.normalizeSearch(search);
+  168 const take = this.resolveTake(normalizedSearch, limit);
+  169 const contains = normalizedSearch ? this.buildContainsFilter(normalizedSearch) : undefined;
+→ 170 const rows = await this.prisma.branchMaster.findMany(
+The column `branch_master.comp_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:18)
+    at async MasterLookupController.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:74:18)
+2026-06-24T13:13:17.782Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/branches/by-company/019c8ea6-19e9-78a8-b15f-749e1cde7292
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.branchMaster.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:49
+
+  167 const normalizedSearch = this.normalizeSearch(search);
+  168 const take = this.resolveTake(normalizedSearch, limit);
+  169 const contains = normalizedSearch ? this.buildContainsFilter(normalizedSearch) : undefined;
+→ 170 const rows = await this.prisma.branchMaster.findMany(
+The column `branch_master.comp_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:18)
+    at async MasterLookupController.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:74:18)
+2026-06-24T13:13:19.276Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=13&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "comp_id" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-24T13:35:24.511Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/branches/by-company/019c8ea6-19e9-78a8-b15f-749e1cde7292
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.branchMaster.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:49
+
+  167 const normalizedSearch = this.normalizeSearch(search);
+  168 const take = this.resolveTake(normalizedSearch, limit);
+  169 const contains = normalizedSearch ? this.buildContainsFilter(normalizedSearch) : undefined;
+→ 170 const rows = await this.prisma.branchMaster.findMany(
+The column `branch_master.comp_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:18)
+    at async MasterLookupController.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:74:18)
+2026-06-24T13:35:25.364Z ERROR [AllExceptionsFilter] GET /api/v1/master-lookups/branches/by-company/019c8ea6-19e9-78a8-b15f-749e1cde7292
+PrismaClientKnownRequestError: 
+Invalid `this.prisma.branchMaster.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:49
+
+  167 const normalizedSearch = this.normalizeSearch(search);
+  168 const take = this.resolveTake(normalizedSearch, limit);
+  169 const contains = normalizedSearch ? this.buildContainsFilter(normalizedSearch) : undefined;
+→ 170 const rows = await this.prisma.branchMaster.findMany(
+The column `branch_master.comp_id` does not exist in the current database.
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async MasterLookupService.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.service.ts:170:18)
+    at async MasterLookupController.getBranchesByCompany (/home/vk/Dev/erp/ERP server/src/modules/master-lookup/master-lookup.controller.ts:74:18)
+2026-06-24T13:51:17.785Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=55&page=1&limit=22
+error: column "igdl_is_deleted" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-24T13:51:21.439Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=55&page=1&limit=22
+error: column "igdl_is_deleted" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-24T14:54:36.341Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=55&page=1&limit=22
+error: column "igdl_is_deleted" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-24T14:56:52.260Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=55&page=1&limit=22
+error: column "igdl_is_deleted" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T05:44:47.552Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=18&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "spgId" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T05:50:42.960Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=4&page=1&limit=100
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T05:50:42.971Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=5
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T05:53:54.228Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=13&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "comp_id" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T06:15:53.835Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=5&page=1&limit=100
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T06:17:04.269Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=13&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "comp_id" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T11:32:13.380Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=5&page=1&limit=100
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T11:43:33.131Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=4&page=1&limit=100
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T11:43:33.143Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=4&page=1&limit=100
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T11:43:33.146Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=5
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T12:26:49.936Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=5&page=1&limit=100
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T12:27:40.078Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=4&page=1&limit=100
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T12:27:40.085Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=4&page=1&limit=100
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T12:27:40.114Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=5
+error: column "wantdelete" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T12:28:35.925Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=13&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "comp_id" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T12:31:03.087Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=13&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "comp_id" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T12:32:45.235Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=13&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "comp_id" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T12:32:47.745Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=13&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "comp_id" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-06-25T13:10:33.703Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=18&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "spgId" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)

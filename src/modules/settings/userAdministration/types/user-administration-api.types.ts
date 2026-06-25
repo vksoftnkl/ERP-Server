@@ -38,7 +38,9 @@ export interface UserMenuPayload {
 export interface UserAdminPayload {
   usrId: string;
   usrCompanyId: string | null;
+  usrCompanyName?: string | null;
   usrBranchId: string | null;
+  usrBranchName?: string | null;
   usrEmployeeId: string | null;
   usrLoginName: string;
   usrDisplayName: string;

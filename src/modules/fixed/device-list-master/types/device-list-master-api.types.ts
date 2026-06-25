@@ -6,8 +6,11 @@ export type { FixedListMeta as DeviceListMasterListMeta } from 'src/common/types
 export interface DeviceListMasterPayload {
   devId: string;
   devCompanyId: string | null;
+  devCompanyName?: string | null;
   devBranchId: string | null;
+  devBranchName?: string | null;
   devUserId: string | null;
+  devUserName?: string | null;
   devDeviceUid: string;
   devDeviceName: string | null;
   devDeviceType: DeviceType;

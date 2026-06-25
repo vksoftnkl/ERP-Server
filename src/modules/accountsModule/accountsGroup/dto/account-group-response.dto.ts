@@ -27,6 +27,13 @@ export class AccountGroupPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   accGroupCompanyId!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  accGroupCompanyName!: string | null;
+
   @ApiProperty({ maxLength: 150 })
   accGroupName!: string;
 

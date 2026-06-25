@@ -8,6 +8,7 @@ export { AccLedgerProfile, AccountGroupNature, AccountGroupType } from './accoun
 export interface AccountGroupPayload {
   accGroupId: string;
   accGroupCompanyId: string | null;
+  accGroupCompanyName: string | null;
   accGroupName: string;
   accGroupAlias: string | null;
   accGroupShort: string | null;

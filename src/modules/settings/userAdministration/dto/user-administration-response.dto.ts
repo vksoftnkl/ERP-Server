@@ -86,8 +86,22 @@ export class UserAdminPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   usrCompanyId!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  usrCompanyName?: string | null;
+
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   usrBranchId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Branch',
+    description: 'Name of the linked branch (resolved on the get endpoint)',
+  })
+  usrBranchName?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   usrEmployeeId!: string | null;

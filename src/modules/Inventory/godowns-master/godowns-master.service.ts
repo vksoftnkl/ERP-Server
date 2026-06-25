@@ -41,7 +41,9 @@ export class GodownsMasterService {
         `No active godown location found with id ${gdlId}`,
       );
     }
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    payload.gdl_parent_name = await this.getParentName(this.prisma, record.gdlParentId);
+    return payload;
   }
   async toggleDelete(gdlId: string): Promise<{ gdl_id: string; deleted: boolean }> {
     return this.prisma.$transaction(async (tx) => {
@@ -362,6 +364,20 @@ export class GodownsMasterService {
         gdlIsDeleted: false,
       },
     });
+  }
+
+  private async getParentName(
+    client: GodownLocationWriteClient,
+    parentId: string | null,
+  ): Promise<string | null> {
+    if (!parentId) {
+      return null;
+    }
+    const parent = await client.godownLocation.findFirst({
+      where: { gdlId: parentId },
+      select: { gdlName: true },
+    });
+    return parent?.gdlName ?? null;
   }
 
   private async getActiveLocationOrThrow(

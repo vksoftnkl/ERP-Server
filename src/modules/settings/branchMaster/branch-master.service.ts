@@ -95,7 +95,9 @@ export class BranchMasterService {
     if (!record) {
       this.throwNotFound(brId);
     }
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    const relatedNames = await this.resolveRelatedNames(this.prisma, record);
+    return { ...payload, ...relatedNames };
   }
   async softDelete(brId: string): Promise<{ brId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -168,7 +170,7 @@ export class BranchMasterService {
         }
         const now = new Date();
         const data: Prisma.BranchMasterUncheckedCreateInput = {
-          compId: saveBranchMasterDto.compId,
+          brCompId: saveBranchMasterDto.compId,
           brName: normalizedName,
           brStateCode: stateCode,
           brCreatedOn: now,
@@ -223,7 +225,7 @@ export class BranchMasterService {
           await this.clearDefaultBranch(tx, saveBranchMasterDto.compId, brId);
         }
         const data: Prisma.BranchMasterUncheckedUpdateInput = {
-          compId: saveBranchMasterDto.compId,
+          brCompId: saveBranchMasterDto.compId,
           brName: normalizedName,
           brStateCode: stateCode,
           brModifiedOn: new Date(),
@@ -259,6 +261,31 @@ export class BranchMasterService {
       throw error;
     }
   }
+  private async resolveRelatedNames(
+    client: BranchMasterWriteClient,
+    record: Pick<BranchMaster, 'brCompId' | 'brBankId'>,
+  ): Promise<{ compName: string | null; brBankName: string | null }> {
+    const [company, bank] = await Promise.all([
+      record.brCompId
+        ? client.company.findFirst({
+            where: { compId: record.brCompId },
+            select: { compName: true },
+          })
+        : null,
+      record.brBankId
+        ? client.bankMaster.findFirst({
+            where: { bnkId: record.brBankId },
+            select: { bnkName: true },
+          })
+        : null,
+    ]);
+
+    return {
+      compName: company?.compName ?? null,
+      brBankName: bank?.bnkName ?? null,
+    };
+  }
+
   private async ensureCompanyExists(compId: string, tx: BranchMasterWriteClient): Promise<void> {
     const company = await tx.company.findFirst({
       where: {
@@ -286,7 +313,7 @@ export class BranchMasterService {
   ): Promise<void> {
     const existing = await tx.branchMaster.findFirst({
       where: {
-        compId,
+        brCompId: compId,
         brIsDeleted: false,
         brName: {
           equals: brName,
@@ -358,7 +385,7 @@ export class BranchMasterService {
   ): Promise<void> {
     await tx.branchMaster.updateMany({
       where: {
-        compId,
+        brCompId: compId,
         brIsDeleted: false,
         brIsDefault: true,
         ...(excludeBrId !== undefined
@@ -400,7 +427,7 @@ export class BranchMasterService {
   private toPayload(record: BranchMaster): BranchMasterPayload {
     return {
       brId: record.brId,
-      compId: record.compId,
+      compId: record.brCompId,
       brCode: record.brCode,
       brName: record.brName,
       brMailingName: record.brMailingName,

@@ -21,6 +21,12 @@ type PrismaMock = {
       [Prisma.GridDetailsFindFirstArgs]
     >;
   };
+  accLedgerMaster: {
+    findMany: jest.Mock<
+      Promise<Array<{ ledId: string; ledName: string }>>,
+      [Prisma.AccLedgerMasterFindManyArgs]
+    >;
+  };
   $queryRawUnsafe: jest.Mock<Promise<unknown>, [string, ...unknown[]]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
@@ -96,6 +102,12 @@ describe('ItemsTaxMasterService', () => {
           [Prisma.GridDetailsFindFirstArgs]
         >(),
       },
+      accLedgerMaster: {
+        findMany: jest.fn<
+          Promise<Array<{ ledId: string; ledName: string }>>,
+          [Prisma.AccLedgerMasterFindManyArgs]
+        >(),
+      },
       $queryRawUnsafe: jest.fn<Promise<unknown>, [string, ...unknown[]]>(),
       $transaction: jest.fn<
         Promise<unknown>,
@@ -105,6 +117,7 @@ describe('ItemsTaxMasterService', () => {
 
     prisma.gridDetails.findFirst.mockResolvedValue(null);
     prisma.itemTaxMaster.findMany.mockResolvedValue([]);
+    prisma.accLedgerMaster.findMany.mockResolvedValue([]);
 
     prisma.$transaction.mockImplementation(
       async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
@@ -283,6 +296,34 @@ describe('ItemsTaxMasterService', () => {
     const result = await service.getById(TAX_ID);
     expect(result.tax_id).toBe(TAX_ID);
     expect(result.tax_is_deleted).toBe(false);
+    expect(result.tax_sales_ledger_name).toBeNull();
+    expect(prisma.accLedgerMaster.findMany).not.toHaveBeenCalled();
+  });
+
+  it('getById resolves ledger names for the set ledger ids', async () => {
+    const SALES_LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fe01';
+    const CGST_OUTPUT_LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fe02';
+    prisma.itemTaxMaster.findFirst.mockResolvedValue(
+      makeRecord({
+        taxSalesLedgerId: SALES_LEDGER_ID,
+        taxCgstOutputLedgerId: CGST_OUTPUT_LEDGER_ID,
+      }),
+    );
+    prisma.accLedgerMaster.findMany.mockResolvedValue([
+      { ledId: SALES_LEDGER_ID, ledName: 'Sales Account' },
+      { ledId: CGST_OUTPUT_LEDGER_ID, ledName: 'CGST Output' },
+    ]);
+
+    const result = await service.getById(TAX_ID);
+
+    expect(prisma.accLedgerMaster.findMany).toHaveBeenCalledTimes(1);
+    const findManyArgs = prisma.accLedgerMaster.findMany.mock.calls[0][0];
+    expect(findManyArgs.where).toEqual({
+      ledId: { in: [SALES_LEDGER_ID, CGST_OUTPUT_LEDGER_ID] },
+    });
+    expect(result.tax_sales_ledger_name).toBe('Sales Account');
+    expect(result.tax_cgst_output_ledger_name).toBe('CGST Output');
+    expect(result.tax_purchase_ledger_name).toBeNull();
   });
   it('getById throws not found for missing/deleted tax', async () => {
     prisma.itemTaxMaster.findFirst.mockResolvedValue(null);

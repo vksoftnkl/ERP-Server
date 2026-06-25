@@ -641,7 +641,7 @@ export class OpeningStockService {
       tx.branchMaster.findMany({
         where: {
           brId: { in: [context.branchId] },
-          compId: context.companyId,
+          brCompId: context.companyId,
           brIsDeleted: false,
         },
         select: {

@@ -4,8 +4,11 @@ export type { PurchaseSuccessResponse as SupplierSuccessResponse } from 'src/com
 export interface SupplierPayload {
   supId: string;
   supCompanyId: string | null;
+  supCompanyName?: string | null;
   supBranchId: string | null;
+  supBranchName?: string | null;
   supGroupId: string;
+  supGroupName?: string | null;
   supPurchaseType: string;
   supName: string;
   supShort: string | null;

@@ -55,7 +55,8 @@ export class AccountsGroupService {
       );
     }
     const parentName = await this.getParentName(record.accGroupParentId);
-    return this.toPayload(record, parentName);
+    const companyName = await this.getCompanyName(record.accGroupCompanyId);
+    return this.toPayload(record, parentName, companyName);
   }
   async softDelete(accGroupId: string): Promise<{ accGroupId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -671,13 +672,32 @@ export class AccountsGroupService {
     });
     return parent?.accGroupName ?? null;
   }
+  private async getCompanyName(
+    companyId: string | null,
+    client: AccountGroupWriteClient = this.prisma,
+  ): Promise<string | null> {
+    if (!companyId) {
+      return null;
+    }
+    const company = await client.company.findFirst({
+      where: {
+        compId: companyId,
+      },
+      select: {
+        compName: true,
+      },
+    });
+    return company?.compName ?? null;
+  }
   private toPayload(
     record: AccountGroup,
     accGroupParentName: string | null = null,
+    accGroupCompanyName: string | null = null,
   ): AccountGroupPayload {
     return {
       accGroupId: record.accGroupId,
       accGroupCompanyId: record.accGroupCompanyId,
+      accGroupCompanyName,
       accGroupName: record.accGroupName,
       accGroupAlias: record.accGroupAlias,
       accGroupShort: record.accGroupShort,

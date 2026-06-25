@@ -10,6 +10,7 @@ export interface GodownPayload {
   gdl_code: string | null;
   gdl_type: string;
   gdl_parent_id: string | null;
+  gdl_parent_name?: string | null;
   gdl_sort: number;
   gdl_level: number;
   gdl_path_ids_cache: string[];

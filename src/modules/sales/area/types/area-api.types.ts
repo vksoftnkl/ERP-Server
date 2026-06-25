@@ -8,6 +8,7 @@ export interface AreaPayload {
   armAlias: string | null;
   armShort: string | null;
   armCityId: string;
+  armCityName?: string | null;
   armSort: number;
   armDistanceKm: number | null;
   armCollectionDays: number[];

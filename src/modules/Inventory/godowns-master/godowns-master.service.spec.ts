@@ -480,6 +480,20 @@ describe('GodownsMasterService', () => {
 
     expect(result.gdl_id).toBe(GDL_ID);
     expect(result.gdl_is_deleted).toBe(false);
+    expect(result.gdl_parent_name).toBeNull();
+  });
+
+  it('getById resolves the parent name when the location has a parent', async () => {
+    prisma.godownLocation.findFirst
+      .mockResolvedValueOnce(makeRecord({ gdlId: CHILD_ID, gdlParentId: PARENT_ID }))
+      .mockResolvedValueOnce(makeRecord({ gdlId: PARENT_ID, gdlName: 'Main Warehouse' }));
+
+    const result = await service.getById(CHILD_ID);
+
+    expect(result.gdl_parent_id).toBe(PARENT_ID);
+    expect(result.gdl_parent_name).toBe('Main Warehouse');
+    const parentLookupArgs = prisma.godownLocation.findFirst.mock.calls[1][0];
+    expect(parentLookupArgs.where).toEqual({ gdlId: PARENT_ID });
   });
 
   it('getById throws not found for missing/deleted location', async () => {

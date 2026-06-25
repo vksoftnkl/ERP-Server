@@ -99,7 +99,56 @@ export class EmployeeMasterService {
     if (!record) {
       this.throwNotFound(empId);
     }
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    const relatedNames = await this.resolveRelatedNames(this.prisma, record);
+    return { ...payload, ...relatedNames };
+  }
+
+  private async resolveRelatedNames(
+    client: EmployeeMasterWriteClient,
+    record: Pick<
+      EmpMaster,
+      'empCompanyId' | 'empBranchId' | 'empDepartmentId' | 'empDesignationId'
+    >,
+  ): Promise<{
+    empCompanyName: string | null;
+    empBranchName: string | null;
+    empDepartmentName: string | null;
+    empDesignationName: string | null;
+  }> {
+    const [company, branch, department, designation] = await Promise.all([
+      record.empCompanyId
+        ? client.company.findFirst({
+            where: { compId: record.empCompanyId },
+            select: { compName: true },
+          })
+        : null,
+      record.empBranchId
+        ? client.branchMaster.findFirst({
+            where: { brId: record.empBranchId },
+            select: { brName: true },
+          })
+        : null,
+      record.empDepartmentId
+        ? client.employeeDepartment.findFirst({
+            where: { edptId: record.empDepartmentId },
+            select: { edptName: true },
+          })
+        : null,
+      record.empDesignationId
+        ? client.employeeDesignation.findFirst({
+            where: { edId: record.empDesignationId },
+            select: { edName: true },
+          })
+        : null,
+    ]);
+
+    return {
+      empCompanyName: company?.compName ?? null,
+      empBranchName: branch?.brName ?? null,
+      empDepartmentName: department?.edptName ?? null,
+      empDesignationName: designation?.edName ?? null,
+    };
   }
 
   async softDelete(empId: string): Promise<{ empId: string; deleted: true }> {
@@ -364,10 +413,8 @@ export class EmployeeMasterService {
     if (!trimmed) {
       return null;
     }
-
     const extracted = this.extractBase64Payload(trimmed);
     const normalized = extracted.replace(/\s+/g, '');
-
     if (!normalized || normalized.length % 4 !== 0 || !BASE64_PATTERN.test(normalized)) {
       this.throwBadRequest(VALIDATION_FAILED_MESSAGE, [
         {
@@ -376,23 +423,18 @@ export class EmployeeMasterService {
         },
       ]);
     }
-
     return Uint8Array.from(Buffer.from(normalized, 'base64')).slice();
   }
-
   private extractBase64Payload(value: string): string {
     if (!value.startsWith('data:')) {
       return value;
     }
-
     const separatorIndex = value.indexOf(',');
     if (separatorIndex === -1) {
       return '';
     }
-
     return value.slice(separatorIndex + 1).trim();
   }
-
   private toPayload(record: EmpMaster): EmployeeMasterPayload {
     return {
       empId: record.empId,
@@ -451,7 +493,6 @@ export class EmployeeMasterService {
       empModifiedBy: record.empModifiedBy,
     };
   }
-
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<EmployeeMasterErrorDetail>(error, 'Employee already exists', [
       {
@@ -459,7 +500,6 @@ export class EmployeeMasterService {
         message: 'Duplicate employee unique value is not allowed',
       },
     ]);
-
     if (isForeignKeyConstraintError(error)) {
       throwSettingsBadRequest<EmployeeMasterErrorDetail>('Invalid relation reference', [
         {
@@ -469,7 +509,6 @@ export class EmployeeMasterService {
       ]);
     }
   }
-
   private throwNotFound(empId: string): never {
     throwSettingsNotFound<EmployeeMasterErrorDetail>(
       'Employee not found',
@@ -477,11 +516,9 @@ export class EmployeeMasterService {
       `No active employee found with id ${empId}`,
     );
   }
-
   private throwBadRequest(message: string, errors: EmployeeMasterErrorDetail[]): never {
     throwSettingsBadRequest<EmployeeMasterErrorDetail>(message, errors);
   }
-
   private buildErrorResponse(
     message: string,
     errors: EmployeeMasterErrorDetail[] = [],

@@ -120,7 +120,10 @@ export class CustomerService {
       );
     }
 
-    return this.toPayload(record);
+    const payload = this.toPayload(record);
+    const relatedNames = await this.resolveRelatedNames(this.prisma, record);
+
+    return { ...payload, ...relatedNames };
   }
 
   async softDelete(cusId: string): Promise<{ cusId: string; deleted: true }> {
@@ -363,6 +366,42 @@ export class CustomerService {
       );
       throw error;
     }
+  }
+
+  private async resolveRelatedNames(
+    client: CustomerWriteClient,
+    record: Pick<Customer, 'cusCompanyId' | 'cusBranchId' | 'cusAreaId'>,
+  ): Promise<{
+    cusCompanyName: string | null;
+    cusBranchName: string | null;
+    cusAreaName: string | null;
+  }> {
+    const [company, branch, area] = await Promise.all([
+      record.cusCompanyId
+        ? client.company.findFirst({
+            where: { compId: record.cusCompanyId },
+            select: { compName: true },
+          })
+        : null,
+      record.cusBranchId
+        ? client.branchMaster.findFirst({
+            where: { brId: record.cusBranchId },
+            select: { brName: true },
+          })
+        : null,
+      record.cusAreaId
+        ? client.areaMaster.findFirst({
+            where: { armId: record.cusAreaId },
+            select: { armName: true },
+          })
+        : null,
+    ]);
+
+    return {
+      cusCompanyName: company?.compName ?? null,
+      cusBranchName: branch?.brName ?? null,
+      cusAreaName: area?.armName ?? null,
+    };
   }
 
   private async ensureAreaExists(tx: CustomerWriteClient, areaId: string): Promise<void> {
