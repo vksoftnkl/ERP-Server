@@ -6,6 +6,7 @@ import { SaveCityDto } from './dto/save-city.dto';
 import {
   CityErrorDetail,
   CityErrorResponse,
+  CityMasterCreateResult,
   CityPayload,
 } from './types/city-api.types';
 import {
@@ -25,6 +26,8 @@ import { RequestContextService } from '../../../common/request-context/request-c
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
 const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];
+// Fixed parent account group. A city master's account group is always created under it.
+const CITY_ACCOUNT_GROUP_PARENT_ID = '019f081c-6764-73b0-b397-3f30a6efe73e';
 type CityWriteClient = SalesWriteClient;
 @Injectable()
 export class CityService {
@@ -37,7 +40,127 @@ export class CityService {
     if (saveCityDto.ctmId) {
       return this.updateCity(saveCityDto);
     }
-    return this.createCity(saveCityDto);
+    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const { cityMaster } = await this.createCityMaster(saveCityDto, userId);
+    return cityMaster;
+  }
+  async createCityMaster(
+    dto: SaveCityDto,
+    userId: string,
+    // parentId is a separate argument because it can't come from the city payload. For this flow
+    // it defaults to the fixed parent account group; callers may override it.
+    parentId: string = CITY_ACCOUNT_GROUP_PARENT_ID,
+  ): Promise<CityMasterCreateResult> {
+    const normalizedName = normalizeRequiredText<CityErrorDetail, CityErrorResponse>(
+      dto.ctmName,
+      'ctmName',
+    );
+    const actor = resolveActor(dto.ctmCreatedBy, userId);
+    const now = new Date();
+    // ctmIsActive collapses onto soft-delete state: active => is_deleted false, inactive => true.
+    const isDeleted = dto.ctmIsActive === false;
+    const order = dto.ctmOrder ?? 0;
+    try {
+      // $transaction is the rollback boundary: the account group insert and the city master
+      // insert commit together. Any throw below (including the second insert failing) rolls
+      // back BOTH rows.
+      return await this.prisma.$transaction(async (tx) => {
+        await this.ensureStateExists(tx, dto.ctmStateId);
+        await this.ensureNameIsUnique(tx, normalizedName, dto.ctmStateId);
+        // acc_group_type / company / nature / ledger profile are required (or NOT NULL) on
+        // account_groups and are never client-supplied — inherit them from the parent group.
+        const parent = await tx.accountGroup.findFirst({
+          where: {
+            accGroupId: parentId,
+            accGroupIsDeleted: false,
+          },
+          select: {
+            accGroupCompanyId: true,
+            accGroupType: true,
+            accLedgerProfile: true,
+            accGroupNature: true,
+          },
+        });
+        if (!parent) {
+          throwSalesBadRequest<CityErrorDetail, CityErrorResponse>(
+            'Parent account group does not exist',
+            [
+              {
+                field: 'parentId',
+                message: `No active account group found with id ${parentId}`,
+              },
+            ],
+          );
+        }
+        // Create the account group derived from the city fields; capture acc_group_id.
+        const accountGroupData: Prisma.AccountGroupUncheckedCreateInput = {
+          accGroupName: normalizedName, // <- ctmName
+          accGroupShort: dto.ctmShort ?? null, // <- ctmShort
+          accGroupDescription: null, // not carried from the city payload
+          accGroupSort: order, // <- ctmOrder
+          accGroupParentId: parentId, // <- parentId argument
+          accGroupCompanyId: parent.accGroupCompanyId,
+          accGroupType: parent.accGroupType,
+          accLedgerProfile: parent.accLedgerProfile,
+          accGroupNature: parent.accGroupNature,
+          accGroupChildIds: [],
+          accGroupIsActive: !isDeleted,
+          accGroupIsDeleted: isDeleted,
+          accGroupCreatedOn: now,
+          accGroupCreatedBy: actor,
+          accGroupModifiedOn: now,
+          accGroupModifiedBy: actor,
+        };
+        const accountGroup = await tx.accountGroup.create({ data: accountGroupData });
+        const accGroupId = accountGroup.accGroupId;
+        // The city master shares its PK with the account group. ctm_id is set EXPLICITLY to
+        // acc_group_id, overriding the uuidv7() default, so the two rows share one id.
+        const cityData: Prisma.CityMasterUncheckedCreateInput = {
+          ctmId: accGroupId,
+          ctmName: normalizedName,
+          ctmAlias: dto.ctmAlias ?? null,
+          ctmShort: dto.ctmShort ?? null,
+          ctmStateId: dto.ctmStateId,
+          ctmOrder: order,
+          ctmIsActive: !isDeleted,
+          ctmIsDeleted: isDeleted,
+          ctmCreatedOn: now,
+          ctmCreatedBy: actor,
+          ctmModifiedOn: now,
+          ctmModifiedBy: actor,
+        };
+        const created = await tx.cityMaster.create({ data: cityData });
+        const payload = this.toPayload(created);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'New',
+            tableName: CITY_TABLE_NAME,
+            screenName: CITY_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: payload.ctmId,
+            displayName: payload.ctmName,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: actor,
+            notes: 'City created with linked account group',
+          },
+          tx,
+        );
+        return { cityMaster: payload, accGroupId };
+      });
+    } catch (error: unknown) {
+      throwOnUniqueConstraintError<CityErrorDetail, CityErrorResponse>(
+        error,
+        'City already exists',
+        [
+          {
+            field: 'ctmName',
+            message: 'Duplicate ctmName is not allowed',
+          },
+        ],
+      );
+      throw error;
+    }
   }
   async getById(ctmId: string): Promise<CityPayload> {
     const record = await this.prisma.cityMaster.findFirst({
@@ -138,58 +261,59 @@ export class CityService {
       };
     });
   }
-  private async createCity(saveCityDto: SaveCityDto): Promise<CityPayload> {
-    const normalizedName = normalizeRequiredText<CityErrorDetail, CityErrorResponse>(
-      saveCityDto.ctmName,
-      'ctmName',
-    );
-    const now = new Date();
-    const createdBy = resolveActor(saveCityDto.ctmCreatedBy, this.requestContextService.getUserId());
-    const modifiedBy = resolveActor(saveCityDto.ctmModifiedBy, createdBy);
-    const data: Prisma.CityMasterUncheckedCreateInput = {
-      ctmName: normalizedName,
-      ctmStateId: saveCityDto.ctmStateId,
-      ctmCreatedOn: now,
-      ctmCreatedBy: createdBy,
-    };
-    this.applyOptionalFields(data, saveCityDto);
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.ensureStateExists(tx, data.ctmStateId);
-        await this.ensureNameIsUnique(tx, normalizedName, data.ctmStateId);
-        const created = await tx.cityMaster.create({ data });
-        const payload = this.toPayload(created);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: CITY_TABLE_NAME,
-            screenName: CITY_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: payload.ctmId,
-            displayName: payload.ctmName,
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'City created',
-          },
-          tx,
-        );
-        return payload;
-      });
-    } catch (error: unknown) {
-      throwOnUniqueConstraintError<CityErrorDetail, CityErrorResponse>(
-        error,
-        'City already exists',
-        [
-          {
-            field: 'ctmName',
-            message: 'Duplicate ctmName is not allowed',
-          },
-        ],
-      );
-      throw error;
-    }
-  }
+  // Standalone city create (no linked account group). Superseded by createCityMaster, which
+  // creates the account group first and reuses its id as ctm_id. Kept for reference.
+  // private async createCity(saveCityDto: SaveCityDto): Promise<CityPayload> {
+  //   const normalizedName = normalizeRequiredText<CityErrorDetail, CityErrorResponse>(
+  //     saveCityDto.ctmName,
+  //     'ctmName',
+  //   );
+  //   const now = new Date();
+  //   const createdBy = resolveActor(saveCityDto.ctmCreatedBy, this.requestContextService.getUserId());
+  //   const data: Prisma.CityMasterUncheckedCreateInput = {
+  //     ctmName: normalizedName,
+  //     ctmStateId: saveCityDto.ctmStateId,
+  //     ctmCreatedOn: now,
+  //     ctmCreatedBy: createdBy,
+  //   };
+  //   this.applyOptionalFields(data, saveCityDto);
+  //   try {
+  //     return await this.prisma.$transaction(async (tx) => {
+  //       await this.ensureStateExists(tx, data.ctmStateId);
+  //       await this.ensureNameIsUnique(tx, normalizedName, data.ctmStateId);
+  //       const created = await tx.cityMaster.create({ data });
+  //       const payload = this.toPayload(created);
+  //       await this.auditLogService.logEntityChange(
+  //         {
+  //           action: 'New',
+  //           tableName: CITY_TABLE_NAME,
+  //           screenName: CITY_AUDIT_SCREEN_NAME,
+  //           screenType: 'master',
+  //           pk: payload.ctmId,
+  //           displayName: payload.ctmName,
+  //           originalRecord: null,
+  //           modifiedRecord: payload,
+  //           userId: createdBy,
+  //           notes: 'City created',
+  //         },
+  //         tx,
+  //       );
+  //       return payload;
+  //     });
+  //   } catch (error: unknown) {
+  //     throwOnUniqueConstraintError<CityErrorDetail, CityErrorResponse>(
+  //       error,
+  //       'City already exists',
+  //       [
+  //         {
+  //           field: 'ctmName',
+  //           message: 'Duplicate ctmName is not allowed',
+  //         },
+  //       ],
+  //     );
+  //     throw error;
+  //   }
+  // }
   private async updateCity(saveCityDto: SaveCityDto): Promise<CityPayload> {
     const ctmId = saveCityDto.ctmId!;
     try {
@@ -224,7 +348,10 @@ export class CityService {
           ctmName: normalizedName,
           ctmStateId: nextStateId,
           ctmModifiedOn: new Date(),
-          ctmModifiedBy: resolveActor(saveCityDto.ctmModifiedBy, this.requestContextService.getUserId()),
+          ctmModifiedBy: resolveActor(
+            saveCityDto.ctmModifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         this.applyOptionalFields(data, saveCityDto);
 

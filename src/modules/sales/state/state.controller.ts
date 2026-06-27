@@ -26,7 +26,6 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import { StateExceptionFilter } from './state-exception.filter';
 import { StateService } from './state.service';
 import { SaveStateDto } from './dto/save-state.dto';
-import { CreateStateMasterDto } from './dto/create-state-master.dto';
 import {
   StateErrorResponseDto,
   StateMasterCreateSuccessDto,
@@ -56,14 +55,14 @@ export class StateController {
 
   // Distinct route from the combined `save` (POST states/create) to avoid a handler collision.
   // userId is resolved from the request context since the service takes it as an argument.
-  @Post('create-with-group')
+  @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create a state master together with its parent account group' })
   @ApiCreatedResponse({ type: StateMasterCreateSuccessDto })
   @ApiBadRequestResponse({ type: StateErrorResponseDto })
   @ApiConflictResponse({ type: StateErrorResponseDto })
   async createStateMaster(
-    @Body() dto: CreateStateMasterDto,
+    @Body() dto: SaveStateDto,
   ): Promise<StateSuccessResponse<StateMasterCreateResult>> {
     const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     const data = await this.stateService.createStateMaster(dto, userId);
@@ -75,22 +74,22 @@ export class StateController {
     };
   }
 
-  @Post('create')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update state (by stmId presence)' })
-  @ApiCreatedResponse({ type: StateSuccessSingleDto })
-  @ApiBadRequestResponse({ type: StateErrorResponseDto })
-  @ApiConflictResponse({ type: StateErrorResponseDto })
-  @ApiNotFoundResponse({ type: StateErrorResponseDto })
-  async save(@Body() saveStateDto: SaveStateDto): Promise<StateSuccessResponse<StatePayload>> {
-    const data = await this.stateService.save(saveStateDto);
+  // @Post('create')
+  // @Version(API_VERSION)
+  // @ApiOperation({ summary: 'Create or update state (by stmId presence)' })
+  // @ApiCreatedResponse({ type: StateSuccessSingleDto })
+  // @ApiBadRequestResponse({ type: StateErrorResponseDto })
+  // @ApiConflictResponse({ type: StateErrorResponseDto })
+  // @ApiNotFoundResponse({ type: StateErrorResponseDto })
+  // async save(@Body() saveStateDto: SaveStateDto): Promise<StateSuccessResponse<StatePayload>> {
+  //   const data = await this.stateService.save(saveStateDto);
 
-    return {
-      success: true,
-      message: saveStateDto.stmId ? 'State updated successfully' : 'State created successfully',
-      data,
-    };
-  }
+  //   return {
+  //     success: true,
+  //     message: saveStateDto.stmId ? 'State updated successfully' : 'State created successfully',
+  //     data,
+  //   };
+  // }
 
   @Get('get')
   @Version(API_VERSION)

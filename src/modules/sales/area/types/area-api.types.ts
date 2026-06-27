@@ -21,3 +21,10 @@ export interface AreaPayload {
   armModifiedBy: string | null;
 }
 
+// Result of createAreaMaster: the created area master plus the linked account group id
+// (equal to armId, surfaced explicitly because the two rows are created together).
+export interface AreaMasterCreateResult {
+  areaMaster: AreaPayload;
+  accGroupId: string;
+}
+

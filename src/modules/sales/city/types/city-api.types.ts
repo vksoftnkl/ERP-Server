@@ -18,3 +18,10 @@ export interface CityPayload {
   ctmModifiedBy: string | null;
 }
 
+// Result of createCityMaster: the created city master plus the linked account group id
+// (equal to ctmId, surfaced explicitly because the two rows are created together).
+export interface CityMasterCreateResult {
+  cityMaster: CityPayload;
+  accGroupId: string;
+}
+

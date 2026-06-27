@@ -67,3 +67,19 @@ export class CitySuccessDeleteDto {
   @ApiProperty({ type: CityDeleteResultDto })
   data!: CityDeleteResultDto;
 }
+
+export class CityMasterCreateResultDto {
+  @ApiProperty({ type: CityPayloadDto })
+  cityMaster!: CityPayloadDto;
+  @ApiProperty({ format: 'uuid', description: 'Linked account group id (equals ctmId)' })
+  accGroupId!: string;
+}
+
+export class CityMasterCreateSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'City created successfully' })
+  message!: string;
+  @ApiProperty({ type: CityMasterCreateResultDto })
+  data!: CityMasterCreateResultDto;
+}

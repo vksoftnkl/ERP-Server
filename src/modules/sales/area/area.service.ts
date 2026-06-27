@@ -6,6 +6,7 @@ import { SaveAreaDto } from './dto/save-area.dto';
 import {
   AreaErrorDetail,
   AreaErrorResponse,
+  AreaMasterCreateResult,
   AreaPayload,
 } from './types/area-api.types';
 import {
@@ -32,6 +33,8 @@ const AREA_OPTIONAL_FIELDS = [
   'armCollectionDays',
   'armIsActive',
 ];
+// Fixed parent account group. An area master's account group is always created under it.
+const AREA_ACCOUNT_GROUP_PARENT_ID = '019f081c-6764-73b0-b397-3f30a6efe73e';
 type AreaWriteClient = SalesWriteClient;
 @Injectable()
 export class AreaService {
@@ -44,7 +47,135 @@ export class AreaService {
     if (saveAreaDto.armId) {
       return this.updateArea(saveAreaDto);
     }
-    return this.createArea(saveAreaDto);
+    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const { areaMaster } = await this.createAreaMaster(saveAreaDto, userId);
+    return areaMaster;
+  }
+  async createAreaMaster(
+    dto: SaveAreaDto,
+    userId: string,
+    // parentId is a separate argument because it can't come from the area payload. For this flow
+    // it defaults to the fixed parent account group; callers may override it.
+    parentId: string = AREA_ACCOUNT_GROUP_PARENT_ID,
+  ): Promise<AreaMasterCreateResult> {
+    const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
+      dto.armName,
+      'armName',
+    );
+    const actor = resolveActor(dto.armCreatedBy, userId);
+    const now = new Date();
+    // armIsActive collapses onto soft-delete state: active => is_deleted false, inactive => true.
+    const isDeleted = dto.armIsActive === false;
+    const sort = dto.armSort ?? 0;
+    try {
+      // $transaction is the rollback boundary: the account group insert and the area master
+      // insert commit together. Any throw below (including the second insert failing) rolls
+      // back BOTH rows.
+      return await this.prisma.$transaction(async (tx) => {
+        await this.ensureCityExists(tx, dto.armCityId);
+        await this.ensureNameIsUnique(tx, normalizedName, dto.armCityId);
+        // acc_group_type / company / nature / ledger profile are required (or NOT NULL) on
+        // account_groups and are never client-supplied — inherit them from the parent group.
+        const parent = await tx.accountGroup.findFirst({
+          where: {
+            accGroupId: parentId,
+            accGroupIsDeleted: false,
+          },
+          select: {
+            accGroupCompanyId: true,
+            accGroupType: true,
+            accLedgerProfile: true,
+            accGroupNature: true,
+          },
+        });
+        if (!parent) {
+          throwSalesBadRequest<AreaErrorDetail, AreaErrorResponse>(
+            'Parent account group does not exist',
+            [
+              {
+                field: 'parentId',
+                message: `No active account group found with id ${parentId}`,
+              },
+            ],
+          );
+        }
+        // Create the account group derived from the area fields; capture acc_group_id.
+        const accountGroupData: Prisma.AccountGroupUncheckedCreateInput = {
+          accGroupName: normalizedName, // <- armName
+          accGroupShort: dto.armShort ?? null, // <- armShort
+          accGroupDescription: null, // not carried from the area payload
+          accGroupSort: sort, // <- armSort
+          accGroupParentId: parentId, // <- parentId argument
+          accGroupCompanyId: parent.accGroupCompanyId,
+          accGroupType: parent.accGroupType,
+          accLedgerProfile: parent.accLedgerProfile,
+          accGroupNature: parent.accGroupNature,
+          accGroupChildIds: [],
+          accGroupIsActive: !isDeleted,
+          accGroupIsDeleted: isDeleted,
+          accGroupCreatedOn: now,
+          accGroupCreatedBy: actor,
+          accGroupModifiedOn: now,
+          accGroupModifiedBy: actor,
+        };
+        const accountGroup = await tx.accountGroup.create({ data: accountGroupData });
+        const accGroupId = accountGroup.accGroupId;
+        // The area master shares its PK with the account group. arm_id is set EXPLICITLY to
+        // acc_group_id, overriding the uuidv7() default, so the two rows share one id.
+        const areaData: Prisma.AreaMasterUncheckedCreateInput = {
+          armId: accGroupId,
+          armName: normalizedName,
+          armAlias: dto.armAlias ?? null,
+          armShort: dto.armShort ?? null,
+          armCityId: dto.armCityId,
+          armSort: sort,
+          armCollectionDays: hasOwnProperty(dto, 'armCollectionDays')
+            ? (dto.armCollectionDays ?? [])
+            : [],
+          armIsActive: !isDeleted,
+          armIsDeleted: isDeleted,
+          armCreatedOn: now,
+          armCreatedBy: actor,
+          armModifiedOn: now,
+          armModifiedBy: actor,
+        };
+        // armDistanceKm is nullable with a DB default of 0 — only write it when the client sent
+        // it, so an omitted value keeps the default rather than being forced to null.
+        if (hasOwnProperty(dto, 'armDistanceKm')) {
+          areaData.armDistanceKm = dto.armDistanceKm ?? null;
+        }
+        const created = await tx.areaMaster.create({ data: areaData });
+        const payload = this.toPayload(created);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'New',
+            tableName: AREA_TABLE_NAME,
+            screenName: AREA_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: payload.armId,
+            displayName: payload.armName,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: actor,
+            notes: 'Area created with linked account group',
+          },
+          tx,
+        );
+        return { areaMaster: payload, accGroupId };
+      });
+    } catch (error: unknown) {
+      throwOnUniqueConstraintError<AreaErrorDetail, AreaErrorResponse>(
+        error,
+        'Area already exists',
+        [
+          {
+            field: 'armName',
+            message: 'Duplicate armName is not allowed',
+          },
+        ],
+      );
+      throw error;
+    }
   }
   async getById(armId: string): Promise<AreaPayload> {
     const record = await this.prisma.areaMaster.findFirst({
@@ -145,61 +276,62 @@ export class AreaService {
       };
     });
   }
-  private async createArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
-    const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
-      saveAreaDto.armName,
-      'armName',
-    );
-    const now = new Date();
-    const createdBy = resolveActor(saveAreaDto.armCreatedBy, this.requestContextService.getUserId());
-    const modifiedBy = resolveActor(saveAreaDto.armModifiedBy, createdBy);
-    const data: Prisma.AreaMasterUncheckedCreateInput = {
-      armName: normalizedName,
-      armCityId: saveAreaDto.armCityId,
-      armCollectionDays: hasOwnProperty(saveAreaDto, 'armCollectionDays')
-        ? (saveAreaDto.armCollectionDays ?? [])
-        : [],
-      armCreatedOn: now,
-      armCreatedBy: createdBy,
-    };
-    this.applyOptionalFields(data, saveAreaDto);
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.ensureCityExists(tx, data.armCityId);
-        await this.ensureNameIsUnique(tx, normalizedName, data.armCityId);
-        const created = await tx.areaMaster.create({ data });
-        const payload = this.toPayload(created);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: AREA_TABLE_NAME,
-            screenName: AREA_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: payload.armId,
-            displayName: payload.armName,
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'Area created',
-          },
-          tx,
-        );
-        return payload;
-      });
-    } catch (error: unknown) {
-      throwOnUniqueConstraintError<AreaErrorDetail, AreaErrorResponse>(
-        error,
-        'Area already exists',
-        [
-          {
-            field: 'armName',
-            message: 'Duplicate armName is not allowed',
-          },
-        ],
-      );
-      throw error;
-    }
-  }
+  // Standalone area create (no linked account group). Superseded by createAreaMaster, which
+  // creates the account group first and reuses its id as arm_id. Kept for reference.
+  // private async createArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
+  //   const normalizedName = normalizeRequiredText<AreaErrorDetail, AreaErrorResponse>(
+  //     saveAreaDto.armName,
+  //     'armName',
+  //   );
+  //   const now = new Date();
+  //   const createdBy = resolveActor(saveAreaDto.armCreatedBy, this.requestContextService.getUserId());
+  //   const data: Prisma.AreaMasterUncheckedCreateInput = {
+  //     armName: normalizedName,
+  //     armCityId: saveAreaDto.armCityId,
+  //     armCollectionDays: hasOwnProperty(saveAreaDto, 'armCollectionDays')
+  //       ? (saveAreaDto.armCollectionDays ?? [])
+  //       : [],
+  //     armCreatedOn: now,
+  //     armCreatedBy: createdBy,
+  //   };
+  //   this.applyOptionalFields(data, saveAreaDto);
+  //   try {
+  //     return await this.prisma.$transaction(async (tx) => {
+  //       await this.ensureCityExists(tx, data.armCityId);
+  //       await this.ensureNameIsUnique(tx, normalizedName, data.armCityId);
+  //       const created = await tx.areaMaster.create({ data });
+  //       const payload = this.toPayload(created);
+  //       await this.auditLogService.logEntityChange(
+  //         {
+  //           action: 'New',
+  //           tableName: AREA_TABLE_NAME,
+  //           screenName: AREA_AUDIT_SCREEN_NAME,
+  //           screenType: 'master',
+  //           pk: payload.armId,
+  //           displayName: payload.armName,
+  //           originalRecord: null,
+  //           modifiedRecord: payload,
+  //           userId: createdBy,
+  //           notes: 'Area created',
+  //         },
+  //         tx,
+  //       );
+  //       return payload;
+  //     });
+  //   } catch (error: unknown) {
+  //     throwOnUniqueConstraintError<AreaErrorDetail, AreaErrorResponse>(
+  //       error,
+  //       'Area already exists',
+  //       [
+  //         {
+  //           field: 'armName',
+  //           message: 'Duplicate armName is not allowed',
+  //         },
+  //       ],
+  //     );
+  //     throw error;
+  //   }
+  // }
   private async updateArea(saveAreaDto: SaveAreaDto): Promise<AreaPayload> {
     const armId = saveAreaDto.armId!;
     try {
@@ -230,7 +362,10 @@ export class AreaService {
           armName: normalizedName,
           armCityId: nextCityId,
           armModifiedOn: new Date(),
-          armModifiedBy: resolveActor(saveAreaDto.armModifiedBy, this.requestContextService.getUserId()),
+          armModifiedBy: resolveActor(
+            saveAreaDto.armModifiedBy,
+            this.requestContextService.getUserId(),
+          ),
         };
         this.applyOptionalFields(data, saveAreaDto);
         const updated = await tx.areaMaster.update({

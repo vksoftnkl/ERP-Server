@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveStateDto } from './dto/save-state.dto';
-import { CreateStateMasterDto } from './dto/create-state-master.dto';
 import { StateMasterCreateResult, StatePayload } from './types/state-api.types';
 import {
   applyStateOptionalFields,
@@ -31,10 +30,12 @@ export class StateService {
     if (saveStateDto.stmId) {
       return this.updateState(saveStateDto);
     }
-    return this.createState(saveStateDto);
+    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const { stateMaster } = await this.createStateMaster(saveStateDto, userId);
+    return stateMaster;
   }
   async createStateMaster(
-    dto: CreateStateMasterDto,
+    dto: SaveStateDto,
     userId: string,
     // parentId is a separate argument because it can't come from the state payload. For this flow
     // it defaults to the fixed "States" account group; callers may override it.
@@ -217,49 +218,49 @@ export class StateService {
       };
     });
   }
-  private async createState(saveStateDto: SaveStateDto): Promise<StatePayload> {
-    const normalizedName = normalizeRequiredStateName(saveStateDto.stmName);
-    const now = new Date();
-    const createdBy = resolveStateActor(saveStateDto.stmCreatedBy);
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await ensureStateNameIsUnique(tx, normalizedName);
-        // stm_id no longer has a DB default (it is normally the linked acc_group_id). A standalone
-        // state has no account group, so generate a uuidv7 here to preserve the time-ordered PK.
-        const [generated] = await tx.$queryRaw<
-          Array<{ stmId: string }>
-        >`SELECT uuidv7() AS "stmId"`;
-        const data: Prisma.StateMasterUncheckedCreateInput = {
-          stmId: generated.stmId,
-          stmName: normalizedName,
-          stmCreatedOn: now,
-          stmCreatedBy: createdBy,
-        };
-        applyStateOptionalFields(data, saveStateDto);
-        const created = await tx.stateMaster.create({ data });
-        const payload = toStatePayload(created);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: STATE_TABLE_NAME,
-            screenName: STATE_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: payload.stmId,
-            displayName: payload.stmName,
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'State created',
-          },
-          tx,
-        );
-        return payload;
-      });
-    } catch (error: unknown) {
-      handleStateWriteError(error);
-      throw error;
-    }
-  }
+  // private async createState(saveStateDto: SaveStateDto): Promise<StatePayload> {
+  //   const normalizedName = normalizeRequiredStateName(saveStateDto.stmName);
+  //   const now = new Date();
+  //   const createdBy = resolveStateActor(saveStateDto.stmCreatedBy);
+  //   try {
+  //     return await this.prisma.$transaction(async (tx) => {
+  //       await ensureStateNameIsUnique(tx, normalizedName);
+  //       // stm_id no longer has a DB default (it is normally the linked acc_group_id). A standalone
+  //       // state has no account group, so generate a uuidv7 here to preserve the time-ordered PK.
+  //       const [generated] = await tx.$queryRaw<
+  //         Array<{ stmId: string }>
+  //       >`SELECT uuidv7() AS "stmId"`;
+  //       const data: Prisma.StateMasterUncheckedCreateInput = {
+  //         stmId: generated.stmId,
+  //         stmName: normalizedName,
+  //         stmCreatedOn: now,
+  //         stmCreatedBy: createdBy,
+  //       };
+  //       applyStateOptionalFields(data, saveStateDto);
+  //       const created = await tx.stateMaster.create({ data });
+  //       const payload = toStatePayload(created);
+  //       await this.auditLogService.logEntityChange(
+  //         {
+  //           action: 'New',
+  //           tableName: STATE_TABLE_NAME,
+  //           screenName: STATE_AUDIT_SCREEN_NAME,
+  //           screenType: 'master',
+  //           pk: payload.stmId,
+  //           displayName: payload.stmName,
+  //           originalRecord: null,
+  //           modifiedRecord: payload,
+  //           userId: createdBy,
+  //           notes: 'State created',
+  //         },
+  //         tx,
+  //       );
+  //       return payload;
+  //     });
+  //   } catch (error: unknown) {
+  //     handleStateWriteError(error);
+  //     throw error;
+  //   }
+  // }
   private async updateState(saveStateDto: SaveStateDto): Promise<StatePayload> {
     const stmId = saveStateDto.stmId!;
     try {

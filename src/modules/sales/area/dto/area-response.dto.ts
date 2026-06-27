@@ -70,3 +70,19 @@ export class AreaSuccessDeleteDto {
   @ApiProperty({ type: AreaDeleteResultDto })
   data!: AreaDeleteResultDto;
 }
+
+export class AreaMasterCreateResultDto {
+  @ApiProperty({ type: AreaPayloadDto })
+  areaMaster!: AreaPayloadDto;
+  @ApiProperty({ format: 'uuid', description: 'Linked account group id (equals armId)' })
+  accGroupId!: string;
+}
+
+export class AreaMasterCreateSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Area created successfully' })
+  message!: string;
+  @ApiProperty({ type: AreaMasterCreateResultDto })
+  data!: AreaMasterCreateResultDto;
+}
