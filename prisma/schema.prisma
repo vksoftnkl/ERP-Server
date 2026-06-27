@@ -4246,7 +4246,9 @@ model SaleAgentGroup {
 
 // ----- prisma/sales/stateMaster.prisma -----
 model StateMaster {
-  stmId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("stm_id")
+  // PK is assigned explicitly to the parent acc_group_id (1:1 shared-PK link). No uuidv7()
+  // default — a default would make Prisma generate its own id and ignore the assigned value.
+  stmId         String    @id @db.Uuid                                     @map("stm_id")
   stmName       String                                                      @map("stm_name")
   stmAlias      String?                                                     @map("stm_alias")
   stmShort      String?   @db.VarChar(20)                                  @map("stm_short")

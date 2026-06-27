@@ -20,6 +20,8 @@ import {
 export { DEFAULT_ACTOR, DEFAULT_LIMIT, DEFAULT_PAGE };
 export const STATE_TABLE_NAME = 'state master';
 export const STATE_AUDIT_SCREEN_NAME = 'State Master';
+// Fixed parent "States" account group. A state master's account group is always created under it.
+export const STATES_ACCOUNT_GROUP_ID = '019f081c-6764-73b0-b397-3f30a6efe73e';
 const STATE_OPTIONAL_FIELDS = ['stmAlias', 'stmShort', 'stmOrder', 'stmIsActive'];
 
 export type StateWriteClient = SalesWriteClient;

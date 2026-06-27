@@ -3,7 +3,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveStateDto } from './dto/save-state.dto';
-import { StatePayload } from './types/state-api.types';
+import { CreateStateMasterDto } from './dto/create-state-master.dto';
+import { StateMasterCreateResult, StatePayload } from './types/state-api.types';
 import {
   applyStateOptionalFields,
   DEFAULT_ACTOR,
@@ -13,6 +14,7 @@ import {
   resolveStateActor,
   STATE_AUDIT_SCREEN_NAME,
   STATE_TABLE_NAME,
+  STATES_ACCOUNT_GROUP_ID,
   throwStateBadRequest,
   throwStateNotFound,
   toStatePayload,
@@ -30,6 +32,108 @@ export class StateService {
       return this.updateState(saveStateDto);
     }
     return this.createState(saveStateDto);
+  }
+  async createStateMaster(
+    dto: CreateStateMasterDto,
+    userId: string,
+    // parentId is a separate argument because it can't come from the state payload. For this flow
+    // it defaults to the fixed "States" account group; callers may override it.
+    parentId: string = STATES_ACCOUNT_GROUP_ID,
+  ): Promise<StateMasterCreateResult> {
+    const normalizedName = normalizeRequiredStateName(dto.stmName);
+    const actor = resolveStateActor(userId);
+    const now = new Date();
+    // stmIsActive collapses onto soft-delete state: active => is_deleted false, inactive => true.
+    const isDeleted = dto.stmIsActive === false;
+    const order = dto.stmOrder ?? 0;
+    try {
+      // $transaction is the rollback boundary: the account group insert and the state master
+      // insert commit together. Any throw below (including the second insert failing) rolls
+      // back BOTH rows.
+      return await this.prisma.$transaction(async (tx) => {
+        await ensureStateNameIsUnique(tx, normalizedName);
+        // acc_group_type / company / nature / ledger profile are required (or NOT NULL) on
+        // account_groups and are never client-supplied — inherit them from the parent group.
+        const parent = await tx.accountGroup.findFirst({
+          where: {
+            accGroupId: parentId,
+            accGroupIsDeleted: false,
+          },
+          select: {
+            accGroupCompanyId: true,
+            accGroupType: true,
+            accLedgerProfile: true,
+            accGroupNature: true,
+          },
+        });
+        if (!parent) {
+          throwStateBadRequest('Parent account group does not exist', [
+            {
+              field: 'parentId',
+              message: `No active account group found with id ${parentId}`,
+            },
+          ]);
+        }
+        // Step 2-3: create the account group derived from the state fields; capture acc_group_id.
+        const accountGroupData: Prisma.AccountGroupUncheckedCreateInput = {
+          accGroupName: normalizedName, // <- stmName
+          accGroupShort: dto.stmShort ?? null, // <- stmShort
+          accGroupDescription: null, // not carried from the state payload
+          accGroupSort: order, // <- stmOrder
+          accGroupParentId: parentId, // <- parentId argument
+          accGroupCompanyId: parent.accGroupCompanyId,
+          accGroupType: parent.accGroupType,
+          accLedgerProfile: parent.accLedgerProfile,
+          accGroupNature: parent.accGroupNature,
+          accGroupChildIds: [],
+          accGroupIsActive: !isDeleted,
+          accGroupIsDeleted: isDeleted,
+          accGroupCreatedOn: now,
+          accGroupCreatedBy: actor,
+          accGroupModifiedOn: now,
+          accGroupModifiedBy: actor,
+        };
+        const accountGroup = await tx.accountGroup.create({ data: accountGroupData });
+        const accGroupId = accountGroup.accGroupId;
+        // Step 4-5: the state master shares its PK with the account group. stm_id is set
+        // EXPLICITLY to acc_group_id; the model has no uuidv7() default, so this exact value
+        // is persisted (stmAlias lives on the state row only — there is no group alias here).
+        const stateMasterData: Prisma.StateMasterUncheckedCreateInput = {
+          stmId: accGroupId,
+          stmName: normalizedName,
+          stmAlias: dto.stmAlias ?? null,
+          stmShort: dto.stmShort ?? null,
+          stmOrder: order,
+          stmIsActive: !isDeleted,
+          stmIsDeleted: isDeleted,
+          stmCreatedOn: now,
+          stmCreatedBy: actor,
+          stmModifiedOn: now,
+          stmModifiedBy: actor,
+        };
+        const created = await tx.stateMaster.create({ data: stateMasterData });
+        const payload = toStatePayload(created);
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'New',
+            tableName: STATE_TABLE_NAME,
+            screenName: STATE_AUDIT_SCREEN_NAME,
+            screenType: 'master',
+            pk: payload.stmId,
+            displayName: payload.stmName,
+            originalRecord: null,
+            modifiedRecord: payload,
+            userId: actor,
+            notes: 'State created with linked account group',
+          },
+          tx,
+        );
+        return { stateMaster: payload, accGroupId };
+      });
+    } catch (error: unknown) {
+      handleStateWriteError(error);
+      throw error;
+    }
   }
   async getById(stmId: string): Promise<StatePayload> {
     const record = await this.prisma.stateMaster.findFirst({
@@ -117,16 +221,21 @@ export class StateService {
     const normalizedName = normalizeRequiredStateName(saveStateDto.stmName);
     const now = new Date();
     const createdBy = resolveStateActor(saveStateDto.stmCreatedBy);
-    const modifiedBy = resolveStateActor(saveStateDto.stmModifiedBy, createdBy);
-    const data: Prisma.StateMasterUncheckedCreateInput = {
-      stmName: normalizedName,
-      stmCreatedOn: now,
-      stmCreatedBy: createdBy,
-    };
-    applyStateOptionalFields(data, saveStateDto);
     try {
       return await this.prisma.$transaction(async (tx) => {
         await ensureStateNameIsUnique(tx, normalizedName);
+        // stm_id no longer has a DB default (it is normally the linked acc_group_id). A standalone
+        // state has no account group, so generate a uuidv7 here to preserve the time-ordered PK.
+        const [generated] = await tx.$queryRaw<
+          Array<{ stmId: string }>
+        >`SELECT uuidv7() AS "stmId"`;
+        const data: Prisma.StateMasterUncheckedCreateInput = {
+          stmId: generated.stmId,
+          stmName: normalizedName,
+          stmCreatedOn: now,
+          stmCreatedBy: createdBy,
+        };
+        applyStateOptionalFields(data, saveStateDto);
         const created = await tx.stateMaster.create({ data });
         const payload = toStatePayload(created);
         await this.auditLogService.logEntityChange(

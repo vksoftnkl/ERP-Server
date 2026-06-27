@@ -1,8 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  SalesErrorFieldDto,
-  SalesErrorResponseDto,
-} from 'src/common/utils/module-response.dto';
+import { SalesErrorFieldDto, SalesErrorResponseDto } from 'src/common/utils/module-response.dto';
 export { SalesErrorFieldDto as StateErrorFieldDto };
 export { SalesErrorResponseDto as StateErrorResponseDto };
 export class StatePayloadDto {
@@ -52,4 +49,18 @@ export class StateSuccessDeleteDto {
   message!: string;
   @ApiProperty({ type: StateDeleteResultDto })
   data!: StateDeleteResultDto;
+}
+export class StateMasterCreateResultDto {
+  @ApiProperty({ type: StatePayloadDto })
+  stateMaster!: StatePayloadDto;
+  @ApiProperty({ format: 'uuid', description: 'Linked account group id (equals stmId)' })
+  accGroupId!: string;
+}
+export class StateMasterCreateSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'State created successfully' })
+  message!: string;
+  @ApiProperty({ type: StateMasterCreateResultDto })
+  data!: StateMasterCreateResultDto;
 }

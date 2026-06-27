@@ -26,15 +26,20 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import { StateExceptionFilter } from './state-exception.filter';
 import { StateService } from './state.service';
 import { SaveStateDto } from './dto/save-state.dto';
+import { CreateStateMasterDto } from './dto/create-state-master.dto';
 import {
   StateErrorResponseDto,
+  StateMasterCreateSuccessDto,
   StateSuccessDeleteDto,
   StateSuccessSingleDto,
 } from './dto/state-response.dto';
 import {
+  StateMasterCreateResult,
   StatePayload,
   StateSuccessResponse,
 } from './types/state-api.types';
+import { DEFAULT_ACTOR } from './utils/state.utils';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { API_VERSION } from '../../../common/constants/api-version';
 
 @ApiTags('States')
@@ -44,7 +49,31 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('states')
 @UseFilters(StateExceptionFilter)
 export class StateController {
-  constructor(private readonly stateService: StateService) { }
+  constructor(
+    private readonly stateService: StateService,
+    private readonly requestContextService: RequestContextService,
+  ) {}
+
+  // Distinct route from the combined `save` (POST states/create) to avoid a handler collision.
+  // userId is resolved from the request context since the service takes it as an argument.
+  @Post('create-with-group')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Create a state master together with its parent account group' })
+  @ApiCreatedResponse({ type: StateMasterCreateSuccessDto })
+  @ApiBadRequestResponse({ type: StateErrorResponseDto })
+  @ApiConflictResponse({ type: StateErrorResponseDto })
+  async createStateMaster(
+    @Body() dto: CreateStateMasterDto,
+  ): Promise<StateSuccessResponse<StateMasterCreateResult>> {
+    const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    const data = await this.stateService.createStateMaster(dto, userId);
+
+    return {
+      success: true,
+      message: 'State created successfully',
+      data,
+    };
+  }
 
   @Post('create')
   @Version(API_VERSION)
