@@ -262,7 +262,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
   [
     'Godown Location Master',
     buildAuditSql('inventory.godown_locations', [
-      ['gdl_godown_id', 'Godown ID'],
       ['gdl_branch_id', 'Branch ID'],
       ['gdl_name', 'Location Name'],
       ['gdl_short', 'Short Code'],

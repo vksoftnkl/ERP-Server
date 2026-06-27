@@ -27,11 +27,6 @@ export class SaveGodownDto {
   @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['gdl_location_id'])))
   @Matches(UUID_PATTERN)
   gdl_id?: string;
-  @ApiPropertyOptional({ format: 'uuid', description: 'Required for updateional for update' })
-  @IsOptional()
-  @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['godown_id'])))
-  @Matches(UUID_PATTERN)
-  gdl_godown_id?: string;
   @ApiPropertyOptional({ format: 'uuid', description: 'Required for create, optional for update' })
   @IsOptional()
   @Transform(({ value, obj }) => toOptionalUuid(resolveAliasValue(value, obj, ['branch_id'])))

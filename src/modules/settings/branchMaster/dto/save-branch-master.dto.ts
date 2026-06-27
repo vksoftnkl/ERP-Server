@@ -22,7 +22,7 @@ export class SaveBranchMasterDto {
   brId?: string;
   @ApiProperty({ type: String, format: 'uuid' })
   @IsUUID('all')
-  compId!: string;
+  brCompId!: string;
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   @NullableString(20)
   brCode?: string | null;

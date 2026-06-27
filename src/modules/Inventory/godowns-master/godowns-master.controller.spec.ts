@@ -6,12 +6,10 @@ import { GodownsMasterController } from './godowns-master.controller';
 import { GodownsMasterService } from './godowns-master.service';
 
 const GDL_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
-const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
 const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46fd08';
 
 const godownPayload = {
   gdl_id: GDL_ID,
-  gdl_godown_id: GODOWN_ID,
   gdl_branch_id: BRANCH_ID,
   gdl_name: 'Rack A1',
   gdl_short: 'A1',
@@ -75,7 +73,6 @@ describe('GodownsMasterController', () => {
     const { response, statusMock } = createResponse();
 
     const payload: SaveGodownDto = {
-      gdl_godown_id: GODOWN_ID,
       gdl_branch_id: BRANCH_ID,
       gdl_name: 'Rack A1',
     };

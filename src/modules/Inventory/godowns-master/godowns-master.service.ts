@@ -125,19 +125,17 @@ export class GodownsMasterService {
   }
 
   private async createGodownLocation(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
-    const { gdlName, gdlGodownId, gdlBranchId } = this.validateCreatePayload(saveGodownDto);
+    const { gdlName, gdlBranchId } = this.validateCreatePayload(saveGodownDto);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
         const now = new Date();
         await this.validateParentAssignment(tx, {
           parentId: saveGodownDto.gdl_parent_id ?? null,
-          gdlGodownId,
           gdlBranchId,
         });
 
         const data: Prisma.GodownLocationUncheckedCreateInput = {
-          gdlGodownId,
           gdlBranchId,
           gdlName,
           gdlCreatedOn: now,
@@ -187,16 +185,10 @@ export class GodownsMasterService {
 
   private async updateGodownLocation(saveGodownDto: SaveGodownDto): Promise<GodownPayload> {
     const gdlId = saveGodownDto.gdl_id!;
-    if (!saveGodownDto.gdl_godown_id) {
-      throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
-        { field: 'gdl_godown_id', message: 'gdl_godown_id is required for update' },
-      ]);
-    }
 
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await this.getActiveLocationOrThrow(tx, gdlId);
-        const gdlGodownId = saveGodownDto.gdl_godown_id ?? existing.gdlGodownId;
         const gdlBranchId = saveGodownDto.gdl_branch_id ?? existing.gdlBranchId;
         const parentId = hasOwnProperty(saveGodownDto, 'gdl_parent_id')
           ? (saveGodownDto.gdl_parent_id ?? null)
@@ -205,7 +197,6 @@ export class GodownsMasterService {
         await this.validateParentAssignment(tx, {
           currentId: gdlId,
           parentId,
-          gdlGodownId,
           gdlBranchId,
         });
 
@@ -285,11 +276,6 @@ export class GodownsMasterService {
     if (normalized.gdl_id === undefined && normalized.gdl_location_id !== undefined) {
       normalized.gdl_id = normalized.gdl_location_id;
     }
-
-    if (normalized.gdl_godown_id === undefined && normalized.godown_id !== undefined) {
-      normalized.gdl_godown_id = normalized.godown_id;
-    }
-
     if (normalized.gdl_branch_id === undefined && normalized.branch_id !== undefined) {
       normalized.gdl_branch_id = normalized.branch_id;
     }
@@ -331,7 +317,6 @@ export class GodownsMasterService {
 
   private validateCreatePayload(saveGodownDto: SaveGodownDto): {
     gdlName: string;
-    gdlGodownId: string;
     gdlBranchId: string;
   } {
     const gdlName = saveGodownDto.gdl_name?.trim();
@@ -349,7 +334,6 @@ export class GodownsMasterService {
 
     return {
       gdlName,
-      gdlGodownId: saveGodownDto.gdl_godown_id ?? randomUUID(),
       gdlBranchId: saveGodownDto.gdl_branch_id,
     };
   }
@@ -400,7 +384,6 @@ export class GodownsMasterService {
     tx: GodownLocationWriteClient,
     params: {
       parentId: string | null;
-      gdlGodownId: string;
       gdlBranchId: string;
       currentId?: string;
     },
@@ -425,13 +408,12 @@ export class GodownsMasterService {
       ]);
     }
 
-    const isSameHierarchy =
-      parent.gdlGodownId === params.gdlGodownId && parent.gdlBranchId === params.gdlBranchId;
+    const isSameHierarchy = parent.gdlBranchId === params.gdlBranchId;
     if (!isSameHierarchy) {
       throwInventoryBadRequest<GodownErrorDetail>('Validation failed', [
         {
           field: 'gdl_parent_id',
-          message: 'Parent location must belong to the same gdl_godown_id and gdl_branch_id',
+          message: 'Parent location must belong to the same gdl_branch_id',
         },
       ]);
     }
@@ -644,13 +626,6 @@ export class GodownsMasterService {
     saveGodownDto: SaveGodownDto,
   ): void {
     if (
-      hasOwnProperty(saveGodownDto, 'gdl_godown_id') &&
-      saveGodownDto.gdl_godown_id !== undefined
-    ) {
-      data.gdlGodownId = saveGodownDto.gdl_godown_id;
-    }
-
-    if (
       hasOwnProperty(saveGodownDto, 'gdl_branch_id') &&
       saveGodownDto.gdl_branch_id !== undefined
     ) {
@@ -713,7 +688,6 @@ export class GodownsMasterService {
   private toPayload(record: GodownLocation): GodownPayload {
     return {
       gdl_id: record.gdlId,
-      gdl_godown_id: record.gdlGodownId,
       gdl_branch_id: record.gdlBranchId,
       gdl_name: record.gdlName,
       gdl_short: record.gdlShort,

@@ -162,15 +162,15 @@ export class BranchMasterService {
       return await this.prisma.$transaction(async (tx) => {
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
         const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
-        await this.ensureCompanyExists(saveBranchMasterDto.compId, tx);
-        await this.ensureNameIsUnique(tx, saveBranchMasterDto.compId, normalizedName);
+        await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
+        await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName);
         await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null);
         if (saveBranchMasterDto.brIsDefault === true) {
-          await this.clearDefaultBranch(tx, saveBranchMasterDto.compId);
+          await this.clearDefaultBranch(tx, saveBranchMasterDto.brCompId);
         }
         const now = new Date();
         const data: Prisma.BranchMasterUncheckedCreateInput = {
-          brCompId: saveBranchMasterDto.compId,
+          brCompId: saveBranchMasterDto.brCompId,
           brName: normalizedName,
           brStateCode: stateCode,
           brCreatedOn: now,
@@ -218,14 +218,14 @@ export class BranchMasterService {
         }
         const normalizedName = this.normalizeRequiredName(saveBranchMasterDto.brName);
         const stateCode = this.normalizeStateCode(saveBranchMasterDto.brStateCode);
-        await this.ensureCompanyExists(saveBranchMasterDto.compId, tx);
-        await this.ensureNameIsUnique(tx, saveBranchMasterDto.compId, normalizedName, brId);
+        await this.ensureCompanyExists(saveBranchMasterDto.brCompId, tx);
+        await this.ensureNameIsUnique(tx, saveBranchMasterDto.brCompId, normalizedName, brId);
         await this.ensureCodeIsUnique(tx, saveBranchMasterDto.brCode ?? null, brId);
         if (saveBranchMasterDto.brIsDefault === true) {
-          await this.clearDefaultBranch(tx, saveBranchMasterDto.compId, brId);
+          await this.clearDefaultBranch(tx, saveBranchMasterDto.brCompId, brId);
         }
         const data: Prisma.BranchMasterUncheckedUpdateInput = {
-          brCompId: saveBranchMasterDto.compId,
+          brCompId: saveBranchMasterDto.brCompId,
           brName: normalizedName,
           brStateCode: stateCode,
           brModifiedOn: new Date(),
@@ -263,9 +263,13 @@ export class BranchMasterService {
   }
   private async resolveRelatedNames(
     client: BranchMasterWriteClient,
-    record: Pick<BranchMaster, 'brCompId' | 'brBankId'>,
-  ): Promise<{ compName: string | null; brBankName: string | null }> {
-    const [company, bank] = await Promise.all([
+    record: Pick<BranchMaster, 'brCompId' | 'brBankId' | 'brDefaultGodownId'>,
+  ): Promise<{
+    brCompName: string | null;
+    brBankName: string | null;
+    brDefaultGodownName: string | null;
+  }> {
+    const [company, bankLedger, godown] = await Promise.all([
       record.brCompId
         ? client.company.findFirst({
             where: { compId: record.brCompId },
@@ -273,16 +277,23 @@ export class BranchMasterService {
           })
         : null,
       record.brBankId
-        ? client.bankMaster.findFirst({
-            where: { bnkId: record.brBankId },
-            select: { bnkName: true },
+        ? client.accLedgerMaster.findFirst({
+            where: { ledId: record.brBankId },
+            select: { ledName: true },
+          })
+        : null,
+      record.brDefaultGodownId
+        ? client.godownLocation.findFirst({
+            where: { gdlId: record.brDefaultGodownId },
+            select: { gdlName: true },
           })
         : null,
     ]);
 
     return {
-      compName: company?.compName ?? null,
-      brBankName: bank?.bnkName ?? null,
+      brCompName: company?.compName ?? null,
+      brBankName: bankLedger?.ledName ?? null,
+      brDefaultGodownName: godown?.gdlName ?? null,
     };
   }
 
@@ -307,13 +318,13 @@ export class BranchMasterService {
   }
   private async ensureNameIsUnique(
     tx: BranchMasterWriteClient,
-    compId: string,
+    brCompId: string,
     brName: string,
     excludeBrId?: string,
   ): Promise<void> {
     const existing = await tx.branchMaster.findFirst({
       where: {
-        brCompId: compId,
+        brCompId: brCompId,
         brIsDeleted: false,
         brName: {
           equals: brName,
@@ -427,7 +438,7 @@ export class BranchMasterService {
   private toPayload(record: BranchMaster): BranchMasterPayload {
     return {
       brId: record.brId,
-      compId: record.brCompId,
+      brCompId: record.brCompId,
       brCode: record.brCode,
       brName: record.brName,
       brMailingName: record.brMailingName,

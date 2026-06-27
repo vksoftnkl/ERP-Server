@@ -3,7 +3,6 @@ export type { InventoryErrorResponse as GodownErrorResponse } from 'src/common/t
 export type { InventorySuccessResponse as GodownSuccessResponse } from 'src/common/types/module-api.types';
 export interface GodownPayload {
   gdl_id: string;
-  gdl_godown_id: string;
   gdl_branch_id: string;
   gdl_name: string;
   gdl_short: string | null;

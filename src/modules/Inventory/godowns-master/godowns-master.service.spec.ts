@@ -47,7 +47,6 @@ type ConfiguredGridSqlServiceMock = {
 const makeRecord = (overrides: Partial<GodownLocation> = {}): GodownLocation =>
   ({
     gdlId: GDL_ID,
-    gdlGodownId: GODOWN_ID,
     gdlBranchId: BRANCH_ID,
     gdlName: 'Rack A1',
     gdlShort: 'A1',
@@ -236,7 +235,6 @@ describe('GodownsMasterService', () => {
     prisma.godownLocation.create.mockResolvedValue(created);
 
     const input: SaveGodownDto = {
-      gdl_godown_id: GODOWN_ID,
       gdl_branch_id: BRANCH_ID,
       gdl_name: 'Rack A1',
     };
@@ -274,7 +272,6 @@ describe('GodownsMasterService', () => {
     const createArgs = prisma.godownLocation.create.mock.calls[0][0];
     expect(createArgs.data).toEqual(
       expect.objectContaining({
-        gdlGodownId: GODOWN_ID,
         gdlBranchId: BRANCH_ID,
         gdlName: 'Rack Legacy',
         gdlShort: 'LG',
@@ -290,26 +287,9 @@ describe('GodownsMasterService', () => {
   it('fails create when gdl_name is missing', async () => {
     await expect(
       service.save({
-        gdl_godown_id: GODOWN_ID,
         gdl_branch_id: BRANCH_ID,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('creates location when gdl_godown_id is missing', async () => {
-    prisma.godownLocation.create.mockResolvedValue(makeRecord());
-
-    await service.save({
-      gdl_branch_id: BRANCH_ID,
-      gdl_name: 'Rack A1',
-    });
-
-    const createArgs = prisma.godownLocation.create.mock.calls[0][0];
-    expect(createArgs.data.gdlGodownId).toEqual(
-      expect.stringMatching(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-      ),
-    );
   });
 
   it('fails create when parent location is not found', async () => {
@@ -317,7 +297,6 @@ describe('GodownsMasterService', () => {
 
     await expect(
       service.save({
-        gdl_godown_id: GODOWN_ID,
         gdl_branch_id: BRANCH_ID,
         gdl_name: 'Rack A1',
         gdl_parent_id: PARENT_ID,
@@ -335,7 +314,6 @@ describe('GodownsMasterService', () => {
 
     await expect(
       service.save({
-        gdl_godown_id: GODOWN_ID,
         gdl_branch_id: BRANCH_ID,
         gdl_name: 'Rack A1',
         gdl_parent_id: PARENT_ID,
@@ -357,7 +335,6 @@ describe('GodownsMasterService', () => {
 
     const result = await service.save({
       gdl_id: GDL_ID,
-      gdl_godown_id: GODOWN_ID,
       gdl_name: 'Rack A2',
       gdl_short: 'A2',
       gdl_volume: 15,
@@ -375,19 +352,9 @@ describe('GodownsMasterService', () => {
     await expect(
       service.save({
         gdl_id: GDL_ID,
-        gdl_godown_id: GODOWN_ID,
         gdl_name: 'Rack A2',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
-  });
-
-  it('fails update when gdl_godown_id is missing', async () => {
-    await expect(
-      service.save({
-        gdl_id: GDL_ID,
-        gdl_name: 'Rack A2',
-      }),
-    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('fails update when gdl_parent_id equals gdl_id', async () => {
@@ -396,7 +363,6 @@ describe('GodownsMasterService', () => {
     await expect(
       service.save({
         gdl_id: GDL_ID,
-        gdl_godown_id: GODOWN_ID,
         gdl_parent_id: GDL_ID,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -407,7 +373,6 @@ describe('GodownsMasterService', () => {
 
     await expect(
       service.save({
-        gdl_godown_id: GODOWN_ID,
         gdl_branch_id: BRANCH_ID,
         gdl_name: 'Rack A1',
       }),
@@ -419,7 +384,6 @@ describe('GodownsMasterService', () => {
 
     await expect(
       service.save({
-        gdl_godown_id: GODOWN_ID,
         gdl_branch_id: BRANCH_ID,
         gdl_name: 'Rack A1',
       }),
@@ -461,7 +425,6 @@ describe('GodownsMasterService', () => {
     );
 
     const result = await service.save({
-      gdl_godown_id: GODOWN_ID,
       gdl_branch_id: BRANCH_ID,
       gdl_name: 'Rack B1',
       gdl_parent_id: PARENT_ID,

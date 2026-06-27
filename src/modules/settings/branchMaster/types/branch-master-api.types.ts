@@ -13,8 +13,8 @@ export type BranchMasterSuccessResponse<
 
 export interface BranchMasterPayload {
   brId: string;
-  compId: string;
-  compName?: string | null;
+  brCompId: string;
+  brCompName?: string | null;
   brCode: string | null;
   brName: string;
   brMailingName: string | null;
@@ -52,6 +52,7 @@ export interface BranchMasterPayload {
   brRoundingMode: string | null;
   brRoundingValue: number | null;
   brDefaultGodownId: string | null;
+  brDefaultGodownName?: string | null;
   brPosType: string | null;
   brAllowNegativeStock: boolean;
   brSmsApplicable: boolean;

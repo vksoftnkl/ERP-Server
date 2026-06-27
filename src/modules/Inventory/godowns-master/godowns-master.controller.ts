@@ -68,6 +68,19 @@ export class GodownsMasterController {
       data,
     };
   }
+  @Get()
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Get godown location by gdl_id query parameter (alias of /godowns/get)',
+  })
+  @ApiOkResponse({ type: GodownSuccessSingleDto })
+  @ApiBadRequestResponse({ type: GodownErrorResponseDto })
+  @ApiNotFoundResponse({ type: GodownErrorResponseDto })
+  async getByQuery(
+    @Query() queryDto: DeleteGodownQueryDto,
+  ): Promise<GodownSuccessResponse<GodownPayload>> {
+    return this.listOrGet(queryDto);
+  }
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({

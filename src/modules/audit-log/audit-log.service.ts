@@ -1025,12 +1025,12 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
       case 'godownGroup': {
         const godownLocations = await this.prisma.godownLocation.findMany({
           where: {
-            gdlGodownId: {
+            gdlId: {
               in: [...ids],
             },
           },
           select: {
-            gdlGodownId: true,
+            gdlId: true,
             gdlName: true,
             gdlParentId: true,
             gdlLevel: true,
@@ -1040,8 +1040,8 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
         });
         const godownNameById = new Map<string, string>();
         for (const location of godownLocations) {
-          if (!godownNameById.has(location.gdlGodownId)) {
-            godownNameById.set(location.gdlGodownId, location.gdlName);
+          if (!godownNameById.has(location.gdlId)) {
+            godownNameById.set(location.gdlId, location.gdlName);
           }
         }
         return godownNameById;

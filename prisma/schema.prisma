@@ -2291,8 +2291,7 @@ model categoryMaster {
 
 // ----- prisma/inventory/godownMaster.prisma -----
 model GodownLocation {
-  gdlId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")  
-  gdlGodownId       String   @db.Uuid @map("gdl_godown_id")
+  gdlId             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("gdl_id")
   gdlBranchId       String   @db.Uuid @map("gdl_branch_id")
   // Names / Codes
   gdlName           String   @db.VarChar(200) @map("gdl_name")
@@ -2328,11 +2327,11 @@ model GodownLocation {
   @@map("godown_locations")
    @@schema("inventory")
   // Indexes
- // @@index([gdlCompanyId, gdlGodownId], map: "idx_gdl_godown")
+ // @@index([gdlBranchId], map: "idx_gdl_branch")
   @@index([gdlParentId], map: "idx_gdl_parent")
-  @@index([gdlGodownId, gdlParentId, gdlSort], map: "idx_gdl_sort")
+  @@index([gdlBranchId, gdlParentId, gdlSort], map: "idx_gdl_sort")
   // This is the UNIQUE constraint you defined
-  @@unique([gdlGodownId, gdlParentId, gdlName], map: "uq_gdl_unique_name_per_parent")
+  @@unique([gdlBranchId, gdlParentId, gdlName], map: "uq_gdl_unique_name_per_parent")
   // NOTE:
   // - Partial index (idx_gdl_active WHERE ...) is not expressible in Prisma schema.
   // - GIN index on array is also not expressible in Prisma schema.

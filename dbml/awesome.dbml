@@ -1321,7 +1321,6 @@ Table item_category_master {
 
 Table godown_locations {
   gdlId String [pk]
-  gdlGodownId String [not null]
   gdlBranchId String [not null]
   gdlName String [not null]
   gdlShort String
@@ -1351,7 +1350,7 @@ Table godown_locations {
   physicalStockBatchDetails physical_stock_batch_detail [not null]
 
   indexes {
-    (gdlGodownId, gdlParentId, gdlName) [unique]
+    (gdlBranchId, gdlParentId, gdlName) [unique]
   }
 }
 

@@ -9,8 +9,6 @@ export class GodownPayloadDto {
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd06' })
   gdl_id!: string;
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd07' })
-  gdl_godown_id!: string;
-  @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd08' })
   gdl_branch_id!: string;
   @ApiProperty({ example: 'Rack A1' })
   gdl_name!: string;

@@ -10,7 +10,6 @@ describe('SaveGodownDto', () => {
     await expect(
       validationPipe.transform(
         {
-          gdl_godown_id: '019c6f6c-be87-7a11-8905-36092c46fd07',
           gdl_branch_id: '019c6f6c-be87-7a11-8905-36092c46fd08',
           gdl_name: 'Rack A1',
           gdl_path_ids_cache: ['019c6f6c-be87-7a11-8905-36092c46fd06'],
