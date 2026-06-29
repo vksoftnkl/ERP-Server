@@ -1,6 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OptionalInteger, OptionalQueryBoolean } from 'src/common/dto/dtoDecorators';
-
 export class GetPriceLevelMasterQueryDto {
   @ApiPropertyOptional({
     description:
@@ -10,7 +9,6 @@ export class GetPriceLevelMasterQueryDto {
   })
   @OptionalInteger(1)
   priceLvlId?: number;
-
   @ApiPropertyOptional({
     type: Boolean,
     default: true,
@@ -18,7 +16,6 @@ export class GetPriceLevelMasterQueryDto {
   })
   @OptionalQueryBoolean()
   activeOnly?: boolean;
-
   @ApiPropertyOptional({
     type: Boolean,
     default: false,

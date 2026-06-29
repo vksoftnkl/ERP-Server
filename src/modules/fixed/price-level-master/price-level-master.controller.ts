@@ -22,7 +22,6 @@ import {
   PriceLevelMasterSuccessResponse,
 } from './types/price-level-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Price Level Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -30,7 +29,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('price-level-masters')
 export class PriceLevelMasterController {
   constructor(private readonly priceLevelMasterService: PriceLevelMasterService) { }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({
@@ -44,7 +42,6 @@ export class PriceLevelMasterController {
     @Query() queryDto: GetPriceLevelMasterQueryDto,
   ): Promise<PriceLevelMasterSuccessResponse<PriceLevelMasterPayload[], PriceLevelMasterGetMeta>> {
     const result = await this.priceLevelMasterService.get(queryDto);
-
     return {
       success: true,
       message:

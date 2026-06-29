@@ -6,7 +6,6 @@ import {
   PriceLevelMasterGetMeta,
   PriceLevelMasterPayload,
 } from './types/price-level-master-api.types';
-
 type PriceLevelRecord = Pick<
   PriceLevel,
   | 'priceLvlId'
@@ -21,17 +20,14 @@ type PriceLevelRecord = Pick<
   | 'priceLvlModifiedOn'
   | 'priceLvlModifiedBy'
 >;
-
 @Injectable()
 export class PriceLevelMasterService {
   constructor(private readonly prisma: PrismaService) {}
-
   async get(
     queryDto: GetPriceLevelMasterQueryDto,
   ): Promise<{ items: PriceLevelMasterPayload[]; meta: PriceLevelMasterGetMeta }> {
     const activeOnly = queryDto.activeOnly ?? true;
     const includeDeleted = queryDto.includeDeleted ?? false;
-
     const where: Prisma.PriceLevelWhereInput = {};
     if (queryDto.priceLvlId !== undefined) {
       where.priceLvlId = queryDto.priceLvlId;
@@ -42,7 +38,6 @@ export class PriceLevelMasterService {
     if (!includeDeleted) {
       where.priceLvlIsDeleted = false;
     }
-
     const records = await this.prisma.priceLevel.findMany({
       where,
       orderBy: [{ priceLvlName: 'asc' }, { priceLvlId: 'asc' }],
@@ -60,13 +55,10 @@ export class PriceLevelMasterService {
         priceLvlModifiedBy: true,
       },
     });
-
     if (queryDto.priceLvlId !== undefined && records.length === 0) {
       throw new NotFoundException(`Price level not found for priceLvlId ${queryDto.priceLvlId}`);
     }
-
     const items = records.map((record) => this.toPayload(record));
-
     return {
       items,
       meta: {
@@ -77,7 +69,6 @@ export class PriceLevelMasterService {
       },
     };
   }
-
   private toPayload(record: PriceLevelRecord): PriceLevelMasterPayload {
     return {
       priceLvlId: record.priceLvlId,
