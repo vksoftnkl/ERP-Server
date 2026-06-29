@@ -218,49 +218,6 @@ export class StateService {
       };
     });
   }
-  // private async createState(saveStateDto: SaveStateDto): Promise<StatePayload> {
-  //   const normalizedName = normalizeRequiredStateName(saveStateDto.stmName);
-  //   const now = new Date();
-  //   const createdBy = resolveStateActor(saveStateDto.stmCreatedBy);
-  //   try {
-  //     return await this.prisma.$transaction(async (tx) => {
-  //       await ensureStateNameIsUnique(tx, normalizedName);
-  //       // stm_id no longer has a DB default (it is normally the linked acc_group_id). A standalone
-  //       // state has no account group, so generate a uuidv7 here to preserve the time-ordered PK.
-  //       const [generated] = await tx.$queryRaw<
-  //         Array<{ stmId: string }>
-  //       >`SELECT uuidv7() AS "stmId"`;
-  //       const data: Prisma.StateMasterUncheckedCreateInput = {
-  //         stmId: generated.stmId,
-  //         stmName: normalizedName,
-  //         stmCreatedOn: now,
-  //         stmCreatedBy: createdBy,
-  //       };
-  //       applyStateOptionalFields(data, saveStateDto);
-  //       const created = await tx.stateMaster.create({ data });
-  //       const payload = toStatePayload(created);
-  //       await this.auditLogService.logEntityChange(
-  //         {
-  //           action: 'New',
-  //           tableName: STATE_TABLE_NAME,
-  //           screenName: STATE_AUDIT_SCREEN_NAME,
-  //           screenType: 'master',
-  //           pk: payload.stmId,
-  //           displayName: payload.stmName,
-  //           originalRecord: null,
-  //           modifiedRecord: payload,
-  //           userId: createdBy,
-  //           notes: 'State created',
-  //         },
-  //         tx,
-  //       );
-  //       return payload;
-  //     });
-  //   } catch (error: unknown) {
-  //     handleStateWriteError(error);
-  //     throw error;
-  //   }
-  // }
   private async updateState(saveStateDto: SaveStateDto): Promise<StatePayload> {
     const stmId = saveStateDto.stmId!;
     try {
