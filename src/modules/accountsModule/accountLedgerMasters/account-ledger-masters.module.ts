@@ -7,5 +7,6 @@ import { AccountLedgerMastersService } from './account-ledger-masters.service';
   imports: [AuditLogModule],
   controllers: [AccountLedgerMastersController],
   providers: [AccountLedgerMastersService, AccountLedgerMasterExceptionFilter],
+  exports: [AccountLedgerMastersService],
 })
 export class AccountLedgerMastersModule {}

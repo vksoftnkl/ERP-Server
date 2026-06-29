@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, Supplier } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerMasters/account-ledger-masters.service';
+import { SaveAccountLedgerMasterDto } from '../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
 import {
   SupplierPayload,
@@ -22,6 +24,41 @@ import { RequestContextService } from '../../../common/request-context/request-c
 
 const SUPPLIER_TABLE_NAME = 'suppliers';
 const SUPPLIER_AUDIT_SCREEN_NAME = 'Supplier Master';
+// Every supplier is provisioned with a linked account ledger under this fixed
+// account group, and the supplier reuses that ledger's id as its own primary key.
+const SUPPLIER_LINKED_LEDGER_GROUP_ID = '019f081c-98cc-757a-9346-4cfba810c47f';
+// Supplier field -> linked-ledger field copy map. Each entry is copied onto the
+// ledger DTO only when the supplier payload actually carries that key.
+const SUPPLIER_TO_LEDGER_FIELD_MAP: ReadonlyArray<
+  [keyof SaveSupplierDto, keyof SaveAccountLedgerMasterDto]
+> = [
+  ['supCompanyId', 'ledCompanyId'],
+  ['supBranchId', 'ledBranchId'],
+  ['supShort', 'ledShort'],
+  ['supMailId', 'ledEmail'],
+  ['supTel', 'ledTel'],
+  ['supPhone', 'ledPhone1'],
+  ['supWhatsappNo', 'ledWhatsappNo'],
+  ['supAddr1', 'ledAddr1'],
+  ['supAddr2', 'ledAddr2'],
+  ['supAddr3', 'ledAddr3'],
+  ['supCity', 'ledCity'],
+  ['supDistrict', 'ledDistrict'],
+  ['supPincode', 'ledPin'],
+  ['supCountry', 'ledCountry'],
+  ['supRegionName', 'ledRegionName'],
+  ['supRegionAddr1', 'ledRegionAddr1'],
+  ['supRegionAddr2', 'ledRegionAddr2'],
+  ['supRegionAddr3', 'ledRegionAddr3'],
+  ['supRegionCity', 'ledRegionCity'],
+  ['supRegionDistrict', 'ledRegionDistrict'],
+  ['supRegionStateName', 'ledRegionStateName'],
+  ['supRegionCountry', 'ledRegionCountry'],
+  ['supGstNo', 'ledGstinNo'],
+  ['supPanNo', 'ledPanNo'],
+  ['supNotes', 'ledRemarks'],
+  ['supIsActive', 'ledIsActive'],
+];
 
 type SupplierWriteClient = PurchaseWriteClient;
 
@@ -31,6 +68,7 @@ export class SuppliersService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    private readonly accountLedgerMastersService: AccountLedgerMastersService,
   ) {}
 
   async save(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
@@ -123,6 +161,15 @@ export class SuppliersService {
           ? (saveSupplierDto.supCompanyId ?? null)
           : null;
         await this.ensureNameIsUnique(tx, normalizedName, companyId);
+        // Provision the linked account ledger first, then reuse its led_id as the
+        // supplier's sup_id so the two masters share one identity (1:1 link).
+        const ledgerDto = this.buildLinkedLedgerDto(saveSupplierDto, {
+          name: normalizedName,
+          stateName: normalizedStateName,
+          stateCode: normalizedStateCode,
+        });
+        const ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
+        data.supId = ledger.ledId;
         const created = await tx.supplier.create({ data });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
@@ -278,6 +325,29 @@ export class SuppliersService {
         { field: 'supName', message: 'Duplicate supplier name is not allowed for this company' },
       ]);
     }
+  }
+
+  // Map the supplier payload onto a ledger DTO for the linked account ledger.
+  // Required ledger fields come from the supplier's already-normalized values; the
+  // remaining shared fields are copied only when present on the supplier payload.
+  private buildLinkedLedgerDto(
+    saveSupplierDto: SaveSupplierDto,
+    normalized: { name: string; stateName: string; stateCode: string },
+  ): SaveAccountLedgerMasterDto {
+    const ledgerDto: SaveAccountLedgerMasterDto = {
+      ledGroupId: SUPPLIER_LINKED_LEDGER_GROUP_ID,
+      ledName: normalized.name,
+      ledStateName: normalized.stateName,
+      ledStateCode: normalized.stateCode,
+    };
+    const ledgerDtoRecord = ledgerDto as unknown as Record<string, unknown>;
+    const supplierRecord = saveSupplierDto as unknown as Record<string, unknown>;
+    for (const [supField, ledField] of SUPPLIER_TO_LEDGER_FIELD_MAP) {
+      if (hasOwnProperty(saveSupplierDto, supField)) {
+        ledgerDtoRecord[ledField] = supplierRecord[supField];
+      }
+    }
+    return ledgerDto;
   }
 
   private applyOptionalFields(

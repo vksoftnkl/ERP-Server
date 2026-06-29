@@ -205,7 +205,10 @@ export class AccountLedgerMastersService {
       throw error;
     }
   }
-  private async createLedgerWithinTx(
+  // Create a ledger inside an existing transaction. Exposed (not private) so other
+  // modules — e.g. supplier creation, which provisions a linked ledger first — can
+  // compose ledger creation into their own transaction and reuse the returned ledId.
+  async createLedgerWithinTx(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
     tx: AccountLedgerWriteClient,
   ): Promise<AccountLedgerMasterPayload> {
