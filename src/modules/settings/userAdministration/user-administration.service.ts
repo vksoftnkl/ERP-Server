@@ -157,7 +157,7 @@ export class UserAdministrationService {
 
         const data: Prisma.UserMasterUncheckedCreateInput = {
           usrLoginName: dto.usrLoginName.trim(),
-          usrDisplayName: dto.usrDisplayName.trim(),
+          usrDisplayName: dto.usrDisplayName?.trim() ?? '',
           usrPasswordHash: passwordHash,
           usrCreatedOn: now,
           usrCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
@@ -217,7 +217,6 @@ export class UserAdministrationService {
         const now = new Date();
         const data: Prisma.UserMasterUncheckedUpdateInput = {
           usrLoginName: dto.usrLoginName.trim(),
-          usrDisplayName: dto.usrDisplayName.trim(),
           usrModifiedOn: now,
           usrModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
@@ -364,6 +363,9 @@ export class UserAdministrationService {
     if (dto.usrCompanyId !== undefined) data.usrCompanyId = dto.usrCompanyId;
     if (dto.usrBranchId !== undefined) data.usrBranchId = dto.usrBranchId;
     if (dto.usrEmployeeId !== undefined) data.usrEmployeeId = dto.usrEmployeeId;
+    // Optional/nullable: empty or null collapses to '' (the column is NOT NULL); omitting the
+    // key leaves the stored display name unchanged.
+    if (dto.usrDisplayName !== undefined) data.usrDisplayName = dto.usrDisplayName?.trim() ?? '';
     if (dto.usrFullName !== undefined) data.usrFullName = dto.usrFullName;
     if (dto.usrMobileNo !== undefined) data.usrMobileNo = dto.usrMobileNo;
     if (dto.usrEmail !== undefined) data.usrEmail = dto.usrEmail;

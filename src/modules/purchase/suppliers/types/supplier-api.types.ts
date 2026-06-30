@@ -53,5 +53,4 @@ export interface SupplierPayload {
   supCreatedBy: string | null;
   supModifiedOn: string;
   supModifiedBy: string | null;
-  supStateId: string | null;
 }

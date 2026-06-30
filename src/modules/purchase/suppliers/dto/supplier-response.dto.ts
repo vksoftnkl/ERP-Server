@@ -129,8 +129,6 @@ export class SupplierPayloadDto {
   supModifiedOn!: string;
   @ApiPropertyOptional({ nullable: true })
   supModifiedBy!: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  supStateId!: string | null;
 }
 export class SupplierDeleteResultDto {
   @ApiProperty({ format: 'uuid' })

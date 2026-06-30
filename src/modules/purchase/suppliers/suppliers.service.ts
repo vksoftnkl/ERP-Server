@@ -21,7 +21,6 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-
 const SUPPLIER_TABLE_NAME = 'suppliers';
 const SUPPLIER_AUDIT_SCREEN_NAME = 'Supplier Master';
 // Every supplier is provisioned with a linked account ledger under this fixed
@@ -59,9 +58,7 @@ const SUPPLIER_TO_LEDGER_FIELD_MAP: ReadonlyArray<
   ['supNotes', 'ledRemarks'],
   ['supIsActive', 'ledIsActive'],
 ];
-
 type SupplierWriteClient = PurchaseWriteClient;
-
 @Injectable()
 export class SuppliersService {
   constructor(
@@ -70,14 +67,12 @@ export class SuppliersService {
     private readonly requestContextService: RequestContextService,
     private readonly accountLedgerMastersService: AccountLedgerMastersService,
   ) {}
-
   async save(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
     if (saveSupplierDto.supId) {
       return this.updateSupplier(saveSupplierDto);
     }
     return this.createSupplier(saveSupplierDto);
   }
-
   async getById(supId: string): Promise<SupplierPayload> {
     const record = await this.prisma.supplier.findFirst({
       where: { supId, supIsDeleted: false },
@@ -89,7 +84,6 @@ export class SuppliersService {
     const relatedNames = await this.resolveRelatedNames(this.prisma, record);
     return { ...payload, ...relatedNames };
   }
-
   async softDelete(supId: string): Promise<{ supId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.supplier.findFirst({
@@ -143,7 +137,6 @@ export class SuppliersService {
       return { supId, deleted: true };
     });
   }
-
   private async createSupplier(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
     const normalizedName = normalizeRequiredText(saveSupplierDto.supName, 'supName');
     const normalizedPurchaseType = normalizeRequiredText(saveSupplierDto.supPurchaseType, 'supPurchaseType');
@@ -207,7 +200,6 @@ export class SuppliersService {
       throw error;
     }
   }
-
   private async updateSupplier(saveSupplierDto: SaveSupplierDto): Promise<SupplierPayload> {
     const supId = saveSupplierDto.supId!;
     try {
@@ -283,7 +275,6 @@ export class SuppliersService {
       throw error;
     }
   }
-
   private async resolveRelatedNames(
     client: SupplierWriteClient,
     record: Pick<Supplier, 'supCompanyId' | 'supBranchId' | 'supGroupId'>,
@@ -312,14 +303,12 @@ export class SuppliersService {
           })
         : null,
     ]);
-
     return {
       supCompanyName: company?.compName ?? null,
       supBranchName: branch?.brName ?? null,
       supGroupName: group?.spgName ?? null,
     };
   }
-
   private async ensureSupplierGroupExists(tx: SupplierWriteClient, supGroupId: string): Promise<void> {
     const record = await tx.supplierGroup.findFirst({
       where: { spgId: supGroupId, spgIsDeleted: false },
@@ -331,7 +320,6 @@ export class SuppliersService {
       ]);
     }
   }
-
   private async ensureNameIsUnique(
     tx: SupplierWriteClient,
     supName: string,
@@ -353,7 +341,6 @@ export class SuppliersService {
       ]);
     }
   }
-
   // Map the supplier payload onto a ledger DTO for the linked account ledger.
   // Required ledger fields come from the supplier's already-normalized values; the
   // remaining shared fields are copied only when present on the supplier payload.
@@ -376,7 +363,6 @@ export class SuppliersService {
     }
     return ledgerDto;
   }
-
   private applyOptionalFields(
     data: Prisma.SupplierUncheckedCreateInput | Prisma.SupplierUncheckedUpdateInput,
     saveSupplierDto: SaveSupplierDto,
@@ -388,7 +374,7 @@ export class SuppliersService {
       'supCreditDays', 'supCashDiscPerc', 'supGstNo', 'supPanNo', 'supSupCst',
       'supDrugLiscenceNo', 'supRegionName', 'supRegionAddr1', 'supRegionAddr2',
       'supRegionAddr3', 'supRegionCity', 'supRegionDistrict', 'supRegionStateName',
-      'supRegionCountry', 'supSortOrder', 'supIsActive', 'supStateId',
+      'supRegionCountry', 'supSortOrder', 'supIsActive', 
     ];
     for (const field of optionalFields) {
       if (hasOwnProperty(saveSupplierDto, field)) {
@@ -409,7 +395,6 @@ export class SuppliersService {
     }
     return normalized;
   }
-
   private toPayload(record: Supplier): SupplierPayload {
     return {
       supId: record.supId,
@@ -460,7 +445,6 @@ export class SuppliersService {
       supCreatedBy: record.supCreatedBy,
       supModifiedOn: record.supModifiedOn.toISOString(),
       supModifiedBy: record.supModifiedBy,
-      supStateId: record.supStateId,
     };
   }
 }

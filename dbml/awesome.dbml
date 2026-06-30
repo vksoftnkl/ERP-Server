@@ -2396,7 +2396,6 @@ Table suppliers {
   supCreatedBy String
   supModifiedOn DateTime [not null]
   supModifiedBy String
-  supStateId String
   group supplier_groups [not null]
 }
 

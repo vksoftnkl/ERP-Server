@@ -96,10 +96,9 @@ export class SaveUserAdministrationDto {
   @IsNotEmpty()
   usrLoginName!: string;
 
-  @ApiProperty({ maxLength: 100 })
-  @TrimmedString(100)
-  @IsNotEmpty()
-  usrDisplayName!: string;
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  @NullableString(100)
+  usrDisplayName?: string | null;
 
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @NullableString(150)
