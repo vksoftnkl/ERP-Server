@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsArray, IsNotEmpty, IsOptional, ValidateNested } from 'class-validator';
 import {
   NullableDateString,
   NullableInteger,
@@ -13,6 +14,8 @@ import {
   TrimmedString,
   UpperString,
 } from 'src/common/dto/dtoDecorators';
+import { LedgerBankAccountItemDto } from '../../../accountsModule/accountLedgerMasters/dto/ledger-bank-account-item.dto';
+import { normalizeBankAccountItems } from '../../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
 export class SaveSupplierDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -156,4 +159,20 @@ export class SaveSupplierDto {
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableString(100)
   supModifiedBy?: string | null;
+
+  @ApiPropertyOptional({
+    type: LedgerBankAccountItemDto,
+    isArray: true,
+    description:
+      "Bank accounts to persist on the supplier's linked account ledger. On create every item " +
+      'is inserted; on update an item with `lbaId` updates that row, an item without `lbaId` is ' +
+      'inserted. Omitting the array (or sending an empty one) leaves existing bank accounts ' +
+      'untouched — use the ledger bank account delete endpoint to remove them.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeBankAccountItems(value))
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LedgerBankAccountItemDto)
+  ledgerBankAccount?: LedgerBankAccountItemDto[];
 }

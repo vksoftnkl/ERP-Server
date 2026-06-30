@@ -38,7 +38,10 @@ const isBlankBankAccountItem = (item: unknown): boolean => {
   );
 };
 
-const normalizeBankAccountItems = (value: unknown): unknown => {
+// Exported so linked masters that embed the same bank-account array (e.g. the supplier
+// create/update payload, which provisions a shared account ledger) reuse one normalizer
+// instead of duplicating the blank-row stripping logic.
+export const normalizeBankAccountItems = (value: unknown): unknown => {
   if (value === null || value === undefined) {
     return undefined;
   }

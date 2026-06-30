@@ -42,7 +42,12 @@ export class GodownsMasterService {
       );
     }
     const payload = this.toPayload(record);
-    payload.gdl_parent_name = await this.getParentName(this.prisma, record.gdlParentId);
+    const [parentName, branchName] = await Promise.all([
+      this.getParentName(this.prisma, record.gdlParentId),
+      this.getBranchName(this.prisma, record.gdlBranchId),
+    ]);
+    payload.gdl_parent_name = parentName;
+    payload.gdl_branch_name = branchName;
     return payload;
   }
   async toggleDelete(gdlId: string): Promise<{ gdl_id: string; deleted: boolean }> {
@@ -362,6 +367,20 @@ export class GodownsMasterService {
       select: { gdlName: true },
     });
     return parent?.gdlName ?? null;
+  }
+
+  private async getBranchName(
+    client: GodownLocationWriteClient,
+    branchId: string | null,
+  ): Promise<string | null> {
+    if (!branchId) {
+      return null;
+    }
+    const branch = await client.branchMaster.findFirst({
+      where: { brId: branchId },
+      select: { brName: true },
+    });
+    return branch?.brName ?? null;
   }
 
   private async getActiveLocationOrThrow(

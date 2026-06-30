@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LedgerBankAccountPayloadDto } from '../../../accountsModule/ledgerBankAccount/dto/ledger-bank-account-response.dto';
 
 export class SupplierErrorFieldDto {
   @ApiProperty({ example: 'supName' })
@@ -129,6 +130,8 @@ export class SupplierPayloadDto {
   supModifiedOn!: string;
   @ApiPropertyOptional({ nullable: true })
   supModifiedBy!: string | null;
+  @ApiProperty({ type: LedgerBankAccountPayloadDto, isArray: true })
+  ledgerBankAccount!: LedgerBankAccountPayloadDto[];
 }
 export class SupplierDeleteResultDto {
   @ApiProperty({ format: 'uuid' })

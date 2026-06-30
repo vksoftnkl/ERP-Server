@@ -1,6 +1,8 @@
+import type { LedgerBankAccountPayload } from '../../../accountsModule/accountLedgerMasters/types/account-ledger-master-api.types';
 export type { PurchaseErrorDetail as SupplierErrorDetail } from 'src/common/types/module-api.types';
 export type { PurchaseErrorResponse as SupplierErrorResponse } from 'src/common/types/module-api.types';
 export type { PurchaseSuccessResponse as SupplierSuccessResponse } from 'src/common/types/module-api.types';
+export type { LedgerBankAccountPayload } from '../../../accountsModule/accountLedgerMasters/types/account-ledger-master-api.types';
 export interface SupplierPayload {
   supId: string;
   supCompanyId: string | null;
@@ -53,4 +55,5 @@ export interface SupplierPayload {
   supCreatedBy: string | null;
   supModifiedOn: string;
   supModifiedBy: string | null;
+  ledgerBankAccount: LedgerBankAccountPayload[];
 }

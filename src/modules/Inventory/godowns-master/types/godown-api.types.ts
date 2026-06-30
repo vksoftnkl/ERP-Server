@@ -4,6 +4,7 @@ export type { InventorySuccessResponse as GodownSuccessResponse } from 'src/comm
 export interface GodownPayload {
   gdl_id: string;
   gdl_branch_id: string;
+  gdl_branch_name?: string | null;
   gdl_name: string;
   gdl_short: string | null;
   gdl_code: string | null;

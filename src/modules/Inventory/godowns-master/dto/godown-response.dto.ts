@@ -10,6 +10,12 @@ export class GodownPayloadDto {
   gdl_id!: string;
   @ApiProperty({ format: 'uuid', example: '019c6f6c-be87-7a11-8905-36092c46fd07' })
   gdl_branch_id!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Head Office',
+    description: 'Name of the branch (resolved on the get endpoint)',
+  })
+  gdl_branch_name?: string | null;
   @ApiProperty({ example: 'Rack A1' })
   gdl_name!: string;
   @ApiPropertyOptional({ nullable: true, example: 'A1' })

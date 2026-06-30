@@ -1011,6 +1011,17 @@ export class AccountLedgerMastersService {
       orderBy: LEDGER_BANK_ACCOUNT_ORDER_BY,
     });
   }
+  // Load a ledger's active bank-account payloads (default-first, then oldest-first), returning
+  // an empty array when there are none. Exposed so linked masters that share their PK with a
+  // ledger — e.g. supplier get/create/update — can embed the bank accounts in their own
+  // response without re-implementing the payload mapping. Never throws on a missing ledger.
+  async listBankAccountPayloads(
+    ledId: string,
+    client: AccountLedgerWriteClient = this.prisma,
+  ): Promise<LedgerBankAccountPayload[]> {
+    const records = await this.loadBankAccounts(client, ledId);
+    return records.map((record) => this.toBankAccountPayload(record));
+  }
   private toBankAccountPayload(record: AccLedgerBankAccount): LedgerBankAccountPayload {
     return {
       lbaId: record.lbaId,

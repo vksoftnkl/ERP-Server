@@ -6,6 +6,7 @@ import { AccountLedgerMastersService } from '../../accountsModule/accountLedgerM
 import { SaveAccountLedgerMasterDto } from '../../accountsModule/accountLedgerMasters/dto/save-account-ledger-master.dto';
 import { SaveSupplierDto } from './dto/save-supplier.dto';
 import {
+  LedgerBankAccountPayload,
   SupplierPayload,
 } from './types/supplier-api.types';
 import {
@@ -80,8 +81,13 @@ export class SuppliersService {
     if (!record) {
       throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
     }
-    const payload = this.toPayload(record);
-    const relatedNames = await this.resolveRelatedNames(this.prisma, record);
+    // Bank accounts live on the linked account ledger (it shares sup_id as its PK), so load
+    // them alongside the related master names and embed them in the supplier payload.
+    const [relatedNames, ledgerBankAccount] = await Promise.all([
+      this.resolveRelatedNames(this.prisma, record),
+      this.accountLedgerMastersService.listBankAccountPayloads(record.supId),
+    ]);
+    const payload = this.toPayload(record, ledgerBankAccount);
     return { ...payload, ...relatedNames };
   }
   async softDelete(supId: string): Promise<{ supId: string; deleted: true }> {
@@ -175,7 +181,7 @@ export class SuppliersService {
         const ledger = await this.accountLedgerMastersService.createLedgerWithinTx(ledgerDto, tx);
         data.supId = ledger.ledId;
         const created = await tx.supplier.create({ data });
-        const payload = this.toPayload(created);
+        const payload = this.toPayload(created, ledger.ledgerBankAccount);
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -241,6 +247,7 @@ export class SuppliersService {
           where: { ledId: supId, ledIsDeleted: false },
           select: { ledId: true },
         });
+        let ledgerBankAccount: LedgerBankAccountPayload[] = [];
         if (linkedLedger) {
           const ledgerDto = this.buildLinkedLedgerDto(saveSupplierDto, {
             name: normalizedName,
@@ -248,9 +255,10 @@ export class SuppliersService {
             stateCode: normalizedStateCode,
           });
           ledgerDto.ledId = supId;
-          await this.accountLedgerMastersService.updateLedgerWithinTx(ledgerDto, tx);
+          const ledger = await this.accountLedgerMastersService.updateLedgerWithinTx(ledgerDto, tx);
+          ledgerBankAccount = ledger.ledgerBankAccount;
         }
-        const payload = this.toPayload(updated);
+        const payload = this.toPayload(updated, ledgerBankAccount);
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -361,6 +369,11 @@ export class SuppliersService {
         ledgerDtoRecord[ledField] = supplierRecord[supField];
       }
     }
+    // The nested bank accounts ride straight through to the linked ledger, which owns the
+    // acc_ledger_bank_accounts rows and handles the insert/update/default-flag sync.
+    if (hasOwnProperty(saveSupplierDto, 'ledgerBankAccount')) {
+      ledgerDto.ledgerBankAccount = saveSupplierDto.ledgerBankAccount;
+    }
     return ledgerDto;
   }
   private applyOptionalFields(
@@ -395,7 +408,10 @@ export class SuppliersService {
     }
     return normalized;
   }
-  private toPayload(record: Supplier): SupplierPayload {
+  private toPayload(
+    record: Supplier,
+    ledgerBankAccount: LedgerBankAccountPayload[] = [],
+  ): SupplierPayload {
     return {
       supId: record.supId,
       supCompanyId: record.supCompanyId,
@@ -445,6 +461,7 @@ export class SuppliersService {
       supCreatedBy: record.supCreatedBy,
       supModifiedOn: record.supModifiedOn.toISOString(),
       supModifiedBy: record.supModifiedBy,
+      ledgerBankAccount,
     };
   }
 }
