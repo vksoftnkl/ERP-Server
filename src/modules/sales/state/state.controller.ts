@@ -53,17 +53,31 @@ export class StateController {
     private readonly requestContextService: RequestContextService,
   ) {}
 
-  // Distinct route from the combined `save` (POST states/create) to avoid a handler collision.
-  // userId is resolved from the request context since the service takes it as an argument.
+  // Single write endpoint: dispatches on stmId. With stmId it updates the existing state
+  // (returns the updated StatePayload); without it, it creates a state master together with
+  // its parent account group (returns StateMasterCreateResult). userId is resolved from the
+  // request context since the create service takes it as an argument.
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create a state master together with its parent account group' })
+  @ApiOperation({ summary: 'Create or update state (by stmId presence)' })
   @ApiCreatedResponse({ type: StateMasterCreateSuccessDto })
+  @ApiOkResponse({ type: StateSuccessSingleDto })
   @ApiBadRequestResponse({ type: StateErrorResponseDto })
   @ApiConflictResponse({ type: StateErrorResponseDto })
+  @ApiNotFoundResponse({ type: StateErrorResponseDto })
   async createStateMaster(
     @Body() dto: SaveStateDto,
-  ): Promise<StateSuccessResponse<StateMasterCreateResult>> {
+  ): Promise<StateSuccessResponse<StateMasterCreateResult | StatePayload>> {
+    if (dto.stmId) {
+      const data = await this.stateService.save(dto);
+
+      return {
+        success: true,
+        message: 'State updated successfully',
+        data,
+      };
+    }
+
     const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     const data = await this.stateService.createStateMaster(dto, userId);
 
@@ -73,23 +87,6 @@ export class StateController {
       data,
     };
   }
-
-  // @Post('create')
-  // @Version(API_VERSION)
-  // @ApiOperation({ summary: 'Create or update state (by stmId presence)' })
-  // @ApiCreatedResponse({ type: StateSuccessSingleDto })
-  // @ApiBadRequestResponse({ type: StateErrorResponseDto })
-  // @ApiConflictResponse({ type: StateErrorResponseDto })
-  // @ApiNotFoundResponse({ type: StateErrorResponseDto })
-  // async save(@Body() saveStateDto: SaveStateDto): Promise<StateSuccessResponse<StatePayload>> {
-  //   const data = await this.stateService.save(saveStateDto);
-
-  //   return {
-  //     success: true,
-  //     message: saveStateDto.stmId ? 'State updated successfully' : 'State created successfully',
-  //     data,
-  //   };
-  // }
 
   @Get('get')
   @Version(API_VERSION)

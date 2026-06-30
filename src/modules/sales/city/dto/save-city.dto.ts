@@ -38,6 +38,10 @@ export class SaveCityDto {
   @OptionalNumber()
   ctmOrder?: number;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Free-text description' })
+  @NullableString()
+  ctmDescription?: string | null;
+
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
   ctmIsActive?: boolean;

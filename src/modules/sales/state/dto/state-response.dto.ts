@@ -13,6 +13,8 @@ export class StatePayloadDto {
   stmShort!: string | null;
   @ApiProperty({ example: 0 })
   stmOrder!: number;
+  @ApiPropertyOptional({ nullable: true })
+  stmDescription!: string | null;
   @ApiProperty({ example: true })
   stmIsActive!: boolean;
   @ApiProperty({ example: false })

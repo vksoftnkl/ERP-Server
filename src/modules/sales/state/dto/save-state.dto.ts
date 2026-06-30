@@ -33,6 +33,10 @@ export class SaveStateDto {
   @OptionalNumber()
   stmOrder?: number;
 
+  @ApiPropertyOptional({ nullable: true, description: 'Free-text description' })
+  @NullableString()
+  stmDescription?: string | null;
+
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
   stmIsActive?: boolean;

@@ -47,16 +47,29 @@ export class AreaController {
     private readonly areaService: AreaService,
     private readonly requestContextService: RequestContextService,
   ) {}
-  // userId is resolved from the request context since the service takes it as an argument.
+  // Single write endpoint: dispatches on armId. With armId it updates the existing area
+  // (returns the updated AreaPayload); without it, it creates an area master together with its
+  // parent account group (returns AreaMasterCreateResult). userId is resolved from the request
+  // context since the create service takes it as an argument.
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create an area master together with its parent account group' })
+  @ApiOperation({ summary: 'Create or update area (by armId presence)' })
   @ApiCreatedResponse({ type: AreaMasterCreateSuccessDto })
+  @ApiOkResponse({ type: AreaSuccessSingleDto })
   @ApiBadRequestResponse({ type: AreaErrorResponseDto })
   @ApiConflictResponse({ type: AreaErrorResponseDto })
+  @ApiNotFoundResponse({ type: AreaErrorResponseDto })
   async createAreaMaster(
     @Body() dto: SaveAreaDto,
-  ): Promise<AreaSuccessResponse<AreaMasterCreateResult>> {
+  ): Promise<AreaSuccessResponse<AreaMasterCreateResult | AreaPayload>> {
+    if (dto.armId) {
+      const data = await this.areaService.save(dto);
+      return {
+        success: true,
+        message: 'Area updated successfully',
+        data,
+      };
+    }
     const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     const data = await this.areaService.createAreaMaster(dto, userId);
     return {
@@ -66,21 +79,6 @@ export class AreaController {
     };
   }
 
-  // @Post('create')
-  // @Version(API_VERSION)
-  // @ApiOperation({ summary: 'Create or update area (by armId presence)' })
-  // @ApiCreatedResponse({ type: AreaSuccessSingleDto })
-  // @ApiBadRequestResponse({ type: AreaErrorResponseDto })
-  // @ApiConflictResponse({ type: AreaErrorResponseDto })
-  // @ApiNotFoundResponse({ type: AreaErrorResponseDto })
-  // async save(@Body() saveAreaDto: SaveAreaDto): Promise<AreaSuccessResponse<AreaPayload>> {
-  //   const data = await this.areaService.save(saveAreaDto);
-  //   return {
-  //     success: true,
-  //     message: saveAreaDto.armId ? 'Area updated successfully' : 'Area created successfully',
-  //     data,
-  //   };
-  // }
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get area by id' })

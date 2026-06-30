@@ -106,6 +106,17 @@ export class SuppliersService {
       if (result.count === 0) {
         throwPurchaseNotFound('Supplier not found', 'supId', `No active supplier found with id ${supId}`);
       }
+      // Soft delete the linked account ledger (shares sup_id as its PK) so it can't stay active
+      // while the supplier is logically deleted. No-op for legacy rows with no linked ledger.
+      await tx.accLedgerMaster.updateMany({
+        where: { ledId: supId, ledIsDeleted: false },
+        data: {
+          ledIsDeleted: true,
+          ledIsActive: false,
+          ledModifiedOn: modifiedOn,
+          ledModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        },
+      });
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -231,6 +242,22 @@ export class SuppliersService {
         };
         this.applyOptionalFields(data, saveSupplierDto);
         const updated = await tx.supplier.update({ where: { supId }, data });
+        // Keep the linked account ledger (shares sup_id as its PK) in sync with the edited
+        // supplier fields, mirroring how createSupplier provisions it. Same transaction =>
+        // atomic. Guarded so legacy suppliers with no linked ledger stay a no-op.
+        const linkedLedger = await tx.accLedgerMaster.findFirst({
+          where: { ledId: supId, ledIsDeleted: false },
+          select: { ledId: true },
+        });
+        if (linkedLedger) {
+          const ledgerDto = this.buildLinkedLedgerDto(saveSupplierDto, {
+            name: normalizedName,
+            stateName: normalizedStateName,
+            stateCode: normalizedStateCode,
+          });
+          ledgerDto.ledId = supId;
+          await this.accountLedgerMastersService.updateLedgerWithinTx(ledgerDto, tx);
+        }
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
           {

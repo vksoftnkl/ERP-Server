@@ -31,6 +31,7 @@ const AREA_OPTIONAL_FIELDS = [
   'armSort',
   'armDistanceKm',
   'armCollectionDays',
+  'armDescription',
   'armIsActive',
 ];
 // Fixed parent account group. An area master's account group is always created under it.
@@ -103,8 +104,10 @@ export class AreaService {
         const accountGroupData: Prisma.AccountGroupUncheckedCreateInput = {
           accGroupName: normalizedName, // <- armName
           accGroupShort: dto.armShort ?? null, // <- armShort
-          accGroupDescription: null, // not carried from the area payload
-          accGroupSort: sort, // <- armSort
+          // acc_group_description is VarChar(250) while the master column is unbounded Text;
+          // cap the mirror so an over-long description can't abort the whole transaction.
+          accGroupDescription: dto.armDescription?.slice(0, 250) ?? null, // <- armDescription
+          accGroupSort: Math.trunc(sort), // <- armSort (acc_group_sort is Int)
           accGroupParentId: parentId, // <- parentId argument
           accGroupCompanyId: parent.accGroupCompanyId,
           accGroupType: parent.accGroupType,
@@ -129,6 +132,7 @@ export class AreaService {
           armShort: dto.armShort ?? null,
           armCityId: dto.armCityId,
           armSort: sort,
+          armDescription: dto.armDescription ?? null,
           armCollectionDays: hasOwnProperty(dto, 'armCollectionDays')
             ? (dto.armCollectionDays ?? [])
             : [],
@@ -247,6 +251,17 @@ export class AreaService {
           `No active area found with id ${armId}`,
         );
       }
+      // Mirror the soft delete onto the linked account group (shares arm_id as its PK) so it
+      // can't stay active while the area is logically deleted. No-op for legacy rows.
+      await tx.accountGroup.updateMany({
+        where: { accGroupId: armId },
+        data: {
+          accGroupIsActive: false,
+          accGroupIsDeleted: true,
+          accGroupModifiedOn: modifiedOn,
+          accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        },
+      });
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -374,6 +389,22 @@ export class AreaService {
           },
           data,
         });
+        // Keep the linked account group (shares arm_id as its PK) in sync with the mirrored
+        // area fields, the same subset the create flow derives. updateMany is a no-op for
+        // legacy rows that have no linked group, so it can't fail the update.
+        await tx.accountGroup.updateMany({
+          where: { accGroupId: armId },
+          data: {
+            accGroupName: updated.armName,
+            accGroupShort: updated.armShort,
+            accGroupDescription: updated.armDescription?.slice(0, 250) ?? null,
+            accGroupSort: Math.trunc(toNumber(updated.armSort)),
+            accGroupIsActive: updated.armIsActive,
+            accGroupIsDeleted: updated.armIsDeleted,
+            accGroupModifiedOn: updated.armModifiedOn,
+            accGroupModifiedBy: updated.armModifiedBy,
+          },
+        });
         const payload = this.toPayload(updated);
         await this.auditLogService.logEntityChange(
           {
@@ -490,6 +521,7 @@ export class AreaService {
       armSort: toNumber(record.armSort),
       armDistanceKm: record.armDistanceKm,
       armCollectionDays: record.armCollectionDays,
+      armDescription: record.armDescription,
       armIsActive: record.armIsActive,
       armIsDeleted: record.armIsDeleted,
       armSyncDate: record.armSyncDate ? record.armSyncDate.toISOString() : null,

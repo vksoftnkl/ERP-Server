@@ -25,7 +25,7 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 const CITY_TABLE_NAME = 'city master';
 const CITY_AUDIT_SCREEN_NAME = 'City Master';
-const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmIsActive'];
+const CITY_OPTIONAL_FIELDS = ['ctmAlias', 'ctmShort', 'ctmOrder', 'ctmDescription', 'ctmIsActive'];
 // Fixed parent account group. A city master's account group is always created under it.
 const CITY_ACCOUNT_GROUP_PARENT_ID = '019f081c-6764-73b0-b397-3f30a6efe73e';
 type CityWriteClient = SalesWriteClient;
@@ -96,8 +96,10 @@ export class CityService {
         const accountGroupData: Prisma.AccountGroupUncheckedCreateInput = {
           accGroupName: normalizedName, // <- ctmName
           accGroupShort: dto.ctmShort ?? null, // <- ctmShort
-          accGroupDescription: null, // not carried from the city payload
-          accGroupSort: order, // <- ctmOrder
+          // acc_group_description is VarChar(250) while the master column is unbounded Text;
+          // cap the mirror so an over-long description can't abort the whole transaction.
+          accGroupDescription: dto.ctmDescription?.slice(0, 250) ?? null, // <- ctmDescription
+          accGroupSort: Math.trunc(order), // <- ctmOrder (acc_group_sort is Int)
           accGroupParentId: parentId, // <- parentId argument
           accGroupCompanyId: parent.accGroupCompanyId,
           accGroupType: parent.accGroupType,
@@ -122,6 +124,7 @@ export class CityService {
           ctmShort: dto.ctmShort ?? null,
           ctmStateId: dto.ctmStateId,
           ctmOrder: order,
+          ctmDescription: dto.ctmDescription ?? null,
           ctmIsActive: !isDeleted,
           ctmIsDeleted: isDeleted,
           ctmCreatedOn: now,
@@ -232,6 +235,17 @@ export class CityService {
           `No active city found with id ${ctmId}`,
         );
       }
+      // Mirror the soft delete onto the linked account group (shares ctm_id as its PK) so it
+      // can't stay active while the city is logically deleted. No-op for legacy rows.
+      await tx.accountGroup.updateMany({
+        where: { accGroupId: ctmId },
+        data: {
+          accGroupIsActive: false,
+          accGroupIsDeleted: true,
+          accGroupModifiedOn: modifiedOn,
+          accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        },
+      });
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -361,6 +375,22 @@ export class CityService {
           },
           data,
         });
+        // Keep the linked account group (shares ctm_id as its PK) in sync with the mirrored
+        // city fields, the same subset the create flow derives. updateMany is a no-op for
+        // legacy rows that have no linked group, so it can't fail the update.
+        await tx.accountGroup.updateMany({
+          where: { accGroupId: ctmId },
+          data: {
+            accGroupName: updated.ctmName,
+            accGroupShort: updated.ctmShort,
+            accGroupDescription: updated.ctmDescription?.slice(0, 250) ?? null,
+            accGroupSort: Math.trunc(toNumber(updated.ctmOrder)),
+            accGroupIsActive: updated.ctmIsActive,
+            accGroupIsDeleted: updated.ctmIsDeleted,
+            accGroupModifiedOn: updated.ctmModifiedOn,
+            accGroupModifiedBy: updated.ctmModifiedBy,
+          },
+        });
         const payload = this.toPayload(updated);
 
         await this.auditLogService.logEntityChange(
@@ -482,6 +512,7 @@ export class CityService {
       ctmShort: record.ctmShort,
       ctmStateId: record.ctmStateId,
       ctmOrder: toNumber(record.ctmOrder),
+      ctmDescription: record.ctmDescription,
       ctmIsActive: record.ctmIsActive,
       ctmIsDeleted: record.ctmIsDeleted,
       ctmSyncDate: record.ctmSyncDate ? record.ctmSyncDate.toISOString() : null,

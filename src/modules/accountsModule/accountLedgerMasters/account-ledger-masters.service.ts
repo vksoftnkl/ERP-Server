@@ -277,7 +277,10 @@ export class AccountLedgerMastersService {
       throw error;
     }
   }
-  private async updateLedgerWithinTx(
+  // Update a ledger inside an existing transaction. Exposed (not private) so linked masters —
+  // e.g. customer/supplier edits, which share their PK with a ledger — can keep that ledger in
+  // sync within their own transaction, mirroring how creation provisions it via createLedgerWithinTx.
+  async updateLedgerWithinTx(
     saveAccountLedgerMasterDto: SaveAccountLedgerMasterDto,
     tx: AccountLedgerWriteClient,
   ): Promise<AccountLedgerMasterPayload> {

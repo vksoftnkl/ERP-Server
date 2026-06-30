@@ -7,6 +7,7 @@ export interface StatePayload {
   stmAlias: string | null;
   stmShort: string | null;
   stmOrder: number;
+  stmDescription: string | null;
   stmIsActive: boolean;
   stmIsDeleted: boolean;
   stmSyncDate: string | null;

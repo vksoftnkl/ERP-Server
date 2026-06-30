@@ -16,16 +16,13 @@ import {
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
-
 export { DEFAULT_ACTOR, DEFAULT_LIMIT, DEFAULT_PAGE };
 export const STATE_TABLE_NAME = 'state master';
 export const STATE_AUDIT_SCREEN_NAME = 'State Master';
 // Fixed parent "States" account group. A state master's account group is always created under it.
 export const STATES_ACCOUNT_GROUP_ID = '019f081c-6764-73b0-b397-3f30a6efe73e';
-const STATE_OPTIONAL_FIELDS = ['stmAlias', 'stmShort', 'stmOrder', 'stmIsActive'];
-
+const STATE_OPTIONAL_FIELDS = ['stmAlias', 'stmShort', 'stmOrder', 'stmDescription', 'stmIsActive'];
 export type StateWriteClient = SalesWriteClient;
-
 export async function ensureStateNameIsUnique(
   tx: StateWriteClient,
   stateName: string,
@@ -50,7 +47,6 @@ export async function ensureStateNameIsUnique(
       stmId: true,
     },
   });
-
   if (existing) {
     throwSalesConflict<StateErrorDetail, StateErrorResponse>('State name already exists', [
       {
@@ -60,18 +56,15 @@ export async function ensureStateNameIsUnique(
     ]);
   }
 }
-
 export function applyStateOptionalFields(
   data: Prisma.StateMasterUncheckedCreateInput | Prisma.StateMasterUncheckedUpdateInput,
   saveStateDto: SaveStateDto,
 ): void {
   applyPresentFields(data, saveStateDto, STATE_OPTIONAL_FIELDS);
 }
-
 export function normalizeRequiredStateName(name: string): string {
   return normalizeRequiredText<StateErrorDetail, StateErrorResponse>(name, 'stmName');
 }
-
 export function toStatePayload(record: StateMaster): StatePayload {
   return {
     stmId: record.stmId,
@@ -79,6 +72,7 @@ export function toStatePayload(record: StateMaster): StatePayload {
     stmAlias: record.stmAlias,
     stmShort: record.stmShort,
     stmOrder: toNumber(record.stmOrder),
+    stmDescription: record.stmDescription,
     stmIsActive: record.stmIsActive,
     stmIsDeleted: record.stmIsDeleted,
     stmSyncDate: record.stmSyncDate ? record.stmSyncDate.toISOString() : null,
@@ -88,14 +82,12 @@ export function toStatePayload(record: StateMaster): StatePayload {
     stmModifiedBy: record.stmModifiedBy,
   };
 }
-
 export function resolveStateActor(
   value: string | null | undefined,
   userId: string | null | undefined = null,
 ): string {
   return resolveActor(value, userId);
 }
-
 export function handleStateWriteError(error: unknown): void {
   throwOnUniqueConstraintError<StateErrorDetail, StateErrorResponse>(
     error,
@@ -108,7 +100,6 @@ export function handleStateWriteError(error: unknown): void {
     ],
   );
 }
-
 export function throwStateNotFound(stmId: string): never {
   throwSalesNotFound<StateErrorDetail, StateErrorResponse>(
     'State not found',
@@ -116,11 +107,9 @@ export function throwStateNotFound(stmId: string): never {
     `No active state found with id ${stmId}`,
   );
 }
-
 export function throwStateBadRequest(message: string, errors: StateErrorDetail[]): never {
   throwSalesBadRequest<StateErrorDetail, StateErrorResponse>(message, errors);
 }
-
 export function buildStateErrorResponse(
   message: string,
   errors: StateErrorDetail[] = [],

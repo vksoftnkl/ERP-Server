@@ -7,6 +7,7 @@ model AreaMaster {
   armSort           Decimal   @default(0.0) @db.Decimal                        @map("arm_sort")
   armDistanceKm     Int?      @default(0)                                       @map("arm_distance_km")
   armCollectionDays Int[]                                                       @map("arm_collection_days")
+  armDescription    String?   @db.Text                                 @map("arm_description")
   armIsActive       Boolean   @default(true)                                    @map("arm_is_active")
   armIsDeleted      Boolean   @default(false)                                   @map("arm_is_deleted")
   armSyncDate       DateTime? @db.Timestamptz                                  @map("arm_sync_date")

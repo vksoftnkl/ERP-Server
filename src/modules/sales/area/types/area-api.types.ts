@@ -12,6 +12,7 @@ export interface AreaPayload {
   armSort: number;
   armDistanceKm: number | null;
   armCollectionDays: number[];
+  armDescription: string | null;
   armIsActive: boolean;
   armIsDeleted: boolean;
   armSyncDate: string | null;

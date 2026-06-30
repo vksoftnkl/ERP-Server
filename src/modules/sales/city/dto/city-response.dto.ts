@@ -26,6 +26,8 @@ export class CityPayloadDto {
   ctmStateName?: string | null;
   @ApiProperty({ example: 0 })
   ctmOrder!: number;
+  @ApiPropertyOptional({ nullable: true })
+  ctmDescription!: string | null;
   @ApiProperty({ example: true })
   ctmIsActive!: boolean;
   @ApiProperty({ example: false })

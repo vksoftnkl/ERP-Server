@@ -49,16 +49,31 @@ export class CityController {
     private readonly requestContextService: RequestContextService,
   ) {}
 
-  // userId is resolved from the request context since the service takes it as an argument.
+  // Single write endpoint: dispatches on ctmId. With ctmId it updates the existing city
+  // (returns the updated CityPayload); without it, it creates a city master together with its
+  // parent account group (returns CityMasterCreateResult). userId is resolved from the request
+  // context since the create service takes it as an argument.
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create a city master together with its parent account group' })
+  @ApiOperation({ summary: 'Create or update city (by ctmId presence)' })
   @ApiCreatedResponse({ type: CityMasterCreateSuccessDto })
+  @ApiOkResponse({ type: CitySuccessSingleDto })
   @ApiBadRequestResponse({ type: CityErrorResponseDto })
   @ApiConflictResponse({ type: CityErrorResponseDto })
+  @ApiNotFoundResponse({ type: CityErrorResponseDto })
   async createCityMaster(
     @Body() dto: SaveCityDto,
-  ): Promise<CitySuccessResponse<CityMasterCreateResult>> {
+  ): Promise<CitySuccessResponse<CityMasterCreateResult | CityPayload>> {
+    if (dto.ctmId) {
+      const data = await this.cityService.save(dto);
+
+      return {
+        success: true,
+        message: 'City updated successfully',
+        data,
+      };
+    }
+
     const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     const data = await this.cityService.createCityMaster(dto, userId);
 
@@ -69,22 +84,6 @@ export class CityController {
     };
   }
 
-  // @Post('create')
-  // @Version(API_VERSION)
-  // @ApiOperation({ summary: 'Create or update city (by ctmId presence)' })
-  // @ApiCreatedResponse({ type: CitySuccessSingleDto })
-  // @ApiBadRequestResponse({ type: CityErrorResponseDto })
-  // @ApiConflictResponse({ type: CityErrorResponseDto })
-  // @ApiNotFoundResponse({ type: CityErrorResponseDto })
-  // async save(@Body() saveCityDto: SaveCityDto): Promise<CitySuccessResponse<CityPayload>> {
-  //   const data = await this.cityService.save(saveCityDto);
-
-  //   return {
-  //     success: true,
-  //     message: saveCityDto.ctmId ? 'City updated successfully' : 'City created successfully',
-  //     data,
-  //   };
-  // }
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get city by id' })

@@ -48,6 +48,10 @@ export class SaveAreaDto {
   @OptionalIntegerArray()
   armCollectionDays?: number[];
 
+  @ApiPropertyOptional({ nullable: true, description: 'Free-text description' })
+  @NullableString()
+  armDescription?: string | null;
+
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
   armIsActive?: boolean;

@@ -30,6 +30,8 @@ export class AreaPayloadDto {
   armDistanceKm!: number | null;
   @ApiProperty({ type: [Number], example: [] })
   armCollectionDays!: number[];
+  @ApiPropertyOptional({ nullable: true })
+  armDescription!: string | null;
   @ApiProperty({ example: true })
   armIsActive!: boolean;
   @ApiProperty({ example: false })

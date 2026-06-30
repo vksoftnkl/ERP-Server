@@ -6,6 +6,7 @@ model StateMaster {
   stmAlias      String?                                                     @map("stm_alias")
   stmShort      String?   @db.VarChar(20)                                  @map("stm_short")
   stmOrder      Decimal   @default(0.0) @db.Decimal                        @map("stm_order")
+  stmDescription    String?   @db.Text                                 @map("stm_description")
   stmIsActive   Boolean   @default(true)                                    @map("stm_is_active")
   stmIsDeleted  Boolean   @default(false)                                   @map("stm_is_deleted")
   stmSyncDate   DateTime? @db.Timestamptz                                  @map("stm_sync_date")

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { toNumber } from 'src/common/utils/module-service.utils';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveStateDto } from './dto/save-state.dto';
@@ -79,8 +80,10 @@ export class StateService {
         const accountGroupData: Prisma.AccountGroupUncheckedCreateInput = {
           accGroupName: normalizedName, // <- stmName
           accGroupShort: dto.stmShort ?? null, // <- stmShort
-          accGroupDescription: null, // not carried from the state payload
-          accGroupSort: order, // <- stmOrder
+          // acc_group_description is VarChar(250) while the master column is unbounded Text;
+          // cap the mirror so an over-long description can't abort the whole transaction.
+          accGroupDescription: dto.stmDescription?.slice(0, 250) ?? null, // <- stmDescription
+          accGroupSort: Math.trunc(order), // <- stmOrder (acc_group_sort is Int)
           accGroupParentId: parentId, // <- parentId argument
           accGroupCompanyId: parent.accGroupCompanyId,
           accGroupType: parent.accGroupType,
@@ -105,6 +108,7 @@ export class StateService {
           stmAlias: dto.stmAlias ?? null,
           stmShort: dto.stmShort ?? null,
           stmOrder: order,
+          stmDescription: dto.stmDescription ?? null,
           stmIsActive: !isDeleted,
           stmIsDeleted: isDeleted,
           stmCreatedOn: now,
@@ -189,6 +193,17 @@ export class StateService {
       if (result.count === 0) {
         throwStateNotFound(stmId);
       }
+      // Mirror the soft delete onto the linked account group (shares stm_id as its PK) so it
+      // can't stay active while the state is logically deleted. No-op for legacy rows.
+      await tx.accountGroup.updateMany({
+        where: { accGroupId: stmId },
+        data: {
+          accGroupIsActive: false,
+          accGroupIsDeleted: true,
+          accGroupModifiedOn: modifiedOn,
+          accGroupModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        },
+      });
       const originalRecord = toStatePayload(existing);
       const modifiedRecord = toStatePayload({
         ...existing,
@@ -244,6 +259,22 @@ export class StateService {
             stmId,
           },
           data,
+        });
+        // Keep the linked account group (shares stm_id as its PK) in sync with the mirrored
+        // state fields, the same subset the create flow derives. updateMany is a no-op for
+        // legacy rows that have no linked group, so it can't fail the update.
+        await tx.accountGroup.updateMany({
+          where: { accGroupId: stmId },
+          data: {
+            accGroupName: updated.stmName,
+            accGroupShort: updated.stmShort,
+            accGroupDescription: updated.stmDescription?.slice(0, 250) ?? null,
+            accGroupSort: Math.trunc(toNumber(updated.stmOrder)),
+            accGroupIsActive: updated.stmIsActive,
+            accGroupIsDeleted: updated.stmIsDeleted,
+            accGroupModifiedOn: updated.stmModifiedOn,
+            accGroupModifiedBy: updated.stmModifiedBy,
+          },
         });
         const payload = toStatePayload(updated);
         await this.auditLogService.logEntityChange(

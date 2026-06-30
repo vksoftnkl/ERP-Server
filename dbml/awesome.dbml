@@ -2425,6 +2425,7 @@ Table area_master {
   armSort Decimal [not null, default: 0]
   armDistanceKm Int [default: 0]
   armCollectionDays Int[] [not null]
+  armDescription String
   armIsActive Boolean [not null, default: true]
   armIsDeleted Boolean [not null, default: false]
   armSyncDate DateTime
@@ -2443,6 +2444,7 @@ Table city_master {
   ctmShort String
   ctmStateId String [not null]
   ctmOrder Decimal [not null, default: 0]
+  ctmDescription String
   ctmIsActive Boolean [not null, default: true]
   ctmIsDeleted Boolean [not null, default: false]
   ctmSyncDate DateTime
@@ -2692,6 +2694,7 @@ Table state_master {
   stmAlias String
   stmShort String
   stmOrder Decimal [not null, default: 0]
+  stmDescription String
   stmIsActive Boolean [not null, default: true]
   stmIsDeleted Boolean [not null, default: false]
   stmSyncDate DateTime

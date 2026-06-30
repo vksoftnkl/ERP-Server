@@ -9,6 +9,7 @@ export interface CityPayload {
   ctmStateId: string;
   ctmStateName?: string | null;
   ctmOrder: number;
+  ctmDescription: string | null;
   ctmIsActive: boolean;
   ctmIsDeleted: boolean;
   ctmSyncDate: string | null;
