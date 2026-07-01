@@ -446,14 +446,18 @@ export class CustomerService {
   }
   private async resolveRelatedNames(
     client: CustomerWriteClient,
-    record: Pick<Customer, 'cusCompanyId' | 'cusBranchId' | 'cusAreaId' | 'cusGroupId'>,
+    record: Pick<
+      Customer,
+      'cusCompanyId' | 'cusBranchId' | 'cusAreaId' | 'cusGroupId' | 'cusPriceLevelId'
+    >,
   ): Promise<{
     cusCompanyName: string | null;
     cusBranchName: string | null;
     cusAreaName: string | null;
     cusGroupName: string | null;
+    cusPriceLevelName: string | null;
   }> {
-    const [company, branch, area, group] = await Promise.all([
+    const [company, branch, area, group, priceLevel] = await Promise.all([
       record.cusCompanyId
         ? client.company.findFirst({
             where: { compId: record.cusCompanyId },
@@ -478,12 +482,19 @@ export class CustomerService {
             select: { cgrName: true },
           })
         : null,
+      record.cusPriceLevelId
+        ? client.itemPriceLevel.findFirst({
+            where: { iplId: record.cusPriceLevelId },
+            select: { iplName: true },
+          })
+        : null,
     ]);
     return {
       cusCompanyName: company?.compName ?? null,
       cusBranchName: branch?.brName ?? null,
       cusAreaName: area?.armName ?? null,
       cusGroupName: group?.cgrName ?? null,
+      cusPriceLevelName: priceLevel?.iplName ?? null,
     };
   }
   private async ensureAreaExists(tx: CustomerWriteClient, areaId: string): Promise<void> {

@@ -206,6 +206,13 @@ export class CustomerPayloadDto {
   @ApiProperty()
   cusPriceLevelId!: number;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Retail Price',
+    description: 'Name of the linked price level (resolved on the get endpoint)',
+  })
+  cusPriceLevelName?: string | null;
+
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   cusBilledDate!: string | null;
 

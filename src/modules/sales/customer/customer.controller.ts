@@ -36,7 +36,6 @@ import {
   CustomerSuccessResponse,
 } from './types/customer-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Customers')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -45,7 +44,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(CustomerExceptionFilter)
 export class CustomerController {
   constructor(private readonly customerService: CustomerService) { }
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update customer (by cusId presence)' })
@@ -57,7 +55,6 @@ export class CustomerController {
     @Body() saveCustomerDto: SaveCustomerDto,
   ): Promise<CustomerSuccessResponse<CustomerPayload>> {
     const data = await this.customerService.save(saveCustomerDto);
-
     return {
       success: true,
       message: saveCustomerDto.cusId
@@ -66,7 +63,6 @@ export class CustomerController {
       data,
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get customer by id' })
@@ -78,14 +74,12 @@ export class CustomerController {
     @Query('cusId', new ParseUUIDPipe({ version: '7' })) cusId: string,
   ): Promise<CustomerSuccessResponse<CustomerPayload>> {
     const data = await this.customerService.getById(cusId);
-
     return {
       success: true,
       message: 'Customer fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete customer by id' })
@@ -97,7 +91,6 @@ export class CustomerController {
     @Query('cusId', new ParseUUIDPipe({ version: '7' })) cusId: string,
   ): Promise<CustomerSuccessResponse<{ cusId: string; deleted: true }>> {
     const data = await this.customerService.softDelete(cusId);
-
     return {
       success: true,
       message: 'Customer deleted successfully',

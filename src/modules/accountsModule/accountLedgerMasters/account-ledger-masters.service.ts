@@ -228,7 +228,10 @@ export class AccountLedgerMastersService {
       ledBranchId: branchId,
       ledGroupId: groupId,
       ledName: normalizedName,
-      ledLedgerType: 'Party',
+      // Must match the chk_led_ledger_type DB constraint, which only permits the
+      // uppercase domain values ('PARTY','BANK','CASH',...). 'Party' violates it and
+      // surfaces as a raw Postgres 23514 -> 500 on every ledger provision.
+      ledLedgerType: 'PARTY',
       ledCreatedOn: now,
       ledCreatedBy: createdBy,
     };

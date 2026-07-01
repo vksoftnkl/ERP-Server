@@ -66,6 +66,7 @@ export interface CustomerPayload {
   cusCollectionDays: number[];
   cusDefaultSalesman: string | null;
   cusPriceLevelId: number;
+  cusPriceLevelName?: string | null;
   cusBilledDate: string | null;
   cusBilledCount: number;
   cusNotes: string | null;
