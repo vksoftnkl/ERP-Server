@@ -2705,7 +2705,7 @@ model ItemPriceLevel {
   iplCreatedBy  String     @map("ipl_created_by")
   iplModifiedOn DateTime @default(now()) @db.Timestamptz(6) @map("ipl_modified_on")
   iplModifiedBy String   @map("ipl_modified_by")
-
+  customers     Customer[] @relation("CustomerPriceLevel")
   @@map("item_price_levels")
   @@schema("inventory")
 }
@@ -4068,9 +4068,10 @@ model Customer {
   cusModifiedBy        String?   @db.VarChar(100)                                 @map("cus_modified_by")
 
   // Relations
-  area                 AreaMaster @relation(fields: [cusAreaId],  references: [armId])
-  custGroup            CustGroup  @relation(fields: [cusGroupId], references: [cgrId])
-  company              Company?   @relation(fields: [cusCompanyId], references: [compId])
+  area                 AreaMaster     @relation(fields: [cusAreaId],  references: [armId])
+  custGroup            CustGroup      @relation(fields: [cusGroupId], references: [cgrId])
+  company              Company?       @relation(fields: [cusCompanyId], references: [compId])
+  priceLevel           ItemPriceLevel @relation("CustomerPriceLevel", fields: [cusPriceLevelId], references: [iplId])
 
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")

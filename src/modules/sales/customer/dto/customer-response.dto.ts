@@ -248,6 +248,13 @@ export class CustomerPayloadDto {
   @ApiProperty({ format: 'uuid' })
   cusGroupId!: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Wholesale',
+    description: 'Name of the linked customer group (resolved on the get endpoint)',
+  })
+  cusGroupName?: string | null;
+
   @ApiProperty()
   cusIsActive!: boolean;
 

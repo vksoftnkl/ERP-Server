@@ -1596,6 +1596,7 @@ Table item_price_levels {
   iplCreatedBy String [not null]
   iplModifiedOn DateTime [default: `now()`, not null]
   iplModifiedBy String [not null]
+  customers customers [not null]
 }
 
 Table item_price_master {
@@ -2560,6 +2561,7 @@ Table customers {
   area area_master [not null]
   custGroup cust_groups [not null]
   company companys
+  priceLevel item_price_levels [not null]
 }
 
 Table cust_groups {
@@ -3410,6 +3412,8 @@ Ref: customers.cusAreaId > area_master.armId
 Ref: customers.cusGroupId > cust_groups.cgrId
 
 Ref: customers.cusCompanyId > companys.compId
+
+Ref: customers.cusPriceLevelId > item_price_levels.iplId
 
 Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]
 

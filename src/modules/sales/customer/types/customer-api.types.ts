@@ -76,6 +76,7 @@ export interface CustomerPayload {
   cusAreaId: string;
   cusAreaName?: string | null;
   cusGroupId: string;
+  cusGroupName?: string | null;
   cusIsActive: boolean;
   cusIsDeleted: boolean;
   cusSyncDate: string | null;
