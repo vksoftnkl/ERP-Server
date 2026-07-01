@@ -3,7 +3,6 @@ import type {
   ModuleApiErrorResponse,
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
-
 export type ConfigsErrorDetail = ModuleApiErrorDetail;
 export type ConfigsErrorResponse = ModuleApiErrorResponse<ConfigsErrorDetail>;
 export type ConfigsSuccessResponse<
@@ -11,7 +10,6 @@ export type ConfigsSuccessResponse<
   TMeta = Record<string, unknown>,
   TStyles = unknown,
 > = ModuleApiSuccessResponse<T, TMeta, TStyles>;
-
 export interface ConfigsPayload {
   configId: number;
   configName: string | null;

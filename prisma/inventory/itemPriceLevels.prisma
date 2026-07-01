@@ -1,0 +1,17 @@
+model ItemPriceLevel {
+  iplId         Int      @id @default(autoincrement()) @map("ipl_id")
+  iplName       String   @map("ipl_name")
+  iplUname      String   @map("ipl_uname")
+  iplStatus     Boolean  @default(true)  @map("ipl_status")
+  iplAdmin      Boolean  @default(false) @map("ipl_admin")
+  iplIsDeleted  Boolean  @default(false) @map("ipl_is_deleted")
+
+  iplCreatedOn  DateTime @default(now()) @db.Timestamptz(6) @map("ipl_created_on")
+  iplSyncDate   DateTime @default(now()) @db.Timestamptz(6) @map("ipl_sync_date")
+  iplCreatedBy  String     @map("ipl_created_by")
+  iplModifiedOn DateTime @default(now()) @db.Timestamptz(6) @map("ipl_modified_on")
+  iplModifiedBy String   @map("ipl_modified_by")
+
+  @@map("item_price_levels")
+  @@schema("inventory")
+}

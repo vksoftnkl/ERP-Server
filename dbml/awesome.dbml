@@ -1584,6 +1584,20 @@ Table item_master {
   loyaltySchemeGifts loyalty_sch_gift [not null]
 }
 
+Table item_price_levels {
+  iplId Int [pk, increment]
+  iplName String [not null]
+  iplUname String [not null]
+  iplStatus Boolean [not null, default: true]
+  iplAdmin Boolean [not null, default: false]
+  iplIsDeleted Boolean [not null, default: false]
+  iplCreatedOn DateTime [default: `now()`, not null]
+  iplSyncDate DateTime [default: `now()`, not null]
+  iplCreatedBy String [not null]
+  iplModifiedOn DateTime [default: `now()`, not null]
+  iplModifiedBy String [not null]
+}
+
 Table item_price_master {
   ipmId String [pk]
   ipmCompanyId String
