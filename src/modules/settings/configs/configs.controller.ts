@@ -59,18 +59,6 @@ export class ConfigsController {
       data,
     };
   }
-  @Get('list')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'List all configs' })
-  @ApiOkResponse({ type: ConfigsSuccessListDto })
-  async list(): Promise<ConfigsSuccessResponse<ConfigsPayload[]>> {
-    const data = await this.configsService.list();
-    return {
-      success: true,
-      message: 'Configs fetched successfully',
-      data,
-    };
-  }
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get config by id' })

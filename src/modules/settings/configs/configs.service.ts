@@ -39,13 +39,7 @@ export class ConfigsService {
       return this.updateConfig(saveConfigsDto);
     }
     return this.createConfig(saveConfigsDto);
-  }
-  async list(): Promise<ConfigsPayload[]> {
-    const records = await this.prisma.configs.findMany({
-      orderBy: { configId: 'asc' },
-    });
-    return records.map((record) => this.toPayload(record));
-  }
+  }  
   async getById(configId: number): Promise<ConfigsPayload> {
     const record = await this.prisma.configs.findUnique({ where: { configId } });
     if (!record) {
