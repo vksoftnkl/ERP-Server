@@ -1,0 +1,12 @@
+model Configs {
+  configId            Int    @id  @map("config_id")
+  configName          String? @map("config_name") @db.Text
+  configValue         String? @map("config_value") @db.Text
+  configSyncDate     DateTime? @map("config_sync_date") @db.Timestamptz(0)
+  configCreatedBy    String?   @map("config_created_by") @db.VarChar(100)
+  configCreatedOn    DateTime? @map("config_created_on") @db.Timestamptz(0)
+  configModifiedBy   String?   @map("config_modified_by") @db.VarChar(100)
+  configModifiedOn   DateTime? @map("config_modified_on") @db.Timestamptz(0)
+  @@map("configs")
+  @@schema("public")
+}

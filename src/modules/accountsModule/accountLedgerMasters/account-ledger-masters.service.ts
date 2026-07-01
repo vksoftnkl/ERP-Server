@@ -228,6 +228,7 @@ export class AccountLedgerMastersService {
       ledBranchId: branchId,
       ledGroupId: groupId,
       ledName: normalizedName,
+      ledLedgerType: 'Party',
       ledCreatedOn: now,
       ledCreatedBy: createdBy,
     };
