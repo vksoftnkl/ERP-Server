@@ -586,7 +586,6 @@ export class CustomerService {
     }
     return ledgerDto;
   }
-
   private applyOptionalFields(
     data: Prisma.CustomerUncheckedCreateInput | Prisma.CustomerUncheckedUpdateInput,
     saveCustomerDto: SaveCustomerDto,
