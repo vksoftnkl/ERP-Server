@@ -36,6 +36,7 @@ import { EmployeeDepartmentMasterModule } from './modules/settings/employeeDepar
 import { EmployeeDesignationMasterModule } from './modules/settings/employeeDesignationMaster/employee-designation-master.module';
 import { EmployeeMasterModule } from './modules/settings/employeeMaster/employee-master.module';
 import { UserAdministrationModule } from './modules/settings/userAdministration/user-administration.module';
+import { ConfigsModule } from './modules/settings/configs/configs.module';
 import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -144,6 +145,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     EmployeeDesignationMasterModule,
     EmployeeMasterModule,
     UserAdministrationModule,
+    ConfigsModule,
     TenderMasterModule,
     TenderTypeMasterModule,
     GspProviderMasterModule,

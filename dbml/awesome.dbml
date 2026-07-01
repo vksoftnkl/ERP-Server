@@ -2250,6 +2250,17 @@ Table company_group_master {
   cogModifiedBy String
 }
 
+Table configs {
+  configId Int [pk]
+  configName String
+  configValue String
+  configSyncDate DateTime
+  configCreatedBy String
+  configCreatedOn DateTime
+  configModifiedBy String
+  configModifiedOn DateTime
+}
+
 Table cust_item_rates {
   csrId String [pk]
   csrBranchId String
