@@ -117,6 +117,20 @@ export class ItemsReorderMasterService {
     }
     return this.toPayload(record);
   }
+  async findByItemId(itemId: string): Promise<ItemReorderPayload[]> {
+    const records = await this.prisma.itemReorder.findMany({
+      where: { irItemId: itemId, irIsDeleted: false },
+      orderBy: [{ irId: 'asc' }],
+    });
+    return records.map((record) => this.toPayload(record));
+  }
+  async findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]> {
+    const records = await this.prisma.itemReorder.findMany({
+      where: { irItemId: itemId, irIsDeleted: isDeleted },
+      select: { irId: true },
+    });
+    return records.map((record) => record.irId);
+  }
 
   async toggleDelete(irId: string): Promise<ItemReorderDeleteResult>;
   async toggleDelete(irId: string[]): Promise<ItemReorderDeleteResult[]>;

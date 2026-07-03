@@ -3,7 +3,7 @@ import { ItemMaster, Prisma } from '@prisma/client';
 import { SaveItemDto } from './dto/save-item.dto';
 import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
 import { BulkLoadItemPayload, ItemErrorDetail, ItemPayload } from './types/item-api.types';
-import { ItemCompositePayload } from './types/item-composite-api.types';
+import { ItemCompositeDeleteResult, ItemCompositePayload } from './types/item-composite-api.types';
 import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
 import { ItemsPriceMasterService } from '../items-price-master/items-price-master.service';
 import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-code-master.service';
@@ -105,6 +105,22 @@ export class ItemsMasterService {
       );
     }
     return this.toPayload(record);
+  }
+  /**
+   * Fetches an item together with all of its non-deleted child collections
+   * (unit conversions, prices, EAN codes and reorders) by item id. Throws
+   * NotFound when the item does not exist or is deleted; child collections come
+   * back as empty arrays when the item has none.
+   */
+  async getComposite(itemId: string): Promise<ItemCompositePayload> {
+    const item = await this.getById(itemId);
+    const [unit_conversions, prices, ean_codes, reorders] = await Promise.all([
+      this.itemUnitConversionService.findByItemId(itemId),
+      this.itemsPriceMasterService.findByItemId(itemId),
+      this.itemsEanCodeMasterService.findByItemId(itemId),
+      this.itemsReorderMasterService.findByItemId(itemId),
+    ]);
+    return { item, unit_conversions, prices, ean_codes, reorders };
   }
   async listForBulkLoad(params: {
     itemCompanyId?: string;
@@ -267,6 +283,34 @@ export class ItemsMasterService {
         deleted: nextDeleted,
       };
     });
+  }
+  /**
+   * Soft deletes (or restores) an item and cascades the same state to all of
+   * its unit conversions, prices, EAN codes and reorders. NOT atomic: the item
+   * is toggled first (its own transaction), then each child collection is
+   * toggled in its own transaction. Only child rows currently in the item's
+   * OLD state are flipped (e.g. deleting the item soft-deletes its currently
+   * active children; restoring it restores its currently deleted children) —
+   * children already in the target state are left untouched.
+   */
+  async toggleDeleteComposite(itemId: string): Promise<ItemCompositeDeleteResult> {
+    const item = await this.toggleDelete(itemId);
+    const wasDeleted = !item.deleted;
+    const [unitConversionIds, priceIds, eanCodeIds, reorderIds] = await Promise.all([
+      this.itemUnitConversionService.findIdsByItemId(itemId, wasDeleted),
+      this.itemsPriceMasterService.findIdsByItemId(itemId, wasDeleted),
+      this.itemsEanCodeMasterService.findIdsByItemId(itemId, wasDeleted),
+      this.itemsReorderMasterService.findIdsByItemId(itemId, wasDeleted),
+    ]);
+    const [unit_conversions, prices, ean_codes, reorders] = await Promise.all([
+      unitConversionIds.length
+        ? this.itemUnitConversionService.toggleDelete(unitConversionIds)
+        : [],
+      priceIds.length ? this.itemsPriceMasterService.toggleDelete(priceIds) : [],
+      eanCodeIds.length ? this.itemsEanCodeMasterService.toggleDelete(eanCodeIds) : [],
+      reorderIds.length ? this.itemsReorderMasterService.toggleDelete(reorderIds) : [],
+    ]);
+    return { item, unit_conversions, prices, ean_codes, reorders };
   }
   private async createItem(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     const itemNameEn = saveItemDto.item_name_en?.trim();

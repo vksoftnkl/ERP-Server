@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsArray, IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
@@ -291,6 +291,7 @@ export class SaveItemDto {
     nullable: true,
     description: 'Can be UUID array, JSON array string, or comma-separated string',
   })
+  @IsOptional()
   @Transform(({ value }) => toUuidArray(value))
   @IsArray()
   @IsUUID('all', { each: true })

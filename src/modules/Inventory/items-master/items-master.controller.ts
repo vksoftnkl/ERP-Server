@@ -23,18 +23,16 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { ItemErrorResponseDto } from './dto/item-response.dto';
 import {
-  ItemErrorResponseDto,
-  ItemSuccessDeleteDto,
-  ItemSuccessSingleDto,
-} from './dto/item-response.dto';
-import { ItemCompositeSuccessSingleDto } from './dto/item-composite-response.dto';
-import { SaveItemDto } from './dto/save-item.dto';
+  ItemCompositeSuccessDeleteDto,
+  ItemCompositeSuccessSingleDto,
+} from './dto/item-composite-response.dto';
 import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
 import { ItemExceptionFilter } from './item-exception.filter';
 import { ItemsMasterService } from './items-master.service';
-import { BulkLoadItemPayload, ItemPayload, ItemSuccessResponse } from './types/item-api.types';
-import { ItemCompositePayload } from './types/item-composite-api.types';
+import { BulkLoadItemPayload, ItemSuccessResponse } from './types/item-api.types';
+import { ItemCompositeDeleteResult, ItemCompositePayload } from './types/item-composite-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Items')
@@ -47,56 +45,43 @@ export class ItemsMasterController {
   constructor(private readonly itemsMasterService: ItemsMasterService) { }
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update item (by item_id presence)' })
-  @ApiCreatedResponse({ type: ItemSuccessSingleDto })
+  @ApiOperation({
+    summary:
+      'Create or update an item, optionally with its unit conversions, prices, EAN codes and reorders',
+    description:
+      'Item fields are sent at the top level (create vs update by item_id presence). Optionally include ' +
+      'unit_conversions[], prices[], ean_codes[] and/or reorders[] to save them in the same call. ' +
+      'Saving is NON-ATOMIC: the item is saved first, then each child collection in dependency order ' +
+      '(unit-conversions, prices, EAN codes, reorders); the parent item_id is injected into every child ' +
+      'row. Rows absent from the payload are not deleted.',
+  })
+  @ApiCreatedResponse({ type: ItemCompositeSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemErrorResponseDto })
   @ApiConflictResponse({ type: ItemErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemErrorResponseDto })
-  async save(@Body() saveItemDto: SaveItemDto): Promise<ItemSuccessResponse<ItemPayload>> {
-    const data = await this.itemsMasterService.save(saveItemDto);
+  async save(
+    @Body() saveItemDto: SaveItemCompositeDto,
+  ): Promise<ItemSuccessResponse<ItemCompositePayload>> {
+    const data = await this.itemsMasterService.saveComposite(saveItemDto);
     return {
       success: true,
       message: saveItemDto.item_id ? 'Item updated successfully' : 'Item created successfully',
       data,
     };
   }
-  @Post('save-composite')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Save item with unit conversions, prices, EAN codes and reorders in one call',
-    description:
-      'Non-atomic: the item is saved first (create or update by item_id presence), then each child ' +
-      'collection is saved in dependency order (unit-conversions, prices, EAN codes, reorders). ' +
-      'The parent item_id is injected into every child row. If a child collection fails, the item ' +
-      'and any earlier children remain persisted.',
-  })
-  @ApiCreatedResponse({ type: ItemCompositeSuccessSingleDto })
-  @ApiBadRequestResponse({ type: ItemErrorResponseDto })
-  @ApiConflictResponse({ type: ItemErrorResponseDto })
-  @ApiNotFoundResponse({ type: ItemErrorResponseDto })
-  async saveComposite(
-    @Body() saveItemCompositeDto: SaveItemCompositeDto,
-  ): Promise<ItemSuccessResponse<ItemCompositePayload>> {
-    const data = await this.itemsMasterService.saveComposite(saveItemCompositeDto);
-    return {
-      success: true,
-      message: saveItemCompositeDto.item.item_id
-        ? 'Item composite updated successfully'
-        : 'Item composite created successfully',
-      data,
-    };
-  }
   @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get item by id' })
+  @ApiOperation({
+    summary: 'Get an item by id with its unit conversions, prices, EAN codes and reorders',
+  })
   @ApiQuery({ name: 'item_id', schema: { type: 'string', format: 'uuid' } })
-  @ApiOkResponse({ type: ItemSuccessSingleDto })
+  @ApiOkResponse({ type: ItemCompositeSuccessSingleDto })
   @ApiBadRequestResponse({ type: ItemErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemErrorResponseDto })
   async getById(
     @Query('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
-  ): Promise<ItemSuccessResponse<ItemPayload>> {
-    const data = await this.itemsMasterService.getById(itemId);
+  ): Promise<ItemSuccessResponse<ItemCompositePayload>> {
+    const data = await this.itemsMasterService.getComposite(itemId);
     return {
       success: true,
       message: 'Item fetched successfully',
@@ -143,22 +128,29 @@ export class ItemsMasterController {
     });
     return { success: true, message: 'Items fetched successfully', data };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete or restore item by id' })
+  @ApiOperation({
+    summary:
+      'Soft delete or restore an item by id, cascading to its unit conversions, prices, EAN codes and reorders',
+    description:
+      'Toggles the item (delete if active, restore if deleted), then cascades the same target state to ' +
+      'all of its child rows: children currently in the item\'s old state are flipped, children already ' +
+      'in the target state are left untouched. NON-ATOMIC: the item is toggled first, then each child ' +
+      'collection in its own transaction.',
+  })
   @ApiQuery({ name: 'item_id', schema: { type: 'string', format: 'uuid' } })
-  @ApiOkResponse({ type: ItemSuccessDeleteDto })
+  @ApiOkResponse({ type: ItemCompositeSuccessDeleteDto })
   @ApiBadRequestResponse({ type: ItemErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemErrorResponseDto })
   async remove(
     @Query('item_id', new ParseUUIDPipe({ version: '7' })) itemId: string,
-  ): Promise<ItemSuccessResponse<{ item_id: string; deleted: boolean }>> {
-    const { item_id, deleted } = await this.itemsMasterService.toggleDelete(itemId);
+  ): Promise<ItemSuccessResponse<ItemCompositeDeleteResult>> {
+    const data = await this.itemsMasterService.toggleDeleteComposite(itemId);
     return {
       success: true,
-      message: deleted ? 'Item deleted successfully' : 'Item restored successfully',
-      data: { item_id, deleted },
+      message: data.item.deleted ? 'Item deleted successfully' : 'Item restored successfully',
+      data,
     };
   }
 }

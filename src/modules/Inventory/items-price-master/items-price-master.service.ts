@@ -124,6 +124,20 @@ export class ItemsPriceMasterService {
     }
     return this.toPayload(record);
   }
+  async findByItemId(itemId: string): Promise<ItemPricePayload[]> {
+    const records = await this.prisma.itemPriceMaster.findMany({
+      where: { ipmItemId: itemId, ipmIsDeleted: false },
+      orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+    });
+    return records.map((record) => this.toPayload(record));
+  }
+  async findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]> {
+    const records = await this.prisma.itemPriceMaster.findMany({
+      where: { ipmItemId: itemId, ipmIsDeleted: isDeleted },
+      select: { ipmId: true },
+    });
+    return records.map((record) => record.ipmId);
+  }
   async toggleDelete(ipmId: string): Promise<ItemPriceDeleteResult>;
   async toggleDelete(ipmId: string[]): Promise<ItemPriceDeleteResult[]>;
   async toggleDelete(

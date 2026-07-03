@@ -89,17 +89,23 @@ type PrismaMock = {
     create: jest.Mock<Promise<ItemMaster>, [Prisma.ItemMasterCreateArgs]>;
     findFirst: jest.Mock<Promise<ItemMaster | null>, [Prisma.ItemMasterFindFirstArgs]>;
     update: jest.Mock<Promise<ItemMaster>, [Prisma.ItemMasterUpdateArgs]>;
+    updateMany: jest.Mock<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>;
   };
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
-type ChildServiceMock = { save: jest.Mock };
+type ChildServiceMock = {
+  save: jest.Mock;
+  findByItemId: jest.Mock;
+  findIdsByItemId: jest.Mock;
+  toggleDelete: jest.Mock;
+};
 
 // The first array of dtos passed to a child service's save(), typed for assertions.
 const savedRows = (mock: jest.Mock): Array<Record<string, unknown>> =>
   (mock.mock.calls as unknown as unknown[][])[0][0] as Array<Record<string, unknown>>;
 
-describe('ItemsMasterService.saveComposite', () => {
+describe('ItemsMasterService composite endpoints', () => {
   let service: ItemsMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
@@ -115,6 +121,9 @@ describe('ItemsMasterService.saveComposite', () => {
         create: jest.fn<Promise<ItemMaster>, [Prisma.ItemMasterCreateArgs]>(),
         findFirst: jest.fn<Promise<ItemMaster | null>, [Prisma.ItemMasterFindFirstArgs]>(),
         update: jest.fn<Promise<ItemMaster>, [Prisma.ItemMasterUpdateArgs]>(),
+        updateMany: jest
+          .fn<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>()
+          .mockResolvedValue({ count: 1 }),
       },
       $transaction: jest.fn<
         Promise<unknown>,
@@ -129,12 +138,42 @@ describe('ItemsMasterService.saveComposite', () => {
     auditLogService = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
     requestContextService = { getUserId: jest.fn().mockReturnValue(USER_ID) };
 
-    // Child mocks echo the injected dtos back as "payloads" so the response and
-    // the injection can both be asserted from the same call.
-    unitConversionService = { save: jest.fn((dtos: unknown) => Promise.resolve(dtos)) };
-    priceService = { save: jest.fn((dtos: unknown) => Promise.resolve(dtos)) };
-    eanCodeService = { save: jest.fn((dtos: unknown) => Promise.resolve(dtos)) };
-    reorderService = { save: jest.fn((dtos: unknown) => Promise.resolve(dtos)) };
+    // Child save mocks echo the injected dtos back as "payloads" so the response
+    // and the injection can both be asserted from the same call. findByItemId /
+    // findIdsByItemId default to empty and toggleDelete echoes ids as {*_id, deleted:
+    // true}; all are overridden per test where relevant.
+    unitConversionService = {
+      save: jest.fn((dtos: unknown) => Promise.resolve(dtos)),
+      findByItemId: jest.fn().mockResolvedValue([]),
+      findIdsByItemId: jest.fn().mockResolvedValue([]),
+      toggleDelete: jest.fn((ids: string[]) =>
+        Promise.resolve(ids.map((iuc_id) => ({ iuc_id, deleted: true }))),
+      ),
+    };
+    priceService = {
+      save: jest.fn((dtos: unknown) => Promise.resolve(dtos)),
+      findByItemId: jest.fn().mockResolvedValue([]),
+      findIdsByItemId: jest.fn().mockResolvedValue([]),
+      toggleDelete: jest.fn((ids: string[]) =>
+        Promise.resolve(ids.map((ipm_id) => ({ ipm_id, deleted: true }))),
+      ),
+    };
+    eanCodeService = {
+      save: jest.fn((dtos: unknown) => Promise.resolve(dtos)),
+      findByItemId: jest.fn().mockResolvedValue([]),
+      findIdsByItemId: jest.fn().mockResolvedValue([]),
+      toggleDelete: jest.fn((ids: string[]) =>
+        Promise.resolve(ids.map((ean_id) => ({ ean_id, deleted: true }))),
+      ),
+    };
+    reorderService = {
+      save: jest.fn((dtos: unknown) => Promise.resolve(dtos)),
+      findByItemId: jest.fn().mockResolvedValue([]),
+      findIdsByItemId: jest.fn().mockResolvedValue([]),
+      toggleDelete: jest.fn((ids: string[]) =>
+        Promise.resolve(ids.map((ir_id) => ({ ir_id, deleted: true }))),
+      ),
+    };
 
     service = new ItemsMasterService(
       prisma as unknown as PrismaService,
@@ -148,11 +187,9 @@ describe('ItemsMasterService.saveComposite', () => {
   });
 
   const fullCompositeDto = (): SaveItemCompositeDto => ({
-    item: {
-      item_company_id: COMPANY_ID,
-      item_name_en: 'Widget',
-      item_group_id: GROUP_ID,
-    },
+    item_company_id: COMPANY_ID,
+    item_name_en: 'Widget',
+    item_group_id: GROUP_ID,
     unit_conversions: [{ iuc_company_id: COMPANY_ID, iuc_unit_id: UNIT_ID }],
     prices: [{ ipm_unit_id: UNIT_ID, ipm_godown_id: GODOWN_ID, ipm_profit_type: 'MANUAL' }],
     ean_codes: [{ ean_unit_id: UNIT_ID, ean_code: '890123456789' }],
@@ -234,14 +271,34 @@ describe('ItemsMasterService.saveComposite', () => {
     expect(savedRows(priceService.save)[0].ipm_item_id).toBe(ITEM_ID);
   });
 
+  it('injects the parent item_id into EVERY row of a multi-row collection', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    dto.prices = [
+      { ipm_unit_id: UNIT_ID, ipm_godown_id: GODOWN_ID, ipm_profit_type: 'MANUAL' },
+      {
+        ipm_unit_id: UNIT_ID,
+        ipm_godown_id: GODOWN_ID,
+        ipm_profit_type: 'MANUAL',
+        ipm_item_id: OTHER_ITEM_ID,
+      },
+    ];
+
+    await service.saveComposite(dto);
+
+    const savedPrices = savedRows(priceService.save);
+    expect(savedPrices).toHaveLength(2);
+    expect(savedPrices.every((row) => row.ipm_item_id === ITEM_ID)).toBe(true);
+  });
+
   it('routes to the update flow when item_id is present', async () => {
     const existing = makeItemRecord();
     prisma.itemMaster.findFirst.mockResolvedValue(existing);
     prisma.itemMaster.update.mockResolvedValue(makeItemRecord({ itemNameEn: 'Widget v2' }));
 
     const dto = fullCompositeDto();
-    dto.item.item_id = ITEM_ID;
-    dto.item.item_name_en = 'Widget v2';
+    dto.item_id = ITEM_ID;
+    dto.item_name_en = 'Widget v2';
 
     const result = await service.saveComposite(dto);
 
@@ -256,11 +313,9 @@ describe('ItemsMasterService.saveComposite', () => {
     prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
 
     const result = await service.saveComposite({
-      item: {
-        item_company_id: COMPANY_ID,
-        item_name_en: 'Widget',
-        item_group_id: GROUP_ID,
-      },
+      item_company_id: COMPANY_ID,
+      item_name_en: 'Widget',
+      item_group_id: GROUP_ID,
     });
 
     expect(unitConversionService.save).not.toHaveBeenCalled();
@@ -287,5 +342,116 @@ describe('ItemsMasterService.saveComposite', () => {
     expect(unitConversionService.save).toHaveBeenCalledTimes(1);
     expect(eanCodeService.save).not.toHaveBeenCalled();
     expect(reorderService.save).not.toHaveBeenCalled();
+  });
+
+  it('getComposite assembles the item with all child collections fetched by item id', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+    unitConversionService.findByItemId.mockResolvedValue([{ iuc_id: 'uc1' }]);
+    priceService.findByItemId.mockResolvedValue([{ ipm_id: 'p1' }, { ipm_id: 'p2' }]);
+    eanCodeService.findByItemId.mockResolvedValue([{ ean_id: 'e1' }]);
+    reorderService.findByItemId.mockResolvedValue([{ ir_id: 'r1' }]);
+
+    const result = await service.getComposite(ITEM_ID);
+
+    expect(unitConversionService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
+    expect(priceService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
+    expect(eanCodeService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
+    expect(reorderService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
+
+    expect(result.item.item_id).toBe(ITEM_ID);
+    expect(result.unit_conversions).toHaveLength(1);
+    expect(result.prices).toHaveLength(2);
+    expect(result.ean_codes).toHaveLength(1);
+    expect(result.reorders).toHaveLength(1);
+  });
+
+  it('getComposite returns empty child arrays when the item has no children', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+
+    const result = await service.getComposite(ITEM_ID);
+
+    expect(result.unit_conversions).toEqual([]);
+    expect(result.prices).toEqual([]);
+    expect(result.ean_codes).toEqual([]);
+    expect(result.reorders).toEqual([]);
+  });
+
+  it('getComposite throws NotFound and does not query children when the item is missing', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(null);
+
+    await expect(service.getComposite(ITEM_ID)).rejects.toThrow();
+
+    expect(unitConversionService.findByItemId).not.toHaveBeenCalled();
+    expect(priceService.findByItemId).not.toHaveBeenCalled();
+    expect(eanCodeService.findByItemId).not.toHaveBeenCalled();
+    expect(reorderService.findByItemId).not.toHaveBeenCalled();
+  });
+
+  it('toggleDeleteComposite soft-deletes an active item and cascades to its currently active children', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord({ itemIsDeleted: false }));
+    unitConversionService.findIdsByItemId.mockResolvedValue(['uc1']);
+    priceService.findIdsByItemId.mockResolvedValue(['p1', 'p2']);
+    eanCodeService.findIdsByItemId.mockResolvedValue(['e1']);
+    reorderService.findIdsByItemId.mockResolvedValue(['r1']);
+
+    const result = await service.toggleDeleteComposite(ITEM_ID);
+
+    // Children are looked up in their OLD (active) state, i.e. isDeleted=false
+    expect(unitConversionService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, false);
+    expect(priceService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, false);
+    expect(eanCodeService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, false);
+    expect(reorderService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, false);
+
+    // Every matched child id is toggled (soft deleted)
+    expect(unitConversionService.toggleDelete).toHaveBeenCalledWith(['uc1']);
+    expect(priceService.toggleDelete).toHaveBeenCalledWith(['p1', 'p2']);
+    expect(eanCodeService.toggleDelete).toHaveBeenCalledWith(['e1']);
+    expect(reorderService.toggleDelete).toHaveBeenCalledWith(['r1']);
+
+    expect(result.item).toEqual({ item_id: ITEM_ID, deleted: true });
+    expect(result.unit_conversions).toHaveLength(1);
+    expect(result.prices).toHaveLength(2);
+    expect(result.ean_codes).toHaveLength(1);
+    expect(result.reorders).toHaveLength(1);
+  });
+
+  it('toggleDeleteComposite restores a deleted item and cascades to its currently deleted children', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord({ itemIsDeleted: true }));
+    unitConversionService.findIdsByItemId.mockResolvedValue(['uc1']);
+
+    const result = await service.toggleDeleteComposite(ITEM_ID);
+
+    // Children are looked up in their OLD (deleted) state, i.e. isDeleted=true
+    expect(unitConversionService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, true);
+    expect(priceService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, true);
+    expect(eanCodeService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, true);
+    expect(reorderService.findIdsByItemId).toHaveBeenCalledWith(ITEM_ID, true);
+
+    expect(result.item).toEqual({ item_id: ITEM_ID, deleted: false });
+  });
+
+  it('toggleDeleteComposite skips a child service entirely when it has no matching rows', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord({ itemIsDeleted: false }));
+    // All findIdsByItemId mocks default to [] from beforeEach
+
+    const result = await service.toggleDeleteComposite(ITEM_ID);
+
+    expect(unitConversionService.toggleDelete).not.toHaveBeenCalled();
+    expect(priceService.toggleDelete).not.toHaveBeenCalled();
+    expect(eanCodeService.toggleDelete).not.toHaveBeenCalled();
+    expect(reorderService.toggleDelete).not.toHaveBeenCalled();
+    expect(result.unit_conversions).toEqual([]);
+    expect(result.prices).toEqual([]);
+    expect(result.ean_codes).toEqual([]);
+    expect(result.reorders).toEqual([]);
+  });
+
+  it('toggleDeleteComposite throws NotFound and never queries or toggles children when the item is missing', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(null);
+
+    await expect(service.toggleDeleteComposite(ITEM_ID)).rejects.toThrow();
+
+    expect(unitConversionService.findIdsByItemId).not.toHaveBeenCalled();
+    expect(priceService.toggleDelete).not.toHaveBeenCalled();
   });
 });

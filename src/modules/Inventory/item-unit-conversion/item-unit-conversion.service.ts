@@ -139,6 +139,20 @@ export class ItemUnitConversionService {
     }
     return this.toPayload(record);
   }
+  async findByItemId(itemId: string): Promise<ItemUnitConversionPayload[]> {
+    const records = await this.prisma.itemUnitConversion.findMany({
+      where: { iucItemId: itemId, iucIsDeleted: false },
+      orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
+    });
+    return records.map((record) => this.toPayload(record));
+  }
+  async findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]> {
+    const records = await this.prisma.itemUnitConversion.findMany({
+      where: { iucItemId: itemId, iucIsDeleted: isDeleted },
+      select: { iucId: true },
+    });
+    return records.map((record) => record.iucId);
+  }
   async toggleDelete(iucId: string): Promise<ItemUnitConversionDeleteResult>;
   async toggleDelete(iucId: string[]): Promise<ItemUnitConversionDeleteResult[]>;
   async toggleDelete(
