@@ -8,5 +8,6 @@ import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
   imports: [AuditLogModule],
   controllers: [ItemsReorderMasterController],
   providers: [ItemsReorderMasterService, ItemReorderExceptionFilter],
+  exports: [ItemsReorderMasterService],
 })
 export class ItemsReorderMasterModule {}

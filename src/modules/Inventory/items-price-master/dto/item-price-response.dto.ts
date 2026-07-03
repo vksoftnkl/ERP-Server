@@ -111,76 +111,15 @@ export class ItemPriceDeleteResultDto {
   })
   deleted!: boolean;
 }
-export class ItemUnitConversionPayloadDto {
-  @ApiProperty({ format: 'uuid' })
-  iuc_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  iuc_company_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  iuc_item_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  iuc_unit_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  iuc_base_unit_id!: string;
-  @ApiProperty({ example: 1 })
-  iuc_to_base_factor!: number;
-  @ApiProperty({ example: 0 })
-  iuc_unit_slno!: number;
-  @ApiProperty({ example: 1 })
-  iuc_unit_factor!: number;
-  @ApiProperty({ example: false })
-  iuc_is_default_unit!: boolean;
-  @ApiProperty({ example: false })
-  iuc_is_base_unit!: boolean;
-  @ApiProperty({ example: false })
-  iuc_is_big_unit!: boolean;
-  @ApiProperty({ example: 0 })
-  iuc_uom_weight!: number;
-  @ApiPropertyOptional({ nullable: true })
-  iuc_uom_remarks!: string | null;
-  @ApiProperty({ example: true })
-  iuc_is_active!: boolean;
-  @ApiProperty({ example: false })
-  iuc_is_deleted!: boolean;
-  @ApiPropertyOptional({ nullable: true })
-  iuc_sync_date!: string | null;
-  @ApiProperty()
-  iuc_created_on!: string;
-  @ApiPropertyOptional({ nullable: true })
-  iuc_created_by!: string | null;
-  @ApiPropertyOptional({ nullable: true })
-  iuc_updated_on!: string | null;
-  @ApiPropertyOptional({ nullable: true })
-  iuc_updated_by!: string | null;
-}
-export class ItemUnitConversionDeleteResultDto {
-  @ApiProperty({ format: 'uuid' })
-  iuc_id!: string;
-  @ApiProperty({
-    example: true,
-    description: 'true when the item unit conversion was soft deleted, false when it was restored',
-  })
-  deleted!: boolean;
-}
 export class ItemPriceSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
   @ApiProperty({ example: 'Item price fetched successfully' })
   message!: string;
-  @ApiProperty({
-    oneOf: [
-      { $ref: getSchemaPath(ItemPricePayloadDto) },
-      { $ref: getSchemaPath(ItemUnitConversionPayloadDto) },
-    ],
-  })
-  data!: ItemPricePayloadDto | ItemUnitConversionPayloadDto;
+  @ApiProperty({ type: ItemPricePayloadDto })
+  data!: ItemPricePayloadDto;
 }
-@ApiExtraModels(
-  ItemPricePayloadDto,
-  ItemUnitConversionPayloadDto,
-  ItemPriceDeleteResultDto,
-  ItemUnitConversionDeleteResultDto,
-)
+@ApiExtraModels(ItemPricePayloadDto, ItemPriceDeleteResultDto)
 export class ItemPriceSuccessSaveDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -193,20 +132,11 @@ export class ItemPriceSuccessSaveDto {
         type: 'array',
         items: { $ref: getSchemaPath(ItemPricePayloadDto) },
       },
-      { $ref: getSchemaPath(ItemUnitConversionPayloadDto) },
-      {
-        type: 'array',
-        items: { $ref: getSchemaPath(ItemUnitConversionPayloadDto) },
-      },
     ],
   })
-  data!:
-    | ItemPricePayloadDto
-    | ItemPricePayloadDto[]
-    | ItemUnitConversionPayloadDto
-    | ItemUnitConversionPayloadDto[];
+  data!: ItemPricePayloadDto | ItemPricePayloadDto[];
 }
-@ApiExtraModels(ItemPricePayloadDto, ItemUnitConversionPayloadDto)
+@ApiExtraModels(ItemPricePayloadDto)
 export class ItemPriceSuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
@@ -214,17 +144,11 @@ export class ItemPriceSuccessListDto {
   @ApiProperty({ example: 'Item prices fetched successfully' })
   message!: string;
 
-  @ApiProperty({
-    oneOf: [
-      { type: 'array', items: { $ref: getSchemaPath(ItemPricePayloadDto) } },
-      { type: 'array', items: { $ref: getSchemaPath(ItemUnitConversionPayloadDto) } },
-    ],
-  })
-  data!: ItemPricePayloadDto[] | ItemUnitConversionPayloadDto[];
+  @ApiProperty({ type: [ItemPricePayloadDto] })
+  data!: ItemPricePayloadDto[];
 
   @ApiProperty({ type: InventoryListMetaDto })
   meta!: InventoryListMetaDto;
-
 }
 
 export class ItemPriceSuccessDeleteDto {
@@ -239,16 +163,7 @@ export class ItemPriceSuccessDeleteDto {
         type: 'array',
         items: { $ref: getSchemaPath(ItemPriceDeleteResultDto) },
       },
-      { $ref: getSchemaPath(ItemUnitConversionDeleteResultDto) },
-      {
-        type: 'array',
-        items: { $ref: getSchemaPath(ItemUnitConversionDeleteResultDto) },
-      },
     ],
   })
-  data!:
-    | ItemPriceDeleteResultDto
-    | ItemPriceDeleteResultDto[]
-    | ItemUnitConversionDeleteResultDto
-    | ItemUnitConversionDeleteResultDto[];
+  data!: ItemPriceDeleteResultDto | ItemPriceDeleteResultDto[];
 }

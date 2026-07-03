@@ -8,5 +8,6 @@ import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
   imports: [AuditLogModule],
   controllers: [ItemsPriceMasterController],
   providers: [ItemsPriceMasterService, ItemPriceExceptionFilter],
+  exports: [ItemsPriceMasterService],
 })
 export class ItemsPriceMasterModule {}

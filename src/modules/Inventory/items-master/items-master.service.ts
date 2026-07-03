@@ -1,7 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { ItemMaster, Prisma } from '@prisma/client';
 import { SaveItemDto } from './dto/save-item.dto';
+import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
 import { BulkLoadItemPayload, ItemErrorDetail, ItemPayload } from './types/item-api.types';
+import { ItemCompositePayload } from './types/item-composite-api.types';
+import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
+import { ItemsPriceMasterService } from '../items-price-master/items-price-master.service';
+import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-code-master.service';
+import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
+import { SaveItemUnitConversionDto } from '../item-unit-conversion/dto/save-item-unit-conversion.dto';
+import { SaveItemPriceDto } from '../items-price-master/dto/save-item-price.dto';
+import { SaveItemEanCodeDto } from '../items-ean-code-master/dto/save-item-ean-code.dto';
+import { SaveItemReorderDto } from '../items-reorder-master/dto/save-item-reorder.dto';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { toNumber } from 'src/common/utils/module-service.utils';
 import { AuditLogService } from 'src/modules/audit-log/audit-log.service';
@@ -24,12 +34,61 @@ export class ItemsMasterService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    private readonly itemUnitConversionService: ItemUnitConversionService,
+    private readonly itemsPriceMasterService: ItemsPriceMasterService,
+    private readonly itemsEanCodeMasterService: ItemsEanCodeMasterService,
+    private readonly itemsReorderMasterService: ItemsReorderMasterService,
   ) {}
   async save(saveItemDto: SaveItemDto): Promise<ItemPayload> {
     if (saveItemDto.item_id) {
       return this.updateItem(saveItemDto);
     }
     return this.createItem(saveItemDto);
+  }
+  /**
+   * Saves an item together with its unit conversions, prices, EAN codes and
+   * reorders in a single request. NOT atomic: the item is persisted first
+   * (in its own transaction), then each child collection is saved in its own
+   * transaction, in dependency order (unit-conversions -> prices -> EAN codes
+   * -> reorders). If a child collection fails, the item and any earlier
+   * children remain persisted. The parent item_id is always injected into each
+   * child row, overwriting any client-supplied id. The item fields live on the
+   * dto directly (it extends SaveItemDto); the child arrays are optional.
+   */
+  async saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload> {
+    const item = await this.save(dto);
+    const itemId = item.item_id;
+
+    const unitConversionDtos: SaveItemUnitConversionDto[] = (dto.unit_conversions ?? []).map(
+      (child) => ({ ...child, iuc_item_id: itemId }),
+    );
+    const unit_conversions = unitConversionDtos.length
+      ? await this.itemUnitConversionService.save(unitConversionDtos)
+      : [];
+
+    const priceDtos: SaveItemPriceDto[] = (dto.prices ?? []).map((child) => ({
+      ...child,
+      ipm_item_id: itemId,
+    }));
+    const prices = priceDtos.length ? await this.itemsPriceMasterService.save(priceDtos) : [];
+
+    const eanCodeDtos: SaveItemEanCodeDto[] = (dto.ean_codes ?? []).map((child) => ({
+      ...child,
+      ean_item_id: itemId,
+    }));
+    const ean_codes = eanCodeDtos.length
+      ? await this.itemsEanCodeMasterService.save(eanCodeDtos)
+      : [];
+
+    const reorderDtos: SaveItemReorderDto[] = (dto.reorders ?? []).map((child) => ({
+      ...child,
+      ir_item_id: itemId,
+    }));
+    const reorders = reorderDtos.length
+      ? await this.itemsReorderMasterService.save(reorderDtos)
+      : [];
+
+    return { item, unit_conversions, prices, ean_codes, reorders };
   }
   async getById(itemId: string): Promise<ItemPayload> {
     const record = await this.prisma.itemMaster.findFirst({

@@ -8,5 +8,6 @@ import { AuditLogModule } from 'src/modules/audit-log/audit-log.module';
   imports: [AuditLogModule],
   controllers: [ItemsEanCodeMasterController],
   providers: [ItemsEanCodeMasterService, ItemEanCodeExceptionFilter],
+  exports: [ItemsEanCodeMasterService],
 })
 export class ItemsEanCodeMasterModule {}

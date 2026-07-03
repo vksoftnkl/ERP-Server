@@ -28,10 +28,13 @@ import {
   ItemSuccessDeleteDto,
   ItemSuccessSingleDto,
 } from './dto/item-response.dto';
+import { ItemCompositeSuccessSingleDto } from './dto/item-composite-response.dto';
 import { SaveItemDto } from './dto/save-item.dto';
+import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
 import { ItemExceptionFilter } from './item-exception.filter';
 import { ItemsMasterService } from './items-master.service';
 import { BulkLoadItemPayload, ItemPayload, ItemSuccessResponse } from './types/item-api.types';
+import { ItemCompositePayload } from './types/item-composite-api.types';
 import { HttpErrorResponseDto } from 'src/common/dto/http-error-response.dto';
 import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Items')
@@ -54,6 +57,32 @@ export class ItemsMasterController {
     return {
       success: true,
       message: saveItemDto.item_id ? 'Item updated successfully' : 'Item created successfully',
+      data,
+    };
+  }
+  @Post('save-composite')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Save item with unit conversions, prices, EAN codes and reorders in one call',
+    description:
+      'Non-atomic: the item is saved first (create or update by item_id presence), then each child ' +
+      'collection is saved in dependency order (unit-conversions, prices, EAN codes, reorders). ' +
+      'The parent item_id is injected into every child row. If a child collection fails, the item ' +
+      'and any earlier children remain persisted.',
+  })
+  @ApiCreatedResponse({ type: ItemCompositeSuccessSingleDto })
+  @ApiBadRequestResponse({ type: ItemErrorResponseDto })
+  @ApiConflictResponse({ type: ItemErrorResponseDto })
+  @ApiNotFoundResponse({ type: ItemErrorResponseDto })
+  async saveComposite(
+    @Body() saveItemCompositeDto: SaveItemCompositeDto,
+  ): Promise<ItemSuccessResponse<ItemCompositePayload>> {
+    const data = await this.itemsMasterService.saveComposite(saveItemCompositeDto);
+    return {
+      success: true,
+      message: saveItemCompositeDto.item.item_id
+        ? 'Item composite updated successfully'
+        : 'Item composite created successfully',
       data,
     };
   }

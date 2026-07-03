@@ -7,7 +7,6 @@ const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
 const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fd08';
 const USER_ID = '019c6f6c-be87-7a11-8905-36092c46fd09';
-const UNIT_CONVERSION_ID = '019c6f6c-be87-7a11-8905-36092c46fd10';
 
 const itemPricePayload = {
   ipm_id: ITEM_PRICE_ID,
@@ -58,41 +57,14 @@ const itemPricePayload = {
   ipm_updated_by: USER_ID,
 };
 
-const itemUnitConversionPayload = {
-  iuc_id: UNIT_CONVERSION_ID,
-  iuc_company_id: ITEM_ID,
-  iuc_item_id: ITEM_ID,
-  iuc_unit_id: UNIT_ID,
-  iuc_base_unit_id: UNIT_ID,
-  iuc_to_base_factor: 1,
-  iuc_unit_slno: 0,
-  iuc_unit_factor: 1,
-  iuc_is_default_unit: true,
-  iuc_is_base_unit: true,
-  iuc_is_big_unit: false,
-  iuc_uom_weight: 0,
-  iuc_uom_remarks: null,
-  iuc_is_active: true,
-  iuc_is_deleted: false,
-  iuc_sync_date: null,
-  iuc_created_on: '2026-02-20T10:00:00.000Z',
-  iuc_created_by: USER_ID,
-  iuc_updated_on: '2026-02-20T10:00:00.000Z',
-  iuc_updated_by: USER_ID,
-};
-
 describe('ItemsPriceMasterController', () => {
   let controller: ItemsPriceMasterController;
 
   const serviceMock = {
     save: jest.fn(),
-    saveItemUnitConversions: jest.fn(),
-    list: jest.fn(),
-    listItemUnitConversions: jest.fn(),
+    listPrices: jest.fn(),
     getById: jest.fn(),
-    getItemUnitConversionById: jest.fn(),
     toggleDelete: jest.fn(),
-    toggleDeleteItemUnitConversions: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -146,39 +118,6 @@ describe('ItemsPriceMasterController', () => {
     });
   });
 
-  it('wraps unit conversion save response with success envelope', async () => {
-    serviceMock.saveItemUnitConversions.mockResolvedValue(itemUnitConversionPayload);
-
-    await expect(
-      controller.save({
-        iuc_company_id: ITEM_ID,
-        iuc_item_id: ITEM_ID,
-        iuc_unit_id: UNIT_ID,
-        iuc_base_unit_id: UNIT_ID,
-      }),
-    ).resolves.toEqual({
-      success: true,
-      message: 'Item unit conversion created successfully',
-      data: itemUnitConversionPayload,
-    });
-  });
-
-  it('accepts unit conversion payloads when iuc_base_unit_id is an empty string', async () => {
-    serviceMock.saveItemUnitConversions.mockResolvedValue(itemUnitConversionPayload);
-
-    await expect(
-      controller.save({
-        iuc_company_id: ITEM_ID,
-        iuc_item_id: ITEM_ID,
-        iuc_unit_id: UNIT_ID,
-        iuc_base_unit_id: '',
-      }),
-    ).resolves.toEqual({
-      success: true,
-      message: 'Item unit conversion created successfully',
-      data: itemUnitConversionPayload,
-    });
-  });
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemPricePayload);
 
@@ -186,16 +125,6 @@ describe('ItemsPriceMasterController', () => {
       success: true,
       message: 'Item price fetched successfully',
       data: itemPricePayload,
-    });
-  });
-
-  it('returns wrapped item unit conversion getById response', async () => {
-    serviceMock.getItemUnitConversionById.mockResolvedValue(itemUnitConversionPayload);
-
-    await expect(controller.getById({ iuc_id: UNIT_CONVERSION_ID })).resolves.toEqual({
-      success: true,
-      message: 'Item unit conversion fetched successfully',
-      data: itemUnitConversionPayload,
     });
   });
 
@@ -234,26 +163,6 @@ describe('ItemsPriceMasterController', () => {
         {
           ipm_id: ITEM_PRICE_ID,
           deleted: false,
-        },
-      ],
-    });
-  });
-
-  it('supports unit conversion delete with body arrays', async () => {
-    serviceMock.toggleDeleteItemUnitConversions.mockResolvedValue([
-      {
-        iuc_id: UNIT_CONVERSION_ID,
-        deleted: true,
-      },
-    ]);
-
-    await expect(controller.remove([{ iuc_id: UNIT_CONVERSION_ID }], {})).resolves.toEqual({
-      success: true,
-      message: 'Item unit conversions deleted successfully',
-      data: [
-        {
-          iuc_id: UNIT_CONVERSION_ID,
-          deleted: true,
         },
       ],
     });

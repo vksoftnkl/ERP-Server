@@ -7,11 +7,6 @@ export interface ItemPriceDeleteResult {
   deleted: boolean;
 }
 
-export interface ItemUnitConversionDeleteResult {
-  iuc_id: string;
-  deleted: boolean;
-}
-
 export interface ItemPricePayload {
   ipm_id: string;
   ipm_company_id: string | null;
@@ -60,28 +55,5 @@ export interface ItemPricePayload {
   ipm_updated_on: string | null;
   ipm_updated_by: string | null;
 }
-export interface ItemUnitConversionPayload {
-  iuc_id: string;
-  iuc_company_id: string;
-  iuc_item_id: string;
-  iuc_unit_id: string;
-  iuc_base_unit_id: string;
-  iuc_to_base_factor: number;
-  iuc_unit_slno: number;
-  iuc_unit_factor: number;
-  iuc_is_default_unit: boolean;
-  iuc_is_base_unit: boolean;
-  iuc_is_big_unit: boolean;
-  iuc_uom_weight: number;
-  iuc_uom_remarks: string | null;
-  iuc_is_active: boolean;
-  iuc_is_deleted: boolean;
-  iuc_sync_date: string | null;
-  iuc_created_on: string;
-  iuc_created_by: string | null;
-  iuc_updated_on: string | null;
-  iuc_updated_by: string | null;
-}
 
 export type ItemPriceListItem = ItemPricePayload | Record<string, unknown>;
-export type ItemUnitConversionListItem = ItemUnitConversionPayload | Record<string, unknown>;
