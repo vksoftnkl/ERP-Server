@@ -54,6 +54,12 @@ export interface ItemPricePayload {
   ipm_created_by: string | null;
   ipm_updated_on: string | null;
   ipm_updated_by: string | null;
+  // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
+  ipm_company_name?: string | null;
+  ipm_branch_name?: string | null;
+  ipm_unit_name?: string | null;
+  ipm_godown_name?: string | null;
+  ipm_base_unit_name?: string | null;
 }
 
 export type ItemPriceListItem = ItemPricePayload | Record<string, unknown>;

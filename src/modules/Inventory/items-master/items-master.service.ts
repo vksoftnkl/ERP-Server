@@ -120,7 +120,181 @@ export class ItemsMasterService {
       this.itemsEanCodeMasterService.findByItemId(itemId),
       this.itemsReorderMasterService.findByItemId(itemId),
     ]);
-    return { item, unit_conversions, prices, ean_codes, reorders };
+    return this.resolveCompositeNames({ item, unit_conversions, prices, ean_codes, reorders });
+  }
+  /**
+   * Enriches the composite payload with human-readable names for every
+   * resolvable foreign-key id. Names are attached as flat sibling `*_name`
+   * fields alongside the ids (matching the customer/supplier convention); the
+   * ids are preserved. Reference tables are batch-loaded — one query per table
+   * over the deduped id set — and resolved by id regardless of soft-delete, so a
+   * name still shows even if the master was later deleted. Columns with no
+   * master table (item_company_category_id, item_mfgr_id, item_barcode_sticker_id)
+   * are not resolved. Every child row belongs to this item, so their
+   * `*_item_name` echoes reuse the parent item name without an extra query.
+   */
+  private async resolveCompositeNames(
+    composite: ItemCompositePayload,
+  ): Promise<ItemCompositePayload> {
+    const { item, unit_conversions, prices, ean_codes, reorders } = composite;
+    const collect = (...ids: (string | null | undefined)[]): string[] =>
+      Array.from(new Set(ids.filter((id): id is string => !!id)));
+
+    const companyIds = collect(
+      item.item_company_id,
+      ...unit_conversions.map((r) => r.iuc_company_id),
+      ...prices.map((r) => r.ipm_company_id),
+    );
+    const branchIds = collect(
+      item.item_branch_id,
+      ...prices.map((r) => r.ipm_branch_id),
+      ...reorders.map((r) => r.ir_branch_id),
+    );
+    const unitIds = collect(
+      item.item_base_unit_id,
+      ...unit_conversions.flatMap((r) => [r.iuc_unit_id, r.iuc_base_unit_id]),
+      ...prices.flatMap((r) => [r.ipm_unit_id, r.ipm_base_unit_id]),
+      ...ean_codes.map((r) => r.ean_unit_id),
+      ...reorders.map((r) => r.ir_unit_id),
+    );
+    const godownIds = collect(
+      ...prices.map((r) => r.ipm_godown_id),
+      ...ean_codes.map((r) => r.ean_godown_id),
+      ...reorders.map((r) => r.ir_godown_id),
+    );
+    const groupIds = collect(item.item_group_id);
+    const categoryIds = collect(item.item_category_id);
+    const brandIds = collect(item.item_brand_id);
+    const sectionIds = collect(item.item_section_id);
+    const supplierIds = collect(item.item_supplier_id);
+    const custGroupIds = collect(item.item_cust_group);
+    const taxIds = collect(item.item_default_tax_id);
+
+    const [companies, branches, units, godowns, groups, categories, brands, sections, suppliers, custGroups, taxes] =
+      await Promise.all([
+        companyIds.length
+          ? this.prisma.company.findMany({
+              where: { compId: { in: companyIds } },
+              select: { compId: true, compName: true },
+            })
+          : [],
+        branchIds.length
+          ? this.prisma.branchMaster.findMany({
+              where: { brId: { in: branchIds } },
+              select: { brId: true, brName: true },
+            })
+          : [],
+        unitIds.length
+          ? this.prisma.unit.findMany({
+              where: { unit_id: { in: unitIds } },
+              select: { unit_id: true, unit_name: true },
+            })
+          : [],
+        godownIds.length
+          ? this.prisma.godownLocation.findMany({
+              where: { gdlId: { in: godownIds } },
+              select: { gdlId: true, gdlName: true },
+            })
+          : [],
+        groupIds.length
+          ? this.prisma.itemGroupMaster.findMany({
+              where: { itgId: { in: groupIds } },
+              select: { itgId: true, itgName: true },
+            })
+          : [],
+        categoryIds.length
+          ? this.prisma.categoryMaster.findMany({
+              where: { categoryId: { in: categoryIds } },
+              select: { categoryId: true, categoryName: true },
+            })
+          : [],
+        brandIds.length
+          ? this.prisma.itemBrandMaster.findMany({
+              where: { brand_id: { in: brandIds } },
+              select: { brand_id: true, brand_name: true },
+            })
+          : [],
+        sectionIds.length
+          ? this.prisma.itemSectionMaster.findMany({
+              where: { secId: { in: sectionIds } },
+              select: { secId: true, secName: true },
+            })
+          : [],
+        supplierIds.length
+          ? this.prisma.supplier.findMany({
+              where: { supId: { in: supplierIds } },
+              select: { supId: true, supName: true },
+            })
+          : [],
+        custGroupIds.length
+          ? this.prisma.custGroup.findMany({
+              where: { cgrId: { in: custGroupIds } },
+              select: { cgrId: true, cgrName: true },
+            })
+          : [],
+        taxIds.length
+          ? this.prisma.itemTaxMaster.findMany({
+              where: { taxId: { in: taxIds } },
+              select: { taxId: true, taxName: true },
+            })
+          : [],
+      ]);
+
+    const companyName = new Map(companies.map((r) => [r.compId, r.compName]));
+    const branchName = new Map(branches.map((r) => [r.brId, r.brName]));
+    const unitName = new Map(units.map((r) => [r.unit_id, r.unit_name]));
+    const godownName = new Map(godowns.map((r) => [r.gdlId, r.gdlName]));
+    const groupName = new Map(groups.map((r) => [r.itgId, r.itgName]));
+    const categoryName = new Map(categories.map((r) => [r.categoryId, r.categoryName]));
+    const brandName = new Map(brands.map((r) => [r.brand_id, r.brand_name]));
+    const sectionName = new Map(sections.map((r) => [r.secId, r.secName]));
+    const supplierName = new Map(suppliers.map((r) => [r.supId, r.supName]));
+    const custGroupName = new Map(custGroups.map((r) => [r.cgrId, r.cgrName]));
+    const taxName = new Map(taxes.map((r) => [r.taxId, r.taxName]));
+
+    const nameOf = <T>(map: Map<string, T>, id: string | null | undefined): T | null =>
+      id ? (map.get(id) ?? null) : null;
+
+    return {
+      item: {
+        ...item,
+        item_company_name: nameOf(companyName, item.item_company_id),
+        item_branch_name: nameOf(branchName, item.item_branch_id),
+        item_group_name: nameOf(groupName, item.item_group_id),
+        item_category_name: nameOf(categoryName, item.item_category_id),
+        item_brand_name: nameOf(brandName, item.item_brand_id),
+        item_section_name: nameOf(sectionName, item.item_section_id),
+        item_supplier_name: nameOf(supplierName, item.item_supplier_id),
+        item_cust_group_name: nameOf(custGroupName, item.item_cust_group),
+        item_base_unit_name: nameOf(unitName, item.item_base_unit_id),
+        item_default_tax_name: nameOf(taxName, item.item_default_tax_id),
+      },
+      unit_conversions: unit_conversions.map((r) => ({
+        ...r,
+        iuc_company_name: nameOf(companyName, r.iuc_company_id),
+        iuc_unit_name: nameOf(unitName, r.iuc_unit_id),
+        iuc_base_unit_name: nameOf(unitName, r.iuc_base_unit_id),
+      })),
+      prices: prices.map((r) => ({
+        ...r,
+        ipm_company_name: nameOf(companyName, r.ipm_company_id),
+        ipm_branch_name: nameOf(branchName, r.ipm_branch_id),
+        ipm_unit_name: nameOf(unitName, r.ipm_unit_id),
+        ipm_godown_name: nameOf(godownName, r.ipm_godown_id),
+        ipm_base_unit_name: nameOf(unitName, r.ipm_base_unit_id),
+      })),
+      ean_codes: ean_codes.map((r) => ({
+        ...r,
+        ean_unit_name: nameOf(unitName, r.ean_unit_id),
+        ean_godown_name: nameOf(godownName, r.ean_godown_id),
+      })),
+      reorders: reorders.map((r) => ({
+        ...r,
+        ir_branch_name: nameOf(branchName, r.ir_branch_id),
+        ir_unit_name: nameOf(unitName, r.ir_unit_id),
+        ir_godown_name: nameOf(godownName, r.ir_godown_id),
+      })),
+    };
   }
   async listForBulkLoad(params: {
     itemCompanyId?: string;

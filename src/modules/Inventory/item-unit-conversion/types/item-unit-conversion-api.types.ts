@@ -28,6 +28,10 @@ export interface ItemUnitConversionPayload {
   iuc_created_by: string | null;
   iuc_updated_on: string | null;
   iuc_updated_by: string | null;
+  // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
+  iuc_company_name?: string | null;
+  iuc_unit_name?: string | null;
+  iuc_base_unit_name?: string | null;
 }
 
 export type ItemUnitConversionListItem = ItemUnitConversionPayload | Record<string, unknown>;

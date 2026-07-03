@@ -131,6 +131,26 @@ export class ItemPayloadDto {
   item_modified_on!: string;
   @ApiPropertyOptional({ nullable: true })
   item_modified_by!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked company (resolved on the composite get endpoint)' })
+  item_company_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked branch (resolved on the composite get endpoint)' })
+  item_branch_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked item group (resolved on the composite get endpoint)' })
+  item_group_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked category (resolved on the composite get endpoint)' })
+  item_category_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked brand (resolved on the composite get endpoint)' })
+  item_brand_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked section (resolved on the composite get endpoint)' })
+  item_section_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked supplier (resolved on the composite get endpoint)' })
+  item_supplier_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked customer group (resolved on the composite get endpoint)' })
+  item_cust_group_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked base unit (resolved on the composite get endpoint)' })
+  item_base_unit_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked default tax (resolved on the composite get endpoint)' })
+  item_default_tax_name?: string | null;
 }
 
 export class ItemDeleteResultDto {

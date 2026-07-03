@@ -15,6 +15,9 @@ const GROUP_ID = '019c6f6c-be87-7a11-8905-36092c46aa03';
 const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46aa04';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46aa05';
 const USER_ID = '019c6f6c-be87-7a11-8905-36092c46aa06';
+const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46aa07';
+const CATEGORY_ID = '019c6f6c-be87-7a11-8905-36092c46aa08';
+const BASE_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46aa09';
 const OTHER_ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46aa99';
 
 const makeItemRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =>
@@ -84,6 +87,12 @@ const makeItemRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =>
     ...overrides,
   }) as ItemMaster;
 
+// The composite name-resolver batch-loads each reference master via findMany.
+type LookupMock = { findMany: jest.Mock<Promise<Array<Record<string, unknown>>>, [unknown]> };
+const makeLookup = (): LookupMock => ({
+  findMany: jest.fn<Promise<Array<Record<string, unknown>>>, [unknown]>().mockResolvedValue([]),
+});
+
 type PrismaMock = {
   itemMaster: {
     create: jest.Mock<Promise<ItemMaster>, [Prisma.ItemMasterCreateArgs]>;
@@ -91,6 +100,17 @@ type PrismaMock = {
     update: jest.Mock<Promise<ItemMaster>, [Prisma.ItemMasterUpdateArgs]>;
     updateMany: jest.Mock<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>;
   };
+  company: LookupMock;
+  branchMaster: LookupMock;
+  unit: LookupMock;
+  godownLocation: LookupMock;
+  itemGroupMaster: LookupMock;
+  categoryMaster: LookupMock;
+  itemBrandMaster: LookupMock;
+  itemSectionMaster: LookupMock;
+  supplier: LookupMock;
+  custGroup: LookupMock;
+  itemTaxMaster: LookupMock;
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
 
@@ -125,6 +145,17 @@ describe('ItemsMasterService composite endpoints', () => {
           .fn<Promise<{ count: number }>, [Prisma.ItemMasterUpdateManyArgs]>()
           .mockResolvedValue({ count: 1 }),
       },
+      company: makeLookup(),
+      branchMaster: makeLookup(),
+      unit: makeLookup(),
+      godownLocation: makeLookup(),
+      itemGroupMaster: makeLookup(),
+      categoryMaster: makeLookup(),
+      itemBrandMaster: makeLookup(),
+      itemSectionMaster: makeLookup(),
+      supplier: makeLookup(),
+      custGroup: makeLookup(),
+      itemTaxMaster: makeLookup(),
       $transaction: jest.fn<
         Promise<unknown>,
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
@@ -363,6 +394,93 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.prices).toHaveLength(2);
     expect(result.ean_codes).toHaveLength(1);
     expect(result.reorders).toHaveLength(1);
+  });
+
+  it('getComposite resolves foreign-key names onto the item and every child row', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(
+      makeItemRecord({ itemBranchId: BRANCH_ID, itemCategoryId: CATEGORY_ID }),
+    );
+    unitConversionService.findByItemId.mockResolvedValue([
+      {
+        iuc_id: 'uc1',
+        iuc_company_id: COMPANY_ID,
+        iuc_item_id: ITEM_ID,
+        iuc_unit_id: UNIT_ID,
+        iuc_base_unit_id: BASE_UNIT_ID,
+      },
+    ]);
+    priceService.findByItemId.mockResolvedValue([
+      {
+        ipm_id: 'p1',
+        ipm_company_id: COMPANY_ID,
+        ipm_branch_id: BRANCH_ID,
+        ipm_item_id: ITEM_ID,
+        ipm_unit_id: UNIT_ID,
+        ipm_godown_id: GODOWN_ID,
+        ipm_base_unit_id: BASE_UNIT_ID,
+      },
+    ]);
+    eanCodeService.findByItemId.mockResolvedValue([
+      { ean_id: 'e1', ean_item_id: ITEM_ID, ean_unit_id: UNIT_ID, ean_godown_id: GODOWN_ID },
+    ]);
+    reorderService.findByItemId.mockResolvedValue([
+      { ir_id: 'r1', ir_branch_id: BRANCH_ID, ir_item_id: ITEM_ID, ir_unit_id: UNIT_ID, ir_godown_id: GODOWN_ID },
+    ]);
+
+    prisma.company.findMany.mockResolvedValue([{ compId: COMPANY_ID, compName: 'Acme' }]);
+    prisma.branchMaster.findMany.mockResolvedValue([{ brId: BRANCH_ID, brName: 'HQ' }]);
+    prisma.unit.findMany.mockResolvedValue([
+      { unit_id: UNIT_ID, unit_name: 'PCS' },
+      { unit_id: BASE_UNIT_ID, unit_name: 'BOX' },
+    ]);
+    prisma.godownLocation.findMany.mockResolvedValue([{ gdlId: GODOWN_ID, gdlName: 'Main Store' }]);
+    prisma.itemGroupMaster.findMany.mockResolvedValue([{ itgId: GROUP_ID, itgName: 'Hardware' }]);
+    prisma.categoryMaster.findMany.mockResolvedValue([{ categoryId: CATEGORY_ID, categoryName: 'Tools' }]);
+
+    const result = await service.getComposite(ITEM_ID);
+
+    // Item: resolved names sit alongside the ids; the id is preserved.
+    expect(result.item.item_company_id).toBe(COMPANY_ID);
+    expect(result.item.item_company_name).toBe('Acme');
+    expect(result.item.item_branch_name).toBe('HQ');
+    expect(result.item.item_group_name).toBe('Hardware');
+    expect(result.item.item_category_name).toBe('Tools');
+    expect(result.item.item_base_unit_name).toBe('PCS');
+    // Null id and columns with no master table resolve to null (not undefined).
+    expect(result.item.item_supplier_name).toBeNull();
+    expect(result.item.item_default_tax_name).toBeNull();
+
+    // Children: distinct refs resolved.
+    expect(result.unit_conversions[0].iuc_company_name).toBe('Acme');
+    expect(result.unit_conversions[0].iuc_unit_name).toBe('PCS');
+    expect(result.unit_conversions[0].iuc_base_unit_name).toBe('BOX');
+
+    expect(result.prices[0].ipm_branch_name).toBe('HQ');
+    expect(result.prices[0].ipm_unit_name).toBe('PCS');
+    expect(result.prices[0].ipm_base_unit_name).toBe('BOX');
+    expect(result.prices[0].ipm_godown_name).toBe('Main Store');
+
+    expect(result.ean_codes[0].ean_unit_name).toBe('PCS');
+    expect(result.ean_codes[0].ean_godown_name).toBe('Main Store');
+
+    expect(result.reorders[0].ir_branch_name).toBe('HQ');
+    expect(result.reorders[0].ir_unit_name).toBe('PCS');
+    expect(result.reorders[0].ir_godown_name).toBe('Main Store');
+
+    // Reference tables are batch-loaded once each (no per-row N+1).
+    expect(prisma.unit.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.godownLocation.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('getComposite yields a null name when the referenced master row is missing', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+    // itemBaseUnitId is UNIT_ID but the unit lookup returns nothing.
+    prisma.unit.findMany.mockResolvedValue([]);
+
+    const result = await service.getComposite(ITEM_ID);
+
+    expect(result.item.item_base_unit_id).toBe(UNIT_ID);
+    expect(result.item.item_base_unit_name).toBeNull();
   });
 
   it('getComposite returns empty child arrays when the item has no children', async () => {

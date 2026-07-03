@@ -105,4 +105,15 @@ export interface ItemPayload {
   item_created_by: string | null;
   item_modified_on: string;
   item_modified_by: string | null;
+  // Resolved names for the foreign-key ids above (populated by the composite get endpoint).
+  item_company_name?: string | null;
+  item_branch_name?: string | null;
+  item_group_name?: string | null;
+  item_category_name?: string | null;
+  item_brand_name?: string | null;
+  item_section_name?: string | null;
+  item_supplier_name?: string | null;
+  item_cust_group_name?: string | null;
+  item_base_unit_name?: string | null;
+  item_default_tax_name?: string | null;
 }

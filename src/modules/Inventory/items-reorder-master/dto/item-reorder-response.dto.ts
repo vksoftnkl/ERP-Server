@@ -50,6 +50,12 @@ export class ItemReorderPayloadDto {
   ir_modified_on!: string;
   @ApiPropertyOptional({ nullable: true })
   ir_modified_by!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' })
+  ir_branch_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
+  ir_unit_name?: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
+  ir_godown_name?: string | null;
 }
 export class ItemReorderDeleteResultDto {
   @ApiProperty({ format: 'uuid' })

@@ -47,6 +47,12 @@ export class ItemEanCodePayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   ean_remarks!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
+  ean_unit_name?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
+  ean_godown_name?: string | null;
 }
 
 export class ItemEanCodeDeleteResultDto {

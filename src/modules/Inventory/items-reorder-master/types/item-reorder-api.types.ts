@@ -28,5 +28,9 @@ export interface ItemReorderPayload {
   ir_created_by: string | null;
   ir_modified_on: string;
   ir_modified_by: string | null;
+  // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
+  ir_branch_name?: string | null;
+  ir_unit_name?: string | null;
+  ir_godown_name?: string | null;
 }
 export type ItemReorderListItem = ItemReorderPayload | Record<string, unknown>;
