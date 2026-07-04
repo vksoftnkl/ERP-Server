@@ -126,17 +126,34 @@ export class ConfiguredGridSqlController {
       baseSql = bound.sql;
       params = bound.params;
     }
-    const result = await this.configuredGridSqlService.runPagedQuery<Record<string, unknown>>({
-      baseSql,
-      params,
-      alias: 'cgrid',
-      search: query.search,
-      limit,
-      skip,
-      gridId,
-      sortBy: query.sort_by,
-      sortDir: query.sort_dir,
-    });
+    let result: { items: Record<string, unknown>[]; total: number };
+    try {
+      result = await this.configuredGridSqlService.runPagedQuery<Record<string, unknown>>({
+        baseSql,
+        params,
+        alias: 'cgrid',
+        search: query.search,
+        limit,
+        skip,
+        gridId,
+        sortBy: query.sort_by,
+        sortDir: query.sort_dir,
+      });
+    } catch (error) {
+      // Stored grid SQL is only validated syntactically at save time (see
+      // GridDetailsService.normalizeGridSql — no LIMIT 0 probe), so schema drift
+      // (e.g. a column typed into the grid designer that doesn't exist) surfaces
+      // here. SQLSTATE class 42 = syntax/access-rule violations (undefined column,
+      // undefined table, …) — a grid/request configuration problem, not a server
+      // fault, so report it instead of an opaque 500.
+      const code = (error as { code?: string } | null)?.code;
+      if (typeof code === 'string' && code.startsWith('42')) {
+        throw new BadRequestException(
+          `Grid ${query.grid_id} configured SQL failed: ${(error as Error).message}`,
+        );
+      }
+      throw error;
+    }
     return {
       success: true,
       message: 'Grid data fetched successfully',

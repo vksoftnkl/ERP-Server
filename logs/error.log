@@ -3314,3 +3314,31 @@ error: column "wantdelete" does not exist
 2026-07-02T13:47:53.940Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-07-02T13:47:55.252Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-07-02T13:47:58.707Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-07-04T05:03:23.488Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=6&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "itg_position" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-07-04T05:03:25.788Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=6&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "itg_position" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-07-04T05:03:31.321Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=6&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "itg_position" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
+2026-07-04T05:03:53.282Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=6&page=1&limit=20&grid_param=%7B%22wantdelete%22%3Afalse%7D
+error: column "itg_position" does not exist
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:129:20)
