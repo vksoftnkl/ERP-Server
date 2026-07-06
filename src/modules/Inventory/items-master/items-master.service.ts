@@ -58,20 +58,17 @@ export class ItemsMasterService {
   async saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload> {
     const item = await this.save(dto);
     const itemId = item.item_id;
-
     const unitConversionDtos: SaveItemUnitConversionDto[] = (dto.unit_conversions ?? []).map(
       (child) => ({ ...child, iuc_item_id: itemId }),
     );
     const unit_conversions = unitConversionDtos.length
       ? await this.itemUnitConversionService.save(unitConversionDtos)
       : [];
-
     const priceDtos: SaveItemPriceDto[] = (dto.prices ?? []).map((child) => ({
       ...child,
       ipm_item_id: itemId,
     }));
     const prices = priceDtos.length ? await this.itemsPriceMasterService.save(priceDtos) : [];
-
     const eanCodeDtos: SaveItemEanCodeDto[] = (dto.ean_codes ?? []).map((child) => ({
       ...child,
       ean_item_id: itemId,
@@ -79,7 +76,6 @@ export class ItemsMasterService {
     const ean_codes = eanCodeDtos.length
       ? await this.itemsEanCodeMasterService.save(eanCodeDtos)
       : [];
-
     const reorderDtos: SaveItemReorderDto[] = (dto.reorders ?? []).map((child) => ({
       ...child,
       ir_item_id: itemId,
@@ -87,7 +83,6 @@ export class ItemsMasterService {
     const reorders = reorderDtos.length
       ? await this.itemsReorderMasterService.save(reorderDtos)
       : [];
-
     return { item, unit_conversions, prices, ean_codes, reorders };
   }
   async getById(itemId: string): Promise<ItemPayload> {
@@ -139,7 +134,6 @@ export class ItemsMasterService {
     const { item, unit_conversions, prices, ean_codes, reorders } = composite;
     const collect = (...ids: (string | null | undefined)[]): string[] =>
       Array.from(new Set(ids.filter((id): id is string => !!id)));
-
     const companyIds = collect(
       item.item_company_id,
       ...unit_conversions.map((r) => r.iuc_company_id),
@@ -169,7 +163,6 @@ export class ItemsMasterService {
     const supplierIds = collect(item.item_supplier_id);
     const custGroupIds = collect(item.item_cust_group);
     const taxIds = collect(item.item_default_tax_id);
-
     const [companies, branches, units, godowns, groups, categories, brands, sections, suppliers, custGroups, taxes] =
       await Promise.all([
         companyIds.length
@@ -239,7 +232,6 @@ export class ItemsMasterService {
             })
           : [],
       ]);
-
     const companyName = new Map(companies.map((r) => [r.compId, r.compName]));
     const branchName = new Map(branches.map((r) => [r.brId, r.brName]));
     const unitName = new Map(units.map((r) => [r.unit_id, r.unit_name]));
@@ -251,10 +243,8 @@ export class ItemsMasterService {
     const supplierName = new Map(suppliers.map((r) => [r.supId, r.supName]));
     const custGroupName = new Map(custGroups.map((r) => [r.cgrId, r.cgrName]));
     const taxName = new Map(taxes.map((r) => [r.taxId, r.taxName]));
-
     const nameOf = <T>(map: Map<string, T>, id: string | null | undefined): T | null =>
       id ? (map.get(id) ?? null) : null;
-
     return {
       item: {
         ...item,
