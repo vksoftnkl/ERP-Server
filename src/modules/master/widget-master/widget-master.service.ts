@@ -19,7 +19,6 @@ import {
   hasOwnProperty,
   throwMasterBadRequest,
   throwMasterNotFound,
-  throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
 const FIELD_ORDER_BY: Prisma.FormFieldOrderByWithRelationInput[] = [
   { fieldPosition: 'asc' },
@@ -34,12 +33,7 @@ export class WidgetMasterService {
   ) {}
   async save(saveWidgetDto: SaveWidgetDto): Promise<WidgetMasterPayload> {
     const actor = this.getActor();
-    try {
-      return await this.prisma.$transaction((tx) => this.saveSectionTx(tx, saveWidgetDto, actor));
-    } catch (error) {
-      this.throwOnConflict(error);
-      throw error;
-    }
+    return this.prisma.$transaction((tx) => this.saveSectionTx(tx, saveWidgetDto, actor));
   }
   /**
    * Upsert several sections (each with its nested fields) in a single transaction. Each section
@@ -48,18 +42,13 @@ export class WidgetMasterService {
    */
   async saveBulk(saveBulkWidgetDto: SaveBulkWidgetDto): Promise<WidgetMasterPayload[]> {
     const actor = this.getActor();
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const results: WidgetMasterPayload[] = [];
-        for (const section of saveBulkWidgetDto.data) {
-          results.push(await this.saveSectionTx(tx, section, actor));
-        }
-        return results;
-      });
-    } catch (error) {
-      this.throwOnConflict(error);
-      throw error;
-    }
+    return this.prisma.$transaction(async (tx) => {
+      const results: WidgetMasterPayload[] = [];
+      for (const section of saveBulkWidgetDto.data) {
+        results.push(await this.saveSectionTx(tx, section, actor));
+      }
+      return results;
+    });
   }
   async list(queryDto: ListWidgetQueryDto): Promise<WidgetMasterPayload[]> {
     const search = queryDto.search?.trim() ?? '';
@@ -410,20 +399,6 @@ export class WidgetMasterService {
     }
     return fieldId;
   }
-  private throwOnConflict(error: unknown): void {
-    throwOnUniqueConstraintError<WidgetMasterErrorDetail>(
-      error,
-      'Section already exists',
-      [
-        {
-          field: 'sectionName',
-          message:
-            'A section with the same name already exists for this menu and platform, or a field name is duplicated within the section',
-        },
-      ],
-    );
-  }
-
   private throwNotFound(sectionId: number): never {
     throwMasterNotFound<WidgetMasterErrorDetail>(
       'Section not found',

@@ -1,0 +1,31 @@
+model Salesman {
+  smanId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sman_id")
+  smanCompanyId  String?   @db.Uuid @map("sman_company_id")
+  smanBranchId   String?   @db.Uuid @map("sman_branch_id")
+  smanGroupId    String?   @db.Uuid @map("sman_group_id")
+
+  smanCode       String?   @db.VarChar(50)  @map("sman_code")
+  smanName       String    @db.VarChar(150) @map("sman_name")
+  smanShort      String?   @db.VarChar(50)  @map("sman_short")
+  smanMobile     String?   @db.VarChar(20)  @map("sman_mobile")
+  smanEmail      String?   @db.VarChar(120) @map("sman_email")
+
+  smanIsActive   Boolean   @default(true)  @map("sman_is_active")
+  smanIsDeleted  Boolean   @default(false) @map("sman_is_deleted")
+  smanSyncDate   DateTime? @db.Timestamptz(6) @map("sman_sync_date")
+  smanCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("sman_created_on")
+  smanCreatedBy  String?   @db.Uuid @map("sman_created_by")
+  smanModifiedOn DateTime? @db.Timestamptz(6) @map("sman_modified_on")
+  smanModifiedBy String?   @db.Uuid @map("sman_modified_by")
+
+  // Relations
+  group      SaleAgentGroup? @relation(fields: [smanGroupId], references: [saGrpId])
+  quotations Quotation[]
+  customers  Customer[]
+
+  @@index([smanName], map: "idx_salesman_name")
+  @@index([smanGroupId], map: "idx_salesman_group")
+  @@index([smanIsActive, smanIsDeleted], map: "idx_salesman_active_deleted")
+  @@map("salesman_master")
+  @@schema("sales")
+}

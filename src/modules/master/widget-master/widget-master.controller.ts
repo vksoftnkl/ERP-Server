@@ -61,7 +61,7 @@ export class WidgetMasterController {
       '- Omit `sectionId` to create a new section; include it to update the existing one.',
       '- `fields` is a full-sync of the section\'s children: fields with a `fieldId` are updated, fields without one are created, and any existing field not present in the array is deleted.',
       '- Omit `fields` entirely to leave the existing fields untouched; send `[]` to remove all fields.',
-      '- `(sectionMenuId, sectionPlatform, sectionName)` must be unique, and `fieldName` must be unique within a section — violations return 409.',
+      '- Section names and field names are not enforced unique — duplicate `sectionName` (per menu/platform) and duplicate `fieldName` within a section are allowed.',
     ].join('\n'),
   })
   @ApiBody({
@@ -142,7 +142,7 @@ export class WidgetMasterController {
       '',
       '- Each section in `data` follows the same rules as `create`: omit `sectionId` to create, include it to update.',
       '- `fields` per section is a full-sync (update by `fieldId`, create when absent, delete the rest); omit it to leave fields untouched, send `[]` to clear them.',
-      '- All-or-nothing: if any section fails (duplicate name 409, missing id 404, …) the whole batch is rolled back and nothing is persisted.',
+      '- All-or-nothing: if any section fails (missing id 404, …) the whole batch is rolled back and nothing is persisted.',
     ].join('\n'),
   })
   @ApiBody({

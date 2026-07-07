@@ -15,7 +15,6 @@ model FormSection {
 
   fields            FormField[]
   menu              Menu      @relation(fields: [sectionMenuId], references: [menuId], onDelete: Cascade, onUpdate: Cascade)
-  @@unique([sectionMenuId, sectionPlatform, sectionName], map: "uq_form_section")
   @@map("form_section")
   @@schema("fixed")
 }
@@ -36,7 +35,6 @@ model FormField {
   fieldUpdatedOn     DateTime @default(now())                    @map("field_updated_on")   // updated date
   fieldUpdatedBy     String? @db.Text                   @map("field_updated_by")   // updated by
  
-  @@unique([fieldSectionId, fieldName], map: "uq_form_field")
   @@index([fieldSectionId, fieldPosition], map: "ix_form_field_tree")
   @@map("form_field")
   @@schema("fixed")

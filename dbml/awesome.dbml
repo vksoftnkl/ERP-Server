@@ -1075,10 +1075,6 @@ Table form_section {
   sectionUpdatedBy String
   fields form_field [not null]
   menu menu_master [not null]
-
-  indexes {
-    (sectionMenuId, sectionPlatform, sectionName) [unique]
-  }
 }
 
 Table form_field {
@@ -1095,10 +1091,6 @@ Table form_field {
   fieldCreatedBy String
   fieldUpdatedOn DateTime [default: `now()`, not null]
   fieldUpdatedBy String
-
-  indexes {
-    (fieldSectionId, fieldName) [unique]
-  }
 }
 
 Table grid_columns {
