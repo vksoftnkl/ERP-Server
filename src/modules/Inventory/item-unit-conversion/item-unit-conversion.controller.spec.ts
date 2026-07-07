@@ -9,7 +9,6 @@ const UNIT_CONVERSION_ID = '019c6f6c-be87-7a11-8905-36092c46fd10';
 
 const itemUnitConversionPayload = {
   iuc_id: UNIT_CONVERSION_ID,
-  iuc_company_id: ITEM_ID,
   iuc_item_id: ITEM_ID,
   iuc_unit_id: UNIT_ID,
   iuc_base_unit_id: UNIT_ID,
@@ -60,7 +59,6 @@ describe('ItemUnitConversionController', () => {
 
     await expect(
       controller.save({
-        iuc_company_id: ITEM_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: UNIT_ID,
@@ -77,7 +75,6 @@ describe('ItemUnitConversionController', () => {
 
     await expect(
       controller.save({
-        iuc_company_id: ITEM_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: '',

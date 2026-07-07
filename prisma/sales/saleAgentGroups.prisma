@@ -12,6 +12,8 @@ model SaleAgentGroup {
   saGrpModifiedOn DateTime? @db.Timestamptz @map("sa_grp_modified_on")
   saGrpModifiedBy String?   @db.Uuid @map("sa_grp_modified_by")
 
+  salesmen        Salesman[]
+
   @@index([saGrpId], map: "idx_sale_agent_groups_id")
   @@index([saGrpName], map: "idx_sale_agent_groups_name")
   @@index([saGrpIsActive, saGrpIsDeleted], map: "idx_sale_agent_groups_active_deleted")

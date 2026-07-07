@@ -1,7 +1,6 @@
 
 model ItemUnitConversion {
   iucId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iuc_id")
-  iucCompanyId       String    @db.Uuid @map("iuc_company_id")
   iucItemId          String    @db.Uuid @map("iuc_item_id")
   iucUnitId          String    @db.Uuid @map("iuc_unit_id")
   iucBaseUnitId      String    @db.Uuid @map("iuc_base_unit_id")
@@ -24,11 +23,12 @@ model ItemUnitConversion {
   item               ItemMaster @relation("ItemUnitConversions", fields: [iucItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_item_id")
   unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
-  company            Company    @relation("iucCompanyId", fields: [iucCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_company_id")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")
   // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,
   // and uq_item_unit_conversion_base are not expressible in Prisma schema.
-  // CHECK constraints are not expressible in Prisma schema.
+  // CHECK constraints (chk_iuc_to_base_factor, chk_iuc_uom_weight, chk_iuc_base_row)
+  // were dropped and are now enforced in the application layer
+  // (ItemUnitConversionService.assertItemUnitConversionConstraints).
 }

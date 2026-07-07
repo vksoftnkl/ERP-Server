@@ -141,6 +141,7 @@ Table acc_ledger_master {
   oppositeAccountingEntries acc_vouchers [not null]
   tenderLedgerEntries acc_voucher_tenders [not null]
   voucherLedgerTenders acc_voucher_tenders [not null]
+  quotationCustomers quotation_master [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -1582,6 +1583,7 @@ Table item_master {
   taxHistory item_tax_history [not null]
   company companys [not null]
   loyaltySchemeGifts loyalty_sch_gift [not null]
+  quotationLines quotation_detail [not null]
 }
 
 Table item_price_levels {
@@ -1597,6 +1599,7 @@ Table item_price_levels {
   iplModifiedOn DateTime [default: `now()`, not null]
   iplModifiedBy String [not null]
   customers customers [not null]
+  quotations quotation_master [not null]
 }
 
 Table item_price_master {
@@ -1879,11 +1882,11 @@ Table item_tax_master {
   taxModifiedBy String
   defaultItems item_master [not null]
   taxHistory item_tax_history [not null]
+  quotationLines quotation_detail [not null]
 }
 
 Table item_unit_conversion {
   iucId String [pk]
-  iucCompanyId String [not null]
   iucItemId String [not null]
   iucUnitId String [not null]
   iucBaseUnitId String [not null]
@@ -1905,7 +1908,6 @@ Table item_unit_conversion {
   item item_master [not null]
   unit item_unit_master [not null]
   baseUnit item_unit_master [not null]
-  company companys [not null]
 }
 
 Table item_unit_master {
@@ -1944,6 +1946,7 @@ Table item_unit_master {
   eanCodes item_ean_codes [not null]
   itemMasters item_master [not null]
   itemReorders item_reorders [not null]
+  quotationLines quotation_detail [not null]
   loyaltySchemePoints loyalty_sch_points [not null]
   loyaltySchemeGifts loyalty_sch_gift [not null]
 }
@@ -2248,7 +2251,6 @@ Table companys {
   physicalStockHeaders physical_stock_header [not null]
   physicalStockDetails physical_stock_detail [not null]
   physicalStockBatchDetails physical_stock_batch_detail [not null]
-  ItemUnitConversions item_unit_conversion [not null]
   loyaltySchemes loyalty_sch_list [not null]
 }
 
@@ -2462,6 +2464,20 @@ Table area_master {
   customers customers [not null]
 }
 
+Table beat_master {
+  beatId Int [pk, increment]
+  beatName String [unique, not null]
+  beatSiteId Int
+  beatIsActive Boolean [not null, default: true]
+  beatIsDeleted Boolean [not null, default: false]
+  beatCreatedOn DateTime [default: `now()`, not null]
+  beatCreatedBy String
+  beatUpdatedOn DateTime
+  beatUpdatedBy String
+  beatSyncDate DateTime
+  quotations quotation_master [not null]
+}
+
 Table city_master {
   ctmId String [pk]
   ctmName String [not null]
@@ -2562,6 +2578,7 @@ Table customers {
   custGroup cust_groups [not null]
   company companys
   priceLevel item_price_levels [not null]
+  defaultSalesman salesman_master
 }
 
 Table cust_groups {
@@ -2699,6 +2716,89 @@ Table loyalty_sch_points {
   unit item_unit_master
 }
 
+Table quotation_master {
+  quotationId String [pk]
+  quotationCompanyId String [not null]
+  quotationSiteId String [not null]
+  quotationFinancialYear String [not null]
+  quotationNo String [not null]
+  quotationDate DateTime [default: `now()`, not null]
+  quotationExpiryDate DateTime
+  quotationCustomerLedgerId String
+  quotationCustomer acc_ledger_master
+  quotationCustomerName String [not null]
+  quotationPlace String
+  quotationMobileNo String
+  quotationStateId String
+  quotationState state_master
+  quotationGstNo String
+  quotationBeatId Int
+  quotationBeat beat_master
+  quotationSalesmanId String
+  quotationSalesman salesman_master
+  quotationPriceLevelId Int [not null]
+  quotationPriceLevel item_price_levels [not null]
+  quotationFreightFlag Boolean [not null, default: false]
+  quotationLoadingFlag Boolean [not null, default: false]
+  quotationUnloadingFlag Boolean [not null, default: false]
+  quotationPromotionFlag Boolean [not null, default: false]
+  quotationLoyaltyFlag Boolean [not null, default: false]
+  quotationSubTotal Decimal [not null, default: 0]
+  quotationTotalTax Decimal [not null, default: 0]
+  quotationFreightAmount Decimal [not null, default: 0]
+  quotationLoadingAmount Decimal [not null, default: 0]
+  quotationUnloadingAmount Decimal [not null, default: 0]
+  quotationOtherCharge Decimal [not null, default: 0]
+  quotationCdPercent Decimal [not null, default: 0]
+  quotationCdAmount Decimal [not null, default: 0]
+  quotationGrandTotal Decimal [not null, default: 0]
+  quotationRemarks String
+  quotationStatus String [not null, default: 'SAVED']
+  quotationConvertedSoId String
+  quotationIsDeleted Boolean [not null, default: false]
+  quotationIsActive Boolean [not null, default: true]
+  quotationSyncDate DateTime
+  quotationCreatedBy String
+  quotationCreatedAt DateTime [default: `now()`, not null]
+  quotationModifiedBy String
+  quotationModifiedAt DateTime
+  lines quotation_detail [not null]
+
+  indexes {
+    (quotationCompanyId, quotationSiteId, quotationFinancialYear, quotationNo) [unique]
+  }
+}
+
+Table quotation_detail {
+  quotationDetailId String [pk]
+  quotationId String [not null]
+  quotation quotation_master [not null]
+  quotationDetailLineNo Int [not null]
+  quotationDetailItemId String [not null]
+  quotationDetailItem item_master [not null]
+  quotationDetailDescription String [not null]
+  quotationDetailStockSnapshot Decimal
+  quotationDetailQty Decimal [not null]
+  quotationDetailUomId String [not null]
+  quotationDetailUom item_unit_master [not null]
+  quotationDetailRate Decimal [not null]
+  quotationDetailDiscountPercent Decimal [not null, default: 0]
+  quotationDetailDiscountAmount Decimal [not null, default: 0]
+  quotationDetailTaxableValue Decimal [not null]
+  quotationDetailTaxCodeId String
+  quotationDetailTaxCode item_tax_master
+  quotationDetailGstPercent Decimal [not null, default: 0]
+  quotationDetailCgstAmount Decimal [not null, default: 0]
+  quotationDetailSgstAmount Decimal [not null, default: 0]
+  quotationDetailIgstAmount Decimal [not null, default: 0]
+  quotationDetailCessAmount Decimal [not null, default: 0]
+  quotationDetailLineTotal Decimal [not null]
+
+  indexes {
+    (quotationId, quotationDetailLineNo) [unique]
+  }
+}
+
 Table sale_agent_groups {
   saGrpId String [pk]
   saGrpName String [not null]
@@ -2712,6 +2812,29 @@ Table sale_agent_groups {
   saGrpCreatedBy String [not null]
   saGrpModifiedOn DateTime
   saGrpModifiedBy String
+  salesmen salesman_master [not null]
+}
+
+Table salesman_master {
+  smanId String [pk]
+  smanCompanyId String
+  smanBranchId String
+  smanGroupId String
+  smanCode String
+  smanName String [not null]
+  smanShort String
+  smanMobile String
+  smanEmail String
+  smanIsActive Boolean [not null, default: true]
+  smanIsDeleted Boolean [not null, default: false]
+  smanSyncDate DateTime
+  smanCreatedOn DateTime [default: `now()`, not null]
+  smanCreatedBy String
+  smanModifiedOn DateTime
+  smanModifiedBy String
+  group sale_agent_groups
+  quotations quotation_master [not null]
+  customers customers [not null]
 }
 
 Table state_master {
@@ -2729,6 +2852,7 @@ Table state_master {
   stmModifiedOn DateTime [default: `now()`, not null]
   stmModifiedBy String
   cities city_master [not null]
+  quotations quotation_master [not null]
 }
 
 Table physical_stock_batch_detail {
@@ -3365,8 +3489,6 @@ Ref: item_unit_conversion.iucUnitId > item_unit_master.unit_id [delete: Restrict
 
 Ref: item_unit_conversion.iucBaseUnitId > item_unit_master.unit_id [delete: Restrict]
 
-Ref: item_unit_conversion.iucCompanyId > companys.compId [delete: Restrict]
-
 Ref: item_unit_master.unit_code > item_gst_units.itemGstUnitCode [delete: Set Null]
 
 Ref: item_unit_master.unit_base_unit_id - item_unit_master.unit_id [delete: Restrict]
@@ -3415,6 +3537,8 @@ Ref: customers.cusCompanyId > companys.compId
 
 Ref: customers.cusPriceLevelId > item_price_levels.iplId
 
+Ref: customers.cusDefaultSalesman > salesman_master.smanId
+
 Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]
 
 Ref: loyalty_sch_list.lsCompId > companys.compId [delete: Restrict]
@@ -3432,6 +3556,26 @@ Ref: loyalty_sch_party.lpsLsId > loyalty_sch_list.lsId [delete: Cascade]
 Ref: loyalty_sch_points.lsptLsId > loyalty_sch_list.lsId [delete: Cascade]
 
 Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: quotation_master.quotationCustomerLedgerId > acc_ledger_master.ledId
+
+Ref: quotation_master.quotationStateId > state_master.stmId
+
+Ref: quotation_master.quotationBeatId > beat_master.beatId
+
+Ref: quotation_master.quotationSalesmanId > salesman_master.smanId
+
+Ref: quotation_master.quotationPriceLevelId > item_price_levels.iplId
+
+Ref: quotation_detail.quotationId > quotation_master.quotationId [delete: Cascade]
+
+Ref: quotation_detail.quotationDetailItemId > item_master.itemId
+
+Ref: quotation_detail.quotationDetailUomId > item_unit_master.unit_id
+
+Ref: quotation_detail.quotationDetailTaxCodeId > item_tax_master.taxId
+
+Ref: salesman_master.smanGroupId > sale_agent_groups.saGrpId
 
 Ref: physical_stock_batch_detail.psbPsdId > physical_stock_detail.psdId
 

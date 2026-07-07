@@ -107,7 +107,6 @@ model Company {
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
   physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailCompany")
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
-  ItemUnitConversions   ItemUnitConversion[] @relation("iucCompanyId")
   loyaltySchemes        LoyaltyScheme[]
   @@map("companys")
   @@schema("public")

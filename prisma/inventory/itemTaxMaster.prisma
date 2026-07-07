@@ -44,6 +44,7 @@ model ItemTaxMaster {
   taxModifiedBy           String?   @db.VarChar(100) @map("tax_modified_by")
   defaultItems            ItemMaster[]
   taxHistory              ItemTaxHistory[]
+  quotationLines          QuotationDetail[]
   @@map("item_tax_master")
    @@schema("inventory")
   // unique slab name globally (since company removed)

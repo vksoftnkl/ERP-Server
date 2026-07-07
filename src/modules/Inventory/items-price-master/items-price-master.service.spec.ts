@@ -1,10 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
 import { ItemPriceMaster, ItemUnitConversion, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemPriceDto } from './dto/save-item-price.dto';
 import { ItemsPriceMasterService } from './items-price-master.service';
-
 const ITEM_PRICE_ID = '019c6f6c-be87-7a11-8905-36092c46fd05';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
 const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
@@ -12,7 +10,6 @@ const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd08';
 const BASE_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd09';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fd10';
 const USER_ID = '019c6f6c-be87-7a11-8905-36092c46fd11';
-
 type PrismaMock = {
   itemPriceMaster: {
     create: jest.Mock<Promise<ItemPriceMaster>, [Prisma.ItemPriceMasterCreateArgs]>;
@@ -29,14 +26,12 @@ type PrismaMock = {
   };
   $transaction: jest.Mock<Promise<unknown>, [(tx: Prisma.TransactionClient) => Promise<unknown>]>;
 };
-
 type ConfiguredGridSqlServiceMock = {
   loadCandidates: jest.Mock;
   filterPrimaryFromTable: jest.Mock;
   validateBaseSql: jest.Mock;
   runPagedQuery: jest.Mock;
 };
-
 const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPriceMaster =>
   ({
     ipmId: ITEM_PRICE_ID,
@@ -87,13 +82,11 @@ const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPric
     ipmUpdatedBy: USER_ID,
     ...overrides,
   }) as ItemPriceMaster;
-
 const makeItemUnitConversionRecord = (
   overrides: Partial<ItemUnitConversion> = {},
 ): ItemUnitConversion =>
   ({
     iucId: '019c6f6c-be87-7a11-8905-36092c46fd12',
-    iucCompanyId: COMPANY_ID,
     iucItemId: ITEM_ID,
     iucUnitId: UNIT_ID,
     iucBaseUnitId: BASE_UNIT_ID,
@@ -114,13 +107,11 @@ const makeItemUnitConversionRecord = (
     iucUpdatedBy: null,
     ...overrides,
   }) as ItemUnitConversion;
-
 describe('ItemsPriceMasterService', () => {
   let service: ItemsPriceMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
   let configuredGridSqlService: ConfiguredGridSqlServiceMock;
-
   beforeEach(() => {
     prisma = {
       itemPriceMaster: {
@@ -144,35 +135,29 @@ describe('ItemsPriceMasterService', () => {
         [(tx: Prisma.TransactionClient) => Promise<unknown>]
       >(),
     };
-
     prisma.$transaction.mockImplementation(
       async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
         callback(prisma as unknown as Prisma.TransactionClient),
     );
     prisma.itemUnitConversion.findMany.mockResolvedValue([]);
-
     auditLogService = {
       logEntityChange: jest.fn().mockResolvedValue(undefined),
     };
-
     configuredGridSqlService = {
       loadCandidates: jest.fn().mockResolvedValue([]),
       filterPrimaryFromTable: jest.fn().mockImplementation((candidates: unknown[]) => candidates),
       validateBaseSql: jest.fn(),
       runPagedQuery: jest.fn(),
     };
-
     service = new ItemsPriceMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
       configuredGridSqlService as never,
     );
   });
-
   it('creates item prices with structural UOM fields copied from item unit conversion', async () => {
     prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
     prisma.itemPriceMaster.create.mockResolvedValue(makeItemPriceRecord());
-
     const input: SaveItemPriceDto = {
       ipm_company_id: COMPANY_ID,
       ipm_item_id: ITEM_ID,
@@ -188,9 +173,7 @@ describe('ItemsPriceMasterService', () => {
       ipm_profit_type: 'MANUAL',
       ipm_created_by: USER_ID,
     };
-
     const result = await service.save(input);
-
     expect(prisma.itemUnitConversion.findFirst).toHaveBeenCalledWith({
       where: {
         iucItemId: ITEM_ID,
@@ -199,7 +182,6 @@ describe('ItemsPriceMasterService', () => {
         iucIsDeleted: false,
       },
     });
-
     const createArgs = prisma.itemPriceMaster.create.mock.calls[0][0];
     expect(createArgs.data.ipmBaseUnitId).toBe(BASE_UNIT_ID);
     expect(createArgs.data.ipmToBaseFactor).toEqual(new Prisma.Decimal(12));
@@ -216,7 +198,6 @@ describe('ItemsPriceMasterService', () => {
       ipm_unit_factor: 6,
     });
   });
-
   it('keeps explicit UOM remarks while syncing structural fields during updates', async () => {
     prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
     prisma.itemPriceMaster.findFirst.mockResolvedValueOnce(
@@ -236,7 +217,6 @@ describe('ItemsPriceMasterService', () => {
         ipmUomRemarks: 'Manual UOM note',
       }),
     );
-
     const input: SaveItemPriceDto = {
       ipm_id: ITEM_PRICE_ID,
       ipm_company_id: COMPANY_ID,
@@ -247,9 +227,7 @@ describe('ItemsPriceMasterService', () => {
       ipm_uom_remarks: 'Manual UOM note',
       ipm_updated_by: USER_ID,
     };
-
     await service.save(input);
-
     const updateArgs = prisma.itemPriceMaster.update.mock.calls[0][0];
     expect(updateArgs.data.ipmBaseUnitId).toBe(BASE_UNIT_ID);
     expect(updateArgs.data.ipmToBaseFactor).toEqual(new Prisma.Decimal(12));
@@ -260,7 +238,6 @@ describe('ItemsPriceMasterService', () => {
     expect(updateArgs.data.ipmIsBaseUnit).toBe(false);
     expect(updateArgs.data.ipmUomRemarks).toBe('Manual UOM note');
   });
-
   it('falls back to request-derived structural fields when no active item unit conversion exists', async () => {
     prisma.itemUnitConversion.findFirst.mockResolvedValue(null);
     prisma.itemPriceMaster.create.mockResolvedValue(
@@ -275,14 +252,12 @@ describe('ItemsPriceMasterService', () => {
         ipmUomRemarks: null,
       }),
     );
-
     const input: SaveItemPriceDto = {
       ipm_item_id: ITEM_ID,
       ipm_unit_id: UNIT_ID,
       ipm_godown_id: GODOWN_ID,
       ipm_profit_type: 'MANUAL',
     };
-
     await expect(service.save(input)).resolves.toMatchObject({
       ipm_base_unit_id: UNIT_ID,
       ipm_to_base_factor: 1,
@@ -292,22 +267,6 @@ describe('ItemsPriceMasterService', () => {
     });
     expect(prisma.itemPriceMaster.create).toHaveBeenCalled();
   });
-
-  it('rejects saves when ipm_company_id does not match item unit conversion company', async () => {
-    prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
-
-    const input: SaveItemPriceDto = {
-      ipm_company_id: '019c6f6c-be87-7a11-8905-36092c46fd13',
-      ipm_item_id: ITEM_ID,
-      ipm_unit_id: UNIT_ID,
-      ipm_godown_id: GODOWN_ID,
-      ipm_profit_type: 'MANUAL',
-    };
-
-    await expect(service.save(input)).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.itemPriceMaster.create).not.toHaveBeenCalled();
-  });
-
   it('uses ipm_unit_factor to build fallback structural factors when no unit conversion exists', async () => {
     prisma.itemUnitConversion.findFirst.mockResolvedValue(null);
     prisma.itemPriceMaster.create.mockResolvedValue(
@@ -321,7 +280,6 @@ describe('ItemsPriceMasterService', () => {
         ipmIsBaseUnit: false,
       }),
     );
-
     await service.save({
       ipm_item_id: ITEM_ID,
       ipm_unit_id: UNIT_ID,
@@ -332,7 +290,6 @@ describe('ItemsPriceMasterService', () => {
       ipm_unit_factor: 4,
       ipm_is_big_unit: true,
     });
-
     const createArgs = prisma.itemPriceMaster.create.mock.calls.at(-1)?.[0];
     expect(createArgs?.data.ipmToBaseFactor).toEqual(new Prisma.Decimal(4));
     expect(createArgs?.data.ipmUnitFactor).toEqual(new Prisma.Decimal(4));

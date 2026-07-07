@@ -1,0 +1,64 @@
+model Quotation {
+  quotationId   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("quotation_id")
+  quotationCompanyId     String   @db.Uuid @map("quotation_company_id")
+  quotationSiteId        String   @db.Uuid @map("quotation_site_id")
+  quotationFinancialYear String   @map("quotation_financial_year") @db.VarChar(9)
+
+  quotationNo   String    @map("quotation_no") @db.VarChar(30)
+  quotationDate DateTime  @default(now()) @map("quotation_date")
+  quotationExpiryDate    DateTime? @map("quotation_expiry_date") @db.Date
+
+  quotationCustomerLedgerId String?          @db.Uuid @map("quotation_customer_ledger_id")
+  quotationCustomer         AccLedgerMaster? @relation(fields: [quotationCustomerLedgerId], references: [ledId])
+  quotationCustomerName     String  @map("quotation_customer_name") @db.VarChar(150)
+  quotationPlace            String? @db.VarChar(120) @map("quotation_place")
+  quotationMobileNo         String? @map("quotation_mobile_no") @db.VarChar(20)
+  quotationStateId          String?      @db.Uuid @map("quotation_state_id")
+  quotationState            StateMaster? @relation(fields: [quotationStateId], references: [stmId])
+  quotationGstNo            String? @map("quotation_gst_no") @db.VarChar(15)
+
+  quotationBeatId       Int?       @map("quotation_beat_id")
+  quotationBeat         Beat?      @relation(fields: [quotationBeatId], references: [beatId])
+  quotationSalesmanId   String?    @db.Uuid @map("quotation_salesman_id")
+  quotationSalesman     Salesman?  @relation(fields: [quotationSalesmanId], references: [smanId])
+  quotationPriceLevelId Int            @map("quotation_price_level_id")
+  quotationPriceLevel   ItemPriceLevel @relation(fields: [quotationPriceLevelId], references: [iplId])
+
+  quotationFreightFlag   Boolean @default(false) @map("quotation_freight_flag")
+  quotationLoadingFlag   Boolean @default(false) @map("quotation_loading_flag")
+  quotationUnloadingFlag Boolean @default(false) @map("quotation_unloading_flag")
+  quotationPromotionFlag Boolean @default(false) @map("quotation_promotion_flag")
+  quotationLoyaltyFlag   Boolean @default(false) @map("quotation_loyalty_flag")
+
+  quotationSubTotal        Decimal @default(0) @map("quotation_sub_total") @db.Decimal(18, 2)
+  quotationTotalTax        Decimal @default(0) @map("quotation_total_tax") @db.Decimal(18, 2)
+  quotationFreightAmount   Decimal @default(0) @map("quotation_freight_amount") @db.Decimal(18, 2)
+  quotationLoadingAmount   Decimal @default(0) @map("quotation_loading_amount") @db.Decimal(18, 2)
+  quotationUnloadingAmount Decimal @default(0) @map("quotation_unloading_amount") @db.Decimal(18, 2)
+  quotationOtherCharge     Decimal @default(0) @map("quotation_other_charge") @db.Decimal(18, 2)
+  quotationCdPercent       Decimal @default(0) @map("quotation_cd_percent") @db.Decimal(6, 3)
+  quotationCdAmount        Decimal @default(0) @map("quotation_cd_amount") @db.Decimal(18, 2)
+  quotationGrandTotal      Decimal @default(0) @map("quotation_grand_total") @db.Decimal(18, 2)
+
+  quotationRemarks String? @db.VarChar(500) @map("quotation_remarks")
+
+  quotationStatus        String  @default("SAVED") @db.VarChar(12) @map("quotation_status")
+  quotationConvertedSoId String? @db.Uuid @map("quotation_converted_so_id")
+  quotationIsDeleted     Boolean @default(false) @map("quotation_is_deleted")
+  quotationIsActive      Boolean @default(true) @map("quotation_is_active")
+  quotationSyncDate      DateTime? @db.Timestamptz @map("quotation_sync_date")
+  quotationCreatedBy     String?   @db.Text @map("quotation_created_by")
+  quotationCreatedAt     DateTime  @default(now()) @map("quotation_created_at")
+  quotationModifiedBy    String?   @db.Text  @map("quotation_modified_by")
+  quotationModifiedAt    DateTime? @db.Timestamptz @map("quotation_modified_at")
+
+  lines QuotationDetail[]
+
+  @@unique([quotationCompanyId, quotationSiteId, quotationFinancialYear, quotationNo], name: "uq_quotation_no")
+  @@index([quotationCustomerLedgerId])
+  @@index([quotationSiteId, quotationDate])
+  @@index([quotationSalesmanId, quotationStatus])
+  @@index([quotationExpiryDate, quotationStatus])
+  @@map("quotation_master")
+  @@schema("sales")
+}

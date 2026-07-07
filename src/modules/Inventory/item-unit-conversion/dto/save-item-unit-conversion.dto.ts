@@ -30,12 +30,6 @@ export class SaveItemUnitConversionDto {
   @IsString()
   @IsNotEmpty()
   @IsUUID('all')
-  iuc_company_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
-  @IsNotEmpty()
-  @IsUUID('all')
   iuc_item_id!: string;
   @ApiProperty({ format: 'uuid' })
   @Transform(({ value }) => toTrimmedString(value))

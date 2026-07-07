@@ -12,8 +12,6 @@ export class ItemUnitConversionPayloadDto {
   @ApiProperty({ format: 'uuid' })
   iuc_id!: string;
   @ApiProperty({ format: 'uuid' })
-  iuc_company_id!: string;
-  @ApiProperty({ format: 'uuid' })
   iuc_item_id!: string;
   @ApiProperty({ format: 'uuid' })
   iuc_unit_id!: string;
@@ -49,8 +47,6 @@ export class ItemUnitConversionPayloadDto {
   iuc_updated_on!: string | null;
   @ApiPropertyOptional({ nullable: true })
   iuc_updated_by!: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked company (resolved on the item composite get endpoint)' })
-  iuc_company_name?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   iuc_unit_name?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked base unit (resolved on the item composite get endpoint)' })

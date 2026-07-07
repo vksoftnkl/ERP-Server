@@ -11,10 +11,6 @@ export class GetItemUnitConversionQueryDto extends InventoryListQueryBaseDto {
   @OptionalUuid()
   iuc_item_id?: string;
 
-  @ApiPropertyOptional({ format: 'uuid' })
-  @OptionalUuid()
-  iuc_company_id?: string;
-
   @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })
   @OptionalQueryBoolean()
   iuc_is_active?: boolean;

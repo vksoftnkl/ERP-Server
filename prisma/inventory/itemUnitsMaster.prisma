@@ -53,6 +53,7 @@ model Unit {
   eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
   itemReorders ItemReorder[]
+  quotationLines QuotationDetail[]
   loyaltySchemePoints LoyaltySchemePoint[]
   loyaltySchemeGifts  LoyaltySchemeGift[]
 

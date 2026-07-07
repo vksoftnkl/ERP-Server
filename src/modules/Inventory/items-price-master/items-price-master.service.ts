@@ -373,7 +373,6 @@ export class ItemsPriceMasterService {
       isBigUnit: boolean;
       uomRemarks: string | null;
       cumulative: number;
-      companyId: string;
     };
     const chainRows: ChainRow[] = persistedRows.map((row) => ({
       iucId: row.iucId,
@@ -387,22 +386,7 @@ export class ItemsPriceMasterService {
       isBigUnit: row.iucIsBigUnit,
       uomRemarks: row.iucUomRemarks,
       cumulative: 1,
-      companyId: row.iucCompanyId,
     }));
-    if (saveItemPriceDto.ipm_company_id !== undefined && saveItemPriceDto.ipm_company_id !== null) {
-      const wrongCompanyRow = chainRows.find(
-        (row) => row.companyId !== saveItemPriceDto.ipm_company_id,
-      );
-      if (wrongCompanyRow) {
-        throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
-          {
-            field: 'ipm_company_id',
-            message:
-              'ipm_company_id must match the company configured on the selected item unit conversion',
-          },
-        ]);
-      }
-    }
     const targetRow = chainRows.find((row) => row.unitId === saveItemPriceDto.ipm_unit_id);
     if (!targetRow) {
       return this.buildFallbackUnitConversionSnapshot(saveItemPriceDto);
@@ -497,19 +481,6 @@ export class ItemsPriceMasterService {
     });
     if (!unitConversion) {
       return this.buildFallbackUnitConversionSnapshot(saveItemPriceDto);
-    }
-    if (
-      saveItemPriceDto.ipm_company_id !== undefined &&
-      saveItemPriceDto.ipm_company_id !== null &&
-      saveItemPriceDto.ipm_company_id !== unitConversion.iucCompanyId
-    ) {
-      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
-        {
-          field: 'ipm_company_id',
-          message:
-            'ipm_company_id must match the company configured on the selected item unit conversion',
-        },
-      ]);
     }
     return unitConversion;
   }

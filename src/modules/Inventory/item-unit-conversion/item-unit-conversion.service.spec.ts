@@ -4,7 +4,6 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ItemUnitConversionService } from './item-unit-conversion.service';
 
-const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
 const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
 const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd08';
 const BASE_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd09';
@@ -42,7 +41,6 @@ const makeItemUnitConversionRecord = (
 ): ItemUnitConversion =>
   ({
     iucId: '019c6f6c-be87-7a11-8905-36092c46fd12',
-    iucCompanyId: COMPANY_ID,
     iucItemId: ITEM_ID,
     iucUnitId: UNIT_ID,
     iucBaseUnitId: BASE_UNIT_ID,
@@ -125,7 +123,6 @@ describe('ItemUnitConversionService', () => {
     });
 
     const result = await service.save({
-      iuc_company_id: COMPANY_ID,
       iuc_item_id: ITEM_ID,
       iuc_unit_id: UNIT_ID,
       iuc_base_unit_id: BASE_UNIT_ID,
@@ -185,7 +182,6 @@ describe('ItemUnitConversionService', () => {
 
     await service.save([
       {
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: BASE_UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
@@ -194,7 +190,6 @@ describe('ItemUnitConversionService', () => {
         iuc_created_by: USER_ID,
       },
       {
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
@@ -203,7 +198,6 @@ describe('ItemUnitConversionService', () => {
         iuc_created_by: USER_ID,
       },
       {
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: tertiaryUnitId,
         iuc_base_unit_id: BASE_UNIT_ID,
@@ -283,7 +277,6 @@ describe('ItemUnitConversionService', () => {
 
     await service.save([
       {
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: BASE_UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
@@ -292,7 +285,6 @@ describe('ItemUnitConversionService', () => {
         iuc_created_by: USER_ID,
       },
       {
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
@@ -301,7 +293,6 @@ describe('ItemUnitConversionService', () => {
         iuc_created_by: USER_ID,
       },
       {
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: tertiaryUnitId,
         iuc_base_unit_id: BASE_UNIT_ID,
@@ -368,7 +359,6 @@ describe('ItemUnitConversionService', () => {
     );
 
     await service.save({
-      iuc_company_id: COMPANY_ID,
       iuc_item_id: ITEM_ID,
       iuc_unit_id: tertiaryUnitId,
       iuc_base_unit_id: BASE_UNIT_ID,
@@ -411,13 +401,11 @@ describe('ItemUnitConversionService', () => {
 
     const result = await service.save([
       {
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: secondaryUnitId,
         iuc_to_base_factor: 12,
       },
       {
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: BASE_UNIT_ID,
         iuc_is_base_unit: true,
@@ -448,7 +436,6 @@ describe('ItemUnitConversionService', () => {
   it('rejects invalid base-unit conversion rows', async () => {
     await expect(
       service.save({
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,

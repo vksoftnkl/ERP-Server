@@ -8,6 +8,7 @@ import { ItemsEanCodeMasterService } from '../items-ean-code-master/items-ean-co
 import { ItemsReorderMasterService } from '../items-reorder-master/items-reorder-master.service';
 import { SaveItemCompositeDto } from './dto/save-item-composite.dto';
 import { ItemsMasterService } from './items-master.service';
+import { ItemMasterUpdateService } from './item-master-update.service';
 
 const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46aa01';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46aa02';
@@ -169,42 +170,37 @@ describe('ItemsMasterService composite endpoints', () => {
     auditLogService = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
     requestContextService = { getUserId: jest.fn().mockReturnValue(USER_ID) };
 
-    // Child save mocks echo the injected dtos back as "payloads" so the response
-    // and the injection can both be asserted from the same call. findByItemId /
-    // findIdsByItemId default to empty and toggleDelete echoes ids as {*_id, deleted:
-    // true}; all are overridden per test where relevant.
-    unitConversionService = {
-      save: jest.fn((dtos: unknown) => Promise.resolve(dtos)),
-      findByItemId: jest.fn().mockResolvedValue([]),
-      findIdsByItemId: jest.fn().mockResolvedValue([]),
-      toggleDelete: jest.fn((ids: string[]) =>
-        Promise.resolve(ids.map((iuc_id) => ({ iuc_id, deleted: true }))),
-      ),
+    // Child save mocks echo the injected dtos back as "payloads" so the
+    // injection can be asserted from the call. Saved rows are also recorded so
+    // findByItemId echoes them afterwards, matching the diff-sync flow (fetch
+    // existing -> save -> re-fetch); it starts empty, so every payload row is
+    // treated as a create. toggleDelete echoes ids as {*_id, deleted: true};
+    // all mocks are overridden per test where relevant.
+    const makeChildServiceMock = (idField: string): ChildServiceMock => {
+      const saved: unknown[] = [];
+      return {
+        save: jest.fn((dtos: unknown) => {
+          saved.push(...(Array.isArray(dtos) ? dtos : [dtos]));
+          return Promise.resolve(dtos);
+        }),
+        findByItemId: jest.fn(() => Promise.resolve([...saved])),
+        findIdsByItemId: jest.fn().mockResolvedValue([]),
+        toggleDelete: jest.fn((ids: string[]) =>
+          Promise.resolve(ids.map((id) => ({ [idField]: id, deleted: true }))),
+        ),
+      };
     };
-    priceService = {
-      save: jest.fn((dtos: unknown) => Promise.resolve(dtos)),
-      findByItemId: jest.fn().mockResolvedValue([]),
-      findIdsByItemId: jest.fn().mockResolvedValue([]),
-      toggleDelete: jest.fn((ids: string[]) =>
-        Promise.resolve(ids.map((ipm_id) => ({ ipm_id, deleted: true }))),
-      ),
-    };
-    eanCodeService = {
-      save: jest.fn((dtos: unknown) => Promise.resolve(dtos)),
-      findByItemId: jest.fn().mockResolvedValue([]),
-      findIdsByItemId: jest.fn().mockResolvedValue([]),
-      toggleDelete: jest.fn((ids: string[]) =>
-        Promise.resolve(ids.map((ean_id) => ({ ean_id, deleted: true }))),
-      ),
-    };
-    reorderService = {
-      save: jest.fn((dtos: unknown) => Promise.resolve(dtos)),
-      findByItemId: jest.fn().mockResolvedValue([]),
-      findIdsByItemId: jest.fn().mockResolvedValue([]),
-      toggleDelete: jest.fn((ids: string[]) =>
-        Promise.resolve(ids.map((ir_id) => ({ ir_id, deleted: true }))),
-      ),
-    };
+    unitConversionService = makeChildServiceMock('iuc_id');
+    priceService = makeChildServiceMock('ipm_id');
+    eanCodeService = makeChildServiceMock('ean_id');
+    reorderService = makeChildServiceMock('ir_id');
+
+    const itemMasterUpdateService = new ItemMasterUpdateService(
+      unitConversionService as unknown as ItemUnitConversionService,
+      priceService as unknown as ItemsPriceMasterService,
+      eanCodeService as unknown as ItemsEanCodeMasterService,
+      reorderService as unknown as ItemsReorderMasterService,
+    );
 
     service = new ItemsMasterService(
       prisma as unknown as PrismaService,
@@ -214,6 +210,7 @@ describe('ItemsMasterService composite endpoints', () => {
       priceService as unknown as ItemsPriceMasterService,
       eanCodeService as unknown as ItemsEanCodeMasterService,
       reorderService as unknown as ItemsReorderMasterService,
+      itemMasterUpdateService,
     );
   });
 
@@ -221,7 +218,7 @@ describe('ItemsMasterService composite endpoints', () => {
     item_company_id: COMPANY_ID,
     item_name_en: 'Widget',
     item_group_id: GROUP_ID,
-    unit_conversions: [{ iuc_company_id: COMPANY_ID, iuc_unit_id: UNIT_ID }],
+    unit_conversions: [{ iuc_unit_id: UNIT_ID }],
     prices: [{ ipm_unit_id: UNIT_ID, ipm_godown_id: GODOWN_ID, ipm_profit_type: 'MANUAL' }],
     ean_codes: [{ ean_unit_id: UNIT_ID, ean_code: '890123456789' }],
     reorders: [{ ir_min_level: 5 }],
@@ -284,9 +281,7 @@ describe('ItemsMasterService composite endpoints', () => {
   it('injected parent item_id overwrites any client-supplied child item_id', async () => {
     prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
     const dto = fullCompositeDto();
-    dto.unit_conversions = [
-      { iuc_company_id: COMPANY_ID, iuc_unit_id: UNIT_ID, iuc_item_id: OTHER_ITEM_ID },
-    ];
+    dto.unit_conversions = [{ iuc_unit_id: UNIT_ID, iuc_item_id: OTHER_ITEM_ID }];
     dto.prices = [
       {
         ipm_unit_id: UNIT_ID,
@@ -403,7 +398,6 @@ describe('ItemsMasterService composite endpoints', () => {
     unitConversionService.findByItemId.mockResolvedValue([
       {
         iuc_id: 'uc1',
-        iuc_company_id: COMPANY_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
@@ -451,7 +445,6 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.item.item_default_tax_name).toBeNull();
 
     // Children: distinct refs resolved.
-    expect(result.unit_conversions[0].iuc_company_name).toBe('Acme');
     expect(result.unit_conversions[0].iuc_unit_name).toBe('PCS');
     expect(result.unit_conversions[0].iuc_base_unit_name).toBe('BOX');
 

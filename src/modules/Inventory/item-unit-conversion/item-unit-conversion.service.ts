@@ -95,7 +95,6 @@ export class ItemUnitConversionService {
     const where: Prisma.ItemUnitConversionWhereInput = {
       iucIsDeleted: false,
       ...(queryDto.iuc_item_id !== undefined && { iucItemId: queryDto.iuc_item_id }),
-      ...(queryDto.iuc_company_id !== undefined && { iucCompanyId: queryDto.iuc_company_id }),
       ...(queryDto.iuc_is_active !== undefined && { iucIsActive: queryDto.iuc_is_active }),
     };
     return runInventoryListQuery<ItemUnitConversion, ItemUnitConversionListItem>(
@@ -197,7 +196,6 @@ export class ItemUnitConversionService {
     const baseUnitId =
       saveItemUnitConversionDto.iuc_base_unit_id ?? saveItemUnitConversionDto.iuc_unit_id;
     const data: Prisma.ItemUnitConversionUncheckedCreateInput = {
-      iucCompanyId: saveItemUnitConversionDto.iuc_company_id,
       iucItemId: saveItemUnitConversionDto.iuc_item_id,
       iucUnitId: saveItemUnitConversionDto.iuc_unit_id,
       iucBaseUnitId: baseUnitId,
@@ -207,6 +205,13 @@ export class ItemUnitConversionService {
       iucUpdatedBy: updatedBy,
     };
     this.applyOptionalFields(data, saveItemUnitConversionDto);
+    this.assertItemUnitConversionConstraints({
+      unitId: saveItemUnitConversionDto.iuc_unit_id,
+      baseUnitId,
+      toBaseFactor: saveItemUnitConversionDto.iuc_to_base_factor ?? 1,
+      uomWeight: saveItemUnitConversionDto.iuc_uom_weight ?? 0,
+      isBaseUnit: saveItemUnitConversionDto.iuc_is_base_unit ?? false,
+    });
     const created = await tx.itemUnitConversion.create({ data });
     const payload = this.toPayload(created);
     await this.auditLogService.logEntityChange(
@@ -231,7 +236,6 @@ export class ItemUnitConversionService {
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
   ): Promise<ItemUnitConversionPayload> {
     this.validateItemUnitConversion(saveItemUnitConversionDto);
-
     const iucId = saveItemUnitConversionDto.iuc_id!;
     const existing = await tx.itemUnitConversion.findFirst({
       where: {
@@ -248,7 +252,6 @@ export class ItemUnitConversionService {
     }
     const baseUnitId = saveItemUnitConversionDto.iuc_base_unit_id ?? existing.iucBaseUnitId;
     const data: Prisma.ItemUnitConversionUncheckedUpdateInput = {
-      iucCompanyId: saveItemUnitConversionDto.iuc_company_id,
       iucItemId: saveItemUnitConversionDto.iuc_item_id,
       iucUnitId: saveItemUnitConversionDto.iuc_unit_id,
       iucBaseUnitId: baseUnitId,
@@ -258,6 +261,15 @@ export class ItemUnitConversionService {
       data.iucUpdatedBy = this.resolveRecordActor(saveItemUnitConversionDto.iuc_updated_by);
     }
     this.applyOptionalFields(data, saveItemUnitConversionDto);
+    // Unprovided fields keep their existing persisted values, so validate the
+    // effective post-update state (incoming values merged over the stored row).
+    this.assertItemUnitConversionConstraints({
+      unitId: saveItemUnitConversionDto.iuc_unit_id ?? existing.iucUnitId,
+      baseUnitId,
+      toBaseFactor: saveItemUnitConversionDto.iuc_to_base_factor ?? toNumber(existing.iucToBaseFactor),
+      uomWeight: saveItemUnitConversionDto.iuc_uom_weight ?? toNumber(existing.iucUomWeight),
+      isBaseUnit: saveItemUnitConversionDto.iuc_is_base_unit ?? existing.iucIsBaseUnit,
+    });
     const updated = await tx.itemUnitConversion.update({
       where: {
         iucId,
@@ -280,7 +292,6 @@ export class ItemUnitConversionService {
       },
       tx,
     );
-
     return payload;
   }
   private async toggleDeleteItemUnitConversion(
@@ -373,16 +384,60 @@ export class ItemUnitConversionService {
         },
       ]);
     }
-    // if (factor !== undefined && factor !== 1) {
-    //   throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
-    //     {
-    //       field: 'iuc_to_base_factor',
-    //       message: 'Base unit conversion row must use iuc_to_base_factor = 1',
-    //     },
-    //   ]);
-    // }
-    // Do not force iuc_unit_factor = 1 for base row.
+    // Do not force iuc_unit_factor = 1 for the base row.
     // Base unit may be first, middle, or last row in the chain.
+    // The persisted-state guard (assertItemUnitConversionConstraints) enforces
+    // iuc_to_base_factor = 1 for the base row after factor normalization.
+  }
+  /**
+   * Application-layer replacement for the database CHECK constraints that were
+   * dropped from the item_unit_conversion table:
+   *   - chk_iuc_to_base_factor : iuc_to_base_factor > 0
+   *   - chk_iuc_uom_weight     : iuc_uom_weight >= 0
+   *   - chk_iuc_base_row       : (iuc_is_base_unit = true  AND iuc_unit_id = iuc_base_unit_id AND iuc_to_base_factor = 1)
+   *                              OR (iuc_is_base_unit = false AND iuc_to_base_factor > 0)
+   *
+   * Runs against the final, resolved row values immediately before persistence,
+   * mirroring exactly where the database constraint would have fired.
+   */
+  private assertItemUnitConversionConstraints(row: {
+    unitId: string;
+    baseUnitId: string;
+    toBaseFactor: number;
+    uomWeight: number;
+    isBaseUnit: boolean;
+  }): void {
+    const errors: ItemUnitConversionErrorDetail[] = [];
+    // chk_iuc_to_base_factor
+    if (!(row.toBaseFactor > 0)) {
+      errors.push({
+        field: 'iuc_to_base_factor',
+        message: 'iuc_to_base_factor must be greater than 0',
+      });
+    } else if (row.isBaseUnit && row.toBaseFactor !== 1) {
+      // chk_iuc_base_row: base row must convert to itself (factor 1)
+      errors.push({
+        field: 'iuc_to_base_factor',
+        message: 'Base unit conversion row must use iuc_to_base_factor = 1',
+      });
+    }
+    // chk_iuc_uom_weight
+    if (row.uomWeight < 0) {
+      errors.push({
+        field: 'iuc_uom_weight',
+        message: 'iuc_uom_weight cannot be negative',
+      });
+    }
+    // chk_iuc_base_row: base row must reference itself as the base unit
+    if (row.isBaseUnit && row.unitId !== row.baseUnitId) {
+      errors.push({
+        field: 'iuc_unit_id',
+        message: 'Base unit conversion row must use the selected base unit as iuc_unit_id',
+      });
+    }
+    if (errors.length > 0) {
+      throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', errors);
+    }
   }
   private async normalizeItemUnitConversionBaseUnits(
     tx: Prisma.TransactionClient,
@@ -486,39 +541,30 @@ export class ItemUnitConversionService {
         }
         return left.unitId.localeCompare(right.unitId);
       });
-
       const resolvedBaseUnitId =
         indexedSaveItems.find(({ item }) => item.iuc_is_base_unit === true)?.item.iuc_unit_id ??
         effectiveRows.find((row) => row.isBaseUnit)?.unitId ??
         effectiveRows[0].baseUnitId ??
         effectiveRows[0].unitId;
-
       for (const row of effectiveRows) {
         row.baseUnitId = resolvedBaseUnitId;
         row.isBaseUnit = row.unitId === resolvedBaseUnitId;
       }
-
       const cumulativeByUnitId = new Map<string, number>();
-
       for (let i = 0; i < effectiveRows.length; i++) {
         const row = effectiveRows[i];
-
         if (i === 0) {
           row.unitFactor = 1;
           cumulativeByUnitId.set(row.unitId, 1);
           continue;
         }
-
         const previousRow = effectiveRows[i - 1];
         const resolvedUnitFactor = this.resolveChainUnitFactor(previousRow, row);
-
         row.unitFactor = resolvedUnitFactor;
-
         const previousCumulative = cumulativeByUnitId.get(previousRow.unitId)!;
         const currentCumulative = this.roundFactor(previousCumulative * resolvedUnitFactor);
         cumulativeByUnitId.set(row.unitId, currentCumulative);
       }
-
       const baseCumulative = cumulativeByUnitId.get(resolvedBaseUnitId);
       if (!baseCumulative) {
         throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
@@ -528,17 +574,14 @@ export class ItemUnitConversionService {
           },
         ]);
       }
-
       for (const row of effectiveRows) {
         const rowCumulative = cumulativeByUnitId.get(row.unitId)!;
         row.toBaseFactor = this.roundFactor(baseCumulative / rowCumulative);
       }
-
       for (const row of effectiveRows) {
         if (row.saveIndex === undefined) {
           continue;
         }
-
         const saveItem = normalizedItems[row.saveIndex];
         normalizedItems[row.saveIndex] = {
           ...saveItem,
@@ -705,7 +748,6 @@ export class ItemUnitConversionService {
   private toPayload(record: ItemUnitConversion): ItemUnitConversionPayload {
     return {
       iuc_id: record.iucId,
-      iuc_company_id: record.iucCompanyId,
       iuc_item_id: record.iucItemId,
       iuc_unit_id: record.iucUnitId,
       iuc_base_unit_id: record.iucBaseUnitId,
@@ -756,7 +798,7 @@ export class ItemUnitConversionService {
       throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Invalid relation reference', [
         {
           field: 'request',
-          message: 'Referenced company, item, unit, or base unit does not exist',
+          message: 'Referenced item, unit, or base unit does not exist',
         },
       ]);
     }

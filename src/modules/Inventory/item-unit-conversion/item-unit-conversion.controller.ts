@@ -110,7 +110,7 @@ export class ItemUnitConversionController {
   @ApiOperation({
     summary:
       'Get item unit conversion by iuc_id, or list with optional filters/pagination ' +
-      '(iuc_item_id, iuc_company_id, iuc_is_active).',
+      '(iuc_item_id, iuc_is_active).',
   })
   @ApiOkResponse({
     schema: {

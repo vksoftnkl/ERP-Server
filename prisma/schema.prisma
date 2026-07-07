@@ -204,6 +204,7 @@ model AccLedgerMaster {
   oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
   tenderLedgerEntries      AccVoucherTender[]     @relation("VoucherTenderTenderLedger")
   voucherLedgerTenders     AccVoucherTender[]     @relation("VoucherTenderVoucherLedger")
+  quotationCustomers       Quotation[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -2682,6 +2683,7 @@ model ItemMaster {
   taxHistory           ItemTaxHistory[]
   company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   loyaltySchemeGifts   LoyaltySchemeGift[]
+  quotationLines       QuotationDetail[]
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
@@ -2706,6 +2708,7 @@ model ItemPriceLevel {
   iplModifiedOn DateTime @default(now()) @db.Timestamptz(6) @map("ipl_modified_on")
   iplModifiedBy String   @map("ipl_modified_by")
   customers     Customer[] @relation("CustomerPriceLevel")
+  quotations    Quotation[]
   @@map("item_price_levels")
   @@schema("inventory")
 }
@@ -3141,6 +3144,7 @@ model ItemTaxMaster {
   taxModifiedBy           String?   @db.VarChar(100) @map("tax_modified_by")
   defaultItems            ItemMaster[]
   taxHistory              ItemTaxHistory[]
+  quotationLines          QuotationDetail[]
   @@map("item_tax_master")
    @@schema("inventory")
   // unique slab name globally (since company removed)
@@ -3156,7 +3160,6 @@ model ItemTaxMaster {
 // ----- prisma/inventory/itemUnitConversion.prisma -----
 model ItemUnitConversion {
   iucId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iuc_id")
-  iucCompanyId       String    @db.Uuid @map("iuc_company_id")
   iucItemId          String    @db.Uuid @map("iuc_item_id")
   iucUnitId          String    @db.Uuid @map("iuc_unit_id")
   iucBaseUnitId      String    @db.Uuid @map("iuc_base_unit_id")
@@ -3179,13 +3182,14 @@ model ItemUnitConversion {
   item               ItemMaster @relation("ItemUnitConversions", fields: [iucItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_item_id")
   unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
-  company            Company    @relation("iucCompanyId", fields: [iucCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_company_id")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")
   // Partial unique indexes uq_item_unit_conversion, uq_item_unit_conversion_default,
   // and uq_item_unit_conversion_base are not expressible in Prisma schema.
-  // CHECK constraints are not expressible in Prisma schema.
+  // CHECK constraints (chk_iuc_to_base_factor, chk_iuc_uom_weight, chk_iuc_base_row)
+  // were dropped and are now enforced in the application layer
+  // (ItemUnitConversionService.assertItemUnitConversionConstraints).
 }
 
 // ----- prisma/inventory/itemUnitsMaster.prisma -----
@@ -3244,6 +3248,7 @@ model Unit {
   eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
   itemReorders ItemReorder[]
+  quotationLines QuotationDetail[]
   loyaltySchemePoints LoyaltySchemePoint[]
   loyaltySchemeGifts  LoyaltySchemeGift[]
 
@@ -3615,7 +3620,6 @@ model Company {
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
   physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailCompany")
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
-  ItemUnitConversions   ItemUnitConversion[] @relation("iucCompanyId")
   loyaltySchemes        LoyaltyScheme[]
   @@map("companys")
   @@schema("public")
@@ -3943,6 +3947,23 @@ model AreaMaster {
   @@schema("sales")
 }
 
+// ----- prisma/sales/beat.prisma -----
+model Beat {
+  beatId         Int         @id @default(autoincrement()) @map("beat_id")
+  beatName       String      @unique @map("beat_name") @db.VarChar(80)
+  beatSiteId     Int?        @map("beat_site_id")
+  beatIsActive   Boolean     @default(true) @map("beat_is_active")
+  beatIsDeleted  Boolean     @default(false) @map("beat_is_deleted")
+  beatCreatedOn  DateTime    @default(now()) @db.Timestamptz(6) @map("beat_created_on")
+  beatCreatedBy  String?     @db.Uuid @map("beat_created_by")
+  beatUpdatedOn  DateTime?   @db.Timestamptz(6) @map("beat_updated_on")
+  beatUpdatedBy  String?     @db.Uuid @map("beat_updated_by")
+  beatSyncDate   DateTime?   @db.Timestamptz(6) @map("beat_sync_date")
+  quotations     Quotation[]
+  @@map("beat_master")
+  @@schema("sales")
+}
+
 // ----- prisma/sales/cityMaster.prisma -----
 model CityMaster {
   ctmId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("ctm_id")
@@ -4072,6 +4093,7 @@ model Customer {
   custGroup            CustGroup      @relation(fields: [cusGroupId], references: [cgrId])
   company              Company?       @relation(fields: [cusCompanyId], references: [compId])
   priceLevel           ItemPriceLevel @relation("CustomerPriceLevel", fields: [cusPriceLevelId], references: [iplId])
+  defaultSalesman      Salesman?      @relation(fields: [cusDefaultSalesman], references: [smanId])
 
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")
@@ -4258,6 +4280,109 @@ model LoyaltySchemePoint {
   @@schema("sales")
 }
 
+// ----- prisma/sales/quotation.prisma -----
+model Quotation {
+  quotationId   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("quotation_id")
+  quotationCompanyId     String   @db.Uuid @map("quotation_company_id")
+  quotationSiteId        String   @db.Uuid @map("quotation_site_id")
+  quotationFinancialYear String   @map("quotation_financial_year") @db.VarChar(9)
+
+  quotationNo   String    @map("quotation_no") @db.VarChar(30)
+  quotationDate DateTime  @default(now()) @map("quotation_date")
+  quotationExpiryDate    DateTime? @map("quotation_expiry_date") @db.Date
+
+  quotationCustomerLedgerId String?          @db.Uuid @map("quotation_customer_ledger_id")
+  quotationCustomer         AccLedgerMaster? @relation(fields: [quotationCustomerLedgerId], references: [ledId])
+  quotationCustomerName     String  @map("quotation_customer_name") @db.VarChar(150)
+  quotationPlace            String? @db.VarChar(120) @map("quotation_place")
+  quotationMobileNo         String? @map("quotation_mobile_no") @db.VarChar(20)
+  quotationStateId          String?      @db.Uuid @map("quotation_state_id")
+  quotationState            StateMaster? @relation(fields: [quotationStateId], references: [stmId])
+  quotationGstNo            String? @map("quotation_gst_no") @db.VarChar(15)
+
+  quotationBeatId       Int?       @map("quotation_beat_id")
+  quotationBeat         Beat?      @relation(fields: [quotationBeatId], references: [beatId])
+  quotationSalesmanId   String?    @db.Uuid @map("quotation_salesman_id")
+  quotationSalesman     Salesman?  @relation(fields: [quotationSalesmanId], references: [smanId])
+  quotationPriceLevelId Int            @map("quotation_price_level_id")
+  quotationPriceLevel   ItemPriceLevel @relation(fields: [quotationPriceLevelId], references: [iplId])
+
+  quotationFreightFlag   Boolean @default(false) @map("quotation_freight_flag")
+  quotationLoadingFlag   Boolean @default(false) @map("quotation_loading_flag")
+  quotationUnloadingFlag Boolean @default(false) @map("quotation_unloading_flag")
+  quotationPromotionFlag Boolean @default(false) @map("quotation_promotion_flag")
+  quotationLoyaltyFlag   Boolean @default(false) @map("quotation_loyalty_flag")
+
+  quotationSubTotal        Decimal @default(0) @map("quotation_sub_total") @db.Decimal(18, 2)
+  quotationTotalTax        Decimal @default(0) @map("quotation_total_tax") @db.Decimal(18, 2)
+  quotationFreightAmount   Decimal @default(0) @map("quotation_freight_amount") @db.Decimal(18, 2)
+  quotationLoadingAmount   Decimal @default(0) @map("quotation_loading_amount") @db.Decimal(18, 2)
+  quotationUnloadingAmount Decimal @default(0) @map("quotation_unloading_amount") @db.Decimal(18, 2)
+  quotationOtherCharge     Decimal @default(0) @map("quotation_other_charge") @db.Decimal(18, 2)
+  quotationCdPercent       Decimal @default(0) @map("quotation_cd_percent") @db.Decimal(6, 3)
+  quotationCdAmount        Decimal @default(0) @map("quotation_cd_amount") @db.Decimal(18, 2)
+  quotationGrandTotal      Decimal @default(0) @map("quotation_grand_total") @db.Decimal(18, 2)
+
+  quotationRemarks String? @db.VarChar(500) @map("quotation_remarks")
+
+  quotationStatus        String  @default("SAVED") @db.VarChar(12) @map("quotation_status")
+  quotationConvertedSoId String? @db.Uuid @map("quotation_converted_so_id")
+  quotationIsDeleted     Boolean @default(false) @map("quotation_is_deleted")
+  quotationIsActive      Boolean @default(true) @map("quotation_is_active")
+  quotationSyncDate      DateTime? @db.Timestamptz @map("quotation_sync_date")
+  quotationCreatedBy     String?   @db.Text @map("quotation_created_by")
+  quotationCreatedAt     DateTime  @default(now()) @map("quotation_created_at")
+  quotationModifiedBy    String?   @db.Text  @map("quotation_modified_by")
+  quotationModifiedAt    DateTime? @db.Timestamptz @map("quotation_modified_at")
+
+  lines QuotationDetail[]
+
+  @@unique([quotationCompanyId, quotationSiteId, quotationFinancialYear, quotationNo], name: "uq_quotation_no")
+  @@index([quotationCustomerLedgerId])
+  @@index([quotationSiteId, quotationDate])
+  @@index([quotationSalesmanId, quotationStatus])
+  @@index([quotationExpiryDate, quotationStatus])
+  @@map("quotation_master")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/quotationDetail.prisma -----
+model QuotationDetail {
+  quotationDetailId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("quotation_detail_id")
+  quotationId String    @db.Uuid @map("quotation_id")
+  quotation   Quotation @relation(fields: [quotationId], references: [quotationId], onDelete: Cascade)
+  quotationDetailLineNo      Int       @map("quotation_detail_line_no")
+
+  quotationDetailItemId        String     @db.Uuid @map("item_id")
+  quotationDetailItem          ItemMaster @relation(fields: [quotationDetailItemId], references: [itemId])
+  quotationDetailDescription   String   @db.VarChar(200) @map("quotation_detail_description")
+  quotationDetailStockSnapshot Decimal? @map("stock_snapshot") @db.Decimal(18, 3)
+
+  quotationDetailQty   Decimal @db.Decimal(18, 3) @map("quotation_detail_qty")
+  quotationDetailUomId String  @db.Uuid @map("uom_id")
+  quotationDetailUom   Unit    @relation(fields: [quotationDetailUomId], references: [unit_id])
+  quotationDetailRate  Decimal @db.Decimal(18, 4) @map("quotation_detail_rate")
+
+  quotationDetailDiscountPercent Decimal @default(0) @map("quotation_detail_discount_percent") @db.Decimal(6, 3)
+  quotationDetailDiscountAmount  Decimal @default(0) @map("quotation_detail_discount_amount") @db.Decimal(18, 2)
+  quotationDetailTaxableValue    Decimal @map("quotation_detail_taxable_value") @db.Decimal(18, 2)
+
+  quotationDetailTaxCodeId  String?        @db.Uuid @map("quotation_detail_tax_code_id")
+  quotationDetailTaxCode    ItemTaxMaster? @relation(fields: [quotationDetailTaxCodeId], references: [taxId])
+  quotationDetailGstPercent Decimal  @default(0) @map("quotation_detail_gst_percent") @db.Decimal(6, 3)
+  quotationDetailCgstAmount Decimal  @default(0) @map("quotation_detail_cgst_amount") @db.Decimal(18, 2)
+  quotationDetailSgstAmount Decimal  @default(0) @map("quotation_detail_sgst_amount") @db.Decimal(18, 2)
+  quotationDetailIgstAmount Decimal  @default(0) @map("quotation_detail_igst_amount") @db.Decimal(18, 2)
+  quotationDetailCessAmount Decimal  @default(0) @map("quotation_detail_cess_amount") @db.Decimal(18, 2)
+
+  quotationDetailLineTotal Decimal @map("quotation_detail_line_total") @db.Decimal(18, 2)
+
+  @@unique([quotationId, quotationDetailLineNo], name: "uq_quotation_line")
+  @@index([quotationDetailItemId])
+  @@map("quotation_detail")
+  @@schema("sales")
+}
+
 // ----- prisma/sales/saleAgentGroups.prisma -----
 model SaleAgentGroup {
   saGrpId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sa_grp_id")
@@ -4273,10 +4398,45 @@ model SaleAgentGroup {
   saGrpModifiedOn DateTime? @db.Timestamptz @map("sa_grp_modified_on")
   saGrpModifiedBy String?   @db.Uuid @map("sa_grp_modified_by")
 
+  salesmen        Salesman[]
+
   @@index([saGrpId], map: "idx_sale_agent_groups_id")
   @@index([saGrpName], map: "idx_sale_agent_groups_name")
   @@index([saGrpIsActive, saGrpIsDeleted], map: "idx_sale_agent_groups_active_deleted")
   @@map("sale_agent_groups")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/salesman.prisma -----
+model Salesman {
+  smanId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sman_id")
+  smanCompanyId  String?   @db.Uuid @map("sman_company_id")
+  smanBranchId   String?   @db.Uuid @map("sman_branch_id")
+  smanGroupId    String?   @db.Uuid @map("sman_group_id")
+
+  smanCode       String?   @db.VarChar(50)  @map("sman_code")
+  smanName       String    @db.VarChar(150) @map("sman_name")
+  smanShort      String?   @db.VarChar(50)  @map("sman_short")
+  smanMobile     String?   @db.VarChar(20)  @map("sman_mobile")
+  smanEmail      String?   @db.VarChar(120) @map("sman_email")
+
+  smanIsActive   Boolean   @default(true)  @map("sman_is_active")
+  smanIsDeleted  Boolean   @default(false) @map("sman_is_deleted")
+  smanSyncDate   DateTime? @db.Timestamptz(6) @map("sman_sync_date")
+  smanCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("sman_created_on")
+  smanCreatedBy  String?   @db.Uuid @map("sman_created_by")
+  smanModifiedOn DateTime? @db.Timestamptz(6) @map("sman_modified_on")
+  smanModifiedBy String?   @db.Uuid @map("sman_modified_by")
+
+  // Relations
+  group      SaleAgentGroup? @relation(fields: [smanGroupId], references: [saGrpId])
+  quotations Quotation[]
+  customers  Customer[]
+
+  @@index([smanName], map: "idx_salesman_name")
+  @@index([smanGroupId], map: "idx_salesman_group")
+  @@index([smanIsActive, smanIsDeleted], map: "idx_salesman_active_deleted")
+  @@map("salesman_master")
   @@schema("sales")
 }
 
@@ -4300,6 +4460,7 @@ model StateMaster {
 
   // Relations
   cities        CityMaster[]
+  quotations    Quotation[]
 
   @@index([stmIsActive], name: "idx_stm_active")
   @@map("state_master")
