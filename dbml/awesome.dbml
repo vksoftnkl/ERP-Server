@@ -139,7 +139,6 @@ Table acc_ledger_master {
   voucherHeaderParties acc_voucher_header [not null]
   accountingEntries acc_vouchers [not null]
   oppositeAccountingEntries acc_vouchers [not null]
-  quotationCustomers quotation_master [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -1508,7 +1507,7 @@ Table item_master {
   taxHistory item_tax_history [not null]
   company companys [not null]
   loyaltySchemeGifts loyalty_sch_gift [not null]
-  quotationLines quotation_detail [not null]
+  saleQuotationItems sale_quotation_item [not null]
 }
 
 Table item_price_levels {
@@ -1524,7 +1523,8 @@ Table item_price_levels {
   iplModifiedOn DateTime [default: `now()`, not null]
   iplModifiedBy String [not null]
   customers customers [not null]
-  quotations quotation_master [not null]
+  saleQuotations sale_quotation [not null]
+  saleQuotationItems sale_quotation_item [not null]
 }
 
 Table item_price_master {
@@ -1807,7 +1807,6 @@ Table item_tax_master {
   taxModifiedBy String
   defaultItems item_master [not null]
   taxHistory item_tax_history [not null]
-  quotationLines quotation_detail [not null]
 }
 
 Table item_unit_conversion {
@@ -1871,9 +1870,9 @@ Table item_unit_master {
   eanCodes item_ean_codes [not null]
   itemMasters item_master [not null]
   itemReorders item_reorders [not null]
-  quotationLines quotation_detail [not null]
   loyaltySchemePoints loyalty_sch_points [not null]
   loyaltySchemeGifts loyalty_sch_gift [not null]
+  saleQuotationItems sale_quotation_item [not null]
 }
 
 Table opening_stock_detail {
@@ -2385,7 +2384,7 @@ Table area_master {
   armModifiedBy String
   city city_master [not null]
   customers customers [not null]
-  quotations quotation_master [not null]
+  saleQuotations sale_quotation [not null]
 }
 
 Table city_master {
@@ -2489,6 +2488,7 @@ Table customers {
   company companys
   priceLevel item_price_levels [not null]
   defaultSalesman salesman_master
+  saleQuotations sale_quotation [not null]
 }
 
 Table cust_groups {
@@ -2626,89 +2626,6 @@ Table loyalty_sch_points {
   unit item_unit_master
 }
 
-Table quotation_master {
-  quotationId String [pk]
-  quotationCompanyId String [not null]
-  quotationSiteId String [not null]
-  quotationFinancialYear String [not null]
-  quotationNo String [not null]
-  quotationDate DateTime [default: `now()`, not null]
-  quotationExpiryDate DateTime
-  quotationCustomerLedgerId String
-  quotationCustomer acc_ledger_master
-  quotationCustomerName String [not null]
-  quotationPlace String
-  quotationMobileNo String
-  quotationStateId String
-  quotationState state_master
-  quotationGstNo String
-  quotationAreaId String
-  quotationArea area_master
-  quotationSalesmanId String
-  quotationSalesman salesman_master
-  quotationPriceLevelId Int [not null]
-  quotationPriceLevel item_price_levels [not null]
-  quotationFreightFlag Boolean [not null, default: false]
-  quotationLoadingFlag Boolean [not null, default: false]
-  quotationUnloadingFlag Boolean [not null, default: false]
-  quotationPromotionFlag Boolean [not null, default: false]
-  quotationLoyaltyFlag Boolean [not null, default: false]
-  quotationSubTotal Decimal [not null, default: 0]
-  quotationTotalTax Decimal [not null, default: 0]
-  quotationFreightAmount Decimal [not null, default: 0]
-  quotationLoadingAmount Decimal [not null, default: 0]
-  quotationUnloadingAmount Decimal [not null, default: 0]
-  quotationOtherCharge Decimal [not null, default: 0]
-  quotationCdPercent Decimal [not null, default: 0]
-  quotationCdAmount Decimal [not null, default: 0]
-  quotationGrandTotal Decimal [not null, default: 0]
-  quotationRemarks String
-  quotationStatus String [not null, default: 'SAVED']
-  quotationConvertedSoId String
-  quotationIsDeleted Boolean [not null, default: false]
-  quotationIsActive Boolean [not null, default: true]
-  quotationSyncDate DateTime
-  quotationCreatedBy String
-  quotationCreatedAt DateTime [default: `now()`, not null]
-  quotationModifiedBy String
-  quotationModifiedAt DateTime
-  lines quotation_detail [not null]
-
-  indexes {
-    (quotationCompanyId, quotationSiteId, quotationFinancialYear, quotationNo) [unique]
-  }
-}
-
-Table quotation_detail {
-  quotationDetailId String [pk]
-  quotationId String [not null]
-  quotation quotation_master [not null]
-  quotationDetailLineNo Int [not null]
-  quotationDetailItemId String [not null]
-  quotationDetailItem item_master [not null]
-  quotationDetailDescription String [not null]
-  quotationDetailStockSnapshot Decimal
-  quotationDetailQty Decimal [not null]
-  quotationDetailUomId String [not null]
-  quotationDetailUom item_unit_master [not null]
-  quotationDetailRate Decimal [not null]
-  quotationDetailDiscountPercent Decimal [not null, default: 0]
-  quotationDetailDiscountAmount Decimal [not null, default: 0]
-  quotationDetailTaxableValue Decimal [not null]
-  quotationDetailTaxCodeId String
-  quotationDetailTaxCode item_tax_master
-  quotationDetailGstPercent Decimal [not null, default: 0]
-  quotationDetailCgstAmount Decimal [not null, default: 0]
-  quotationDetailSgstAmount Decimal [not null, default: 0]
-  quotationDetailIgstAmount Decimal [not null, default: 0]
-  quotationDetailCessAmount Decimal [not null, default: 0]
-  quotationDetailLineTotal Decimal [not null]
-
-  indexes {
-    (quotationId, quotationDetailLineNo) [unique]
-  }
-}
-
 Table sale_agent_groups {
   saGrpId String [pk]
   saGrpName String [not null]
@@ -2723,6 +2640,212 @@ Table sale_agent_groups {
   saGrpModifiedOn DateTime
   saGrpModifiedBy String
   salesmen salesman_master [not null]
+}
+
+Table sale_quotation {
+  sqId String [pk]
+  sqCompanyId String [not null]
+  sqBranchId String [not null]
+  sqTenantId String [not null]
+  sqAccYear String [not null]
+  sqSessionId String
+  sqCategoryId String
+  sqPriceLevel Int [not null]
+  sqDocType String [not null, default: 'QUOTATION']
+  sqQuoteSlno BigInt [not null]
+  sqQuoteRefno String [not null]
+  sqUsrRefno String
+  sqQuoteDate DateTime [not null]
+  sqQuoteDatetime DateTime [default: `now()`, not null]
+  sqValidUntil DateTime
+  sqValidityDays Int
+  sqRevisionNo Int [not null, default: 0]
+  sqParentQuoteId String
+  sqSrcDocType String
+  sqSrcDocId String
+  sqSrcDocRefno String
+  sqSrcDocDate DateTime
+  sqCustId String
+  sqCustAreaId String
+  sqCustName String [not null]
+  sqCustAddr String
+  sqCustPlace String
+  sqCustPhone String
+  sqCustEmail String
+  sqCustGstin String
+  sqCustGstType String
+  sqCustStcd String
+  sqPosStcd String
+  sqContactPerson String
+  sqContactPhone String
+  sqHasLoad Boolean [not null, default: false]
+  sqHasUnload Boolean [not null, default: false]
+  sqHasFreight Boolean [not null, default: false]
+  sqHasPromo Boolean [not null, default: false]
+  sqHasComm Boolean [not null, default: false]
+  sqUserId String [not null]
+  sqSalesmanId String
+  sqAgentId String
+  sqTotItems Int [not null, default: 0]
+  sqTotWeight Decimal [not null, default: 0]
+  sqTotBags Decimal [not null, default: 0]
+  sqGrossAmt Decimal [not null, default: 0]
+  sqItemDisc Decimal [not null, default: 0]
+  sqSplDisc Decimal [not null, default: 0]
+  sqSchDisc Decimal [not null, default: 0]
+  sqBillSchDisc Decimal [not null, default: 0]
+  sqAddlDisc1 Decimal [not null, default: 0]
+  sqAddlDisc2 Decimal [not null, default: 0]
+  sqTaxableAmt Decimal [not null, default: 0]
+  sqCgstAmt Decimal [not null, default: 0]
+  sqSgstAmt Decimal [not null, default: 0]
+  sqIgstAmt Decimal [not null, default: 0]
+  sqCessAmt Decimal [not null, default: 0]
+  sqTaxAmt Decimal [not null, default: 0]
+  sqFreightAmt Decimal [not null, default: 0]
+  sqLoadAmt Decimal [not null, default: 0]
+  sqUnloadAmt Decimal [not null, default: 0]
+  sqOtherAmt1 Decimal [not null, default: 0]
+  sqOtherAmt2 Decimal [not null, default: 0]
+  sqRoundOff Decimal [not null, default: 0]
+  sqQuoteAmt Decimal [not null, default: 0]
+  sqTotalCost Decimal
+  sqMarginAmt Decimal
+  sqMarginPerc Decimal
+  sqPaymentTerms String
+  sqDeliveryTerms String
+  sqTermsConditions String
+  sqStatus String [not null, default: 'DRAFT']
+  sqSentOn DateTime
+  sqAcceptedOn DateTime
+  sqRejectedOn DateTime
+  sqRejectReason String
+  sqConvertedDocType String
+  sqConvertedDocId String
+  sqConvertedOn DateTime
+  sqApprovedOn DateTime
+  sqApprovedBy String
+  sqCancelledOn DateTime
+  sqCancelledBy String
+  sqCancelReason String
+  sqPrintCount Int [not null, default: 0]
+  sqDeviceType String
+  sqDeviceId String
+  sqRemarks String
+  sqIsDeleted Boolean [not null, default: false]
+  sqSyncDate DateTime
+  sqCreatedOn DateTime [default: `now()`, not null]
+  sqCreatedBy String [not null]
+  sqModifiedOn DateTime
+  sqModifiedBy String
+  parentQuote sale_quotation
+  revisions sale_quotation [not null]
+  items sale_quotation_item [not null]
+  customer customers
+  custArea area_master
+  salesman salesman_master
+  priceLevel item_price_levels [not null]
+}
+
+Table sale_quotation_item {
+  sqiId String [pk]
+  sqiQuoteId String [not null]
+  sqiCompanyId String [not null]
+  sqiBranchId String [not null]
+  sqiTenantId String [not null]
+  sqiAccYear String [not null]
+  sqiSrcDocType String
+  sqiSrcItemId String
+  sqiSrcUnitId String
+  sqiSrcDocRefno String
+  sqiSrcItemQty Decimal
+  sqiLineNo Int [not null]
+  sqiItemId String [not null]
+  sqiItemCode String
+  sqiItemName String
+  sqiUnitId String [not null]
+  sqiHsnCode String
+  sqiPriceLevel Int [not null]
+  sqiEanCode String
+  sqiBatchNo String
+  sqiBatchDate DateTime
+  sqiExpiryDate DateTime
+  sqiIsTaxIncl Boolean [not null, default: false]
+  sqiIsPromo Boolean [not null, default: false]
+  sqiIsFree Boolean [not null, default: false]
+  sqiFreeType String
+  sqiIsService Boolean [not null, default: false]
+  sqiQty Decimal [not null, default: 0]
+  sqiQtyLength Decimal [not null, default: 0]
+  sqiItemWeight Decimal [default: 0]
+  sqiQtyConverted Decimal [not null, default: 0]
+  sqiAvailableStock Decimal [not null, default: 0]
+  sqiRate Decimal [not null, default: 0]
+  sqiRatePreTax Decimal [not null, default: 0]
+  sqiItemDiscPerc Decimal [not null, default: 0]
+  sqiItemDiscQty Decimal [not null, default: 0]
+  sqiItemDiscAmt Decimal [not null, default: 0]
+  sqiSplDiscPerc Decimal [not null, default: 0]
+  sqiSplDiscQty Decimal [not null, default: 0]
+  sqiSplDiscAmt Decimal [not null, default: 0]
+  sqiSchDiscPerc Decimal [not null, default: 0]
+  sqiSchDiscQty Decimal [not null, default: 0]
+  sqiSchDiscAmt Decimal [not null, default: 0]
+  sqiBillSchPerc Decimal [not null, default: 0]
+  sqiBillSchQty Decimal [not null, default: 0]
+  sqiBillSchAmt Decimal [not null, default: 0]
+  sqiAddlDisc1Perc Decimal [not null, default: 0]
+  sqiAddlDisc1Amt Decimal [not null, default: 0]
+  sqiAddlDisc2Perc Decimal [not null, default: 0]
+  sqiAddlDisc2Amt Decimal [not null, default: 0]
+  sqiCashDiscPerc Decimal [not null, default: 0]
+  sqiCashDiscAmt Decimal [not null, default: 0]
+  sqiGrossAmt Decimal [not null, default: 0]
+  sqiTaxableAmt Decimal [not null, default: 0]
+  sqiTaxPerc Decimal [not null, default: 0]
+  sqiTaxAmt Decimal [not null, default: 0]
+  sqiCgstPerc Decimal [not null, default: 0]
+  sqiCgstAmt Decimal [not null, default: 0]
+  sqiSgstPerc Decimal [not null, default: 0]
+  sqiSgstAmt Decimal [not null, default: 0]
+  sqiIgstPerc Decimal [not null, default: 0]
+  sqiIgstAmt Decimal [not null, default: 0]
+  sqiCessPerc Decimal [not null, default: 0]
+  sqiCessPerUnit Decimal [not null, default: 0]
+  sqiCessAmt Decimal [not null, default: 0]
+  sqiAcessPerc Decimal [not null, default: 0]
+  sqiAcessPerUnit Decimal [not null, default: 0]
+  sqiAcessAmt Decimal [not null, default: 0]
+  sqiFreightQty Decimal [not null, default: 0]
+  sqiFreightAmt Decimal [not null, default: 0]
+  sqiLoadQty Decimal [not null, default: 0]
+  sqiLoadAmt Decimal [not null, default: 0]
+  sqiUnloadQty Decimal [not null, default: 0]
+  sqiUnloadAmt Decimal [not null, default: 0]
+  sqiRoundOff Decimal [not null, default: 0]
+  sqiNetAmt Decimal [not null, default: 0]
+  sqiCostPrice Decimal
+  sqiMaxPrice Decimal
+  sqiMinPrice Decimal
+  sqiActPrice Decimal
+  sqiQuotePrice Decimal
+  sqiItemProfit Decimal
+  sqiCostPreTax Decimal
+  sqiQuotePreTax Decimal
+  sqiProfitPreTax Decimal
+  sqiSchemeId String
+  sqiSchemeName String
+  sqiRemarks String
+  sqiIsDeleted Boolean [not null, default: false]
+  sqiSyncDate DateTime
+  sqiCreatedOn DateTime [default: `now()`, not null]
+  sqiCreatedBy String [not null]
+  sqiModifiedOn DateTime
+  sqiModifiedBy String
+  quote sale_quotation [not null]
+  item item_master [not null]
+  unit item_unit_master [not null]
+  priceLevel item_price_levels [not null]
 }
 
 Table salesman_master {
@@ -2743,8 +2866,8 @@ Table salesman_master {
   smanModifiedOn DateTime
   smanModifiedBy String
   group sale_agent_groups
-  quotations quotation_master [not null]
   customers customers [not null]
+  saleQuotations sale_quotation [not null]
 }
 
 Table state_master {
@@ -2762,7 +2885,6 @@ Table state_master {
   stmModifiedOn DateTime [default: `now()`, not null]
   stmModifiedBy String
   cities city_master [not null]
-  quotations quotation_master [not null]
 }
 
 Table physical_stock_batch_detail {
@@ -3446,23 +3568,23 @@ Ref: loyalty_sch_points.lsptLsId > loyalty_sch_list.lsId [delete: Cascade]
 
 Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]
 
-Ref: quotation_master.quotationCustomerLedgerId > acc_ledger_master.ledId
+Ref: sale_quotation.sqParentQuoteId - sale_quotation.sqId [delete: No Action]
 
-Ref: quotation_master.quotationStateId > state_master.stmId
+Ref: sale_quotation.sqCustId > customers.cusId [delete: Restrict]
 
-Ref: quotation_master.quotationAreaId > area_master.armId
+Ref: sale_quotation.sqCustAreaId > area_master.armId [delete: Restrict]
 
-Ref: quotation_master.quotationSalesmanId > salesman_master.smanId
+Ref: sale_quotation.sqSalesmanId > salesman_master.smanId [delete: Restrict]
 
-Ref: quotation_master.quotationPriceLevelId > item_price_levels.iplId
+Ref: sale_quotation.sqPriceLevel > item_price_levels.iplId [delete: Restrict]
 
-Ref: quotation_detail.quotationId > quotation_master.quotationId [delete: Cascade]
+Ref: sale_quotation_item.sqiQuoteId > sale_quotation.sqId [delete: No Action]
 
-Ref: quotation_detail.quotationDetailItemId > item_master.itemId
+Ref: sale_quotation_item.sqiItemId > item_master.itemId [delete: Restrict]
 
-Ref: quotation_detail.quotationDetailUomId > item_unit_master.unit_id
+Ref: sale_quotation_item.sqiUnitId > item_unit_master.unit_id [delete: Restrict]
 
-Ref: quotation_detail.quotationDetailTaxCodeId > item_tax_master.taxId
+Ref: sale_quotation_item.sqiPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: salesman_master.smanGroupId > sale_agent_groups.saGrpId
 

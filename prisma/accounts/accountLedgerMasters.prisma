@@ -109,7 +109,6 @@ model AccLedgerMaster {
   voucherHeaderParties     AccVoucherHeader[]
   accountingEntries        AccVoucher[]           @relation("AccVoucherLedger")
   oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
-  quotationCustomers       Quotation[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")

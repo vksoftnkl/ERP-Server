@@ -20,8 +20,8 @@ model Salesman {
 
   // Relations
   group      SaleAgentGroup? @relation(fields: [smanGroupId], references: [saGrpId])
-  quotations Quotation[]
   customers  Customer[]
+  saleQuotations SaleQuotation[]
 
   @@index([smanName], map: "idx_salesman_name")
   @@index([smanGroupId], map: "idx_salesman_group")

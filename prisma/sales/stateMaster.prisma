@@ -17,7 +17,6 @@ model StateMaster {
 
   // Relations
   cities        CityMaster[]
-  quotations    Quotation[]
 
   @@index([stmIsActive], name: "idx_stm_active")
   @@map("state_master")

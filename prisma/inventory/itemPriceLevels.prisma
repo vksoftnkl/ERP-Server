@@ -12,7 +12,8 @@ model ItemPriceLevel {
   iplModifiedOn DateTime @default(now()) @db.Timestamptz(6) @map("ipl_modified_on")
   iplModifiedBy String   @map("ipl_modified_by")
   customers     Customer[] @relation("CustomerPriceLevel")
-  quotations    Quotation[]
+  saleQuotations     SaleQuotation[]
+  saleQuotationItems SaleQuotationItem[]
   @@map("item_price_levels")
   @@schema("inventory")
 }
