@@ -202,8 +202,6 @@ model AccLedgerMaster {
   voucherHeaderParties     AccVoucherHeader[]
   accountingEntries        AccVoucher[]           @relation("AccVoucherLedger")
   oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
-  tenderLedgerEntries      AccVoucherTender[]     @relation("VoucherTenderTenderLedger")
-  voucherLedgerTenders     AccVoucherTender[]     @relation("VoucherTenderVoucherLedger")
   quotationCustomers       Quotation[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
@@ -236,31 +234,27 @@ model AccountTenderMaster {
   acctndRemarks         String?                                                            @map("acc_tnd_tnd_remarks")
   acctndEditSurcharge   Boolean   @default(false)                                         @map("acc_tnd_tnd_edit_surcharge")
   acctndEditLedger      Boolean   @default(false)                                         @map("acc_tnd_tnd_edit_ledger")
-
   // Audit
   acctndSyncDate        DateTime? @db.Timestamptz                                         @map("acc_tnd_tnd_sync_date")
   acctndCreatedOn       DateTime  @default(now()) @db.Timestamptz                         @map("acc_tnd_tnd_created_on")
   acctndCreatedBy       String?   @db.VarChar(100)                                        @map("acc_tnd_tnd_created_by")
   acctndModifiedOn      DateTime  @default(now()) @db.Timestamptz                         @map("acc_tnd_tnd_modified_on")
   acctndModifiedBy      String?   @db.VarChar(100)                                        @map("acc_tnd_tnd_modified_by")
-
   // Relations
   tenderType  AccountTenderTypes @relation(fields: [acctndTypeId], references: [accttTypeId])
   ledger      AccLedgerMaster    @relation(fields: [acctndLedgerId], references: [ledId])
-  voucherTenders AccVoucherTender[]
-
   @@index([acctndTypeId],          name: "idx_tnd_master_type")
   @@index([acctndLedgerId],        name: "idx_tnd_master_ledger")
   @@index([acctndDisplayPosition], name: "idx_tnd_master_position")
-  @@map("account_tender_master")
+  @@map("acc_tender_master")
   @@schema("accounts")
 }
 
 // ----- prisma/accounts/AccountTenderTypes.prisma -----
 model AccountTenderTypes {
-  accttTypeId         BigInt    @id @default(autoincrement())          @map("acc_ttm_type_id")
-  accttTypeName       String                                           @map("acc_ttm_type_name")
-  accttTypeShortName  String                                           @map("acc_ttm_type_short_name")
+  accttTypeId         BigInt    @id @default(autoincrement())         @map("acc_ttm_type_id")
+  accttTypeName       String                                          @map("acc_ttm_type_name")
+  accttTypeShortName  String                                          @map("acc_ttm_type_short_name")
   accttTypeIsActive   Boolean   @default(true)                        @map("acc_ttm_type_is_active")  // fixed: was acctTypeIsActive
   accttTypeIsDeleted  Boolean   @default(false)                       @map("acc_ttm_type_is_deleted")
   accttTypeSyncDate   DateTime? @db.Timestamptz                       @map("acc_ttm_type_sync_date")
@@ -268,13 +262,10 @@ model AccountTenderTypes {
   accttTypeCreatedBy  String?   @db.VarChar(100)                      @map("acc_ttm_type_created_by")
   accttTypeModifiedOn DateTime  @default(now()) @db.Timestamptz       @map("acc_ttm_type_modified_on")
   accttTypeModifiedBy String?   @db.VarChar(100)                      @map("acc_ttm_type_modified_by")
-
   // Relations
   accttTenders AccountTenderMaster[]  // fixed: was TenderMaster[]
-  voucherTenders AccVoucherTender[]
-
   @@index([accttTypeIsActive], name: "idx_acc_ttm_type_is_active")
-  @@map("tender_type")
+  @@map("acc_tender_types")
   @@schema("accounts")
 }
 
@@ -1128,7 +1119,6 @@ model AccVoucherHeader {
   voucherDocDetails      AccVoucherDocDetail[]
   voucherDocRegisters    AccVoucherDocRegister[]
   vouchers               AccVoucher[]
-  voucherTenders         AccVoucherTender[]
   openingStockHeaders    OpeningStockHeader[] @relation("OpeningStockHeaderVoucher")
   openingStockDetails    OpeningStockDetail[] @relation("OpeningStockDetailVoucher")
 
@@ -1261,105 +1251,6 @@ model AccVoucherSeq {
   @@schema("accounts")
 }
 
-// ----- prisma/accounts/AccountVoucherTender.prisma -----
-enum TenderTraType {
-  R
-  P
-  @@schema("accounts")
-}
-
-model AccVoucherTender {
-  // Primary
-  vtdId                String           @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("vtd_id")
-
-  // Links
-  vtdVoucherId         String           @db.Uuid @map("vtd_voucher_id")
-  vtdVoucherLineId     String?          @db.Uuid @map("vtd_voucher_line_id")
-  vtdRowNo             Int              @map("vtd_row_no")
-
-  // Multi-branch snapshot
-  vtdAccYear           String           @db.VarChar(9) @map("vtd_acc_year")
-  vtdCompanyId         String           @db.Uuid @map("vtd_company_id")
-  vtdBranchId          String           @db.Uuid @map("vtd_branch_id")
-
-  // Voucher snapshot
-  vtdVoucherTypeId     Int              @map("vtd_voucher_type_id")
-  vtdVoucherNo         BigInt           @map("vtd_voucher_no")
-  vtdVoucherDate       DateTime         @db.Date @map("vtd_voucher_date")
-  vtdVoucherRefno      String           @db.VarChar(50) @map("vtd_voucher_refno")
-  vtdVoucherLedgerId   String           @db.Uuid @map("vtd_voucher_ledger_id")
-
-  // Session / ownership
-  vtdSessionId         String?          @db.Uuid @map("vtd_session_id")
-  vtdUserId            String           @db.Uuid @map("vtd_user_id")
-  vtdCounterId         String?          @db.VarChar(30) @map("vtd_counter_id")
-
-  // Tender classification
-  vtdTraType           TenderTraType    @map("vtd_tra_type")
-  vtdTenderTypeId      BigInt           @map("vtd_tender_type_id")
-  vtdTenderId          String           @db.Uuid @map("vtd_tender_id")
-  vtdTenderLedgerId    String           @db.Uuid @map("vtd_tender_ledger_id")
-
-  // Amounts
-  vtdTenderAmount      Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_tender_amount")
-  vtdSurchargePercent  Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_surcharge_percent")
-  vtdSurchargeAmount   Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_surcharge_amount")
-  vtdTotalAmount       Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_total_amount")
-  vtdRefundAmount      Decimal          @default(0) @db.Decimal(15, 4) @map("vtd_refund_amount")
-  vtdIsChangeReturn    Boolean          @default(false) @map("vtd_is_change_return")
-
-  // Card / digital trace details
-  vtdCardBank          String?          @db.VarChar(150) @map("vtd_card_bank")
-  vtdCardNoMasked      String?          @db.VarChar(30) @map("vtd_card_no_masked")
-  vtdCardExpiry        DateTime?        @db.Date @map("vtd_card_expiry")
-  vtdCardRefNo         String?          @db.VarChar(100) @map("vtd_card_ref_no")
-  vtdAuthCode          String?          @db.VarChar(100) @map("vtd_auth_code")
-  vtdRrnNo             String?          @db.VarChar(100) @map("vtd_rrn_no")
-  vtdUpiId             String?          @db.VarChar(100) @map("vtd_upi_id")
-  vtdTerminalId        String?          @db.VarChar(50) @map("vtd_terminal_id")
-
-  // Cheque details
-  vtdChqBank           String?          @db.VarChar(150) @map("vtd_chq_bank")
-  vtdChqNo             String?          @db.VarChar(30) @map("vtd_chq_no")
-  vtdChqDate           DateTime?        @db.Date @map("vtd_chq_date")
-  vtdChqPayeeName      String?          @db.VarChar(150) @map("vtd_chq_payee_name")
-  vtdChqPrintStatus    String?          @db.VarChar(1) @map("vtd_chq_print_status")
-  vtdChqAccountPayee   Boolean          @default(false) @map("vtd_chq_account_payee")
-
-  // Approval / remarks
-  vtdIsApproved        Boolean          @default(false) @map("vtd_is_approved")
-  vtdApprovedOn        DateTime?        @db.Timestamptz(6) @map("vtd_approved_on")
-  vtdApprovedBy        String?          @db.Uuid @map("vtd_approved_by")
-  vtdNotes             String?          @map("vtd_notes")
-
-  // Status
-  vtdIsActive          Boolean          @default(true) @map("vtd_is_active")
-  vtdIsDeleted         Boolean          @default(false) @map("vtd_is_deleted")
-
-  // Audit
-  vtdSyncDate          DateTime?        @db.Timestamptz(6) @map("vtd_sync_date")
-  vtdCreatedOn         DateTime         @default(now()) @db.Timestamptz(6) @map("vtd_created_on")
-  vtdCreatedBy         String?          @db.Uuid @map("vtd_created_by")
-  vtdUpdatedOn         DateTime?        @db.Timestamptz(6) @map("vtd_updated_on")
-  vtdUpdatedBy         String?          @db.Uuid @map("vtd_updated_by")
-
-  // Relations
-  company              Company          @relation(fields: [vtdCompanyId], references: [compId], map: "fk_acc_voucher_tenders_company")
-  branch               BranchMaster     @relation(fields: [vtdBranchId], references: [brId], map: "fk_acc_voucher_tenders_branch")
-  tenderType           AccountTenderTypes @relation(fields: [vtdTenderTypeId], references: [accttTypeId], map: "fk_acc_voucher_tenders_type")
-  tender               AccountTenderMaster @relation(fields: [vtdTenderId], references: [acctndId], map: "fk_acc_voucher_tenders_tender")
-  tenderLedger         AccLedgerMaster  @relation("VoucherTenderTenderLedger", fields: [vtdTenderLedgerId], references: [ledId], map: "fk_acc_voucher_tenders_tender_ledger")
-  voucherLedger        AccLedgerMaster  @relation("VoucherTenderVoucherLedger", fields: [vtdVoucherLedgerId], references: [ledId], map: "fk_acc_voucher_tenders_voucher_ledger")
-  voucherHeader        AccVoucherHeader @relation(fields: [vtdVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_tenders_header")
-  voucherType          AccVoucherType   @relation(fields: [vtdVoucherTypeId], references: [vchrTypeId], map: "fk_acc_voucher_tenders_voucher_type")
-
-  @@map("acc_voucher_tenders")
-  @@schema("accounts")
-  // Partial indexes idx_acc_voucher_tenders_voucher, idx_acc_voucher_tenders_type,
-  // and idx_acc_voucher_tenders_tender WHERE vtd_is_deleted = false
-  // are not expressible in Prisma schema.
-}
-
 // ----- prisma/accounts/AccountVoucherType.prisma -----
 enum VoucherCategory {
   ACCOUNTING
@@ -1432,7 +1323,6 @@ model AccVoucherType {
   voucherHeaders             AccVoucherHeader[]
   voucherSequences           AccVoucherSeq[]
   vouchers                   AccVoucher[]
-  voucherTenders             AccVoucherTender[]
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")
@@ -3493,7 +3383,6 @@ model BranchMaster {
   voucherHeaders        AccVoucherHeader[]
   voucherSequences      AccVoucherSeq[]
   vouchers              AccVoucher[]
-  voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderBranch")
@@ -3612,7 +3501,6 @@ model Company {
   voucherHeaders        AccVoucherHeader[]
   voucherSequences      AccVoucherSeq[]
   vouchers              AccVoucher[]
-  voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
@@ -3918,47 +3806,29 @@ model SupplierGroup {
 
 // ----- prisma/sales/areaMaster.prisma -----
 model AreaMaster {
-  armId             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("arm_id")
-  armName           String                                                      @map("arm_name")
-  armAlias          String?                                                     @map("arm_alias")
+  armId             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("arm_id")
+  armName           String                                                     @map("arm_name")
+  armAlias          String?                                                    @map("arm_alias")
   armShort          String?   @db.VarChar(50)                                  @map("arm_short")
-  armCityId         String    @db.Uuid                                          @map("arm_city_id")
+  armCityId         String    @db.Uuid                                         @map("arm_city_id")
   armSort           Decimal   @default(0.0) @db.Decimal                        @map("arm_sort")
-  armDistanceKm     Int?      @default(0)                                       @map("arm_distance_km")
-  armCollectionDays Int[]                                                       @map("arm_collection_days")
-  armDescription    String?   @db.Text                                 @map("arm_description")
-  armIsActive       Boolean   @default(true)                                    @map("arm_is_active")
-  armIsDeleted      Boolean   @default(false)                                   @map("arm_is_deleted")
+  armDistanceKm     Int?      @default(0)                                      @map("arm_distance_km")
+  armCollectionDays Int[]                                                      @map("arm_collection_days")
+  armDescription    String?   @db.Text                                         @map("arm_description")
+  armIsActive       Boolean   @default(true)                                   @map("arm_is_active")
+  armIsDeleted      Boolean   @default(false)                                  @map("arm_is_deleted")
   armSyncDate       DateTime? @db.Timestamptz                                  @map("arm_sync_date")
   armCreatedOn      DateTime  @default(now()) @db.Timestamptz                  @map("arm_created_on")
   armCreatedBy      String?   @db.VarChar(100)                                 @map("arm_created_by")
   armModifiedOn     DateTime  @default(now()) @db.Timestamptz                  @map("arm_modified_on")
   armModifiedBy     String?   @db.VarChar(100)                                 @map("arm_modified_by")
-
   // Relations
   city              CityMaster @relation(fields: [armCityId], references: [ctmId])
   customers         Customer[]
-
+  quotations        Quotation[]
   @@index([armCityId],   name: "idx_arm_city")
   @@index([armIsActive], name: "idx_arm_active")
   @@map("area_master")
-  @@schema("sales")
-}
-
-// ----- prisma/sales/beat.prisma -----
-model Beat {
-  beatId         Int         @id @default(autoincrement()) @map("beat_id")
-  beatName       String      @unique @map("beat_name") @db.VarChar(80)
-  beatSiteId     Int?        @map("beat_site_id")
-  beatIsActive   Boolean     @default(true) @map("beat_is_active")
-  beatIsDeleted  Boolean     @default(false) @map("beat_is_deleted")
-  beatCreatedOn  DateTime    @default(now()) @db.Timestamptz(6) @map("beat_created_on")
-  beatCreatedBy  String?     @db.Uuid @map("beat_created_by")
-  beatUpdatedOn  DateTime?   @db.Timestamptz(6) @map("beat_updated_on")
-  beatUpdatedBy  String?     @db.Uuid @map("beat_updated_by")
-  beatSyncDate   DateTime?   @db.Timestamptz(6) @map("beat_sync_date")
-  quotations     Quotation[]
-  @@map("beat_master")
   @@schema("sales")
 }
 
@@ -4280,15 +4150,13 @@ model LoyaltySchemePoint {
 
 // ----- prisma/sales/quotation.prisma -----
 model Quotation {
-  quotationId   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("quotation_id")
-  quotationCompanyId     String   @db.Uuid @map("quotation_company_id")
-  quotationSiteId        String   @db.Uuid @map("quotation_site_id")
-  quotationFinancialYear String   @map("quotation_financial_year") @db.VarChar(9)
-
-  quotationNo   String    @map("quotation_no") @db.VarChar(30)
-  quotationDate DateTime  @default(now()) @map("quotation_date")
-  quotationExpiryDate    DateTime? @map("quotation_expiry_date") @db.Date
-
+  quotationId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("quotation_id")
+  quotationCompanyId        String   @db.Uuid @map("quotation_company_id")
+  quotationSiteId           String   @db.Uuid @map("quotation_site_id")
+  quotationFinancialYear    String   @map("quotation_financial_year") @db.VarChar(9)
+  quotationNo               String     @map("quotation_no") @db.VarChar(30)
+  quotationDate             DateTime    @default(now()) @map("quotation_date")
+  quotationExpiryDate       DateTime? @map("quotation_expiry_date") @db.Date
   quotationCustomerLedgerId String?          @db.Uuid @map("quotation_customer_ledger_id")
   quotationCustomer         AccLedgerMaster? @relation(fields: [quotationCustomerLedgerId], references: [ledId])
   quotationCustomerName     String  @map("quotation_customer_name") @db.VarChar(150)
@@ -4297,20 +4165,17 @@ model Quotation {
   quotationStateId          String?      @db.Uuid @map("quotation_state_id")
   quotationState            StateMaster? @relation(fields: [quotationStateId], references: [stmId])
   quotationGstNo            String? @map("quotation_gst_no") @db.VarChar(15)
-
-  quotationBeatId       Int?       @map("quotation_beat_id")
-  quotationBeat         Beat?      @relation(fields: [quotationBeatId], references: [beatId])
-  quotationSalesmanId   String?    @db.Uuid @map("quotation_salesman_id")
-  quotationSalesman     Salesman?  @relation(fields: [quotationSalesmanId], references: [smanId])
-  quotationPriceLevelId Int            @map("quotation_price_level_id")
-  quotationPriceLevel   ItemPriceLevel @relation(fields: [quotationPriceLevelId], references: [iplId])
-
-  quotationFreightFlag   Boolean @default(false) @map("quotation_freight_flag")
-  quotationLoadingFlag   Boolean @default(false) @map("quotation_loading_flag")
-  quotationUnloadingFlag Boolean @default(false) @map("quotation_unloading_flag")
-  quotationPromotionFlag Boolean @default(false) @map("quotation_promotion_flag")
-  quotationLoyaltyFlag   Boolean @default(false) @map("quotation_loyalty_flag")
-
+  quotationAreaId           String?       @db.Uuid @map("quotation_area_id")
+  quotationArea            AreaMaster?      @relation(fields: [quotationAreaId], references: [armId])
+  quotationSalesmanId      String?    @db.Uuid @map("quotation_salesman_id")
+  quotationSalesman        Salesman?  @relation(fields: [quotationSalesmanId], references: [smanId])
+  quotationPriceLevelId    Int            @map("quotation_price_level_id")
+  quotationPriceLevel      ItemPriceLevel @relation(fields: [quotationPriceLevelId], references: [iplId])
+  quotationFreightFlag     Boolean @default(false) @map("quotation_freight_flag")
+  quotationLoadingFlag     Boolean @default(false) @map("quotation_loading_flag")
+  quotationUnloadingFlag   Boolean @default(false) @map("quotation_unloading_flag")
+  quotationPromotionFlag   Boolean @default(false) @map("quotation_promotion_flag")
+  quotationLoyaltyFlag     Boolean @default(false) @map("quotation_loyalty_flag")
   quotationSubTotal        Decimal @default(0) @map("quotation_sub_total") @db.Decimal(18, 2)
   quotationTotalTax        Decimal @default(0) @map("quotation_total_tax") @db.Decimal(18, 2)
   quotationFreightAmount   Decimal @default(0) @map("quotation_freight_amount") @db.Decimal(18, 2)
@@ -4320,21 +4185,17 @@ model Quotation {
   quotationCdPercent       Decimal @default(0) @map("quotation_cd_percent") @db.Decimal(6, 3)
   quotationCdAmount        Decimal @default(0) @map("quotation_cd_amount") @db.Decimal(18, 2)
   quotationGrandTotal      Decimal @default(0) @map("quotation_grand_total") @db.Decimal(18, 2)
-
-  quotationRemarks String? @db.VarChar(500) @map("quotation_remarks")
-
-  quotationStatus        String  @default("SAVED") @db.VarChar(12) @map("quotation_status")
-  quotationConvertedSoId String? @db.Uuid @map("quotation_converted_so_id")
-  quotationIsDeleted     Boolean @default(false) @map("quotation_is_deleted")
-  quotationIsActive      Boolean @default(true) @map("quotation_is_active")
-  quotationSyncDate      DateTime? @db.Timestamptz @map("quotation_sync_date")
-  quotationCreatedBy     String?   @db.Text @map("quotation_created_by")
-  quotationCreatedAt     DateTime  @default(now()) @map("quotation_created_at")
-  quotationModifiedBy    String?   @db.Text  @map("quotation_modified_by")
-  quotationModifiedAt    DateTime? @db.Timestamptz @map("quotation_modified_at")
-
-  lines QuotationDetail[]
-
+  quotationRemarks         String? @db.VarChar(500) @map("quotation_remarks")
+  quotationStatus          String  @default("SAVED") @db.VarChar(12) @map("quotation_status")
+  quotationConvertedSoId   String? @db.Uuid @map("quotation_converted_so_id")
+  quotationIsDeleted       Boolean @default(false) @map("quotation_is_deleted")
+  quotationIsActive        Boolean @default(true) @map("quotation_is_active")
+  quotationSyncDate        DateTime? @db.Timestamptz @map("quotation_sync_date")
+  quotationCreatedBy       String?   @db.Text @map("quotation_created_by")
+  quotationCreatedAt       DateTime  @default(now()) @map("quotation_created_at")
+  quotationModifiedBy      String?   @db.Text  @map("quotation_modified_by")
+  quotationModifiedAt      DateTime? @db.Timestamptz @map("quotation_modified_at")
+  lines                    QuotationDetail[]
   @@unique([quotationCompanyId, quotationSiteId, quotationFinancialYear, quotationNo], name: "uq_quotation_no")
   @@index([quotationCustomerLedgerId])
   @@index([quotationSiteId, quotationDate])
@@ -4350,21 +4211,17 @@ model QuotationDetail {
   quotationId String    @db.Uuid @map("quotation_id")
   quotation   Quotation @relation(fields: [quotationId], references: [quotationId], onDelete: Cascade)
   quotationDetailLineNo      Int       @map("quotation_detail_line_no")
-
   quotationDetailItemId        String     @db.Uuid @map("item_id")
   quotationDetailItem          ItemMaster @relation(fields: [quotationDetailItemId], references: [itemId])
   quotationDetailDescription   String   @db.VarChar(200) @map("quotation_detail_description")
   quotationDetailStockSnapshot Decimal? @map("stock_snapshot") @db.Decimal(18, 3)
-
   quotationDetailQty   Decimal @db.Decimal(18, 3) @map("quotation_detail_qty")
   quotationDetailUomId String  @db.Uuid @map("uom_id")
   quotationDetailUom   Unit    @relation(fields: [quotationDetailUomId], references: [unit_id])
   quotationDetailRate  Decimal @db.Decimal(18, 4) @map("quotation_detail_rate")
-
   quotationDetailDiscountPercent Decimal @default(0) @map("quotation_detail_discount_percent") @db.Decimal(6, 3)
   quotationDetailDiscountAmount  Decimal @default(0) @map("quotation_detail_discount_amount") @db.Decimal(18, 2)
   quotationDetailTaxableValue    Decimal @map("quotation_detail_taxable_value") @db.Decimal(18, 2)
-
   quotationDetailTaxCodeId  String?        @db.Uuid @map("quotation_detail_tax_code_id")
   quotationDetailTaxCode    ItemTaxMaster? @relation(fields: [quotationDetailTaxCodeId], references: [taxId])
   quotationDetailGstPercent Decimal  @default(0) @map("quotation_detail_gst_percent") @db.Decimal(6, 3)
@@ -4372,9 +4229,7 @@ model QuotationDetail {
   quotationDetailSgstAmount Decimal  @default(0) @map("quotation_detail_sgst_amount") @db.Decimal(18, 2)
   quotationDetailIgstAmount Decimal  @default(0) @map("quotation_detail_igst_amount") @db.Decimal(18, 2)
   quotationDetailCessAmount Decimal  @default(0) @map("quotation_detail_cess_amount") @db.Decimal(18, 2)
-
   quotationDetailLineTotal Decimal @map("quotation_detail_line_total") @db.Decimal(18, 2)
-
   @@unique([quotationId, quotationDetailLineNo], name: "uq_quotation_line")
   @@index([quotationDetailItemId])
   @@map("quotation_detail")

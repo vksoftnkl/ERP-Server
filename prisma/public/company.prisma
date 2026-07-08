@@ -101,7 +101,6 @@ model Company {
   voucherHeaders        AccVoucherHeader[]
   voucherSequences      AccVoucherSeq[]
   vouchers              AccVoucher[]
-  voucherTenders        AccVoucherTender[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")

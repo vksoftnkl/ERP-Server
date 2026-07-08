@@ -1,8 +1,7 @@
-
 model AccountTenderTypes {
-  accttTypeId         BigInt    @id @default(autoincrement())          @map("acc_ttm_type_id")
-  accttTypeName       String                                           @map("acc_ttm_type_name")
-  accttTypeShortName  String                                           @map("acc_ttm_type_short_name")
+  accttTypeId         BigInt    @id @default(autoincrement())         @map("acc_ttm_type_id")
+  accttTypeName       String                                          @map("acc_ttm_type_name")
+  accttTypeShortName  String                                          @map("acc_ttm_type_short_name")
   accttTypeIsActive   Boolean   @default(true)                        @map("acc_ttm_type_is_active")  // fixed: was acctTypeIsActive
   accttTypeIsDeleted  Boolean   @default(false)                       @map("acc_ttm_type_is_deleted")
   accttTypeSyncDate   DateTime? @db.Timestamptz                       @map("acc_ttm_type_sync_date")
@@ -10,12 +9,9 @@ model AccountTenderTypes {
   accttTypeCreatedBy  String?   @db.VarChar(100)                      @map("acc_ttm_type_created_by")
   accttTypeModifiedOn DateTime  @default(now()) @db.Timestamptz       @map("acc_ttm_type_modified_on")
   accttTypeModifiedBy String?   @db.VarChar(100)                      @map("acc_ttm_type_modified_by")
-
   // Relations
   accttTenders AccountTenderMaster[]  // fixed: was TenderMaster[]
-  voucherTenders AccVoucherTender[]
-
   @@index([accttTypeIsActive], name: "idx_acc_ttm_type_is_active")
-  @@map("tender_type")
+  @@map("acc_tender_types")
   @@schema("accounts")
 }

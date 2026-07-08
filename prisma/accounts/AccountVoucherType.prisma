@@ -69,7 +69,6 @@ model AccVoucherType {
   voucherHeaders             AccVoucherHeader[]
   voucherSequences           AccVoucherSeq[]
   vouchers                   AccVoucher[]
-  voucherTenders             AccVoucherTender[]
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")

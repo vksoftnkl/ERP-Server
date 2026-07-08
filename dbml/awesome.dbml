@@ -133,14 +133,12 @@ Table acc_ledger_master {
   branches branch_master
   bankAccounts acc_ledger_bank_accounts [not null]
   shipAddrs acc_ship_addrs [not null]
-  tenders account_tender_master [not null]
+  tenders acc_tender_master [not null]
   voucherBillParties acc_voucher_bills [not null]
   voucherDocRegisterParties acc_voucher_doc_register [not null]
   voucherHeaderParties acc_voucher_header [not null]
   accountingEntries acc_vouchers [not null]
   oppositeAccountingEntries acc_vouchers [not null]
-  tenderLedgerEntries acc_voucher_tenders [not null]
-  voucherLedgerTenders acc_voucher_tenders [not null]
   quotationCustomers quotation_master [not null]
 
   indexes {
@@ -149,7 +147,7 @@ Table acc_ledger_master {
   }
 }
 
-Table account_tender_master {
+Table acc_tender_master {
   acctndId String [pk]
   acctndTypeId BigInt [not null]
   acctndName String [not null]
@@ -169,12 +167,11 @@ Table account_tender_master {
   acctndCreatedBy String
   acctndModifiedOn DateTime [default: `now()`, not null]
   acctndModifiedBy String
-  tenderType tender_type [not null]
+  tenderType acc_tender_types [not null]
   ledger acc_ledger_master [not null]
-  voucherTenders acc_voucher_tenders [not null]
 }
 
-Table tender_type {
+Table acc_tender_types {
   accttTypeId BigInt [pk, increment]
   accttTypeName String [not null]
   accttTypeShortName String [not null]
@@ -185,8 +182,7 @@ Table tender_type {
   accttTypeCreatedBy String
   accttTypeModifiedOn DateTime [default: `now()`, not null]
   accttTypeModifiedBy String
-  accttTenders account_tender_master [not null]
-  voucherTenders acc_voucher_tenders [not null]
+  accttTenders acc_tender_master [not null]
 }
 
 Table acc_voucher_bills {
@@ -586,7 +582,6 @@ Table acc_voucher_header {
   voucherDocDetails acc_voucher_doc_detail [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   vouchers acc_vouchers [not null]
-  voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
 
@@ -663,67 +658,6 @@ Table acc_voucher_seq {
   }
 }
 
-Table acc_voucher_tenders {
-  vtdId String [pk]
-  vtdVoucherId String [not null]
-  vtdVoucherLineId String
-  vtdRowNo Int [not null]
-  vtdAccYear String [not null]
-  vtdCompanyId String [not null]
-  vtdBranchId String [not null]
-  vtdVoucherTypeId Int [not null]
-  vtdVoucherNo BigInt [not null]
-  vtdVoucherDate DateTime [not null]
-  vtdVoucherRefno String [not null]
-  vtdVoucherLedgerId String [not null]
-  vtdSessionId String
-  vtdUserId String [not null]
-  vtdCounterId String
-  vtdTraType TenderTraType [not null]
-  vtdTenderTypeId BigInt [not null]
-  vtdTenderId String [not null]
-  vtdTenderLedgerId String [not null]
-  vtdTenderAmount Decimal [not null, default: 0]
-  vtdSurchargePercent Decimal [not null, default: 0]
-  vtdSurchargeAmount Decimal [not null, default: 0]
-  vtdTotalAmount Decimal [not null, default: 0]
-  vtdRefundAmount Decimal [not null, default: 0]
-  vtdIsChangeReturn Boolean [not null, default: false]
-  vtdCardBank String
-  vtdCardNoMasked String
-  vtdCardExpiry DateTime
-  vtdCardRefNo String
-  vtdAuthCode String
-  vtdRrnNo String
-  vtdUpiId String
-  vtdTerminalId String
-  vtdChqBank String
-  vtdChqNo String
-  vtdChqDate DateTime
-  vtdChqPayeeName String
-  vtdChqPrintStatus String
-  vtdChqAccountPayee Boolean [not null, default: false]
-  vtdIsApproved Boolean [not null, default: false]
-  vtdApprovedOn DateTime
-  vtdApprovedBy String
-  vtdNotes String
-  vtdIsActive Boolean [not null, default: true]
-  vtdIsDeleted Boolean [not null, default: false]
-  vtdSyncDate DateTime
-  vtdCreatedOn DateTime [default: `now()`, not null]
-  vtdCreatedBy String
-  vtdUpdatedOn DateTime
-  vtdUpdatedBy String
-  company companys [not null]
-  branch branch_master [not null]
-  tenderType tender_type [not null]
-  tender account_tender_master [not null]
-  tenderLedger acc_ledger_master [not null]
-  voucherLedger acc_ledger_master [not null]
-  voucherHeader acc_voucher_header [not null]
-  voucherType acc_voucher_types [not null]
-}
-
 Table acc_voucher_types {
   vchrTypeId Int [pk, increment]
   vchrTypeCode String [unique, not null]
@@ -758,7 +692,6 @@ Table acc_voucher_types {
   voucherHeaders acc_voucher_header [not null]
   voucherSequences acc_voucher_seq [not null]
   vouchers acc_vouchers [not null]
-  voucherTenders acc_voucher_tenders [not null]
 }
 
 Table employee_departments {
@@ -2134,7 +2067,6 @@ Table branch_master {
   voucherHeaders acc_voucher_header [not null]
   voucherSequences acc_voucher_seq [not null]
   vouchers acc_vouchers [not null]
-  voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
   physicalStockHeaders physical_stock_header [not null]
@@ -2237,7 +2169,6 @@ Table companys {
   voucherHeaders acc_voucher_header [not null]
   voucherSequences acc_voucher_seq [not null]
   vouchers acc_vouchers [not null]
-  voucherTenders acc_voucher_tenders [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
   physicalStockHeaders physical_stock_header [not null]
@@ -2454,19 +2385,6 @@ Table area_master {
   armModifiedBy String
   city city_master [not null]
   customers customers [not null]
-}
-
-Table beat_master {
-  beatId Int [pk, increment]
-  beatName String [unique, not null]
-  beatSiteId Int
-  beatIsActive Boolean [not null, default: true]
-  beatIsDeleted Boolean [not null, default: false]
-  beatCreatedOn DateTime [default: `now()`, not null]
-  beatCreatedBy String
-  beatUpdatedOn DateTime
-  beatUpdatedBy String
-  beatSyncDate DateTime
   quotations quotation_master [not null]
 }
 
@@ -2724,8 +2642,8 @@ Table quotation_master {
   quotationStateId String
   quotationState state_master
   quotationGstNo String
-  quotationBeatId Int
-  quotationBeat beat_master
+  quotationAreaId String
+  quotationArea area_master
   quotationSalesmanId String
   quotationSalesman salesman_master
   quotationPriceLevelId Int [not null]
@@ -3235,11 +3153,6 @@ Enum DrCrType {
   CR
 }
 
-Enum TenderTraType {
-  R
-  P
-}
-
 Enum VoucherCategory {
   ACCOUNTING
   INVENTORY
@@ -3295,9 +3208,9 @@ Ref: acc_ledger_master.ledGroupId > account_groups.accGroupId [delete: Restrict]
 
 Ref: acc_ledger_master.ledBranchId > branch_master.brId [delete: Restrict]
 
-Ref: account_tender_master.acctndTypeId > tender_type.accttTypeId
+Ref: acc_tender_master.acctndTypeId > acc_tender_types.accttTypeId
 
-Ref: account_tender_master.acctndLedgerId > acc_ledger_master.ledId
+Ref: acc_tender_master.acctndLedgerId > acc_ledger_master.ledId
 
 Ref: acc_voucher_bills.avbdVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
 
@@ -3372,22 +3285,6 @@ Ref: acc_voucher_seq.vchrTypeId > acc_voucher_types.vchrTypeId
 Ref: acc_voucher_seq.companyId > companys.compId
 
 Ref: acc_voucher_seq.branchId > branch_master.brId
-
-Ref: acc_voucher_tenders.vtdCompanyId > companys.compId
-
-Ref: acc_voucher_tenders.vtdBranchId > branch_master.brId
-
-Ref: acc_voucher_tenders.vtdTenderTypeId > tender_type.accttTypeId
-
-Ref: acc_voucher_tenders.vtdTenderId > account_tender_master.acctndId
-
-Ref: acc_voucher_tenders.vtdTenderLedgerId > acc_ledger_master.ledId
-
-Ref: acc_voucher_tenders.vtdVoucherLedgerId > acc_ledger_master.ledId
-
-Ref: acc_voucher_tenders.vtdVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
-
-Ref: acc_voucher_tenders.vtdVoucherTypeId > acc_voucher_types.vchrTypeId
 
 Ref: emp_master.empCompanyId > companys.compId [delete: Restrict]
 
@@ -3553,7 +3450,7 @@ Ref: quotation_master.quotationCustomerLedgerId > acc_ledger_master.ledId
 
 Ref: quotation_master.quotationStateId > state_master.stmId
 
-Ref: quotation_master.quotationBeatId > beat_master.beatId
+Ref: quotation_master.quotationAreaId > area_master.armId
 
 Ref: quotation_master.quotationSalesmanId > salesman_master.smanId
 

@@ -651,7 +651,7 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
   ],
   [
     'Tender Type Master',
-    buildAuditSql('accounts.tender_type', [
+    buildAuditSql('accounts.acc_tender_types', [
       ['acc_ttm_type_name', 'Tender Type Name'],
       ['acc_ttm_type_short_name', 'Tender Type Short Name'],
       ['acc_ttm_type_is_active', 'Is Active'],
@@ -665,7 +665,7 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
   ],
   [
     'Tender Master',
-    buildAuditSql('accounts.account_tender_master', [
+    buildAuditSql('accounts.acc_tender_master', [
       ['acc_tnd_type_id', 'Tender Type ID'],
       ['acc_tnd_tnd_name', 'Tender Name'],
       ['acc_tnd_tnd_short_name', 'Tender Short Name'],

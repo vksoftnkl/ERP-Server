@@ -407,7 +407,7 @@ describe('MasterLookupService', () => {
       {
         dropdownId: 11,
         dropdownName: 'GSP Service Master',
-        dropdownSql: 'SELECT ttm_type_id, ttm_type_name FROM accounts.tender_type',
+        dropdownSql: 'SELECT ttm_type_id, ttm_type_name FROM accounts.acc_tender_types',
         dropdownSqlRegional: null,
         dropdownSortColumn: 'ttm_type_name',
         dropdownSortOrder: 'ASC',

@@ -1,25 +1,24 @@
 model AreaMaster {
-  armId             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("arm_id")
-  armName           String                                                      @map("arm_name")
-  armAlias          String?                                                     @map("arm_alias")
+  armId             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("arm_id")
+  armName           String                                                     @map("arm_name")
+  armAlias          String?                                                    @map("arm_alias")
   armShort          String?   @db.VarChar(50)                                  @map("arm_short")
-  armCityId         String    @db.Uuid                                          @map("arm_city_id")
+  armCityId         String    @db.Uuid                                         @map("arm_city_id")
   armSort           Decimal   @default(0.0) @db.Decimal                        @map("arm_sort")
-  armDistanceKm     Int?      @default(0)                                       @map("arm_distance_km")
-  armCollectionDays Int[]                                                       @map("arm_collection_days")
-  armDescription    String?   @db.Text                                 @map("arm_description")
-  armIsActive       Boolean   @default(true)                                    @map("arm_is_active")
-  armIsDeleted      Boolean   @default(false)                                   @map("arm_is_deleted")
+  armDistanceKm     Int?      @default(0)                                      @map("arm_distance_km")
+  armCollectionDays Int[]                                                      @map("arm_collection_days")
+  armDescription    String?   @db.Text                                         @map("arm_description")
+  armIsActive       Boolean   @default(true)                                   @map("arm_is_active")
+  armIsDeleted      Boolean   @default(false)                                  @map("arm_is_deleted")
   armSyncDate       DateTime? @db.Timestamptz                                  @map("arm_sync_date")
   armCreatedOn      DateTime  @default(now()) @db.Timestamptz                  @map("arm_created_on")
   armCreatedBy      String?   @db.VarChar(100)                                 @map("arm_created_by")
   armModifiedOn     DateTime  @default(now()) @db.Timestamptz                  @map("arm_modified_on")
   armModifiedBy     String?   @db.VarChar(100)                                 @map("arm_modified_by")
-
   // Relations
   city              CityMaster @relation(fields: [armCityId], references: [ctmId])
   customers         Customer[]
-
+  quotations        Quotation[]
   @@index([armCityId],   name: "idx_arm_city")
   @@index([armIsActive], name: "idx_arm_active")
   @@map("area_master")
