@@ -3065,10 +3065,10 @@ model ItemUnitConversion {
   iucCreatedBy       String?   @db.Uuid @map("iuc_created_by")
   iucUpdatedOn       DateTime? @db.Timestamptz(6) @map("iuc_updated_on")
   iucUpdatedBy       String?   @db.Uuid @map("iuc_updated_by")
-
   item               ItemMaster @relation("ItemUnitConversions", fields: [iucItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_item_id")
   unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
+  saleQuotationItem  SaleQuotationItem[] @relation("SaleQuotationItemUnitConversion")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")
@@ -4013,6 +4013,29 @@ model CustGroup {
   @@schema("sales")
 }
 
+// ----- prisma/sales/freightCharges.prisma -----
+model FreightCharges {
+  frId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("fr_id")
+  frFromKm          Int?      @default(0)                                       @map("fr_from_km")
+  frToKm            Int?      @default(0)                                       @map("fr_to_km")
+  frFreightChrg     Decimal?  @default(0.0) @db.Decimal                         @map("fr_freight_chrg")
+  frFromWeight      Decimal?  @default(0.0) @db.Decimal                         @map("fr_from_weight")
+  frToWeight        Decimal?  @default(0.0) @db.Decimal                         @map("fr_to_weight")
+  frLoadChrg        Decimal?  @default(0.0) @db.Decimal                         @map("fr_load_chrg")
+  frUnloadChrg      Decimal?  @default(0.0) @db.Decimal                         @map("fr_unload_chrg")
+  frIsActive        Boolean   @default(true)                                    @map("fr_is_active")
+  frIsDeleted       Boolean   @default(false)                                   @map("fr_is_deleted")
+  frSyncDate        DateTime? @db.Timestamptz                                   @map("fr_sync_date")
+  frCreatedOn       DateTime  @default(now()) @db.Timestamptz                   @map("fr_created_on")
+  frCreatedBy       String?   @db.VarChar(100)                                  @map("fr_created_by")
+  frModifiedOn      DateTime  @default(now()) @db.Timestamptz                   @map("fr_modified_on")
+  frModifiedBy      String?   @db.VarChar(100)                                  @map("fr_modified_by")
+
+  @@index([frIsActive], name: "idx_fr_active")
+  @@map("freight_charges")
+  @@schema("sales")
+}
+
 // ----- prisma/sales/loyaltyScheme.prisma -----
 model LoyaltyScheme {
   lsId                           String              @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ls_id")
@@ -4338,7 +4361,7 @@ model SaleQuotationItem {
   sqiSrcUnitId       String?   @db.Uuid @map("sqi_src_unit_id")
   sqiSrcDocRefno     String?   @db.VarChar(100) @map("sqi_src_doc_refno")
   sqiSrcItemQty      Decimal?  @db.Decimal(15, 3) @map("sqi_src_item_qty")
-
+  sqiItemUnitId      String?   @db.Uuid @map("sqi_item_unit_id")
   sqiLineNo          Int       @map("sqi_line_no")
   sqiItemId          String    @db.Uuid @map("sqi_item_id")
   sqiItemCode        String?   @db.VarChar(50) @map("sqi_item_code")
@@ -4445,7 +4468,7 @@ model SaleQuotationItem {
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
   unit       Unit           @relation(fields: [sqiUnitId], references: [unit_id], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_unit")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
-
+  itemUnitConversion ItemUnitConversion? @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
   // ux_sqi_quote_line (unique line no per quote among non-deleted rows) is a
   // DB-only partial index (migration 20260708120000). Prisma cannot express its
   // WHERE predicate; declaring it here makes `migrate dev` regenerate it

@@ -1832,6 +1832,7 @@ Table item_unit_conversion {
   item item_master [not null]
   unit item_unit_master [not null]
   baseUnit item_unit_master [not null]
+  saleQuotationItem sale_quotation_item [not null]
 }
 
 Table item_unit_master {
@@ -2515,6 +2516,24 @@ Table cust_groups {
   customers customers [not null]
 }
 
+Table freight_charges {
+  frId String [pk]
+  frFromKm Int [default: 0]
+  frToKm Int [default: 0]
+  frFreightChrg Decimal [default: 0]
+  frFromWeight Decimal [default: 0]
+  frToWeight Decimal [default: 0]
+  frLoadChrg Decimal [default: 0]
+  frUnloadChrg Decimal [default: 0]
+  frIsActive Boolean [not null, default: true]
+  frIsDeleted Boolean [not null, default: false]
+  frSyncDate DateTime
+  frCreatedOn DateTime [default: `now()`, not null]
+  frCreatedBy String
+  frModifiedOn DateTime [default: `now()`, not null]
+  frModifiedBy String
+}
+
 Table loyalty_sch_list {
   lsId String [pk]
   lsCode String
@@ -2759,6 +2778,7 @@ Table sale_quotation_item {
   sqiSrcUnitId String
   sqiSrcDocRefno String
   sqiSrcItemQty Decimal
+  sqiItemUnitId String
   sqiLineNo Int [not null]
   sqiItemId String [not null]
   sqiItemCode String
@@ -2846,6 +2866,7 @@ Table sale_quotation_item {
   item item_master [not null]
   unit item_unit_master [not null]
   priceLevel item_price_levels [not null]
+  itemUnitConversion item_unit_conversion
 }
 
 Table salesman_master {
@@ -3585,6 +3606,8 @@ Ref: sale_quotation_item.sqiItemId > item_master.itemId [delete: Restrict]
 Ref: sale_quotation_item.sqiUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: sale_quotation_item.sqiPriceLevel > item_price_levels.iplId [delete: Restrict]
+
+Ref: sale_quotation_item.sqiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: salesman_master.smanGroupId > sale_agent_groups.saGrpId
 

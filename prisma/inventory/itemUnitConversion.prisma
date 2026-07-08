@@ -1,4 +1,3 @@
-
 model ItemUnitConversion {
   iucId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iuc_id")
   iucItemId          String    @db.Uuid @map("iuc_item_id")
@@ -19,10 +18,10 @@ model ItemUnitConversion {
   iucCreatedBy       String?   @db.Uuid @map("iuc_created_by")
   iucUpdatedOn       DateTime? @db.Timestamptz(6) @map("iuc_updated_on")
   iucUpdatedBy       String?   @db.Uuid @map("iuc_updated_by")
-
   item               ItemMaster @relation("ItemUnitConversions", fields: [iucItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_item_id")
   unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
+  saleQuotationItem  SaleQuotationItem[] @relation("SaleQuotationItemUnitConversion")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")

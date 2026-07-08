@@ -17,9 +17,11 @@ import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tende
 import { TenderTypeMasterModule } from '../modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
+import { FreightChargesModule } from '../modules/sales/freight-charges/freight-charges.module';
 import { CityModule } from '../modules/sales/city/city.module';
 import { CustomerGroupModule } from '../modules/sales/customer-group/customer-group.module';
 import { CustomerModule } from '../modules/sales/customer/customer.module';
+import { QuotationModule } from '../modules/sales/quotation/quotation.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
 import { HealthModule } from '../modules/health/health.module';
@@ -344,6 +346,12 @@ export const swaggerModuleDocuments = [
     include: [AreaModule],
   },
   {
+    path: 'freight-charges',
+    title: 'Freight Charges API',
+    description: 'Freight charges module endpoints',
+    include: [FreightChargesModule],
+  },
+  {
     path: 'cities',
     title: 'Cities API',
     description: 'Cities module endpoints',
@@ -366,6 +374,12 @@ export const swaggerModuleDocuments = [
     title: 'Customer Groups API',
     description: 'Customer groups module endpoints',
     include: [CustomerGroupModule],
+  },
+  {
+    path: 'quotations',
+    title: 'Quotations API',
+    description: 'Single-call sale quotation endpoints with nested line items',
+    include: [QuotationModule],
   },
   {
     path: 'bank-lists',

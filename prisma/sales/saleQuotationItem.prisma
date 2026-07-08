@@ -16,7 +16,7 @@ model SaleQuotationItem {
   sqiSrcUnitId       String?   @db.Uuid @map("sqi_src_unit_id")
   sqiSrcDocRefno     String?   @db.VarChar(100) @map("sqi_src_doc_refno")
   sqiSrcItemQty      Decimal?  @db.Decimal(15, 3) @map("sqi_src_item_qty")
-
+  sqiItemUnitId      String?   @db.Uuid @map("sqi_item_unit_id")
   sqiLineNo          Int       @map("sqi_line_no")
   sqiItemId          String    @db.Uuid @map("sqi_item_id")
   sqiItemCode        String?   @db.VarChar(50) @map("sqi_item_code")
@@ -123,7 +123,7 @@ model SaleQuotationItem {
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
   unit       Unit           @relation(fields: [sqiUnitId], references: [unit_id], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_unit")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
-
+  itemUnitConversion ItemUnitConversion? @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
   // ux_sqi_quote_line (unique line no per quote among non-deleted rows) is a
   // DB-only partial index (migration 20260708120000). Prisma cannot express its
   // WHERE predicate; declaring it here makes `migrate dev` regenerate it

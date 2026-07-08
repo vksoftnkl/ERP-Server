@@ -45,10 +45,12 @@ import { GspCompanyServiceModule } from './modules/settings/gspCompanyService/gs
 import { SupplierGroupModule } from './modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from './modules/purchase/suppliers/suppliers.module';
 import { AreaModule } from './modules/sales/area/area.module';
+import { FreightChargesModule } from './modules/sales/freight-charges/freight-charges.module';
 import { CityModule } from './modules/sales/city/city.module';
 import { StateModule } from './modules/sales/state/state.module';
 import { CustomerModule } from './modules/sales/customer/customer.module';
 import { CustomerGroupModule } from './modules/sales/customer-group/customer-group.module';
+import { QuotationModule } from './modules/sales/quotation/quotation.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
 import { DeviceListMasterModule } from './modules/fixed/device-list-master/device-list-master.module';
 import { MenuMasterModule } from './modules/fixed/menu-master/menu-master.module';
@@ -157,8 +159,10 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     StateModule,
     CityModule,
     AreaModule,
+    FreightChargesModule,
     CustomerModule,
     CustomerGroupModule,
+    QuotationModule,
     BankListModule,
     DeviceListMasterModule,
     MenuMasterModule,
