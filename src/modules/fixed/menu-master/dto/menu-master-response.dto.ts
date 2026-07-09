@@ -90,19 +90,7 @@ export class MenuMasterPayloadDto {
 }
 
 export class MenuMasterGetMetaDto {
-  @ApiPropertyOptional({ example: 1 })
-  menuId?: number;
-
-  @ApiPropertyOptional({ example: null, nullable: true })
-  parentId!: number | null;
-
-  @ApiProperty({ example: true })
-  includeChildren!: boolean;
-
-  @ApiProperty({ example: true })
-  activeOnly!: boolean;
-
-  @ApiProperty({ example: true })
+  @ApiProperty({ example: false })
   visibleOnly!: boolean;
 
   @ApiProperty({ example: 9 })

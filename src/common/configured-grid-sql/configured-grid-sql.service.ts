@@ -197,8 +197,8 @@ export class ConfiguredGridSqlService {
     const rowsSql = `SELECT * FROM (${baseSql}) AS ${options.alias}_rows${orderByClause} LIMIT $${params.length + 1
       } OFFSET $${params.length + 2}`;
     const [countResult, rowsResult] = await Promise.all([
-      this.pg.query<{ total: bigint | number | string }>(countSql, params),
-      this.pg.query(rowsSql, [...params, options.limit, options.skip]),
+      this.pg.queryReadOnly<{ total: bigint | number | string }>(countSql, params),
+      this.pg.queryReadOnly(rowsSql, [...params, options.limit, options.skip]),
     ]);
     return {
       items: this.serializeRawQueryValue(rowsResult.rows) as TItem[],
@@ -207,7 +207,7 @@ export class ConfiguredGridSqlService {
   }
   async assertBaseSqlExecutable(baseSql: string, alias: string): Promise<void> {
     const validationSql = `SELECT * FROM (${baseSql}) AS ${alias} LIMIT 0`;
-    await this.pg.query(validationSql);
+    await this.pg.queryReadOnly(validationSql);
   }
   async loadGridColumns(gridId: bigint): Promise<GridColumnItem[]> {
     const columns = await this.prisma.gridColumn.findMany({

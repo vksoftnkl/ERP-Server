@@ -56,11 +56,15 @@ export class AuthService {
       sub: user.usrId,
       user_name: user.usrLoginName,
       sid: this.authSessionService.createSessionId(),
+      user_type: user.usrType ?? null,
+      company_id: user.usrCompanyId ?? null,
     });
     const issuedRefreshToken = this.tokenService.signRefreshToken({
       sub: user.usrId,
       user_name: user.usrLoginName,
       sid: issuedAccessToken.payload.sid,
+      user_type: user.usrType ?? null,
+      company_id: user.usrCompanyId ?? null,
     });
     await this.authSessionService.storeTokenSession(
       issuedAccessToken.token,
@@ -107,10 +111,26 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<LoginResponseDto> {
     const refreshPayload = this.tokenService.verifyRefreshToken(refreshToken);
     await this.authSessionService.assertRefreshTokenIsActive(refreshToken, refreshPayload);
+    // Re-read the user so role/company changes and lockouts take effect on the
+    // next refresh instead of persisting for the refresh token's whole lifetime.
+    const user = await this.prisma.userMaster.findFirst({
+      where: {
+        usrId: refreshPayload.sub,
+        usrIsDeleted: false,
+        usrIsActive: true,
+        usrIsLocked: false,
+      },
+      select: { usrType: true, usrCompanyId: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User is no longer active');
+    }
     const issuedAccessToken = this.tokenService.signAccessToken({
       sub: refreshPayload.sub,
       user_name: refreshPayload.user_name,
       sid: refreshPayload.sid,
+      user_type: user.usrType ?? null,
+      company_id: user.usrCompanyId ?? null,
     });
     await this.authSessionService.storeTokenSession(
       issuedAccessToken.token,
@@ -122,7 +142,7 @@ export class AuthService {
       refresh_token: refreshToken,
       token_type: 'Bearer',
       usrId: refreshPayload.sub,
-      user_type: null,
+      user_type: user.usrType ?? null,
       user_name: refreshPayload.user_name,
       device_id: null,
       device_name: null,

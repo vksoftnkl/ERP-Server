@@ -3,6 +3,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 type RequestContextStore = {
   ipAddress: string | null;
   userId: string | null;
+  userType: string | null;
+  companyId: string | null;
 };
 @Injectable()
 export class RequestContextService {
@@ -22,5 +24,25 @@ export class RequestContextService {
   }
   getUserId(): string | null {
     return this.asyncLocalStorage.getStore()?.userId ?? null;
+  }
+  setUserType(userType: string | null): void {
+    const store = this.asyncLocalStorage.getStore();
+    if (!store) {
+      return;
+    }
+    store.userType = userType;
+  }
+  getUserType(): string | null {
+    return this.asyncLocalStorage.getStore()?.userType ?? null;
+  }
+  setCompanyId(companyId: string | null): void {
+    const store = this.asyncLocalStorage.getStore();
+    if (!store) {
+      return;
+    }
+    store.companyId = companyId;
+  }
+  getCompanyId(): string | null {
+    return this.asyncLocalStorage.getStore()?.companyId ?? null;
   }
 }

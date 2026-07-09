@@ -35,6 +35,8 @@ export class AccessTokenGuard implements CanActivate {
     request.user = this.tokenService.verifyAccessToken(accessToken);
     await this.authSessionService.assertAccessTokenIsActive(accessToken, request.user);
     this.requestContextService.setUserId(request.user.sub);
+    this.requestContextService.setUserType(request.user.user_type);
+    this.requestContextService.setCompanyId(request.user.company_id);
     return true;
   }
   private extractBearerToken(request: Request): string | null {

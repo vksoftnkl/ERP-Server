@@ -31,10 +31,6 @@ export interface MenuMasterPayload {
 }
 
 export interface MenuMasterGetMeta {
-  menuId?: number;
-  parentId: number | null;
-  includeChildren: boolean;
-  activeOnly: boolean;
   visibleOnly: boolean;
   count: number;
 }

@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Menu } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { GetMenuQueryDto } from './dto/get-menu-query.dto';
 import {
   MenuMasterGetMeta,
@@ -21,59 +22,20 @@ type BaseMenuFields = Pick<
   | 'menuSeparator'
   | 'menuIsActive'
 >;
-type MenuRecord = BaseMenuFields & {
-  userMenus: {
-    umId: string;
-    umUserId: string;
-    umMenuId: number;
-    umCanView: boolean;
-    umCanCreate: boolean;
-    umCanEdit: boolean;
-    umCanDelete: boolean;
-    umCanPrint: boolean;
-    umCanExport: boolean;
-    umVisibility: boolean;
-    umIsFavourite: boolean;
-    umIsPinned: boolean;
-    umSortOrder: number;
-  }[];
-};
 @Injectable()
 export class MenuMasterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly requestContextService: RequestContextService,
+  ) {}
   async get(
     queryDto: GetMenuQueryDto,
   ): Promise<{ items: MenuMasterPayload[]; meta: MenuMasterGetMeta }> {
-    const userId = queryDto.userId ?? null;
-    const includeChildren = queryDto.includeChildren ?? true;
-    const activeOnly = queryDto.activeOnly ?? true;
     const visibleOnly = queryDto.visibleOnly ?? false;
-    if (!userId) return this.getAll(queryDto);
-    // Confirm the user from the token is active and logged in
-    const activeUser = await this.prisma.userMaster.findUnique({
-      where: { usrId: userId, usrIsActive: true, usrIsDeleted: false },
-      select: { usrId: true },
-    });
-    if (!activeUser) return this.emptyResult(queryDto, includeChildren, activeOnly, visibleOnly);
-    // Use the verified userId to get all umMenuIds assigned to this user.
-    // When visibleOnly is true, filter here on umVisibility (per-user) rather than
-    // the global menuVisibility column, since menuVisibility is the same for all users.
-    const userMenuRows = await this.prisma.userMenus.findMany({
-      where: {
-        umUserId: activeUser.usrId,
-        umIsDeleted: false,
-        ...(visibleOnly ? { umVisibility: true } : {}),
-      },
-      select: { umMenuId: true },
-    });
-    const assignedMenuIds = userMenuRows.map((r) => r.umMenuId);
-    if (assignedMenuIds.length === 0) return this.emptyResult(queryDto, includeChildren, activeOnly, visibleOnly);
-    // Fetch the menus for those IDs with this user's permission data attached.
-    // Visibility is already scoped per-user via the userMenuRows filter above.
     const records = await this.prisma.menu.findMany({
       where: {
-        menuId: { in: assignedMenuIds },
-        ...(activeOnly ? { menuIsActive: true } : {}),
+        menuIsActive: true,
+        ...(visibleOnly ? { menuVisibility: true } : {}),
       },
       orderBy: [{ menuParentId: 'asc' }, { menuPosition: 'asc' }, { menuId: 'asc' }],
       select: {
@@ -88,59 +50,76 @@ export class MenuMasterService {
         menuIconLocationMobile: true,
         menuSeparator: true,
         menuIsActive: true,
-        userMenus: {
-          where: { umUserId: activeUser.usrId, umIsDeleted: false },
+      },
+    });
+    return this.buildResponse(records, visibleOnly, (r, bp) => this.toSimplePayload(r, bp, true));
+  }
+  async getUserMenu(): Promise<{ items: MenuMasterPayload[]; meta: MenuMasterGetMeta }> {
+    const userId = this.requestContextService.getUserId();
+    if (!userId) {
+      throw new UnauthorizedException('Unable to resolve the current user from the access token');
+    }
+    const userMenus = await this.prisma.userMenus.findMany({
+      where: {
+        umUserId: userId,
+        umVisibility: true,
+        umIsDeleted: false,
+        menu: { menuIsActive: true },
+      },
+      select: {
+        umMenuId: true,
+        umCanCreate: true,
+        umCanEdit: true,
+        umCanDelete: true,
+        umCanPrint: true,
+        umCanExport: true,
+        umVisibility: true,
+        umIsFavourite: true,
+        umIsPinned: true,
+        umSortOrder: true,
+        menu: {
           select: {
-            umId: true,
-            umUserId: true,
-            umMenuId: true,
-            umCanView: true,
-            umCanCreate: true,
-            umCanEdit: true,
-            umCanDelete: true,
-            umCanPrint: true,
-            umCanExport: true,
-            umVisibility: true,
-            umIsFavourite: true,
-            umIsPinned: true,
-            umSortOrder: true,
+            menuId: true,
+            menuParentId: true,
+            menuName: true,
+            menuAlias: true,
+            menuVisibility: true,
+            menuPosition: true,
+            menuIconLocationDesktop: true,
+            menuIconLocationWeb: true,
+            menuIconLocationMobile: true,
+            menuSeparator: true,
+            menuIsActive: true,
           },
         },
       },
+      orderBy: [{ umSortOrder: 'asc' }],
     });
-    return this.buildResponse(queryDto, records, includeChildren, activeOnly, visibleOnly, (r, bp) =>
-      this.toPayload(r, bp, includeChildren),
+    const records = userMenus.map((userMenu) => userMenu.menu);
+    const permissionsByMenuId = new Map<number, MenuMasterUserPermissions>(
+      userMenus.map((userMenu) => [
+        userMenu.umMenuId,
+        {
+          canCreate: userMenu.umCanCreate,
+          canEdit: userMenu.umCanEdit,
+          canDelete: userMenu.umCanDelete,
+          canPrint: userMenu.umCanPrint,
+          canExport: userMenu.umCanExport,
+          isVisible: userMenu.umVisibility,
+          isFavourite: userMenu.umIsFavourite,
+          isPinned: userMenu.umIsPinned,
+          sortOrder: userMenu.umSortOrder,
+        },
+      ]),
+    );
+    return this.buildResponse(records, true, (r, bp) =>
+      this.toSimplePayload(r, bp, true, undefined, permissionsByMenuId),
     );
   }
   async updateVisibility(
     items: { menuId: number; menuVisibility: boolean }[],
-    userId?: string | null,
   ): Promise<{ menuId: number; menuVisibility: boolean }[]> {
     const menuIds = items.map((i) => i.menuId);
-    if (userId) {
-      // Per-user visibility: update umVisibility in userMenus
-      const existing = await this.prisma.userMenus.findMany({
-        where: { umUserId: userId, umMenuId: { in: menuIds }, umIsDeleted: false },
-        select: { umMenuId: true },
-      });
-      const foundIds = new Set(existing.map((r) => r.umMenuId));
-      const missing = menuIds.filter((id) => !foundIds.has(id));
-      if (missing.length > 0) {
-        throw new NotFoundException(
-          `UserMenu assignment(s) not found for menuId(s): ${missing.join(', ')}`,
-        );
-      }
-      const updated = await this.prisma.$transaction(
-        items.map((item) =>
-          this.prisma.userMenus.update({
-            where: { uq_user_menus_user_menu: { umUserId: userId, umMenuId: item.menuId } },
-            data: { umVisibility: item.menuVisibility },
-            select: { umMenuId: true, umVisibility: true },
-          }),
-        ),
-      );
-      return updated.map((r) => ({ menuId: r.umMenuId, menuVisibility: r.umVisibility }));
-    }
     // Global visibility: update menuVisibility on the menu table
     const existing = await this.prisma.menu.findMany({
       where: { menuId: { in: menuIds } },
@@ -168,87 +147,19 @@ export class MenuMasterService {
     );
     return updated.map((r) => ({ menuId: r.menuId, menuVisibility: r.menuVisibility }));
   }
-  async getAll(
-    queryDto: GetMenuQueryDto,
-  ): Promise<{ items: MenuMasterPayload[]; meta: MenuMasterGetMeta }> {
-    const includeChildren = queryDto.includeChildren ?? true;
-    const activeOnly = queryDto.activeOnly ?? true;
-    const visibleOnly = queryDto.visibleOnly ?? false;
-    const records = await this.prisma.menu.findMany({
-      where: {
-        ...(activeOnly ? { menuIsActive: true } : {}),
-        ...(visibleOnly ? { menuVisibility: true } : {}),
-      },
-      orderBy: [{ menuParentId: 'asc' }, { menuPosition: 'asc' }, { menuId: 'asc' }],
-      select: {
-        menuId: true,
-        menuParentId: true,
-        menuName: true,
-        menuAlias: true,
-        menuVisibility: true,
-        menuPosition: true,
-        menuIconLocationDesktop: true,
-        menuIconLocationWeb: true,
-        menuIconLocationMobile: true,
-        menuSeparator: true,
-        menuIsActive: true,
-      },
-    });
-    return this.buildResponse(queryDto, records, includeChildren, activeOnly, visibleOnly, (r, bp) =>
-      this.toSimplePayload(r, bp, includeChildren),
-    );
-  }
   private buildResponse<T extends BaseMenuFields>(
-    queryDto: GetMenuQueryDto,
     records: T[],
-    includeChildren: boolean,
-    activeOnly: boolean,
     visibleOnly: boolean,
     toItem: (record: T, byParent: Map<number | null, T[]>) => MenuMasterPayload,
   ): { items: MenuMasterPayload[]; meta: MenuMasterGetMeta } {
-    const recordsById = new Map(records.map((r) => [r.menuId, r]));
     const byParent = this.groupByParent(records);
     const roots = this.getRootRecords(byParent);
-    let selected: T[];
-    if (queryDto.menuId !== undefined) {
-      const menu = recordsById.get(queryDto.menuId);
-      if (!menu) {
-        throw new NotFoundException(`Menu not found for menuId ${queryDto.menuId}`);
-      }
-      selected = [menu];
-    } else if (queryDto.parentId !== undefined) {
-      selected = byParent.get(queryDto.parentId) ?? [];
-    } else {
-      selected = roots;
-    }
-    const items = selected.map((record) => toItem(record, byParent));
+    const items = roots.map((record) => toItem(record, byParent));
     return {
       items,
       meta: {
-        menuId: queryDto.menuId,
-        parentId: queryDto.parentId ?? null,
-        includeChildren,
-        activeOnly,
         visibleOnly,
         count: items.length,
-      },
-    };
-  }
-  private emptyResult(
-    queryDto: GetMenuQueryDto,
-    includeChildren: boolean,
-    activeOnly: boolean,
-    visibleOnly: boolean,
-  ): { items: MenuMasterPayload[]; meta: MenuMasterGetMeta } {
-    return {
-      items: [],
-      meta: {
-        menuId: queryDto.menuId,
-        parentId: queryDto.parentId ?? null,
-        includeChildren,
-        activeOnly,
-        visibleOnly,
-        count: 0,
       },
     };
   }
@@ -279,59 +190,12 @@ export class MenuMasterService {
     }
     return merged;
   }
-  private toPermissions(um: MenuRecord['userMenus'][0]): MenuMasterUserPermissions {
-    return {
-      canCreate: um.umCanCreate,
-      canEdit: um.umCanEdit,
-      canDelete: um.umCanDelete,
-      canPrint: um.umCanPrint,
-      canExport: um.umCanExport,
-      isVisible: um.umVisibility,
-      isFavourite: um.umIsFavourite,
-      isPinned: um.umIsPinned,
-      sortOrder: um.umSortOrder,
-    };
-  }
-  private toPayload(
-    record: MenuRecord,
-    byParent: Map<number | null, MenuRecord[]>,
-    includeChildren: boolean,
-    visited: Set<number> = new Set<number>(),
-  ): MenuMasterPayload {
-    const um = record.userMenus[0];
-    const payload: MenuMasterPayload = {
-      menuId: record.menuId,
-      menuParentId: record.menuParentId,
-      menuName: record.menuName,
-      menuAlias: record.menuAlias,
-      menuVisibility: um ? um.umVisibility : record.menuVisibility,
-      menuPosition: record.menuPosition?.toString() ?? null,
-      menuIconLocationDesktop: record.menuIconLocationDesktop,
-      menuIconLocationWeb: record.menuIconLocationWeb,
-      menuIconLocationMobile: record.menuIconLocationMobile,
-      menuSeparator: record.menuSeparator,
-      menuIsActive: record.menuIsActive,
-      permissions: um ? this.toPermissions(um) : null,
-    };
-    if (!includeChildren || visited.has(record.menuId)) {
-      return payload;
-    }
-    const children = byParent.get(record.menuId) ?? [];
-    if (children.length === 0) {
-      return payload;
-    }
-    const nextVisited = new Set(visited);
-    nextVisited.add(record.menuId);
-    payload.children = children.map((child) =>
-      this.toPayload(child, byParent, includeChildren, nextVisited),
-    );
-    return payload;
-  }
   private toSimplePayload(
     record: BaseMenuFields,
     byParent: Map<number | null, BaseMenuFields[]>,
     includeChildren: boolean,
     visited: Set<number> = new Set<number>(),
+    permissionsByMenuId?: Map<number, MenuMasterUserPermissions>,
   ): MenuMasterPayload {
     const payload: MenuMasterPayload = {
       menuId: record.menuId,
@@ -345,7 +209,7 @@ export class MenuMasterService {
       menuIconLocationMobile: record.menuIconLocationMobile,
       menuSeparator: record.menuSeparator,
       menuIsActive: record.menuIsActive,
-      permissions: null,
+      permissions: permissionsByMenuId?.get(record.menuId) ?? null,
     };
     if (!includeChildren || visited.has(record.menuId)) {
       return payload;
@@ -357,7 +221,7 @@ export class MenuMasterService {
     const nextVisited = new Set(visited);
     nextVisited.add(record.menuId);
     payload.children = children.map((child) =>
-      this.toSimplePayload(child, byParent, includeChildren, nextVisited),
+      this.toSimplePayload(child, byParent, includeChildren, nextVisited, permissionsByMenuId),
     );
     return payload;
   }

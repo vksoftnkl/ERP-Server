@@ -45,6 +45,10 @@ export default () => ({
   },
   database: {
     url: buildDatabaseUrl(),
+    // Optional connection string for a read-only DB role; used to execute
+    // user-configured grid/dropdown SQL. Falls back to `url` (with the session
+    // forced read-only) when unset.
+    readOnlyUrl: process.env.DATABASE_READONLY_URL ?? '',
     host: process.env.DB_HOST ?? 'localhost',
     port: parseNumber(process.env.DB_PORT, 5432),
     username: process.env.DB_USER ?? 'erp_app',

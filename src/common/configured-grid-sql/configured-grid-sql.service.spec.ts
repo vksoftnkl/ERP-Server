@@ -11,6 +11,7 @@ type PrismaMock = {
 };
 type PgMock = {
   query: jest.Mock;
+  queryReadOnly: jest.Mock;
 };
 describe('ConfiguredGridSqlService', () => {
   let service: ConfiguredGridSqlService;
@@ -27,6 +28,7 @@ describe('ConfiguredGridSqlService', () => {
     };
     pg = {
       query: jest.fn(),
+      queryReadOnly: jest.fn(),
     };
     service = new ConfiguredGridSqlService(
       prisma as unknown as PrismaService,
@@ -326,7 +328,7 @@ ORDER BY unit_name`,
   });
 
   it('runs paged query and returns rows + total', async () => {
-    pg.query
+    pg.queryReadOnly
       .mockResolvedValueOnce({
         rows: [
           {
@@ -350,12 +352,12 @@ ORDER BY unit_name`,
       items: [{ id: 1 }, { id: 2 }],
       total: 3,
     });
-    expect(pg.query).toHaveBeenCalledTimes(2);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(2);
   });
 
   it('serializes bigint raw query row values before returning', async () => {
     const createdAt = new Date('2026-06-11T00:00:00.000Z');
-    pg.query
+    pg.queryReadOnly
       .mockResolvedValueOnce({ rows: [{ total: 1n }] })
       .mockResolvedValueOnce({
         rows: [
@@ -500,7 +502,7 @@ ORDER BY unit_name`,
         },
       ])
       .mockResolvedValueOnce([]);
-    pg.query
+    pg.queryReadOnly
       .mockResolvedValueOnce({
         rows: [
           {
@@ -523,7 +525,7 @@ ORDER BY unit_name`,
       items: [{ cus_name: 'SUN ELECTRONICS G' }],
       total: 1,
     });
-    expect(pg.query).toHaveBeenNthCalledWith(
+    expect(pg.queryReadOnly).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('grid_kv.value ILIKE $2'),
       ['cus_name', '%sun%'],
@@ -574,13 +576,13 @@ ORDER BY unit_name`,
   });
 
   it('checks whether a configured query is executable', async () => {
-    pg.query.mockResolvedValue({ rows: [] });
+    pg.queryReadOnly.mockResolvedValue({ rows: [] });
 
     await expect(service.assertBaseSqlExecutable('SELECT * FROM units', 'unit_grid')).resolves.toBe(
       undefined,
     );
 
-    expect(pg.query).toHaveBeenCalledWith(
+    expect(pg.queryReadOnly).toHaveBeenCalledWith(
       'SELECT * FROM (SELECT * FROM units) AS unit_grid LIMIT 0',
     );
   });

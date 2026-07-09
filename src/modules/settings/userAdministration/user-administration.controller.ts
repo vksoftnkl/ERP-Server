@@ -23,6 +23,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
+import { Roles } from '../../../common/decorators/roles.decorator';
+import { UserType } from './types/user-administration.enum';
 import {
   UserAdminErrorResponseDto,
   UserAdminSuccessDeleteDto,
@@ -45,6 +47,7 @@ export class UserAdministrationController {
 
   @Post('create')
   @Version(API_VERSION)
+  @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
   @ApiOperation({
     summary: 'Create or update user with menu permissions (by usrId presence)',
     description:
@@ -86,6 +89,7 @@ export class UserAdministrationController {
 
   @Delete('delete')
   @Version(API_VERSION)
+  @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
   @ApiOperation({ summary: 'Soft delete user and all their menu assignments by usrId' })
   @ApiQuery({ name: 'usrId', schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({ type: UserAdminSuccessDeleteDto })

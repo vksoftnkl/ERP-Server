@@ -5,6 +5,10 @@ export type AccessTokenClaims = {
   sub: string;
   user_name: string;
   sid: string;
+  // Authorization context resolved server-side at sign time. Nullable so tokens
+  // issued before these claims existed keep verifying (they normalize to null).
+  user_type: string | null;
+  company_id: string | null;
 };
 export type AccessTokenPayload = AccessTokenClaims & {
   iat: number;
@@ -133,6 +137,8 @@ export class TokenService {
     const issuedAt = payload.iat;
     const expiresAt = payload.exp;
     const tokenType = payload.typ;
+    const userType = payload.user_type;
+    const companyId = payload.company_id;
     if (typeof sub !== 'string' || sub.length === 0) {
       throw new UnauthorizedException('Invalid access token');
     }
@@ -160,10 +166,18 @@ export class TokenService {
     if (tokenType !== expectedType) {
       throw new UnauthorizedException('Invalid access token');
     }
+    if (userType !== undefined && userType !== null && typeof userType !== 'string') {
+      throw new UnauthorizedException('Invalid access token');
+    }
+    if (companyId !== undefined && companyId !== null && typeof companyId !== 'string') {
+      throw new UnauthorizedException('Invalid access token');
+    }
     const normalizedPayload = {
       sub,
       user_name: userName,
       sid: sessionId,
+      user_type: typeof userType === 'string' && userType.length > 0 ? userType : null,
+      company_id: typeof companyId === 'string' && companyId.length > 0 ? companyId : null,
       iat: issuedAt,
       exp: expiresAt,
       typ: expectedType,

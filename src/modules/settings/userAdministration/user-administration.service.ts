@@ -234,7 +234,10 @@ export class UserAdministrationService {
         const menus =
           dto.menus !== undefined
             ? await this.replaceUserMenus(usrId, dto.menus, this.requestContextService.getUserId() ?? DEFAULT_ACTOR, now, tx)
-            : await tx.userMenus.findMany({ where: { umUserId: usrId, umIsDeleted: false } });
+            : await tx.userMenus.findMany({
+                where: { umUserId: usrId, umIsDeleted: false },
+                orderBy: { umMenuId: 'asc' },
+              });
 
         const payload = this.toPayload(updated, menus);
 
@@ -332,7 +335,7 @@ export class UserAdministrationService {
       ),
     );
 
-    return created;
+    return created.sort((a, b) => a.umMenuId - b.umMenuId);
   }
 
   private async ensureLoginNameUnique(
@@ -415,7 +418,10 @@ export class UserAdministrationService {
       usrMustChangePassword: record.usrMustChangePassword,
       usrPasswordExpiresOn: record.usrPasswordExpiresOn?.toISOString() ?? null,
       usrPasswordChangedOn: record.usrPasswordChangedOn?.toISOString() ?? null,
-      usrType: record.usrType ? (UserType[record.usrType as keyof typeof UserType] ?? null) : null,
+      usrType:
+        record.usrType && (Object.values(UserType) as string[]).includes(record.usrType)
+          ? (record.usrType as UserType)
+          : null,
       usrEditDate: record.usrEditDate,
       usrEditEntry: record.usrEditEntry,
       usrEditRate: record.usrEditRate,

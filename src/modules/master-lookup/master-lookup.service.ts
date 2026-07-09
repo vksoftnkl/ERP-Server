@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import {
   ACCOUNT_LOOKUP_MODULE_KEYS,
@@ -100,7 +101,10 @@ type DropdownRecord = {
 @Injectable()
 export class MasterLookupService {
   private readonly moduleFetchers: Record<LookupModuleKey, ModuleFetcher>;
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pg: PgService,
+  ) {
     this.moduleFetchers = this.buildModuleFetchers();
   }
   // ─── Public API ─────────────────────────────────────────────────────────────
@@ -770,8 +774,15 @@ export class MasterLookupService {
     if (sqlCandidates.length === 0) return null;
     for (const sql of sqlCandidates) {
       try {
-        const rows = await this.prisma.$queryRawUnsafe<LookupRow[]>(sql);
-        return this.mapConfiguredRowsToOptions(rows, config.dropdownColumns, search, take, config);
+        // Stored dropdown SQL is user-configured — run it on the read-only pool.
+        const result = await this.pg.queryReadOnly<LookupRow>(sql);
+        return this.mapConfiguredRowsToOptions(
+          result.rows,
+          config.dropdownColumns,
+          search,
+          take,
+          config,
+        );
       } catch {
         continue;
       }

@@ -1,3 +1,4 @@
+import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { MasterLookupService } from './master-lookup.service';
 
@@ -14,12 +15,18 @@ type PrismaMock = {
   company: {
     findMany: jest.Mock;
   };
-  $queryRawUnsafe: jest.Mock;
 };
+
+type PgMock = {
+  queryReadOnly: jest.Mock;
+};
+
+const pgRows = (rows: unknown[]) => ({ rows });
 
 describe('MasterLookupService', () => {
   let service: MasterLookupService;
   let prisma: PrismaMock;
+  let pg: PgMock;
 
   beforeEach(() => {
     prisma = {
@@ -35,10 +42,12 @@ describe('MasterLookupService', () => {
       company: {
         findMany: jest.fn().mockResolvedValue([]),
       },
-      $queryRawUnsafe: jest.fn().mockResolvedValue([]),
+    };
+    pg = {
+      queryReadOnly: jest.fn().mockResolvedValue(pgRows([])),
     };
 
-    service = new MasterLookupService(prisma as unknown as PrismaService);
+    service = new MasterLookupService(prisma as unknown as PrismaService, pg as unknown as PgService);
   });
 
   it('uses configured regional dropdown SQL and dropdown columns for module lookups', async () => {
@@ -67,9 +76,9 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       { item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' },
-    ]);
+    ]));
 
     const result = await service.getAllAccountsAndMasterNameIds('items', 'milk', 5);
 
@@ -79,9 +88,9 @@ describe('MasterLookupService', () => {
       items: [{ id: 'ITEM-1', name: 'Milk', item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' }],
     });
     expect(prisma.itemMaster.findMany).not.toHaveBeenCalled();
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
 
-    const [sql, ...params] = prisma.$queryRawUnsafe.mock.calls[0];
+    const [sql, ...params] = pg.queryReadOnly.mock.calls[0];
     expect(String(sql)).toContain('SELECT regional_item_id AS item_id');
     expect(String(sql)).toContain('regional_item_name AS item_name FROM regional_items');
     expect(String(sql)).not.toContain(', FROM regional_items');
@@ -113,14 +122,14 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       {
         cgr_id: '019cad4b-84db-7a76-a67f-41e7e6adb9ce',
         cgr_branch_id: null,
         cgr_name: 'Retail',
         cgr_alias: 'RTL',
       },
-    ]);
+    ]));
 
     const result = await service.getAllAccountsAndMasterNameIds('customerGroups');
 
@@ -138,7 +147,7 @@ describe('MasterLookupService', () => {
         },
       ],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
     expect(prisma.custGroup.findMany).not.toHaveBeenCalled();
   });
 
@@ -161,11 +170,11 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       {
         cgr_id: '019cad4b-84db-7a76-a67f-41e7e6adb9ce',
       },
-    ]);
+    ]));
 
     const result = await service.getAllAccountsAndMasterNameIds('customerGroups');
 
@@ -180,7 +189,7 @@ describe('MasterLookupService', () => {
         },
       ],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
     expect(prisma.custGroup.findMany).not.toHaveBeenCalled();
   });
 
@@ -217,7 +226,7 @@ describe('MasterLookupService', () => {
       module: 'items',
       items: [{ id: 'ITEM-2', name: 'Bread' }],
     });
-    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(pg.queryReadOnly).not.toHaveBeenCalled();
     expect(prisma.itemMaster.findMany).toHaveBeenCalledTimes(1);
   });
 
@@ -240,7 +249,7 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockRejectedValue(new Error('broken dropdown sql'));
+    pg.queryReadOnly.mockRejectedValue(new Error('broken dropdown sql'));
     prisma.itemMaster.findMany.mockResolvedValue([
       {
         itemId: 'ITEM-3',
@@ -255,7 +264,7 @@ describe('MasterLookupService', () => {
       module: 'items',
       items: [{ id: 'ITEM-3', name: 'Butter' }],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
     expect(prisma.itemMaster.findMany).toHaveBeenCalledTimes(1);
   });
 
@@ -284,14 +293,14 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    prisma.$queryRawUnsafe
+    pg.queryReadOnly
       .mockRejectedValueOnce(new Error('broken regional dropdown sql'))
-      .mockResolvedValueOnce([
+      .mockResolvedValueOnce(pgRows([
         {
           item_id: 'ITEM-4',
           item_name: 'Cheese',
         },
-      ]);
+      ]));
 
     const result = await service.getAllAccountsAndMasterNameIds('items', 'cheese', 3);
 
@@ -300,11 +309,11 @@ describe('MasterLookupService', () => {
       module: 'items',
       items: [{ id: 'ITEM-4', name: 'Cheese', item_id: 'ITEM-4', item_name: 'Cheese' }],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
-    expect(String(prisma.$queryRawUnsafe.mock.calls[0][0])).toContain(
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(2);
+    expect(String(pg.queryReadOnly.mock.calls[0][0])).toContain(
       'SELECT item_id, item_name FROM regional_item_master',
     );
-    expect(String(prisma.$queryRawUnsafe.mock.calls[1][0])).toContain(
+    expect(String(pg.queryReadOnly.mock.calls[1][0])).toContain(
       'SELECT item_id, item_name FROM item_master',
     );
     expect(prisma.itemMaster.findMany).not.toHaveBeenCalled();
@@ -336,12 +345,12 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       {
         br_id: 'BR-1',
         br_name: 'Main Branch',
       },
-    ]);
+    ]));
 
     const result = await service.getAllAccountsAndMasterNameIds('branches');
 
@@ -350,7 +359,7 @@ describe('MasterLookupService', () => {
       module: 'branches',
       items: [{ id: 'BR-1', name: 'Main Branch', br_id: 'BR-1', br_name: 'Main Branch' }],
     });
-    const [sql] = prisma.$queryRawUnsafe.mock.calls[0];
+    const [sql] = pg.queryReadOnly.mock.calls[0];
     expect(String(sql)).toContain('public.branch_master');
     expect(String(sql)).toContain('inventory.item_unit_master');
     expect(String(sql)).not.toContain('accounts.branch_master');
@@ -382,12 +391,12 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       {
         comp_id: 'COMP-1',
         comp_name: 'Acme Pvt Ltd',
       },
-    ]);
+    ]));
 
     const result = await service.getAllAccountsAndMasterNameIds('companies');
 
@@ -396,7 +405,7 @@ describe('MasterLookupService', () => {
       module: 'companies',
       items: [{ id: 'COMP-1', name: 'Acme Pvt Ltd', comp_id: 'COMP-1', comp_name: 'Acme Pvt Ltd' }],
     });
-    const [sql] = prisma.$queryRawUnsafe.mock.calls[0];
+    const [sql] = pg.queryReadOnly.mock.calls[0];
     expect(String(sql)).toContain('public.companys');
     expect(String(sql)).not.toContain('accounts.companys');
     expect(prisma.company.findMany).not.toHaveBeenCalled();
@@ -427,12 +436,12 @@ describe('MasterLookupService', () => {
         ],
       },
     ]);
-    prisma.$queryRawUnsafe.mockResolvedValue([
+    pg.queryReadOnly.mockResolvedValue(pgRows([
       {
         ttm_type_id: 1,
         ttm_type_name: 'E-Invoice',
       },
-    ]);
+    ]));
 
     const result = await service.getAllAccountsAndMasterNameIds('tenderTypes');
 
@@ -441,7 +450,7 @@ describe('MasterLookupService', () => {
       module: 'tenderTypes',
       items: [{ id: '1', name: 'E-Invoice', ttm_type_id: 1, ttm_type_name: 'E-Invoice' }],
     });
-    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
   });
 
   it('falls back to Prisma table queries when no dropdown mapping exists for the module', async () => {
@@ -459,7 +468,7 @@ describe('MasterLookupService', () => {
       module: 'companies',
       items: [{ id: 'COMP-1', name: 'Acme Pvt Ltd' }],
     });
-    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+    expect(pg.queryReadOnly).not.toHaveBeenCalled();
     expect(prisma.company.findMany).toHaveBeenCalledTimes(1);
   });
 });

@@ -16,6 +16,8 @@ const buildPayload = (): AccessTokenPayload => {
     sub: '7a9a4d16-9940-4b65-a7bc-57e83887a112',
     user_name: 'john.doe',
     sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
+    user_type: 'USER',
+    company_id: null,
     iat: now,
     exp: now + 900,
     typ: 'access',

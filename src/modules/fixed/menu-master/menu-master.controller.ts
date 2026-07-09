@@ -34,7 +34,7 @@ export class MenuMasterController {
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Get menus for the authenticated user (filtered by UserMenus permissions).',
+    summary: 'Get the full active menu tree, optionally filtered to only visible menus.',
   })
   @ApiOkResponse({ type: MenuMasterSuccessGetDto })
   @ApiBadRequestResponse({ type: MenuMasterErrorResponseDto })
@@ -46,8 +46,26 @@ export class MenuMasterController {
 
     return {
       success: true,
-      message:
-        queryDto.menuId !== undefined ? 'Menu fetched successfully' : 'Menus fetched successfully',
+      message: 'Menus fetched successfully',
+      data: result.items,
+      meta: result.meta,
+    };
+  }
+  @Get('usermenu')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'Get the menus visible to the current user, based on their user-menu assignments (um_visibility = true).',
+  })
+  @ApiOkResponse({ type: MenuMasterSuccessGetDto })
+  @ApiBadRequestResponse({ type: MenuMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: MenuMasterErrorResponseDto })
+  async getUserMenu(): Promise<MenuMasterSuccessResponse<MenuMasterPayload[], MenuMasterGetMeta>> {
+    const result = await this.menuMasterService.getUserMenu();
+
+    return {
+      success: true,
+      message: 'User menus fetched successfully',
       data: result.items,
       meta: result.meta,
     };
@@ -61,7 +79,7 @@ export class MenuMasterController {
   async updateVisibility(
     @Body() body: UpdateMenuVisibilityDto,
   ): Promise<MenuMasterSuccessUpdateVisibilityDto> {
-    const data = await this.menuMasterService.updateVisibility(body.menus, body.userId);
+    const data = await this.menuMasterService.updateVisibility(body.menus);
     return {
       success: true,
       message: 'Menu visibility updated successfully',

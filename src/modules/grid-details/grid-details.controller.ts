@@ -13,6 +13,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserType } from '../settings/userAdministration/types/user-administration.enum';
 import { ListGridDetailQueryDto } from './dto/list-grid-detail-query.dto';
 import {
   GridDetailErrorResponseDto,
@@ -74,6 +76,7 @@ export class GridDetailsController {
   constructor(private readonly gridDetailsService: GridDetailsService) { }
   @Post('create')
   @Version(API_VERSION)
+  @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
   @ApiOperation({
     summary: 'Create or update grid details with nested columns',
     description:
@@ -156,6 +159,7 @@ export class GridDetailsController {
   }
   @Delete('column-delete')
   @Version(API_VERSION)
+  @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
   @ApiOperation({ summary: 'Soft delete a grid column by id' })
   @ApiQuery({ name: 'grid_column_id', description: 'UUID grid column id' })
   @ApiOkResponse({ type: GridDetailSuccessColumnDeleteDto })
@@ -169,6 +173,7 @@ export class GridDetailsController {
   }
   @Delete('delete')
   @Version(API_VERSION)
+  @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
   @ApiOperation({ summary: 'Soft delete grid details by id' })
   @ApiQuery({ name: 'grid_id', description: 'Numeric grid id' })
   @ApiOkResponse({ type: GridDetailSuccessDeleteDto })
