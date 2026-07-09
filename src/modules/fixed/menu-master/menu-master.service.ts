@@ -93,7 +93,11 @@ export class MenuMasterService {
           },
         },
       },
-      orderBy: [{ umSortOrder: 'asc' }],
+      orderBy: [
+        { umSortOrder: 'asc' },
+        { menu: { menuPosition: 'asc' } },
+        { menu: { menuId: 'asc' } },
+      ],
     });
     const records = userMenus.map((userMenu) => userMenu.menu);
     const permissionsByMenuId = new Map<number, MenuMasterUserPermissions>(
