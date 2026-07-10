@@ -10,6 +10,7 @@ import { EmployeeDepartmentMasterModule } from '../modules/settings/employeeDepa
 import { EmployeeDesignationMasterModule } from '../modules/settings/employeeDesignationMaster/employee-designation-master.module';
 import { EmployeeMasterModule } from '../modules/settings/employeeMaster/employee-master.module';
 import { UserAdministrationModule } from '../modules/settings/userAdministration/user-administration.module';
+import { ConfigsModule } from '../modules/settings/configs/configs.module';
 import { GspCompanyServiceModule } from '../modules/settings/gspCompanyService/gsp-company-service.module';
 import { GspProviderMasterModule } from '../modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { LedgerShippingAddressModule } from '../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -27,6 +28,7 @@ import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-deta
 import { HealthModule } from '../modules/health/health.module';
 import { ItemsCustRatesMasterModule } from '../modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemPriceDetailsModule } from '../modules/Inventory/item-price-details/item-price-details.module';
+import { ItemPriceLookupModule } from '../modules/Inventory/item-price-lookup/item-price-lookup.module';
 import { UsersModule } from '../modules/users/users.module';
 import { MasterLookupModule } from '../modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from '../modules/master/batch-prefix/batch-prefix.module';
@@ -147,6 +149,12 @@ export const swaggerModuleDocuments = [
     include: [ItemPriceDetailsModule],
   },
   {
+    path: 'item-price-lookup',
+    title: 'Item Price Lookup API',
+    description: 'Item price lookup module endpoints',
+    include: [ItemPriceLookupModule],
+  },
+  {
     path: 'item-qtywise-rates',
     title: 'Item Qtywise Rates API',
     description: 'Item qtywise rates module endpoints',
@@ -236,6 +244,12 @@ export const swaggerModuleDocuments = [
     description:
       'User administration module endpoints — manages UserMaster and UserMenus in a single call',
     include: [UserAdministrationModule],
+  },
+  {
+    path: 'configs',
+    title: 'Configs API',
+    description: 'Configs module endpoints',
+    include: [ConfigsModule],
   },
   {
     path: 'tender-master',
