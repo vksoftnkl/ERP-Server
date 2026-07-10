@@ -10,6 +10,6 @@ export class ItemPriceLookupExceptionFilter extends InventoryExceptionFilter<
   ItemPriceLookupErrorResponse
 > {
   constructor() {
-    super(/\b(item_id|unit_id|branch_id|company_id)\b/i);
+    super(/\b(item_id|unit_id|branch_id|company_id|customer_id|acccyear|price_level|quantity)\b/i);
   }
 }

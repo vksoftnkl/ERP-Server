@@ -1,163 +1,267 @@
 import { Injectable } from '@nestjs/common';
-import { ItemMaster, ItemPriceMaster } from '@prisma/client';
+import { ItemMaster, ItemPriceMaster, ItemQtywiseRate } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
-import { throwInventoryNotFound, toNumber } from 'src/common/utils/module-service.utils';
-import { ItemPayload } from '../items-master/types/item-api.types';
-import { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
+import {
+  throwInventoryNotFound,
+  toNullableNumber,
+  toNumber,
+} from 'src/common/utils/module-service.utils';
 import { GetItemPriceLookupQueryDto } from './dto/get-item-price-lookup-query.dto';
 import {
   ItemPriceLookupErrorDetail,
   ItemPriceLookupPayload,
+  ItemPriceLookupQtyWiseRate,
 } from './types/item-price-lookup-api.types';
+
 @Injectable()
 export class ItemPriceLookupService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Port of the legacy PL/pgSQL `getItemForSale` cursor onto the current UUID
+   * schema. It resolves one item + one unit rate into a single flat row: the
+   * effective price for the requested price level, the tax block, stock,
+   * reorder level, negative-stock rule and the quantity-wise rate list.
+   *
+   * Schema divergences from the legacy query:
+   *  - customer rates / qty-wise rates now hang off the pricing hub
+   *    `item_price_master` (ipm_id) instead of (item_id, unit_id).
+   *  - price level is A–D here (legacy 1–4); max/min/cost levels (5–7) are not
+   *    selectable, only surfaced inside `json_qws`.
+   *  - the item-group price-level scheme discount has no column → `sch_discount`
+   *    is always null.
+   */
   async getByParams(query: GetItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload> {
-    const { item_id, unit_id, branch_id, company_id } = query;
-    const itemRecord = await this.prisma.itemMaster.findFirst({
-      where: {
-        itemId: item_id,
-        itemCompanyId: company_id,
-        itemBranchId: branch_id,
-        itemIsDeleted: false,
-      },
-    });
+    const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
+    const priceLevel = (query.price_level ?? 'A').toUpperCase();
+
+    // 1. Item + candidate unit-rate rows (legacy: item_master ⋈ item_unit_rates).
+    const [itemRecord, priceRows] = await Promise.all([
+      this.prisma.itemMaster.findFirst({
+        where: {
+          itemId: item_id,
+          itemCompanyId: company_id,
+          itemBranchId: branch_id,
+          itemIsDeleted: false,
+        },
+      }),
+      this.prisma.itemPriceMaster.findMany({
+        where: {
+          ipmItemId: item_id,
+          ipmCompanyId: company_id,
+          ipmBranchId: branch_id,
+          ipmIsDeleted: false,
+        },
+        orderBy: [{ ipmUnitSlno: 'asc' }],
+      }),
+    ]);
     if (!itemRecord) {
       throwInventoryNotFound<ItemPriceLookupErrorDetail>(
         'Item not found',
         'item_id',
-        `No active item found for id ${item_id} at branch ${branch_id} / company ${company_id}`,
+        `No active item found for id ${item_id}`,
       );
     }
-    const priceRecords = await this.prisma.itemPriceMaster.findMany({
-      where: {
-        ipmItemId: item_id,
-        ipmUnitId: unit_id,
-        ipmBranchId: branch_id,
-        ipmCompanyId: company_id,
-        ipmIsDeleted: false,
-      },
-      orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
-    });
+
+    // 2. Pick the unit rate (legacy unit_slno CASE: explicit unit, else max
+    //    slno for retail items / slno 0 otherwise).
+    const rate = this.selectUnitRate(priceRows, itemRecord, unit_id);
+    if (!rate) {
+      throwInventoryNotFound<ItemPriceLookupErrorDetail>(
+        'Item price not found',
+        unit_id ? 'unit_id' : 'item_id',
+        unit_id
+          ? `No active price row found for item ${item_id} and unit ${unit_id}`
+          : `No active price row configured for item ${item_id}`,
+      );
+    }
+
+    // 3. Everything that hangs off the chosen item / rate (legacy lateral joins).
+    const [godown, unit, tax, company, custRate, qtyRates, reorder, stockSum] = await Promise.all([
+      this.prisma.godownLocation.findFirst({ where: { gdlId: rate.ipmGodownId } }),
+      this.prisma.unit.findFirst({ where: { unit_id: rate.ipmUnitId } }),
+      itemRecord.itemDefaultTaxId
+        ? this.prisma.itemTaxMaster.findFirst({
+            where: { taxId: itemRecord.itemDefaultTaxId, taxIsDeleted: false },
+          })
+        : Promise.resolve(null),
+      this.prisma.company.findFirst({ where: { compId: company_id } }),
+      customer_id
+        ? this.prisma.custItemRate.findFirst({
+            where: {
+              csrUnitRateId: rate.ipmId,
+              csrCustomerId: customer_id,
+              csrIsDeleted: false,
+              csrIsActive: true,
+            },
+          })
+        : Promise.resolve(null),
+      this.prisma.itemQtywiseRate.findMany({
+        where: { iqrUnitRateId: rate.ipmId, iqrIsDeleted: false, iqrIsActive: true },
+      }),
+      this.prisma.itemReorder.findFirst({
+        where: { irItemId: item_id, irUnitId: rate.ipmUnitId, irIsDeleted: false },
+      }),
+      acccyear
+        ? this.prisma.itemStockBalance.aggregate({
+            _sum: { isbClosingQty: true },
+            where: {
+              isbAccYear: acccyear,
+              isbItemId: item_id,
+              isbUnitId: rate.ipmUnitId,
+              isbCompanyId: company_id,
+              isbBranchId: branch_id,
+              isbGodownId: rate.ipmGodownId,
+            },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    // 4. Derived values.
+    const gstApplicable = company?.compGstApplicable ?? false;
+    const basePrice = this.priceForLevel(rate, priceLevel);
+    const customerDiscQty = custRate ? toNumber(custRate.csrDiscQty) : 0;
+    const salesPrice = basePrice - customerDiscQty;
+
+    const stock = stockSum ? toNullableNumber(stockSum._sum.isbClosingQty ?? 0) : null;
+    const reorderQty = reorder ? toNumber(reorder.irMinLevel) - (stock ?? 0) : null;
+
+    // Legacy allow_negative_stock: service items always allow; otherwise it is
+    // blocked only when godown, company and item all disallow it.
+    const allowNegativeStock = itemRecord.itemIsService
+      ? true
+      : !(
+          godown?.gdlNegativeStock === false &&
+          company?.compNegStkApl === false &&
+          itemRecord.itemAllowNegStock === false
+        );
+
     return {
-      item: this.toItemPayload(itemRecord),
-      item_prices: priceRecords.map((record) => this.toItemPricePayload(record)),
+      item_id: itemRecord.itemId,
+      unit_id: rate.ipmUnitId,
+      unit_rate_id: rate.ipmId,
+      godown_id: rate.ipmGodownId,
+      godown_name: godown?.gdlName ?? '',
+
+      item_code: itemRecord.itemCode,
+      item_name: itemRecord.itemNameEn,
+      item_com_code: itemRecord.itemSku,
+      barcode: itemRecord.itemDefaultBarcode,
+
+      allow_promo: itemRecord.itemAllowPromo,
+      add_freight: itemRecord.itemAllowFreight,
+      item_group_id: itemRecord.itemGroupId,
+      item_category_id: itemRecord.itemCategoryId,
+      weigh_scale: itemRecord.itemWeighScale,
+      batch_config: itemRecord.itemBatchConfig,
+      service_item: itemRecord.itemIsService ? 'Y' : 'N',
+      allow_negative_stock: allowNegativeStock,
+
+      price_level: priceLevel,
+      sales_price: salesPrice,
+      cost_price: toNumber(rate.ipmCostPrice),
+      cost_wot: toNumber(rate.ipmCostWot),
+      min_price: toNumber(rate.ipmMinPrice),
+      max_price: toNumber(rate.ipmMaxPrice),
+      disc_perc: toNumber(rate.ipmDiscPerc),
+      disc_qty: toNumber(rate.ipmDiscQty),
+      sch_discount: null,
+      addl_cess: toNumber(rate.ipmAddlCess),
+
+      unit_desc: unit?.unit_description ?? null,
+      unit_weight: toNullableNumber(unit?.unit_weight ?? null) ?? 0,
+      unit_loading: itemRecord.itemAllowLoading
+        ? (toNullableNumber(unit?.unit_loading ?? null) ?? 0)
+        : 0,
+      decimal_count: unit?.unit_decimal_count ?? 0,
+
+      loyalty_pv: itemRecord.itemAllowLoyalty ? toNumber(rate.ipmLoyaltyPoints) : 0,
+
+      stock,
+      reorder_qty: reorderQty,
+
+      gst_rate: gstApplicable && tax ? toNumber(tax.taxGstRateTotal) : 0,
+      cess_perc: gstApplicable && tax ? toNumber(tax.taxCessPerc) : 0,
+      cess_unit: gstApplicable && tax ? toNumber(tax.taxCessUnit) : 0,
+      sgst_perc: gstApplicable && tax ? toNumber(tax.taxSgstPerc) : 0,
+      cgst_perc: gstApplicable && tax ? toNumber(tax.taxCgstPerc) : 0,
+      igst_perc: gstApplicable && tax ? toNumber(tax.taxIgstPerc) : 0,
+      sales_ledger_id: tax?.taxSalesLedgerId ?? null,
+      sgst_output_ledger_id: tax?.taxSgstOutputLedgerId ?? null,
+      cgst_output_ledger_id: tax?.taxCgstOutputLedgerId ?? null,
+      igst_output_ledger_id: tax?.taxIgstOutputLedgerId ?? null,
+      cess_output_ledger_id: tax?.taxCessOutputLedgerId ?? null,
+
+      json_qws: this.buildQtyWiseRates(rate, qtyRates),
     };
   }
-  private toItemPayload(record: ItemMaster): ItemPayload {
-    return {
-      item_id: record.itemId,
-      item_company_id: record.itemCompanyId,
-      item_branch_id: record.itemBranchId,
-      item_code: record.itemCode,
-      item_sku: record.itemSku,
-      item_name_en: record.itemNameEn,
-      item_name_ta: record.itemNameTa,
-      item_alias: record.itemAlias,
-      item_stock_type: record.itemStockType,
-      item_default_barcode: record.itemDefaultBarcode,
-      item_group_id: record.itemGroupId,
-      item_category_id: record.itemCategoryId,
-      item_brand_id: record.itemBrandId,
-      item_section_id: record.itemSectionId,
-      item_company_category_id: record.itemCompanyCategoryId,
-      item_mfgr_id: record.itemMfgrId,
-      item_supplier_id: record.itemSupplierId,
-      item_cust_group: record.itemCustGroup,
-      item_base_unit_id: record.itemBaseUnitId,
-      item_is_service: record.itemIsService,
-      item_is_batch_based: record.itemIsBatchBased,
-      item_is_expiry_item: record.itemIsExpiryItem,
-      item_expiry_days: record.itemExpiryDays,
-      item_intimate_before_days: record.itemIntimateBeforeDays,
-      item_allow_sales: record.itemAllowSales,
-      item_allow_sales_return: record.itemAllowSalesReturn,
-      item_allow_purchase: record.itemAllowPurchase,
-      item_allow_po: record.itemAllowPo,
-      item_allow_so: record.itemAllowSo,
-      item_allow_neg_stock: record.itemAllowNegStock,
-      item_allow_negative_so: record.itemAllowNegativeSo,
-      item_price_list: record.itemPriceList,
-      item_weigh_scale: record.itemWeighScale,
-      item_retail_item: record.itemRetailItem,
-      item_is_kit: record.itemIsKit,
-      item_auto_break: record.itemAutoBreak,
-      item_auto_make: record.itemAutoMake,
-      item_allow_loyalty: record.itemAllowLoyalty,
-      item_allow_promo: record.itemAllowPromo,
-      item_has_offer: record.itemHasOffer,
-      item_damagable_product: record.itemDamagableProduct,
-      item_is_demand: record.itemIsDemand,
-      item_allow_loading: record.itemAllowLoading,
-      item_allow_freight: record.itemAllowFreight,
-      item_random_stock: record.itemRandomStock,
-      item_barcode_sticker: record.itemBarcodeSticker,
-      item_barcode_sticker_id: record.itemBarcodeStickerId,
-      item_default_tax_id: record.itemDefaultTaxId,
-      item_hsn_code: record.itemHsnCode,
-      item_batch_config: record.itemBatchConfig,
-      item_sort_order: record.itemSortOrder,
-      item_photo: record.itemPhoto ? Buffer.from(record.itemPhoto).toString('base64') : null,
-      item_image_url: record.itemImageUrl,
-      item_notes: record.itemNotes,
-      item_storage_location: record.itemStorageLocation,
-      item_packing_item_ids: record.itemPackingItemIds,
-      item_is_active: record.itemIsActive,
-      item_is_deleted: record.itemIsDeleted,
-      item_created_on: record.itemCreatedOn.toISOString(),
-      item_created_by: record.itemCreatedBy,
-      item_modified_on: record.itemModifiedOn.toISOString(),
-      item_modified_by: record.itemModifiedBy,
-    };
+
+  /**
+   * Legacy unit_slno selection: an explicit unit wins; otherwise retail items
+   * take the highest slno row and non-retail items take slno 0. Falls back to
+   * the default unit / first row so a data quirk still returns a rate.
+   */
+  private selectUnitRate(
+    priceRows: ItemPriceMaster[],
+    item: ItemMaster,
+    unitId?: string,
+  ): ItemPriceMaster | null {
+    if (priceRows.length === 0) return null;
+    if (unitId) {
+      return priceRows.find((row) => row.ipmUnitId === unitId) ?? null;
+    }
+    if (item.itemRetailItem) {
+      return priceRows.reduce((best, row) => (row.ipmUnitSlno > best.ipmUnitSlno ? row : best));
+    }
+    return (
+      priceRows.find((row) => row.ipmUnitSlno === 0) ??
+      priceRows.find((row) => row.ipmIsDefaultUnit) ??
+      priceRows[0]
+    );
   }
-  private toItemPricePayload(record: ItemPriceMaster): ItemPricePayload {
-    return {
-      ipm_id: record.ipmId,
-      ipm_company_id: record.ipmCompanyId,
-      ipm_branch_id: record.ipmBranchId,
-      ipm_item_id: record.ipmItemId,
-      ipm_unit_id: record.ipmUnitId,
-      ipm_godown_id: record.ipmGodownId,
-      ipm_base_unit_id: record.ipmBaseUnitId,
-      ipm_to_base_factor: toNumber(record.ipmToBaseFactor),
-      ipm_unit_slno: record.ipmUnitSlno,
-      ipm_unit_factor: toNumber(record.ipmUnitFactor),
-      ipm_is_default_unit: record.ipmIsDefaultUnit,
-      ipm_is_big_unit: record.ipmIsBigUnit,
-      ipm_is_base_unit: record.ipmIsBaseUnit,
-      ipm_cost_price: toNumber(record.ipmCostPrice),
-      ipm_cost_wot: toNumber(record.ipmCostWot),
-      ipm_sales_price_a: toNumber(record.ipmSalesPriceA),
-      ipm_sales_price_b: toNumber(record.ipmSalesPriceB),
-      ipm_sales_price_c: toNumber(record.ipmSalesPriceC),
-      ipm_sales_price_d: toNumber(record.ipmSalesPriceD),
-      ipm_price_a_wot: toNumber(record.ipmPriceAWot),
-      ipm_price_b_wot: toNumber(record.ipmPriceBWot),
-      ipm_price_c_wot: toNumber(record.ipmPriceCWot),
-      ipm_price_d_wot: toNumber(record.ipmPriceDWot),
-      ipm_price_a_markup_perc: toNumber(record.ipmPriceAMarkupPerc),
-      ipm_price_b_markup_perc: toNumber(record.ipmPriceBMarkupPerc),
-      ipm_price_c_markup_perc: toNumber(record.ipmPriceCMarkupPerc),
-      ipm_price_d_markup_perc: toNumber(record.ipmPriceDMarkupPerc),
-      ipm_max_price: toNumber(record.ipmMaxPrice),
-      ipm_min_price: toNumber(record.ipmMinPrice),
-      ipm_disc_perc: toNumber(record.ipmDiscPerc),
-      ipm_disc_qty: toNumber(record.ipmDiscQty),
-      ipm_addl_cess: toNumber(record.ipmAddlCess),
-      ipm_profit_type: record.ipmProfitType,
-      ipm_round_off: toNumber(record.ipmRoundOff),
-      ipm_loading_charge: toNumber(record.ipmLoadingCharge),
-      ipm_freight_charge: toNumber(record.ipmFreightCharge),
-      ipm_loyalty_points: toNumber(record.ipmLoyaltyPoints),
-      ipm_uom_remarks: record.ipmUomRemarks,
-      ipm_cost_remarks: record.ipmCostRemarks,
-      ipm_is_active: record.ipmIsActive,
-      ipm_is_deleted: record.ipmIsDeleted,
-      ipm_sync_date: record.ipmSyncDate ? record.ipmSyncDate.toISOString() : null,
-      ipm_created_on: record.ipmCreatedOn.toISOString(),
-      ipm_created_by: record.ipmCreatedBy,
-      ipm_updated_on: record.ipmUpdatedOn ? record.ipmUpdatedOn.toISOString() : null,
-      ipm_updated_by: record.ipmUpdatedBy,
-    };
+
+  /** Legacy price-level CASE (A–D → sales_price_a..d). */
+  private priceForLevel(rate: ItemPriceMaster, priceLevel: string): number {
+    switch (priceLevel) {
+      case 'B':
+        return toNumber(rate.ipmSalesPriceB);
+      case 'C':
+        return toNumber(rate.ipmSalesPriceC);
+      case 'D':
+        return toNumber(rate.ipmSalesPriceD);
+      case 'A':
+      default:
+        return toNumber(rate.ipmSalesPriceA);
+    }
+  }
+
+  /**
+   * Legacy `json_qws`: the base unit-rate's seven price levels (1..7 →
+   * a/b/c/d/max/min/cost) unioned with the configured quantity slabs, ordered
+   * by price level then start qty.
+   */
+  private buildQtyWiseRates(
+    rate: ItemPriceMaster,
+    qtyRates: ItemQtywiseRate[],
+  ): ItemPriceLookupQtyWiseRate[] {
+    const baseLevels: ItemPriceLookupQtyWiseRate[] = [
+      { price_level: 1, start_qty: 0, sales_price: toNumber(rate.ipmSalesPriceA), disc_perc: 0, disc_qty: 0 },
+      { price_level: 2, start_qty: 0, sales_price: toNumber(rate.ipmSalesPriceB), disc_perc: 0, disc_qty: 0 },
+      { price_level: 3, start_qty: 0, sales_price: toNumber(rate.ipmSalesPriceC), disc_perc: 0, disc_qty: 0 },
+      { price_level: 4, start_qty: 0, sales_price: toNumber(rate.ipmSalesPriceD), disc_perc: 0, disc_qty: 0 },
+      { price_level: 5, start_qty: 0, sales_price: toNumber(rate.ipmMaxPrice), disc_perc: 0, disc_qty: 0 },
+      { price_level: 6, start_qty: 0, sales_price: toNumber(rate.ipmMinPrice), disc_perc: 0, disc_qty: 0 },
+      { price_level: 7, start_qty: 0, sales_price: toNumber(rate.ipmCostPrice), disc_perc: 0, disc_qty: 0 },
+    ];
+    const slabs: ItemPriceLookupQtyWiseRate[] = qtyRates.map((slab) => ({
+      price_level: slab.iqrPriceLevel,
+      start_qty: toNumber(slab.iqrStartQty),
+      sales_price: toNumber(slab.iqrSalesPrice),
+      disc_perc: toNumber(slab.iqrDiscPerc),
+      disc_qty: toNumber(slab.iqrDiscQty),
+    }));
+    return [...slabs, ...baseLevels].sort(
+      (a, b) => a.price_level - b.price_level || a.start_qty - b.start_qty,
+    );
   }
 }

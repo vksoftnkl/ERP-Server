@@ -13,9 +13,9 @@ model EmployeeDesignation {
   edModifiedBy  String?   @db.VarChar(100)                                 @map("ed_modified_by")
 
   // Relations
-  employees     EmpMaster[]
+  employees     EmployeeMaster[]
 
   @@index([edIsActive], name: "idx_ed_active")
   @@map("employee_designations")
-  @@schema("accounts")
+  @@schema("public")
 }

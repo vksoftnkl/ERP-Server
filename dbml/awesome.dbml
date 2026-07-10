@@ -693,98 +693,6 @@ Table acc_voucher_types {
   vouchers acc_vouchers [not null]
 }
 
-Table employee_departments {
-  edptId String [pk]
-  edptName String [not null]
-  edptCode String
-  edptAlias String
-  edptRemarks String
-  edptIsActive Boolean [not null, default: true]
-  edptIsDeleted Boolean [not null, default: false]
-  edptSyncDate DateTime
-  edptCreatedOn DateTime [default: `now()`, not null]
-  edptCreatedBy String
-  edptModifiedOn DateTime [default: `now()`, not null]
-  edptModifiedBy String
-  employees emp_master [not null]
-}
-
-Table employee_designations {
-  edId String [pk]
-  edName String [not null]
-  edCode String
-  edIsDefault Boolean [not null, default: false]
-  edRemarks String
-  edIsActive Boolean [not null, default: true]
-  edIsDeleted Boolean [not null, default: false]
-  edSyncDate DateTime
-  edCreatedOn DateTime [default: `now()`, not null]
-  edCreatedBy String
-  edModifiedOn DateTime [default: `now()`, not null]
-  edModifiedBy String
-  employees emp_master [not null]
-}
-
-Table emp_master {
-  empId String [pk]
-  empCompanyId String [not null]
-  empBranchId String
-  empCode String
-  empName String [not null]
-  empAlias String
-  empMobile1 String
-  empMobile2 String
-  empEmail String
-  empAddr1 String
-  empAddr2 String
-  empAddr3 String
-  empCity String
-  empDistrict String
-  empState String
-  empPincode String
-  empGender String
-  empMaritalStatus String
-  empBloodGroup String
-  empDob DateTime
-  empDepartmentId String
-  empDesignationId String
-  empEmploymentType String
-  empStatus String
-  empJoinedOn DateTime
-  empProbationEndOn DateTime
-  empConfirmationOn DateTime
-  empLeftOn DateTime
-  empShiftId String
-  empAttConstraintId String
-  empHolidayGroupId String
-  empOvertimeAllowed Boolean [not null, default: false]
-  empHasCommission Boolean [not null, default: false]
-  empCommissionType String
-  empCommissionValue Decimal
-  empSalaryType String [not null]
-  empSalaryAmount Decimal [not null, default: 0]
-  empBataAmount Decimal [not null, default: 0]
-  empKmBataAmount Decimal [not null, default: 0]
-  empPanNo String
-  empAadharNo String
-  empPfNo String
-  empEsiNo String
-  empLoanLedgerId String
-  empPhotoUrl String
-  empPhoto Bytes
-  empRemarks String
-  empIsActive Boolean [not null, default: true]
-  empIsDeleted Boolean [not null, default: false]
-  empSyncDate DateTime
-  empCreatedOn DateTime [default: `now()`, not null]
-  empCreatedBy String
-  empModifiedOn DateTime [default: `now()`, not null]
-  empModifiedBy String
-  company companys [not null]
-  designation employee_designations
-  department employee_departments
-}
-
 Table acc_ship_addrs {
   saaId String [pk]
   saaCompanyId String
@@ -2152,7 +2060,7 @@ Table companys {
   branches branch_master [not null]
   accountGroups account_groups [not null]
   ledgers acc_ledger_master [not null]
-  employees emp_master [not null]
+  employees employee_master [not null]
   ledgerBankAccounts acc_ledger_bank_accounts [not null]
   gspCompanyServices gsp_company_service [not null]
   shipAddrs acc_ship_addrs [not null]
@@ -2514,6 +2422,98 @@ Table cust_groups {
   cgrModifiedOn DateTime [not null]
   company companys
   customers customers [not null]
+}
+
+Table employee_departments {
+  edptId String [pk]
+  edptName String [not null]
+  edptCode String
+  edptAlias String
+  edptRemarks String
+  edptIsActive Boolean [not null, default: true]
+  edptIsDeleted Boolean [not null, default: false]
+  edptSyncDate DateTime
+  edptCreatedOn DateTime [default: `now()`, not null]
+  edptCreatedBy String
+  edptModifiedOn DateTime [default: `now()`, not null]
+  edptModifiedBy String
+  employees employee_master [not null]
+}
+
+Table employee_designations {
+  edId String [pk]
+  edName String [not null]
+  edCode String
+  edIsDefault Boolean [not null, default: false]
+  edRemarks String
+  edIsActive Boolean [not null, default: true]
+  edIsDeleted Boolean [not null, default: false]
+  edSyncDate DateTime
+  edCreatedOn DateTime [default: `now()`, not null]
+  edCreatedBy String
+  edModifiedOn DateTime [default: `now()`, not null]
+  edModifiedBy String
+  employees employee_master [not null]
+}
+
+Table employee_master {
+  empId String [pk]
+  empCompanyId String [not null]
+  empBranchId String
+  empCode String
+  empName String [not null]
+  empAlias String
+  empMobile1 String
+  empMobile2 String
+  empEmail String
+  empAddr1 String
+  empAddr2 String
+  empAddr3 String
+  empCity String
+  empDistrict String
+  empState String
+  empPincode String
+  empGender String
+  empMaritalStatus String
+  empBloodGroup String
+  empDob DateTime
+  empDepartmentId String
+  empDesignationId String
+  empEmploymentType String
+  empStatus String
+  empJoinedOn DateTime
+  empProbationEndOn DateTime
+  empConfirmationOn DateTime
+  empLeftOn DateTime
+  empShiftId String
+  empAttConstraintId String
+  empHolidayGroupId String
+  empOvertimeAllowed Boolean [not null, default: false]
+  empHasCommission Boolean [not null, default: false]
+  empCommissionType String
+  empCommissionValue Decimal
+  empSalaryType String [not null]
+  empSalaryAmount Decimal [not null, default: 0]
+  empBataAmount Decimal [not null, default: 0]
+  empKmBataAmount Decimal [not null, default: 0]
+  empPanNo String
+  empAadharNo String
+  empPfNo String
+  empEsiNo String
+  empLoanLedgerId String
+  empPhotoUrl String
+  empPhoto Bytes
+  empRemarks String
+  empIsActive Boolean [not null, default: true]
+  empIsDeleted Boolean [not null, default: false]
+  empSyncDate DateTime
+  empCreatedOn DateTime [default: `now()`, not null]
+  empCreatedBy String
+  empModifiedOn DateTime [default: `now()`, not null]
+  empModifiedBy String
+  company companys [not null]
+  designation employee_designations
+  department employee_departments
 }
 
 Table freight_charges {
@@ -3429,12 +3429,6 @@ Ref: acc_voucher_seq.companyId > companys.compId
 
 Ref: acc_voucher_seq.branchId > branch_master.brId
 
-Ref: emp_master.empCompanyId > companys.compId [delete: Restrict]
-
-Ref: emp_master.empDesignationId > employee_designations.edId
-
-Ref: emp_master.empDepartmentId > employee_departments.edptId
-
 Ref: acc_ship_addrs.saaCompanyId > companys.compId [delete: Restrict]
 
 Ref: acc_ship_addrs.saaBranchId > branch_master.brId [delete: Restrict]
@@ -3572,6 +3566,12 @@ Ref: customers.cusPriceLevelId > item_price_levels.iplId
 Ref: customers.cusDefaultSalesman > salesman_master.smanId
 
 Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]
+
+Ref: employee_master.empCompanyId > companys.compId [delete: Restrict]
+
+Ref: employee_master.empDesignationId > employee_designations.edId
+
+Ref: employee_master.empDepartmentId > employee_departments.edptId
 
 Ref: loyalty_sch_list.lsCompId > companys.compId [delete: Restrict]
 

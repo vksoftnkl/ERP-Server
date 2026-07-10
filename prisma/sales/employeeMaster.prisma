@@ -1,4 +1,4 @@
-model EmpMaster {
+model EmployeeMaster {
   empId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("emp_id")
   // Identity / Scope
   empCompanyId         String    @db.Uuid                                         @map("emp_company_id")
@@ -75,6 +75,6 @@ model EmpMaster {
   @@index([empIsActive],     name: "idx_emp_active")
   @@index([empDepartmentId], name: "idx_emp_department")
   @@index([empDesignationId],name: "idx_emp_designation")
-  @@map("emp_master")
-  @@schema("sales")
+  @@map("employee_master")
+  @@schema("public")
 }

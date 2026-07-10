@@ -84,7 +84,7 @@ model Company {
   branches              BranchMaster[]
   accountGroups         AccountGroup[]
   ledgers               AccLedgerMaster[]
-  employees             EmpMaster[]
+  employees             EmployeeMaster[]
   ledgerBankAccounts    AccLedgerBankAccount[]
   gspCompanyServices    GspCompanyService[]
   shipAddrs             AccShipAddr[]
