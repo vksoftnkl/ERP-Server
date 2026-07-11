@@ -14,6 +14,79 @@ export interface FiscalYearOption {
   status: string;
   isCurrent: boolean;
 }
+/**
+ * A freight-charge slab row (legacy `freight_charges`). `iflag = 8` returns all
+ * active slabs; `iflag = 9` returns the slabs matching a given distance.
+ */
+export interface FreightChargeOption {
+  id: string;
+  fromKm: number | null;
+  toKm: number | null;
+  freightCharge: number | null;
+  fromWeight: number | null;
+  toWeight: number | null;
+  loadCharge: number | null;
+  unloadCharge: number | null;
+}
+/**
+ * Flat customer-detail row — port of the legacy PL/pgSQL `iflag = 7` cursor onto
+ * the current UUID schema. `salesman_id` is `cus_default_salesman` and
+ * `salesman_name` is resolved by joining it to `employee_master` (emp_id).
+ */
+export interface CustomerDetail {
+  cust_id: string;
+  cust_name: string;
+  cust_address: string | null;
+  cust_place: string | null;
+  cust_ename: string | null;
+  cust_eadd1: string | null;
+  cust_eadd2: string | null;
+  cust_eadd3: string | null;
+  cust_pin: string | null;
+  ecommerce_gstin: string | null;
+  gst_no: string | null;
+  gst_type: string | null;
+  state_code: string;
+  state_name: string;
+  area_id: string;
+  area_name: string | null;
+  distance_km: number | null;
+  cust_phone1: string | null;
+  debit_days: number;
+  debit_limit: number;
+  debit_allowed: boolean;
+  freight_charge: boolean;
+  cooly: boolean;
+  unloading_charge: boolean;
+  allow_promotion: boolean;
+  allow_loyalty: boolean;
+  allow_discount: boolean;
+  overdue_billing: boolean;
+  price_level: number;
+  cust_disc_perc: number;
+  salesman_id: string | null;
+  salesman_name: string | null;
+  tcs_company: boolean;
+  tcs_customer: boolean;
+  cust_pan: boolean;
+  local_sales: boolean;
+  cust_points: number | null;
+  billed_date: string | null;
+}
+/**
+ * Barcode-resolution row (legacy `iflag = 10`): a scanned EAN code resolved to
+ * its item + selling unit, plus the sales-relevant flags the POS needs.
+ * `itemStatus` is the legacy `item_status` (current `item_is_active`).
+ */
+export interface BarcodeItemLookup {
+  itemId: string;
+  unitId: string;
+  itemName: string;
+  batchConfig: number;
+  allowSales: boolean;
+  itemStatus: boolean;
+  weighScale: boolean;
+}
 export interface AccountsLookupPayload {
   companies: NameIdOption[];
   companyGroups: NameIdOption[];

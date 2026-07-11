@@ -4,23 +4,10 @@ export type { InventoryErrorDetail as ItemPriceLookupErrorDetail } from 'src/com
 export type { InventoryErrorResponse as ItemPriceLookupErrorResponse } from 'src/common/types/module-api.types';
 
 /**
- * One quantity-slab / price-level rate row — the port of an element of the
- * legacy `json_qws` array. The caller resolves the applicable slab for a given
- * order quantity from this list (as the legacy sale-entry screen did).
- */
-export interface ItemPriceLookupQtyWiseRate {
-  price_level: number;
-  start_qty: number;
-  sales_price: number;
-  disc_perc: number;
-  disc_qty: number;
-}
-
-/**
  * Flat, fully-resolved sale-lookup row — the port of the legacy PL/pgSQL
  * `getItemForSale` cursor onto the current UUID schema. It resolves ONE item +
  * ONE unit rate (the pricing hub `item_price_master` row) into a single row
- * carrying the effective price, tax block, stock, reorder and qty-wise rates.
+ * carrying the effective price, tax block, and stock.
  */
 export interface ItemPriceLookupPayload {
   item_id: string;
@@ -86,7 +73,4 @@ export interface ItemPriceLookupPayload {
   cgst_output_ledger_id: string | null;
   igst_output_ledger_id: string | null;
   cess_output_ledger_id: string | null;
-
-  // Quantity-wise rates (base unit-rate levels 1..7 unioned with configured slabs)
-  json_qws: ItemPriceLookupQtyWiseRate[] | null;
 }

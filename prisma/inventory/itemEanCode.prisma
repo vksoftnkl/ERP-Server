@@ -21,8 +21,8 @@ model ItemEanCode {
 
   eanRemarks   String?  @db.VarChar(250) @map("ean_remarks")
 
-  // Relation
-  unit         Unit       @relation(fields: [eanUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  // Relation — eanUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion ItemUnitConversion @relation("ItemEanCodeUnitConversion", fields: [eanUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ean_item_unit")
 
   @@map("item_ean_codes")
   @@schema("inventory")

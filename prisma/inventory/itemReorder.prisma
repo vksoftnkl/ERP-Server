@@ -35,7 +35,8 @@ model ItemReorder {
 
   // Relations
   item                ItemMaster @relation(fields: [irItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-  unit                Unit?      @relation(fields: [irUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  // irUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion  ItemUnitConversion? @relation("ItemReorderUnitConversion", fields: [irUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ir_item_unit")
 
   @@map("item_reorders")
    @@schema("inventory")

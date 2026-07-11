@@ -11,19 +11,28 @@ import {
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import {
+  BarcodeItemLookup,
+  CustomerDetail,
   FiscalYearOption,
+  FreightChargeOption,
   LOOKUP_MODULE_KEYS,
   MasterLookupDataPayload,
   MasterLookupSuccessResponse,
   NameIdOption,
 } from './types/master-lookup-api.types';
 import {
+  BarcodeItemLookupSuccessDto,
+  CustomerDetailSuccessDto,
   FiscalYearOptionListSuccessDto,
+  FreightChargeListSuccessDto,
   MasterLookupSuccessDto,
   NameIdOptionListSuccessDto,
 } from './dto/master-lookup-response.dto';
 import { MasterLookupService } from './master-lookup.service';
 import { MasterLookupQueryDto } from './dto/master-lookup-query.dto';
+import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
+import { FreightChargeQueryDto } from './dto/freight-charge-query.dto';
+import { BarcodeLookupQueryDto } from './dto/barcode-lookup-query.dto';
 import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Master Lookup')
 @ApiBearerAuth('access-token')
@@ -49,6 +58,20 @@ export class MasterLookupController {
       : 'Name-id data fetched successfully';
     return { success: true, message, data };
   }
+  @Get('name-id/all-masters')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Get id-name lookup data for all master modules as a flat array',
+  })
+  @ApiQuery({ name: 'module', required: false, enum: LOOKUP_MODULE_KEYS })
+  @ApiOkResponse({ type: NameIdOptionListSuccessDto })
+  async getAllMasters(
+    @Query() queryDto: MasterLookupQueryDto,
+  ): Promise<MasterLookupSuccessResponse<NameIdOption[]>> {
+    const data = await this.masterLookupService.getAllMasters(queryDto.module);
+    const message = 'Data fetched successfully';
+    return { success: true, message, data };
+  }
   @Get('branches/by-company/:companyId')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get branches for a specific company' })
@@ -70,6 +93,75 @@ export class MasterLookupController {
   ): Promise<MasterLookupSuccessResponse<FiscalYearOption[]>> {
     const data = await this.masterLookupService.getFiscalYearsByCompany(companyId);
     return { success: true, message: `Fiscal years fetched for company ${companyId}`, data };
+  }
+  @Get('customer-detail')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'Resolve a customer into a single detail row (legacy iflag=7 customer-detail cursor): identity, address, GST, credit-control flags, price level and billed-date summary. salesman_id is cus_default_salesman and salesman_name is joined from employee_master; tcs_company/local_sales are derived against the requested company; regional returns the regional-language name/address.',
+  })
+  @ApiQuery({ name: 'cus_id', required: true, schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'company_id', required: true, schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'branch_id', required: true, schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({
+    name: 'regional',
+    required: false,
+    description: 'When true, name/address use the regional-language fields, else English.',
+    schema: { type: 'boolean' },
+  })
+  @ApiOkResponse({ type: CustomerDetailSuccessDto })
+  async getCustomerDetail(
+    @Query() query: CustomerDetailQueryDto,
+  ): Promise<MasterLookupSuccessResponse<CustomerDetail>> {
+    const data = await this.masterLookupService.getCustomerDetail(query);
+    return { success: true, message: 'Customer detail fetched successfully', data };
+  }
+  @Get('freight-charges')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'Get all active freight-charge slabs (legacy iflag=8), ordered by distance then weight.',
+  })
+  @ApiOkResponse({ type: FreightChargeListSuccessDto })
+  async getAllFreightCharges(): Promise<MasterLookupSuccessResponse<FreightChargeOption[]>> {
+    const data = await this.masterLookupService.getAllFreightCharges();
+    return { success: true, message: 'Freight charges fetched successfully', data };
+  }
+  @Get('freight-charges/charge')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'Get the freight-charge slabs matching a distance (legacy iflag=9): distance BETWEEN fr_from_km AND fr_to_km.',
+  })
+  @ApiQuery({ name: 'distance', required: true, schema: { type: 'integer', minimum: 0 } })
+  @ApiOkResponse({ type: FreightChargeListSuccessDto })
+  async getFreightChargesForDistance(
+    @Query() query: FreightChargeQueryDto,
+  ): Promise<MasterLookupSuccessResponse<FreightChargeOption[]>> {
+    const data = await this.masterLookupService.getFreightChargesForDistance(query.distance);
+    return {
+      success: true,
+      message: `Freight charges fetched for distance ${query.distance} km`,
+      data,
+    };
+  }
+  @Get('item-by-barcode')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      'Resolve a scanned barcode into its item and selling unit (legacy iflag=10). Matches item_ean_codes.ean_code case-insensitively; returns allow_sales, item_status, batch_config and weigh_scale flags.',
+  })
+  @ApiQuery({ name: 'barcode', required: true, schema: { type: 'string', maxLength: 64 } })
+  @ApiOkResponse({ type: BarcodeItemLookupSuccessDto })
+  async getItemByBarcode(
+    @Query() query: BarcodeLookupQueryDto,
+  ): Promise<MasterLookupSuccessResponse<BarcodeItemLookup>> {
+    const data = await this.masterLookupService.getItemByBarcode(query.barcode);
+    return {
+      success: true,
+      message: `Item fetched successfully for barcode ${query.barcode}`,
+      data,
+    };
   }
   @Get('dropdown/:dropdownId')
   @Version(API_VERSION)

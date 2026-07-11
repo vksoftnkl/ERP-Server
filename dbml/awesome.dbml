@@ -1296,7 +1296,7 @@ Table item_ean_codes {
   eanModifiedOn DateTime [default: `now()`, not null]
   eanModifiedBy String
   eanRemarks String
-  unit item_unit_master [not null]
+  itemUnitConversion item_unit_conversion [not null]
 }
 
 Table item_group_master {
@@ -1541,7 +1541,7 @@ Table item_reorders {
   irModifiedOn DateTime [default: `now()`, not null]
   irModifiedBy String
   item item_master [not null]
-  unit item_unit_master
+  itemUnitConversion item_unit_conversion
 
   indexes {
     (irItemId, irUnitId, irGodownId) [unique]
@@ -1741,6 +1741,8 @@ Table item_unit_conversion {
   unit item_unit_master [not null]
   baseUnit item_unit_master [not null]
   saleQuotationItem sale_quotation_item [not null]
+  itemEanCodes item_ean_codes [not null]
+  itemReorders item_reorders [not null]
 }
 
 Table item_unit_master {
@@ -1776,9 +1778,7 @@ Table item_unit_master {
   physicalStockBaseUnits physical_stock_detail [not null]
   physicalStockBatchUnits physical_stock_batch_detail [not null]
   physicalStockBatchBaseUnits physical_stock_batch_detail [not null]
-  eanCodes item_ean_codes [not null]
   itemMasters item_master [not null]
-  itemReorders item_reorders [not null]
   loyaltySchemePoints loyalty_sch_points [not null]
   loyaltySchemeGifts loyalty_sch_gift [not null]
   saleQuotationItems sale_quotation_item [not null]
@@ -3477,7 +3477,7 @@ Ref: item_batch_stock.ibsBatchId > item_batch_master.btmId
 
 Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
 
-Ref: item_ean_codes.eanUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: item_ean_codes.eanUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_group_master.itgParentId - item_group_master.itgId [delete: Restrict]
 
@@ -3507,7 +3507,7 @@ Ref: item_qtywise_rates.iqrUnitRateId > item_price_master.ipmId [delete: Restric
 
 Ref: item_reorders.irItemId > item_master.itemId [delete: Restrict]
 
-Ref: item_reorders.irUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: item_reorders.irUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_section_master.secParentId - item_section_master.secId [delete: Restrict]
 

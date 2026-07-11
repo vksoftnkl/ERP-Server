@@ -2277,8 +2277,8 @@ model ItemEanCode {
 
   eanRemarks   String?  @db.VarChar(250) @map("ean_remarks")
 
-  // Relation
-  unit         Unit       @relation(fields: [eanUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  // Relation — eanUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion ItemUnitConversion @relation("ItemEanCodeUnitConversion", fields: [eanUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ean_item_unit")
 
   @@map("item_ean_codes")
   @@schema("inventory")
@@ -2627,7 +2627,8 @@ model ItemReorder {
 
   // Relations
   item                ItemMaster @relation(fields: [irItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-  unit                Unit?      @relation(fields: [irUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
+  // irUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion  ItemUnitConversion? @relation("ItemReorderUnitConversion", fields: [irUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ir_item_unit")
 
   @@map("item_reorders")
    @@schema("inventory")
@@ -2941,6 +2942,8 @@ model ItemUnitConversion {
   unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
   saleQuotationItem  SaleQuotationItem[] @relation("SaleQuotationItemUnitConversion")
+  itemEanCodes       ItemEanCode[]       @relation("ItemEanCodeUnitConversion")
+  itemReorders       ItemReorder[]       @relation("ItemReorderUnitConversion")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")
@@ -3004,9 +3007,7 @@ model Unit {
   physicalStockBatchBaseUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBaseUnit")
 
   // Back-relations — others
-  eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
-  itemReorders ItemReorder[]
   loyaltySchemePoints LoyaltySchemePoint[]
   loyaltySchemeGifts  LoyaltySchemeGift[]
   saleQuotationItems  SaleQuotationItem[]

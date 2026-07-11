@@ -3423,3 +3423,5 @@ Inconsistent column data: Error creating UUID, invalid length: expected length 3
     at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
     at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
     at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-07-11T07:44:33.854Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-07-11T13:37:17.609Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

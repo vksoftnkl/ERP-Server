@@ -17,7 +17,6 @@ import { GetItemPriceLookupQueryDto } from './dto/get-item-price-lookup-query.dt
 import {
   ItemPriceLookupErrorResponseDto,
   ItemPriceLookupPayloadDto,
-  ItemPriceLookupQtyWiseRateDto,
   ItemPriceLookupSuccessSingleDto,
 } from './dto/item-price-lookup-response.dto';
 import { ItemPriceLookupExceptionFilter } from './item-price-lookup-exception.filter';
@@ -30,7 +29,7 @@ import { API_VERSION } from 'src/common/constants/api-version';
 @ApiTags('Item Price Lookup')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@ApiExtraModels(ItemPriceLookupQtyWiseRateDto, ItemPriceLookupPayloadDto)
+@ApiExtraModels(ItemPriceLookupPayloadDto)
 @CacheTTL(60)
 @Controller('item-price-lookup')
 @UseFilters(ItemPriceLookupExceptionFilter)

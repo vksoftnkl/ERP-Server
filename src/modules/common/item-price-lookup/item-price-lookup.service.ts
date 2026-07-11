@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ItemPriceMaster, ItemQtywiseRate } from '@prisma/client';
+import { ItemPriceMaster } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import {
   throwInventoryNotFound,
@@ -10,7 +10,6 @@ import { GetItemPriceLookupQueryDto } from './dto/get-item-price-lookup-query.dt
 import {
   ItemPriceLookupErrorDetail,
   ItemPriceLookupPayload,
-  ItemPriceLookupQtyWiseRate,
 } from './types/item-price-lookup-api.types';
 
 @Injectable()
@@ -94,7 +93,7 @@ export class ItemPriceLookupService {
     const godownId = query.godown_id ?? rate.ipmGodownId;
 
     // 3. Everything that hangs off the chosen item / rate (legacy lateral joins).
-    const [godown, unit, tax, company, custRate, qtyRates, reorder, stockSum] = await Promise.all([
+    const [godown, unit, tax, company, custRate, reorder, stockSum] = await Promise.all([
       this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } }),
       this.prisma.unit.findFirst({ where: { unit_id: rate.ipmUnitId } }),
       itemRecord.itemDefaultTaxId
@@ -113,9 +112,6 @@ export class ItemPriceLookupService {
             },
           })
         : Promise.resolve(null),
-      this.prisma.itemQtywiseRate.findMany({
-        where: { iqrUnitRateId: rate.ipmId, iqrIsDeleted: false, iqrIsActive: true },
-      }),
       this.prisma.itemReorder.findFirst({
         where: { irItemId: item_id, irUnitId: rate.ipmUnitId, irIsDeleted: false },
       }),
@@ -219,7 +215,6 @@ export class ItemPriceLookupService {
       igst_output_ledger_id: tax?.taxIgstOutputLedgerId ?? null,
       cess_output_ledger_id: tax?.taxCessOutputLedgerId ?? null,
 
-      json_qws: this.buildQtyWiseRates(rate, qtyRates),
     };
   }
 
@@ -266,35 +261,5 @@ export class ItemPriceLookupService {
       default:
         return toNumber(rate.ipmSalesPriceA);
     }
-  }
-
-  /**
-   * Legacy `json_qws`: the base unit-rate's seven price levels (1..7 →
-   * a/b/c/d/max/min/cost) unioned with the configured quantity slabs, ordered
-   * by price level then start qty.
-   */
-  private buildQtyWiseRates(
-    rate: ItemPriceMaster,
-    qtyRates: ItemQtywiseRate[],
-  ): ItemPriceLookupQtyWiseRate[] {
-    const baseLevels: ItemPriceLookupQtyWiseRate[] = [
-      { price_level: 1, start_qty: 0, sales_price: toNumber(rate.ipmSalesPriceA), disc_perc: 0, disc_qty: 0 },
-      { price_level: 2, start_qty: 0, sales_price: toNumber(rate.ipmSalesPriceB), disc_perc: 0, disc_qty: 0 },
-      { price_level: 3, start_qty: 0, sales_price: toNumber(rate.ipmSalesPriceC), disc_perc: 0, disc_qty: 0 },
-      { price_level: 4, start_qty: 0, sales_price: toNumber(rate.ipmSalesPriceD), disc_perc: 0, disc_qty: 0 },
-      { price_level: 5, start_qty: 0, sales_price: toNumber(rate.ipmMaxPrice), disc_perc: 0, disc_qty: 0 },
-      { price_level: 6, start_qty: 0, sales_price: toNumber(rate.ipmMinPrice), disc_perc: 0, disc_qty: 0 },
-      { price_level: 7, start_qty: 0, sales_price: toNumber(rate.ipmCostPrice), disc_perc: 0, disc_qty: 0 },
-    ];
-    const slabs: ItemPriceLookupQtyWiseRate[] = qtyRates.map((slab) => ({
-      price_level: slab.iqrPriceLevel,
-      start_qty: toNumber(slab.iqrStartQty),
-      sales_price: toNumber(slab.iqrSalesPrice),
-      disc_perc: toNumber(slab.iqrDiscPerc),
-      disc_qty: toNumber(slab.iqrDiscQty),
-    }));
-    return [...slabs, ...baseLevels].sort(
-      (a, b) => a.price_level - b.price_level || a.start_qty - b.start_qty,
-    );
   }
 }

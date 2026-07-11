@@ -50,9 +50,7 @@ model Unit {
   physicalStockBatchBaseUnits PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBaseUnit")
 
   // Back-relations — others
-  eanCodes     ItemEanCode[]
   itemMasters  ItemMaster[]
-  itemReorders ItemReorder[]
   loyaltySchemePoints LoyaltySchemePoint[]
   loyaltySchemeGifts  LoyaltySchemeGift[]
   saleQuotationItems  SaleQuotationItem[]

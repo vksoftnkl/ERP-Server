@@ -6,19 +6,6 @@ import {
 export { InventoryErrorFieldDto as ItemPriceLookupErrorFieldDto };
 export { InventoryErrorResponseDto as ItemPriceLookupErrorResponseDto };
 
-export class ItemPriceLookupQtyWiseRateDto {
-  @ApiProperty({ example: 1 })
-  price_level!: number;
-  @ApiProperty({ example: 0 })
-  start_qty!: number;
-  @ApiProperty({ example: 100.5 })
-  sales_price!: number;
-  @ApiProperty({ example: 0 })
-  disc_perc!: number;
-  @ApiProperty({ example: 0 })
-  disc_qty!: number;
-}
-
 export class ItemPriceLookupPayloadDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;
@@ -120,9 +107,6 @@ export class ItemPriceLookupPayloadDto {
   igst_output_ledger_id!: string | null;
   @ApiProperty({ format: 'uuid', nullable: true })
   cess_output_ledger_id!: string | null;
-
-  @ApiProperty({ type: ItemPriceLookupQtyWiseRateDto, isArray: true, nullable: true })
-  json_qws!: ItemPriceLookupQtyWiseRateDto[] | null;
 }
 
 export class ItemPriceLookupSuccessSingleDto {
