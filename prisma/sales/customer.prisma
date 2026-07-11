@@ -99,7 +99,6 @@ model Customer {
   custGroup            CustGroup      @relation(fields: [cusGroupId], references: [cgrId])
   company              Company?       @relation(fields: [cusCompanyId], references: [compId])
   priceLevel           ItemPriceLevel @relation("CustomerPriceLevel", fields: [cusPriceLevelId], references: [iplId])
-  defaultSalesman      Salesman?      @relation(fields: [cusDefaultSalesman], references: [smanId])
   saleQuotations       SaleQuotation[]
 
   @@index([cusAreaId],   name: "idx_cus_area")

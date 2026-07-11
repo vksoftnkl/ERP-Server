@@ -3857,7 +3857,6 @@ model Customer {
   custGroup            CustGroup      @relation(fields: [cusGroupId], references: [cgrId])
   company              Company?       @relation(fields: [cusCompanyId], references: [compId])
   priceLevel           ItemPriceLevel @relation("CustomerPriceLevel", fields: [cusPriceLevelId], references: [iplId])
-  defaultSalesman      Salesman?      @relation(fields: [cusDefaultSalesman], references: [smanId])
   saleQuotations       SaleQuotation[]
 
   @@index([cusAreaId],   name: "idx_cus_area")
@@ -4247,8 +4246,6 @@ model SaleAgentGroup {
   saGrpModifiedOn DateTime? @db.Timestamptz @map("sa_grp_modified_on")
   saGrpModifiedBy String?   @db.Uuid @map("sa_grp_modified_by")
 
-  salesmen        Salesman[]
-
   @@index([saGrpId], map: "idx_sale_agent_groups_id")
   @@index([saGrpName], map: "idx_sale_agent_groups_name")
   @@index([saGrpIsActive, saGrpIsDeleted], map: "idx_sale_agent_groups_active_deleted")
@@ -4389,7 +4386,6 @@ model SaleQuotation {
   items       SaleQuotationItem[]
   customer    Customer?           @relation(fields: [sqCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust")
   custArea    AreaMaster?         @relation(fields: [sqCustAreaId], references: [armId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust_area")
-  salesman    Salesman?           @relation(fields: [sqSalesmanId], references: [smanId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_salesman")
   priceLevel  ItemPriceLevel      @relation(fields: [sqPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_price_level")
 
   // DB-only partial indexes (migration 20260708120000): ux_sq_quote_no and
@@ -4538,39 +4534,6 @@ model SaleQuotationItem {
   @@index([sqiItemId], map: "ix_sqi_item")
   @@index([sqiHsnCode], map: "ix_sqi_hsn")
   @@map("sale_quotation_item")
-  @@schema("sales")
-}
-
-// ----- prisma/sales/salesman.prisma -----
-model Salesman {
-  smanId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("sman_id")
-  smanCompanyId  String?   @db.Uuid @map("sman_company_id")
-  smanBranchId   String?   @db.Uuid @map("sman_branch_id")
-  smanGroupId    String?   @db.Uuid @map("sman_group_id")
-
-  smanCode       String?   @db.VarChar(50)  @map("sman_code")
-  smanName       String    @db.VarChar(150) @map("sman_name")
-  smanShort      String?   @db.VarChar(50)  @map("sman_short")
-  smanMobile     String?   @db.VarChar(20)  @map("sman_mobile")
-  smanEmail      String?   @db.VarChar(120) @map("sman_email")
-
-  smanIsActive   Boolean   @default(true)  @map("sman_is_active")
-  smanIsDeleted  Boolean   @default(false) @map("sman_is_deleted")
-  smanSyncDate   DateTime? @db.Timestamptz(6) @map("sman_sync_date")
-  smanCreatedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("sman_created_on")
-  smanCreatedBy  String?   @db.Uuid @map("sman_created_by")
-  smanModifiedOn DateTime? @db.Timestamptz(6) @map("sman_modified_on")
-  smanModifiedBy String?   @db.Uuid @map("sman_modified_by")
-
-  // Relations
-  group      SaleAgentGroup? @relation(fields: [smanGroupId], references: [saGrpId])
-  customers  Customer[]
-  saleQuotations SaleQuotation[]
-
-  @@index([smanName], map: "idx_salesman_name")
-  @@index([smanGroupId], map: "idx_salesman_group")
-  @@index([smanIsActive, smanIsDeleted], map: "idx_salesman_active_deleted")
-  @@map("salesman_master")
   @@schema("sales")
 }
 

@@ -2403,7 +2403,6 @@ Table customers {
   custGroup cust_groups [not null]
   company companys
   priceLevel item_price_levels [not null]
-  defaultSalesman salesman_master
   saleQuotations sale_quotation [not null]
 }
 
@@ -2689,7 +2688,6 @@ Table sale_agent_groups {
   saGrpCreatedBy String [not null]
   saGrpModifiedOn DateTime
   saGrpModifiedBy String
-  salesmen salesman_master [not null]
 }
 
 Table sale_quotation {
@@ -2793,7 +2791,6 @@ Table sale_quotation {
   items sale_quotation_item [not null]
   customer customers
   custArea area_master
-  salesman salesman_master
   priceLevel item_price_levels [not null]
 }
 
@@ -2898,28 +2895,6 @@ Table sale_quotation_item {
   unit item_unit_master [not null]
   priceLevel item_price_levels [not null]
   itemUnitConversion item_unit_conversion
-}
-
-Table salesman_master {
-  smanId String [pk]
-  smanCompanyId String
-  smanBranchId String
-  smanGroupId String
-  smanCode String
-  smanName String [not null]
-  smanShort String
-  smanMobile String
-  smanEmail String
-  smanIsActive Boolean [not null, default: true]
-  smanIsDeleted Boolean [not null, default: false]
-  smanSyncDate DateTime
-  smanCreatedOn DateTime [default: `now()`, not null]
-  smanCreatedBy String
-  smanModifiedOn DateTime
-  smanModifiedBy String
-  group sale_agent_groups
-  customers customers [not null]
-  saleQuotations sale_quotation [not null]
 }
 
 Table state_master {
@@ -3596,8 +3571,6 @@ Ref: customers.cusCompanyId > companys.compId
 
 Ref: customers.cusPriceLevelId > item_price_levels.iplId
 
-Ref: customers.cusDefaultSalesman > salesman_master.smanId
-
 Ref: cust_groups.cgrCompanyId > companys.compId [delete: Restrict]
 
 Ref: employee_master.empCompanyId > companys.compId [delete: Restrict]
@@ -3628,8 +3601,6 @@ Ref: sale_quotation.sqCustId > customers.cusId [delete: Restrict]
 
 Ref: sale_quotation.sqCustAreaId > area_master.armId [delete: Restrict]
 
-Ref: sale_quotation.sqSalesmanId > salesman_master.smanId [delete: Restrict]
-
 Ref: sale_quotation.sqPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_quotation_item.sqiQuoteId > sale_quotation.sqId [delete: No Action]
@@ -3641,8 +3612,6 @@ Ref: sale_quotation_item.sqiUnitId > item_unit_master.unit_id [delete: Restrict]
 Ref: sale_quotation_item.sqiPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_quotation_item.sqiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
-
-Ref: salesman_master.smanGroupId > sale_agent_groups.saGrpId
 
 Ref: physical_stock_batch_detail.psbPsdId > physical_stock_detail.psdId
 

@@ -57,3 +57,12 @@ export class PriceLevelMasterSuccessGetDto {
   @ApiProperty({ type: PriceLevelMasterGetMetaDto })
   meta!: PriceLevelMasterGetMetaDto;
 }
+
+export class PriceLevelMasterSuccessUpdateDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Price levels updated successfully' })
+  message!: string;
+  @ApiProperty({ type: PriceLevelMasterPayloadDto, isArray: true })
+  data!: PriceLevelMasterPayloadDto[];
+}

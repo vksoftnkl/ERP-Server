@@ -130,7 +130,6 @@ model SaleQuotation {
   items       SaleQuotationItem[]
   customer    Customer?           @relation(fields: [sqCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust")
   custArea    AreaMaster?         @relation(fields: [sqCustAreaId], references: [armId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust_area")
-  salesman    Salesman?           @relation(fields: [sqSalesmanId], references: [smanId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_salesman")
   priceLevel  ItemPriceLevel      @relation(fields: [sqPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_price_level")
 
   // DB-only partial indexes (migration 20260708120000): ux_sq_quote_no and

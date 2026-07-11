@@ -1,5 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import { Controller, Get, Query, Version } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query, Version } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -11,9 +11,11 @@ import {
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { GetPriceLevelMasterQueryDto } from './dto/get-price-level-master-query.dto';
+import { UpdatePriceLevelMasterDto } from './dto/update-price-level-master.dto';
 import {
   PriceLevelMasterErrorResponseDto,
   PriceLevelMasterSuccessGetDto,
+  PriceLevelMasterSuccessUpdateDto,
 } from './dto/price-level-master-response.dto';
 import { PriceLevelMasterService } from './price-level-master.service';
 import {
@@ -50,6 +52,23 @@ export class PriceLevelMasterController {
           : 'Price levels fetched successfully',
       data: result.items,
       meta: result.meta,
+    };
+  }
+
+  @Patch('bulk')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'Update one or more price levels in bulk' })
+  @ApiOkResponse({ type: PriceLevelMasterSuccessUpdateDto })
+  @ApiBadRequestResponse({ type: PriceLevelMasterErrorResponseDto })
+  @ApiNotFoundResponse({ type: PriceLevelMasterErrorResponseDto })
+  async update(
+    @Body() updateDto: UpdatePriceLevelMasterDto,
+  ): Promise<PriceLevelMasterSuccessUpdateDto> {
+    const data = await this.priceLevelMasterService.update(updateDto);
+    return {
+      success: true,
+      message: 'Price levels updated successfully',
+      data,
     };
   }
 }
