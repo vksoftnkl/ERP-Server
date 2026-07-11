@@ -1,0 +1,113 @@
+# Quotation
+
+CRUD API for **sales quotations** — the price quote a company issues to a customer,
+composed of a quotation **header** and its nested **line items** (one row per quoted
+product/service, with its rates, discounts and tax breakup).
+
+- **Base route:** `quotations` (API-versioned via `@Version(API_VERSION)`)
+- **Swagger tag:** `Quotations`
+- **Auth:** Bearer `access-token` (required)
+- **Primary table:** `sale_quotation` (`sales` schema) — PK `sqId` (uuidv7)
+- **Line-item table:** `sale_quotation_item` (`sales` schema) — PK `sqiId` (uuidv7), FK `sqiQuoteId → sqId`
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| [quotation.module.ts](quotation.module.ts) | Module wiring — imports `AuditLogModule`, **exports `QuotationService`** |
+| [quotation.controller.ts](quotation.controller.ts) | HTTP routes + Swagger docs |
+| [quotation.service.ts](quotation.service.ts) | Business logic, persistence, line-item reconciliation, audit logging |
+| [quotation-exception.filter.ts](quotation-exception.filter.ts) | Registered via `@UseFilters`; a pass-through that re-throws the `HttpException` (error shaping is done in the service) |
+| [dto/save-quotation.dto.ts](dto/save-quotation.dto.ts) | Create/update payload for the header + nested `items[]` |
+| [dto/save-quotation-item.dto.ts](dto/save-quotation-item.dto.ts) | A single quotation line-item entry |
+| [dto/quotation-response.dto.ts](dto/quotation-response.dto.ts) | Swagger success/error response models |
+| [types/quotation-api.types.ts](types/quotation-api.types.ts) | Payload / response / error TypeScript contracts |
+
+## Endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/create` | Create **or** update a quotation, chosen by `sqId` presence in the body. |
+| `GET` | `/get` | Fetch one active quotation by `sqId` (query param), including its active line items. |
+| `DELETE` | `/delete` | Soft-delete a quotation by `sqId` (query param), cascading to its line items. |
+
+Both `/get` and `/delete` take `sqId` as a query parameter validated by `ParseUUIDPipe({ version: '7' })`.
+
+### Create / update semantics
+
+- **Omit `sqId` → create; include `sqId` → update** the existing quotation.
+- Each operation runs inside a single `$transaction` (header, all line items, and audit entries
+  are all-or-nothing).
+- On **update**, the header must still be active (`sqIsDeleted = false`) or a not-found error is
+  raised.
+- On **create**, `sqCustName` and `sqQuoteRefno` are normalized via `normalizeRequiredText`
+  (trimmed and required-non-empty), `sqQuoteDate` defaults to *now* when omitted, and `sqStatus`
+  defaults to `'DRAFT'`.
+- Optional header fields are copied through only when present on the payload
+  (`applyPresentFields` over the `QUOTATION_OPTIONAL_FIELDS` list); absent fields are left as-is
+  on update.
+
+### Nested line items
+
+Line items are managed through the `items[]` array on the create/update payload
+(`syncItems` reconciliation):
+
+- Item **with** `sqiId` → updates that existing line (it must belong to this quotation, else a
+  not-found error).
+- Item **without** `sqiId` → inserts a new line; `sqiItemId` and `sqiUnitId` are required for a new
+  line (`requireItemField`).
+- An existing active line **absent** from the array → **soft deleted** (`sqiIsDeleted = true`).
+- Omitting the `items` property entirely (`undefined`) leaves the current lines **untouched**.
+- Scope keys (`sqiQuoteId`, `sqiCompanyId`, `sqiBranchId`, `sqiTenantId`, `sqiAccYear`,
+  `sqiPriceLevel`) are inherited from the parent quotation; any values sent on the item default to
+  the parent scope.
+- Returned line items are sorted by `sqiLineNo` ascending.
+
+### Line numbering & uniqueness
+
+- `sqiLineNo` defaults to the **1-based position** of the item within the `items[]` array when
+  omitted.
+- A **duplicate line number within one payload** raises a conflict (`throwSalesConflict` on
+  `sqiLineNo`). At the DB level, `ux_sqi_quote_line` enforces unique `(sqiQuoteId, sqiLineNo)` among
+  non-deleted lines.
+- Header reference number `sqQuoteRefno` is unique per `(sqCompanyId, sqBranchId, sqAccYear,
+  sqQuoteRefno, sqRevisionNo)` among non-deleted rows (`ux_sq_quote_no`); `sqQuoteSlno` is unique
+  per `(sqCompanyId, sqBranchId, sqAccYear, sqQuoteSlno)` (`ux_sq_slno`). A unique-constraint
+  violation is mapped to a "Duplicate quotation reference number is not allowed" conflict on
+  `sqQuoteRefno` (`throwOnUniqueConstraintError`).
+
+### Soft delete
+
+- `DELETE /delete` sets `sqIsDeleted = true` (plus `sqModifiedOn` / `sqModifiedBy`) on the header,
+  then cascades the same to all its active line items so no line stays active under a logically
+  deleted header. Rows are never hard-deleted.
+- `GET /get` and the update lookups only ever see rows with `sqIsDeleted = false` (and items with
+  `sqiIsDeleted = false`).
+
+### Validation
+
+- Enforced by the DTO decorators under the global `ValidationPipe`: `sqCompanyId`, `sqBranchId`,
+  `sqTenantId`, `sqUserId` are required UUIDs; `sqAccYear` is a fixed 9-char string; `sqPriceLevel`
+  and `sqQuoteSlno` are required integers; `sqQuoteRefno` (max 100) and `sqCustName` (max 200) are
+  required non-empty strings; nested `items[]` are validated per-element (`@ValidateNested`), each
+  requiring `sqiItemId` and `sqiUnitId` as UUIDs.
+
+### Audit logging
+
+- **Every mutation is audited** via `AuditLogService.logEntityChange` inside the same transaction,
+  capturing original vs. modified records.
+  - Header: actions `New` / `update` / `delete`, `tableName = 'sale_quotation'`,
+    `screenName = 'Sale Quotation'`, `screenType = 'transaction'`.
+  - Each line-item insert/update/soft-delete is logged separately against
+    `sale_quotation_item`.
+- The acting user is resolved from the payload's `sqCreatedBy` / `sqModifiedBy`, then the request
+  context user (`RequestContextService.getUserId()`), falling back to `DEFAULT_ACTOR`
+  (`resolveActor`).
+
+### Response shape
+
+Success responses follow `{ success: true, message, data }` (`QuotationSuccessResponse`), where
+`data` is the quotation payload (header fields with date-times serialized to ISO strings, plus an
+`items[]` array). Errors use `{ success: false, message, errors: [{ field, message }] }`
+(`QuotationErrorResponse`), produced by the shared sales helpers rather than by the exception
+filter.

@@ -1,0 +1,172 @@
+# Master Lookup
+
+Read-only lookup API that returns `{ id, name }` **option lists** for the ERP's account and
+master tables, so front-end dropdowns can be populated from a single module. One module key
+selects which master to look up; every master can optionally be overridden by a user-configured
+dropdown SQL query.
+
+- **Base route:** `master-lookups` (API-versioned via `API_VERSION`)
+- **Swagger tag:** `Master Lookup`
+- **Auth:** Bearer `access-token` (required)
+- **Response caching:** controller-level `@CacheTTL(1)`
+- **Sources:**
+  - **Prisma** ([PrismaService](../../database/prisma/prisma.service.ts)) — reads ~33 master
+    tables (see the [dispatch table](#lookup-dispatch)), plus `branch_master`, `fiscal_years`,
+    and `dropdown_details` / `dropdown_details_columns` for configured dropdowns.
+  - **Read-only Postgres pool** ([PgService.queryReadOnly](../../database/pg/pg.service.ts)) —
+    runs user-configured dropdown SQL, which is untrusted.
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| [master-lookup.module.ts](master-lookup.module.ts) | Module wiring — registers the controller and service (no exports) |
+| [master-lookup.controller.ts](master-lookup.controller.ts) | HTTP routes + Swagger docs |
+| [master-lookup.service.ts](master-lookup.service.ts) | Fetcher registry, configured-dropdown resolution, row mapping |
+| [dto/master-lookup-query.dto.ts](dto/master-lookup-query.dto.ts) | Optional `module` query param + alias-to-canonical-key resolution |
+| [dto/master-lookup-response.dto.ts](dto/master-lookup-response.dto.ts) | Swagger response models |
+| [types/master-lookup-api.types.ts](types/master-lookup-api.types.ts) | TS contracts, module-key constants, and dropdown-name aliases |
+
+## Endpoints
+
+All routes are `GET` and wrap their result in `{ success: true, message, data }`.
+
+| Method | Path | Selects which master via | Description |
+| --- | --- | --- | --- |
+| `GET` | `/name-id/all-accounts-and-masters` | `?module=` query param (optional) | With no `module`: returns id-name lists for **all** modules, grouped `{ accounts, masters }`. With `module`: returns just that module's list as `{ scope, module, items }`. |
+| `GET` | `/branches/by-company/:companyId` | Fixed to branches, scoped by company | Active branches for the given company UUID. |
+| `GET` | `/fiscal-years/by-company/:companyId` | Fixed to fiscal years, scoped by company | Non-deleted fiscal years for the given company UUID (current-first). |
+| `GET` | `/dropdown/:dropdownId` | Numeric configured-dropdown id | Runs one configured dropdown's stored SQL directly and returns its rows as options. |
+
+### Selecting a master (`module` query param)
+
+The `module` value on `/name-id/all-accounts-and-masters` is resolved in
+[master-lookup-query.dto.ts](dto/master-lookup-query.dto.ts):
+
+- A canonical key from [`LOOKUP_MODULE_KEYS`](#supported-lookup-keys) (case-insensitive) is
+  accepted as-is.
+- Otherwise the value is normalized and matched against `LOOKUP_MODULE_ALIASES` — so route/display
+  aliases like `item-group-master`, `tax-master`, `gsp-service-master`, `statecode`,
+  `pricelevel`, `hsncode`, `acc_ledger_master`, etc. resolve to their canonical key.
+- Unresolvable values fail `@IsIn(LOOKUP_MODULE_KEYS)` validation (400).
+- Omitting `module` returns the full grouped payload.
+
+## Lookup dispatch
+
+For every requested module, [`fetchModuleItems`](master-lookup.service.ts) first tries a matching
+**user-configured dropdown**; if none matches or it fails, it falls back to the module's **built-in
+Prisma fetcher**.
+
+1. **Configured-dropdown override.** [`loadLookupDropdownConfigs`](master-lookup.service.ts) reads
+   all `dropdown_details` rows (with visible columns) and matches one to each module by name —
+   exact match, then normalized-token match, against the union of the module key,
+   `MODULE_DROPDOWN_NAME_ALIASES`, and `LOOKUP_MODULE_ALIASES`. Token normalization strips the
+   noise words `master`, `lookup`, `dropdown` and splits camelCase/punctuation.
+2. **Built-in fetcher fallback.** Each module maps to a hard-coded Prisma query in the
+   `moduleFetchers` registry below.
+
+### Built-in fetchers (key → source)
+
+Unless noted, each fetcher filters `…IsDeleted = false` **and** `…IsActive = true`, selects the id
+and name columns, and orders by `name asc, id asc`. `id` is coerced to a string; a blank name
+falls back to the id.
+
+**`accounts` scope** — from [`ACCOUNT_LOOKUP_MODULE_KEYS`](types/master-lookup-api.types.ts):
+
+| Module key | Prisma model | Option `name` |
+| --- | --- | --- |
+| `companies` | `company` | `compName` |
+| `companyGroups` | `companyGroupMaster` | `cogGroupName` |
+| `branches` | `branchMaster` | `brName` |
+| `accountGroups` | `accountGroup` | `accGroupName` |
+| `accountLedgers` | `accLedgerMaster` | `ledName` |
+| `ledgerBankAccounts` | `accLedgerBankAccount` | `accountHolder (accountNo) - ledgerName`; ordered by holder |
+| `ledgerShippingAddresses` | `accShipAddr` | `saaTradeName` → `saaContactName` → ledger name; ordered by `saaSort` |
+| `employeeDepartments` | `employeeDepartment` | `edptName` |
+| `employeeDesignations` | `employeeDesignation` | `edName` |
+| `employees` | `employeeMaster` | `empName` |
+| `tenderTypes` | `accountTenderTypes` | `accttTypeName` |
+| `tenders` | `accountTenderMaster` | `acctndName` |
+| `gspProviders` | `gspProviderMaster` | `gspProviderName` |
+| `gspCompanyServices` | `gspCompanyService` | `csgServiceType - companyName`; ordered by service type |
+
+**`masters` scope** — from [`MASTER_LOOKUP_MODULE_KEYS`](types/master-lookup-api.types.ts):
+
+| Module key | Prisma model | Option `name` |
+| --- | --- | --- |
+| `itemGroups` | `itemGroupMaster` | `itgName` |
+| `itemCategories` | `categoryMaster` | `categoryName` |
+| `itemSections` | `itemSectionMaster` | `secName` |
+| `itemBrands` | `itemBrandMaster` | `brand_name` |
+| `units` | `unit` | `unit_name` |
+| `itemTaxes` | `itemTaxMaster` | `taxName` |
+| `priceLevels` | `priceLevel` | `priceLvlName` → `priceLvlShort` |
+| `hsnCodes` | `hsnMaster` | `hsnCode` (both id and name); filters **`hsnIsActive` only** |
+| `items` | `itemMaster` | `itemNameEn` |
+| `godownLocations` | `godownLocation` | `gdlName` |
+| `stateCodes` | `stateCode` | `stateName`; id is `stateCode`, filters `isDeleted`/`isActive` |
+| `states` | `stateMaster` | `stmName` |
+| `cities` | `cityMaster` | `ctmName` |
+| `areas` | `areaMaster` | `armName` |
+| `customerGroups` | `custGroup` | `cgrName` → `cgrAlias` |
+| `customers` | `customer` | `cusName` |
+| `supplierGroups` | `supplierGroup` | `spgName` |
+| `suppliers` | `supplier` | `supName` |
+| `userMasters` | `userMaster` | `usrDisplayName` |
+
+### Configured dropdown SQL
+
+When a dropdown config matches (or via `GET /dropdown/:dropdownId`),
+[`tryFetchConfiguredModuleItems`](master-lookup.service.ts) runs its stored SQL:
+
+- **Candidates & order.** Tries `dropdownSqlRegional` first, then `dropdownSql`. On query error it
+  moves to the next candidate; if all fail it returns `null` and the caller falls back to the
+  built-in fetcher (`GET /dropdown/:dropdownId` returns `[]` on failure or unknown id).
+- **Sanitization** (`normalizeConfiguredSql`): trims and strips trailing `;`, requires the statement
+  to start with `SELECT`/`WITH`, rejects any statement containing an inner `;` (no multi-statement),
+  removes trailing commas before clauses, and rejects dangling-dot patterns (e.g. `t. FROM`).
+- **Table remapping** (`CONFIGURED_SQL_TABLE_REPLACEMENTS`): rewrites stale references —
+  `inventory.units` → `inventory.item_unit_master`, `accounts.companys` → `public.companys`,
+  `accounts.branch_master` → `public.branch_master`.
+- **Execution:** runs on the read-only pool via `pg.queryReadOnly`.
+- **Row → option mapping** (`mapConfiguredRowToOption`): picks the id column by likely-id tokens
+  (`id` / `uuid` / `value`, else the first column) and the name column by likely-name tokens
+  (`name` / `label` / `title` / `alias` / `short` / `description`); rows without an id value are
+  dropped. Each option also spreads the full serialized row (bigint→string, Date→ISO), so configured
+  results can carry extra columns beyond `id`/`name`.
+- **Ordering:** by `dropdownSortColumn` / `dropdownSortOrder` (`DESC` reverses) when present,
+  otherwise by option `name`; ties break on `id`, all via locale-aware numeric compare.
+
+## Response shapes
+
+Grounded in [types/master-lookup-api.types.ts](types/master-lookup-api.types.ts) and
+[dto/master-lookup-response.dto.ts](dto/master-lookup-response.dto.ts):
+
+- **`NameIdOption`** — `{ id: string; name: string; [key: string]: unknown }`. Configured-SQL
+  options may include additional row columns.
+- **Grouped payload** (`/name-id/...` with no `module`) — `{ accounts: {...}, masters: {...} }`,
+  each group keyed by its module keys with `NameIdOption[]` values.
+- **Single-module payload** (`/name-id/...?module=`) — `{ scope: 'accounts' | 'masters', module,
+  items: NameIdOption[] }`; `scope` is derived from whether the key is in
+  `ACCOUNT_LOOKUP_MODULE_KEYS`.
+- **`FiscalYearOption`** (`/fiscal-years/...`) — `{ id, name, beginDate, endDate, status,
+  isCurrent }`; dates are emitted as `YYYY-MM-DD` (or `null`).
+- **Branches / dropdown** — `NameIdOption[]`.
+
+## Supported lookup keys
+
+[types/master-lookup-api.types.ts](types/master-lookup-api.types.ts) defines the accepted module
+keys as `as const` string-literal arrays (used as the Swagger `enum` and validated by the query
+DTO) rather than TypeScript `enum`s:
+
+- **`ACCOUNT_LOOKUP_MODULE_KEYS`** (`accounts` scope): `companies`, `companyGroups`, `branches`,
+  `accountGroups`, `accountLedgers`, `ledgerBankAccounts`, `ledgerShippingAddresses`,
+  `employeeDepartments`, `employeeDesignations`, `employees`, `tenderTypes`, `tenders`,
+  `gspProviders`, `gspCompanyServices`.
+- **`MASTER_LOOKUP_MODULE_KEYS`** (`masters` scope): `itemGroups`, `itemCategories`, `itemSections`,
+  `itemBrands`, `units`, `itemTaxes`, `priceLevels`, `hsnCodes`, `items`, `godownLocations`,
+  `stateCodes`, `states`, `cities`, `areas`, `customerGroups`, `customers`, `supplierGroups`,
+  `suppliers`, `userMasters`.
+- **`LOOKUP_MODULE_KEYS`** — the concatenation of both, and the full set accepted by `?module=`.
+- **`LOOKUP_MODULE_ALIASES`** — per-key alias lists (route/display/table names) used to resolve the
+  `module` param and to match configured dropdowns to a module.
