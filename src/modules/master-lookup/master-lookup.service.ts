@@ -4,6 +4,7 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import {
   ACCOUNT_LOOKUP_MODULE_KEYS,
   AccountsLookupModuleKey,
+  FiscalYearOption,
   LookupModuleKey,
   LOOKUP_MODULE_ALIASES,
   LOOKUP_MODULE_KEYS,
@@ -12,8 +13,6 @@ import {
   SingleModuleLookupPayload,
 } from './types/master-lookup-api.types';
 // ─── Constants ───────────────────────────────────────────────────────────────
-const DEFAULT_SEARCH_LIMIT = 20;
-const MAX_LOOKUP_LIMIT = 100;
 const LOOKUP_NAME_NOISE_TOKENS = new Set(['master', 'lookup', 'dropdown']);
 const CONFIGURED_SQL_TABLE_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\binventory\s*\.\s*units\b/gi, 'inventory.item_unit_master'],
@@ -65,7 +64,7 @@ const MODULE_DROPDOWN_NAME_ALIASES: Record<LookupModuleKey, string[]> = {
   userMasters: ['user masters', 'user master', 'users', 'user'],
 };
 // ─── Types ────────────────────────────────────────────────────────────────────
-type ModuleFetcher = (search: string | undefined, take: number | undefined) => Promise<NameIdOption[]>;
+type ModuleFetcher = () => Promise<NameIdOption[]>;
 type DropdownLookupColumnConfig = {
   name: string;
   alias: string | null;
@@ -108,22 +107,16 @@ export class MasterLookupService {
     this.moduleFetchers = this.buildModuleFetchers();
   }
   // ─── Public API ─────────────────────────────────────────────────────────────
-  async getAllAccountsAndMasterNameIds(
-    module?: LookupModuleKey,
-    search?: string,
-    limit?: number,
-  ): Promise<MasterLookupDataPayload> {
-    const normalizedSearch = this.normalizeSearch(search);
-    const take = this.resolveTake(normalizedSearch, limit);
+  async getAllAccountsAndMasterNameIds(module?: LookupModuleKey): Promise<MasterLookupDataPayload> {
     const configuredDropdowns = await this.loadLookupDropdownConfigs();
     if (module) {
-      const items = await this.fetchModuleItems(module, normalizedSearch, take, configuredDropdowns);
+      const items = await this.fetchModuleItems(module, configuredDropdowns);
       return this.toSingleModulePayload(module, items);
     }
     const entries = await Promise.all(
       LOOKUP_MODULE_KEYS.map(async (key) => [
         key,
-        await this.fetchModuleItems(key, normalizedSearch, take, configuredDropdowns),
+        await this.fetchModuleItems(key, configuredDropdowns),
       ]),
     );
     const byModule = Object.fromEntries(entries) as Record<LookupModuleKey, NameIdOption[]>;
@@ -167,24 +160,44 @@ export class MasterLookupService {
       },
     };
   }
-  async getBranchesByCompany(companyId: string, search?: string, limit?: number): Promise<NameIdOption[]> {
-    const normalizedSearch = this.normalizeSearch(search);
-    const take = this.resolveTake(normalizedSearch, limit);
-    const contains = normalizedSearch ? this.buildContainsFilter(normalizedSearch) : undefined;
+  async getBranchesByCompany(companyId: string): Promise<NameIdOption[]> {
     const rows = await this.prisma.branchMaster.findMany({
       where: {
         brCompId: companyId,
         brIsDeleted: false,
         brIsActive: true,
-        ...(contains ? { brName: contains } : {}),
       },
       select: { brId: true, brName: true },
       orderBy: [{ brName: 'asc' }, { brId: 'asc' }],
-      ...(take ? { take } : {}),
     });
     return rows.map((row) => this.toOption(row.brId, row.brName));
   }
-  async getDropdownSqlData(dropdownId: number, search?: string, limit?: number): Promise<NameIdOption[]> {
+  async getFiscalYearsByCompany(companyId: string): Promise<FiscalYearOption[]> {
+    const rows = await this.prisma.fiscalYear.findMany({
+      where: {
+        compId: companyId,
+        isDeleted: false,
+      },
+      select: {
+        fyId: true,
+        fyYearName: true,
+        fyBeginDate: true,
+        fyEndDate: true,
+        fyStatus: true,
+        fyIsCurrent: true,
+      },
+      orderBy: [{ fyIsCurrent: 'desc' }, { fyBeginDate: 'desc' }, { fyId: 'desc' }],
+    });
+    return rows.map((row) => ({
+      id: row.fyId,
+      name: row.fyYearName.trim(),
+      beginDate: this.toDateOnly(row.fyBeginDate),
+      endDate: this.toDateOnly(row.fyEndDate),
+      status: row.fyStatus,
+      isCurrent: row.fyIsCurrent,
+    }));
+  }
+  async getDropdownSqlData(dropdownId: number): Promise<NameIdOption[]> {
     const record = await this.prisma.dropdownDetails.findUnique({
       where: { dropdownId },
       include: { dropdownColumns: { orderBy: [{ dropdownColumnsNo: 'asc' }] } },
@@ -206,9 +219,7 @@ export class MasterLookupService {
           visible: true,
         })),
     };
-    const normalizedSearch = this.normalizeSearch(search);
-    const take = this.resolveTake(normalizedSearch, limit);
-    return (await this.tryFetchConfiguredModuleItems(config, normalizedSearch, take)) ?? [];
+    return (await this.tryFetchConfiguredModuleItems(config)) ?? [];
   }
   // ─── Module Fetcher Registry ─────────────────────────────────────────────────
   /**
@@ -218,74 +229,58 @@ export class MasterLookupService {
   private buildModuleFetchers(): Record<LookupModuleKey, ModuleFetcher> {
     return {
       companies: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.company.findMany({
-            where: { compIsDeleted: false, compIsActive: true, ...c({ compName: true }) },
+            where: { compIsDeleted: false, compIsActive: true },
             select: { compId: true, compName: true },
             orderBy: [{ compName: 'asc' }, { compId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.compId, row.compName),
       ),
       companyGroups: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.companyGroupMaster.findMany({
-            where: { cogIsDeleted: false, cogIsActive: true, ...c({ cogGroupName: true }) },
+            where: { cogIsDeleted: false, cogIsActive: true },
             select: { cogGroupId: true, cogGroupName: true },
             orderBy: [{ cogGroupName: 'asc' }, { cogGroupId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.cogGroupId, row.cogGroupName),
       ),
       branches: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.branchMaster.findMany({
-            where: { brIsDeleted: false, brIsActive: true, ...c({ brName: true }) },
+            where: { brIsDeleted: false, brIsActive: true },
             select: { brId: true, brName: true },
             orderBy: [{ brName: 'asc' }, { brId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.brId, row.brName),
       ),
       accountGroups: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.accountGroup.findMany({
-            where: { accGroupIsDeleted: false, accGroupIsActive: true, ...c({ accGroupName: true }) },
+            where: { accGroupIsDeleted: false, accGroupIsActive: true },
             select: { accGroupId: true, accGroupName: true },
             orderBy: [{ accGroupName: 'asc' }, { accGroupId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.accGroupId, row.accGroupName),
       ),
       accountLedgers: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.accLedgerMaster.findMany({
             where: {
               ledIsDeleted: false,
               ledIsActive: true,
-              ...c({ OR: [{ ledName: true }, { ledAlias: true }, { ledShort: true }] }),
             },
             select: { ledId: true, ledName: true },
             orderBy: [{ ledName: 'asc' }, { ledId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.ledId, row.ledName),
       ),
-      ledgerBankAccounts: async (search, take) => {
-        const contains = search ? this.buildContainsFilter(search) : undefined;
+      ledgerBankAccounts: async () => {
         const rows = await this.prisma.accLedgerBankAccount.findMany({
           where: {
             lbaIsDeleted: false,
             lbaIsActive: true,
-            ...(contains
-              ? {
-                  OR: [
-                    { lbaAccountHolder: contains },
-                    { lbaAccountNo: contains },
-                    { ledger: { is: { ledName: contains } } },
-                  ],
-                }
-              : {}),
           },
           select: {
             lbaId: true,
@@ -294,28 +289,17 @@ export class MasterLookupService {
             ledger: { select: { ledName: true } },
           },
           orderBy: [{ lbaAccountHolder: 'asc' }, { lbaId: 'asc' }],
-          ...(take ? { take } : {}),
         });
         return rows.map((row) => {
           const ledgerSuffix = row.ledger?.ledName ? ` - ${row.ledger.ledName}` : '';
           return this.toOption(row.lbaId, `${row.lbaAccountHolder} (${row.lbaAccountNo})${ledgerSuffix}`);
         });
       },
-      ledgerShippingAddresses: async (search, take) => {
-        const contains = search ? this.buildContainsFilter(search) : undefined;
+      ledgerShippingAddresses: async () => {
         const rows = await this.prisma.accShipAddr.findMany({
           where: {
             saaIsDeleted: false,
             saaIsActive: true,
-            ...(contains
-              ? {
-                  OR: [
-                    { saaTradeName: contains },
-                    { saaContactName: contains },
-                    { ledger: { is: { ledName: contains } } },
-                  ],
-                }
-              : {}),
           },
           select: {
             saaId: true,
@@ -324,91 +308,76 @@ export class MasterLookupService {
             ledger: { select: { ledName: true } },
           },
           orderBy: [{ saaSort: 'asc' }, { saaId: 'asc' }],
-          ...(take ? { take } : {}),
         });
         return rows.map((row) =>
           this.toOption(row.saaId, row.saaTradeName ?? row.saaContactName ?? row.ledger?.ledName ?? row.saaId),
         );
       },
       employeeDepartments: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.employeeDepartment.findMany({
-            where: { edptIsDeleted: false, edptIsActive: true, ...c({ edptName: true }) },
+            where: { edptIsDeleted: false, edptIsActive: true },
             select: { edptId: true, edptName: true },
             orderBy: [{ edptName: 'asc' }, { edptId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.edptId, row.edptName),
       ),
       employeeDesignations: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.employeeDesignation.findMany({
-            where: { edIsDeleted: false, edIsActive: true, ...c({ edName: true }) },
+            where: { edIsDeleted: false, edIsActive: true },
             select: { edId: true, edName: true },
             orderBy: [{ edName: 'asc' }, { edId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.edId, row.edName),
       ),
       employees: this.simpleFetcher(
-        (c, take) =>
-          this.prisma.empMaster.findMany({
-            where: { empIsDeleted: false, empIsActive: true, ...c({ empName: true }) },
+        () =>
+          this.prisma.employeeMaster.findMany({
+            where: { empIsDeleted: false, empIsActive: true },
             select: { empId: true, empName: true },
             orderBy: [{ empName: 'asc' }, { empId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.empId, row.empName),
       ),
       tenderTypes: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.accountTenderTypes.findMany({
             where: {
               accttTypeIsDeleted: false,
               accttTypeIsActive: true,
-              ...c({ accttTypeName: true }),
             },
             select: { accttTypeId: true, accttTypeName: true },
             orderBy: [{ accttTypeName: 'asc' }, { accttTypeId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(String(row.accttTypeId), row.accttTypeName),
       ),
       tenders: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.accountTenderMaster.findMany({
             where: {
               acctndIsDeleted: false,
               acctndIsActive: true,
-              ...c({ acctndName: true }),
             },
             select: { acctndId: true, acctndName: true },
             orderBy: [{ acctndName: 'asc' }, { acctndId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.acctndId, row.acctndName),
       ),
       gspProviders: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.gspProviderMaster.findMany({
-            where: { gspIsDeleted: false, gspIsActive: true, ...c({ gspProviderName: true }) },
+            where: { gspIsDeleted: false, gspIsActive: true },
             select: { gspProviderId: true, gspProviderName: true },
             orderBy: [{ gspProviderName: 'asc' }, { gspProviderId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.gspProviderId, row.gspProviderName),
       ),
-      gspCompanyServices: async (search, take) => {
-        const contains = search ? this.buildContainsFilter(search) : undefined;
+      gspCompanyServices: async () => {
         const rows = await this.prisma.gspCompanyService.findMany({
           where: {
             csgIsDeleted: false,
             csgIsActive: true,
-            ...(contains
-              ? {
-                  OR: [{ csgServiceType: contains }, { company: { is: { compName: contains } } }],
-                }
-              : {}),
           },
           select: {
             csgCompanyServiceId: true,
@@ -416,309 +385,226 @@ export class MasterLookupService {
             company: { select: { compName: true } },
           },
           orderBy: [{ csgServiceType: 'asc' }, { csgCompanyServiceId: 'asc' }],
-          ...(take ? { take } : {}),
         });
         return rows.map((row) =>
           this.toOption(row.csgCompanyServiceId, `${row.csgServiceType} - ${row.company.compName}`),
         );
       },
       itemGroups: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.itemGroupMaster.findMany({
-            where: { itgIsDeleted: false, itgIsActive: true, ...c({ itgName: true }) },
+            where: { itgIsDeleted: false, itgIsActive: true },
             select: { itgId: true, itgName: true },
             orderBy: [{ itgName: 'asc' }, { itgId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.itgId, row.itgName),
       ),
       itemCategories: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.categoryMaster.findMany({
-            where: { categoryIsDeleted: false, categoryIsActive: true, ...c({ categoryName: true }) },
+            where: { categoryIsDeleted: false, categoryIsActive: true },
             select: { categoryId: true, categoryName: true },
             orderBy: [{ categoryName: 'asc' }, { categoryId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.categoryId, row.categoryName),
       ),
       itemSections: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.itemSectionMaster.findMany({
-            where: { secIsDeleted: false, secIsActive: true, ...c({ secName: true }) },
+            where: { secIsDeleted: false, secIsActive: true },
             select: { secId: true, secName: true },
             orderBy: [{ secName: 'asc' }, { secId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.secId, row.secName),
       ),
       itemBrands: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.itemBrandMaster.findMany({
-            where: { brand_is_deleted: false, brand_is_active: true, ...c({ brand_name: true }) },
+            where: { brand_is_deleted: false, brand_is_active: true },
             select: { brand_id: true, brand_name: true },
             orderBy: [{ brand_name: 'asc' }, { brand_id: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.brand_id, row.brand_name),
       ),
       units: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.unit.findMany({
-            where: { unit_is_deleted: false, unit_is_active: true, ...c({ unit_name: true }) },
+            where: { unit_is_deleted: false, unit_is_active: true },
             select: { unit_id: true, unit_name: true },
             orderBy: [{ unit_name: 'asc' }, { unit_id: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.unit_id, row.unit_name),
       ),
       itemTaxes: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.itemTaxMaster.findMany({
-            where: { taxIsDeleted: false, taxIsActive: true, ...c({ taxName: true }) },
+            where: { taxIsDeleted: false, taxIsActive: true },
             select: { taxId: true, taxName: true },
             orderBy: [{ taxName: 'asc' }, { taxId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.taxId, row.taxName),
       ),
-      priceLevels: async (search, take) => {
-        const contains = search ? this.buildContainsFilter(search) : undefined;
+      priceLevels: async () => {
         const rows = await this.prisma.priceLevel.findMany({
           where: {
             priceLvlIsDeleted: false,
             priceLvlIsActive: true,
-            ...(contains
-              ? {
-                  OR: [{ priceLvlName: contains }, { priceLvlShort: contains }],
-                }
-              : {}),
           },
           select: { priceLvlId: true, priceLvlName: true, priceLvlShort: true },
           orderBy: [{ priceLvlName: 'asc' }, { priceLvlId: 'asc' }],
-          ...(take ? { take } : {}),
         });
         return rows.map((row) =>
           this.toOption(String(row.priceLvlId), row.priceLvlName ?? row.priceLvlShort),
         );
       },
-      hsnCodes: async (search, take) => {
-        const contains = search ? this.buildContainsFilter(search) : undefined;
+      hsnCodes: async () => {
         const rows = await this.prisma.hsnMaster.findMany({
           where: {
             hsnIsActive: true,
-            ...(contains
-              ? {
-                  OR: [{ hsnCode: contains }, { hsnName: contains }],
-                }
-              : {}),
           },
           select: { hsnCode: true, hsnId: true },
           orderBy: [{ hsnCode: 'asc' }, { hsnId: 'asc' }],
-          ...(take ? { take } : {}),
         });
         return rows.map((row) => this.toOption(row.hsnCode, row.hsnCode));
       },
       items: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.itemMaster.findMany({
             where: {
               itemIsDeleted: false,
               itemIsActive: true,
-              ...c({ OR: [{ itemNameEn: true }, { itemCode: true }, { itemAlias: true }] }),
             },
             select: { itemId: true, itemNameEn: true },
             orderBy: [{ itemNameEn: 'asc' }, { itemId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.itemId, row.itemNameEn),
       ),
       godownLocations: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.godownLocation.findMany({
-            where: { gdlIsDeleted: false, gdlIsActive: true, ...c({ gdlName: true }) },
+            where: { gdlIsDeleted: false, gdlIsActive: true },
             select: { gdlId: true, gdlName: true },
             orderBy: [{ gdlName: 'asc' }, { gdlId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.gdlId, row.gdlName),
       ),
-      stateCodes: async (search, take) => {
-        const contains = search ? this.buildContainsFilter(search) : undefined;
+      stateCodes: async () => {
         const rows = await this.prisma.stateCode.findMany({
           where: {
             isDeleted: false,
             isActive: true,
-            ...(contains
-              ? {
-                  OR: [{ stateCode: contains }, { stateName: contains }, { tinCode: contains }],
-                }
-              : {}),
           },
           select: { stateCode: true, stateName: true },
           orderBy: [{ stateName: 'asc' }, { stateCode: 'asc' }],
-          ...(take ? { take } : {}),
         });
         return rows.map((row) => this.toOption(row.stateCode, row.stateName));
       },
       states: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.stateMaster.findMany({
-            where: { stmIsDeleted: false, stmIsActive: true, ...c({ stmName: true }) },
+            where: { stmIsDeleted: false, stmIsActive: true },
             select: { stmId: true, stmName: true },
             orderBy: [{ stmName: 'asc' }, { stmId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.stmId, row.stmName),
       ),
       cities: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.cityMaster.findMany({
-            where: { ctmIsDeleted: false, ctmIsActive: true, ...c({ ctmName: true }) },
+            where: { ctmIsDeleted: false, ctmIsActive: true },
             select: { ctmId: true, ctmName: true },
             orderBy: [{ ctmName: 'asc' }, { ctmId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.ctmId, row.ctmName),
       ),
       areas: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.areaMaster.findMany({
-            where: { armIsDeleted: false, armIsActive: true, ...c({ armName: true }) },
+            where: { armIsDeleted: false, armIsActive: true },
             select: { armId: true, armName: true },
             orderBy: [{ armName: 'asc' }, { armId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.armId, row.armName),
       ),
       customerGroups: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.custGroup.findMany({
             where: {
               cgrIsDeleted: false,
               cgrIsActive: true,
-              ...c({ OR: [{ cgrName: true }, { cgrAlias: true }] }),
             },
             select: { cgrId: true, cgrName: true, cgrAlias: true },
             orderBy: [{ cgrName: 'asc' }, { cgrId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.cgrId, row.cgrName ?? row.cgrAlias ?? row.cgrId),
       ),
       customers: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.customer.findMany({
             where: {
               cusIsDeleted: false,
               cusIsActive: true,
-              ...c({ OR: [{ cusName: true }, { cusCode: true }, { cusShort: true }] }),
             },
             select: { cusId: true, cusName: true },
             orderBy: [{ cusName: 'asc' }, { cusId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.cusId, row.cusName ?? row.cusId),
       ),
       supplierGroups: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.supplierGroup.findMany({
-            where: { spgIsDeleted: false, spgIsActive: true, ...c({ spgName: true }) },
+            where: { spgIsDeleted: false, spgIsActive: true },
             select: { spgId: true, spgName: true },
             orderBy: [{ spgName: 'asc' }, { spgId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.spgId, row.spgName),
       ),
       suppliers: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.supplier.findMany({
-            where: { supIsDeleted: false, supIsActive: true, ...c({ supName: true }) },
+            where: { supIsDeleted: false, supIsActive: true },
             select: { supId: true, supName: true },
             orderBy: [{ supName: 'asc' }, { supId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.supId, row.supName),
       ),
       userMasters: this.simpleFetcher(
-        (c, take) =>
+        () =>
           this.prisma.userMaster.findMany({
             where: {
               usrIsDeleted: false,
               usrIsActive: true,
-              ...c({ OR: [{ usrDisplayName: true }, { usrLoginName: true }] }),
             },
             select: { usrId: true, usrDisplayName: true },
             orderBy: [{ usrDisplayName: 'asc' }, { usrId: 'asc' }],
-            ...take,
           }),
         (row) => this.toOption(row.usrId, row.usrDisplayName),
       ),
     };
   }
   /**
-   * Factory for modules whose search target is a single name field (or a fixed OR clause).
-   * `queryFn` receives:
-   *   - `c` — a helper that returns `{ <field>: contains }` when a search term is present,
-   *           or `{}` when it is not
-   *   - `take` — a spread-ready `{ take }` object or `{}`
+   * Factory for modules that map a Prisma table query to `{ id, name }` options.
    */
   private simpleFetcher<T>(
-    queryFn: (
-      contains: (field: Record<string, unknown>) => Record<string, unknown>,
-      take: Record<string, unknown>,
-    ) => Promise<T[]>,
+    queryFn: () => Promise<T[]>,
     mapper: (row: T) => NameIdOption,
   ): ModuleFetcher {
-    return async (search, take) => {
-      const filter = search ? this.buildContainsFilter(search) : undefined;
-      const containsHelper = (field: Record<string, unknown>) =>
-        filter ? this.applyContainsFilter(field, filter) : {};
-      const takeArg = take ? { take } : {};
-      const rows = await queryFn(containsHelper, takeArg);
+    return async () => {
+      const rows = await queryFn();
       return rows.map(mapper);
     };
-  }
-  /**
-   * Recursively walks a field selector object and replaces `true` leaf values
-   * with the Prisma `contains` filter, preserving OR/AND/NOT wrappers.
-   */
-  private applyContainsFilter(
-    field: Record<string, unknown>,
-    contains: { contains: string; mode: 'insensitive' },
-  ): Record<string, unknown> {
-    return Object.fromEntries(
-      Object.entries(field).map(([key, value]) => {
-        if (value === true) return [key, contains];
-        if (Array.isArray(value)) {
-          return [
-            key,
-            value.map((v) =>
-              typeof v === 'object' && v !== null
-                ? this.applyContainsFilter(v as Record<string, unknown>, contains)
-                : v,
-            ),
-          ];
-        }
-        if (typeof value === 'object' && value !== null) {
-          return [key, this.applyContainsFilter(value as Record<string, unknown>, contains)];
-        }
-        return [key, value];
-      }),
-    );
   }
   // ─── Core Fetch Logic ────────────────────────────────────────────────────────
   private async fetchModuleItems(
     module: LookupModuleKey,
-    search: string | undefined,
-    take: number | undefined,
     configuredDropdowns: Map<LookupModuleKey, DropdownLookupConfig>,
   ): Promise<NameIdOption[]> {
     const config = configuredDropdowns.get(module);
     if (config) {
-      const configured = await this.tryFetchConfiguredModuleItems(config, search, take);
+      const configured = await this.tryFetchConfiguredModuleItems(config);
       if (configured !== null) return configured;
     }
-    return this.moduleFetchers[module](search, take);
+    return this.moduleFetchers[module]();
   }
   // ─── Dropdown Config Loading ─────────────────────────────────────────────────
   private async loadLookupDropdownConfigs(): Promise<Map<LookupModuleKey, DropdownLookupConfig>> {
@@ -767,8 +653,6 @@ export class MasterLookupService {
   // ─── Configured SQL Fetching ─────────────────────────────────────────────────
   private async tryFetchConfiguredModuleItems(
     config: DropdownLookupConfig,
-    search?: string,
-    take?: number,
   ): Promise<NameIdOption[] | null> {
     const sqlCandidates = this.resolveConfiguredSqlCandidates(config);
     if (sqlCandidates.length === 0) return null;
@@ -776,13 +660,7 @@ export class MasterLookupService {
       try {
         // Stored dropdown SQL is user-configured — run it on the read-only pool.
         const result = await this.pg.queryReadOnly<LookupRow>(sql);
-        return this.mapConfiguredRowsToOptions(
-          result.rows,
-          config.dropdownColumns,
-          search,
-          take,
-          config,
-        );
+        return this.mapConfiguredRowsToOptions(result.rows, config.dropdownColumns, config);
       } catch {
         continue;
       }
@@ -822,17 +700,13 @@ export class MasterLookupService {
   private mapConfiguredRowsToOptions(
     rows: LookupRow[],
     columns: DropdownLookupColumnConfig[],
-    search: string | undefined,
-    take: number | undefined,
     config: DropdownLookupConfig,
   ): NameIdOption[] {
-    const items = rows
+    return rows
       .map((row) => ({ row, option: this.mapConfiguredRowToOption(row, columns) }))
       .filter((item): item is { row: LookupRow; option: NameIdOption } => item.option !== null)
-      .filter((item) => this.matchesConfiguredSearch(item, search, columns))
       .sort((a, b) => this.compareConfiguredRows(a, b, config))
       .map((item) => item.option);
-    return take ? items.slice(0, take) : items;
   }
   private mapConfiguredRowToOption(
     row: LookupRow,
@@ -874,30 +748,6 @@ export class MasterLookupService {
       }
     }
     return value;
-  }
-  private matchesConfiguredSearch(
-    item: { row: LookupRow; option: NameIdOption },
-    search: string | undefined,
-    columns: DropdownLookupColumnConfig[],
-  ): boolean {
-    if (!search) return true;
-    const filterableKeys = new Set(
-      columns
-        .filter((col) => col.filter)
-        .flatMap((col) => [col.name, col.alias].filter((v): v is string => Boolean(v)))
-        .map((v) => this.normalizeLookupToken(v)),
-    );
-    const extraValues =
-      filterableKeys.size > 0
-        ? Object.entries(item.row)
-            .filter(([key]) => filterableKeys.has(this.normalizeLookupToken(key)))
-            .map(([, v]) => this.toLookupValue(v))
-            .filter((v): v is string => Boolean(v))
-        : [];
-    const haystack = [item.option.id, item.option.name, ...extraValues]
-      .join(' ')
-      .toLowerCase();
-    return haystack.includes(search.toLowerCase());
   }
   private compareConfiguredRows(
     left: { row: LookupRow; option: NameIdOption },
@@ -1011,6 +861,9 @@ export class MasterLookupService {
       .join(' ');
   }
   // ─── Misc Helpers ────────────────────────────────────────────────────────────
+  private toDateOnly(value: Date | null | undefined): string | null {
+    return value ? value.toISOString().slice(0, 10) : null;
+  }
   private toOption(
     id: string,
     name: string | null | undefined,
@@ -1031,18 +884,5 @@ export class MasterLookupService {
       ? 'accounts'
       : 'masters';
     return { scope, module, items };
-  }
-  private normalizeSearch(search?: string): string | undefined {
-    return search?.trim() || undefined;
-  }
-  private resolveTake(search: string | undefined, limit?: number): number | undefined {
-    if (limit !== undefined) {
-      const clamped = Math.max(1, Math.min(Math.trunc(limit), MAX_LOOKUP_LIMIT));
-      return clamped;
-    }
-    return search ? DEFAULT_SEARCH_LIMIT : undefined;
-  }
-  private buildContainsFilter(search: string): { contains: string; mode: 'insensitive' } {
-    return { contains: search, mode: 'insensitive' };
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { EmpMaster, Prisma } from '@prisma/client';
+import { EmployeeMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveEmployeeMasterDto } from './dto/save-employee-master.dto';
@@ -90,7 +90,7 @@ export class EmployeeMasterService {
     return this.createEmployee(saveEmployeeMasterDto);
   }
   async getById(empId: string): Promise<EmployeeMasterPayload> {
-    const record = await this.prisma.empMaster.findFirst({
+    const record = await this.prisma.employeeMaster.findFirst({
       where: {
         empId,
         empIsDeleted: false,
@@ -107,7 +107,7 @@ export class EmployeeMasterService {
   private async resolveRelatedNames(
     client: EmployeeMasterWriteClient,
     record: Pick<
-      EmpMaster,
+      EmployeeMaster,
       'empCompanyId' | 'empBranchId' | 'empDepartmentId' | 'empDesignationId'
     >,
   ): Promise<{
@@ -153,7 +153,7 @@ export class EmployeeMasterService {
 
   async softDelete(empId: string): Promise<{ empId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.empMaster.findFirst({
+      const existing = await tx.employeeMaster.findFirst({
         where: {
           empId,
           empIsDeleted: false,
@@ -163,7 +163,7 @@ export class EmployeeMasterService {
         this.throwNotFound(empId);
       }
       const modifiedOn = new Date();
-      const result = await tx.empMaster.updateMany({
+      const result = await tx.employeeMaster.updateMany({
         where: {
           empId,
           empIsDeleted: false,
@@ -221,7 +221,7 @@ export class EmployeeMasterService {
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
         const now = new Date();
-        const data: Prisma.EmpMasterUncheckedCreateInput = {
+        const data: Prisma.EmployeeMasterUncheckedCreateInput = {
           empCompanyId: saveEmployeeMasterDto.empCompanyId,
           empName,
           empSalaryType,
@@ -229,7 +229,7 @@ export class EmployeeMasterService {
           empCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
-        const created = await tx.empMaster.create({ data });
+        const created = await tx.employeeMaster.create({ data });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
           {
@@ -259,7 +259,7 @@ export class EmployeeMasterService {
     const empId = saveEmployeeMasterDto.empId!;
     try {
       return this.prisma.$transaction(async (tx) => {
-        const existing = await tx.empMaster.findFirst({
+        const existing = await tx.employeeMaster.findFirst({
           where: {
             empId,
             empIsDeleted: false,
@@ -276,7 +276,7 @@ export class EmployeeMasterService {
         await this.ensureCompanyExists(saveEmployeeMasterDto.empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
-        const data: Prisma.EmpMasterUncheckedUpdateInput = {
+        const data: Prisma.EmployeeMasterUncheckedUpdateInput = {
           empCompanyId: saveEmployeeMasterDto.empCompanyId,
           empName,
           empSalaryType,
@@ -284,7 +284,7 @@ export class EmployeeMasterService {
           empModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         this.applyOptionalFields(data, saveEmployeeMasterDto);
-        const updated = await tx.empMaster.update({
+        const updated = await tx.employeeMaster.update({
           where: {
             empId,
           },
@@ -384,7 +384,7 @@ export class EmployeeMasterService {
   }
 
   private applyOptionalFields(
-    data: Prisma.EmpMasterUncheckedCreateInput | Prisma.EmpMasterUncheckedUpdateInput,
+    data: Prisma.EmployeeMasterUncheckedCreateInput | Prisma.EmployeeMasterUncheckedUpdateInput,
     saveEmployeeMasterDto: SaveEmployeeMasterDto,
   ): void {
     applyPresentFields(data, saveEmployeeMasterDto, EMPLOYEE_MASTER_OPTIONAL_FIELDS, {
@@ -435,7 +435,7 @@ export class EmployeeMasterService {
     }
     return value.slice(separatorIndex + 1).trim();
   }
-  private toPayload(record: EmpMaster): EmployeeMasterPayload {
+  private toPayload(record: EmployeeMaster): EmployeeMasterPayload {
     return {
       empId: record.empId,
       empCompanyId: record.empCompanyId,

@@ -166,11 +166,12 @@ export const RequiredNumber = (min?: number) =>
     IsNumber(),
     ...(min !== undefined ? [Min(min)] : []),
   );
-export const RequiredInteger = (min?: number) =>
+export const RequiredInteger = (min?: number, max?: number) =>
   applyDecorators(
     Transform(({ value }) => toInteger(value)),
     IsInt(),
     ...(min !== undefined ? [Min(min)] : []),
+    ...(max !== undefined ? [Max(max)] : []),
   );
 export const OptionalInteger = (min?: number, max?: number) =>
   applyDecorators(

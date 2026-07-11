@@ -33,7 +33,7 @@ export class ItemPriceLookupPayloadDto {
 
   @ApiProperty({ nullable: true })
   item_code!: string | null;
-  @ApiProperty()
+  @ApiProperty({ description: 'Regional name (item_name_ta) when regional=true, else the English name.' })
   item_name!: string;
   @ApiProperty({ nullable: true })
   item_com_code!: string | null;
@@ -57,8 +57,11 @@ export class ItemPriceLookupPayloadDto {
   @ApiProperty()
   allow_negative_stock!: boolean;
 
-  @ApiProperty({ enum: ['A', 'B', 'C', 'D'] })
-  price_level!: string;
+  @ApiProperty({
+    enum: [1, 2, 3, 4, 5, 6, 7],
+    description: '1=A, 2=B, 3=C, 4=D, 5=MRP/max, 6=min, 7=cost',
+  })
+  price_level!: number;
   @ApiProperty({ example: 100.5 })
   sales_price!: number;
   @ApiProperty({ example: 80 })

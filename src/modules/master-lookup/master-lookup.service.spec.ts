@@ -80,7 +80,7 @@ describe('MasterLookupService', () => {
       { item_id: 'ITEM-1', item_name: 'Milk', item_code: 'MILK-001' },
     ]));
 
-    const result = await service.getAllAccountsAndMasterNameIds('items', 'milk', 5);
+    const result = await service.getAllAccountsAndMasterNameIds('items');
 
     expect(result).toEqual({
       scope: 'masters',
@@ -219,7 +219,7 @@ describe('MasterLookupService', () => {
       },
     ]);
 
-    const result = await service.getAllAccountsAndMasterNameIds('items', 'bread', 3);
+    const result = await service.getAllAccountsAndMasterNameIds('items');
 
     expect(result).toEqual({
       scope: 'masters',
@@ -257,7 +257,7 @@ describe('MasterLookupService', () => {
       },
     ]);
 
-    const result = await service.getAllAccountsAndMasterNameIds('items', 'butter', 3);
+    const result = await service.getAllAccountsAndMasterNameIds('items');
 
     expect(result).toEqual({
       scope: 'masters',
@@ -302,7 +302,7 @@ describe('MasterLookupService', () => {
         },
       ]));
 
-    const result = await service.getAllAccountsAndMasterNameIds('items', 'cheese', 3);
+    const result = await service.getAllAccountsAndMasterNameIds('items');
 
     expect(result).toEqual({
       scope: 'masters',

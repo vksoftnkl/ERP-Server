@@ -32,7 +32,7 @@ export interface ItemPriceLookupPayload {
 
   // Identity / naming
   item_code: string | null;
-  /** English name; regional (Tamil) name is not selected — no regional flag on this endpoint. */
+  /** Regional name (item_name_ta) when the `regional` flag is set, else the English name. */
   item_name: string;
   item_com_code: string | null;
   barcode: string | null;
@@ -48,7 +48,8 @@ export interface ItemPriceLookupPayload {
   allow_negative_stock: boolean;
 
   // Pricing (effective = selected price level − customer disc qty)
-  price_level: string;
+  /** Selected price column: 1=A, 2=B, 3=C, 4=D, 5=MRP/max, 6=min, 7=cost. */
+  price_level: number;
   sales_price: number;
   cost_price: number;
   cost_wot: number;

@@ -62,7 +62,7 @@ export class EmployeeDepartmentMasterService {
       if (!existing) {
         this.throwNotFound(edptId);
       }
-      const activeEmployeesCount = await tx.empMaster.count({
+      const activeEmployeesCount = await tx.employeeMaster.count({
         where: {
           empDepartmentId: edptId,
           empIsDeleted: false,

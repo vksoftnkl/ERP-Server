@@ -1,10 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Matches } from 'class-validator';
 import {
-  OptionalNumber,
+  OptionalQueryBoolean,
   OptionalTrimmedString,
-  OptionalUpperString,
   OptionalUuid,
+  RequiredInteger,
   RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
 export class GetItemPriceLookupQueryDto {
@@ -23,14 +22,32 @@ export class GetItemPriceLookupQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @OptionalUuid()
   customer_id?: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Sale godown override (legacy isale_no). When supplied, resolves the godown row and scopes stock to this godown instead of the rate\'s own godown.',
+  })
+  @OptionalUuid()
+  godown_id?: string;
   @ApiPropertyOptional({ maxLength: 9, description: 'Accounting year, e.g. 2024-2025' })
   @OptionalTrimmedString(9)
   acccyear?: string;
-  @ApiPropertyOptional({ maxLength: 1, description: 'Price level: A, B, C or D' })
-  @OptionalUpperString(1)
-  @Matches(/^[A-D]$/, { message: 'price_level must be one of A, B, C, D' })
-  price_level?: string;
-  @ApiPropertyOptional({ minimum: 0, description: 'Quantity, for quantity-based pricing' })
-  @OptionalNumber(0)
-  quantity?: number;
+  @ApiPropertyOptional({
+    description:
+      'Loading mode (legacy ienable_loading). When true, stock is summed across ALL godowns; when false/absent it is scoped to the resolved godown.',
+  })
+  @OptionalQueryBoolean()
+  enable_loading?: boolean;
+  @ApiPropertyOptional({
+    description: 'Regional name (legacy iregional). When true, returns item_name_ta, else the English name.',
+  })
+  @OptionalQueryBoolean()
+  regional?: boolean;
+  @ApiProperty({
+    minimum: 1,
+    maximum: 7,
+    description: 'Price column to use: 1=A, 2=B, 3=C, 4=D, 5=MRP/max, 6=min, 7=cost',
+  })
+  @RequiredInteger(1, 7)
+  price_level!: number;
 }

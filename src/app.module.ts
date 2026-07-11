@@ -24,7 +24,6 @@ import { GridDetailsModule } from './modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from './modules/dropdown-details/dropdown-details.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
-import { RolesGuard } from './modules/auth/guards/roles.guard';
 import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemPriceDetailsModule } from './modules/Inventory/item-price-details/item-price-details.module';
 import { ItemPriceLookupModule } from './modules/common/item-price-lookup/item-price-lookup.module';
@@ -194,10 +193,6 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     {
       provide: APP_GUARD,
       useClass: AccessTokenGuard,
-    },
-    {
-      provide: APP_GUARD,
-      useClass: RolesGuard,
     },
     ...(isThrottlerEnabled
       ? [

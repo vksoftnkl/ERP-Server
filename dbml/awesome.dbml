@@ -2109,28 +2109,35 @@ Table configs {
   configModifiedOn DateTime
 }
 
-Table cust_item_rates {
-  csrId String [pk]
-  csrBranchId String
-  csrCustomerId String [not null]
-  csrUnitRateId String [not null]
-  csrRateType String [not null, default: 'FIXED']
-  csrItemRate Decimal [not null, default: 0]
-  csrDiscPerc Decimal [not null, default: 0]
-  csrDiscQty Decimal [not null, default: 0]
-  csrPriceLevel String
-  csrValidFrom DateTime
-  csrValidTo DateTime
-  csrPriority Int [not null, default: 0]
-  csrIsActive Boolean [not null, default: true]
-  csrIsDeleted Boolean [not null, default: false]
-  csrCreatedOn DateTime [default: `now()`, not null]
-  csrCreatedBy String
-  csrModifiedOn DateTime [default: `now()`, not null]
-  csrModifiedBy String
-  csrUploadedAt DateTime
-  csrUploadedBy String
-  csrRemarks String
+Table fiscal_years {
+  fyId String [pk]
+  compId String [not null]
+  fyYearName String [not null]
+  fyBeginDate DateTime [not null]
+  fyEndDate DateTime [not null]
+  fyBooksBeginDate DateTime
+  fyStatus String [not null, default: 'OPEN']
+  fyIsCurrent Boolean [not null, default: false]
+  fyLockDate DateTime
+  fyClosedAt DateTime
+  fyClosedBy String
+  fyIsCarriedForward Boolean [not null, default: false]
+  fyCarriedForwardAt DateTime
+  fyPrevFyId String
+  fyDetached Boolean [not null, default: false]
+  fyRemarks String
+  tallyGuid String
+  tallyMasterId BigInt
+  tallyAlterId BigInt
+  isDeleted Boolean [not null, default: false]
+  createdAt DateTime [default: `now()`, not null]
+  createdBy String [not null]
+  updatedAt DateTime
+  updatedBy String
+  deletedAt DateTime
+  deletedBy String
+  prevFiscalYear fiscal_years
+  nextFiscalYears fiscal_years [not null]
 }
 
 Table user_master {
@@ -2532,6 +2539,30 @@ Table freight_charges {
   frCreatedBy String
   frModifiedOn DateTime [default: `now()`, not null]
   frModifiedBy String
+}
+
+Table cust_item_rates {
+  csrId String [pk]
+  csrBranchId String
+  csrCustomerId String [not null]
+  csrUnitRateId String [not null]
+  csrRateType String [not null, default: 'FIXED']
+  csrItemRate Decimal [not null, default: 0]
+  csrDiscPerc Decimal [not null, default: 0]
+  csrDiscQty Decimal [not null, default: 0]
+  csrPriceLevel String
+  csrValidFrom DateTime
+  csrValidTo DateTime
+  csrPriority Int [not null, default: 0]
+  csrIsActive Boolean [not null, default: true]
+  csrIsDeleted Boolean [not null, default: false]
+  csrCreatedOn DateTime [default: `now()`, not null]
+  csrCreatedBy String
+  csrModifiedOn DateTime [default: `now()`, not null]
+  csrModifiedBy String
+  csrUploadedAt DateTime
+  csrUploadedBy String
+  csrRemarks String
 }
 
 Table loyalty_sch_list {
@@ -3544,6 +3575,8 @@ Ref: opening_stock_header.oshBranchId > branch_master.brId
 Ref: branch_master.brCompId > companys.compId
 
 Ref: companys.compStylesheetId > app_theme_master.thmId
+
+Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
 
 Ref: user_menus.umUserId > user_master.usrId
 

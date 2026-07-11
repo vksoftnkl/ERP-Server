@@ -126,3 +126,34 @@ export class NameIdOptionListSuccessDto {
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   data!: NameIdOptionDto[];
 }
+
+export class FiscalYearOptionDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: '2025-2026' })
+  name!: string;
+
+  @ApiProperty({ example: '2025-04-01', nullable: true })
+  beginDate!: string | null;
+
+  @ApiProperty({ example: '2026-03-31', nullable: true })
+  endDate!: string | null;
+
+  @ApiProperty({ example: 'OPEN' })
+  status!: string;
+
+  @ApiProperty({ example: true })
+  isCurrent!: boolean;
+}
+
+export class FiscalYearOptionListSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Fiscal years fetched for company' })
+  message!: string;
+
+  @ApiProperty({ type: FiscalYearOptionDto, isArray: true })
+  data!: FiscalYearOptionDto[];
+}

@@ -6,6 +6,14 @@ export interface NameIdOption {
   name: string;
   [key: string]: unknown;
 }
+export interface FiscalYearOption {
+  id: string;
+  name: string;
+  beginDate: string | null;
+  endDate: string | null;
+  status: string;
+  isCurrent: boolean;
+}
 export interface AccountsLookupPayload {
   companies: NameIdOption[];
   companyGroups: NameIdOption[];

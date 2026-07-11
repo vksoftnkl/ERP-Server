@@ -463,7 +463,9 @@ export class ItemsMasterService {
     const createdBy = resolveActor(saveItemDto.item_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveItemDto.item_modified_by, createdBy);
     const data: Prisma.ItemMasterUncheckedCreateInput = {
-      itemCompanyId: saveItemDto.item_company_id,
+      // Overridden with the token's company by applyOptionalFields when the
+      // caller is company-bound; body value is used only for unscoped tokens.
+      itemCompanyId: this.requestContextService.getCompanyId() ?? saveItemDto.item_company_id,
       itemNameEn,
       itemGroupId: saveItemDto.item_group_id,
       itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
@@ -565,7 +567,16 @@ export class ItemsMasterService {
     data: Prisma.ItemMasterUncheckedCreateInput | Prisma.ItemMasterUncheckedUpdateInput,
     saveItemDto: SaveItemDto,
   ): void {
-    if (hasOwnProperty(saveItemDto, 'item_company_id')) {
+    // Tenant-scoped model: the owning company comes from the caller's access
+    // token, never the client body. Reads are auto-scoped to the token's
+    // company (see tenant-scope.extension.ts), so trusting a client-supplied
+    // company here would create/leave rows the caller can never read back.
+    // Only fall back to the body for super-admin / no-company tokens, which
+    // are not scoped.
+    const tokenCompanyId = this.requestContextService.getCompanyId();
+    if (tokenCompanyId) {
+      data.itemCompanyId = tokenCompanyId;
+    } else if (hasOwnProperty(saveItemDto, 'item_company_id')) {
       data.itemCompanyId = saveItemDto.item_company_id;
     }
     if (hasOwnProperty(saveItemDto, 'item_branch_id')) {

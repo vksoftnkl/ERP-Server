@@ -26,7 +26,7 @@ model CustItemRate {
   csrUploadedBy  String?   @db.VarChar(100) @map("csr_uploaded_by")
   csrRemarks     String?   @db.VarChar(250) @map("csr_remarks")
   @@map("cust_item_rates")
-  @@schema("public")
+  @@schema("sales")
   @@index([csrCustomerId], map: "idx_csr_customer")
   @@index([csrUnitRateId], map: "idx_csr_unit_rate")
   @@index([csrBranchId], map: "idx_csr_branch")

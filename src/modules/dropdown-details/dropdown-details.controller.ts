@@ -23,8 +23,6 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserType } from '../settings/userAdministration/types/user-administration.enum';
 import { ListDropdownDetailQueryDto } from './dto/list-dropdown-detail-query.dto';
 import { RunDropdownQueryDto } from './dto/run-dropdown-query.dto';
 import { DropdownRunResponseDto } from './dto/dropdown-run-response.dto';
@@ -85,7 +83,6 @@ export class DropdownDetailsController {
   constructor(private readonly dropdownDetailsService: DropdownDetailsService) {}
   @Post('create')
   @Version(API_VERSION)
-  @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
   @ApiOperation({
     summary: 'Create or update dropdown details with nested columns',
     description:
@@ -182,7 +179,6 @@ export class DropdownDetailsController {
   }
   @Delete('column-delete')
   @Version(API_VERSION)
-  @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
   @ApiOperation({ summary: 'Delete a dropdown column by id' })
   @ApiQuery({ name: 'dropdown_columns_id', description: 'UUID dropdown column id' })
   @ApiOkResponse({ type: DropdownDetailSuccessColumnDeleteDto })
@@ -196,7 +192,6 @@ export class DropdownDetailsController {
   }
   @Delete('delete')
   @Version(API_VERSION)
-  @Roles(UserType.SUPER_ADMIN, UserType.ADMIN)
   @ApiOperation({ summary: 'Delete dropdown details by id' })
   @ApiQuery({ name: 'dropdown_id', description: 'Numeric dropdown id' })
   @ApiOkResponse({ type: DropdownDetailSuccessDeleteDto })
