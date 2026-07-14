@@ -25,6 +25,10 @@ import { RequestContextService } from '../../../common/request-context/request-c
 const ITEM_TABLE_NAME = 'item master';
 const ITEM_AUDIT_SCREEN_NAME = 'Item Master';
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+// A composite save writes the item plus four child collections (each row an
+// insert/update alongside its audit-log row) in one transaction, so it needs
+// more headroom than Prisma's 5s interactive-transaction default.
+const COMPOSITE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
 @Injectable()
 export class ItemsMasterService {
   constructor(
@@ -37,11 +41,15 @@ export class ItemsMasterService {
     private readonly itemsReorderMasterService: ItemsReorderMasterService,
     private readonly itemMasterUpdateService: ItemMasterUpdateService,
   ) {}
-  async save(saveItemDto: SaveItemDto): Promise<ItemPayload> {
+  /**
+   * @param tx When supplied, the write runs inside the caller's transaction
+   * instead of opening its own (see saveComposite).
+   */
+  async save(saveItemDto: SaveItemDto, tx?: Prisma.TransactionClient): Promise<ItemPayload> {
     if (saveItemDto.item_id) {
-      return this.updateItem(saveItemDto);
+      return this.updateItem(saveItemDto, tx);
     }
-    return this.createItem(saveItemDto);
+    return this.createItem(saveItemDto, tx);
   }
   /**
    * Saves an item together with its unit conversions, prices, EAN codes and
@@ -49,16 +57,20 @@ export class ItemsMasterService {
    * against the item's existing rows by natural key: new rows are created,
    * matched rows are updated when a field differs, and existing rows absent
    * from the payload are soft-deleted (see ItemMasterUpdateService). Omitted
-   * child arrays are left untouched. NOT atomic: the item is persisted first
-   * (in its own transaction), then each child collection in dependency order
-   * (unit-conversions -> prices -> EAN codes -> reorders). If a child
-   * collection fails, the item and any earlier children remain persisted. The
-   * parent item_id is always injected into each child row.
+   * child arrays are left untouched. The parent item_id is always injected into
+   * each child row.
+   *
+   * ATOMIC: the item and every child collection are written in ONE transaction,
+   * in dependency order (unit-conversions -> prices -> EAN codes -> reorders).
+   * Any failure — including an EAN/reorder row naming a unit the item has no
+   * conversion row for — rolls the whole save back, item included.
    */
   async saveComposite(dto: SaveItemCompositeDto): Promise<ItemCompositePayload> {
-    const item = await this.save(dto);
-    const children = await this.itemMasterUpdateService.syncChildren(item.item_id, dto);
-    return { item, ...children };
+    return this.prisma.$transaction(async (tx) => {
+      const item = await this.save(dto, tx);
+      const children = await this.itemMasterUpdateService.syncChildren(item.item_id, dto, tx);
+      return { item, ...children };
+    }, COMPOSITE_TRANSACTION_OPTIONS);
   }
   async getById(itemId: string): Promise<ItemPayload> {
     const record = await this.prisma.itemMaster.findFirst({
@@ -102,6 +114,11 @@ export class ItemsMasterService {
    * master table (item_company_category_id, item_mfgr_id, item_barcode_sticker_id)
    * are not resolved. Every child row belongs to this item, so their
    * `*_item_name` echoes reuse the parent item name without an extra query.
+   *
+   * ean_unit_id and ir_unit_id hold an iuc_id rather than a unit_id, so their
+   * names are resolved by hopping through the item's conversion rows to the
+   * underlying unit; a row whose conversion has since been soft-deleted has no
+   * unit to name and resolves to null.
    */
   private async resolveCompositeNames(
     composite: ItemCompositePayload,
@@ -109,6 +126,9 @@ export class ItemsMasterService {
     const { item, unit_conversions, prices, ean_codes, reorders } = composite;
     const collect = (...ids: (string | null | undefined)[]): string[] =>
       Array.from(new Set(ids.filter((id): id is string => !!id)));
+    const unitIdByConversionId = new Map(unit_conversions.map((r) => [r.iuc_id, r.iuc_unit_id]));
+    const conversionUnitId = (iucId: string | null | undefined): string | null =>
+      iucId ? (unitIdByConversionId.get(iucId) ?? null) : null;
     const companyIds = collect(
       item.item_company_id,
       ...prices.map((r) => r.ipm_company_id),
@@ -122,12 +142,11 @@ export class ItemsMasterService {
       item.item_base_unit_id,
       ...unit_conversions.flatMap((r) => [r.iuc_unit_id, r.iuc_base_unit_id]),
       ...prices.flatMap((r) => [r.ipm_unit_id, r.ipm_base_unit_id]),
-      ...ean_codes.map((r) => r.ean_unit_id),
-      ...reorders.map((r) => r.ir_unit_id),
+      ...ean_codes.map((r) => conversionUnitId(r.ean_unit_id)),
+      ...reorders.map((r) => conversionUnitId(r.ir_unit_id)),
     );
     const godownIds = collect(
       ...prices.map((r) => r.ipm_godown_id),
-      ...ean_codes.map((r) => r.ean_godown_id),
       ...reorders.map((r) => r.ir_godown_id),
     );
     const groupIds = collect(item.item_group_id);
@@ -248,13 +267,12 @@ export class ItemsMasterService {
       })),
       ean_codes: ean_codes.map((r) => ({
         ...r,
-        ean_unit_name: nameOf(unitName, r.ean_unit_id),
-        ean_godown_name: nameOf(godownName, r.ean_godown_id),
+        ean_unit_name: nameOf(unitName, conversionUnitId(r.ean_unit_id)),
       })),
       reorders: reorders.map((r) => ({
         ...r,
         ir_branch_name: nameOf(branchName, r.ir_branch_id),
-        ir_unit_name: nameOf(unitName, r.ir_unit_id),
+        ir_unit_name: nameOf(unitName, conversionUnitId(r.ir_unit_id)),
         ir_godown_name: nameOf(godownName, r.ir_godown_id),
       })),
     };
@@ -449,7 +467,10 @@ export class ItemsMasterService {
     ]);
     return { item, unit_conversions, prices, ean_codes, reorders };
   }
-  private async createItem(saveItemDto: SaveItemDto): Promise<ItemPayload> {
+  private async createItem(
+    saveItemDto: SaveItemDto,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemPayload> {
     const itemNameEn = saveItemDto.item_name_en?.trim();
     if (!itemNameEn) {
       throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
@@ -474,33 +495,37 @@ export class ItemsMasterService {
       itemCreatedBy: createdBy,
     };
     this.applyOptionalFields(data, saveItemDto);
+    const create = async (client: Prisma.TransactionClient) => {
+      const created = await client.itemMaster.create({ data });
+      const payload = this.toPayload(created);
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'New',
+          tableName: ITEM_TABLE_NAME,
+          screenName: ITEM_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: payload.item_id,
+          displayName: payload.item_name_en,
+          originalRecord: null,
+          modifiedRecord: payload,
+          userId: createdBy,
+          notes: 'Item created',
+        },
+        client,
+      );
+      return payload;
+    };
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        const created = await tx.itemMaster.create({ data });
-        const payload = this.toPayload(created);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: ITEM_TABLE_NAME,
-            screenName: ITEM_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: payload.item_id,
-            displayName: payload.item_name_en,
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: createdBy,
-            notes: 'Item created',
-          },
-          tx,
-        );
-        return payload;
-      });
+      return tx ? await create(tx) : await this.prisma.$transaction(create);
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;
     }
   }
-  private async updateItem(saveItemDto: SaveItemDto): Promise<ItemPayload> {
+  private async updateItem(
+    saveItemDto: SaveItemDto,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemPayload> {
     const itemId = saveItemDto.item_id!;
     const itemNameEn = saveItemDto.item_name_en?.trim();
     if (!itemNameEn) {
@@ -511,53 +536,54 @@ export class ItemsMasterService {
         },
       ]);
     }
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.itemMaster.findFirst({
-          where: {
-            itemId,
-            itemIsDeleted: false,
-          },
-        });
-        if (!existing) {
-          throwInventoryNotFound<ItemErrorDetail>(
-            'Item not found',
-            'item_id',
-            `No active item found with id ${itemId}`,
-          );
-        }
-        const data: Prisma.ItemMasterUncheckedUpdateInput = {
-          itemNameEn,
-          itemGroupId: saveItemDto.item_group_id,
-          itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
-          itemModifiedOn: new Date(),
-          itemModifiedBy: resolveActor(saveItemDto.item_modified_by, this.requestContextService.getUserId()),
-        };
-        this.applyOptionalFields(data, saveItemDto);
-        const updated = await tx.itemMaster.update({
-          where: {
-            itemId,
-          },
-          data,
-        });
-        const payload = this.toPayload(updated);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: ITEM_TABLE_NAME,
-            screenName: ITEM_AUDIT_SCREEN_NAME,
-            screenType: 'master',
-            pk: itemId,
-            displayName: payload.item_name_en,
-            originalRecord: this.toPayload(existing),
-            modifiedRecord: payload,
-            userId: payload.item_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
-            notes: 'Item updated',
-          },
-          tx,
-        );
-        return payload;
+    const update = async (client: Prisma.TransactionClient) => {
+      const existing = await client.itemMaster.findFirst({
+        where: {
+          itemId,
+          itemIsDeleted: false,
+        },
       });
+      if (!existing) {
+        throwInventoryNotFound<ItemErrorDetail>(
+          'Item not found',
+          'item_id',
+          `No active item found with id ${itemId}`,
+        );
+      }
+      const data: Prisma.ItemMasterUncheckedUpdateInput = {
+        itemNameEn,
+        itemGroupId: saveItemDto.item_group_id,
+        itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,
+        itemModifiedOn: new Date(),
+        itemModifiedBy: resolveActor(saveItemDto.item_modified_by, this.requestContextService.getUserId()),
+      };
+      this.applyOptionalFields(data, saveItemDto);
+      const updated = await client.itemMaster.update({
+        where: {
+          itemId,
+        },
+        data,
+      });
+      const payload = this.toPayload(updated);
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'update',
+          tableName: ITEM_TABLE_NAME,
+          screenName: ITEM_AUDIT_SCREEN_NAME,
+          screenType: 'master',
+          pk: itemId,
+          displayName: payload.item_name_en,
+          originalRecord: this.toPayload(existing),
+          modifiedRecord: payload,
+          userId: payload.item_modified_by ?? this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          notes: 'Item updated',
+        },
+        client,
+      );
+      return payload;
+    };
+    try {
+      return tx ? await update(tx) : await this.prisma.$transaction(update);
     } catch (error: unknown) {
       this.handleWriteError(error);
       throw error;

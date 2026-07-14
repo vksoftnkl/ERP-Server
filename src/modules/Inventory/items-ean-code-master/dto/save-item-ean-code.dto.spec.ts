@@ -4,17 +4,17 @@ import { validateSync } from 'class-validator';
 import { SaveItemEanCodeDto } from './save-item-ean-code.dto';
 
 describe('SaveItemEanCodeDto', () => {
-  it('maps empty ean_godown_id to null', () => {
+  it('maps empty ean_remarks to null', () => {
     const dto = plainToInstance(SaveItemEanCodeDto, {
       ean_item_id: '019c6f6c-be87-7a11-8905-36092c46fd07',
       ean_unit_id: '019c6f6c-be87-7a11-8905-36092c46fd08',
       ean_code: '8901234567890',
-      ean_godown_id: '',
+      ean_remarks: '',
     });
 
     const errors = validateSync(dto);
 
-    expect(dto.ean_godown_id).toBeNull();
+    expect(dto.ean_remarks).toBeNull();
     expect(errors).toHaveLength(0);
   });
 

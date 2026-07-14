@@ -15,8 +15,8 @@ export interface FiscalYearOption {
   isCurrent: boolean;
 }
 /**
- * A freight-charge slab row (legacy `freight_charges`). `iflag = 8` returns all
- * active slabs; `iflag = 9` returns the slabs matching a given distance.
+ * A freight-charge slab row (legacy `freight_charges`). `iflag = 9` returns the
+ * slabs matching a given distance.
  */
 export interface FreightChargeOption {
   id: string;

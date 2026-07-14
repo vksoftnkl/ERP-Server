@@ -1,15 +1,14 @@
 # Item EAN Codes
 
 CRUD API for **item EAN / barcode codes** — the scannable barcodes assigned to an inventory
-item for a given unit (and optionally a godown), with one code flagged as the default per scope.
+item for a given unit, with one code flagged as the default per `(item, unit)` scope.
 
 - **Base route:** `item-ean-codes` (each route is API-versioned via `@Version(API_VERSION)`)
 - **Swagger tag:** `Item EAN Codes`
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `item_ean_codes` (`inventory` schema) — PK `eanId` (`ean_id`, uuidv7)
-- **Unique index:** `uq_ean_code` on `eanCode`; plus a partial unique index `uq_ean_one_default`
-  (kept in SQL migration, not expressible in Prisma)
-- **FK:** `eanUnitId → inventory.units.unit_id`
+- **Unique index:** `uq_ean_code` on `eanCode`
+- **FK:** `eanUnitId → inventory.item_unit_conversion.iuc_id`
 - Responses are cached with `@CacheTTL(1)`.
 
 ## Files
@@ -43,7 +42,7 @@ item for a given unit (and optionally a godown), with one code flagged as the de
   fails, nothing is persisted.
 - On both create and update, `ean_code` is trimmed and must be non-empty (otherwise a
   `Validation failed` bad request is thrown).
-- Optional fields (`ean_godown_id`, `ean_is_default`, `ean_is_active`, `ean_remarks`) are only
+- Optional fields (`ean_is_default`, `ean_is_active`, `ean_remarks`) are only
   written when present on the payload (`applyOptionalFields` / `hasOwnProperty`).
 - The acting user for `ean_created_by` / `ean_modified_by` is resolved from the payload value,
   falling back to `RequestContextService.getUserId()` (then `DEFAULT_ACTOR`).
@@ -64,8 +63,7 @@ item for a given unit (and optionally a godown), with one code flagged as the de
   `EAN code already exists` conflict (`handleWriteError` → `throwOnUniqueConstraintError`).
 - **At most one default per scope** — when a saved row has `eanIsDefault = true`,
   `enforceSingleDefaultInScope` clears the default flag on every other non-deleted row sharing
-  the same `(eanItemId, eanUnitId, eanGodownId)`, backed by the partial unique index
-  `uq_ean_one_default`.
+  the same `(eanItemId, eanUnitId)`. This is enforced in the service, not by a DB constraint.
 - **Invalid relation reference** — a foreign-key violation (e.g. an unknown `ean_unit_id`) is
   mapped to a bad request `Invalid relation reference`.
 - **Soft delete only** — rows are never hard-deleted; delete flips `eanIsDeleted` and stamps
@@ -73,7 +71,7 @@ item for a given unit (and optionally a godown), with one code flagged as the de
 - **Every mutation is audited** via `AuditLogService.logEntityChange` (`New` / `update` /
   `cancel`), under screen `Item EAN Code Master`, capturing original vs. modified records.
 - **Listing** filters to non-deleted rows, supports `ean_item_id` / `ean_unit_id` /
-  `ean_godown_id` / `ean_is_default` / `ean_is_active` filters plus `search` and pagination,
+  `ean_is_default` / `ean_is_active` filters plus `search` and pagination,
   and can source rows from a configured grid SQL (`configured-grid-sql`) or a direct Prisma
   query ordered by `eanItemId`, then `eanId`.
 
@@ -87,5 +85,5 @@ EAN codes into its own reads and cascade operations. The intentionally non-priva
 - `findIdsByItemId(itemId, isDeleted)` — return EAN ids for an item at a given deleted state
   (used when the item master cascades soft-delete / restore).
 
-The `ItemEanCodePayload` also carries optional resolved `ean_unit_name` / `ean_godown_name`
-fields that the item composite `get` endpoint populates.
+The `ItemEanCodePayload` also carries an optional resolved `ean_unit_name`
+field that the item composite `get` endpoint populates.

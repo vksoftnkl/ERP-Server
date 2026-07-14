@@ -15,10 +15,6 @@ export class GetItemEanCodeQueryDto extends InventoryListQueryBaseDto {
   @OptionalUuid()
   ean_unit_id?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @OptionalUuid()
-  ean_godown_id?: string;
-
   @ApiPropertyOptional({ type: Boolean, description: 'Supports true/false/1/0/yes/no/on/off' })
   @OptionalQueryBoolean()
   ean_is_default?: boolean;

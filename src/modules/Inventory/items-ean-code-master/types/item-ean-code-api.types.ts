@@ -12,7 +12,6 @@ export interface ItemEanCodePayload {
   ean_item_id: string;
   ean_unit_id: string;
   ean_code: string;
-  ean_godown_id: string | null;
   ean_is_default: boolean;
   ean_is_active: boolean;
   ean_is_deleted: boolean;
@@ -23,7 +22,6 @@ export interface ItemEanCodePayload {
   ean_remarks: string | null;
   // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
   ean_unit_name?: string | null;
-  ean_godown_name?: string | null;
 }
 
 export type ItemEanCodeListItem = ItemEanCodePayload | Record<string, unknown>;

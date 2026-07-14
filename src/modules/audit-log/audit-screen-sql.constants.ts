@@ -172,7 +172,6 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
       ['ean_item_id', 'Item ID'],
       ['ean_unit_id', 'Unit ID'],
       ['ean_code', 'EAN / Barcode'],
-      ['ean_godown_id', 'Godown ID'],
       ['ean_is_default', 'Is Default'],
       ['ean_is_active', 'Is Active'],
       ['ean_is_deleted', 'Is Deleted'],

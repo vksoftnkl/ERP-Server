@@ -2262,8 +2262,7 @@ model ItemEanCode {
   eanUnitId    String  @db.Uuid @map("ean_unit_id")
   eanCode      String  @db.VarChar(64) @map("ean_code")
 
-  // Optional scoping for default-barcode rule
-  eanGodownId  String? @db.Uuid @map("ean_godown_id")
+  // Default-barcode rule is scoped per (item, unit)
   eanIsDefault Boolean @default(false) @map("ean_is_default")
 
   // Status / audit
@@ -2288,9 +2287,6 @@ model ItemEanCode {
 
   @@index([eanCode], map: "idx_ean_code")
   @@index([eanItemId], map: "idx_ean_item")
-
-  // NOTE: partial unique index uq_ean_one_default cannot be expressed in Prisma schema.
-  // Keep it in SQL migration.
 }
 
 // ----- prisma/inventory/itemGroupMaster.prisma -----

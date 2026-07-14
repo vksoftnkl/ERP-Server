@@ -3,7 +3,6 @@ import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
-  NullableUuid,
   OptionalQueryBoolean,
   OptionalUuid,
   toTrimmedString,
@@ -37,10 +36,6 @@ export class SaveItemEanCodeDto {
   @IsNotEmpty()
   @MaxLength(64)
   ean_code!: string;
-
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @NullableUuid()
-  ean_godown_id?: string | null;
 
   @ApiPropertyOptional({ default: false })
   @OptionalQueryBoolean()

@@ -24,6 +24,7 @@ import {
   throwInventoryNotFound,
   throwOnUniqueConstraintError,
 } from 'src/common/utils/module-service.utils';
+import type { InventoryWriteClient } from 'src/common/utils/module-service.utils';
 import {
   resolvePagination,
   runConfiguredGridQuery,
@@ -42,26 +43,42 @@ export class ItemsEanCodeMasterService {
     private readonly requestContextService: RequestContextService,
   ) {}
 
-  async save(saveItemEanCodeDto: SaveItemEanCodeDto): Promise<ItemEanCodePayload>;
-  async save(saveItemEanCodeDto: SaveItemEanCodeDto[]): Promise<ItemEanCodePayload[]>;
+  async save(
+    saveItemEanCodeDto: SaveItemEanCodeDto,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemEanCodePayload>;
+  async save(
+    saveItemEanCodeDto: SaveItemEanCodeDto[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemEanCodePayload[]>;
   async save(
     saveItemEanCodeDto: SaveItemEanCodeDto | SaveItemEanCodeDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemEanCodePayload | ItemEanCodePayload[]>;
+  /**
+   * `ean_unit_id` must hold an `iuc_id` from item_unit_conversion, not a raw
+   * unit_id — the column is a FK to item_unit_conversion(iuc_id).
+   *
+   * @param tx When supplied, the batch runs inside the caller's transaction
+   * instead of opening its own (see ItemsMasterService.saveComposite).
+   */
   async save(
     saveItemEanCodeDto: SaveItemEanCodeDto | SaveItemEanCodeDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemEanCodePayload | ItemEanCodePayload[]> {
     const saveItems = Array.isArray(saveItemEanCodeDto) ? saveItemEanCodeDto : [saveItemEanCodeDto];
+    const saveAll = async (client: Prisma.TransactionClient) => {
+      const savedItems: ItemEanCodePayload[] = [];
+
+      for (const saveItem of saveItems) {
+        savedItems.push(await this.saveItemEanCode(client, saveItem));
+      }
+
+      return savedItems;
+    };
 
     try {
-      const results = await this.prisma.$transaction(async (tx) => {
-        const savedItems: ItemEanCodePayload[] = [];
-
-        for (const saveItem of saveItems) {
-          savedItems.push(await this.saveItemEanCode(tx, saveItem));
-        }
-
-        return savedItems;
-      });
+      const results = tx ? await saveAll(tx) : await this.prisma.$transaction(saveAll);
 
       return Array.isArray(saveItemEanCodeDto) ? results : results[0];
     } catch (error: unknown) {
@@ -77,7 +94,6 @@ export class ItemsEanCodeMasterService {
       eanIsDeleted: false,
       ...(queryDto.ean_item_id !== undefined && { eanItemId: queryDto.ean_item_id }),
       ...(queryDto.ean_unit_id !== undefined && { eanUnitId: queryDto.ean_unit_id }),
-      ...(queryDto.ean_godown_id !== undefined && { eanGodownId: queryDto.ean_godown_id }),
       ...(queryDto.ean_is_default !== undefined && { eanIsDefault: queryDto.ean_is_default }),
       ...(queryDto.ean_is_active !== undefined && { eanIsActive: queryDto.ean_is_active }),
     };
@@ -127,8 +143,11 @@ export class ItemsEanCodeMasterService {
 
     return this.toPayload(record);
   }
-  async findByItemId(itemId: string): Promise<ItemEanCodePayload[]> {
-    const records = await this.prisma.itemEanCode.findMany({
+  async findByItemId(
+    itemId: string,
+    client: InventoryWriteClient = this.prisma,
+  ): Promise<ItemEanCodePayload[]> {
+    const records = await client.itemEanCode.findMany({
       where: { eanItemId: itemId, eanIsDeleted: false },
       orderBy: [{ eanId: 'asc' }],
     });
@@ -142,25 +161,34 @@ export class ItemsEanCodeMasterService {
     return records.map((record) => record.eanId);
   }
 
-  async toggleDelete(eanId: string): Promise<ItemEanCodeDeleteResult>;
-  async toggleDelete(eanId: string[]): Promise<ItemEanCodeDeleteResult[]>;
+  async toggleDelete(
+    eanId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemEanCodeDeleteResult>;
+  async toggleDelete(
+    eanId: string[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemEanCodeDeleteResult[]>;
   async toggleDelete(
     eanId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>;
   async toggleDelete(
     eanId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]> {
     const toggleIds = Array.isArray(eanId) ? eanId : [eanId];
-
-    const results = await this.prisma.$transaction(async (tx) => {
+    const toggleAll = async (client: Prisma.TransactionClient) => {
       const toggledItems: ItemEanCodeDeleteResult[] = [];
 
       for (const toggleId of toggleIds) {
-        toggledItems.push(await this.toggleDeleteItemEanCode(tx, toggleId));
+        toggledItems.push(await this.toggleDeleteItemEanCode(client, toggleId));
       }
 
       return toggledItems;
-    });
+    };
+
+    const results = tx ? await toggleAll(tx) : await this.prisma.$transaction(toggleAll);
 
     return Array.isArray(eanId) ? results : results[0];
   }
@@ -369,10 +397,6 @@ export class ItemsEanCodeMasterService {
     data: Prisma.ItemEanCodeUncheckedCreateInput | Prisma.ItemEanCodeUncheckedUpdateInput,
     saveItemEanCodeDto: SaveItemEanCodeDto,
   ): void {
-    if (hasOwnProperty(saveItemEanCodeDto, 'ean_godown_id')) {
-      data.eanGodownId = saveItemEanCodeDto.ean_godown_id;
-    }
-
     if (hasOwnProperty(saveItemEanCodeDto, 'ean_is_default')) {
       data.eanIsDefault = saveItemEanCodeDto.ean_is_default;
     }
@@ -399,7 +423,6 @@ export class ItemsEanCodeMasterService {
       where: {
         eanItemId: record.eanItemId,
         eanUnitId: record.eanUnitId,
-        eanGodownId: record.eanGodownId,
         eanIsDeleted: false,
         eanIsDefault: true,
         eanId: {
@@ -420,7 +443,6 @@ export class ItemsEanCodeMasterService {
       ean_item_id: record.eanItemId,
       ean_unit_id: record.eanUnitId,
       ean_code: record.eanCode,
-      ean_godown_id: record.eanGodownId,
       ean_is_default: record.eanIsDefault,
       ean_is_active: record.eanIsActive,
       ean_is_deleted: record.eanIsDeleted,

@@ -225,18 +225,6 @@ export class MasterLookupService {
     }));
   }
   /**
-   * Legacy `iflag = 8`: all active, non-deleted freight-charge slabs, ordered by
-   * distance then weight (fr_from_km ASC, fr_from_weight ASC).
-   */
-  async getAllFreightCharges(): Promise<FreightChargeOption[]> {
-    const rows = await this.prisma.freightCharges.findMany({
-      where: { frIsDeleted: false, frIsActive: true },
-      orderBy: [{ frFromKm: 'asc' }, { frFromWeight: 'asc' }],
-    });
-    return rows.map((row) => this.toFreightChargeOption(row));
-  }
-
-  /**
    * Legacy `iflag = 9`: the active freight-charge slabs whose km range covers the
    * given distance (distance BETWEEN fr_from_km AND fr_to_km).
    */
@@ -252,7 +240,6 @@ export class MasterLookupService {
     });
     return rows.map((row) => this.toFreightChargeOption(row));
   }
-
   /**
    * Legacy `iflag = 10` (barcode): resolve a scanned EAN code to its item and
    * selling unit. Matches item_ean_codes.ean_code case-insensitively (legacy
@@ -277,7 +264,6 @@ export class MasterLookupService {
         `No active item found for barcode ${code}`,
       );
     }
-
     // Legacy INNER JOIN item_master ON item_id = ean.item_id.
     const item = await this.prisma.itemMaster.findFirst({
       where: { itemId: ean.eanItemId },
@@ -296,7 +282,6 @@ export class MasterLookupService {
         `Barcode ${code} is not linked to a valid item`,
       );
     }
-
     return {
       itemId: ean.eanItemId,
       unitId: ean.eanUnitId,
@@ -307,7 +292,6 @@ export class MasterLookupService {
       weighScale: item.itemWeighScale,
     };
   }
-
   /**
    * Port of the legacy PL/pgSQL `iflag = 7` customer-detail cursor onto the
    * current UUID schema. Resolves one customer (legacy isale_cust_id) within a
@@ -334,7 +318,6 @@ export class MasterLookupService {
   async getCustomerDetail(query: CustomerDetailQueryDto): Promise<CustomerDetail> {
     const { cus_id, company_id } = query;
     const regional = query.regional ?? false;
-
     // Customer + its area (legacy INNER JOIN area_master for distance_km).
     const customer = await this.prisma.customer.findFirst({
       where: { cusId: cus_id, cusIsDeleted: false },
@@ -347,7 +330,6 @@ export class MasterLookupService {
         `No active customer found for id ${cus_id}`,
       );
     }
-
     // Company (legacy INNER JOIN companys ON comp_id = icompany_id) and the
     // salesman (legacy default_salesman[1] ⋈ employee_master).
     const [company, salesman] = await Promise.all([
@@ -362,14 +344,12 @@ export class MasterLookupService {
           })
         : Promise.resolve(null),
     ]);
-
     // Legacy `iregional`: regional name/address fall back to English when unset.
     const custName = regional ? (customer.cusRegionName ?? customer.cusName) : customer.cusName;
     const custAddress = regional
       ? (customer.cusRegionAddr1 ?? customer.cusAddr1)
       : customer.cusAddr1;
     const custPlace = regional ? (customer.cusRegionAddr2 ?? customer.cusAddr2) : customer.cusAddr2;
-
     return {
       cust_id: customer.cusId,
       cust_name: custName ?? '',
@@ -389,12 +369,10 @@ export class MasterLookupService {
       area_name: customer.area?.armName ?? null,
       distance_km: customer.area?.armDistanceKm ?? null,
       cust_phone1: customer.cusPhone1,
-
       // Legacy debit_* credit-control fields → current cus_credit_* columns.
       debit_days: customer.cusCreditDays,
       debit_limit: toNumber(customer.cusCreditAmtLimit),
       debit_allowed: customer.cusCreditAllowed,
-
       freight_charge: customer.cusFreightCharge,
       cooly: customer.cusLoadingCharge,
       unloading_charge: customer.cusUnloadingCharge,
@@ -404,22 +382,18 @@ export class MasterLookupService {
       overdue_billing: customer.cusOverdueBilling,
       price_level: customer.cusPriceLevelId,
       cust_disc_perc: toNumber(customer.cusDiscPerc),
-
       salesman_id: customer.cusDefaultSalesman,
       salesman_name: salesman?.empName ?? null,
-
       tcs_company: company?.compTcsApplicable ?? false,
       // Legacy: TCS applies only when the IT-collection type is TCS and unexempted.
       tcs_customer: customer.cusItcollType === 'TCS' && customer.cusItcollExempted === false,
       cust_pan: Boolean(customer.cusPanNo),
       // Legacy `local_sales`: customer and company in the same state.
       local_sales: !!company && customer.cusStateCode === company.compStateCode,
-
       cust_points: null,
       billed_date: this.formatBilledDate(customer.cusBilledDate),
     };
   }
-
   async getDropdownSqlData(dropdownId: number): Promise<NameIdOption[]> {
     const record = await this.prisma.dropdownDetails.findUnique({
       where: { dropdownId },

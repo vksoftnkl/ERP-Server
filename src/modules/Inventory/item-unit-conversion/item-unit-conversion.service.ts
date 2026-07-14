@@ -23,6 +23,7 @@ import {
   throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import type { InventoryWriteClient } from 'src/common/utils/module-service.utils';
 import {
   resolvePagination,
   runConfiguredGridQuery,
@@ -50,38 +51,48 @@ export class ItemUnitConversionService {
   ) {}
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto,
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemUnitConversionPayload>;
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemUnitConversionPayload[]>;
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]>;
+  /**
+   * @param tx When supplied, the batch runs inside the caller's transaction
+   * instead of opening its own, so a later failure rolls these rows back too
+   * (see ItemsMasterService.saveComposite).
+   */
   async save(
     saveItemUnitConversionDto: SaveItemUnitConversionDto | SaveItemUnitConversionDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemUnitConversionPayload | ItemUnitConversionPayload[]> {
     const saveItems = Array.isArray(saveItemUnitConversionDto)
       ? saveItemUnitConversionDto
       : [saveItemUnitConversionDto];
+    const saveAll = async (client: Prisma.TransactionClient) => {
+      const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(
+        client,
+        saveItems,
+      );
+      for (const saveItem of baseUnitNormalizedSaveItems) {
+        this.validateItemUnitConversion(saveItem);
+      }
+      const normalizedSaveItems = await this.normalizeItemUnitConversionFactors(
+        client,
+        baseUnitNormalizedSaveItems,
+      );
+      const savedItems: ItemUnitConversionPayload[] = [];
+      for (const saveItem of normalizedSaveItems) {
+        savedItems.push(await this.saveItemUnitConversion(client, saveItem));
+      }
+      return savedItems;
+    };
     try {
-      const results = await this.prisma.$transaction(async (tx) => {
-        const baseUnitNormalizedSaveItems = await this.normalizeItemUnitConversionBaseUnits(
-          tx,
-          saveItems,
-        );
-        for (const saveItem of baseUnitNormalizedSaveItems) {
-          this.validateItemUnitConversion(saveItem);
-        }
-        const normalizedSaveItems = await this.normalizeItemUnitConversionFactors(
-          tx,
-          baseUnitNormalizedSaveItems,
-        );
-        const savedItems: ItemUnitConversionPayload[] = [];
-        for (const saveItem of normalizedSaveItems) {
-          savedItems.push(await this.saveItemUnitConversion(tx, saveItem));
-        }
-        return savedItems;
-      });
+      const results = tx ? await saveAll(tx) : await this.prisma.$transaction(saveAll);
       return Array.isArray(saveItemUnitConversionDto) ? results : results[0];
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -121,7 +132,6 @@ export class ItemUnitConversionService {
       },
     );
   }
-
   async getById(iucId: string): Promise<ItemUnitConversionPayload> {
     const record = await this.prisma.itemUnitConversion.findFirst({
       where: {
@@ -138,8 +148,11 @@ export class ItemUnitConversionService {
     }
     return this.toPayload(record);
   }
-  async findByItemId(itemId: string): Promise<ItemUnitConversionPayload[]> {
-    const records = await this.prisma.itemUnitConversion.findMany({
+  async findByItemId(
+    itemId: string,
+    client: InventoryWriteClient = this.prisma,
+  ): Promise<ItemUnitConversionPayload[]> {
+    const records = await client.itemUnitConversion.findMany({
       where: { iucItemId: itemId, iucIsDeleted: false },
       orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
     });
@@ -152,23 +165,32 @@ export class ItemUnitConversionService {
     });
     return records.map((record) => record.iucId);
   }
-  async toggleDelete(iucId: string): Promise<ItemUnitConversionDeleteResult>;
-  async toggleDelete(iucId: string[]): Promise<ItemUnitConversionDeleteResult[]>;
+  async toggleDelete(
+    iucId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemUnitConversionDeleteResult>;
+  async toggleDelete(
+    iucId: string[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemUnitConversionDeleteResult[]>;
   async toggleDelete(
     iucId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]>;
   async toggleDelete(
     iucId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemUnitConversionDeleteResult | ItemUnitConversionDeleteResult[]> {
     const toggleIds = Array.isArray(iucId) ? iucId : [iucId];
+    const toggleAll = async (client: Prisma.TransactionClient) => {
+      const toggledItems: ItemUnitConversionDeleteResult[] = [];
+      for (const toggleId of toggleIds) {
+        toggledItems.push(await this.toggleDeleteItemUnitConversion(client, toggleId));
+      }
+      return toggledItems;
+    };
     try {
-      const results = await this.prisma.$transaction(async (tx) => {
-        const toggledItems: ItemUnitConversionDeleteResult[] = [];
-        for (const toggleId of toggleIds) {
-          toggledItems.push(await this.toggleDeleteItemUnitConversion(tx, toggleId));
-        }
-        return toggledItems;
-      });
+      const results = tx ? await toggleAll(tx) : await this.prisma.$transaction(toggleAll);
       return Array.isArray(iucId) ? results : results[0];
     } catch (error: unknown) {
       this.handleDeleteError(error);

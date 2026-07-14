@@ -8,7 +8,6 @@ import { ItemsEanCodeMasterService } from './items-ean-code-master.service';
 const EAN_ID = '019c6f6c-be87-7a11-8905-36092c46fd06';
 const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
 const UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fd08';
-const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fd09';
 
 type PrismaMock = {
   itemEanCode: {
@@ -28,7 +27,6 @@ const makeRecord = (overrides: Partial<ItemEanCode> = {}): ItemEanCode =>
     eanItemId: ITEM_ID,
     eanUnitId: UNIT_ID,
     eanCode: '8901234567890',
-    eanGodownId: null,
     eanIsDefault: false,
     eanIsActive: true,
     eanIsDeleted: false,
@@ -162,7 +160,6 @@ describe('ItemsEanCodeMasterService', () => {
 
   it('normalizes old defaults when a new default ean is created in same scope', async () => {
     const createdDefault = makeRecord({
-      eanGodownId: GODOWN_ID,
       eanIsDefault: true,
     });
     prisma.itemEanCode.create.mockResolvedValue(createdDefault);
@@ -172,7 +169,6 @@ describe('ItemsEanCodeMasterService', () => {
       ean_item_id: ITEM_ID,
       ean_unit_id: UNIT_ID,
       ean_code: '8901234567890',
-      ean_godown_id: GODOWN_ID,
       ean_is_default: true,
     };
 
@@ -182,7 +178,6 @@ describe('ItemsEanCodeMasterService', () => {
     const updateManyArgs = prisma.itemEanCode.updateMany.mock.calls[0][0];
     expect(updateManyArgs.where?.eanItemId).toBe(ITEM_ID);
     expect(updateManyArgs.where?.eanUnitId).toBe(UNIT_ID);
-    expect(updateManyArgs.where?.eanGodownId).toBe(GODOWN_ID);
     expect(updateManyArgs.where?.eanIsDefault).toBe(true);
     expect(updateManyArgs.where?.eanId).toEqual({ not: EAN_ID });
     expect(updateManyArgs.data.eanIsDefault).toBe(false);

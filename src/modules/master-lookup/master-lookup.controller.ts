@@ -116,17 +116,6 @@ export class MasterLookupController {
     const data = await this.masterLookupService.getCustomerDetail(query);
     return { success: true, message: 'Customer detail fetched successfully', data };
   }
-  @Get('freight-charges')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary:
-      'Get all active freight-charge slabs (legacy iflag=8), ordered by distance then weight.',
-  })
-  @ApiOkResponse({ type: FreightChargeListSuccessDto })
-  async getAllFreightCharges(): Promise<MasterLookupSuccessResponse<FreightChargeOption[]>> {
-    const data = await this.masterLookupService.getAllFreightCharges();
-    return { success: true, message: 'Freight charges fetched successfully', data };
-  }
   @Get('freight-charges/charge')
   @Version(API_VERSION)
   @ApiOperation({

@@ -12,7 +12,6 @@ const itemEanCodePayload = {
   ean_item_id: ITEM_ID,
   ean_unit_id: UNIT_ID,
   ean_code: '8901234567890',
-  ean_godown_id: null,
   ean_is_default: false,
   ean_is_active: true,
   ean_is_deleted: false,

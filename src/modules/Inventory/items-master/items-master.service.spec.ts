@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { ItemMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -20,6 +21,12 @@ const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46aa07';
 const CATEGORY_ID = '019c6f6c-be87-7a11-8905-36092c46aa08';
 const BASE_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46aa09';
 const OTHER_ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46aa99';
+// A second unit the item has no item_unit_conversion row for.
+const UNMAPPED_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46aa10';
+// item_unit_conversion PKs. item_ean_codes.ean_unit_id and item_reorders.ir_unit_id
+// store one of these, NOT a unit_id — the child save mocks stamp them on create,
+// standing in for the real services' uuidv7() default.
+const IUC_ID = '019c6f6c-be87-7a11-8905-36092c46ab01';
 
 const makeItemRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =>
   ({
@@ -130,7 +137,7 @@ describe('ItemsMasterService composite endpoints', () => {
   let service: ItemsMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
-  let requestContextService: Pick<RequestContextService, 'getUserId'>;
+  let requestContextService: Pick<RequestContextService, 'getUserId' | 'getCompanyId'>;
   let unitConversionService: ChildServiceMock;
   let priceService: ChildServiceMock;
   let eanCodeService: ChildServiceMock;
@@ -168,20 +175,31 @@ describe('ItemsMasterService composite endpoints', () => {
     );
 
     auditLogService = { logEntityChange: jest.fn().mockResolvedValue(undefined) };
-    requestContextService = { getUserId: jest.fn().mockReturnValue(USER_ID) };
+    requestContextService = {
+      getUserId: jest.fn().mockReturnValue(USER_ID),
+      // Unscoped (super-admin) token, so item_company_id comes from the body.
+      getCompanyId: jest.fn().mockReturnValue(null),
+    };
 
-    // Child save mocks echo the injected dtos back as "payloads" so the
-    // injection can be asserted from the call. Saved rows are also recorded so
-    // findByItemId echoes them afterwards, matching the diff-sync flow (fetch
-    // existing -> save -> re-fetch); it starts empty, so every payload row is
-    // treated as a create. toggleDelete echoes ids as {*_id, deleted: true};
-    // all mocks are overridden per test where relevant.
-    const makeChildServiceMock = (idField: string): ChildServiceMock => {
-      const saved: unknown[] = [];
+    // Child save mocks echo the injected dtos back as "payloads", stamping the
+    // row's PK when the dto has none (the real services let the DB default it).
+    // Saved rows are also recorded so findByItemId echoes them afterwards,
+    // matching the diff-sync flow (fetch existing -> save -> re-fetch); it
+    // starts empty, so every payload row is treated as a create. toggleDelete
+    // echoes ids as {*_id, deleted: true}; all mocks are overridden per test
+    // where relevant.
+    const makeChildServiceMock = (idField: string, generatedId: string): ChildServiceMock => {
+      const saved: Record<string, unknown>[] = [];
       return {
         save: jest.fn((dtos: unknown) => {
-          saved.push(...(Array.isArray(dtos) ? dtos : [dtos]));
-          return Promise.resolve(dtos);
+          const rows = (Array.isArray(dtos) ? dtos : [dtos]).map(
+            (dto: Record<string, unknown>) => ({
+              ...dto,
+              [idField]: dto[idField] ?? generatedId,
+            }),
+          );
+          saved.push(...rows);
+          return Promise.resolve(rows);
         }),
         findByItemId: jest.fn(() => Promise.resolve([...saved])),
         findIdsByItemId: jest.fn().mockResolvedValue([]),
@@ -190,10 +208,10 @@ describe('ItemsMasterService composite endpoints', () => {
         ),
       };
     };
-    unitConversionService = makeChildServiceMock('iuc_id');
-    priceService = makeChildServiceMock('ipm_id');
-    eanCodeService = makeChildServiceMock('ean_id');
-    reorderService = makeChildServiceMock('ir_id');
+    unitConversionService = makeChildServiceMock('iuc_id', IUC_ID);
+    priceService = makeChildServiceMock('ipm_id', 'p1');
+    eanCodeService = makeChildServiceMock('ean_id', 'e1');
+    reorderService = makeChildServiceMock('ir_id', 'r1');
 
     const itemMasterUpdateService = new ItemMasterUpdateService(
       unitConversionService as unknown as ItemUnitConversionService,
@@ -261,21 +279,26 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.reorders).toHaveLength(1);
   });
 
-  it('saves prices only after unit conversions (order matters)', async () => {
+  it('saves children in dependency order: unit conversions, then prices, then EAN codes', async () => {
     prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
     const order: string[] = [];
-    unitConversionService.save.mockImplementation((dtos: unknown) => {
-      order.push('unit_conversions');
-      return Promise.resolve(dtos);
-    });
-    priceService.save.mockImplementation((dtos: unknown) => {
-      order.push('prices');
-      return Promise.resolve(dtos);
-    });
+    // Record the call order but delegate to the mock's real behavior, so the
+    // saved conversion rows still exist for the EAN unit resolution downstream.
+    const trackOrder = (mock: jest.Mock, label: string): void => {
+      const original = mock.getMockImplementation() as (dtos: unknown) => Promise<unknown>;
+      mock.mockImplementation((dtos: unknown) => {
+        order.push(label);
+        return original(dtos);
+      });
+    };
+    trackOrder(unitConversionService.save, 'unit_conversions');
+    trackOrder(priceService.save, 'prices');
+    trackOrder(eanCodeService.save, 'ean_codes');
 
     await service.saveComposite(fullCompositeDto());
 
-    expect(order).toEqual(['unit_conversions', 'prices']);
+    // Conversions must land before EAN codes: the EAN rows store an iuc_id from them.
+    expect(order).toEqual(['unit_conversions', 'prices', 'ean_codes']);
   });
 
   it('injected parent item_id overwrites any client-supplied child item_id', async () => {
@@ -354,7 +377,7 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.reorders).toEqual([]);
   });
 
-  it('propagates a child failure after the item is already persisted (non-atomic / orphan)', async () => {
+  it('runs the item and every child on ONE transaction, so a child failure rolls the item back', async () => {
     prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
     priceService.save.mockRejectedValue(new Error('price validation failed'));
 
@@ -362,12 +385,97 @@ describe('ItemsMasterService composite endpoints', () => {
       'price validation failed',
     );
 
-    // Item and the earlier child (unit conversions) were already persisted;
-    // later children (EAN, reorder) never ran.
-    expect(prisma.itemMaster.create).toHaveBeenCalledTimes(1);
-    expect(unitConversionService.save).toHaveBeenCalledTimes(1);
+    // One transaction spans the whole save, and the failure escapes it: the item
+    // insert and the earlier children are rolled back with it, not left behind.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // Later children never ran.
     expect(eanCodeService.save).not.toHaveBeenCalled();
     expect(reorderService.save).not.toHaveBeenCalled();
+    // The children that did run were handed the caller's transaction, not left
+    // to open their own (which would commit independently of the rollback).
+    const tx = unitConversionService.save.mock.calls[0][1] as unknown;
+    expect(tx).toBeDefined();
+  });
+
+  it('stores the unit conversion iuc_id — not the raw unit_id — in the EAN unit column', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+
+    await service.saveComposite(fullCompositeDto());
+
+    // The payload named UNIT_ID; the conversion row saved for that unit is IUC_ID,
+    // and that is what lands in item_ean_codes.ean_unit_id (a FK to iuc_id).
+    expect(savedRows(unitConversionService.save)[0].iuc_unit_id).toBe(UNIT_ID);
+    expect(savedRows(eanCodeService.save)[0].ean_unit_id).toBe(IUC_ID);
+  });
+
+  it('stores the unit conversion iuc_id in the reorder unit column, and leaves a null unit null', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    dto.reorders = [
+      { ir_unit_id: UNIT_ID, ir_min_level: 5 },
+      // No unit scoping: the global rule, which must stay null rather than resolve.
+      { ir_min_level: 1 },
+    ];
+
+    await service.saveComposite(dto);
+
+    const savedReorders = savedRows(reorderService.save);
+    expect(savedReorders[0].ir_unit_id).toBe(IUC_ID);
+    expect(savedReorders[1].ir_unit_id).toBeUndefined();
+  });
+
+  it('accepts a unit column that already holds an iuc_id (a getComposite response echoed back)', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    dto.ean_codes = [{ ean_unit_id: IUC_ID, ean_code: '890123456789' }];
+
+    await service.saveComposite(dto);
+
+    expect(savedRows(eanCodeService.save)[0].ean_unit_id).toBe(IUC_ID);
+  });
+
+  it('rejects an EAN code whose unit has no conversion row, and saves nothing', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    dto.ean_codes = [{ ean_unit_id: UNMAPPED_UNIT_ID, ean_code: '890123456789' }];
+
+    await expect(service.saveComposite(dto)).rejects.toThrow(BadRequestException);
+
+    // Thrown inside the transaction, so the item and the conversions it did write
+    // roll back; the EAN rows themselves never reached the database.
+    expect(eanCodeService.save).not.toHaveBeenCalled();
+    expect(reorderService.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reorder whose unit has no conversion row', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    dto.reorders = [{ ir_unit_id: UNMAPPED_UNIT_ID, ir_min_level: 5 }];
+
+    await expect(service.saveComposite(dto)).rejects.toThrow(BadRequestException);
+
+    expect(reorderService.save).not.toHaveBeenCalled();
+  });
+
+  it('resolves EAN/reorder units against conversions the item already has when none are sent', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+    prisma.itemMaster.update.mockResolvedValue(makeItemRecord());
+    // Conversions omitted from the payload -> untouched, but still the source of
+    // truth for resolving the EAN row's unit, so they are re-read from the item.
+    unitConversionService.findByItemId.mockResolvedValue([
+      { iuc_id: IUC_ID, iuc_item_id: ITEM_ID, iuc_unit_id: UNIT_ID },
+    ]);
+
+    await service.saveComposite({
+      item_id: ITEM_ID,
+      item_company_id: COMPANY_ID,
+      item_name_en: 'Widget',
+      item_group_id: GROUP_ID,
+      ean_codes: [{ ean_unit_id: UNIT_ID, ean_code: '890123456789' }],
+    });
+
+    expect(unitConversionService.save).not.toHaveBeenCalled();
+    expect(savedRows(eanCodeService.save)[0].ean_unit_id).toBe(IUC_ID);
   });
 
   it('getComposite assembles the item with all child collections fetched by item id', async () => {
@@ -397,7 +505,7 @@ describe('ItemsMasterService composite endpoints', () => {
     );
     unitConversionService.findByItemId.mockResolvedValue([
       {
-        iuc_id: 'uc1',
+        iuc_id: IUC_ID,
         iuc_item_id: ITEM_ID,
         iuc_unit_id: UNIT_ID,
         iuc_base_unit_id: BASE_UNIT_ID,
@@ -414,11 +522,19 @@ describe('ItemsMasterService composite endpoints', () => {
         ipm_base_unit_id: BASE_UNIT_ID,
       },
     ]);
+    // ean_unit_id / ir_unit_id hold an iuc_id, so their unit name is resolved by
+    // hopping through the conversion row above to UNIT_ID.
     eanCodeService.findByItemId.mockResolvedValue([
-      { ean_id: 'e1', ean_item_id: ITEM_ID, ean_unit_id: UNIT_ID, ean_godown_id: GODOWN_ID },
+      { ean_id: 'e1', ean_item_id: ITEM_ID, ean_unit_id: IUC_ID },
     ]);
     reorderService.findByItemId.mockResolvedValue([
-      { ir_id: 'r1', ir_branch_id: BRANCH_ID, ir_item_id: ITEM_ID, ir_unit_id: UNIT_ID, ir_godown_id: GODOWN_ID },
+      {
+        ir_id: 'r1',
+        ir_branch_id: BRANCH_ID,
+        ir_item_id: ITEM_ID,
+        ir_unit_id: IUC_ID,
+        ir_godown_id: GODOWN_ID,
+      },
     ]);
 
     prisma.company.findMany.mockResolvedValue([{ compId: COMPANY_ID, compName: 'Acme' }]);
@@ -454,7 +570,6 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.prices[0].ipm_godown_name).toBe('Main Store');
 
     expect(result.ean_codes[0].ean_unit_name).toBe('PCS');
-    expect(result.ean_codes[0].ean_godown_name).toBe('Main Store');
 
     expect(result.reorders[0].ir_branch_name).toBe('HQ');
     expect(result.reorders[0].ir_unit_name).toBe('PCS');

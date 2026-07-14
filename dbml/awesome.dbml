@@ -1287,7 +1287,6 @@ Table item_ean_codes {
   eanItemId String [not null]
   eanUnitId String [not null]
   eanCode String [unique, not null]
-  eanGodownId String
   eanIsDefault Boolean [not null, default: false]
   eanIsActive Boolean [not null, default: true]
   eanIsDeleted Boolean [not null, default: false]

@@ -23,6 +23,7 @@ import {
   throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import type { InventoryWriteClient } from 'src/common/utils/module-service.utils';
 import {
   resolvePagination,
   runConfiguredGridQuery,
@@ -49,23 +50,36 @@ export class ItemsPriceMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-  async save(saveItemPriceDto: SaveItemPriceDto): Promise<ItemPricePayload>;
-  async save(saveItemPriceDto: SaveItemPriceDto[]): Promise<ItemPricePayload[]>;
+  async save(
+    saveItemPriceDto: SaveItemPriceDto,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemPricePayload>;
+  async save(
+    saveItemPriceDto: SaveItemPriceDto[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemPricePayload[]>;
   async save(
     saveItemPriceDto: SaveItemPriceDto | SaveItemPriceDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemPricePayload | ItemPricePayload[]>;
+  /**
+   * @param tx When supplied, the batch runs inside the caller's transaction
+   * instead of opening its own (see ItemsMasterService.saveComposite).
+   */
   async save(
     saveItemPriceDto: SaveItemPriceDto | SaveItemPriceDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemPricePayload | ItemPricePayload[]> {
     const saveItems = Array.isArray(saveItemPriceDto) ? saveItemPriceDto : [saveItemPriceDto];
+    const saveAll = async (client: Prisma.TransactionClient) => {
+      const savedItems: ItemPricePayload[] = [];
+      for (const saveItem of saveItems) {
+        savedItems.push(await this.saveItemPrice(client, saveItem));
+      }
+      return savedItems;
+    };
     try {
-      const results = await this.prisma.$transaction(async (tx) => {
-        const savedItems: ItemPricePayload[] = [];
-        for (const saveItem of saveItems) {
-          savedItems.push(await this.saveItemPrice(tx, saveItem));
-        }
-        return savedItems;
-      });
+      const results = tx ? await saveAll(tx) : await this.prisma.$transaction(saveAll);
       return Array.isArray(saveItemPriceDto) ? results : results[0];
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -124,8 +138,11 @@ export class ItemsPriceMasterService {
     }
     return this.toPayload(record);
   }
-  async findByItemId(itemId: string): Promise<ItemPricePayload[]> {
-    const records = await this.prisma.itemPriceMaster.findMany({
+  async findByItemId(
+    itemId: string,
+    client: InventoryWriteClient = this.prisma,
+  ): Promise<ItemPricePayload[]> {
+    const records = await client.itemPriceMaster.findMany({
       where: { ipmItemId: itemId, ipmIsDeleted: false },
       orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
     });
@@ -138,23 +155,29 @@ export class ItemsPriceMasterService {
     });
     return records.map((record) => record.ipmId);
   }
-  async toggleDelete(ipmId: string): Promise<ItemPriceDeleteResult>;
-  async toggleDelete(ipmId: string[]): Promise<ItemPriceDeleteResult[]>;
+  async toggleDelete(ipmId: string, tx?: Prisma.TransactionClient): Promise<ItemPriceDeleteResult>;
+  async toggleDelete(
+    ipmId: string[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemPriceDeleteResult[]>;
   async toggleDelete(
     ipmId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]>;
   async toggleDelete(
     ipmId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemPriceDeleteResult | ItemPriceDeleteResult[]> {
     const toggleIds = Array.isArray(ipmId) ? ipmId : [ipmId];
+    const toggleAll = async (client: Prisma.TransactionClient) => {
+      const toggledItems: ItemPriceDeleteResult[] = [];
+      for (const toggleId of toggleIds) {
+        toggledItems.push(await this.toggleDeleteItemPrice(client, toggleId));
+      }
+      return toggledItems;
+    };
     try {
-      const results = await this.prisma.$transaction(async (tx) => {
-        const toggledItems: ItemPriceDeleteResult[] = [];
-        for (const toggleId of toggleIds) {
-          toggledItems.push(await this.toggleDeleteItemPrice(tx, toggleId));
-        }
-        return toggledItems;
-      });
+      const results = tx ? await toggleAll(tx) : await this.prisma.$transaction(toggleAll);
       return Array.isArray(ipmId) ? results : results[0];
     } catch (error: unknown) {
       this.handleDeleteError(error);

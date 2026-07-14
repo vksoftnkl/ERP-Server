@@ -25,6 +25,7 @@ import {
   throwOnUniqueConstraintError,
   toNumber,
 } from 'src/common/utils/module-service.utils';
+import type { InventoryWriteClient } from 'src/common/utils/module-service.utils';
 import {
   resolvePagination,
   runConfiguredGridQuery,
@@ -44,23 +45,40 @@ export class ItemsReorderMasterService {
     private readonly requestContextService: RequestContextService,
   ) {}
 
-  async save(saveItemReorderDto: SaveItemReorderDto): Promise<ItemReorderPayload>;
-  async save(saveItemReorderDto: SaveItemReorderDto[]): Promise<ItemReorderPayload[]>;
+  async save(
+    saveItemReorderDto: SaveItemReorderDto,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemReorderPayload>;
+  async save(
+    saveItemReorderDto: SaveItemReorderDto[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemReorderPayload[]>;
   async save(
     saveItemReorderDto: SaveItemReorderDto | SaveItemReorderDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemReorderPayload | ItemReorderPayload[]>;
+  /**
+   * A non-null `ir_unit_id` must hold an `iuc_id` from item_unit_conversion, not
+   * a raw unit_id — the column is a FK to item_unit_conversion(iuc_id). NULL
+   * still means "the global rule" (no unit scoping).
+   *
+   * @param tx When supplied, the batch runs inside the caller's transaction
+   * instead of opening its own (see ItemsMasterService.saveComposite).
+   */
   async save(
     saveItemReorderDto: SaveItemReorderDto | SaveItemReorderDto[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemReorderPayload | ItemReorderPayload[]> {
     const saveItems = Array.isArray(saveItemReorderDto) ? saveItemReorderDto : [saveItemReorderDto];
+    const saveAll = async (client: Prisma.TransactionClient) => {
+      const savedItems: ItemReorderPayload[] = [];
+      for (const saveItem of saveItems) {
+        savedItems.push(await this.saveItemReorder(client, saveItem));
+      }
+      return savedItems;
+    };
     try {
-      const results = await this.prisma.$transaction(async (tx) => {
-        const savedItems: ItemReorderPayload[] = [];
-        for (const saveItem of saveItems) {
-          savedItems.push(await this.saveItemReorder(tx, saveItem));
-        }
-        return savedItems;
-      });
+      const results = tx ? await saveAll(tx) : await this.prisma.$transaction(saveAll);
       return Array.isArray(saveItemReorderDto) ? results : results[0];
     } catch (error: unknown) {
       this.handleWriteError(error);
@@ -117,8 +135,11 @@ export class ItemsReorderMasterService {
     }
     return this.toPayload(record);
   }
-  async findByItemId(itemId: string): Promise<ItemReorderPayload[]> {
-    const records = await this.prisma.itemReorder.findMany({
+  async findByItemId(
+    itemId: string,
+    client: InventoryWriteClient = this.prisma,
+  ): Promise<ItemReorderPayload[]> {
+    const records = await client.itemReorder.findMany({
       where: { irItemId: itemId, irIsDeleted: false },
       orderBy: [{ irId: 'asc' }],
     });
@@ -132,23 +153,29 @@ export class ItemsReorderMasterService {
     return records.map((record) => record.irId);
   }
 
-  async toggleDelete(irId: string): Promise<ItemReorderDeleteResult>;
-  async toggleDelete(irId: string[]): Promise<ItemReorderDeleteResult[]>;
+  async toggleDelete(irId: string, tx?: Prisma.TransactionClient): Promise<ItemReorderDeleteResult>;
+  async toggleDelete(
+    irId: string[],
+    tx?: Prisma.TransactionClient,
+  ): Promise<ItemReorderDeleteResult[]>;
   async toggleDelete(
     irId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]>;
   async toggleDelete(
     irId: string | string[],
+    tx?: Prisma.TransactionClient,
   ): Promise<ItemReorderDeleteResult | ItemReorderDeleteResult[]> {
     const toggleIds = Array.isArray(irId) ? irId : [irId];
-
-    const results = await this.prisma.$transaction(async (tx) => {
+    const toggleAll = async (client: Prisma.TransactionClient) => {
       const toggledItems: ItemReorderDeleteResult[] = [];
       for (const toggleId of toggleIds) {
-        toggledItems.push(await this.toggleDeleteItemReorder(tx, toggleId));
+        toggledItems.push(await this.toggleDeleteItemReorder(client, toggleId));
       }
       return toggledItems;
-    });
+    };
+
+    const results = tx ? await toggleAll(tx) : await this.prisma.$transaction(toggleAll);
 
     return Array.isArray(irId) ? results : results[0];
   }

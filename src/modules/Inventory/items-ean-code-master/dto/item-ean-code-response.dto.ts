@@ -21,9 +21,6 @@ export class ItemEanCodePayloadDto {
   @ApiProperty({ maxLength: 64 })
   ean_code!: string;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  ean_godown_id!: string | null;
-
   @ApiProperty({ example: false })
   ean_is_default!: boolean;
 
@@ -50,9 +47,6 @@ export class ItemEanCodePayloadDto {
 
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   ean_unit_name?: string | null;
-
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
-  ean_godown_name?: string | null;
 }
 
 export class ItemEanCodeDeleteResultDto {
