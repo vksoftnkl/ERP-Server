@@ -1,12 +1,10 @@
 model Customer {
   cusId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("cus_id")
-
   // 1) Identity / Code
   cusTitle             String?   @db.VarChar(5)                                   @map("cus_title")
   cusShort             String?   @db.VarChar(50)                                  @map("cus_short")
   cusCode              String?   @db.VarChar(50)                                  @map("cus_code")
   cusName              String?   @db.VarChar(200)                                 @map("cus_name")
-
   // 2) Address / Contact
   cusAddr1             String?   @db.VarChar(250)                                 @map("cus_addr1")
   cusAddr2             String?   @db.VarChar(250)                                 @map("cus_addr2")
@@ -26,7 +24,6 @@ model Customer {
   cusAadharNo          String?   @db.VarChar(12)                                  @map("cus_aadhar_no")
   cusContactPerson     String?   @db.VarChar(150)                                 @map("cus_contact_person")
   cusDistanceKm        Int?                                                        @map("cus_distance_km")
-
   // 3) Credit / Billing Control
   cusCreditAllowed     Boolean   @default(false)                                   @map("cus_credit_allowed")
   cusCreditBillLimit   Int       @default(0)                                       @map("cus_credit_bill_limit")
@@ -42,7 +39,6 @@ model Customer {
   cusAllowLoyalty      Boolean   @default(false)                                   @map("cus_allow_loyalty")
   cusAllowDiscount     Boolean   @default(true)                                    @map("cus_allow_discount")
   cusSortOrder         Int       @default(0)                                       @map("cus_sort_order")
-
   // 4) Region / Tally Ledger style
   cusRegionName        String?   @db.VarChar(200)                                 @map("cus_region_name")
   cusRegionAddr1       String?   @db.VarChar(250)                                 @map("cus_region_addr1")
@@ -52,7 +48,6 @@ model Customer {
   cusRegionDistrict    String?   @db.VarChar(250)                                 @map("cus_region_district")
   cusRegionStateName   String?   @db.VarChar(100)                                 @map("cus_region_state_name")
   cusRegionCountry     String?   @default("India") @db.VarChar(60)                @map("cus_region_country")
-
   // 5) Dates / Logistics / Charges
   cusBirthDate         DateTime? @db.Date                                          @map("cus_birth_date")
   cusMarriageDate      DateTime? @db.Date                                          @map("cus_marriage_date")
@@ -60,7 +55,6 @@ model Customer {
   cusFreightCharge     Boolean   @default(false)                                   @map("cus_freight_charge")
   cusLoadingCharge     Boolean   @default(false)                                   @map("cus_loading_charge")
   cusUnloadingCharge   Boolean   @default(false)                                   @map("cus_unloading_charge")
-
   // 6) GST / Tax
   cusGstNo             String?   @db.VarChar(15)                                   @map("cus_gst_no")
   cusPanNo             String?   @db.VarChar(10)                                   @map("cus_pan_no")
@@ -69,18 +63,15 @@ model Customer {
   cusTcsApplicable     Boolean   @default(false)                                   @map("cus_tcs_applicable")
   cusItcollExempted    Boolean   @default(false)                                   @map("cus_itcoll_exempted")
   cusItcollType        String?   @db.VarChar(30)                                    @map("cus_itcoll_type")
-
   // 7) Geo / Salesman / Price Level
   cusGeoLocation       String?   @db.VarChar(200)                                  @map("cus_geo_location")
   cusCollectionDays    Int[]                                                       @map("sup_collection_days")
   cusDefaultSalesman   String?   @db.Uuid                                          @map("cus_default_salesman")
   cusPriceLevelId      Int                                                         @map("cus_price_level_id")
-
   // 8) Billing Stats / Notes
   cusBilledDate        DateTime? @db.Date                                          @map("cus_billed_date")
   cusBilledCount       Int       @default(0)                                       @map("cus_billed_count")
   cusNotes             String?   @db.VarChar(250)                                  @map("cus_notes")
-
   // 9) Scope / Status / Sync / Audit
   cusCompanyId         String?   @db.Uuid                                          @map("cus_company_id")
   cusBranchId          String?   @db.Uuid                                          @map("cus_branch_id")
@@ -93,14 +84,12 @@ model Customer {
   cusCreatedBy         String?   @db.VarChar(100)                                 @map("cus_created_by")
   cusModifiedOn        DateTime  @default(now()) @db.Timestamptz                  @map("cus_modified_on")
   cusModifiedBy        String?   @db.VarChar(100)                                 @map("cus_modified_by")
-
   // Relations
   area                 AreaMaster     @relation(fields: [cusAreaId],  references: [armId])
   custGroup            CustGroup      @relation(fields: [cusGroupId], references: [cgrId])
   company              Company?       @relation(fields: [cusCompanyId], references: [compId])
   priceLevel           ItemPriceLevel @relation("CustomerPriceLevel", fields: [cusPriceLevelId], references: [iplId])
   saleQuotations       SaleQuotation[]
-
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")
   @@index([cusGstNo],    name: "idx_cus_gst_no")

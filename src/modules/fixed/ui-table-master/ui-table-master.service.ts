@@ -331,7 +331,6 @@ export class UiTableMasterService {
       throw error;
     }
   }
-
   private async updateUiTable(
     saveUiTableMasterDto: SaveUiTableMasterDto,
   ): Promise<UiTableMasterPayload> {
@@ -422,7 +421,6 @@ export class UiTableMasterService {
       throw error;
     }
   }
-
   private async saveColumnsInTx(
     columns: SaveUiTableColumnDto[],
     tableId: bigint,
@@ -435,7 +433,6 @@ export class UiTableMasterService {
     }
     return savedIds;
   }
-
   private async upsertColumnInTx(
     colDto: SaveUiTableColumnDto,
     tableId: bigint,
@@ -450,7 +447,6 @@ export class UiTableMasterService {
       );
     }
     const now = new Date();
-
     if (colDto.uiTblClmId) {
       const parsedId = BigInt(colDto.uiTblClmId);
       const colData: Prisma.UitableColumnsUncheckedUpdateInput = {
@@ -480,7 +476,6 @@ export class UiTableMasterService {
       return created.uiTblClmId;
     }
   }
-
   private async ensureNameIsUnique(
     tx: FixedWriteClient,
     uiTblName: string,
@@ -501,7 +496,6 @@ export class UiTableMasterService {
       );
     }
   }
-
   private normalizeRequiredName(name: string): string {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -512,7 +506,6 @@ export class UiTableMasterService {
     }
     return trimmed;
   }
-
   private toPayload(record: UitableWithColumns): UiTableMasterPayload {
     return {
       uiTblId: record.uiTblId.toString(),
@@ -530,7 +523,6 @@ export class UiTableMasterService {
       columns: record.uiTableColumns.map((col) => this.toColumnPayload(col)),
     };
   }
-
   private toColumnPayload(record: UitableColumns): UiTableColumnPayload {
     return {
       uiTblClmId: record.uiTblClmId.toString(),
@@ -553,11 +545,9 @@ export class UiTableMasterService {
       uiTblClmModifiedBy: record.uiTblClmModifiedBy,
     };
   }
-
   private resolveDisplayName(uiTblName: string | null, uiTblId: string): string {
     return uiTblName?.trim() || `UI Table ${uiTblId}`;
   }
-
   private parseBigIntId(field: string, value: string): bigint {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {

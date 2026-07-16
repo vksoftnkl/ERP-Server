@@ -42,9 +42,9 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(ConfigsExceptionFilter)
 export class ConfigsController {
   constructor(private readonly configsService: ConfigsService) {}
-  @Post('create')
+  @Post('update')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update a config (by configId presence)' })
+  @ApiOperation({ summary: 'Update a config' })
   @ApiCreatedResponse({ type: ConfigsSuccessSingleDto })
   @ApiBadRequestResponse({ type: ConfigsErrorResponseDto })
   @ApiConflictResponse({ type: ConfigsErrorResponseDto })
@@ -75,22 +75,5 @@ export class ConfigsController {
       message: 'Config fetched successfully',
       data,
     };
-  }
-  @Delete('delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Delete config by id' })
-  @ApiQuery({ name: 'configId', schema: { type: 'integer' }, example: 1 })
-  @ApiOkResponse({ type: ConfigsSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: ConfigsErrorResponseDto })
-  @ApiNotFoundResponse({ type: ConfigsErrorResponseDto })
-  async remove(
-    @Query('configId', ParseIntPipe) configId: number,
-  ): Promise<ConfigsSuccessResponse<{ configId: number; deleted: true }>> {
-    const data = await this.configsService.remove(configId);
-    return {
-      success: true,
-      message: 'Config deleted successfully',
-      data,
-    };
-  }
+  }  
 }
