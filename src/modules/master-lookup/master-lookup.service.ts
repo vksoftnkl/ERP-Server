@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { ItemPriceMaster } from '@prisma/client';
 import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import {
   MasterErrorDetail,
   throwMasterNotFound,
+  toNullableNumber,
   toNumber,
 } from '../../common/utils/module-service.utils';
 import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
+import { ItemPriceLookupQueryDto } from './dto/item-price-lookup-query.dto';
 import {
   ACCOUNT_LOOKUP_MODULE_KEYS,
   AccountsLookupModuleKey,
@@ -14,6 +17,7 @@ import {
   CustomerDetail,
   FiscalYearOption,
   FreightChargeOption,
+  ItemPriceLookupPayload,
   LookupModuleKey,
   LOOKUP_MODULE_ALIASES,
   LOOKUP_MODULE_KEYS,
@@ -393,6 +397,249 @@ export class MasterLookupService {
       cust_points: null,
       billed_date: this.formatBilledDate(customer.cusBilledDate),
     };
+  }
+  /**
+   * Port of the legacy PL/pgSQL `getItemForSale` cursor onto the current UUID
+   * schema. It resolves one item + one unit rate into a single flat row: the
+   * effective price for the requested price level, the tax block, stock,
+   * reorder level, negative-stock rule and the quantity-wise rate list.
+   *
+   * Legacy workflow faithfully reproduced here:
+   *  - unit-rate pick (legacy `ivoucher_no` / `unit_slno`): an explicit unit_id
+   *    wins; otherwise the unit-slno rule applies — a retail item takes the
+   *    highest slno row, a non-retail item takes the base row (slno 0).
+   *  - godown (legacy `isale_no`): an explicit godown_id overrides the rate's
+   *    own godown for both the godown row and the stock scope.
+   *  - stock (legacy `ienable_loading`): when enable_loading is set, stock is
+   *    summed across ALL godowns; otherwise it is scoped to the resolved godown.
+   *  - customer rate (legacy `CSR.csr_disc_qty`): the customer discount is
+   *    subtracted ONLY from the A/B/C/D sales prices (levels 1–4), never from
+   *    max/min/cost (levels 5/6/7).
+   *  - name (legacy `iregional`): regional=true returns item_name_ta, else the
+   *    English name.
+   *
+   * Schema divergences from the legacy query:
+   *  - customer rates / qty-wise rates now hang off the pricing hub
+   *    `item_price_master` (ipm_id) instead of (item_id, unit_id).
+   *  - price level is the legacy 1–7 scheme: 1=A, 2=B, 3=C, 4=D, 5=MRP/max,
+   *    6=min, 7=cost — any of the seven columns is selectable.
+   *  - the item-group price-level scheme discount has no column → `sch_discount`
+   *    is always null.
+   */
+  async getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload> {
+    const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
+    const priceLevel = query.price_level;
+    const enableLoading = query.enable_loading ?? false;
+    const regional = query.regional ?? false;
+
+    // 1. Item + candidate unit-rate rows (legacy: item_master ⋈ item_unit_rates).
+    const [itemRecord, priceRows] = await Promise.all([
+      this.prisma.itemMaster.findFirst({
+        where: {
+          itemId: item_id,
+          itemBranchId: branch_id,
+          itemIsDeleted: false,
+        },
+      }),
+      this.prisma.itemPriceMaster.findMany({
+        where: {
+          ipmItemId: item_id,
+          ipmBranchId: branch_id,
+          ipmIsDeleted: false,
+        },
+        orderBy: [{ ipmUnitSlno: 'asc' }],
+      }),
+    ]);
+    if (!itemRecord) {
+      throwMasterNotFound<MasterErrorDetail>(
+        'Item not found',
+        'item_id',
+        `No active item found for id ${item_id}`,
+      );
+    }
+
+    // 2. Pick the unit rate: an explicit unit wins, otherwise the legacy
+    //    unit-slno rule (retail item → highest slno, else base row, slno 0).
+    const rate = this.selectUnitRate(priceRows, itemRecord.itemRetailItem, unit_id);
+    if (!rate) {
+      throwMasterNotFound<MasterErrorDetail>(
+        'Item price not found',
+        unit_id ? 'unit_id' : 'item_id',
+        unit_id
+          ? `No active price row found for item ${item_id} and unit ${unit_id}`
+          : `No active price row configured for item ${item_id}`,
+      );
+    }
+
+    // Legacy `isale_no`: an explicit sale godown overrides the rate's own godown.
+    const godownId = query.godown_id ?? rate.ipmGodownId;
+
+    // 3. Everything that hangs off the chosen item / rate (legacy lateral joins).
+    const [godown, unit, tax, company, custRate, reorder, stockSum] = await Promise.all([
+      this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } }),
+      this.prisma.unit.findFirst({ where: { unit_id: rate.ipmUnitId } }),
+      itemRecord.itemDefaultTaxId
+        ? this.prisma.itemTaxMaster.findFirst({
+            where: { taxId: itemRecord.itemDefaultTaxId, taxIsDeleted: false },
+          })
+        : Promise.resolve(null),
+      this.prisma.company.findFirst({ where: { compId: company_id } }),
+      customer_id
+        ? this.prisma.custItemRate.findFirst({
+            where: {
+              csrUnitRateId: rate.ipmId,
+              csrCustomerId: customer_id,
+              csrIsDeleted: false,
+              csrIsActive: true,
+            },
+          })
+        : Promise.resolve(null),
+      this.prisma.itemReorder.findFirst({
+        where: { irItemId: item_id, irUnitId: rate.ipmUnitId, irIsDeleted: false },
+      }),
+      acccyear
+        ? this.prisma.itemStockBalance.aggregate({
+            _sum: { isbClosingQty: true },
+            where: {
+              isbAccYear: acccyear,
+              isbItemId: item_id,
+              isbUnitId: rate.ipmUnitId,
+              isbCompanyId: company_id,
+              isbBranchId: branch_id,
+              // Legacy `ienable_loading`: loading mode sums across all godowns;
+              // otherwise stock is scoped to the resolved godown.
+              ...(enableLoading ? {} : { isbGodownId: godownId }),
+            },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    // 4. Derived values.
+    const gstApplicable = company?.compGstApplicable ?? false;
+    const basePrice = this.priceForLevel(rate, priceLevel);
+    // Legacy: the customer rate discount applies ONLY to the A/B/C/D sales
+    // prices (levels 1–4), never to max/min/cost (levels 5/6/7).
+    const customerDiscQty =
+      custRate && priceLevel >= 1 && priceLevel <= 4 ? toNumber(custRate.csrDiscQty) : 0;
+    const salesPrice = basePrice - customerDiscQty;
+
+    // Legacy `iregional`: regional name falls back to English when unset.
+    const itemName = regional
+      ? (itemRecord.itemNameTa ?? itemRecord.itemNameEn)
+      : itemRecord.itemNameEn;
+
+    const stock = stockSum ? toNullableNumber(stockSum._sum.isbClosingQty ?? 0) : null;
+    const reorderQty = reorder ? toNumber(reorder.irMinLevel) - (stock ?? 0) : null;
+
+    // Legacy allow_negative_stock: service items always allow; otherwise it is
+    // blocked only when godown, company and item all disallow it.
+    const allowNegativeStock = itemRecord.itemIsService
+      ? true
+      : !(
+          godown?.gdlNegativeStock === false &&
+          company?.compNegStkApl === false &&
+          itemRecord.itemAllowNegStock === false
+        );
+
+    return {
+      item_id: itemRecord.itemId,
+      unit_id: rate.ipmUnitId,
+      unit_rate_id: rate.ipmId,
+      godown_id: godownId,
+      godown_name: godown?.gdlName ?? '',
+
+      item_code: itemRecord.itemCode,
+      item_name: itemName,
+      item_com_code: itemRecord.itemSku,
+      barcode: itemRecord.itemDefaultBarcode,
+
+      allow_promo: itemRecord.itemAllowPromo,
+      add_freight: itemRecord.itemAllowFreight,
+      item_group_id: itemRecord.itemGroupId,
+      item_category_id: itemRecord.itemCategoryId,
+      weigh_scale: itemRecord.itemWeighScale,
+      batch_config: itemRecord.itemBatchConfig,
+      service_item: itemRecord.itemIsService ? 'Y' : 'N',
+      allow_negative_stock: allowNegativeStock,
+
+      price_level: priceLevel,
+      sales_price: salesPrice,
+      cost_price: toNumber(rate.ipmCostPrice),
+      cost_wot: toNumber(rate.ipmCostWot),
+      min_price: toNumber(rate.ipmMinPrice),
+      max_price: toNumber(rate.ipmMaxPrice),
+      disc_perc: toNumber(rate.ipmDiscPerc),
+      disc_qty: toNumber(rate.ipmDiscQty),
+      sch_discount: null,
+      addl_cess: toNumber(rate.ipmAddlCess),
+
+      unit_desc: unit?.unit_description ?? null,
+      unit_weight: toNullableNumber(unit?.unit_weight ?? null) ?? 0,
+      unit_loading: itemRecord.itemAllowLoading
+        ? (toNullableNumber(unit?.unit_loading ?? null) ?? 0)
+        : 0,
+      decimal_count: unit?.unit_decimal_count ?? 0,
+
+      loyalty_pv: itemRecord.itemAllowLoyalty ? toNumber(rate.ipmLoyaltyPoints) : 0,
+
+      stock,
+      reorder_qty: reorderQty,
+
+      gst_rate: gstApplicable && tax ? toNumber(tax.taxGstRateTotal) : 0,
+      cess_perc: gstApplicable && tax ? toNumber(tax.taxCessPerc) : 0,
+      cess_unit: gstApplicable && tax ? toNumber(tax.taxCessUnit) : 0,
+      sgst_perc: gstApplicable && tax ? toNumber(tax.taxSgstPerc) : 0,
+      cgst_perc: gstApplicable && tax ? toNumber(tax.taxCgstPerc) : 0,
+      igst_perc: gstApplicable && tax ? toNumber(tax.taxIgstPerc) : 0,
+      sales_ledger_id: tax?.taxSalesLedgerId ?? null,
+      sgst_output_ledger_id: tax?.taxSgstOutputLedgerId ?? null,
+      cgst_output_ledger_id: tax?.taxCgstOutputLedgerId ?? null,
+      igst_output_ledger_id: tax?.taxIgstOutputLedgerId ?? null,
+      cess_output_ledger_id: tax?.taxCessOutputLedgerId ?? null,
+    };
+  }
+  /**
+   * Unit-rate selection (legacy WHERE clause). An explicit unit wins. Otherwise
+   * the unit-slno rule applies: a retail item takes the row with the highest
+   * slno (largest pack), a non-retail item takes the base row (slno 0). Returns
+   * null when nothing matches.
+   */
+  private selectUnitRate(
+    priceRows: ItemPriceMaster[],
+    isRetailItem: boolean,
+    unitId?: string,
+  ): ItemPriceMaster | null {
+    if (priceRows.length === 0) return null;
+    if (unitId) {
+      return priceRows.find((row) => row.ipmUnitId === unitId) ?? null;
+    }
+    if (isRetailItem) {
+      return priceRows.reduce(
+        (best, row) => (row.ipmUnitSlno > best.ipmUnitSlno ? row : best),
+        priceRows[0],
+      );
+    }
+    return priceRows.find((row) => row.ipmUnitSlno === 0) ?? null;
+  }
+  /** Legacy price-level CASE (1–7 → a/b/c/d/max/min/cost). */
+  private priceForLevel(rate: ItemPriceMaster, priceLevel: number): number {
+    switch (priceLevel) {
+      case 2:
+        return toNumber(rate.ipmSalesPriceB);
+      case 3:
+        return toNumber(rate.ipmSalesPriceC);
+      case 4:
+        return toNumber(rate.ipmSalesPriceD);
+      case 5:
+        return toNumber(rate.ipmMaxPrice);
+      case 6:
+        return toNumber(rate.ipmMinPrice);
+      case 7:
+        return toNumber(rate.ipmCostPrice);
+      case 1:
+      default:
+        return toNumber(rate.ipmSalesPriceA);
+    }
   }
   async getDropdownSqlData(dropdownId: number): Promise<NameIdOption[]> {
     const record = await this.prisma.dropdownDetails.findUnique({

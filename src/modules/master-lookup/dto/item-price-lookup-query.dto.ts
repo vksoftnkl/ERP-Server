@@ -6,7 +6,7 @@ import {
   RequiredInteger,
   RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
-export class GetItemPriceLookupQueryDto {
+export class ItemPriceLookupQueryDto {
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   item_id!: string;

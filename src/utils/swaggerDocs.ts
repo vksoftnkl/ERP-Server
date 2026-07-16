@@ -28,7 +28,6 @@ import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-deta
 import { HealthModule } from '../modules/health/health.module';
 import { ItemsCustRatesMasterModule } from '../modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemPriceDetailsModule } from '../modules/Inventory/item-price-details/item-price-details.module';
-import { ItemPriceLookupModule } from '../modules/common/item-price-lookup/item-price-lookup.module';
 import { UsersModule } from '../modules/users/users.module';
 import { MasterLookupModule } from '../modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from '../modules/master/batch-prefix/batch-prefix.module';
@@ -147,12 +146,6 @@ export const swaggerModuleDocuments = [
     title: 'Item Price Details API',
     description: 'Item price details module endpoints',
     include: [ItemPriceDetailsModule],
-  },
-  {
-    path: 'item-price-lookup',
-    title: 'Item Price Lookup API',
-    description: 'Item price lookup module endpoints',
-    include: [ItemPriceLookupModule],
   },
   {
     path: 'item-qtywise-rates',

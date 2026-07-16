@@ -76,8 +76,8 @@ export class SaveCustomerDto {
   @NullableStringStrict(200)
   cusLandmark?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  @NullableStringStrict(10)
+  @ApiPropertyOptional({ maxLength: 6, nullable: true })
+  @NullableStringStrict(6)
   cusPin?: string | null;
 
   @ApiPropertyOptional({ maxLength: 20, nullable: true })

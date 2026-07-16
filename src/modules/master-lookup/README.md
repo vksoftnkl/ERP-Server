@@ -22,8 +22,12 @@ dropdown SQL query.
 | --- | --- |
 | [master-lookup.module.ts](master-lookup.module.ts) | Module wiring — registers the controller and service (no exports) |
 | [master-lookup.controller.ts](master-lookup.controller.ts) | HTTP routes + Swagger docs |
-| [master-lookup.service.ts](master-lookup.service.ts) | Fetcher registry, configured-dropdown resolution, row mapping |
+| [master-lookup.service.ts](master-lookup.service.ts) | Fetcher registry, configured-dropdown resolution, row mapping, customer / freight / barcode / item-price resolution |
 | [dto/master-lookup-query.dto.ts](dto/master-lookup-query.dto.ts) | Optional `module` query param + alias-to-canonical-key resolution |
+| [dto/customer-detail-query.dto.ts](dto/customer-detail-query.dto.ts) | Query DTO for the customer-detail lookup |
+| [dto/freight-charge-query.dto.ts](dto/freight-charge-query.dto.ts) | Query DTO for the freight-charge lookup |
+| [dto/barcode-lookup-query.dto.ts](dto/barcode-lookup-query.dto.ts) | Query DTO for the barcode lookup |
+| [dto/item-price-lookup-query.dto.ts](dto/item-price-lookup-query.dto.ts) | Query DTO for the item-price sale lookup |
 | [dto/master-lookup-response.dto.ts](dto/master-lookup-response.dto.ts) | Swagger response models |
 | [types/master-lookup-api.types.ts](types/master-lookup-api.types.ts) | TS contracts, module-key constants, and dropdown-name aliases |
 
@@ -34,9 +38,33 @@ All routes are `GET` and wrap their result in `{ success: true, message, data }`
 | Method | Path | Selects which master via | Description |
 | --- | --- | --- | --- |
 | `GET` | `/name-id/all-accounts-and-masters` | `?module=` query param (optional) | With no `module`: returns id-name lists for **all** modules, grouped `{ accounts, masters }`. With `module`: returns just that module's list as `{ scope, module, items }`. |
+| `GET` | `/name-id/all-masters` | `?module=` query param (optional) | Master-scope id-name lists as a single flat `NameIdOption[]`. |
 | `GET` | `/branches/by-company/:companyId` | Fixed to branches, scoped by company | Active branches for the given company UUID. |
 | `GET` | `/fiscal-years/by-company/:companyId` | Fixed to fiscal years, scoped by company | Non-deleted fiscal years for the given company UUID (current-first). |
+| `GET` | `/customer-detail` | `?cus_id=&company_id=&branch_id=&regional=` | Resolve one customer into a flat detail row (legacy `iflag=7`). |
+| `GET` | `/freight-charges/charge` | `?distance=` | Freight-charge slabs whose km range covers the distance (legacy `iflag=9`). |
+| `GET` | `/item-by-barcode` | `?barcode=` | Resolve a scanned EAN code to its item + selling unit (legacy `iflag=10`). |
+| `GET` | `/item-price` | `?item_id=&company_id=&branch_id=&price_level=` (+ optional `unit_id`, `customer_id`, `godown_id`, `acccyear`, `enable_loading`, `regional`) | Resolve one item into a single sale-lookup row — effective price, tax block, stock, reorder (legacy `getItemForSale`). `@CacheTTL(60)`. |
 | `GET` | `/dropdown/:dropdownId` | Numeric configured-dropdown id | Runs one configured dropdown's stored SQL directly and returns its rows as options. |
+
+### Item-price sale lookup (`GET /item-price`)
+
+Ports the legacy PL/pgSQL `getItemForSale` cursor onto the current UUID schema, resolving one
+item + one unit rate (`item_price_master`, PK `ipm_id`) into a single flat row: the effective
+price for the requested price level, the tax block, stock, reorder level and negative-stock rule.
+
+- **Unit-rate pick:** an explicit `unit_id` wins; otherwise the unit-slno rule applies — a retail
+  item takes the highest `ipm_unit_slno` (largest pack), a non-retail item takes the base row
+  (slno 0).
+- **Godown override:** an explicit `godown_id` overrides the rate's own `ipm_godown_id`, both for
+  the resolved godown row and the stock scope.
+- **Price level (1–7):** maps to A / B / C / D / max / min / cost. A `customer_id` subtracts the
+  matching `cust_item_rates.csr_disc_qty` — but only for levels 1–4 (never max/min/cost).
+- **Stock:** `SUM(isb_closing_qty)` for the item/unit/company/branch and `acccyear`; scoped to the
+  resolved godown unless `enable_loading` sums across all godowns. `stock` is null without `acccyear`.
+- **Tax:** loaded from `item_tax_master` via the item's `item_default_tax_id`; GST/cess percentages
+  are zeroed when the company has GST disabled.
+- **Name:** `regional=true` returns `item_name_ta` (falling back to English), else the English name.
 
 ### Selecting a master (`module` query param)
 
