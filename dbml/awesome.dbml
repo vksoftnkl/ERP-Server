@@ -1441,6 +1441,7 @@ Table item_price_master {
   ipmItemId String [not null]
   ipmUcUnitId String [not null]
   ipmGodownId String
+  ipmSlNo Int [not null, default: 0]
   ipmCostPrice Decimal [not null, default: 0]
   ipmCostWot Decimal [not null, default: 0]
   ipmSalesPriceA Decimal [not null, default: 0]

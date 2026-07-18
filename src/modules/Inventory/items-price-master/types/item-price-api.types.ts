@@ -17,6 +17,8 @@ export interface ItemPricePayload {
   ipm_uc_unit_id: string;
   // NULL = the price applies to every godown.
   ipm_godown_id: string | null;
+  // Display order of the price rows under an item.
+  ipm_sl_no: number;
   ipm_cost_price: number;
   ipm_cost_wot: number;
   ipm_sales_price_a: number;

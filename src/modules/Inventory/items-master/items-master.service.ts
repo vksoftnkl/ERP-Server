@@ -319,6 +319,7 @@ export class ItemsMasterService {
           where: { ipmIsDeleted: false },
           orderBy: [
             { itemUnitConversion: { iucIsDefaultUnit: 'desc' } },
+            { ipmSlNo: 'asc' },
             { itemUnitConversion: { iucUnitSlno: 'asc' } },
             { ipmId: 'asc' },
           ],

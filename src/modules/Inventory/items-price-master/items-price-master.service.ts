@@ -108,9 +108,11 @@ export class ItemsPriceMasterService {
         findManyFn: () =>
           this.prisma.itemPriceMaster.findMany({
             where,
-            // The conversion row carries the display order the unit shape lives on.
+            // ipm_sl_no is the price row's own display order; where it ties
+            // (both default 0), the conversion row's unit order decides.
             orderBy: [
               { ipmItemId: 'asc' },
+              { ipmSlNo: 'asc' },
               { itemUnitConversion: { iucUnitSlno: 'asc' } },
               { ipmId: 'asc' },
             ],
@@ -144,7 +146,11 @@ export class ItemsPriceMasterService {
   ): Promise<ItemPricePayload[]> {
     const records = await client.itemPriceMaster.findMany({
       where: { ipmItemId: itemId, ipmIsDeleted: false },
-      orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
+      orderBy: [
+        { ipmSlNo: 'asc' },
+        { itemUnitConversion: { iucUnitSlno: 'asc' } },
+        { ipmId: 'asc' },
+      ],
     });
     return records.map((record) => this.toPayload(record));
   }
@@ -393,6 +399,9 @@ export class ItemsPriceMasterService {
     if (hasOwnProperty(saveItemPriceDto, 'ipm_branch_id')) {
       data.ipmBranchId = saveItemPriceDto.ipm_branch_id;
     }
+    if (hasOwnProperty(saveItemPriceDto, 'ipm_sl_no')) {
+      data.ipmSlNo = saveItemPriceDto.ipm_sl_no;
+    }
     if (hasOwnProperty(saveItemPriceDto, 'ipm_cost_price')) {
       data.ipmCostPrice = saveItemPriceDto.ipm_cost_price;
     }
@@ -504,6 +513,7 @@ export class ItemsPriceMasterService {
       ipm_item_id: record.ipmItemId,
       ipm_uc_unit_id: record.ipmUcUnitId,
       ipm_godown_id: record.ipmGodownId,
+      ipm_sl_no: record.ipmSlNo,
       ipm_cost_price: toNumber(record.ipmCostPrice),
       ipm_cost_wot: toNumber(record.ipmCostWot),
       ipm_sales_price_a: toNumber(record.ipmSalesPriceA),

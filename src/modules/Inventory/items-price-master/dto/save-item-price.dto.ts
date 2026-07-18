@@ -13,14 +13,17 @@ import {
   NullableString,
   NullableUuid,
   OptionalBoolean,
+  OptionalInteger,
   OptionalNumber,
   OptionalUuid,
   toNullableString,
   toTrimmedString,
 } from 'src/common/dto/dtoDecorators';
-// The values item_price_master's chk_ipm_profit_type constraint allows (see
-// migration 20260324140000_recreate_item_price_master_without_reset); anything
-// else passes validation here only to be rejected by the database.
+// The allowed ipm_profit_type values. The database no longer checks them —
+// chk_ipm_profit_type was dropped in migration
+// 20260718140000_drop_item_price_profit_type_check because it still pinned the
+// column to the older BY_PERCENT/BY_AMOUNT/MANUAL set — so this list is the only
+// thing enforcing them. Rows written before that migration hold the old values.
 const ITEM_PRICE_PROFIT_TYPES = ['By %', 'By Rs', 'By User'] as const;
 export class SaveItemPriceDto {
   @ApiPropertyOptional({
@@ -53,6 +56,11 @@ export class SaveItemPriceDto {
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   @NullableUuid()
   ipm_godown_id?: string | null;
+  // Display order of the price rows under an item; ties fall back to the
+  // conversion row's iuc_unit_slno.
+  @ApiPropertyOptional({ default: 0 })
+  @OptionalInteger()
+  ipm_sl_no?: number;
   @ApiPropertyOptional({ example: 0 })
   @OptionalNumber()
   ipm_cost_price?: number;

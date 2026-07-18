@@ -22,6 +22,8 @@ export class ItemPricePayloadDto {
   @ApiProperty({ format: 'uuid' })
   ipm_godown_id!: string | null;
   @ApiProperty({ example: 0 })
+  ipm_sl_no!: number;
+  @ApiProperty({ example: 0 })
   ipm_cost_price!: number;
   @ApiProperty({ example: 0 })
   ipm_cost_wot!: number;
@@ -136,17 +138,13 @@ export class ItemPriceSuccessSaveDto {
 export class ItemPriceSuccessListDto {
   @ApiProperty({ example: true })
   success!: true;
-
   @ApiProperty({ example: 'Item prices fetched successfully' })
   message!: string;
-
   @ApiProperty({ type: [ItemPricePayloadDto] })
   data!: ItemPricePayloadDto[];
-
   @ApiProperty({ type: InventoryListMetaDto })
   meta!: InventoryListMetaDto;
 }
-
 export class ItemPriceSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

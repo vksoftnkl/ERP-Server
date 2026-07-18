@@ -153,6 +153,7 @@ export class ItemPriceDetailsService {
       ipm_item_id: record.ipmItemId,
       ipm_uc_unit_id: record.ipmUcUnitId,
       ipm_godown_id: record.ipmGodownId,
+      ipm_sl_no: record.ipmSlNo,
       ipm_cost_price: toNumber(record.ipmCostPrice),
       ipm_cost_wot: toNumber(record.ipmCostWot),
       ipm_sales_price_a: toNumber(record.ipmSalesPriceA),

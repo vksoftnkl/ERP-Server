@@ -5,6 +5,7 @@ model ItemPriceMaster {
   ipmItemId           String        @db.Uuid @map("ipm_item_id")
   ipmUcUnitId           String        @db.Uuid @map("ipm_uc_unit_id")
   ipmGodownId         String?       @db.Uuid @map("ipm_godown_id") // NULL = price applies to every godown
+  ipmSlNo             Int           @default(0) @db.Integer @map("ipm_sl_no")
   ipmCostPrice        Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_cost_price")
   ipmCostWot          Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_cost_wot")
   ipmSalesPriceA      Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_sales_price_a")
