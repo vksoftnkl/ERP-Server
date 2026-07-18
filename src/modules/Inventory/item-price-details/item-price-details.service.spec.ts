@@ -96,15 +96,19 @@ const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPric
     ipmCompanyId: COMPANY_ID,
     ipmBranchId: null,
     ipmItemId: ITEM_ID,
-    ipmUnitId: UNIT_ID,
+    ipmUcUnitId: UNIT_ID,
     ipmGodownId: GODOWN_ID,
-    ipmBaseUnitId: BASE_UNIT_ID,
-    ipmToBaseFactor: new Prisma.Decimal(12),
-    ipmUnitSlno: 2,
-    ipmUnitFactor: new Prisma.Decimal(6),
-    ipmIsDefaultUnit: true,
-    ipmIsBigUnit: true,
-    ipmIsBaseUnit: false,
+    // The unit shape is read through the joined conversion row, not off the
+    // price row, which no longer stores a copy of it.
+    itemUnitConversion: {
+      iucBaseUnitId: BASE_UNIT_ID,
+      iucToBaseFactor: new Prisma.Decimal(12),
+      iucUnitSlno: 2,
+      iucUnitFactor: new Prisma.Decimal(6),
+      iucIsDefaultUnit: true,
+      iucIsBigUnit: true,
+      iucIsBaseUnit: false,
+    },
     ipmCostPrice: new Prisma.Decimal(25),
     ipmCostWot: new Prisma.Decimal(25),
     ipmSalesPriceA: new Prisma.Decimal(30),
@@ -220,7 +224,8 @@ describe('ItemPriceDetailsService', () => {
         ipmItemId: ITEM_ID,
         ipmIsDeleted: false,
       },
-      orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+      include: { itemUnitConversion: true },
+      orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
     });
     expect(prisma.itemTaxMaster.findFirst).toHaveBeenCalledWith({
       where: {

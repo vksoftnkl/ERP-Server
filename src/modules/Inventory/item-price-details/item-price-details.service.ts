@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { ItemMaster, ItemPriceMaster, ItemTaxMaster } from '@prisma/client';
+import { ItemMaster, ItemTaxMaster, Prisma } from '@prisma/client';
+
+/** A price row read with the conversion row that owns its unit shape. */
+type ItemPriceMasterWithConversion = Prisma.ItemPriceMasterGetPayload<{
+  include: { itemUnitConversion: true };
+}>;
 import { PrismaService } from 'src/database/prisma/prisma.service';
 import { ItemPayload } from '../items-master/types/item-api.types';
 import { ItemPricePayload } from '../items-price-master/types/item-price-api.types';
@@ -48,7 +53,8 @@ export class ItemPriceDetailsService {
           ipmItemId: itemId,
           ipmIsDeleted: false,
         },
-        orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+        include: { itemUnitConversion: true },
+        orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
       }),
       itemRecord.itemDefaultTaxId
         ? this.prisma.itemTaxMaster.findFirst({
@@ -131,21 +137,23 @@ export class ItemPriceDetailsService {
       item_modified_by: record.itemModifiedBy,
     };
   }
-  private toItemPricePayload(record: ItemPriceMaster): ItemPricePayload {
+  private toItemPricePayload(record: ItemPriceMasterWithConversion): ItemPricePayload {
+    // The unit shape now lives on the conversion row the price points at.
+    const conversion = record.itemUnitConversion;
     return {
       ipm_id: record.ipmId,
       ipm_company_id: record.ipmCompanyId,
       ipm_branch_id: record.ipmBranchId,
       ipm_item_id: record.ipmItemId,
-      ipm_unit_id: record.ipmUnitId,
+      ipm_unit_id: record.ipmUcUnitId,
       ipm_godown_id: record.ipmGodownId,
-      ipm_base_unit_id: record.ipmBaseUnitId,
-      ipm_to_base_factor: toNumber(record.ipmToBaseFactor),
-      ipm_unit_slno: record.ipmUnitSlno,
-      ipm_unit_factor: toNumber(record.ipmUnitFactor),
-      ipm_is_default_unit: record.ipmIsDefaultUnit,
-      ipm_is_big_unit: record.ipmIsBigUnit,
-      ipm_is_base_unit: record.ipmIsBaseUnit,
+      ipm_base_unit_id: conversion.iucBaseUnitId,
+      ipm_to_base_factor: toNumber(conversion.iucToBaseFactor),
+      ipm_unit_slno: conversion.iucUnitSlno,
+      ipm_unit_factor: toNumber(conversion.iucUnitFactor),
+      ipm_is_default_unit: conversion.iucIsDefaultUnit,
+      ipm_is_big_unit: conversion.iucIsBigUnit,
+      ipm_is_base_unit: conversion.iucIsBaseUnit,
       ipm_cost_price: toNumber(record.ipmCostPrice),
       ipm_cost_wot: toNumber(record.ipmCostWot),
       ipm_sales_price_a: toNumber(record.ipmSalesPriceA),

@@ -32,6 +32,16 @@ import {
 const DEFAULT_AUDIT_ACTOR = 'system';
 const ITEM_PRICE_TABLE_NAME = 'item price master';
 const ITEM_PRICE_AUDIT_SCREEN_NAME = 'Item Price Master';
+/**
+ * item_price_master no longer stores the unit shape (base unit, factors, slno,
+ * the is_* flags) — item_unit_conversion owns it, and a price row reaches it
+ * through ipm_uc_unit_id. Every read that builds a payload must therefore join
+ * the conversion row; this include keeps that requirement in one place.
+ */
+const ITEM_PRICE_CONVERSION_INCLUDE = { itemUnitConversion: true } as const;
+type ItemPriceMasterWithConversion = ItemPriceMaster & {
+  itemUnitConversion: ItemUnitConversion;
+};
 type ItemUnitConversionSnapshot = Pick<
   ItemUnitConversion,
   | 'iucBaseUnitId'
@@ -105,7 +115,7 @@ export class ItemsPriceMasterService {
       ...(queryDto.ipm_branch_id !== undefined && { ipmBranchId: queryDto.ipm_branch_id }),
       ...(queryDto.ipm_is_active !== undefined && { ipmIsActive: queryDto.ipm_is_active }),
     };
-    return runInventoryListQuery<ItemPriceMaster, ItemPriceListItem>(
+    return runInventoryListQuery<ItemPriceMasterWithConversion, ItemPriceListItem>(
       { page, limit },
       {
         configuredGridFn: () =>
@@ -121,7 +131,12 @@ export class ItemsPriceMasterService {
         findManyFn: () =>
           this.prisma.itemPriceMaster.findMany({
             where,
-            orderBy: [{ ipmItemId: 'asc' }, { ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+            include: ITEM_PRICE_CONVERSION_INCLUDE,
+            orderBy: [
+              { ipmItemId: 'asc' },
+              { itemUnitConversion: { iucUnitSlno: 'asc' } },
+              { ipmId: 'asc' },
+            ],
             skip,
             take: limit,
           }),
@@ -136,6 +151,7 @@ export class ItemsPriceMasterService {
         ipmId,
         ipmIsDeleted: false,
       },
+      include: ITEM_PRICE_CONVERSION_INCLUDE,
     });
     if (!record) {
       throwInventoryNotFound<ItemPriceErrorDetail>(
@@ -152,7 +168,8 @@ export class ItemsPriceMasterService {
   ): Promise<ItemPricePayload[]> {
     const records = await client.itemPriceMaster.findMany({
       where: { ipmItemId: itemId, ipmIsDeleted: false },
-      orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+      include: ITEM_PRICE_CONVERSION_INCLUDE,
+      orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
     });
     return records.map((record) => this.toPayload(record));
   }
@@ -210,6 +227,7 @@ export class ItemsPriceMasterService {
       where: {
         ipmId,
       },
+      include: ITEM_PRICE_CONVERSION_INCLUDE,
     });
     if (!existing) {
       throwInventoryNotFound<ItemPriceErrorDetail>(
@@ -228,6 +246,7 @@ export class ItemsPriceMasterService {
         ipmIsDeleted: nextDeleted,
         ipmUpdatedOn: updatedOn,
       },
+      include: ITEM_PRICE_CONVERSION_INCLUDE,
     });
     await this.auditLogService.logEntityChange(
       {
@@ -268,8 +287,8 @@ export class ItemsPriceMasterService {
     const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
     const data: Prisma.ItemPriceMasterUncheckedCreateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
-      ipmUnitId: this.requireUnitConversionId(unitConversion, saveItemPriceDto),
-      ipmGodownId: saveItemPriceDto.ipm_godown_id,
+      ipmUcUnitId: this.requireUnitConversionId(unitConversion, saveItemPriceDto),
+      ipmGodownId: saveItemPriceDto.ipm_godown_id ?? null,
       ipmProfitType: profitType,
       ipmCreatedOn: now,
       ipmCreatedBy: createdBy,
@@ -278,7 +297,10 @@ export class ItemsPriceMasterService {
     };
     this.applyOptionalFields(data, saveItemPriceDto);
     this.applyUnitConversionFields(data, unitConversion, saveItemPriceDto);
-    const created = await tx.itemPriceMaster.create({ data });
+    const created = await tx.itemPriceMaster.create({
+      data,
+      include: ITEM_PRICE_CONVERSION_INCLUDE,
+    });
     const payload = this.toPayload(created);
     await this.auditLogService.logEntityChange(
       {
@@ -316,6 +338,7 @@ export class ItemsPriceMasterService {
         ipmId,
         ipmIsDeleted: false,
       },
+      include: ITEM_PRICE_CONVERSION_INCLUDE,
     });
     if (!existing) {
       throwInventoryNotFound<ItemPriceErrorDetail>(
@@ -327,8 +350,8 @@ export class ItemsPriceMasterService {
     const unitConversion = await this.syncUnitConversionFromItemPriceInput(tx, saveItemPriceDto);
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
-      ipmUnitId: this.requireUnitConversionId(unitConversion, saveItemPriceDto),
-      ipmGodownId: saveItemPriceDto.ipm_godown_id,
+      ipmUcUnitId: this.requireUnitConversionId(unitConversion, saveItemPriceDto),
+      ipmGodownId: saveItemPriceDto.ipm_godown_id ?? null,
       ipmProfitType: profitType,
       ipmUpdatedOn: new Date(),
     };
@@ -342,6 +365,7 @@ export class ItemsPriceMasterService {
         ipmId,
       },
       data,
+      include: ITEM_PRICE_CONVERSION_INCLUDE,
     });
     const payload = this.toPayload(updated);
     await this.auditLogService.logEntityChange(
@@ -576,13 +600,10 @@ export class ItemsPriceMasterService {
     unitConversion: ItemUnitConversionSnapshot,
     saveItemPriceDto: SaveItemPriceDto,
   ): void {
-    data.ipmBaseUnitId = unitConversion.iucBaseUnitId;
-    data.ipmToBaseFactor = unitConversion.iucToBaseFactor;
-    data.ipmUnitSlno = unitConversion.iucUnitSlno;
-    data.ipmUnitFactor = unitConversion.iucUnitFactor;
-    data.ipmIsDefaultUnit = unitConversion.iucIsDefaultUnit;
-    data.ipmIsBigUnit = unitConversion.iucIsBigUnit;
-    data.ipmIsBaseUnit = unitConversion.iucIsBaseUnit;
+    // The unit shape itself (base unit, factors, slno, is_* flags) lives only on
+    // the conversion row now — syncUnitConversionFromItemPriceInput has already
+    // written it there, and the price row reaches it through ipm_uc_unit_id.
+    // Only the remark, which item_price_master still owns, is carried across.
     if (!hasOwnProperty(saveItemPriceDto, 'ipm_uom_remarks')) {
       data.ipmUomRemarks = unitConversion.iucUomRemarks;
     }
@@ -597,27 +618,10 @@ export class ItemsPriceMasterService {
     if (hasOwnProperty(saveItemPriceDto, 'ipm_branch_id')) {
       data.ipmBranchId = saveItemPriceDto.ipm_branch_id;
     }
-    if (hasOwnProperty(saveItemPriceDto, 'ipm_base_unit_id')) {
-      data.ipmBaseUnitId = saveItemPriceDto.ipm_base_unit_id;
-    }
-    if (hasOwnProperty(saveItemPriceDto, 'ipm_to_base_factor')) {
-      data.ipmToBaseFactor = saveItemPriceDto.ipm_to_base_factor;
-    }
-    if (hasOwnProperty(saveItemPriceDto, 'ipm_unit_slno')) {
-      data.ipmUnitSlno = saveItemPriceDto.ipm_unit_slno;
-    }
-    if (hasOwnProperty(saveItemPriceDto, 'ipm_unit_factor')) {
-      data.ipmUnitFactor = saveItemPriceDto.ipm_unit_factor;
-    }
-    if (hasOwnProperty(saveItemPriceDto, 'ipm_is_default_unit')) {
-      data.ipmIsDefaultUnit = saveItemPriceDto.ipm_is_default_unit;
-    }
-    if (hasOwnProperty(saveItemPriceDto, 'ipm_is_big_unit')) {
-      data.ipmIsBigUnit = saveItemPriceDto.ipm_is_big_unit;
-    }
-    if (hasOwnProperty(saveItemPriceDto, 'ipm_is_base_unit')) {
-      data.ipmIsBaseUnit = saveItemPriceDto.ipm_is_base_unit;
-    }
+    // ipm_base_unit_id, ipm_to_base_factor, ipm_unit_slno, ipm_unit_factor and
+    // the ipm_is_* flags are still accepted on the DTO, but they describe the
+    // unit rather than the price: syncUnitConversionFromItemPriceInput applies
+    // them to the conversion row, and the response reads them back from there.
     if (hasOwnProperty(saveItemPriceDto, 'ipm_cost_price')) {
       data.ipmCostPrice = saveItemPriceDto.ipm_cost_price;
     }
@@ -721,21 +725,24 @@ export class ItemsPriceMasterService {
     }
     return parsedDate;
   }
-  private toPayload(record: ItemPriceMaster): ItemPricePayload {
+  private toPayload(record: ItemPriceMasterWithConversion): ItemPricePayload {
+    // The unit-shape half of the response comes from the conversion row the
+    // price points at; item_price_master itself no longer stores a copy.
+    const conversion = record.itemUnitConversion;
     return {
       ipm_id: record.ipmId,
       ipm_company_id: record.ipmCompanyId,
       ipm_branch_id: record.ipmBranchId,
       ipm_item_id: record.ipmItemId,
-      ipm_unit_id: record.ipmUnitId,
+      ipm_unit_id: record.ipmUcUnitId,
       ipm_godown_id: record.ipmGodownId,
-      ipm_base_unit_id: record.ipmBaseUnitId,
-      ipm_to_base_factor: toNumber(record.ipmToBaseFactor),
-      ipm_unit_slno: record.ipmUnitSlno,
-      ipm_unit_factor: toNumber(record.ipmUnitFactor),
-      ipm_is_default_unit: record.ipmIsDefaultUnit,
-      ipm_is_big_unit: record.ipmIsBigUnit,
-      ipm_is_base_unit: record.ipmIsBaseUnit,
+      ipm_base_unit_id: conversion.iucBaseUnitId,
+      ipm_to_base_factor: toNumber(conversion.iucToBaseFactor),
+      ipm_unit_slno: conversion.iucUnitSlno,
+      ipm_unit_factor: toNumber(conversion.iucUnitFactor),
+      ipm_is_default_unit: conversion.iucIsDefaultUnit,
+      ipm_is_big_unit: conversion.iucIsBigUnit,
+      ipm_is_base_unit: conversion.iucIsBaseUnit,
       ipm_cost_price: toNumber(record.ipmCostPrice),
       ipm_cost_wot: toNumber(record.ipmCostWot),
       ipm_sales_price_a: toNumber(record.ipmSalesPriceA),
@@ -773,7 +780,8 @@ export class ItemsPriceMasterService {
   }
   private buildDisplayName(record: ItemPriceMaster): string {
     const branchSegment = record.ipmBranchId ?? 'NO_BRANCH';
-    return `${record.ipmItemId}:${record.ipmUnitId}:${branchSegment}:${record.ipmGodownId}`;
+    const godownSegment = record.ipmGodownId ?? 'ALL_GODOWNS';
+    return `${record.ipmItemId}:${record.ipmUcUnitId}:${branchSegment}:${godownSegment}`;
   }
   private resolveRecordActor(value: string | null | undefined): string | null {
     const trimmed = value?.trim();

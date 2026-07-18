@@ -1259,7 +1259,7 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
             [
               unitRate.item.itemNameEn,
               unitRate.itemUnitConversion.unit.unit_name,
-              unitRate.godown.gdlName,
+              unitRate.godown?.gdlName,
             ]
               .filter(Boolean)
               .join(' / '),

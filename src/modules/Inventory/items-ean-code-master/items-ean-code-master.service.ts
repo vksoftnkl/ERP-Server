@@ -93,7 +93,7 @@ export class ItemsEanCodeMasterService {
     const where: Prisma.ItemEanCodeWhereInput = {
       eanIsDeleted: false,
       ...(queryDto.ean_item_id !== undefined && { eanItemId: queryDto.ean_item_id }),
-      ...(queryDto.ean_unit_id !== undefined && { eanUnitId: queryDto.ean_unit_id }),
+      ...(queryDto.ean_unit_id !== undefined && { eanUcUnitId: queryDto.ean_unit_id }),
       ...(queryDto.ean_is_default !== undefined && { eanIsDefault: queryDto.ean_is_default }),
       ...(queryDto.ean_is_active !== undefined && { eanIsActive: queryDto.ean_is_active }),
     };
@@ -294,7 +294,7 @@ export class ItemsEanCodeMasterService {
     const modifiedBy = resolveActor(saveItemEanCodeDto.ean_modified_by, createdBy);
     const data: Prisma.ItemEanCodeUncheckedCreateInput = {
       eanItemId: saveItemEanCodeDto.ean_item_id,
-      eanUnitId: saveItemEanCodeDto.ean_unit_id,
+      eanUcUnitId: saveItemEanCodeDto.ean_unit_id,
       eanCode,
       eanCreatedOn: now,
       eanCreatedBy: createdBy,
@@ -358,7 +358,7 @@ export class ItemsEanCodeMasterService {
 
     const data: Prisma.ItemEanCodeUncheckedUpdateInput = {
       eanItemId: saveItemEanCodeDto.ean_item_id,
-      eanUnitId: saveItemEanCodeDto.ean_unit_id,
+      eanUcUnitId: saveItemEanCodeDto.ean_unit_id,
       eanCode,
       eanModifiedOn: new Date(),
       eanModifiedBy: resolveActor(saveItemEanCodeDto.ean_modified_by, this.requestContextService.getUserId()),
@@ -422,7 +422,7 @@ export class ItemsEanCodeMasterService {
     await tx.itemEanCode.updateMany({
       where: {
         eanItemId: record.eanItemId,
-        eanUnitId: record.eanUnitId,
+        eanUcUnitId: record.eanUcUnitId,
         eanIsDeleted: false,
         eanIsDefault: true,
         eanId: {
@@ -441,7 +441,7 @@ export class ItemsEanCodeMasterService {
     return {
       ean_id: record.eanId,
       ean_item_id: record.eanItemId,
-      ean_unit_id: record.eanUnitId,
+      ean_unit_id: record.eanUcUnitId,
       ean_code: record.eanCode,
       ean_is_default: record.eanIsDefault,
       ean_is_active: record.eanIsActive,

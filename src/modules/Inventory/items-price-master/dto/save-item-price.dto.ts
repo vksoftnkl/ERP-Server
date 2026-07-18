@@ -47,12 +47,10 @@ export class SaveItemPriceDto {
   @IsNotEmpty()
   @IsUUID('all')
   ipm_unit_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  @Transform(({ value }) => toTrimmedString(value))
-  @IsString()
-  @IsNotEmpty()
-  @IsUUID('all')
-  ipm_godown_id!: string;
+  // NULL / omitted = the price applies to every godown.
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
+  @NullableUuid()
+  ipm_godown_id?: string | null;
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   @NullableUuid()
   ipm_base_unit_id?: string | null;

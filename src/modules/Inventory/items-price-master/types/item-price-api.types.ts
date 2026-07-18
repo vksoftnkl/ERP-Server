@@ -13,7 +13,8 @@ export interface ItemPricePayload {
   ipm_branch_id: string | null;
   ipm_item_id: string;
   ipm_unit_id: string;
-  ipm_godown_id: string;
+  // NULL = the price applies to every godown.
+  ipm_godown_id: string | null;
   ipm_base_unit_id: string | null;
   ipm_to_base_factor: number;
   ipm_unit_slno: number;

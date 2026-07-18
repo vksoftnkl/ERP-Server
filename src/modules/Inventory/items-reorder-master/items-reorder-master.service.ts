@@ -93,7 +93,7 @@ export class ItemsReorderMasterService {
       irIsDeleted: false,
       ...(queryDto.ir_item_id !== undefined && { irItemId: queryDto.ir_item_id }),
       ...(queryDto.ir_branch_id !== undefined && { irBranchId: queryDto.ir_branch_id }),
-      ...(queryDto.ir_unit_id !== undefined && { irUnitId: queryDto.ir_unit_id }),
+      ...(queryDto.ir_unit_id !== undefined && { irUcUnitId: queryDto.ir_unit_id }),
       ...(queryDto.ir_godown_id !== undefined && { irGodownId: queryDto.ir_godown_id }),
       ...(queryDto.ir_is_active !== undefined && { irIsActive: queryDto.ir_is_active }),
     };
@@ -260,7 +260,7 @@ export class ItemsReorderMasterService {
     const modifiedBy = resolveActor(saveItemReorderDto.ir_modified_by, createdBy);
     const data: Prisma.ItemReorderUncheckedCreateInput = {
       irItemId: saveItemReorderDto.ir_item_id,
-      irUnitId: saveItemReorderDto.ir_unit_id ?? null,
+      irUcUnitId: saveItemReorderDto.ir_unit_id ?? null,
       irCreatedOn: now,
       irCreatedBy: createdBy,
       irModifiedOn: now,
@@ -310,7 +310,7 @@ export class ItemsReorderMasterService {
 
     const data: Prisma.ItemReorderUncheckedUpdateInput = {
       irItemId: saveItemReorderDto.ir_item_id,
-      irUnitId: saveItemReorderDto.ir_unit_id ?? null,
+      irUcUnitId: saveItemReorderDto.ir_unit_id ?? null,
       irModifiedOn: new Date(),
       irModifiedBy: resolveActor(saveItemReorderDto.ir_modified_by, this.requestContextService.getUserId()),
     };
@@ -387,7 +387,7 @@ export class ItemsReorderMasterService {
       ir_id: record.irId,
       ir_branch_id: record.irBranchId,
       ir_item_id: record.irItemId,
-      ir_unit_id: record.irUnitId,
+      ir_unit_id: record.irUcUnitId,
       ir_godown_id: record.irGodownId,
       ir_min_level: toNumber(record.irMinLevel),
       ir_max_level: toNumber(record.irMaxLevel),
@@ -409,7 +409,7 @@ export class ItemsReorderMasterService {
   }
 
   private buildDisplayName(record: ItemReorder): string {
-    const unitSegment = record.irUnitId ?? 'NO_UNIT';
+    const unitSegment = record.irUcUnitId ?? 'NO_UNIT';
     const godownSegment = record.irGodownId ?? 'GLOBAL';
     return `${record.irItemId}:${unitSegment}:${godownSegment}`;
   }

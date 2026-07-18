@@ -3,7 +3,7 @@ model ItemEanCode {
 
   // Link
   eanItemId    String  @db.Uuid @map("ean_item_id")
-  eanUnitId    String  @db.Uuid @map("ean_unit_id")
+  eanUcUnitId    String  @db.Uuid @map("ean_uc_unit_id")
   eanCode      String  @db.VarChar(64) @map("ean_code")
 
   // Default-barcode rule is scoped per (item, unit)
@@ -20,8 +20,8 @@ model ItemEanCode {
 
   eanRemarks   String?  @db.VarChar(250) @map("ean_remarks")
 
-  // Relation — eanUnitId references item_unit_conversion(iuc_id)
-  itemUnitConversion ItemUnitConversion @relation("ItemEanCodeUnitConversion", fields: [eanUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ean_item_unit")
+  // Relation — eanUcUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion ItemUnitConversion @relation("ItemEanCodeUnitConversion", fields: [eanUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ean_item_unit")
 
   @@map("item_ean_codes")
   @@schema("inventory")

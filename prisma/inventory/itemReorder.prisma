@@ -4,7 +4,7 @@ model ItemReorder {
   // Scope / link
   irBranchId          String? @db.Uuid @map("ir_branch_id")
   irItemId            String  @db.Uuid @map("ir_item_id")
-  irUnitId            String? @db.Uuid @map("ir_unit_id")
+  irUcUnitId            String? @db.Uuid @map("ir_uc_unit_id")
   irGodownId          String? @db.Uuid @map("ir_godown_id") // NULL = global reorder rule
 
   // Core reorder controls
@@ -35,16 +35,16 @@ model ItemReorder {
 
   // Relations
   item                ItemMaster @relation(fields: [irItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-  // irUnitId references item_unit_conversion(iuc_id)
-  itemUnitConversion  ItemUnitConversion? @relation("ItemReorderUnitConversion", fields: [irUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ir_item_unit")
+  // irUcUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion  ItemUnitConversion? @relation("ItemReorderUnitConversion", fields: [irUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ir_item_unit")
 
   @@map("item_reorders")
    @@schema("inventory")
 
   // Prevent duplicates per scope (no company)
-  @@unique([irItemId, irUnitId, irGodownId], map: "uq_ir_item_unit_godown")
+  @@unique([irItemId, irUcUnitId, irGodownId], map: "uq_ir_item_unit_godown")
 
   @@index([irItemId], map: "idx_ir_item")
-  @@index([irUnitId], map: "idx_ir_unit")
+  @@index([irUcUnitId], map: "idx_ir_unit")
   @@index([irGodownId], map: "idx_ir_godown")
 }

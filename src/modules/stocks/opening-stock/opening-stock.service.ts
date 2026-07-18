@@ -1114,8 +1114,9 @@ export class OpeningStockService {
             },
             select: {
               ipmId: true,
-              // ipm_unit_id is a FK to item_unit_conversion; the unit is one hop
-              // out. ipm_base_unit_id still points straight at a unit.
+              // ipm_uc_unit_id is a FK to item_unit_conversion; both the unit and
+              // the base unit are one hop out through that row, which is the only
+              // place the base unit is recorded now.
               itemUnitConversion: {
                 select: {
                   unit: {
@@ -1123,11 +1124,11 @@ export class OpeningStockService {
                       unit_name: true,
                     },
                   },
-                },
-              },
-              baseUnit: {
-                select: {
-                  unit_name: true,
+                  baseUnit: {
+                    select: {
+                      unit_name: true,
+                    },
+                  },
                 },
               },
             },
@@ -1169,7 +1170,9 @@ export class OpeningStockService {
           price.ipmId,
           {
             baseUomName:
-              price.baseUnit?.unit_name ?? price.itemUnitConversion?.unit.unit_name ?? null,
+              price.itemUnitConversion?.baseUnit.unit_name ??
+              price.itemUnitConversion?.unit.unit_name ??
+              null,
           },
         ]),
       ),

@@ -98,7 +98,8 @@ export interface ItemPriceLookupPayload {
   unit_id: string;
   /** item_price_master PK (ipm_id) — the pricing hub the rate was taken from. */
   unit_rate_id: string;
-  godown_id: string;
+  // NULL when the selected price row is not scoped to a godown.
+  godown_id: string | null;
   godown_name: string;
 
   // Identity / naming

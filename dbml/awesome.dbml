@@ -1285,7 +1285,7 @@ Table item_brand_master {
 Table item_ean_codes {
   eanId String [pk]
   eanItemId String [not null]
-  eanUnitId String [not null]
+  eanUcUnitId String [not null]
   eanCode String [unique, not null]
   eanIsDefault Boolean [not null, default: false]
   eanIsActive Boolean [not null, default: true]
@@ -1439,15 +1439,8 @@ Table item_price_master {
   ipmCompanyId String
   ipmBranchId String
   ipmItemId String [not null]
-  ipmUnitId String [not null]
-  ipmGodownId String [not null]
-  ipmBaseUnitId String
-  ipmToBaseFactor Decimal [not null, default: 1]
-  ipmUnitSlno Int [not null, default: 0]
-  ipmUnitFactor Decimal [not null, default: 1]
-  ipmIsDefaultUnit Boolean [not null, default: false]
-  ipmIsBigUnit Boolean [not null, default: false]
-  ipmIsBaseUnit Boolean [not null, default: false]
+  ipmUcUnitId String [not null]
+  ipmGodownId String
   ipmCostPrice Decimal [not null, default: 0]
   ipmCostWot Decimal [not null, default: 0]
   ipmSalesPriceA Decimal [not null, default: 0]
@@ -1485,8 +1478,7 @@ Table item_price_master {
   company companys
   branch branch_master
   itemUnitConversion item_unit_conversion [not null]
-  baseUnit item_unit_master
-  godown godown_locations [not null]
+  godown godown_locations
   openingStockBaseUomDetails opening_stock_detail [not null]
   qtywiseRates item_qtywise_rates [not null]
 }
@@ -1521,7 +1513,7 @@ Table item_reorders {
   irId String [pk]
   irBranchId String
   irItemId String [not null]
-  irUnitId String
+  irUcUnitId String
   irGodownId String
   irMinLevel Decimal [not null, default: 0]
   irMaxLevel Decimal [not null, default: 0]
@@ -1543,7 +1535,7 @@ Table item_reorders {
   itemUnitConversion item_unit_conversion
 
   indexes {
-    (irItemId, irUnitId, irGodownId) [unique]
+    (irItemId, irUcUnitId, irGodownId) [unique]
   }
 }
 
@@ -1771,7 +1763,6 @@ Table item_unit_master {
   packUnits item_unit_master [not null]
   iucUnits item_unit_conversion [not null]
   iucBaseUnits item_unit_conversion [not null]
-  ipmBaseUnits item_price_master [not null]
   openingStockUnits opening_stock_detail [not null]
   physicalStockUnits physical_stock_detail [not null]
   physicalStockBaseUnits physical_stock_detail [not null]
@@ -3476,7 +3467,7 @@ Ref: item_batch_stock.ibsBatchId > item_batch_master.btmId
 
 Ref: item_brand_master.brand_parent_id - item_brand_master.brand_id [delete: Restrict]
 
-Ref: item_ean_codes.eanUnitId > item_unit_conversion.iucId [delete: Restrict]
+Ref: item_ean_codes.eanUcUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_group_master.itgParentId - item_group_master.itgId [delete: Restrict]
 
@@ -3496,9 +3487,7 @@ Ref: item_price_master.ipmCompanyId > companys.compId [delete: Restrict]
 
 Ref: item_price_master.ipmBranchId > branch_master.brId [delete: Restrict]
 
-Ref: item_price_master.ipmUnitId > item_unit_conversion.iucId [delete: Restrict]
-
-Ref: item_price_master.ipmBaseUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: item_price_master.ipmUcUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_price_master.ipmGodownId > godown_locations.gdlId [delete: Restrict]
 
@@ -3506,7 +3495,7 @@ Ref: item_qtywise_rates.iqrUnitRateId > item_price_master.ipmId [delete: Restric
 
 Ref: item_reorders.irItemId > item_master.itemId [delete: Restrict]
 
-Ref: item_reorders.irUnitId > item_unit_conversion.iucId [delete: Restrict]
+Ref: item_reorders.irUcUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_section_master.secParentId - item_section_master.secId [delete: Restrict]
 

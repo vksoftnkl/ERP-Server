@@ -268,7 +268,7 @@ export class MasterLookupService {
         eanIsDeleted: false,
         eanCode: { equals: code, mode: 'insensitive' },
       },
-      select: { eanItemId: true, eanUnitId: true },
+      select: { eanItemId: true, eanUcUnitId: true },
     });
     if (!ean) {
       throwMasterNotFound<MasterErrorDetail>(
@@ -297,7 +297,7 @@ export class MasterLookupService {
     }
     return {
       itemId: ean.eanItemId,
-      unitId: ean.eanUnitId,
+      unitId: ean.eanUcUnitId,
       itemName: item.itemNameEn,
       batchConfig: item.itemBatchConfig,
       allowSales: item.itemAllowSales,
@@ -457,7 +457,7 @@ export class MasterLookupService {
           ipmIsDeleted: false,
         },
         include: { itemUnitConversion: { include: { unit: true } } },
-        orderBy: [{ ipmUnitSlno: 'asc' }],
+        orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }],
       }),
     ]);
     if (!itemRecord) {
@@ -489,7 +489,9 @@ export class MasterLookupService {
     const unit = rate.itemUnitConversion.unit;
     const rateUnitId = rate.itemUnitConversion.iucUnitId;
     const [godown, tax, company, custRate, reorder, stockSum] = await Promise.all([
-      this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } }),
+      godownId
+        ? this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } })
+        : Promise.resolve(null),
       itemRecord.itemDefaultTaxId
         ? this.prisma.itemTaxMaster.findFirst({
             where: { taxId: itemRecord.itemDefaultTaxId, taxIsDeleted: false },
@@ -508,7 +510,7 @@ export class MasterLookupService {
         : Promise.resolve(null),
       // ir_unit_id and ipm_unit_id both hold an iuc_id, so these match directly.
       this.prisma.itemReorder.findFirst({
-        where: { irItemId: item_id, irUnitId: rate.ipmUnitId, irIsDeleted: false },
+        where: { irItemId: item_id, irUcUnitId: rate.ipmUcUnitId, irIsDeleted: false },
       }),
       acccyear
         ? this.prisma.itemStockBalance.aggregate({
@@ -522,7 +524,9 @@ export class MasterLookupService {
               isbBranchId: branch_id,
               // Legacy `ienable_loading`: loading mode sums across all godowns;
               // otherwise stock is scoped to the resolved godown.
-              ...(enableLoading ? {} : { isbGodownId: godownId }),
+              // A godown-less price row is not godown-scoped, so its stock sums
+              // across all godowns exactly as loading mode does.
+              ...(enableLoading || !godownId ? {} : { isbGodownId: godownId }),
             },
           })
         : Promise.resolve(null),
@@ -559,7 +563,7 @@ export class MasterLookupService {
       item_id: itemRecord.itemId,
       unit_id: rateUnitId,
       unit_rate_id: rate.ipmId,
-      godown_id: godownId,
+      godown_id: godownId ?? null,
       godown_name: godown?.gdlName ?? '',
 
       item_code: itemRecord.itemCode,
@@ -629,17 +633,19 @@ export class MasterLookupService {
       // an iuc_id still matches so an internal caller can pass either.
       return (
         priceRows.find(
-          (row) => row.itemUnitConversion.iucUnitId === unitId || row.ipmUnitId === unitId,
+          (row) => row.itemUnitConversion.iucUnitId === unitId || row.ipmUcUnitId === unitId,
         ) ?? null
       );
     }
+    // The unit slno the legacy rule keys off lives on the conversion row now.
     if (isRetailItem) {
       return priceRows.reduce(
-        (best, row) => (row.ipmUnitSlno > best.ipmUnitSlno ? row : best),
+        (best, row) =>
+          row.itemUnitConversion.iucUnitSlno > best.itemUnitConversion.iucUnitSlno ? row : best,
         priceRows[0],
       );
     }
-    return priceRows.find((row) => row.ipmUnitSlno === 0) ?? null;
+    return priceRows.find((row) => row.itemUnitConversion.iucUnitSlno === 0) ?? null;
   }
   /** Legacy price-level CASE (1–7 → a/b/c/d/max/min/cost). */
   private priceForLevel(rate: ItemPriceMaster, priceLevel: number): number {

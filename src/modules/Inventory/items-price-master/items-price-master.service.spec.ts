@@ -33,21 +33,25 @@ type ConfiguredGridSqlServiceMock = {
   validateBaseSql: jest.Mock;
   runPagedQuery: jest.Mock;
 };
-const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPriceMaster =>
+/**
+ * Price rows are always read with their conversion row joined — the structural
+ * UOM fields (base unit, factors, slno, is_* flags) live only there now, and
+ * the payload is built from both halves.
+ */
+type ItemPriceMasterWithConversion = ItemPriceMaster & {
+  itemUnitConversion: ItemUnitConversion;
+};
+const makeItemPriceRecord = (
+  overrides: Partial<ItemPriceMasterWithConversion> = {},
+): ItemPriceMasterWithConversion =>
   ({
     ipmId: ITEM_PRICE_ID,
     ipmCompanyId: COMPANY_ID,
     ipmBranchId: null,
     ipmItemId: ITEM_ID,
-    ipmUnitId: UNIT_ID,
+    ipmUcUnitId: UNIT_ID,
     ipmGodownId: GODOWN_ID,
-    ipmBaseUnitId: BASE_UNIT_ID,
-    ipmToBaseFactor: new Prisma.Decimal(12),
-    ipmUnitSlno: 2,
-    ipmUnitFactor: new Prisma.Decimal(6),
-    ipmIsDefaultUnit: true,
-    ipmIsBigUnit: true,
-    ipmIsBaseUnit: false,
+    itemUnitConversion: makeItemUnitConversionRecord(),
     ipmCostPrice: new Prisma.Decimal(25),
     ipmCostWot: new Prisma.Decimal(25),
     ipmSalesPriceA: new Prisma.Decimal(30),
@@ -82,7 +86,7 @@ const makeItemPriceRecord = (overrides: Partial<ItemPriceMaster> = {}): ItemPric
     ipmUpdatedOn: new Date('2026-03-25T10:00:00.000Z'),
     ipmUpdatedBy: USER_ID,
     ...overrides,
-  }) as ItemPriceMaster;
+  }) as ItemPriceMasterWithConversion;
 const makeItemUnitConversionRecord = (
   overrides: Partial<ItemUnitConversion> = {},
 ): ItemUnitConversion =>
@@ -116,12 +120,18 @@ describe('ItemsPriceMasterService', () => {
   beforeEach(() => {
     prisma = {
       itemPriceMaster: {
-        create: jest.fn<Promise<ItemPriceMaster>, [Prisma.ItemPriceMasterCreateArgs]>(),
+        create: jest.fn<
+          Promise<ItemPriceMasterWithConversion>,
+          [Prisma.ItemPriceMasterCreateArgs]
+        >(),
         findFirst: jest.fn<
-          Promise<ItemPriceMaster | null>,
+          Promise<ItemPriceMasterWithConversion | null>,
           [Prisma.ItemPriceMasterFindFirstArgs]
         >(),
-        update: jest.fn<Promise<ItemPriceMaster>, [Prisma.ItemPriceMasterUpdateArgs]>(),
+        update: jest.fn<
+          Promise<ItemPriceMasterWithConversion>,
+          [Prisma.ItemPriceMasterUpdateArgs]
+        >(),
       },
       itemUnitConversion: {
         findFirst: jest.fn<
@@ -156,7 +166,7 @@ describe('ItemsPriceMasterService', () => {
       configuredGridSqlService as never,
     );
   });
-  it('creates item prices with structural UOM fields copied from item unit conversion', async () => {
+  it('creates item prices that source structural UOM fields from the conversion row', async () => {
     prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
     prisma.itemPriceMaster.create.mockResolvedValue(makeItemPriceRecord());
     const input: SaveItemPriceDto = {
@@ -186,32 +196,41 @@ describe('ItemsPriceMasterService', () => {
       },
     });
     const createArgs = prisma.itemPriceMaster.create.mock.calls[0][0];
-    expect(createArgs.data.ipmBaseUnitId).toBe(BASE_UNIT_ID);
-    expect(createArgs.data.ipmToBaseFactor).toEqual(new Prisma.Decimal(12));
-    expect(createArgs.data.ipmUnitSlno).toBe(2);
-    expect(createArgs.data.ipmUnitFactor).toEqual(new Prisma.Decimal(6));
-    expect(createArgs.data.ipmIsDefaultUnit).toBe(true);
-    expect(createArgs.data.ipmIsBigUnit).toBe(true);
-    expect(createArgs.data.ipmIsBaseUnit).toBe(false);
+    // item_price_master no longer carries a copy of the unit shape: the write
+    // must not try to set those columns, and the read must join for them.
+    expect(createArgs.data).not.toHaveProperty('ipmBaseUnitId');
+    expect(createArgs.data).not.toHaveProperty('ipmToBaseFactor');
+    expect(createArgs.data).not.toHaveProperty('ipmUnitSlno');
+    expect(createArgs.data).not.toHaveProperty('ipmUnitFactor');
+    expect(createArgs.data).not.toHaveProperty('ipmIsDefaultUnit');
+    expect(createArgs.data).not.toHaveProperty('ipmIsBigUnit');
+    expect(createArgs.data).not.toHaveProperty('ipmIsBaseUnit');
     expect(createArgs.data.ipmUomRemarks).toBe('Carton');
+    expect(createArgs.include).toEqual({ itemUnitConversion: true });
+    // The payload still reports the whole shape — read back off the conversion.
     expect(result).toMatchObject({
       ipm_base_unit_id: BASE_UNIT_ID,
       ipm_to_base_factor: 12,
       ipm_unit_slno: 2,
       ipm_unit_factor: 6,
+      ipm_is_default_unit: true,
+      ipm_is_big_unit: true,
+      ipm_is_base_unit: false,
     });
   });
   it('keeps explicit UOM remarks while syncing structural fields during updates', async () => {
     prisma.itemUnitConversion.findFirst.mockResolvedValue(makeItemUnitConversionRecord());
     prisma.itemPriceMaster.findFirst.mockResolvedValueOnce(
       makeItemPriceRecord({
-        ipmBaseUnitId: null,
-        ipmToBaseFactor: new Prisma.Decimal(1),
-        ipmUnitSlno: 0,
-        ipmUnitFactor: new Prisma.Decimal(1),
-        ipmIsDefaultUnit: false,
-        ipmIsBigUnit: false,
-        ipmIsBaseUnit: false,
+        // The pre-update row points at a conversion still holding the old shape.
+        itemUnitConversion: makeItemUnitConversionRecord({
+          iucToBaseFactor: new Prisma.Decimal(1),
+          iucUnitSlno: 0,
+          iucUnitFactor: new Prisma.Decimal(1),
+          iucIsDefaultUnit: false,
+          iucIsBigUnit: false,
+          iucIsBaseUnit: false,
+        }),
         ipmUomRemarks: null,
       }),
     );
@@ -232,13 +251,15 @@ describe('ItemsPriceMasterService', () => {
     };
     await service.save(input);
     const updateArgs = prisma.itemPriceMaster.update.mock.calls[0][0];
-    expect(updateArgs.data.ipmBaseUnitId).toBe(BASE_UNIT_ID);
-    expect(updateArgs.data.ipmToBaseFactor).toEqual(new Prisma.Decimal(12));
-    expect(updateArgs.data.ipmUnitSlno).toBe(2);
-    expect(updateArgs.data.ipmUnitFactor).toEqual(new Prisma.Decimal(6));
-    expect(updateArgs.data.ipmIsDefaultUnit).toBe(true);
-    expect(updateArgs.data.ipmIsBigUnit).toBe(true);
-    expect(updateArgs.data.ipmIsBaseUnit).toBe(false);
+    // Same rule on update: the structural fields are the conversion row's, so
+    // only the remark — which item_price_master still owns — is written here.
+    expect(updateArgs.data).not.toHaveProperty('ipmBaseUnitId');
+    expect(updateArgs.data).not.toHaveProperty('ipmToBaseFactor');
+    expect(updateArgs.data).not.toHaveProperty('ipmUnitSlno');
+    expect(updateArgs.data).not.toHaveProperty('ipmUnitFactor');
+    expect(updateArgs.data).not.toHaveProperty('ipmIsDefaultUnit');
+    expect(updateArgs.data).not.toHaveProperty('ipmIsBigUnit');
+    expect(updateArgs.data).not.toHaveProperty('ipmIsBaseUnit');
     expect(updateArgs.data.ipmUomRemarks).toBe('Manual UOM note');
   });
   it('rejects a price whose unit has no conversion row, instead of synthesising one', async () => {

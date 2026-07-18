@@ -2259,7 +2259,7 @@ model ItemEanCode {
 
   // Link
   eanItemId    String  @db.Uuid @map("ean_item_id")
-  eanUnitId    String  @db.Uuid @map("ean_unit_id")
+  eanUcUnitId    String  @db.Uuid @map("ean_uc_unit_id")
   eanCode      String  @db.VarChar(64) @map("ean_code")
 
   // Default-barcode rule is scoped per (item, unit)
@@ -2276,8 +2276,8 @@ model ItemEanCode {
 
   eanRemarks   String?  @db.VarChar(250) @map("ean_remarks")
 
-  // Relation — eanUnitId references item_unit_conversion(iuc_id)
-  itemUnitConversion ItemUnitConversion @relation("ItemEanCodeUnitConversion", fields: [eanUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ean_item_unit")
+  // Relation — eanUcUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion ItemUnitConversion @relation("ItemEanCodeUnitConversion", fields: [eanUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ean_item_unit")
 
   @@map("item_ean_codes")
   @@schema("inventory")
@@ -2475,15 +2475,8 @@ model ItemPriceMaster {
   ipmCompanyId        String?       @db.Uuid @map("ipm_company_id")
   ipmBranchId         String?       @db.Uuid @map("ipm_branch_id")
   ipmItemId           String        @db.Uuid @map("ipm_item_id")
-  ipmUnitId           String        @db.Uuid @map("ipm_unit_id")
-  ipmGodownId         String        @db.Uuid @map("ipm_godown_id")
-  ipmBaseUnitId       String?       @db.Uuid @map("ipm_base_unit_id")
-  ipmToBaseFactor     Decimal       @default(1) @db.Decimal(18, 6) @map("ipm_to_base_factor")
-  ipmUnitSlno         Int           @default(0) @map("ipm_unit_slno")
-  ipmUnitFactor       Decimal       @default(1) @db.Decimal(18, 6) @map("ipm_unit_factor")
-  ipmIsDefaultUnit    Boolean       @default(false) @map("ipm_is_default_unit")
-  ipmIsBigUnit        Boolean       @default(false) @map("ipm_is_big_unit")
-  ipmIsBaseUnit       Boolean       @default(false) @map("ipm_is_base_unit")
+  ipmUcUnitId           String        @db.Uuid @map("ipm_uc_unit_id")
+  ipmGodownId         String?       @db.Uuid @map("ipm_godown_id") // NULL = price applies to every godown
   ipmCostPrice        Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_cost_price")
   ipmCostWot          Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_cost_wot")
   ipmSalesPriceA      Decimal       @default(0) @db.Decimal(18, 6) @map("ipm_sales_price_a")
@@ -2521,16 +2514,16 @@ model ItemPriceMaster {
   item                ItemMaster     @relation("ItemPrices", fields: [ipmItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_item")
   company             Company?       @relation("CompanyItemPrices", fields: [ipmCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_company_id")
   branch              BranchMaster?  @relation("BranchItemPrices", fields: [ipmBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_branch_id")
-  itemUnitConversion ItemUnitConversion @relation("ItemPriceMasterUnitConversion", fields: [ipmUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_unit")
-  baseUnit            Unit?          @relation("IpmBaseUnit", fields: [ipmBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_base_unit")
-  godown              GodownLocation @relation("GodownPrices", fields: [ipmGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_godown_id")
+  itemUnitConversion ItemUnitConversion @relation("ItemPriceMasterUnitConversion", fields: [ipmUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_unit")
+  godown              GodownLocation? @relation("GodownPrices", fields: [ipmGodownId], references: [gdlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ipm_godown_id")
   openingStockBaseUomDetails OpeningStockDetail[] @relation("OpeningStockDetailBaseUomPrice")
   qtywiseRates        ItemQtywiseRate[]
 
-  @@index([ipmItemId, ipmUnitId], map: "idx_item_price_master_item")
+  @@index([ipmItemId, ipmUcUnitId], map: "idx_item_price_master_item")
   @@map("item_price_master")
   @@schema("inventory")
-  // Partial unique index uq_item_price_master_branch is not expressible in Prisma schema.
+  // Partial unique indexes uq_item_price_master_branch and
+  // uq_item_price_master_item_unit_global are not expressible in Prisma schema.
   // CHECK constraints are not expressible in Prisma schema.
 }
 
@@ -2592,7 +2585,7 @@ model ItemReorder {
   // Scope / link
   irBranchId          String? @db.Uuid @map("ir_branch_id")
   irItemId            String  @db.Uuid @map("ir_item_id")
-  irUnitId            String? @db.Uuid @map("ir_unit_id")
+  irUcUnitId            String? @db.Uuid @map("ir_uc_unit_id")
   irGodownId          String? @db.Uuid @map("ir_godown_id") // NULL = global reorder rule
 
   // Core reorder controls
@@ -2623,17 +2616,17 @@ model ItemReorder {
 
   // Relations
   item                ItemMaster @relation(fields: [irItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict)
-  // irUnitId references item_unit_conversion(iuc_id)
-  itemUnitConversion  ItemUnitConversion? @relation("ItemReorderUnitConversion", fields: [irUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ir_item_unit")
+  // irUcUnitId references item_unit_conversion(iuc_id)
+  itemUnitConversion  ItemUnitConversion? @relation("ItemReorderUnitConversion", fields: [irUcUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ir_item_unit")
 
   @@map("item_reorders")
    @@schema("inventory")
 
   // Prevent duplicates per scope (no company)
-  @@unique([irItemId, irUnitId, irGodownId], map: "uq_ir_item_unit_godown")
+  @@unique([irItemId, irUcUnitId, irGodownId], map: "uq_ir_item_unit_godown")
 
   @@index([irItemId], map: "idx_ir_item")
-  @@index([irUnitId], map: "idx_ir_unit")
+  @@index([irUcUnitId], map: "idx_ir_unit")
   @@index([irGodownId], map: "idx_ir_godown")
 }
 
@@ -2995,7 +2988,7 @@ model Unit {
   iucBaseUnits ItemUnitConversion[] @relation("IucBaseUnit")
 
   // Back-relations — ItemPriceMaster
-  ipmBaseUnits ItemPriceMaster[] @relation("IpmBaseUnit")
+  // (ItemPriceMaster no longer stores a base unit — it reaches one through ItemUnitConversion.)
   openingStockUnits OpeningStockDetail[] @relation("OpeningStockDetailUnit")
   physicalStockUnits PhysicalStockDetail[] @relation("PhysicalStockDetailUnit")
   physicalStockBaseUnits PhysicalStockDetail[] @relation("PhysicalStockDetailBaseUnit")

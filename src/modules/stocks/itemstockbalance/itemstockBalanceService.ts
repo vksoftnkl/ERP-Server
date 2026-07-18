@@ -17,6 +17,15 @@ type ItemBatchStockWithBatchMaster = Prisma.ItemBatchStockGetPayload<{
   include: { batch: true };
 }>;
 
+/**
+ * The unit shape a price payload reports (base unit, factors, slno, is_* flags)
+ * lives on item_unit_conversion, so any price row rendered as a payload has to
+ * be read with its conversion row joined.
+ */
+type ItemPriceMasterWithConversion = Prisma.ItemPriceMasterGetPayload<{
+  include: { itemUnitConversion: true };
+}>;
+
 const DEFAULT_BATCH_OPTION_LIMIT = 50;
 const MAX_BATCH_OPTION_LIMIT = 100;
 @Injectable()
@@ -128,7 +137,7 @@ export class ItemStockBalanceService {
       }),
       this.prisma.itemPriceMaster.findMany({
         where: { ipmItemId: { in: allItemIds }, ipmIsDeleted: false },
-        select: { ipmItemId: true, ipmId: true, ipmUnitId: true, ipmGodownId: true, ipmBaseUnitId: true, ipmToBaseFactor: true, ipmUnitFactor: true, ipmCostPrice: true, ipmCostWot: true, ipmMaxPrice: true, itemUnitConversion: { select: { iucUnitId: true } } },
+        select: { ipmItemId: true, ipmId: true, ipmUcUnitId: true, ipmGodownId: true, ipmCostPrice: true, ipmCostWot: true, ipmMaxPrice: true, itemUnitConversion: { select: { iucUnitId: true, iucBaseUnitId: true, iucToBaseFactor: true, iucUnitFactor: true } } },
       }),
     ]);
 
@@ -160,7 +169,9 @@ export class ItemStockBalanceService {
           priceByItemUnit.get(`${balance.isbItemId}:${balance.isbUnitId}`) ??
           null;
         const toBaseFactor = price
-          ? this.toNumber(price.ipmToBaseFactor) || this.toNumber(price.ipmUnitFactor) || 1
+          ? this.toNumber(price.itemUnitConversion.iucToBaseFactor) ||
+            this.toNumber(price.itemUnitConversion.iucUnitFactor) ||
+            1
           : 1;
         const closingQty = this.toNumber(balance.isbClosingQty);
         const freeClosingQty = this.toNumber(balance.isbFreeClosingQty);
@@ -171,7 +182,7 @@ export class ItemStockBalanceService {
           item_default_barcode: item.itemDefaultBarcode ?? null,
           isb_unit_id: balance.isbUnitId,
           unit_name: unitsById.get(balance.isbUnitId) ?? '',
-          isb_base_unit_id: price?.ipmBaseUnitId ?? item.itemBaseUnitId ?? null,
+          isb_base_unit_id: price?.itemUnitConversion.iucBaseUnitId ?? item.itemBaseUnitId ?? null,
           isb_price_master_id: price?.ipmId ?? null,
           isb_godown_id: balance.isbGodownId,
           godown_name: godownsById.get(balance.isbGodownId) ?? null,
@@ -250,11 +261,12 @@ export class ItemStockBalanceService {
         // through the conversion row rather than the column itself.
         OR: [
           { ipmId: unitId },
-          { ipmUnitId: unitId },
+          { ipmUcUnitId: unitId },
           { itemUnitConversion: { iucUnitId: unitId } },
         ],
       },
-      orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+      include: { itemUnitConversion: true },
+      orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
     });
     if (records.length === 0) {
       this.throwItemPriceMasterNotFound(itemId, unitId);
@@ -339,21 +351,22 @@ export class ItemStockBalanceService {
       ibs_avg_stock_rate_wot: this.toNumber(record.ibsAvgStockRate),
     };
   }
-  private toItemPricePayload(record: ItemPriceMaster): ItemPricePayload {
+  private toItemPricePayload(record: ItemPriceMasterWithConversion): ItemPricePayload {
+    const conversion = record.itemUnitConversion;
     return {
       ipm_id: record.ipmId,
       ipm_company_id: record.ipmCompanyId,
       ipm_branch_id: record.ipmBranchId,
       ipm_item_id: record.ipmItemId,
-      ipm_unit_id: record.ipmUnitId,
+      ipm_unit_id: record.ipmUcUnitId,
       ipm_godown_id: record.ipmGodownId,
-      ipm_base_unit_id: record.ipmBaseUnitId,
-      ipm_to_base_factor: this.toNumber(record.ipmToBaseFactor),
-      ipm_unit_slno: record.ipmUnitSlno,
-      ipm_unit_factor: this.toNumber(record.ipmUnitFactor),
-      ipm_is_default_unit: record.ipmIsDefaultUnit,
-      ipm_is_big_unit: record.ipmIsBigUnit,
-      ipm_is_base_unit: record.ipmIsBaseUnit,
+      ipm_base_unit_id: conversion.iucBaseUnitId,
+      ipm_to_base_factor: this.toNumber(conversion.iucToBaseFactor),
+      ipm_unit_slno: conversion.iucUnitSlno,
+      ipm_unit_factor: this.toNumber(conversion.iucUnitFactor),
+      ipm_is_default_unit: conversion.iucIsDefaultUnit,
+      ipm_is_big_unit: conversion.iucIsBigUnit,
+      ipm_is_base_unit: conversion.iucIsBaseUnit,
       ipm_cost_price: this.toNumber(record.ipmCostPrice),
       ipm_cost_wot: this.toNumber(record.ipmCostWot),
       ipm_sales_price_a: this.toNumber(record.ipmSalesPriceA),
@@ -399,26 +412,25 @@ export class ItemStockBalanceService {
         ipmIsDeleted: false,
         OR: [
           { ipmId: unitId },
-          { ipmUnitId: unitId },
+          { ipmUcUnitId: unitId },
           { itemUnitConversion: { iucUnitId: unitId } },
         ],
       },
       select: {
         ipmId: true,
-        ipmUnitId: true,
-        ipmUnitFactor: true,
-        itemUnitConversion: { select: { iucUnitId: true } },
+        ipmUcUnitId: true,
+        itemUnitConversion: { select: { iucUnitId: true, iucUnitFactor: true } },
       },
-      orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+      orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
     });
     const factorsByUnitId = new Map<string, number>();
     for (const record of records) {
-      const unitFactor = this.toNumber(record.ipmUnitFactor);
+      const unitFactor = this.toNumber(record.itemUnitConversion.iucUnitFactor);
       if (!factorsByUnitId.has(record.ipmId)) {
         factorsByUnitId.set(record.ipmId, unitFactor);
       }
-      if (!factorsByUnitId.has(record.ipmUnitId)) {
-        factorsByUnitId.set(record.ipmUnitId, unitFactor);
+      if (!factorsByUnitId.has(record.ipmUcUnitId)) {
+        factorsByUnitId.set(record.ipmUcUnitId, unitFactor);
       }
       // Stock rows are keyed by raw unit_id, so index the factor under that too.
       if (!factorsByUnitId.has(record.itemUnitConversion.iucUnitId)) {

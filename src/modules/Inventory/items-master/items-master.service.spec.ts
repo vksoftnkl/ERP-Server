@@ -444,6 +444,19 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(savedRows(priceService.save)[0].ipm_unit_id).toBe(IUC_ID);
   });
 
+  it('saves a price with no godown as a global row', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    // ipm_godown_id is optional: omitted means the price applies to every godown.
+    dto.prices = [{ ipm_unit_id: UNIT_ID, ipm_profit_type: 'MANUAL' }];
+
+    await service.saveComposite(dto);
+
+    const saved = savedRows(priceService.save)[0];
+    expect(saved.ipm_godown_id).toBeUndefined();
+    expect(saved.ipm_unit_id).toBe(IUC_ID);
+  });
+
   it('accepts a price unit column that already holds an iuc_id', async () => {
     prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
     const dto = fullCompositeDto();

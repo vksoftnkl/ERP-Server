@@ -20,7 +20,7 @@ export class ItemPricePayloadDto {
   @ApiProperty({ format: 'uuid' })
   ipm_unit_id!: string;
   @ApiProperty({ format: 'uuid' })
-  ipm_godown_id!: string;
+  ipm_godown_id!: string | null;
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   ipm_base_unit_id!: string | null;
   @ApiProperty({ example: 1 })

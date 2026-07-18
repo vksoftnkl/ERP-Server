@@ -25,7 +25,7 @@ const makeRecord = (overrides: Partial<ItemEanCode> = {}): ItemEanCode =>
   ({
     eanId: EAN_ID,
     eanItemId: ITEM_ID,
-    eanUnitId: UNIT_ID,
+    eanUcUnitId: UNIT_ID,
     eanCode: '8901234567890',
     eanIsDefault: false,
     eanIsActive: true,
@@ -99,7 +99,7 @@ describe('ItemsEanCodeMasterService', () => {
     expect(prisma.itemEanCode.create).toHaveBeenCalledTimes(1);
     const createArgs = prisma.itemEanCode.create.mock.calls[0][0];
     expect(createArgs.data.eanItemId).toBe(ITEM_ID);
-    expect(createArgs.data.eanUnitId).toBe(UNIT_ID);
+    expect(createArgs.data.eanUcUnitId).toBe(UNIT_ID);
     expect(createArgs.data.eanCode).toBe('8901234567890');
     expect(result.ean_id).toBe(EAN_ID);
   });
@@ -177,7 +177,7 @@ describe('ItemsEanCodeMasterService', () => {
     expect(prisma.itemEanCode.updateMany).toHaveBeenCalledTimes(1);
     const updateManyArgs = prisma.itemEanCode.updateMany.mock.calls[0][0];
     expect(updateManyArgs.where?.eanItemId).toBe(ITEM_ID);
-    expect(updateManyArgs.where?.eanUnitId).toBe(UNIT_ID);
+    expect(updateManyArgs.where?.eanUcUnitId).toBe(UNIT_ID);
     expect(updateManyArgs.where?.eanIsDefault).toBe(true);
     expect(updateManyArgs.where?.eanId).toEqual({ not: EAN_ID });
     expect(updateManyArgs.data.eanIsDefault).toBe(false);

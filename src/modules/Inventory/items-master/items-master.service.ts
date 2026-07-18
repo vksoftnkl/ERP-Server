@@ -320,9 +320,13 @@ export class ItemsMasterService {
       include: {
         prices: {
           where: { ipmIsDeleted: false },
-          orderBy: [{ ipmIsDefaultUnit: 'desc' }, { ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
-          // ipm_unit_id is a FK to item_unit_conversion, so the unit itself is
-          // one hop further out; ipm_base_unit_id still points at a unit.
+          orderBy: [
+            { itemUnitConversion: { iucIsDefaultUnit: 'desc' } },
+            { itemUnitConversion: { iucUnitSlno: 'asc' } },
+            { ipmId: 'asc' },
+          ],
+          // ipm_uc_unit_id is a FK to item_unit_conversion, so the unit itself
+          // and the default-unit flag are one hop further out.
           include: { itemUnitConversion: { include: { unit: true } }, godown: true },
         },
       },
@@ -341,7 +345,7 @@ export class ItemsMasterService {
       const p = (params.godownId
         ? item.prices.find((r) => r.ipmGodownId === params.godownId)
         : undefined)
-        ?? item.prices.find((r) => r.ipmIsDefaultUnit)
+        ?? item.prices.find((r) => r.itemUnitConversion.iucIsDefaultUnit)
         ?? item.prices[0]
         ?? null;
       const tax = item.itemDefaultTaxId ? (taxById.get(item.itemDefaultTaxId) ?? null) : null;
@@ -361,10 +365,10 @@ export class ItemsMasterService {
         // unit behind the price row's conversion, not the iuc_id it stores.
         unit_id: p?.itemUnitConversion.iucUnitId ?? item.itemBaseUnitId ?? null,
         unit_name: p?.itemUnitConversion.unit.unit_name ?? null,
-        base_unit_id: p?.ipmBaseUnitId ?? item.itemBaseUnitId ?? null,
+        base_unit_id: p?.itemUnitConversion.iucBaseUnitId ?? item.itemBaseUnitId ?? null,
         godown_id: p?.ipmGodownId ?? null,
         godown_name: p?.godown?.gdlName ?? null,
-        to_base_factor: toNumber(p?.ipmToBaseFactor ?? 0) || 1,
+        to_base_factor: toNumber(p?.itemUnitConversion.iucToBaseFactor ?? 0) || 1,
         cost_price: toNumber(p?.ipmCostPrice ?? 0),
         cost_wot: toNumber(p?.ipmCostWot ?? 0),
         mrp: toNumber(p?.ipmMaxPrice ?? 0),

@@ -405,11 +405,14 @@ describe('OpeningStockService', () => {
     tx.itemPriceMaster.findMany.mockResolvedValue([
       {
         ipmId: BASE_UOM_ID,
-        unit: {
-          unit_name: 'BOX',
-        },
-        baseUnit: {
-          unit_name: 'BOX',
+        // The unit and its base unit both hang off the conversion row now.
+        itemUnitConversion: {
+          unit: {
+            unit_name: 'BOX',
+          },
+          baseUnit: {
+            unit_name: 'BOX',
+          },
         },
       },
     ]);

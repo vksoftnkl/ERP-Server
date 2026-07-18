@@ -150,27 +150,26 @@ export class ItemBatchStockService {
         // through the conversion row rather than the column itself.
         OR: [
           { ipmId: unitId },
-          { ipmUnitId: unitId },
+          { ipmUcUnitId: unitId },
           { itemUnitConversion: { iucUnitId: unitId } },
         ],
       },
       select: {
         ipmId: true,
-        ipmUnitId: true,
-        ipmUnitFactor: true,
-        itemUnitConversion: { select: { iucUnitId: true } },
+        ipmUcUnitId: true,
+        itemUnitConversion: { select: { iucUnitId: true, iucUnitFactor: true } },
       },
-      orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
+      orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
     });
 
     const factorsByUnitId = new Map<string, number>();
     for (const record of records) {
-      const unitFactor = this.toNumber(record.ipmUnitFactor);
+      const unitFactor = this.toNumber(record.itemUnitConversion.iucUnitFactor);
       if (!factorsByUnitId.has(record.ipmId)) {
         factorsByUnitId.set(record.ipmId, unitFactor);
       }
-      if (!factorsByUnitId.has(record.ipmUnitId)) {
-        factorsByUnitId.set(record.ipmUnitId, unitFactor);
+      if (!factorsByUnitId.has(record.ipmUcUnitId)) {
+        factorsByUnitId.set(record.ipmUcUnitId, unitFactor);
       }
       // Batch stock rows are keyed by raw unit_id, so index the factor there too.
       if (!factorsByUnitId.has(record.itemUnitConversion.iucUnitId)) {
