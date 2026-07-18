@@ -12,16 +12,11 @@ export interface ItemPricePayload {
   ipm_company_id: string | null;
   ipm_branch_id: string | null;
   ipm_item_id: string;
-  ipm_unit_id: string;
+  // FK to item_unit_conversion(iuc_id); that row owns the unit shape (base unit,
+  // factors, slno, the is_* flags), which item_price_master no longer stores.
+  ipm_uc_unit_id: string;
   // NULL = the price applies to every godown.
   ipm_godown_id: string | null;
-  ipm_base_unit_id: string | null;
-  ipm_to_base_factor: number;
-  ipm_unit_slno: number;
-  ipm_unit_factor: number;
-  ipm_is_default_unit: boolean;
-  ipm_is_big_unit: boolean;
-  ipm_is_base_unit: boolean;
   ipm_cost_price: number;
   ipm_cost_wot: number;
   ipm_sales_price_a: number;
@@ -58,12 +53,12 @@ export interface ItemPricePayload {
   // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
   ipm_company_name?: string | null;
   ipm_branch_name?: string | null;
-  // Echoes ipm_unit_id, which is already a unit-master id, so price rows read
-  // like the ean/reorder rows whose *_unit_id holds an iuc_id instead.
+  // The unit-master id behind ipm_uc_unit_id — one hop out through the
+  // conversion row, exactly like the ean/reorder rows whose *_unit_id also
+  // holds an iuc_id.
   ipm_unit_master_id?: string | null;
   ipm_unit_name?: string | null;
   ipm_godown_name?: string | null;
-  ipm_base_unit_name?: string | null;
 }
 
 export type ItemPriceListItem = ItemPricePayload | Record<string, unknown>;

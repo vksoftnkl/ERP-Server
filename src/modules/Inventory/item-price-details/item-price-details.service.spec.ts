@@ -1,5 +1,6 @@
 import { ItemMaster, ItemPriceMaster, ItemTaxMaster, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma/prisma.service';
+import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
 import { ItemPriceDetailsService } from './item-price-details.service';
 
 const ITEM_ID = '019c6f6c-be87-7a11-8905-36092c46fd07';
@@ -189,6 +190,7 @@ const makeItemTaxRecord = (overrides: Partial<ItemTaxMaster> = {}): ItemTaxMaste
 describe('ItemPriceDetailsService', () => {
   let service: ItemPriceDetailsService;
   let prisma: PrismaMock;
+  let itemUnitConversionService: { findByItemId: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -203,7 +205,30 @@ describe('ItemPriceDetailsService', () => {
       },
     };
 
-    service = new ItemPriceDetailsService(prisma as unknown as PrismaService);
+    itemUnitConversionService = {
+      findByItemId: jest.fn().mockResolvedValue([]),
+    };
+    service = new ItemPriceDetailsService(
+      prisma as unknown as PrismaService,
+      itemUnitConversionService as unknown as ItemUnitConversionService,
+    );
+  });
+
+  it('returns the item\'s unit conversions alongside the prices', async () => {
+    // A price row only points at a conversion (ipm_uc_unit_id) and carries none
+    // of its shape, so callers doing unit math need both halves in one response.
+    const conversions = [
+      { iuc_id: 'iuc-1', iuc_unit_id: 'unit-1', iuc_unit_factor: 6, iuc_to_base_factor: 12 },
+    ];
+    itemUnitConversionService.findByItemId.mockResolvedValue(conversions);
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemMasterRecord());
+    prisma.itemPriceMaster.findMany.mockResolvedValue([makeItemPriceRecord()]);
+    prisma.itemTaxMaster.findFirst.mockResolvedValue(makeItemTaxRecord());
+
+    const result = await service.getByItemId(ITEM_ID);
+
+    expect(itemUnitConversionService.findByItemId).toHaveBeenCalledWith(ITEM_ID);
+    expect(result.item_unit_conversions).toEqual(conversions);
   });
 
   it('returns joined item, active prices, and default tax when fetching by item id', async () => {

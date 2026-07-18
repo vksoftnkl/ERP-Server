@@ -13,15 +13,15 @@ import {
   NullableString,
   NullableUuid,
   OptionalBoolean,
-  OptionalInteger,
   OptionalNumber,
   OptionalUuid,
   toNullableString,
   toTrimmedString,
 } from 'src/common/dto/dtoDecorators';
-
+// The values item_price_master's chk_ipm_profit_type constraint allows (see
+// migration 20260324140000_recreate_item_price_master_without_reset); anything
+// else passes validation here only to be rejected by the database.
 const ITEM_PRICE_PROFIT_TYPES = ['By %', 'By Rs', 'By User'] as const;
-
 export class SaveItemPriceDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -41,37 +41,18 @@ export class SaveItemPriceDto {
   @IsNotEmpty()
   @IsUUID('all')
   ipm_item_id!: string;
-  @ApiProperty({ format: 'uuid' })
+  // FK to item_unit_conversion(iuc_id) — the conversion row owns the unit shape
+  // (base unit, factors, slno, the is_* flags), so none of it is accepted here.
+  @ApiProperty({ format: 'uuid', description: 'Item unit conversion id (iuc_id) this price applies to' })
   @Transform(({ value }) => toTrimmedString(value))
   @IsString()
   @IsNotEmpty()
   @IsUUID('all')
-  ipm_unit_id!: string;
+  ipm_uc_unit_id!: string;
   // NULL / omitted = the price applies to every godown.
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
   @NullableUuid()
   ipm_godown_id?: string | null;
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
-  @NullableUuid()
-  ipm_base_unit_id?: string | null;
-  @ApiPropertyOptional({ example: 1 })
-  @OptionalNumber()
-  ipm_to_base_factor?: number;
-  @ApiPropertyOptional({ default: 0 })
-  @OptionalInteger()
-  ipm_unit_slno?: number;
-  @ApiPropertyOptional({ example: 1 })
-  @OptionalNumber()
-  ipm_unit_factor?: number;
-  @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
-  ipm_is_default_unit?: boolean;
-  @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
-  ipm_is_big_unit?: boolean;
-  @ApiPropertyOptional({ default: false })
-  @OptionalBoolean()
-  ipm_is_base_unit?: boolean;
   @ApiPropertyOptional({ example: 0 })
   @OptionalNumber()
   ipm_cost_price?: number;

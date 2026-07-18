@@ -54,7 +54,8 @@ item + one unit rate (`item_price_master`, PK `ipm_id`) into a single flat row: 
 price for the requested price level, the tax block, stock, reorder level and negative-stock rule.
 
 - **Unit-rate pick:** an explicit `unit_id` wins; otherwise the unit-slno rule applies — a retail
-  item takes the highest `ipm_unit_slno` (largest pack), a non-retail item takes the base row
+  item takes the highest `iuc_unit_slno` (largest pack) on the price row's conversion, a
+  non-retail item takes the base row
   (slno 0).
 - **Godown override:** an explicit `godown_id` overrides the rate's own `ipm_godown_id`, both for
   the resolved godown row and the stock scope.

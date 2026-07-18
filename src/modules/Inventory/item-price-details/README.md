@@ -48,7 +48,7 @@ The response `data` is a single object with three parts
 
 - `item` — the matched `item_master` row.
 - `item_prices` — the item's active price rows from `item_price_master`
-  (`ipm_item_id = item_id`, `ipm_is_deleted = false`), ordered by `ipm_unit_slno` then `ipm_id`.
+  (`ipm_item_id = item_id`, `ipm_is_deleted = false`), ordered by the conversion row's `iuc_unit_slno` then `ipm_id`.
 - `item_tax` — the item's default tax row from `item_tax_master` (looked up by
   `item_default_tax_id`, `tax_is_deleted = false`), or `null` when the item has no default tax.
 

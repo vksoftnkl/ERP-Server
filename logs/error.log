@@ -4849,3 +4849,15 @@ Inconsistent column data: Error creating UUID, invalid length: expected length 3
     at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
     at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
     at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-07-18T11:08:42.427Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=70&page=1&limit=50
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-07-18T11:08:45.570Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=69&page=1&limit=50
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)

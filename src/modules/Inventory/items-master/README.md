@@ -59,7 +59,7 @@ item's existing non-deleted rows:
 
 - Rows are matched by **natural key** (or by an explicit row id when supplied):
   - unit conversions → `iuc_unit_id`
-  - prices → `ipm_unit_id` + `ipm_godown_id`
+  - prices → `ipm_uc_unit_id` + `ipm_godown_id`
   - EAN codes → `ean_code`
   - reorders → `ir_unit_id` + `ir_godown_id`
 - Unmatched payload rows are **created**; matched rows are **updated only when a supplied field

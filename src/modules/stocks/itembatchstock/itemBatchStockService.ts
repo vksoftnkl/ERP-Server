@@ -146,7 +146,7 @@ export class ItemBatchStockService {
       where: {
         ipmItemId: itemId,
         ipmIsDeleted: false,
-        // ipm_unit_id holds an iuc_id, so a caller-supplied unit_id matches
+        // ipm_uc_unit_id holds an iuc_id, so a caller-supplied unit_id matches
         // through the conversion row rather than the column itself.
         OR: [
           { ipmId: unitId },

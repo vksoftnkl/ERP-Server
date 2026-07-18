@@ -151,7 +151,7 @@ export class ItemStockBalanceService {
     const priceByItemUnitGodown = new Map<string, (typeof priceMasters)[0]>();
     const priceByItemUnit = new Map<string, (typeof priceMasters)[0]>();
     for (const pm of priceMasters) {
-      // Stock balances key off a raw unit_id; ipm_unit_id is an iuc_id, so the
+      // Stock balances key off a raw unit_id; ipm_uc_unit_id is an iuc_id, so the
       // index is built on the unit behind the price row's conversion.
       const unitId = pm.itemUnitConversion.iucUnitId;
       const godownKey = `${pm.ipmItemId}:${unitId}:${pm.ipmGodownId}`;
@@ -257,7 +257,7 @@ export class ItemStockBalanceService {
       where: {
         ipmItemId: itemId,
         ipmIsDeleted: false,
-        // ipm_unit_id holds an iuc_id, so a caller-supplied unit_id matches
+        // ipm_uc_unit_id holds an iuc_id, so a caller-supplied unit_id matches
         // through the conversion row rather than the column itself.
         OR: [
           { ipmId: unitId },
@@ -358,15 +358,8 @@ export class ItemStockBalanceService {
       ipm_company_id: record.ipmCompanyId,
       ipm_branch_id: record.ipmBranchId,
       ipm_item_id: record.ipmItemId,
-      ipm_unit_id: record.ipmUcUnitId,
+      ipm_uc_unit_id: record.ipmUcUnitId,
       ipm_godown_id: record.ipmGodownId,
-      ipm_base_unit_id: conversion.iucBaseUnitId,
-      ipm_to_base_factor: this.toNumber(conversion.iucToBaseFactor),
-      ipm_unit_slno: conversion.iucUnitSlno,
-      ipm_unit_factor: this.toNumber(conversion.iucUnitFactor),
-      ipm_is_default_unit: conversion.iucIsDefaultUnit,
-      ipm_is_big_unit: conversion.iucIsBigUnit,
-      ipm_is_base_unit: conversion.iucIsBaseUnit,
       ipm_cost_price: this.toNumber(record.ipmCostPrice),
       ipm_cost_wot: this.toNumber(record.ipmCostWot),
       ipm_sales_price_a: this.toNumber(record.ipmSalesPriceA),

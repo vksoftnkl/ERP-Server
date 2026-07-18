@@ -1236,7 +1236,7 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
                 itemNameEn: true,
               },
             },
-            // ipm_unit_id is a FK to item_unit_conversion; the unit is one hop out.
+            // ipm_uc_unit_id is a FK to item_unit_conversion; the unit is one hop out.
             itemUnitConversion: {
               select: {
                 unit: {

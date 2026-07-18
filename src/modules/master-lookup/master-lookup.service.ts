@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ItemPriceMaster, Prisma } from '@prisma/client';
 
 /**
- * item_price_master.ipm_unit_id is a FK to item_unit_conversion(iuc_id), not a
+ * item_price_master.ipm_uc_unit_id is a FK to item_unit_conversion(iuc_id), not a
  * raw unit_id, so every price row is loaded with its conversion: iucUnitId is
  * the unit that stock, reorder and the response payload are keyed by.
  */
@@ -508,7 +508,7 @@ export class MasterLookupService {
             },
           })
         : Promise.resolve(null),
-      // ir_unit_id and ipm_unit_id both hold an iuc_id, so these match directly.
+      // ir_unit_id and ipm_uc_unit_id both hold an iuc_id, so these match directly.
       this.prisma.itemReorder.findFirst({
         where: { irItemId: item_id, irUcUnitId: rate.ipmUcUnitId, irIsDeleted: false },
       }),

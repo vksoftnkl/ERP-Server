@@ -27,13 +27,13 @@ export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item'>;
 
 /**
  * item_ean_codes.ean_unit_id, item_reorders.ir_unit_id and
- * item_price_master.ipm_unit_id are FKs to item_unit_conversion(iuc_id): they
- * hold an iuc_id, NOT a raw unit_id (see migrations
+ * item_price_master.ipm_uc_unit_id are FKs to item_unit_conversion(iuc_id):
+ * they hold an iuc_id, NOT a raw unit_id (see migrations
  * 20260711141604_retarget_ean_ir_unit_to_iuc and
  * 20260718055209_changed_the_unit_id_in_price_master_table). Clients address
  * those rows by unit, so all three collections are translated through an index
  * of the item's live conversion rows before they are matched, compared and
- * saved. ipm_base_unit_id is NOT retargeted and still holds a raw unit_id.
+ * saved.
  */
 type UnitConversionIndex = {
   /** iuc_unit_id -> iuc_id, over the item's non-deleted conversion rows. */
@@ -46,7 +46,7 @@ type UnitConversionIndex = {
  * Natural keys used to match payload rows against the item's existing rows:
  *   ean_codes        → ean_code                      (unique per item)
  *   unit_conversions → iuc_unit_id                   (one conversion row per unit)
- *   prices           → ipm_unit_id + ipm_godown_id
+ *   prices           → ipm_uc_unit_id + ipm_godown_id
  *   reorders         → ir_unit_id + ir_godown_id     (nulls = the global rule)
  *
  * Fields never compared when deciding whether a matched row changed: the row's
@@ -206,11 +206,10 @@ export class ItemMasterUpdateService {
   }
 
   /**
-   * Sync item_price_master rows; natural key: (ipm_unit_id, ipm_godown_id). The
-   * payload's ipm_unit_id names a unit, the stored column holds an iuc_id (see
-   * migration 20260718055209_changed_the_unit_id_in_price_master_table), so each
-   * row is resolved before it is matched, compared and saved — exactly like the
-   * EAN and reorder collections below.
+   * Sync item_price_master rows; natural key: (ipm_uc_unit_id, ipm_godown_id).
+   * ipm_uc_unit_id stores an iuc_id, but the composite payload may name either
+   * that or the unit behind it, so each row is resolved before it is matched,
+   * compared and saved — exactly like the EAN and reorder collections below.
    */
   private async syncPrices(
     itemId: string,
@@ -223,7 +222,7 @@ export class ItemMasterUpdateService {
     }
     const existing = await this.itemsPriceMasterService.findByItemId(itemId, tx);
     const existingByKey = new Map(
-      existing.map((row) => [this.pairKey(row.ipm_unit_id, row.ipm_godown_id), row]),
+      existing.map((row) => [this.pairKey(row.ipm_uc_unit_id, row.ipm_godown_id), row]),
     );
 
     const toSave: SaveItemPriceDto[] = [];
@@ -231,11 +230,15 @@ export class ItemMasterUpdateService {
     for (const child of children) {
       const resolved = {
         ...child,
-        ipm_unit_id: this.resolveUnitConversionId(child.ipm_unit_id, 'ipm_unit_id', conversions),
+        ipm_uc_unit_id: this.resolveUnitConversionId(
+          child.ipm_uc_unit_id,
+          'ipm_uc_unit_id',
+          conversions,
+        ),
       };
       const match = resolved.ipm_id
         ? existing.find((row) => row.ipm_id === resolved.ipm_id)
-        : existingByKey.get(this.pairKey(resolved.ipm_unit_id, resolved.ipm_godown_id));
+        : existingByKey.get(this.pairKey(resolved.ipm_uc_unit_id, resolved.ipm_godown_id));
       if (match) {
         claimedIds.add(match.ipm_id);
         if (!this.rowChanged(resolved, match, IPM_IGNORED_FIELDS)) {

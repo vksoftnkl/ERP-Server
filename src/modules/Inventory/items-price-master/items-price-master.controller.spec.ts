@@ -13,15 +13,8 @@ const itemPricePayload = {
   ipm_company_id: null,
   ipm_branch_id: null,
   ipm_item_id: ITEM_ID,
-  ipm_unit_id: UNIT_ID,
+  ipm_uc_unit_id: UNIT_ID,
   ipm_godown_id: GODOWN_ID,
-  ipm_base_unit_id: null,
-  ipm_to_base_factor: 1,
-  ipm_unit_slno: 0,
-  ipm_unit_factor: 1,
-  ipm_is_default_unit: false,
-  ipm_is_big_unit: false,
-  ipm_is_base_unit: false,
   ipm_cost_price: 0,
   ipm_cost_wot: 0,
   ipm_sales_price_a: 0,
@@ -88,7 +81,7 @@ describe('ItemsPriceMasterController', () => {
     await expect(
       controller.save({
         ipm_item_id: ITEM_ID,
-        ipm_unit_id: UNIT_ID,
+        ipm_uc_unit_id: UNIT_ID,
         ipm_godown_id: GODOWN_ID,
         ipm_profit_type: 'MANUAL',
       }),
@@ -106,7 +99,7 @@ describe('ItemsPriceMasterController', () => {
       controller.save([
         {
           ipm_item_id: ITEM_ID,
-          ipm_unit_id: UNIT_ID,
+          ipm_uc_unit_id: UNIT_ID,
           ipm_godown_id: GODOWN_ID,
           ipm_profit_type: 'MANUAL',
         },

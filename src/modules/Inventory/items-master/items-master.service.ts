@@ -115,13 +115,12 @@ export class ItemsMasterService {
    * are not resolved. Every child row belongs to this item, so their
    * `*_item_name` echoes reuse the parent item name without an extra query.
    *
-   * ipm_unit_id, ean_unit_id and ir_unit_id hold an iuc_id rather than a
+   * ipm_uc_unit_id, ean_unit_id and ir_unit_id hold an iuc_id rather than a
    * unit_id, so their names are resolved by hopping through the item's
    * conversion rows to the underlying unit; that unit_id is also surfaced as
    * ipm_unit_master_id / ean_unit_master_id / ir_unit_master_id, since the ids
    * on the row alone never expose it. A row whose conversion has since been
    * soft-deleted has no unit to name and resolves to null for both.
-   * ipm_base_unit_id is not retargeted and resolves directly.
    */
   private async resolveCompositeNames(
     composite: ItemCompositePayload,
@@ -144,7 +143,7 @@ export class ItemsMasterService {
     const unitIds = collect(
       item.item_base_unit_id,
       ...unit_conversions.flatMap((r) => [r.iuc_unit_id, r.iuc_base_unit_id]),
-      ...prices.flatMap((r) => [conversionUnitId(r.ipm_unit_id), r.ipm_base_unit_id]),
+      ...prices.map((r) => conversionUnitId(r.ipm_uc_unit_id)),
       ...ean_codes.map((r) => conversionUnitId(r.ean_unit_id)),
       ...reorders.map((r) => conversionUnitId(r.ir_unit_id)),
     );
@@ -261,7 +260,7 @@ export class ItemsMasterService {
         iuc_base_unit_name: nameOf(unitName, r.iuc_base_unit_id),
       })),
       prices: prices.map((r) => {
-        const unitId = conversionUnitId(r.ipm_unit_id);
+        const unitId = conversionUnitId(r.ipm_uc_unit_id);
         return {
           ...r,
           ipm_company_name: nameOf(companyName, r.ipm_company_id),
@@ -269,8 +268,6 @@ export class ItemsMasterService {
           ipm_unit_master_id: unitId,
           ipm_unit_name: nameOf(unitName, unitId),
           ipm_godown_name: nameOf(godownName, r.ipm_godown_id),
-          // ipm_base_unit_id is not retargeted — still a raw unit_id.
-          ipm_base_unit_name: nameOf(unitName, r.ipm_base_unit_id),
         };
       }),
       ean_codes: ean_codes.map((r) => {

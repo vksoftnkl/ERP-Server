@@ -52,7 +52,7 @@ export class ItemsMasterController {
       'Item fields are sent at the top level (create vs update by item_id presence). Optionally include ' +
       'unit_conversions[], prices[], ean_codes[] and/or reorders[] to save them in the same call. ' +
       'Each provided child collection is DIFF-SYNCED against the item\'s existing rows by natural key ' +
-      '(EAN: ean_code; conversions: iuc_unit_id; prices: ipm_unit_id+ipm_godown_id; reorders: ' +
+      '(EAN: ean_code; conversions: iuc_unit_id; prices: ipm_uc_unit_id+ipm_godown_id; reorders: ' +
       'ir_unit_id+ir_godown_id): new rows are created, matched rows are updated when a field differs, ' +
       'and existing rows absent from the payload are SOFT-DELETED. Omitting a child array leaves that ' +
       'table untouched; an empty array soft-deletes all of its rows. Saving is NON-ATOMIC: the item is ' +

@@ -2522,8 +2522,12 @@ model ItemPriceMaster {
   @@index([ipmItemId, ipmUcUnitId], map: "idx_item_price_master_item")
   @@map("item_price_master")
   @@schema("inventory")
-  // Partial unique indexes uq_item_price_master_branch and
-  // uq_item_price_master_item_unit_global are not expressible in Prisma schema.
+  // Partial unique index uq_item_price_master_scope is not expressible in Prisma
+  // schema: (ipm_company_id, ipm_branch_id, ipm_item_id, ipm_uc_unit_id)
+  // NULLS NOT DISTINCT WHERE ipm_is_deleted = false. It replaced
+  // uq_item_price_master_branch and uq_item_price_master_item_unit_global.
+  // ipm_godown_id is deliberately NOT part of the key, so two godowns cannot
+  // hold different prices for the same item + unit + branch.
   // CHECK constraints are not expressible in Prisma schema.
 }
 

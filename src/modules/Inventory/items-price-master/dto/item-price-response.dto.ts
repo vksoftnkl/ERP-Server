@@ -17,24 +17,10 @@ export class ItemPricePayloadDto {
   ipm_branch_id!: string | null;
   @ApiProperty({ format: 'uuid' })
   ipm_item_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  ipm_unit_id!: string;
+  @ApiProperty({ format: 'uuid', description: 'Item unit conversion id (iuc_id) this price applies to' })
+  ipm_uc_unit_id!: string;
   @ApiProperty({ format: 'uuid' })
   ipm_godown_id!: string | null;
-  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, example: null })
-  ipm_base_unit_id!: string | null;
-  @ApiProperty({ example: 1 })
-  ipm_to_base_factor!: number;
-  @ApiProperty({ example: 0 })
-  ipm_unit_slno!: number;
-  @ApiProperty({ example: 1 })
-  ipm_unit_factor!: number;
-  @ApiProperty({ example: false })
-  ipm_is_default_unit!: boolean;
-  @ApiProperty({ example: false })
-  ipm_is_big_unit!: boolean;
-  @ApiProperty({ example: false })
-  ipm_is_base_unit!: boolean;
   @ApiProperty({ example: 0 })
   ipm_cost_price!: number;
   @ApiProperty({ example: 0 })
@@ -105,14 +91,12 @@ export class ItemPricePayloadDto {
   ipm_company_name?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' })
   ipm_branch_name?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Unit master id for this row; mirrors ipm_unit_id, which already holds one (resolved on the item composite get endpoint)' })
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Unit master id behind ipm_uc_unit_id, one hop through the conversion row (resolved on the item composite get endpoint)' })
   ipm_unit_master_id?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   ipm_unit_name?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
   ipm_godown_name?: string | null;
-  @ApiPropertyOptional({ nullable: true, description: 'Name of the linked base unit (resolved on the item composite get endpoint)' })
-  ipm_base_unit_name?: string | null;
 }
 export class ItemPriceDeleteResultDto {
   @ApiProperty({ format: 'uuid' })

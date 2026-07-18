@@ -14,9 +14,13 @@ import {
   ItemPriceDetailPayload,
 } from './types/item-price-detail-api.types';
 import { throwInventoryNotFound, toNumber } from 'src/common/utils/module-service.utils';
+import { ItemUnitConversionService } from '../item-unit-conversion/item-unit-conversion.service';
 @Injectable()
 export class ItemPriceDetailsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly itemUnitConversionService: ItemUnitConversionService,
+  ) {}
   async getByBarcode(barcode: string): Promise<ItemPriceDetailPayload> {
     const itemRecord = await this.prisma.itemMaster.findFirst({
       where: {
@@ -47,7 +51,7 @@ export class ItemPriceDetailsService {
         `No active item found with id ${itemId}`,
       );
     }
-    const [priceRecords, taxRecord] = await Promise.all([
+    const [priceRecords, unitConversions, taxRecord] = await Promise.all([
       this.prisma.itemPriceMaster.findMany({
         where: {
           ipmItemId: itemId,
@@ -56,6 +60,7 @@ export class ItemPriceDetailsService {
         include: { itemUnitConversion: true },
         orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
       }),
+      this.itemUnitConversionService.findByItemId(itemId),
       itemRecord.itemDefaultTaxId
         ? this.prisma.itemTaxMaster.findFirst({
             where: {
@@ -68,6 +73,7 @@ export class ItemPriceDetailsService {
     return {
       item: this.toItemPayload(itemRecord),
       item_prices: priceRecords.map((record) => this.toItemPricePayload(record)),
+      item_unit_conversions: unitConversions,
       item_tax: taxRecord ? this.toItemTaxPayload(taxRecord) : null,
     };
   }
@@ -145,15 +151,8 @@ export class ItemPriceDetailsService {
       ipm_company_id: record.ipmCompanyId,
       ipm_branch_id: record.ipmBranchId,
       ipm_item_id: record.ipmItemId,
-      ipm_unit_id: record.ipmUcUnitId,
+      ipm_uc_unit_id: record.ipmUcUnitId,
       ipm_godown_id: record.ipmGodownId,
-      ipm_base_unit_id: conversion.iucBaseUnitId,
-      ipm_to_base_factor: toNumber(conversion.iucToBaseFactor),
-      ipm_unit_slno: conversion.iucUnitSlno,
-      ipm_unit_factor: toNumber(conversion.iucUnitFactor),
-      ipm_is_default_unit: conversion.iucIsDefaultUnit,
-      ipm_is_big_unit: conversion.iucIsBigUnit,
-      ipm_is_base_unit: conversion.iucIsBaseUnit,
       ipm_cost_price: toNumber(record.ipmCostPrice),
       ipm_cost_wot: toNumber(record.ipmCostWot),
       ipm_sales_price_a: toNumber(record.ipmSalesPriceA),
