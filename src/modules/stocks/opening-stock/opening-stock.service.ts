@@ -1114,9 +1114,15 @@ export class OpeningStockService {
             },
             select: {
               ipmId: true,
-              unit: {
+              // ipm_unit_id is a FK to item_unit_conversion; the unit is one hop
+              // out. ipm_base_unit_id still points straight at a unit.
+              itemUnitConversion: {
                 select: {
-                  unit_name: true,
+                  unit: {
+                    select: {
+                      unit_name: true,
+                    },
+                  },
                 },
               },
               baseUnit: {
@@ -1162,7 +1168,8 @@ export class OpeningStockService {
         baseUomPrices.map((price) => [
           price.ipmId,
           {
-            baseUomName: price.baseUnit?.unit_name ?? price.unit?.unit_name ?? null,
+            baseUomName:
+              price.baseUnit?.unit_name ?? price.itemUnitConversion?.unit.unit_name ?? null,
           },
         ]),
       ),

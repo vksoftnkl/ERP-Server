@@ -57,6 +57,9 @@ export interface ItemPricePayload {
   // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
   ipm_company_name?: string | null;
   ipm_branch_name?: string | null;
+  // Echoes ipm_unit_id, which is already a unit-master id, so price rows read
+  // like the ean/reorder rows whose *_unit_id holds an iuc_id instead.
+  ipm_unit_master_id?: string | null;
   ipm_unit_name?: string | null;
   ipm_godown_name?: string | null;
   ipm_base_unit_name?: string | null;

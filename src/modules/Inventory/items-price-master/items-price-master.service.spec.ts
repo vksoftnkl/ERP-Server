@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { ItemPriceMaster, ItemUnitConversion, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -166,7 +167,8 @@ describe('ItemsPriceMasterService', () => {
       ipm_base_unit_id: null,
       ipm_to_base_factor: 1,
       ipm_unit_slno: 0,
-      ipm_unit_factor: 1,
+      // No ipm_unit_factor: supplying one routes the save down the chain-walk
+      // branch, which never consults the stored conversion row this test is about.
       ipm_is_default_unit: false,
       ipm_is_big_unit: false,
       ipm_is_base_unit: false,
@@ -174,10 +176,11 @@ describe('ItemsPriceMasterService', () => {
       ipm_created_by: USER_ID,
     };
     const result = await service.save(input);
+    // ipm_unit_id may name either the unit or the conversion row itself.
     expect(prisma.itemUnitConversion.findFirst).toHaveBeenCalledWith({
       where: {
         iucItemId: ITEM_ID,
-        iucUnitId: UNIT_ID,
+        OR: [{ iucUnitId: UNIT_ID }, { iucId: UNIT_ID }],
         iucIsActive: true,
         iucIsDeleted: false,
       },
@@ -238,60 +241,37 @@ describe('ItemsPriceMasterService', () => {
     expect(updateArgs.data.ipmIsBaseUnit).toBe(false);
     expect(updateArgs.data.ipmUomRemarks).toBe('Manual UOM note');
   });
-  it('falls back to request-derived structural fields when no active item unit conversion exists', async () => {
+  it('rejects a price whose unit has no conversion row, instead of synthesising one', async () => {
+    // ipm_unit_id is a FK to item_unit_conversion(iuc_id), so there is no id to
+    // store when the item has no conversion row for the unit: the old
+    // request-derived fallback can no longer produce a writable row.
     prisma.itemUnitConversion.findFirst.mockResolvedValue(null);
-    prisma.itemPriceMaster.create.mockResolvedValue(
-      makeItemPriceRecord({
-        ipmBaseUnitId: UNIT_ID,
-        ipmToBaseFactor: new Prisma.Decimal(1),
-        ipmUnitSlno: 0,
-        ipmUnitFactor: new Prisma.Decimal(1),
-        ipmIsDefaultUnit: false,
-        ipmIsBigUnit: false,
-        ipmIsBaseUnit: true,
-        ipmUomRemarks: null,
-      }),
-    );
     const input: SaveItemPriceDto = {
       ipm_item_id: ITEM_ID,
       ipm_unit_id: UNIT_ID,
       ipm_godown_id: GODOWN_ID,
       ipm_profit_type: 'MANUAL',
     };
-    await expect(service.save(input)).resolves.toMatchObject({
-      ipm_base_unit_id: UNIT_ID,
-      ipm_to_base_factor: 1,
-      ipm_unit_slno: 0,
-      ipm_unit_factor: 1,
-      ipm_is_base_unit: true,
-    });
-    expect(prisma.itemPriceMaster.create).toHaveBeenCalled();
+    await expect(service.save(input)).rejects.toThrow(BadRequestException);
+    expect(prisma.itemPriceMaster.create).not.toHaveBeenCalled();
   });
-  it('uses ipm_unit_factor to build fallback structural factors when no unit conversion exists', async () => {
+  it('rejects a unit-factor payload whose unit has no conversion row', async () => {
+    // Same FK constraint on the explicit-unit-factor path, which walks the
+    // item's conversion chain and previously synthesised a snapshot on a miss.
     prisma.itemUnitConversion.findFirst.mockResolvedValue(null);
-    prisma.itemPriceMaster.create.mockResolvedValue(
-      makeItemPriceRecord({
-        ipmBaseUnitId: BASE_UNIT_ID,
-        ipmToBaseFactor: new Prisma.Decimal(4),
-        ipmUnitSlno: 3,
-        ipmUnitFactor: new Prisma.Decimal(4),
-        ipmIsDefaultUnit: false,
-        ipmIsBigUnit: true,
-        ipmIsBaseUnit: false,
+    prisma.itemUnitConversion.findMany.mockResolvedValue([]);
+    await expect(
+      service.save({
+        ipm_item_id: ITEM_ID,
+        ipm_unit_id: UNIT_ID,
+        ipm_godown_id: GODOWN_ID,
+        ipm_base_unit_id: BASE_UNIT_ID,
+        ipm_profit_type: 'MANUAL',
+        ipm_unit_slno: 3,
+        ipm_unit_factor: 4,
+        ipm_is_big_unit: true,
       }),
-    );
-    await service.save({
-      ipm_item_id: ITEM_ID,
-      ipm_unit_id: UNIT_ID,
-      ipm_godown_id: GODOWN_ID,
-      ipm_base_unit_id: BASE_UNIT_ID,
-      ipm_profit_type: 'MANUAL',
-      ipm_unit_slno: 3,
-      ipm_unit_factor: 4,
-      ipm_is_big_unit: true,
-    });
-    const createArgs = prisma.itemPriceMaster.create.mock.calls.at(-1)?.[0];
-    expect(createArgs?.data.ipmToBaseFactor).toEqual(new Prisma.Decimal(4));
-    expect(createArgs?.data.ipmUnitFactor).toEqual(new Prisma.Decimal(4));
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.itemPriceMaster.create).not.toHaveBeenCalled();
   });
 });

@@ -26,11 +26,14 @@ import type { InventoryErrorDetail } from 'src/common/utils/module-service.utils
 export type ItemChildrenSyncResult = Omit<ItemCompositePayload, 'item'>;
 
 /**
- * item_ean_codes.ean_unit_id and item_reorders.ir_unit_id are FKs to
- * item_unit_conversion(iuc_id): they hold an iuc_id, NOT a raw unit_id (see
- * migration 20260711141604_retarget_ean_ir_unit_to_iuc). Clients address those
- * rows by unit, so both collections are translated through an index of the
- * item's live conversion rows before they are matched, compared and saved.
+ * item_ean_codes.ean_unit_id, item_reorders.ir_unit_id and
+ * item_price_master.ipm_unit_id are FKs to item_unit_conversion(iuc_id): they
+ * hold an iuc_id, NOT a raw unit_id (see migrations
+ * 20260711141604_retarget_ean_ir_unit_to_iuc and
+ * 20260718055209_changed_the_unit_id_in_price_master_table). Clients address
+ * those rows by unit, so all three collections are translated through an index
+ * of the item's live conversion rows before they are matched, compared and
+ * saved. ipm_base_unit_id is NOT retargeted and still holds a raw unit_id.
  */
 type UnitConversionIndex = {
   /** iuc_unit_id -> iuc_id, over the item's non-deleted conversion rows. */
@@ -105,8 +108,8 @@ export class ItemMasterUpdateService {
     tx: Prisma.TransactionClient,
   ): Promise<ItemChildrenSyncResult> {
     const unit_conversions = await this.syncUnitConversions(itemId, dto.unit_conversions, tx);
-    const prices = await this.syncPrices(itemId, dto.prices, tx);
     const conversions = await this.indexUnitConversions(itemId, dto, unit_conversions, tx);
+    const prices = await this.syncPrices(itemId, dto.prices, conversions, tx);
     const ean_codes = await this.syncEanCodes(itemId, dto.ean_codes, conversions, tx);
     const reorders = await this.syncReorders(itemId, dto.reorders, conversions, tx);
     return { unit_conversions, prices, ean_codes, reorders };
@@ -124,7 +127,8 @@ export class ItemMasterUpdateService {
     syncedUnitConversions: ItemUnitConversionPayload[],
     tx: Prisma.TransactionClient,
   ): Promise<UnitConversionIndex> {
-    const needed = dto.ean_codes !== undefined || dto.reorders !== undefined;
+    const needed =
+      dto.prices !== undefined || dto.ean_codes !== undefined || dto.reorders !== undefined;
     const rows = !needed
       ? []
       : dto.unit_conversions !== undefined
@@ -201,10 +205,17 @@ export class ItemMasterUpdateService {
     return this.itemUnitConversionService.findByItemId(itemId, tx);
   }
 
-  /** Sync item_price_master rows; natural key: (ipm_unit_id, ipm_godown_id). */
+  /**
+   * Sync item_price_master rows; natural key: (ipm_unit_id, ipm_godown_id). The
+   * payload's ipm_unit_id names a unit, the stored column holds an iuc_id (see
+   * migration 20260718055209_changed_the_unit_id_in_price_master_table), so each
+   * row is resolved before it is matched, compared and saved — exactly like the
+   * EAN and reorder collections below.
+   */
   private async syncPrices(
     itemId: string,
     children: CompositeItemPriceDto[] | undefined,
+    conversions: UnitConversionIndex,
     tx: Prisma.TransactionClient,
   ): Promise<ItemPricePayload[]> {
     if (children === undefined) {
@@ -218,16 +229,20 @@ export class ItemMasterUpdateService {
     const toSave: SaveItemPriceDto[] = [];
     const claimedIds = new Set<string>();
     for (const child of children) {
-      const match = child.ipm_id
-        ? existing.find((row) => row.ipm_id === child.ipm_id)
-        : existingByKey.get(this.pairKey(child.ipm_unit_id, child.ipm_godown_id));
+      const resolved = {
+        ...child,
+        ipm_unit_id: this.resolveUnitConversionId(child.ipm_unit_id, 'ipm_unit_id', conversions),
+      };
+      const match = resolved.ipm_id
+        ? existing.find((row) => row.ipm_id === resolved.ipm_id)
+        : existingByKey.get(this.pairKey(resolved.ipm_unit_id, resolved.ipm_godown_id));
       if (match) {
         claimedIds.add(match.ipm_id);
-        if (!this.rowChanged(child, match, IPM_IGNORED_FIELDS)) {
+        if (!this.rowChanged(resolved, match, IPM_IGNORED_FIELDS)) {
           continue;
         }
       }
-      toSave.push({ ...child, ipm_item_id: itemId, ipm_id: child.ipm_id ?? match?.ipm_id });
+      toSave.push({ ...resolved, ipm_item_id: itemId, ipm_id: resolved.ipm_id ?? match?.ipm_id });
     }
 
     const staleIds = existing

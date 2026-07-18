@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { ItemPriceMaster } from '@prisma/client';
+import { ItemPriceMaster, Prisma } from '@prisma/client';
+
+/**
+ * item_price_master.ipm_unit_id is a FK to item_unit_conversion(iuc_id), not a
+ * raw unit_id, so every price row is loaded with its conversion: iucUnitId is
+ * the unit that stock, reorder and the response payload are keyed by.
+ */
+type PriceRowWithUnit = Prisma.ItemPriceMasterGetPayload<{
+  include: { itemUnitConversion: { include: { unit: true } } };
+}>;
 import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import {
@@ -447,6 +456,7 @@ export class MasterLookupService {
           ipmBranchId: branch_id,
           ipmIsDeleted: false,
         },
+        include: { itemUnitConversion: { include: { unit: true } } },
         orderBy: [{ ipmUnitSlno: 'asc' }],
       }),
     ]);
@@ -475,9 +485,11 @@ export class MasterLookupService {
     const godownId = query.godown_id ?? rate.ipmGodownId;
 
     // 3. Everything that hangs off the chosen item / rate (legacy lateral joins).
-    const [godown, unit, tax, company, custRate, reorder, stockSum] = await Promise.all([
+    // The rate's unit now arrives with the row, via its conversion.
+    const unit = rate.itemUnitConversion.unit;
+    const rateUnitId = rate.itemUnitConversion.iucUnitId;
+    const [godown, tax, company, custRate, reorder, stockSum] = await Promise.all([
       this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } }),
-      this.prisma.unit.findFirst({ where: { unit_id: rate.ipmUnitId } }),
       itemRecord.itemDefaultTaxId
         ? this.prisma.itemTaxMaster.findFirst({
             where: { taxId: itemRecord.itemDefaultTaxId, taxIsDeleted: false },
@@ -494,6 +506,7 @@ export class MasterLookupService {
             },
           })
         : Promise.resolve(null),
+      // ir_unit_id and ipm_unit_id both hold an iuc_id, so these match directly.
       this.prisma.itemReorder.findFirst({
         where: { irItemId: item_id, irUnitId: rate.ipmUnitId, irIsDeleted: false },
       }),
@@ -503,7 +516,8 @@ export class MasterLookupService {
             where: {
               isbAccYear: acccyear,
               isbItemId: item_id,
-              isbUnitId: rate.ipmUnitId,
+              // isb_unit_id holds a raw unit_id, so the conversion's unit.
+              isbUnitId: rateUnitId,
               isbCompanyId: company_id,
               isbBranchId: branch_id,
               // Legacy `ienable_loading`: loading mode sums across all godowns;
@@ -543,7 +557,7 @@ export class MasterLookupService {
 
     return {
       item_id: itemRecord.itemId,
-      unit_id: rate.ipmUnitId,
+      unit_id: rateUnitId,
       unit_rate_id: rate.ipmId,
       godown_id: godownId,
       godown_name: godown?.gdlName ?? '',
@@ -605,13 +619,19 @@ export class MasterLookupService {
    * null when nothing matches.
    */
   private selectUnitRate(
-    priceRows: ItemPriceMaster[],
+    priceRows: PriceRowWithUnit[],
     isRetailItem: boolean,
     unitId?: string,
-  ): ItemPriceMaster | null {
+  ): PriceRowWithUnit | null {
     if (priceRows.length === 0) return null;
     if (unitId) {
-      return priceRows.find((row) => row.ipmUnitId === unitId) ?? null;
+      // Callers pass a unit_id, which the row now holds only via its conversion;
+      // an iuc_id still matches so an internal caller can pass either.
+      return (
+        priceRows.find(
+          (row) => row.itemUnitConversion.iucUnitId === unitId || row.ipmUnitId === unitId,
+        ) ?? null
+      );
     }
     if (isRetailItem) {
       return priceRows.reduce(

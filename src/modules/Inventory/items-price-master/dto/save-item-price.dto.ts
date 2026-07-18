@@ -20,7 +20,7 @@ import {
   toTrimmedString,
 } from 'src/common/dto/dtoDecorators';
 
-const ITEM_PRICE_PROFIT_TYPES = ['BY_PERCENT', 'BY_AMOUNT', 'MANUAL'] as const;
+const ITEM_PRICE_PROFIT_TYPES = ['By %', 'By Rs', 'By User'] as const;
 
 export class SaveItemPriceDto {
   @ApiPropertyOptional({

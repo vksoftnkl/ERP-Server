@@ -1484,7 +1484,7 @@ Table item_price_master {
   item item_master [not null]
   company companys
   branch branch_master
-  unit item_unit_master [not null]
+  itemUnitConversion item_unit_conversion [not null]
   baseUnit item_unit_master
   godown godown_locations [not null]
   openingStockBaseUomDetails opening_stock_detail [not null]
@@ -1742,6 +1742,7 @@ Table item_unit_conversion {
   saleQuotationItem sale_quotation_item [not null]
   itemEanCodes item_ean_codes [not null]
   itemReorders item_reorders [not null]
+  itemPrices item_price_master [not null]
 }
 
 Table item_unit_master {
@@ -1770,7 +1771,6 @@ Table item_unit_master {
   packUnits item_unit_master [not null]
   iucUnits item_unit_conversion [not null]
   iucBaseUnits item_unit_conversion [not null]
-  ipmUnits item_price_master [not null]
   ipmBaseUnits item_price_master [not null]
   openingStockUnits opening_stock_detail [not null]
   physicalStockUnits physical_stock_detail [not null]
@@ -3496,7 +3496,7 @@ Ref: item_price_master.ipmCompanyId > companys.compId [delete: Restrict]
 
 Ref: item_price_master.ipmBranchId > branch_master.brId [delete: Restrict]
 
-Ref: item_price_master.ipmUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: item_price_master.ipmUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_price_master.ipmBaseUnitId > item_unit_master.unit_id [delete: Restrict]
 

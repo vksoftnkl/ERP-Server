@@ -30,6 +30,8 @@ export interface ItemReorderPayload {
   ir_modified_by: string | null;
   // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
   ir_branch_name?: string | null;
+  // ir_unit_id holds an iuc_id, so the underlying unit-master id is surfaced separately.
+  ir_unit_master_id?: string | null;
   ir_unit_name?: string | null;
   ir_godown_name?: string | null;
 }

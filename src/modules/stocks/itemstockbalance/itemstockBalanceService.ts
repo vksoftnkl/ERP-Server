@@ -128,7 +128,7 @@ export class ItemStockBalanceService {
       }),
       this.prisma.itemPriceMaster.findMany({
         where: { ipmItemId: { in: allItemIds }, ipmIsDeleted: false },
-        select: { ipmItemId: true, ipmId: true, ipmUnitId: true, ipmGodownId: true, ipmBaseUnitId: true, ipmToBaseFactor: true, ipmUnitFactor: true, ipmCostPrice: true, ipmCostWot: true, ipmMaxPrice: true },
+        select: { ipmItemId: true, ipmId: true, ipmUnitId: true, ipmGodownId: true, ipmBaseUnitId: true, ipmToBaseFactor: true, ipmUnitFactor: true, ipmCostPrice: true, ipmCostWot: true, ipmMaxPrice: true, itemUnitConversion: { select: { iucUnitId: true } } },
       }),
     ]);
 
@@ -142,9 +142,12 @@ export class ItemStockBalanceService {
     const priceByItemUnitGodown = new Map<string, (typeof priceMasters)[0]>();
     const priceByItemUnit = new Map<string, (typeof priceMasters)[0]>();
     for (const pm of priceMasters) {
-      const godownKey = `${pm.ipmItemId}:${pm.ipmUnitId}:${pm.ipmGodownId}`;
+      // Stock balances key off a raw unit_id; ipm_unit_id is an iuc_id, so the
+      // index is built on the unit behind the price row's conversion.
+      const unitId = pm.itemUnitConversion.iucUnitId;
+      const godownKey = `${pm.ipmItemId}:${unitId}:${pm.ipmGodownId}`;
       if (!priceByItemUnitGodown.has(godownKey)) priceByItemUnitGodown.set(godownKey, pm);
-      const fallbackKey = `${pm.ipmItemId}:${pm.ipmUnitId}`;
+      const fallbackKey = `${pm.ipmItemId}:${unitId}`;
       if (!priceByItemUnit.has(fallbackKey)) priceByItemUnit.set(fallbackKey, pm);
     }
 
@@ -243,7 +246,13 @@ export class ItemStockBalanceService {
       where: {
         ipmItemId: itemId,
         ipmIsDeleted: false,
-        OR: [{ ipmId: unitId }, { ipmUnitId: unitId }],
+        // ipm_unit_id holds an iuc_id, so a caller-supplied unit_id matches
+        // through the conversion row rather than the column itself.
+        OR: [
+          { ipmId: unitId },
+          { ipmUnitId: unitId },
+          { itemUnitConversion: { iucUnitId: unitId } },
+        ],
       },
       orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
     });
@@ -388,12 +397,17 @@ export class ItemStockBalanceService {
       where: {
         ipmItemId: itemId,
         ipmIsDeleted: false,
-        OR: [{ ipmId: unitId }, { ipmUnitId: unitId }],
+        OR: [
+          { ipmId: unitId },
+          { ipmUnitId: unitId },
+          { itemUnitConversion: { iucUnitId: unitId } },
+        ],
       },
       select: {
         ipmId: true,
         ipmUnitId: true,
         ipmUnitFactor: true,
+        itemUnitConversion: { select: { iucUnitId: true } },
       },
       orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
     });
@@ -405,6 +419,10 @@ export class ItemStockBalanceService {
       }
       if (!factorsByUnitId.has(record.ipmUnitId)) {
         factorsByUnitId.set(record.ipmUnitId, unitFactor);
+      }
+      // Stock rows are keyed by raw unit_id, so index the factor under that too.
+      if (!factorsByUnitId.has(record.itemUnitConversion.iucUnitId)) {
+        factorsByUnitId.set(record.itemUnitConversion.iucUnitId, unitFactor);
       }
     }
     return factorsByUnitId;

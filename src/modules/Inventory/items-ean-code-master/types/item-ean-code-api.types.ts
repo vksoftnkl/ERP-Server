@@ -21,6 +21,8 @@ export interface ItemEanCodePayload {
   ean_modified_by: string | null;
   ean_remarks: string | null;
   // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
+  // ean_unit_id holds an iuc_id, so the underlying unit-master id is surfaced separately.
+  ean_unit_master_id?: string | null;
   ean_unit_name?: string | null;
 }
 

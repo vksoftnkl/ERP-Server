@@ -434,6 +434,38 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(savedRows(eanCodeService.save)[0].ean_unit_id).toBe(IUC_ID);
   });
 
+  it('stores the unit conversion iuc_id — not the raw unit_id — in the price unit column', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+
+    // The payload names UNIT_ID; ipm_unit_id is a FK to iuc_id, so the item's
+    // conversion row for that unit is what must land in the column.
+    await service.saveComposite(fullCompositeDto());
+
+    expect(savedRows(priceService.save)[0].ipm_unit_id).toBe(IUC_ID);
+  });
+
+  it('accepts a price unit column that already holds an iuc_id', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    dto.prices = [{ ipm_unit_id: IUC_ID, ipm_godown_id: GODOWN_ID, ipm_profit_type: 'MANUAL' }];
+
+    await service.saveComposite(dto);
+
+    expect(savedRows(priceService.save)[0].ipm_unit_id).toBe(IUC_ID);
+  });
+
+  it('rejects a price whose unit has no conversion row, and saves nothing', async () => {
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+    const dto = fullCompositeDto();
+    dto.prices = [
+      { ipm_unit_id: UNMAPPED_UNIT_ID, ipm_godown_id: GODOWN_ID, ipm_profit_type: 'MANUAL' },
+    ];
+
+    await expect(service.saveComposite(dto)).rejects.toThrow(BadRequestException);
+
+    expect(priceService.save).not.toHaveBeenCalled();
+  });
+
   it('rejects an EAN code whose unit has no conversion row, and saves nothing', async () => {
     prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
     const dto = fullCompositeDto();
@@ -517,13 +549,14 @@ describe('ItemsMasterService composite endpoints', () => {
         ipm_company_id: COMPANY_ID,
         ipm_branch_id: BRANCH_ID,
         ipm_item_id: ITEM_ID,
-        ipm_unit_id: UNIT_ID,
+        // Stored as an iuc_id; ipm_base_unit_id is not retargeted and stays a unit_id.
+        ipm_unit_id: IUC_ID,
         ipm_godown_id: GODOWN_ID,
         ipm_base_unit_id: BASE_UNIT_ID,
       },
     ]);
-    // ean_unit_id / ir_unit_id hold an iuc_id, so their unit name is resolved by
-    // hopping through the conversion row above to UNIT_ID.
+    // ipm_unit_id / ean_unit_id / ir_unit_id hold an iuc_id, so their unit name is
+    // resolved by hopping through the conversion row above to UNIT_ID.
     eanCodeService.findByItemId.mockResolvedValue([
       { ean_id: 'e1', ean_item_id: ITEM_ID, ean_unit_id: IUC_ID },
     ]);
@@ -565,13 +598,19 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.unit_conversions[0].iuc_base_unit_name).toBe('BOX');
 
     expect(result.prices[0].ipm_branch_name).toBe('HQ');
+    // Resolved through the conversion row, exactly like the ean/reorder rows.
+    expect(result.prices[0].ipm_unit_master_id).toBe(UNIT_ID);
     expect(result.prices[0].ipm_unit_name).toBe('PCS');
     expect(result.prices[0].ipm_base_unit_name).toBe('BOX');
     expect(result.prices[0].ipm_godown_name).toBe('Main Store');
 
+    // The unit id behind the iuc_id is surfaced alongside the name — the row's
+    // own ean_unit_id / ir_unit_id never expose it.
+    expect(result.ean_codes[0].ean_unit_master_id).toBe(UNIT_ID);
     expect(result.ean_codes[0].ean_unit_name).toBe('PCS');
 
     expect(result.reorders[0].ir_branch_name).toBe('HQ');
+    expect(result.reorders[0].ir_unit_master_id).toBe(UNIT_ID);
     expect(result.reorders[0].ir_unit_name).toBe('PCS');
     expect(result.reorders[0].ir_godown_name).toBe('Main Store');
 

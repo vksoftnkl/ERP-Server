@@ -146,12 +146,19 @@ export class ItemBatchStockService {
       where: {
         ipmItemId: itemId,
         ipmIsDeleted: false,
-        OR: [{ ipmId: unitId }, { ipmUnitId: unitId }],
+        // ipm_unit_id holds an iuc_id, so a caller-supplied unit_id matches
+        // through the conversion row rather than the column itself.
+        OR: [
+          { ipmId: unitId },
+          { ipmUnitId: unitId },
+          { itemUnitConversion: { iucUnitId: unitId } },
+        ],
       },
       select: {
         ipmId: true,
         ipmUnitId: true,
         ipmUnitFactor: true,
+        itemUnitConversion: { select: { iucUnitId: true } },
       },
       orderBy: [{ ipmUnitSlno: 'asc' }, { ipmId: 'asc' }],
     });
@@ -164,6 +171,10 @@ export class ItemBatchStockService {
       }
       if (!factorsByUnitId.has(record.ipmUnitId)) {
         factorsByUnitId.set(record.ipmUnitId, unitFactor);
+      }
+      // Batch stock rows are keyed by raw unit_id, so index the factor there too.
+      if (!factorsByUnitId.has(record.itemUnitConversion.iucUnitId)) {
+        factorsByUnitId.set(record.itemUnitConversion.iucUnitId, unitFactor);
       }
     }
     return factorsByUnitId;

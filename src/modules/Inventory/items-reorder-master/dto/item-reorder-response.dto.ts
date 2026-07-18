@@ -52,6 +52,8 @@ export class ItemReorderPayloadDto {
   ir_modified_by!: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' })
   ir_branch_name?: string | null;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Unit master id behind ir_unit_id, which holds a unit-conversion id (resolved on the item composite get endpoint)' })
+  ir_unit_master_id?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   ir_unit_name?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })

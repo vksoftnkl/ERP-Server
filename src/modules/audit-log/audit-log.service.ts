@@ -1236,9 +1236,14 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
                 itemNameEn: true,
               },
             },
-            unit: {
+            // ipm_unit_id is a FK to item_unit_conversion; the unit is one hop out.
+            itemUnitConversion: {
               select: {
-                unit_name: true,
+                unit: {
+                  select: {
+                    unit_name: true,
+                  },
+                },
               },
             },
             godown: {
@@ -1251,7 +1256,11 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
         return new Map(
           unitRates.map((unitRate) => [
             unitRate.ipmId,
-            [unitRate.item.itemNameEn, unitRate.unit.unit_name, unitRate.godown.gdlName]
+            [
+              unitRate.item.itemNameEn,
+              unitRate.itemUnitConversion.unit.unit_name,
+              unitRate.godown.gdlName,
+            ]
               .filter(Boolean)
               .join(' / '),
           ]),

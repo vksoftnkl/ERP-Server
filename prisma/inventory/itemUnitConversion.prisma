@@ -24,6 +24,7 @@ model ItemUnitConversion {
   saleQuotationItem  SaleQuotationItem[] @relation("SaleQuotationItemUnitConversion")
   itemEanCodes       ItemEanCode[]       @relation("ItemEanCodeUnitConversion")
   itemReorders       ItemReorder[]       @relation("ItemReorderUnitConversion")
+  itemPrices         ItemPriceMaster[]   @relation("ItemPriceMasterUnitConversion")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")

@@ -42,7 +42,15 @@ type ItemUnitConversionSnapshot = Pick<
   | 'iucIsBaseUnit'
   | 'iucIsBigUnit'
   | 'iucUomRemarks'
->;
+> & {
+  /**
+   * The conversion row this snapshot came from — what ipm_unit_id stores (see
+   * migration 20260718055209_changed_the_unit_id_in_price_master_table). Null
+   * when the item has no conversion row for the unit and the snapshot was
+   * synthesised, in which case no price row can be written at all.
+   */
+  iucId: string | null;
+};
 @Injectable()
 export class ItemsPriceMasterService {
   constructor(
@@ -260,7 +268,7 @@ export class ItemsPriceMasterService {
     const updatedBy = this.resolveRecordActor(saveItemPriceDto.ipm_updated_by) ?? createdBy;
     const data: Prisma.ItemPriceMasterUncheckedCreateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
-      ipmUnitId: saveItemPriceDto.ipm_unit_id,
+      ipmUnitId: this.requireUnitConversionId(unitConversion, saveItemPriceDto),
       ipmGodownId: saveItemPriceDto.ipm_godown_id,
       ipmProfitType: profitType,
       ipmCreatedOn: now,
@@ -319,7 +327,7 @@ export class ItemsPriceMasterService {
     const unitConversion = await this.syncUnitConversionFromItemPriceInput(tx, saveItemPriceDto);
     const data: Prisma.ItemPriceMasterUncheckedUpdateInput = {
       ipmItemId: saveItemPriceDto.ipm_item_id,
-      ipmUnitId: saveItemPriceDto.ipm_unit_id,
+      ipmUnitId: this.requireUnitConversionId(unitConversion, saveItemPriceDto),
       ipmGodownId: saveItemPriceDto.ipm_godown_id,
       ipmProfitType: profitType,
       ipmUpdatedOn: new Date(),
@@ -410,10 +418,15 @@ export class ItemsPriceMasterService {
       uomRemarks: row.iucUomRemarks,
       cumulative: 1,
     }));
-    const targetRow = chainRows.find((row) => row.unitId === saveItemPriceDto.ipm_unit_id);
+    // ipm_unit_id may arrive as either the unit or the conversion row itself.
+    const targetRow = chainRows.find(
+      (row) =>
+        row.unitId === saveItemPriceDto.ipm_unit_id || row.iucId === saveItemPriceDto.ipm_unit_id,
+    );
     if (!targetRow) {
       return this.buildFallbackUnitConversionSnapshot(saveItemPriceDto);
     }
+    const targetUnitId = targetRow.unitId;
     if (saveItemPriceDto.ipm_unit_slno !== undefined) {
       targetRow.unitSlno = saveItemPriceDto.ipm_unit_slno;
     }
@@ -425,7 +438,7 @@ export class ItemsPriceMasterService {
     });
     const resolvedBaseUnitId =
       saveItemPriceDto.ipm_base_unit_id ??
-      (saveItemPriceDto.ipm_is_base_unit === true ? saveItemPriceDto.ipm_unit_id : undefined) ??
+      (saveItemPriceDto.ipm_is_base_unit === true ? targetUnitId : undefined) ??
       chainRows.find((row) => row.isBaseUnit)?.unitId ??
       chainRows[0].baseUnitId ??
       chainRows[0].unitId;
@@ -440,7 +453,7 @@ export class ItemsPriceMasterService {
         row.cumulative = 1;
         continue;
       }
-      if (row.unitId === saveItemPriceDto.ipm_unit_id) {
+      if (row.unitId === targetUnitId) {
         row.unitFactor = explicitUnitFactor;
       }
       const previousRow = chainRows[i - 1];
@@ -478,8 +491,9 @@ export class ItemsPriceMasterService {
         },
       });
     }
-    const selectedRow = chainRows.find((row) => row.unitId === saveItemPriceDto.ipm_unit_id)!;
+    const selectedRow = chainRows.find((row) => row.unitId === targetUnitId)!;
     return {
+      iucId: selectedRow.iucId,
       iucBaseUnitId: selectedRow.baseUnitId,
       iucToBaseFactor: new Prisma.Decimal(selectedRow.toBaseFactor),
       iucUnitSlno: selectedRow.unitSlno,
@@ -490,6 +504,26 @@ export class ItemsPriceMasterService {
       iucUomRemarks: selectedRow.uomRemarks,
     };
   }
+  /**
+   * ipm_unit_id is a FK to item_unit_conversion(iuc_id), so a price row can only
+   * exist for a unit the item actually has a conversion row for. A synthesised
+   * snapshot has no such row; rejecting here names the offending field instead
+   * of letting the insert fail on an opaque foreign-key violation.
+   */
+  private requireUnitConversionId(
+    unitConversion: ItemUnitConversionSnapshot,
+    saveItemPriceDto: SaveItemPriceDto,
+  ): string {
+    if (!unitConversion.iucId) {
+      throwInventoryBadRequest<ItemPriceErrorDetail>('Validation failed', [
+        {
+          field: 'ipm_unit_id',
+          message: `Unit ${saveItemPriceDto.ipm_unit_id} has no unit conversion row for this item`,
+        },
+      ]);
+    }
+    return unitConversion.iucId;
+  }
   private async resolveUnitConversion(
     tx: Prisma.TransactionClient,
     saveItemPriceDto: SaveItemPriceDto,
@@ -497,7 +531,12 @@ export class ItemsPriceMasterService {
     const unitConversion = await tx.itemUnitConversion.findFirst({
       where: {
         iucItemId: saveItemPriceDto.ipm_item_id,
-        iucUnitId: saveItemPriceDto.ipm_unit_id,
+        // Callers address the row by unit; ipm_unit_id stores the conversion id,
+        // so a getComposite response echoed back matches on iucId instead.
+        OR: [
+          { iucUnitId: saveItemPriceDto.ipm_unit_id },
+          { iucId: saveItemPriceDto.ipm_unit_id },
+        ],
         iucIsActive: true,
         iucIsDeleted: false,
       },
@@ -521,6 +560,7 @@ export class ItemsPriceMasterService {
       this.toPositiveFactor(saveItemPriceDto.ipm_unit_factor) ??
       1;
     return {
+      iucId: null,
       iucBaseUnitId: resolvedBaseUnitId,
       iucToBaseFactor: new Prisma.Decimal(toBaseFactor),
       iucUnitSlno: saveItemPriceDto.ipm_unit_slno ?? 0,

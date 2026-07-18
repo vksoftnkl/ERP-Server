@@ -41,7 +41,6 @@ model Unit {
   iucBaseUnits ItemUnitConversion[] @relation("IucBaseUnit")
 
   // Back-relations — ItemPriceMaster
-  ipmUnits     ItemPriceMaster[] @relation("IpmUnit")
   ipmBaseUnits ItemPriceMaster[] @relation("IpmBaseUnit")
   openingStockUnits OpeningStockDetail[] @relation("OpeningStockDetailUnit")
   physicalStockUnits PhysicalStockDetail[] @relation("PhysicalStockDetailUnit")
