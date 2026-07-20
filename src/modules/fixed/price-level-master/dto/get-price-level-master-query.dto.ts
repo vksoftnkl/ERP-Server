@@ -8,19 +8,5 @@ export class GetPriceLevelMasterQueryDto {
     example: 1,
   })
   @OptionalInteger(1)
-  priceLvlId?: number;
-  @ApiPropertyOptional({
-    type: Boolean,
-    default: true,
-    description: 'Return only active price levels',
-  })
-  @OptionalQueryBoolean()
-  activeOnly?: boolean;
-  @ApiPropertyOptional({
-    type: Boolean,
-    default: false,
-    description: 'Include soft-deleted price levels',
-  })
-  @OptionalQueryBoolean()
-  includeDeleted?: boolean;
+  priceLvlId?: number; 
 }

@@ -1974,6 +1974,7 @@ Table branch_master {
   physicalStockDetails physical_stock_detail [not null]
   physicalStockBatchDetails physical_stock_batch_detail [not null]
   itemPrices item_price_master [not null]
+  freightCharges sale_freight_charges [not null]
   loyaltySchemes loyalty_sch_list [not null]
   deviceMasters device_master [not null]
 }
@@ -2060,6 +2061,7 @@ Table companys {
   custGroup cust_groups [not null]
   itemMaster item_master [not null]
   itemPrices item_price_master [not null]
+  freightCharges sale_freight_charges [not null]
   deviceMasters device_master [not null]
   UserLoginSession user_login_sessions [not null]
   customers customers [not null]
@@ -2515,24 +2517,6 @@ Table employee_master {
   department employee_departments
 }
 
-Table freight_charges {
-  frId String [pk]
-  frFromKm Int [default: 0]
-  frToKm Int [default: 0]
-  frFreightChrg Decimal [default: 0]
-  frFromWeight Decimal [default: 0]
-  frToWeight Decimal [default: 0]
-  frLoadChrg Decimal [default: 0]
-  frUnloadChrg Decimal [default: 0]
-  frIsActive Boolean [not null, default: true]
-  frIsDeleted Boolean [not null, default: false]
-  frSyncDate DateTime
-  frCreatedOn DateTime [default: `now()`, not null]
-  frCreatedBy String
-  frModifiedOn DateTime [default: `now()`, not null]
-  frModifiedBy String
-}
-
 Table cust_item_rates {
   csrId String [pk]
   csrBranchId String
@@ -2681,6 +2665,41 @@ Table sale_agent_groups {
   saGrpCreatedBy String [not null]
   saGrpModifiedOn DateTime
   saGrpModifiedBy String
+}
+
+Table sale_freight_charges {
+  frId String [pk]
+  frBranchId String
+  frCompanyId String
+  frFromKm Int [default: 0]
+  frToKm Int [default: 0]
+  frFromWeight Decimal [default: 0]
+  frToWeight Decimal [default: 0]
+  frFreightChrg Decimal [default: 0]
+  frIsActive Boolean [not null, default: true]
+  frIsDeleted Boolean [not null, default: false]
+  frSyncDate DateTime
+  frCreatedOn DateTime [default: `now()`, not null]
+  frCreatedBy String
+  frModifiedOn DateTime [default: `now()`, not null]
+  frModifiedBy String
+  company companys
+  branch branch_master
+}
+
+Table sale_loading_charges {
+  ilcId String [pk]
+  ilcFromWeight Decimal [default: 0]
+  ilcToWeight Decimal [default: 0]
+  ilcLoadChrg Decimal [default: 0]
+  ilcUnloadChrg Decimal [default: 0]
+  ilcIsActive Boolean [not null, default: true]
+  ilcIsDeleted Boolean [not null, default: false]
+  ilcSyncDate DateTime
+  ilcCreatedOn DateTime [default: `now()`, not null]
+  ilcCreatedBy String
+  ilcModifiedOn DateTime [default: `now()`, not null]
+  ilcModifiedBy String
 }
 
 Table sale_quotation {
@@ -3585,6 +3604,10 @@ Ref: loyalty_sch_party.lpsLsId > loyalty_sch_list.lsId [delete: Cascade]
 Ref: loyalty_sch_points.lsptLsId > loyalty_sch_list.lsId [delete: Cascade]
 
 Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: sale_freight_charges.frCompanyId > companys.compId [delete: Restrict]
+
+Ref: sale_freight_charges.frBranchId > branch_master.brId [delete: Restrict]
 
 Ref: sale_quotation.sqParentQuoteId - sale_quotation.sqId [delete: No Action]
 

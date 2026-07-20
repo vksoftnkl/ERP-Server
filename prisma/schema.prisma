@@ -3255,6 +3255,7 @@ model BranchMaster {
   physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailBranch")
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
+  freightCharges        SaleFreightCharge[] @relation("BranchFreightCharges")
   loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
   @@index([brCompId],    name: "idx_branch_comp_id")
@@ -3357,6 +3358,7 @@ model Company {
   custGroup             CustGroup[]
   itemMaster            ItemMaster[]
   itemPrices            ItemPriceMaster[] @relation("CompanyItemPrices")
+  freightCharges        SaleFreightCharge[] @relation("CompanyFreightCharges")
   deviceMasters         DeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]
@@ -4021,29 +4023,6 @@ model EmployeeMaster {
   @@schema("public")
 }
 
-// ----- prisma/sales/freightCharges.prisma -----
-model FreightCharges {
-  frId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("fr_id")
-  frFromKm          Int?      @default(0)                                       @map("fr_from_km")
-  frToKm            Int?      @default(0)                                       @map("fr_to_km")
-  frFreightChrg     Decimal?  @default(0.0) @db.Decimal                         @map("fr_freight_chrg")
-  frFromWeight      Decimal?  @default(0.0) @db.Decimal                         @map("fr_from_weight")
-  frToWeight        Decimal?  @default(0.0) @db.Decimal                         @map("fr_to_weight")
-  frLoadChrg        Decimal?  @default(0.0) @db.Decimal                         @map("fr_load_chrg")
-  frUnloadChrg      Decimal?  @default(0.0) @db.Decimal                         @map("fr_unload_chrg")
-  frIsActive        Boolean   @default(true)                                    @map("fr_is_active")
-  frIsDeleted       Boolean   @default(false)                                   @map("fr_is_deleted")
-  frSyncDate        DateTime? @db.Timestamptz                                   @map("fr_sync_date")
-  frCreatedOn       DateTime  @default(now()) @db.Timestamptz                   @map("fr_created_on")
-  frCreatedBy       String?   @db.VarChar(100)                                  @map("fr_created_by")
-  frModifiedOn      DateTime  @default(now()) @db.Timestamptz                   @map("fr_modified_on")
-  frModifiedBy      String?   @db.VarChar(100)                                  @map("fr_modified_by")
-
-  @@index([frIsActive], name: "idx_fr_active")
-  @@map("freight_charges")
-  @@schema("sales")
-}
-
 // ----- prisma/sales/itemCustRates.prisma -----
 model CustItemRate {
   csrId          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("csr_id")
@@ -4234,6 +4213,53 @@ model SaleAgentGroup {
   @@index([saGrpName], map: "idx_sale_agent_groups_name")
   @@index([saGrpIsActive, saGrpIsDeleted], map: "idx_sale_agent_groups_active_deleted")
   @@map("sale_agent_groups")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleFreightCharges.prisma -----
+model SaleFreightCharge {
+  frId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("fr_id")
+  frBranchId    String?   @db.Uuid                                         @map("fr_branch_id")
+  frCompanyId   String?   @db.Uuid                                         @map("fr_company_id")
+  frFromKm      Int?      @default(0)                                     @map("fr_from_km")
+  frToKm        Int?      @default(0)                                     @map("fr_to_km")
+  frFromWeight  Decimal?  @default(0.0) @db.Decimal                        @map("fr_from_weight")
+  frToWeight    Decimal?  @default(0.0) @db.Decimal                        @map("fr_to_weight")
+  frFreightChrg Decimal?  @default(0.0) @db.Decimal                        @map("fr_freight_chrg")
+  frIsActive    Boolean   @default(true)                                   @map("fr_is_active")
+  frIsDeleted   Boolean   @default(false)                                  @map("fr_is_deleted")
+  frSyncDate    DateTime? @db.Timestamptz                                  @map("fr_sync_date")
+  frCreatedOn   DateTime  @default(now()) @db.Timestamptz                  @map("fr_created_on")
+  frCreatedBy   String?   @db.VarChar(100)                                 @map("fr_created_by")
+  frModifiedOn  DateTime  @default(now()) @db.Timestamptz                  @map("fr_modified_on")
+  frModifiedBy  String?   @db.VarChar(100)                                 @map("fr_modified_by")
+
+  // Relations
+  company       Company?      @relation("CompanyFreightCharges", fields: [frCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_fr_company_id")
+  branch        BranchMaster? @relation("BranchFreightCharges", fields: [frBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_fr_branch_id")
+
+  @@index([frIsActive], name: "idx_fr_active")
+  @@map("sale_freight_charges")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleLoadingCharges.prisma -----
+model SaleLoadingCharge {
+  ilcId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("ilc_id")
+  ilcFromWeight Decimal?  @default(0.0) @db.Decimal                        @map("ilc_from_weight")
+  ilcToWeight   Decimal?  @default(0.0) @db.Decimal                        @map("ilc_to_weight")
+  ilcLoadChrg   Decimal?  @default(0.0) @db.Decimal                        @map("ilc_load_chrg")
+  ilcUnloadChrg Decimal?  @default(0.0) @db.Decimal                        @map("ilc_unload_chrg")
+  ilcIsActive   Boolean   @default(true)                                   @map("ilc_is_active")
+  ilcIsDeleted  Boolean   @default(false)                                  @map("ilc_is_deleted")
+  ilcSyncDate   DateTime? @db.Timestamptz                                  @map("ilc_sync_date")
+  ilcCreatedOn  DateTime  @default(now()) @db.Timestamptz                  @map("ilc_created_on")
+  ilcCreatedBy  String?   @db.VarChar(100)                                 @map("ilc_created_by")
+  ilcModifiedOn DateTime  @default(now()) @db.Timestamptz                  @map("ilc_modified_on")
+  ilcModifiedBy String?   @db.VarChar(100)                                 @map("ilc_modified_by")
+
+  @@index([ilcIsActive], name: "idx_ilc_active")
+  @@map("sale_loading_charges")
   @@schema("sales")
 }
 

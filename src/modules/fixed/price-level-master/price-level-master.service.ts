@@ -27,14 +27,10 @@ export class PriceLevelMasterService {
   async get(
     queryDto: GetPriceLevelMasterQueryDto,
   ): Promise<{ items: PriceLevelMasterPayload[]; meta: PriceLevelMasterGetMeta }> {
-    const activeOnly = queryDto.activeOnly ?? true;
     const includeDeleted = queryDto.includeDeleted ?? false;
     const where: Prisma.PriceLevelWhereInput = {};
     if (queryDto.priceLvlId !== undefined) {
       where.priceLvlId = queryDto.priceLvlId;
-    }
-    if (activeOnly) {
-      where.priceLvlIsActive = true;
     }
     if (!includeDeleted) {
       where.priceLvlIsDeleted = false;
@@ -64,7 +60,6 @@ export class PriceLevelMasterService {
       items,
       meta: {
         priceLvlId: queryDto.priceLvlId,
-        activeOnly,
         includeDeleted,
         count: items.length,
       },
