@@ -116,7 +116,9 @@ export class ItemsEanCodeMasterService {
         findManyFn: () =>
           this.prisma.itemEanCode.findMany({
             where,
-            orderBy: [{ eanItemId: 'asc' }, { eanId: 'asc' }],
+            // ean_sl_no is the barcode row's own display order; where it ties
+            // (both default 0), the row id keeps the result stable.
+            orderBy: [{ eanItemId: 'asc' }, { eanSlNo: 'asc' }, { eanId: 'asc' }],
             skip,
             take: limit,
           }),
@@ -149,7 +151,7 @@ export class ItemsEanCodeMasterService {
   ): Promise<ItemEanCodePayload[]> {
     const records = await client.itemEanCode.findMany({
       where: { eanItemId: itemId, eanIsDeleted: false },
-      orderBy: [{ eanId: 'asc' }],
+      orderBy: [{ eanSlNo: 'asc' }, { eanId: 'asc' }],
     });
     return records.map((record) => this.toPayload(record));
   }
@@ -397,6 +399,10 @@ export class ItemsEanCodeMasterService {
     data: Prisma.ItemEanCodeUncheckedCreateInput | Prisma.ItemEanCodeUncheckedUpdateInput,
     saveItemEanCodeDto: SaveItemEanCodeDto,
   ): void {
+    if (hasOwnProperty(saveItemEanCodeDto, 'ean_sl_no')) {
+      data.eanSlNo = saveItemEanCodeDto.ean_sl_no;
+    }
+
     if (hasOwnProperty(saveItemEanCodeDto, 'ean_is_default')) {
       data.eanIsDefault = saveItemEanCodeDto.ean_is_default;
     }
@@ -443,6 +449,7 @@ export class ItemsEanCodeMasterService {
       ean_item_id: record.eanItemId,
       ean_unit_id: record.eanUcUnitId,
       ean_code: record.eanCode,
+      ean_sl_no: record.eanSlNo,
       ean_is_default: record.eanIsDefault,
       ean_is_active: record.eanIsActive,
       ean_is_deleted: record.eanIsDeleted,

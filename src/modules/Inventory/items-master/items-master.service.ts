@@ -115,12 +115,13 @@ export class ItemsMasterService {
    * are not resolved. Every child row belongs to this item, so their
    * `*_item_name` echoes reuse the parent item name without an extra query.
    *
-   * ipm_uc_unit_id, ean_unit_id and ir_unit_id hold an iuc_id rather than a
-   * unit_id, so their names are resolved by hopping through the item's
-   * conversion rows to the underlying unit; that unit_id is also surfaced as
-   * ipm_unit_master_id / ean_unit_master_id / ir_unit_master_id, since the ids
-   * on the row alone never expose it. A row whose conversion has since been
-   * soft-deleted has no unit to name and resolves to null for both.
+   * ipm_uc_unit_id, ean_unit_id and ir_unit_id store an iuc_id rather than a
+   * unit_id, so each is resolved by hopping through the item's conversion rows
+   * and the response rewrites the column to that underlying unit_id — callers
+   * see a unit-master id, and update accepts either form back (see
+   * ItemMasterUpdateService.resolveUnitConversionId). A row whose conversion
+   * has since been soft-deleted cannot be resolved, so it keeps its stored
+   * iuc_id and names to null.
    */
   private async resolveCompositeNames(
     composite: ItemCompositePayload,
@@ -265,7 +266,7 @@ export class ItemsMasterService {
           ...r,
           ipm_company_name: nameOf(companyName, r.ipm_company_id),
           ipm_branch_name: nameOf(branchName, r.ipm_branch_id),
-          ipm_unit_master_id: unitId,
+          ipm_uc_unit_id: unitId ?? r.ipm_uc_unit_id,
           ipm_unit_name: nameOf(unitName, unitId),
           ipm_godown_name: nameOf(godownName, r.ipm_godown_id),
         };
@@ -274,7 +275,7 @@ export class ItemsMasterService {
         const unitId = conversionUnitId(r.ean_unit_id);
         return {
           ...r,
-          ean_unit_master_id: unitId,
+          ean_unit_id: unitId ?? r.ean_unit_id,
           ean_unit_name: nameOf(unitName, unitId),
         };
       }),
@@ -283,7 +284,7 @@ export class ItemsMasterService {
         return {
           ...r,
           ir_branch_name: nameOf(branchName, r.ir_branch_id),
-          ir_unit_master_id: unitId,
+          ir_unit_id: unitId ?? r.ir_unit_id,
           ir_unit_name: nameOf(unitName, unitId),
           ir_godown_name: nameOf(godownName, r.ir_godown_id),
         };
@@ -502,13 +503,25 @@ export class ItemsMasterService {
         },
       ]);
     }
+    // item_company_id is optional on the wire because a company-bound token
+    // already carries it. An unscoped super-admin token has no company to fall
+    // back on, so the body must name one — item_company_id is NOT NULL.
+    const companyId = this.requestContextService.getCompanyId() ?? saveItemDto.item_company_id;
+    if (!companyId) {
+      throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
+        {
+          field: 'item_company_id',
+          message: 'item_company_id is required when the access token is not bound to a company',
+        },
+      ]);
+    }
     const now = new Date();
     const createdBy = resolveActor(saveItemDto.item_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveItemDto.item_modified_by, createdBy);
     const data: Prisma.ItemMasterUncheckedCreateInput = {
       // Overridden with the token's company by applyOptionalFields when the
       // caller is company-bound; body value is used only for unscoped tokens.
-      itemCompanyId: this.requestContextService.getCompanyId() ?? saveItemDto.item_company_id,
+      itemCompanyId: companyId,
       itemNameEn,
       itemGroupId: saveItemDto.item_group_id,
       itemBaseUnitId: saveItemDto.item_base_unit_id ?? null,

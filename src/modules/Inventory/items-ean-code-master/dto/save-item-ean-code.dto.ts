@@ -3,6 +3,7 @@ import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableString,
+  OptionalInteger,
   OptionalQueryBoolean,
   OptionalUuid,
   toTrimmedString,
@@ -36,6 +37,12 @@ export class SaveItemEanCodeDto {
   @IsNotEmpty()
   @MaxLength(64)
   ean_code!: string;
+
+  // Display order of the barcode rows under an item; ties fall back to the
+  // conversion row's iuc_unit_slno.
+  @ApiPropertyOptional({ default: 0 })
+  @OptionalInteger()
+  ean_sl_no?: number;
 
   @ApiPropertyOptional({ default: false })
   @OptionalQueryBoolean()

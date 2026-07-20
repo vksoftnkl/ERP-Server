@@ -111,6 +111,7 @@ item's prices without going through HTTP. Consumed methods:
   parent item.
 
 The response payload also exposes optional resolved-name fields (`ipm_company_name`,
-`ipm_branch_name`, `ipm_unit_master_id`, `ipm_unit_name`, `ipm_godown_name`) that the item
-composite get endpoint populates; this module's own endpoints leave them unset.
-`ipm_unit_master_id` is the unit behind `ipm_uc_unit_id`, one hop out through the conversion row.
+`ipm_branch_name`, `ipm_unit_name`, `ipm_godown_name`) that the item composite get endpoint
+populates; this module's own endpoints leave them unset. That endpoint also rewrites
+`ipm_uc_unit_id` from the stored `iuc_id` to the unit-master id behind it, one hop out through
+the conversion row; this module's own endpoints return the raw `iuc_id`.

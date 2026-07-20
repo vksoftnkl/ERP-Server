@@ -21,6 +21,9 @@ export class ItemEanCodePayloadDto {
   @ApiProperty({ maxLength: 64 })
   ean_code!: string;
 
+  @ApiProperty({ example: 0 })
+  ean_sl_no!: number;
+
   @ApiProperty({ example: false })
   ean_is_default!: boolean;
 
@@ -44,9 +47,6 @@ export class ItemEanCodePayloadDto {
 
   @ApiPropertyOptional({ nullable: true })
   ean_remarks!: string | null;
-
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Unit master id behind ean_unit_id, which holds a unit-conversion id (resolved on the item composite get endpoint)' })
-  ean_unit_master_id?: string | null;
 
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   ean_unit_name?: string | null;

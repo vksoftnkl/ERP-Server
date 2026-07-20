@@ -38,6 +38,12 @@ export class SaveItemReorderDto {
   @NullableUuid()
   ir_godown_id?: string | null;
 
+  // Display order of the reorder rows under an item; ties fall back to the
+  // conversion row's iuc_unit_slno.
+  @ApiPropertyOptional({ default: 0 })
+  @OptionalInteger()
+  ir_sl_no?: number;
+
   @ApiPropertyOptional({ example: 0 })
   @OptionalNumber()
   ir_min_level?: number;

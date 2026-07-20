@@ -2261,7 +2261,7 @@ model ItemEanCode {
   eanItemId    String  @db.Uuid @map("ean_item_id")
   eanUcUnitId    String  @db.Uuid @map("ean_uc_unit_id")
   eanCode      String  @db.VarChar(64) @map("ean_code")
-
+  eanSlNo      Int     @default(0) @map("ean_sl_no")
   // Default-barcode rule is scoped per (item, unit)
   eanIsDefault Boolean @default(false) @map("ean_is_default")
 
@@ -2592,7 +2592,7 @@ model ItemReorder {
   irItemId            String  @db.Uuid @map("ir_item_id")
   irUcUnitId            String? @db.Uuid @map("ir_uc_unit_id")
   irGodownId          String? @db.Uuid @map("ir_godown_id") // NULL = global reorder rule
-
+  irSlNo              Int     @default(0) @map("ir_sl_no")
   // Core reorder controls
   irMinLevel          Decimal @default(0) @db.Decimal(15, 4) @map("ir_min_level")
   irMaxLevel          Decimal @default(0) @db.Decimal(15, 4) @map("ir_max_level")

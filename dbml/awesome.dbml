@@ -1287,6 +1287,7 @@ Table item_ean_codes {
   eanItemId String [not null]
   eanUcUnitId String [not null]
   eanCode String [unique, not null]
+  eanSlNo Int [not null, default: 0]
   eanIsDefault Boolean [not null, default: false]
   eanIsActive Boolean [not null, default: true]
   eanIsDeleted Boolean [not null, default: false]
@@ -1516,6 +1517,7 @@ Table item_reorders {
   irItemId String [not null]
   irUcUnitId String
   irGodownId String
+  irSlNo Int [not null, default: 0]
   irMinLevel Decimal [not null, default: 0]
   irMaxLevel Decimal [not null, default: 0]
   irReorderLevel Decimal [not null, default: 0]

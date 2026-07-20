@@ -137,7 +137,9 @@ describe('ItemsMasterService composite endpoints', () => {
   let service: ItemsMasterService;
   let prisma: PrismaMock;
   let auditLogService: Pick<AuditLogService, 'logEntityChange'>;
-  let requestContextService: Pick<RequestContextService, 'getUserId' | 'getCompanyId'>;
+  let requestContextService: {
+    [K in 'getUserId' | 'getCompanyId']: jest.Mock<ReturnType<RequestContextService[K]>, []>;
+  };
   let unitConversionService: ChildServiceMock;
   let priceService: ChildServiceMock;
   let eanCodeService: ChildServiceMock;
@@ -223,7 +225,7 @@ describe('ItemsMasterService composite endpoints', () => {
     service = new ItemsMasterService(
       prisma as unknown as PrismaService,
       auditLogService as AuditLogService,
-      requestContextService as RequestContextService,
+      requestContextService as unknown as RequestContextService,
       unitConversionService as unknown as ItemUnitConversionService,
       priceService as unknown as ItemsPriceMasterService,
       eanCodeService as unknown as ItemsEanCodeMasterService,
@@ -356,6 +358,30 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.item.item_name_en).toBe('Widget v2');
     // Children still linked to the same (updated) item id
     expect(savedRows(priceService.save)[0].ipm_item_id).toBe(ITEM_ID);
+  });
+
+  it('takes the company from the token, letting the body omit item_company_id', async () => {
+    requestContextService.getCompanyId.mockReturnValue(COMPANY_ID);
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+
+    await service.saveComposite({
+      item_name_en: 'Widget',
+      item_group_id: GROUP_ID,
+    });
+
+    expect(prisma.itemMaster.create.mock.calls[0][0].data.itemCompanyId).toBe(COMPANY_ID);
+  });
+
+  it('rejects a create with no item_company_id when the token carries no company', async () => {
+    // Unscoped super-admin token: nothing to fall back on, and the column is
+    // NOT NULL, so this must fail before it reaches Prisma.
+    await expect(
+      service.saveComposite({
+        item_name_en: 'Widget',
+        item_group_id: GROUP_ID,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.itemMaster.create).not.toHaveBeenCalled();
   });
 
   it('does not call child services when no child arrays are provided', async () => {
@@ -609,18 +635,17 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(result.unit_conversions[0].iuc_base_unit_name).toBe('BOX');
 
     expect(result.prices[0].ipm_branch_name).toBe('HQ');
-    // Resolved through the conversion row, exactly like the ean/reorder rows.
-    expect(result.prices[0].ipm_unit_master_id).toBe(UNIT_ID);
+    // The stored iuc_id is rewritten to the unit-master id behind it, exactly
+    // like the ean/reorder rows.
+    expect(result.prices[0].ipm_uc_unit_id).toBe(UNIT_ID);
     expect(result.prices[0].ipm_unit_name).toBe('PCS');
     expect(result.prices[0].ipm_godown_name).toBe('Main Store');
 
-    // The unit id behind the iuc_id is surfaced alongside the name — the row's
-    // own ean_unit_id / ir_unit_id never expose it.
-    expect(result.ean_codes[0].ean_unit_master_id).toBe(UNIT_ID);
+    expect(result.ean_codes[0].ean_unit_id).toBe(UNIT_ID);
     expect(result.ean_codes[0].ean_unit_name).toBe('PCS');
 
     expect(result.reorders[0].ir_branch_name).toBe('HQ');
-    expect(result.reorders[0].ir_unit_master_id).toBe(UNIT_ID);
+    expect(result.reorders[0].ir_unit_id).toBe(UNIT_ID);
     expect(result.reorders[0].ir_unit_name).toBe('PCS');
     expect(result.reorders[0].ir_godown_name).toBe('Main Store');
 

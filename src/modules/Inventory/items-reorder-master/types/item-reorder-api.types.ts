@@ -12,6 +12,7 @@ export interface ItemReorderPayload {
   ir_item_id: string;
   ir_unit_id: string | null;
   ir_godown_id: string | null;
+  ir_sl_no: number;
   ir_min_level: number;
   ir_max_level: number;
   ir_reorder_level: number;
@@ -30,8 +31,8 @@ export interface ItemReorderPayload {
   ir_modified_by: string | null;
   // Resolved names for the foreign-key ids above (populated by the item composite get endpoint).
   ir_branch_name?: string | null;
-  // ir_unit_id holds an iuc_id, so the underlying unit-master id is surfaced separately.
-  ir_unit_master_id?: string | null;
+  // ir_unit_id stores an iuc_id; the item composite get endpoint rewrites it to
+  // the unit-master id behind the conversion row, and update accepts either form.
   ir_unit_name?: string | null;
   ir_godown_name?: string | null;
 }

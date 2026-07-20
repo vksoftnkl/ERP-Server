@@ -93,8 +93,6 @@ export class ItemPricePayloadDto {
   ipm_company_name?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked branch (resolved on the item composite get endpoint)' })
   ipm_branch_name?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Unit master id behind ipm_uc_unit_id, one hop through the conversion row (resolved on the item composite get endpoint)' })
-  ipm_unit_master_id?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked unit (resolved on the item composite get endpoint)' })
   ipm_unit_name?: string | null;
   @ApiPropertyOptional({ nullable: true, description: 'Name of the linked godown (resolved on the item composite get endpoint)' })
