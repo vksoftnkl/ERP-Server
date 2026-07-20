@@ -35,7 +35,7 @@ export class PriceLevelMasterController {
   @Version(API_VERSION)
   @ApiOperation({
     summary:
-      'Get price levels from fixed.price_levels by priceLvlId or filters. Defaults to active and non-deleted.',
+      'Get price levels from fixed.price_levels by priceLvlId or filters. Defaults to non-deleted, both active and inactive.',
   })
   @ApiOkResponse({ type: PriceLevelMasterSuccessGetDto })
   @ApiBadRequestResponse({ type: PriceLevelMasterErrorResponseDto })

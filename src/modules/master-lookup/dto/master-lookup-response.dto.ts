@@ -176,12 +176,6 @@ export class FreightChargeDto {
 
   @ApiProperty({ nullable: true, example: 100, description: 'Slab end weight' })
   toWeight!: number | null;
-
-  @ApiProperty({ nullable: true, example: 50, description: 'Loading charge' })
-  loadCharge!: number | null;
-
-  @ApiProperty({ nullable: true, example: 50, description: 'Unloading charge' })
-  unloadCharge!: number | null;
 }
 
 export class FreightChargeListSuccessDto {

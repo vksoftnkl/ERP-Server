@@ -4,12 +4,18 @@ import {
   SalesErrorResponseDto,
 } from 'src/common/utils/module-response.dto';
 
-export { SalesErrorFieldDto as FreightChargesErrorFieldDto };
-export { SalesErrorResponseDto as FreightChargesErrorResponseDto };
+export { SalesErrorFieldDto as SaleFreightChargeErrorFieldDto };
+export { SalesErrorResponseDto as SaleFreightChargeErrorResponseDto };
 
-export class FreightChargesPayloadDto {
+export class SaleFreightChargePayloadDto {
   @ApiProperty({ format: 'uuid' })
   frId!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  frCompanyId!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  frBranchId!: string | null;
 
   @ApiPropertyOptional({ nullable: true, example: 0 })
   frFromKm!: number | null;
@@ -17,20 +23,14 @@ export class FreightChargesPayloadDto {
   @ApiPropertyOptional({ nullable: true, example: 100 })
   frToKm!: number | null;
 
-  @ApiPropertyOptional({ nullable: true, example: 50 })
-  frFreightChrg!: number | null;
-
   @ApiPropertyOptional({ nullable: true, example: 10 })
   frFromWeight!: number | null;
 
   @ApiPropertyOptional({ nullable: true, example: 50 })
   frToWeight!: number | null;
 
-  @ApiPropertyOptional({ nullable: true, example: 25 })
-  frLoadChrg!: number | null;
-
-  @ApiPropertyOptional({ nullable: true, example: 25 })
-  frUnloadChrg!: number | null;
+  @ApiPropertyOptional({ nullable: true, example: 250 })
+  frFreightChrg!: number | null;
 
   @ApiProperty({ example: true })
   frIsActive!: boolean;
@@ -54,7 +54,7 @@ export class FreightChargesPayloadDto {
   frModifiedBy!: string | null;
 }
 
-export class FreightChargesDeleteResultDto {
+export class SaleFreightChargeDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   frId!: string;
 
@@ -62,35 +62,35 @@ export class FreightChargesDeleteResultDto {
   deleted!: true;
 }
 
-export class FreightChargesSuccessSingleDto {
+export class SaleFreightChargeSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
 
-  @ApiProperty({ example: 'Freight charges fetched successfully' })
+  @ApiProperty({ example: 'Sale freight charge fetched successfully' })
   message!: string;
 
-  @ApiProperty({ type: FreightChargesPayloadDto })
-  data!: FreightChargesPayloadDto;
+  @ApiProperty({ type: SaleFreightChargePayloadDto })
+  data!: SaleFreightChargePayloadDto;
 }
 
-export class FreightChargesSuccessCreateDto {
+export class SaleFreightChargeSuccessCreateDto {
   @ApiProperty({ example: true })
   success!: true;
 
-  @ApiProperty({ example: 'Freight charges created successfully' })
+  @ApiProperty({ example: 'Sale freight charge created successfully' })
   message!: string;
 
-  @ApiProperty({ type: FreightChargesPayloadDto })
-  data!: FreightChargesPayloadDto;
+  @ApiProperty({ type: SaleFreightChargePayloadDto })
+  data!: SaleFreightChargePayloadDto;
 }
 
-export class FreightChargesSuccessDeleteDto {
+export class SaleFreightChargeSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
 
-  @ApiProperty({ example: 'Freight charges deleted successfully' })
+  @ApiProperty({ example: 'Sale freight charge deleted successfully' })
   message!: string;
 
-  @ApiProperty({ type: FreightChargesDeleteResultDto })
-  data!: FreightChargesDeleteResultDto;
+  @ApiProperty({ type: SaleFreightChargeDeleteResultDto })
+  data!: SaleFreightChargeDeleteResultDto;
 }

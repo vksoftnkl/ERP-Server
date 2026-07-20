@@ -242,7 +242,7 @@ export class MasterLookupService {
    * given distance (distance BETWEEN fr_from_km AND fr_to_km).
    */
   async getFreightChargesForDistance(distance: number): Promise<FreightChargeOption[]> {
-    const rows = await this.prisma.freightCharges.findMany({
+    const rows = await this.prisma.saleFreightCharge.findMany({
       where: {
         frIsDeleted: false,
         frIsActive: true,
@@ -1373,8 +1373,6 @@ export class MasterLookupService {
     frFreightChrg: unknown;
     frFromWeight: unknown;
     frToWeight: unknown;
-    frLoadChrg: unknown;
-    frUnloadChrg: unknown;
   }): FreightChargeOption {
     return {
       id: row.frId,
@@ -1383,8 +1381,6 @@ export class MasterLookupService {
       freightCharge: this.toNullableNumber(row.frFreightChrg),
       fromWeight: this.toNullableNumber(row.frFromWeight),
       toWeight: this.toNullableNumber(row.frToWeight),
-      loadCharge: this.toNullableNumber(row.frLoadChrg),
-      unloadCharge: this.toNullableNumber(row.frUnloadChrg),
     };
   }
   private toNullableNumber(value: unknown): number | null {

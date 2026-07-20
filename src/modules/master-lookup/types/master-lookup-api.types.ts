@@ -15,8 +15,9 @@ export interface FiscalYearOption {
   isCurrent: boolean;
 }
 /**
- * A freight-charge slab row (legacy `freight_charges`). `iflag = 9` returns the
- * slabs matching a given distance.
+ * A freight-charge slab row (`sale_freight_charges`). `iflag = 9` returns the
+ * slabs matching a given distance. Loading/unloading charges are weight-slab
+ * based and live separately in `sale_loading_charges`.
  */
 export interface FreightChargeOption {
   id: string;
@@ -25,8 +26,6 @@ export interface FreightChargeOption {
   freightCharge: number | null;
   fromWeight: number | null;
   toWeight: number | null;
-  loadCharge: number | null;
-  unloadCharge: number | null;
 }
 /**
  * Flat customer-detail row — port of the legacy PL/pgSQL `iflag = 7` cursor onto

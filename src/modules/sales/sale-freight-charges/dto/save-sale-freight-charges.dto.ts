@@ -1,20 +1,27 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableNumber,
+  NullableUuid,
   OptionalBoolean,
-  OptionalNumber,
-  OptionalUuid,
   NullableString,
+  OptionalUuid,
 } from 'src/common/dto/dtoDecorators';
 
-export class SaveFreightChargesDto {
+export class SaveSaleFreightChargeDto {
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'When provided, request updates the existing freight charges',
+    description: 'When provided, request updates the existing sale freight charge',
   })
   @OptionalUuid()
   frId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  frCompanyId?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  frBranchId?: string | null;
 
   @ApiPropertyOptional({ nullable: true, default: 0 })
   @NullableNumber()
@@ -26,10 +33,6 @@ export class SaveFreightChargesDto {
 
   @ApiPropertyOptional({ nullable: true, default: 0 })
   @NullableNumber()
-  frFreightChrg?: number | null;
-
-  @ApiPropertyOptional({ nullable: true, default: 0 })
-  @NullableNumber()
   frFromWeight?: number | null;
 
   @ApiPropertyOptional({ nullable: true, default: 0 })
@@ -38,11 +41,7 @@ export class SaveFreightChargesDto {
 
   @ApiPropertyOptional({ nullable: true, default: 0 })
   @NullableNumber()
-  frLoadChrg?: number | null;
-
-  @ApiPropertyOptional({ nullable: true, default: 0 })
-  @NullableNumber()
-  frUnloadChrg?: number | null;
+  frFreightChrg?: number | null;
 
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()

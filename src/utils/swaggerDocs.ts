@@ -18,7 +18,8 @@ import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tende
 import { TenderTypeMasterModule } from '../modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
-import { FreightChargesModule } from '../modules/sales/freight-charges/freight-charges.module';
+import { SaleFreightChargeModule } from '../modules/sales/sale-freight-charges/sale-freight-charges.module';
+import { SaleLoadingChargeModule } from '../modules/sales/sale-loading-charges/sale-loading-charges.module';
 import { CityModule } from '../modules/sales/city/city.module';
 import { CustomerGroupModule } from '../modules/sales/customer-group/customer-group.module';
 import { CustomerModule } from '../modules/sales/customer/customer.module';
@@ -353,10 +354,16 @@ export const swaggerModuleDocuments = [
     include: [AreaModule],
   },
   {
-    path: 'freight-charges',
-    title: 'Freight Charges API',
-    description: 'Freight charges module endpoints',
-    include: [FreightChargesModule],
+    path: 'sale-freight-charges',
+    title: 'Sale Freight Charges API',
+    description: 'Sale freight charges module endpoints',
+    include: [SaleFreightChargeModule],
+  },
+  {
+    path: 'sale-loading-charges',
+    title: 'Sale Loading Charges API',
+    description: 'Sale loading charges module endpoints',
+    include: [SaleLoadingChargeModule],
   },
   {
     path: 'cities',

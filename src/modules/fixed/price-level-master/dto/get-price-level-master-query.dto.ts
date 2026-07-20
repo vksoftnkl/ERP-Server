@@ -8,5 +8,5 @@ export class GetPriceLevelMasterQueryDto {
     example: 1,
   })
   @OptionalInteger(1)
-  priceLvlId?: number; 
+  priceLvlId?: number;
 }

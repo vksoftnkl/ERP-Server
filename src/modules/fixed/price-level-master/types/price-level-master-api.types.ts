@@ -16,7 +16,5 @@ export interface PriceLevelMasterPayload {
 }
 export interface PriceLevelMasterGetMeta {
   priceLvlId?: number;
-  activeOnly: boolean;
-  includeDeleted: boolean;
   count: number;
 }

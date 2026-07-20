@@ -25,21 +25,21 @@ a read endpoint over the `fixed.price_levels` table; it does not create, update,
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/get` | Fetch one price level by `priceLvlId`, or list all matching price levels. Defaults to active, non-deleted rows. |
+| `GET` | `/get` | Fetch one price level by `priceLvlId`, or list all matching price levels. Defaults to non-deleted rows, both active and inactive. |
 
 ### Query parameters
 
 All parameters are optional query-string fields ([GetPriceLevelMasterQueryDto](dto/get-price-level-master-query.dto.ts)):
 
 - **`priceLvlId`** — integer (minimum `1`). When supplied, restricts the result to that id; when omitted, all matching rows are returned.
-- **`activeOnly`** — boolean, **defaults to `true`**. When true, filters `priceLvlIsActive = true`.
+- **`priceLvlIsActive`** — boolean, tri-state (supports `true`/`false`/`1`/`0`/`yes`/`no`/`on`/`off`). Omit to return both active and inactive rows; `true` filters `priceLvlIsActive = true`; `false` filters `priceLvlIsActive = false`.
 - **`includeDeleted`** — boolean, **defaults to `false`**. When false, filters `priceLvlIsDeleted = false`; set true to also return soft-deleted rows.
 
 ### Query behavior
 
 - Results are ordered by `priceLvlName` ascending, then `priceLvlId` ascending.
 - **404 only in single-fetch mode:** when `priceLvlId` is supplied and no row matches, the service throws `NotFoundException`. A list query with no matches returns an empty array (not an error).
-- Every response carries a `meta` object echoing the resolved filters and result `count`: `{ priceLvlId?, activeOnly, includeDeleted, count }`.
+- Every response carries a `meta` object echoing the resolved filters and result `count`: `{ priceLvlId?, priceLvlIsActive?, includeDeleted, count }`.
 - The success `message` reflects the mode — singular (`Price level fetched successfully`) when `priceLvlId` is set, plural otherwise.
 
 ### Response payload

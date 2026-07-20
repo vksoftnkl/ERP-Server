@@ -40,8 +40,8 @@ export class PriceLevelMasterPayloadDto {
 export class PriceLevelMasterGetMetaDto {
   @ApiPropertyOptional({ example: 1 })
   priceLvlId?: number;
-  @ApiProperty({ example: true })
-  activeOnly!: boolean;
+  @ApiPropertyOptional({ example: true })
+  priceLvlIsActive?: boolean;
   @ApiProperty({ example: false })
   includeDeleted!: boolean;
   @ApiProperty({ example: 3 })
