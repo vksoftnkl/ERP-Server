@@ -16,6 +16,7 @@ import {
   NullableString,
   NullableUuid,
   OptionalBoolean,
+  RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
 
 const toRequiredTrimmedString = (value: unknown): string => {
@@ -85,7 +86,7 @@ export class SaveEmployeeMasterDto {
 
   @ApiProperty({ format: 'uuid' })
   @NullableUuid()
-  empCompanyId!: string;
+  empCompanyId?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()

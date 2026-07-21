@@ -4,7 +4,6 @@ import {
   SaleFreightChargeErrorDetail,
   SaleFreightChargeErrorResponse,
 } from './types/sale-freight-charges-api.types';
-
 @Catch()
 export class SaleFreightChargeExceptionFilter extends SalesExceptionFilter<
   SaleFreightChargeErrorDetail,

@@ -19,7 +19,13 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-
+const SALE_FREIGHT_CHARGE_RELATIONS = {
+  company: { select: { compName: true } },
+  branch: { select: { brName: true } },
+} satisfies Prisma.SaleFreightChargeInclude;
+type SaleFreightChargeWithRelations = Prisma.SaleFreightChargeGetPayload<{
+  include: typeof SALE_FREIGHT_CHARGE_RELATIONS;
+}>;
 const SALE_FREIGHT_CHARGE_TABLE_NAME = 'sale freight charges';
 const SALE_FREIGHT_CHARGE_AUDIT_SCREEN_NAME = 'Sale Freight Charges';
 const SALE_FREIGHT_CHARGE_OPTIONAL_FIELDS = [
@@ -32,7 +38,6 @@ const SALE_FREIGHT_CHARGE_OPTIONAL_FIELDS = [
   'frToWeight',
   'frIsActive',
 ];
-
 @Injectable()
 export class SaleFreightChargeService {
   constructor(
@@ -40,7 +45,6 @@ export class SaleFreightChargeService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
   ) {}
-
   async save(dto: SaveSaleFreightChargeDto): Promise<SaleFreightChargePayload> {
     if (dto.frId) {
       return this.updateSaleFreightCharge(dto);
@@ -48,7 +52,6 @@ export class SaleFreightChargeService {
     const userId = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     return this.createSaleFreightCharge(dto, userId);
   }
-
   async createSaleFreightCharge(
     dto: SaveSaleFreightChargeDto,
     userId: string,
@@ -56,7 +59,6 @@ export class SaleFreightChargeService {
     const actor = resolveActor(dto.frCreatedBy, userId);
     const now = new Date();
     const isDeleted = dto.frIsActive === false;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const data: Prisma.SaleFreightChargeUncheckedCreateInput = {
@@ -74,10 +76,8 @@ export class SaleFreightChargeService {
           frModifiedOn: now,
           frModifiedBy: actor,
         };
-
         const created = await tx.saleFreightCharge.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -93,7 +93,6 @@ export class SaleFreightChargeService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -101,15 +100,14 @@ export class SaleFreightChargeService {
       throw error;
     }
   }
-
   async getById(frId: string): Promise<SaleFreightChargePayload> {
     const record = await this.prisma.saleFreightCharge.findFirst({
       where: {
         frId,
         frIsDeleted: false,
       },
+      include: SALE_FREIGHT_CHARGE_RELATIONS,
     });
-
     if (!record) {
       throwSalesNotFound<SaleFreightChargeErrorDetail, SaleFreightChargeErrorResponse>(
         'Sale freight charge not found',
@@ -117,10 +115,8 @@ export class SaleFreightChargeService {
         `No active sale freight charge found with id ${frId}`,
       );
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(frId: string): Promise<{ frId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.saleFreightCharge.findFirst({
@@ -129,7 +125,6 @@ export class SaleFreightChargeService {
           frIsDeleted: false,
         },
       });
-
       if (!existing) {
         throwSalesNotFound<SaleFreightChargeErrorDetail, SaleFreightChargeErrorResponse>(
           'Sale freight charge not found',
@@ -137,7 +132,6 @@ export class SaleFreightChargeService {
           `No active sale freight charge found with id ${frId}`,
         );
       }
-
       const modifiedOn = new Date();
       const result = await tx.saleFreightCharge.updateMany({
         where: {
@@ -151,7 +145,6 @@ export class SaleFreightChargeService {
           frModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         throwSalesNotFound<SaleFreightChargeErrorDetail, SaleFreightChargeErrorResponse>(
           'Sale freight charge not found',
@@ -159,7 +152,6 @@ export class SaleFreightChargeService {
           `No active sale freight charge found with id ${frId}`,
         );
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -168,7 +160,6 @@ export class SaleFreightChargeService {
         frModifiedOn: modifiedOn,
         frModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -184,19 +175,16 @@ export class SaleFreightChargeService {
         },
         tx,
       );
-
       return {
         frId,
         deleted: true,
       };
     });
   }
-
   private async updateSaleFreightCharge(
     dto: SaveSaleFreightChargeDto,
   ): Promise<SaleFreightChargePayload> {
     const frId = dto.frId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.saleFreightCharge.findFirst({
@@ -205,7 +193,6 @@ export class SaleFreightChargeService {
             frIsDeleted: false,
           },
         });
-
         if (!existing) {
           throwSalesNotFound<SaleFreightChargeErrorDetail, SaleFreightChargeErrorResponse>(
             'Sale freight charge not found',
@@ -213,7 +200,6 @@ export class SaleFreightChargeService {
             `No active sale freight charge found with id ${frId}`,
           );
         }
-
         const data: Prisma.SaleFreightChargeUncheckedUpdateInput = {
           frModifiedOn: new Date(),
           frModifiedBy: resolveActor(
@@ -221,16 +207,12 @@ export class SaleFreightChargeService {
             this.requestContextService.getUserId(),
           ),
         };
-
         this.applyOptionalFields(data, dto);
-
         const updated = await tx.saleFreightCharge.update({
           where: { frId },
           data,
         });
-
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -246,7 +228,6 @@ export class SaleFreightChargeService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -254,7 +235,6 @@ export class SaleFreightChargeService {
       throw error;
     }
   }
-
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<SaleFreightChargeErrorDetail, SaleFreightChargeErrorResponse>(
       error,
@@ -278,7 +258,6 @@ export class SaleFreightChargeService {
       );
     }
   }
-
   private applyOptionalFields(
     data:
       | Prisma.SaleFreightChargeUncheckedCreateInput
@@ -287,12 +266,15 @@ export class SaleFreightChargeService {
   ): void {
     applyPresentFields(data, dto, SALE_FREIGHT_CHARGE_OPTIONAL_FIELDS);
   }
-
-  private toPayload(record: SaleFreightCharge): SaleFreightChargePayload {
+  private toPayload(
+    record: SaleFreightCharge | SaleFreightChargeWithRelations,
+  ): SaleFreightChargePayload {
     return {
       frId: record.frId,
       frCompanyId: record.frCompanyId,
+      frCompanyName: 'company' in record ? (record.company?.compName ?? null) : null,
       frBranchId: record.frBranchId,
+      frBranchName: 'branch' in record ? (record.branch?.brName ?? null) : null,
       frFromKm: record.frFromKm,
       frToKm: record.frToKm,
       frFreightChrg: record.frFreightChrg ? toNumber(record.frFreightChrg) : null,

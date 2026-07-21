@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableNumber,
+  NullableUuid,
   OptionalBoolean,
   NullableString,
   OptionalUuid,
@@ -13,6 +14,14 @@ export class SaveSaleLoadingChargeDto {
   })
   @OptionalUuid()
   ilcId?: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  ilcCompId?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  ilcBranchId?: string | null;
 
   @ApiPropertyOptional({ nullable: true, default: 0 })
   @NullableNumber()

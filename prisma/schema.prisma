@@ -3256,6 +3256,7 @@ model BranchMaster {
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
   freightCharges        SaleFreightCharge[] @relation("BranchFreightCharges")
+  loadingCharges        SaleLoadingCharge[] @relation("BranchLoadingCharges")
   loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
   @@index([brCompId],    name: "idx_branch_comp_id")
@@ -3359,6 +3360,7 @@ model Company {
   itemMaster            ItemMaster[]
   itemPrices            ItemPriceMaster[] @relation("CompanyItemPrices")
   freightCharges        SaleFreightCharge[] @relation("CompanyFreightCharges")
+  loadingCharges        SaleLoadingCharge[] @relation("CompanyLoadingCharges")
   deviceMasters         DeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]
@@ -3945,7 +3947,7 @@ model EmployeeDesignation {
 model EmployeeMaster {
   empId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("emp_id")
   // Identity / Scope
-  empCompanyId         String    @db.Uuid                                         @map("emp_company_id")
+  empCompanyId         String?  @db.Uuid                                         @map("emp_company_id")
   empBranchId          String?   @db.Uuid                                          @map("emp_branch_id")
   // Codes / Names
   empCode              String?   @db.VarChar(60)                                  @map("emp_code")
@@ -4012,7 +4014,7 @@ model EmployeeMaster {
   empModifiedOn        DateTime  @default(now()) @db.Timestamptz                  @map("emp_modified_on")
   empModifiedBy        String?   @db.VarChar(100)                                 @map("emp_modified_by")
   // Relations
-  company              Company               @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  company              Company?              @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
   department           EmployeeDepartment? @relation(fields: [empDepartmentId], references: [edptId])
   @@index([empCompanyId],    name: "idx_emp_company")
@@ -4246,6 +4248,8 @@ model SaleFreightCharge {
 // ----- prisma/sales/saleLoadingCharges.prisma -----
 model SaleLoadingCharge {
   ilcId         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("ilc_id")
+  ilcCompId     String?   @db.Uuid                                         @map("ilc_comp_id")
+  ilcBranchId   String?   @db.Uuid                                         @map("ilc_branch_id")
   ilcFromWeight Decimal?  @default(0.0) @db.Decimal                        @map("ilc_from_weight")
   ilcToWeight   Decimal?  @default(0.0) @db.Decimal                        @map("ilc_to_weight")
   ilcLoadChrg   Decimal?  @default(0.0) @db.Decimal                        @map("ilc_load_chrg")
@@ -4257,6 +4261,10 @@ model SaleLoadingCharge {
   ilcCreatedBy  String?   @db.VarChar(100)                                 @map("ilc_created_by")
   ilcModifiedOn DateTime  @default(now()) @db.Timestamptz                  @map("ilc_modified_on")
   ilcModifiedBy String?   @db.VarChar(100)                                 @map("ilc_modified_by")
+
+  // Relations
+  company       Company?      @relation("CompanyLoadingCharges", fields: [ilcCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ilc_comp_id")
+  branch        BranchMaster? @relation("BranchLoadingCharges", fields: [ilcBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ilc_branch_id")
 
   @@index([ilcIsActive], name: "idx_ilc_active")
   @@map("sale_loading_charges")

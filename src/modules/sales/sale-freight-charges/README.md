@@ -1,17 +1,13 @@
 # Sale Freight Charges
-
 CRUD API for **sale freight charges** — a sales master that stores distance-slab freight rates
 (`from`/`to` km, `from`/`to` weight), optionally scoped to a company/branch. Split out of the
 former `freight-charges` module; loading/unloading charges now live in the separate
 [sale-loading-charges](../sale-loading-charges/README.md) module.
-
 - **Base route:** `sale-freight-charges` (API-versioned via `API_VERSION`)
 - **Swagger tag:** `Sale Freight Charges`
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `sale_freight_charges` (`sales` schema) — PK `frId`
-
 ## Files
-
 | File | Purpose |
 | --- | --- |
 | [sale-freight-charges.module.ts](sale-freight-charges.module.ts) | Module wiring — imports `AuditLogModule`, registers the controller, service, and exception filter |
@@ -21,21 +17,19 @@ former `freight-charges` module; loading/unloading charges now live in the separ
 | [dto/save-sale-freight-charges.dto.ts](dto/save-sale-freight-charges.dto.ts) | Single create/update payload |
 | [dto/sale-freight-charges-response.dto.ts](dto/sale-freight-charges-response.dto.ts) | Swagger response models |
 | [types/sale-freight-charges-api.types.ts](types/sale-freight-charges-api.types.ts) | Payload / response TypeScript contracts |
-
 ## Endpoints
-
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a sale-freight-charge row (by presence of `frId`). |
 | `GET` | `/get` | Fetch one sale-freight-charge row by `frId` query param. |
 | `DELETE` | `/delete` | Soft-delete a sale-freight-charge row by `frId` query param. |
-
 - `GET /get` and `DELETE /delete` take `frId` as a query param validated by `ParseUUIDPipe({ version: '7' })`.
 - Responses use the shared envelope `{ success, message, data }`
   ([SaleFreightChargeSuccessResponse](types/sale-freight-charges-api.types.ts)).
-
+- `GET /get` resolves `frCompanyName`/`frBranchName` via a Prisma `include` on the `company`/
+  `branch` relations, `null` when `frCompanyId`/`frBranchId` is unset. `POST /create` responses do
+  not resolve these names.
 ## Create / update semantics
-
 - **Omit `frId` → create; include `frId` → update** the existing row. The controller inspects
   `dto.frId`: with it, the request routes through `save`/`updateSaleFreightCharge` and returns
   `200 OK`; without it, `createSaleFreightCharge` runs and returns `201 Created`.
@@ -53,9 +47,7 @@ former `freight-charges` module; loading/unloading charges now live in the separ
   a `409` **"Sale freight charge already exists"** error on `frFromKm`
   (`throwOnUniqueConstraintError`); a foreign-key violation on `frCompanyId`/`frBranchId` maps to a
   `400` **"Invalid relation reference"** error (`isForeignKeyConstraintError`).
-
 ## Business rules
-
 - **Soft delete only** — rows are never hard-deleted. `DELETE /delete` flags
   `frIsDeleted = true` / `frIsActive = false` and stamps `frModifiedOn` / `frModifiedBy`, via a
   guarded `updateMany` inside a transaction; a missing or already-deleted row raises a `404`

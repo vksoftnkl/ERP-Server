@@ -39,7 +39,6 @@ import {
 import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Sale Freight Charges')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -51,7 +50,6 @@ export class SaleFreightChargeController {
     private readonly saleFreightChargeService: SaleFreightChargeService,
     private readonly requestContextService: RequestContextService,
   ) {}
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update a sale freight charge (by frId presence)' })
@@ -79,7 +77,6 @@ export class SaleFreightChargeController {
       data,
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get a sale freight charge by id' })
@@ -97,7 +94,6 @@ export class SaleFreightChargeController {
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete a sale freight charge by id' })

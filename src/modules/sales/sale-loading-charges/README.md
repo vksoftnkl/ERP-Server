@@ -1,8 +1,8 @@
 # Sale Loading Charges
 
 CRUD API for **sale loading charges** — a sales master that stores weight-slab load/unload rates
-(`from`/`to` weight, load charge, unload charge), company/branch agnostic. Split out of the former
-`freight-charges` module; distance-based freight rates now live in the separate
+(`from`/`to` weight, load charge, unload charge), optionally scoped to a company/branch. Split out
+of the former `freight-charges` module; distance-based freight rates now live in the separate
 [sale-freight-charges](../sale-freight-charges/README.md) module.
 
 - **Base route:** `sale-loading-charges` (API-versioned via `API_VERSION`)
@@ -33,6 +33,9 @@ CRUD API for **sale loading charges** — a sales master that stores weight-slab
 - `GET /get` and `DELETE /delete` take `ilcId` as a query param validated by `ParseUUIDPipe({ version: '7' })`.
 - Responses use the shared envelope `{ success, message, data }`
   ([SaleLoadingChargeSuccessResponse](types/sale-loading-charges-api.types.ts)).
+- `GET /get` resolves `ilcCompanyName`/`ilcBranchName` via a Prisma `include` on the `company`/
+  `branch` relations, `null` when `ilcCompId`/`ilcBranchId` is unset. `POST /create` responses do
+  not resolve these names.
 
 ## Create / update semantics
 
@@ -40,16 +43,18 @@ CRUD API for **sale loading charges** — a sales master that stores weight-slab
   `dto.ilcId`: with it, the request routes through `save`/`updateSaleLoadingCharge` and returns
   `200 OK`; without it, `createSaleLoadingCharge` runs and returns `201 Created`.
 - **Create** seeds every numeric field, defaulting `ilcFromWeight`, `ilcToWeight`, `ilcLoadChrg`,
-  and `ilcUnloadChrg` to `0` when omitted. Active state is derived from the payload:
-  `ilcIsActive === false` stores the row as inactive **and** deleted (`ilcIsDeleted = true`).
+  and `ilcUnloadChrg` to `0` when omitted, and `ilcCompId`/`ilcBranchId` to `null`. Active state is
+  derived from the payload: `ilcIsActive === false` stores the row as inactive **and** deleted
+  (`ilcIsDeleted = true`).
 - **Update** is a partial patch — only fields actually present in the body are applied
-  (`applyPresentFields` over the optional-field list `ilcFromWeight`, `ilcToWeight`, `ilcLoadChrg`,
-  `ilcUnloadChrg`, `ilcIsActive`). Missing fields are left untouched.
+  (`applyPresentFields` over the optional-field list `ilcCompId`, `ilcBranchId`, `ilcFromWeight`,
+  `ilcToWeight`, `ilcLoadChrg`, `ilcUnloadChrg`, `ilcIsActive`). Missing fields are left untouched.
 - The acting user is resolved from `ilcCreatedBy` / `ilcModifiedBy` in the body, falling back to
   `RequestContextService.getUserId()` and then `DEFAULT_ACTOR`.
-- Both create and update run inside a `$transaction` and map any Prisma unique-constraint
-  violation to a `409` **"Sale loading charge already exists"** / "Duplicate sale loading charge
-  range is not allowed" error on `ilcFromWeight` (`throwOnUniqueConstraintError`).
+- Both create and update run inside a `$transaction`. A Prisma unique-constraint violation maps to
+  a `409` **"Sale loading charge already exists"** error on `ilcFromWeight`
+  (`throwOnUniqueConstraintError`); a foreign-key violation on `ilcCompId`/`ilcBranchId` maps to a
+  `400` **"Invalid relation reference"** error (`isForeignKeyConstraintError`).
 
 ## Business rules
 

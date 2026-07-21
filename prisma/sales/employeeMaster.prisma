@@ -1,7 +1,7 @@
 model EmployeeMaster {
   empId                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid  @map("emp_id")
   // Identity / Scope
-  empCompanyId         String    @db.Uuid                                         @map("emp_company_id")
+  empCompanyId         String?  @db.Uuid                                         @map("emp_company_id")
   empBranchId          String?   @db.Uuid                                          @map("emp_branch_id")
   // Codes / Names
   empCode              String?   @db.VarChar(60)                                  @map("emp_code")
@@ -68,7 +68,7 @@ model EmployeeMaster {
   empModifiedOn        DateTime  @default(now()) @db.Timestamptz                  @map("emp_modified_on")
   empModifiedBy        String?   @db.VarChar(100)                                 @map("emp_modified_by")
   // Relations
-  company              Company               @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  company              Company?              @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
   department           EmployeeDepartment? @relation(fields: [empDepartmentId], references: [edptId])
   @@index([empCompanyId],    name: "idx_emp_company")

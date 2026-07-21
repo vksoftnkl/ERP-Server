@@ -11,16 +11,29 @@ import {
 import {
   DEFAULT_ACTOR,
   applyPresentFields,
+  isForeignKeyConstraintError,
   resolveActor,
   throwOnUniqueConstraintError,
+  throwSalesBadRequest,
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 
+const SALE_LOADING_CHARGE_RELATIONS = {
+  company: { select: { compName: true } },
+  branch: { select: { brName: true } },
+} satisfies Prisma.SaleLoadingChargeInclude;
+
+type SaleLoadingChargeWithRelations = Prisma.SaleLoadingChargeGetPayload<{
+  include: typeof SALE_LOADING_CHARGE_RELATIONS;
+}>;
+
 const SALE_LOADING_CHARGE_TABLE_NAME = 'sale loading charges';
 const SALE_LOADING_CHARGE_AUDIT_SCREEN_NAME = 'Sale Loading Charges';
 const SALE_LOADING_CHARGE_OPTIONAL_FIELDS = [
+  'ilcCompId',
+  'ilcBranchId',
   'ilcFromWeight',
   'ilcToWeight',
   'ilcLoadChrg',
@@ -55,6 +68,8 @@ export class SaleLoadingChargeService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const data: Prisma.SaleLoadingChargeUncheckedCreateInput = {
+          ilcCompId: dto.ilcCompId ?? null,
+          ilcBranchId: dto.ilcBranchId ?? null,
           ilcFromWeight: dto.ilcFromWeight ?? 0,
           ilcToWeight: dto.ilcToWeight ?? 0,
           ilcLoadChrg: dto.ilcLoadChrg ?? 0,
@@ -89,16 +104,7 @@ export class SaleLoadingChargeService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<SaleLoadingChargeErrorDetail, SaleLoadingChargeErrorResponse>(
-        error,
-        'Sale loading charge already exists',
-        [
-          {
-            field: 'ilcFromWeight',
-            message: 'Duplicate sale loading charge range is not allowed',
-          },
-        ],
-      );
+      this.handleWriteError(error);
       throw error;
     }
   }
@@ -109,6 +115,7 @@ export class SaleLoadingChargeService {
         ilcId,
         ilcIsDeleted: false,
       },
+      include: SALE_LOADING_CHARGE_RELATIONS,
     });
 
     if (!record) {
@@ -251,17 +258,32 @@ export class SaleLoadingChargeService {
         return payload;
       });
     } catch (error: unknown) {
-      throwOnUniqueConstraintError<SaleLoadingChargeErrorDetail, SaleLoadingChargeErrorResponse>(
-        error,
-        'Sale loading charge already exists',
+      this.handleWriteError(error);
+      throw error;
+    }
+  }
+
+  private handleWriteError(error: unknown): void {
+    throwOnUniqueConstraintError<SaleLoadingChargeErrorDetail, SaleLoadingChargeErrorResponse>(
+      error,
+      'Sale loading charge already exists',
+      [
+        {
+          field: 'ilcFromWeight',
+          message: 'Duplicate sale loading charge range is not allowed',
+        },
+      ],
+    );
+    if (isForeignKeyConstraintError(error)) {
+      throwSalesBadRequest<SaleLoadingChargeErrorDetail, SaleLoadingChargeErrorResponse>(
+        'Invalid relation reference',
         [
           {
-            field: 'ilcFromWeight',
-            message: 'Duplicate sale loading charge range is not allowed',
+            field: 'request',
+            message: 'Referenced company or branch does not exist',
           },
         ],
       );
-      throw error;
     }
   }
 
@@ -274,9 +296,15 @@ export class SaleLoadingChargeService {
     applyPresentFields(data, dto, SALE_LOADING_CHARGE_OPTIONAL_FIELDS);
   }
 
-  private toPayload(record: SaleLoadingCharge): SaleLoadingChargePayload {
+  private toPayload(
+    record: SaleLoadingCharge | SaleLoadingChargeWithRelations,
+  ): SaleLoadingChargePayload {
     return {
       ilcId: record.ilcId,
+      ilcCompId: record.ilcCompId,
+      ilcCompanyName: 'company' in record ? (record.company?.compName ?? null) : null,
+      ilcBranchId: record.ilcBranchId,
+      ilcBranchName: 'branch' in record ? (record.branch?.brName ?? null) : null,
       ilcFromWeight: record.ilcFromWeight ? toNumber(record.ilcFromWeight) : null,
       ilcToWeight: record.ilcToWeight ? toNumber(record.ilcToWeight) : null,
       ilcLoadChrg: record.ilcLoadChrg ? toNumber(record.ilcLoadChrg) : null,

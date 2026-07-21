@@ -13,7 +13,7 @@ export type EmployeeMasterSuccessResponse<
 
 export interface EmployeeMasterPayload {
   empId: string;
-  empCompanyId: string;
+  empCompanyId: string | null;
   empCompanyName?: string | null;
   empBranchId: string | null;
   empBranchName?: string | null;

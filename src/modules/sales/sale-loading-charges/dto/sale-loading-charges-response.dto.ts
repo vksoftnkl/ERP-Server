@@ -11,6 +11,26 @@ export class SaleLoadingChargePayloadDto {
   @ApiProperty({ format: 'uuid' })
   ilcId!: string;
 
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ilcCompId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Acme Pvt Ltd',
+    description: 'Name of the linked company (resolved on the get endpoint)',
+  })
+  ilcCompanyName!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  ilcBranchId!: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Main Branch',
+    description: 'Name of the linked branch (resolved on the get endpoint)',
+  })
+  ilcBranchName!: string | null;
+
   @ApiPropertyOptional({ nullable: true, example: 0 })
   ilcFromWeight!: number | null;
 

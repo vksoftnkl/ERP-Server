@@ -217,7 +217,7 @@ export class EmployeeMasterService {
           saveEmployeeMasterDto.empSalaryType,
           'empSalaryType',
         );
-        await this.ensureCompanyExists(saveEmployeeMasterDto.empCompanyId, tx);
+        await this.ensureCompanyExists(saveEmployeeMasterDto?.empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
         const now = new Date();
@@ -273,11 +273,11 @@ export class EmployeeMasterService {
           saveEmployeeMasterDto.empSalaryType,
           'empSalaryType',
         );
-        await this.ensureCompanyExists(saveEmployeeMasterDto.empCompanyId, tx);
+        await this.ensureCompanyExists(saveEmployeeMasterDto?.empCompanyId, tx);
         await this.ensureDepartmentExists(saveEmployeeMasterDto.empDepartmentId, tx);
         await this.ensureDesignationExists(saveEmployeeMasterDto.empDesignationId, tx);
         const data: Prisma.EmployeeMasterUncheckedUpdateInput = {
-          empCompanyId: saveEmployeeMasterDto.empCompanyId,
+          empCompanyId: saveEmployeeMasterDto?.empCompanyId,
           empName,
           empSalaryType,
           empModifiedOn: new Date(),
@@ -313,7 +313,13 @@ export class EmployeeMasterService {
       throw error;
     }
   }
-  private async ensureCompanyExists(compId: string, tx: EmployeeMasterWriteClient): Promise<void> {
+  private async ensureCompanyExists(
+    compId: string | null | undefined,
+    tx: EmployeeMasterWriteClient,
+  ): Promise<void> {
+    if (compId === undefined || compId === null) {
+      return;
+    }
     const company = await tx.company.findFirst({
       where: {
         compId,

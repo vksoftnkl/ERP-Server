@@ -1975,6 +1975,7 @@ Table branch_master {
   physicalStockBatchDetails physical_stock_batch_detail [not null]
   itemPrices item_price_master [not null]
   freightCharges sale_freight_charges [not null]
+  loadingCharges sale_loading_charges [not null]
   loyaltySchemes loyalty_sch_list [not null]
   deviceMasters device_master [not null]
 }
@@ -2062,6 +2063,7 @@ Table companys {
   itemMaster item_master [not null]
   itemPrices item_price_master [not null]
   freightCharges sale_freight_charges [not null]
+  loadingCharges sale_loading_charges [not null]
   deviceMasters device_master [not null]
   UserLoginSession user_login_sessions [not null]
   customers customers [not null]
@@ -2459,7 +2461,7 @@ Table employee_designations {
 
 Table employee_master {
   empId String [pk]
-  empCompanyId String [not null]
+  empCompanyId String
   empBranchId String
   empCode String
   empName String [not null]
@@ -2512,7 +2514,7 @@ Table employee_master {
   empCreatedBy String
   empModifiedOn DateTime [default: `now()`, not null]
   empModifiedBy String
-  company companys [not null]
+  company companys
   designation employee_designations
   department employee_departments
 }
@@ -2689,6 +2691,8 @@ Table sale_freight_charges {
 
 Table sale_loading_charges {
   ilcId String [pk]
+  ilcCompId String
+  ilcBranchId String
   ilcFromWeight Decimal [default: 0]
   ilcToWeight Decimal [default: 0]
   ilcLoadChrg Decimal [default: 0]
@@ -2700,6 +2704,8 @@ Table sale_loading_charges {
   ilcCreatedBy String
   ilcModifiedOn DateTime [default: `now()`, not null]
   ilcModifiedBy String
+  company companys
+  branch branch_master
 }
 
 Table sale_quotation {
@@ -3608,6 +3614,10 @@ Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]
 Ref: sale_freight_charges.frCompanyId > companys.compId [delete: Restrict]
 
 Ref: sale_freight_charges.frBranchId > branch_master.brId [delete: Restrict]
+
+Ref: sale_loading_charges.ilcCompId > companys.compId [delete: Restrict]
+
+Ref: sale_loading_charges.ilcBranchId > branch_master.brId [delete: Restrict]
 
 Ref: sale_quotation.sqParentQuoteId - sale_quotation.sqId [delete: No Action]
 
