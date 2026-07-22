@@ -108,9 +108,9 @@ model SaleQuotationItem {
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
-  unit       Unit           @relation(fields: [sqiItemUnitId], references: [unit_id], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit_id")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
-  itemUnitConversion ItemUnitConversion? @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
+  // sqiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
+  itemUnitConversion ItemUnitConversion @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
   // ux_sqi_quote_line (unique line no per quote among non-deleted rows) is a
   // DB-only partial index (migration 20260708120000). Prisma cannot express its
   // WHERE predicate; declaring it here makes `migrate dev` regenerate it

@@ -1943,6 +1943,8 @@ model StateCode {
   createdBy     String?   @db.VarChar(100)                                    @map("created_by")
   modifiedOn    DateTime  @default(now()) @db.Timestamptz                     @map("modified_on")
   modifiedBy    String?   @db.VarChar(100)                                    @map("modified_by")
+  // Relations
+  saleQuotations SaleQuotation[]
 
   @@index([isActive],  name: "idx_state_codes_active")
   @@index([stateName], name: "idx_state_codes_name")
@@ -2997,7 +2999,6 @@ model Unit {
   itemMasters  ItemMaster[]
   loyaltySchemePoints LoyaltySchemePoint[]
   loyaltySchemeGifts  LoyaltySchemeGift[]
-  saleQuotationItems  SaleQuotationItem[]
 
   @@map("item_unit_master")
   @@schema("inventory")
@@ -4010,6 +4011,7 @@ model EmployeeMaster {
   company              Company?              @relation(fields: [empCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
   department           EmployeeDepartment? @relation(fields: [empDepartmentId], references: [edptId])
+  saleQuotations       SaleQuotation[]
   @@index([empCompanyId],    name: "idx_emp_company")
   @@index([empIsActive],     name: "idx_emp_active")
   @@index([empDepartmentId], name: "idx_emp_department")
@@ -4344,6 +4346,7 @@ model SaleQuotation {
   sqCustGstType      String?   @db.VarChar(20) @map("sq_cust_gst_type")
   sqCustStcd         String?   @db.Char(2) @map("sq_cust_stcd")
   sqPosStcd          String?   @db.Char(2) @map("sq_pos_stcd")
+  sqStateName        String?   @db.VarChar(100) @map("sq_state_name")
   sqContactPerson    String?   @db.VarChar(150) @map("sq_contact_person")
   sqContactPhone     String?   @db.VarChar(20) @map("sq_contact_phone")
   // applicability flags
@@ -4425,6 +4428,8 @@ model SaleQuotation {
   customer    Customer?           @relation(fields: [sqCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust")
   custArea    AreaMaster?         @relation(fields: [sqCustAreaId], references: [armId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust_area")
   priceLevel  ItemPriceLevel      @relation(fields: [sqPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_price_level")
+  posState    StateCode?          @relation(fields: [sqPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_pos_state")
+  salesman    EmployeeMaster?     @relation(fields: [sqSalesmanId], references: [empId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_salesman")
   // DB-only partial indexes (migration 20260708120000): ux_sq_quote_no and
   // ux_sq_slno (unique per company/branch/year among non-deleted rows),
   // ix_sq_cust, ix_sq_status, ix_sq_valid, ix_sq_conv, ix_sq_parent.
@@ -4547,9 +4552,9 @@ model SaleQuotationItem {
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
-  unit       Unit           @relation(fields: [sqiItemUnitId], references: [unit_id], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit_id")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
-  itemUnitConversion ItemUnitConversion? @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
+  // sqiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
+  itemUnitConversion ItemUnitConversion @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
   // ux_sqi_quote_line (unique line no per quote among non-deleted rows) is a
   // DB-only partial index (migration 20260708120000). Prisma cannot express its
   // WHERE predicate; declaring it here makes `migrate dev` regenerate it

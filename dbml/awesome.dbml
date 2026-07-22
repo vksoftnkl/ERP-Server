@@ -1072,6 +1072,7 @@ Table state_codes {
   createdBy String
   modifiedOn DateTime [default: `now()`, not null]
   modifiedBy String
+  saleQuotations sale_quotation [not null]
 }
 
 Table stock_adj_reasons {
@@ -1773,7 +1774,6 @@ Table item_unit_master {
   itemMasters item_master [not null]
   loyaltySchemePoints loyalty_sch_points [not null]
   loyaltySchemeGifts loyalty_sch_gift [not null]
-  saleQuotationItems sale_quotation_item [not null]
 }
 
 Table opening_stock_detail {
@@ -2516,6 +2516,7 @@ Table employee_master {
   company companys
   designation employee_designations
   department employee_departments
+  saleQuotations sale_quotation [not null]
 }
 
 Table cust_item_rates {
@@ -2769,6 +2770,7 @@ Table sale_quotation {
   sqCustGstType String
   sqCustStcd String
   sqPosStcd String
+  sqStateName String
   sqContactPerson String
   sqContactPhone String
   sqHasLoad Boolean [not null, default: false]
@@ -2839,6 +2841,8 @@ Table sale_quotation {
   customer customers
   custArea area_master
   priceLevel item_price_levels [not null]
+  posState state_codes
+  salesman employee_master
 }
 
 Table sale_quotation_item {
@@ -2939,9 +2943,8 @@ Table sale_quotation_item {
   sqiModifiedBy String
   quote sale_quotation [not null]
   item item_master [not null]
-  unit item_unit_master [not null]
   priceLevel item_price_levels [not null]
-  itemUnitConversion item_unit_conversion
+  itemUnitConversion item_unit_conversion [not null]
 }
 
 Table state_master {
@@ -3654,11 +3657,13 @@ Ref: sale_quotation.sqCustAreaId > area_master.armId [delete: Restrict]
 
 Ref: sale_quotation.sqPriceLevel > item_price_levels.iplId [delete: Restrict]
 
+Ref: sale_quotation.sqPosStcd > state_codes.stateCode [delete: Restrict]
+
+Ref: sale_quotation.sqSalesmanId > employee_master.empId [delete: Restrict]
+
 Ref: sale_quotation_item.sqiQuoteId > sale_quotation.sqId [delete: No Action]
 
 Ref: sale_quotation_item.sqiItemId > item_master.itemId [delete: Restrict]
-
-Ref: sale_quotation_item.sqiItemUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: sale_quotation_item.sqiPriceLevel > item_price_levels.iplId [delete: Restrict]
 

@@ -18,6 +18,8 @@ export type QuotationItemPayload = Omit<
   sqiCreatedOn?: string;
   sqiModifiedOn?: string | null;
   sqiSyncDate?: string | null;
+  sqiItemName?: string | null;
+  sqiUnitName?: string | null;
 };
 
 export type QuotationErrorDetail = {

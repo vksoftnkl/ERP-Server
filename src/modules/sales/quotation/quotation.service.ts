@@ -186,6 +186,12 @@ interface QuotationScope {
   sqPriceLevel: number;
 }
 type QuotationWriteClient = SalesWriteClient;
+// Only populated when the item was fetched with the item/unit joins (getById);
+// create/update paths pass plain SaleQuotationItem rows where these are absent.
+type SaleQuotationItemWithNames = SaleQuotationItem & {
+  item?: { itemNameEn: string } | null;
+  itemUnitConversion?: { unit: { unit_name: string } } | null;
+};
 @Injectable()
 export class QuotationService {
   constructor(
@@ -217,6 +223,10 @@ export class QuotationService {
         items: {
           where: { sqiIsDeleted: false },
           orderBy: { sqiLineNo: 'asc' },
+          include: {
+            item: { select: { itemNameEn: true } },
+            itemUnitConversion: { select: { unit: { select: { unit_name: true } } } },
+          },
         },
       },
     });
@@ -610,7 +620,9 @@ export class QuotationService {
   ): void {
     applyPresentFields(data, dto, QUOTATION_OPTIONAL_FIELDS);
   }
-  private toPayload(record: SaleQuotation & { items?: SaleQuotationItem[] }): QuotationPayload {
+  private toPayload(
+    record: SaleQuotation & { items?: SaleQuotationItemWithNames[] },
+  ): QuotationPayload {
     const { sqCreatedOn, sqModifiedOn, sqQuoteDatetime, sqSyncDate, items, ...rest } = record;
     return {
       ...rest,
@@ -621,13 +633,15 @@ export class QuotationService {
       items: items ? items.map((item) => this.toItemPayload(item)) : [],
     };
   }
-  private toItemPayload(record: SaleQuotationItem): QuotationItemPayload {
-    const { sqiCreatedOn, sqiModifiedOn, sqiSyncDate, ...rest } = record;
+  private toItemPayload(record: SaleQuotationItemWithNames): QuotationItemPayload {
+    const { sqiCreatedOn, sqiModifiedOn, sqiSyncDate, item, itemUnitConversion, ...rest } = record;
     return {
       ...rest,
       sqiCreatedOn: sqiCreatedOn?.toISOString(),
       sqiModifiedOn: sqiModifiedOn?.toISOString() ?? null,
       sqiSyncDate: sqiSyncDate?.toISOString() ?? null,
+      sqiItemName: item?.itemNameEn ?? null,
+      sqiUnitName: itemUnitConversion?.unit.unit_name ?? null,
     };
   }
 }

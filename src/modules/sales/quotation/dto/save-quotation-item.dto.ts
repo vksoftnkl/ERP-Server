@@ -67,7 +67,10 @@ export class SaveQuotationItemDto {
   @NullableNumber()
   sqiSrcItemQty?: string | number | null;
 
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({
+    format: 'uuid',
+    description: 'item_unit_conversion.iucId — NOT item_unit_master.unit_id',
+  })
   @RequiredUuid()
   sqiItemUnitId!: string;
 

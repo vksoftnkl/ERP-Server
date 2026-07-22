@@ -59,8 +59,23 @@ export class QuotationItemPayloadDto {
   @ApiProperty({ format: 'uuid' })
   sqiItemId!: string;
 
-  @ApiProperty({ format: 'uuid' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'item_master.itemNameEn for sqiItemId — only populated on GET',
+  })
+  sqiItemName?: string | null;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'item_unit_conversion.iucId — NOT item_unit_master.unit_id',
+  })
   sqiItemUnitId!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'item_unit_master.unit_name reached via item_unit_conversion — only populated on GET',
+  })
+  sqiUnitName?: string | null;
 
   @ApiPropertyOptional({ maxLength: 8, nullable: true })
   sqiHsnCode!: string | null;

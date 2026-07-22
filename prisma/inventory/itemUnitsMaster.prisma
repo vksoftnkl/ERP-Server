@@ -52,7 +52,6 @@ model Unit {
   itemMasters  ItemMaster[]
   loyaltySchemePoints LoyaltySchemePoint[]
   loyaltySchemeGifts  LoyaltySchemeGift[]
-  saleQuotationItems  SaleQuotationItem[]
 
   @@map("item_unit_master")
   @@schema("inventory")

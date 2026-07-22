@@ -54,8 +54,8 @@ Line items are managed through the `items[]` array on the create/update payload
 
 - Item **with** `sqiId` → updates that existing line (it must belong to this quotation, else a
   not-found error).
-- Item **without** `sqiId` → inserts a new line; `sqiItemId` and `sqiUnitId` are required for a new
-  line (`requireItemField`).
+- Item **without** `sqiId` → inserts a new line; `sqiItemId` and `sqiItemUnitId` are required for a
+  new line (`requireItemField`).
 - An existing active line **absent** from the array → **soft deleted** (`sqiIsDeleted = true`).
 - Omitting the `items` property entirely (`undefined`) leaves the current lines **untouched**.
 - Scope keys (`sqiQuoteId`, `sqiCompanyId`, `sqiBranchId`, `sqiTenantId`, `sqiAccYear`,
@@ -90,7 +90,8 @@ Line items are managed through the `items[]` array on the create/update payload
   `sqTenantId`, `sqUserId` are required UUIDs; `sqAccYear` is a fixed 9-char string; `sqPriceLevel`
   and `sqQuoteSlno` are required integers; `sqQuoteRefno` (max 100) and `sqCustName` (max 200) are
   required non-empty strings; nested `items[]` are validated per-element (`@ValidateNested`), each
-  requiring `sqiItemId` and `sqiUnitId` as UUIDs.
+  requiring `sqiItemId` and `sqiItemUnitId` as UUIDs (`sqiItemUnitId` references
+  `item_unit_conversion.iucId`, not `item_unit_master.unit_id`).
 
 ### Audit logging
 
