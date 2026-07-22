@@ -75,6 +75,7 @@ model ItemMaster {
   baseUnit             Unit?           @relation(fields: [itemBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict)
   defaultTax           ItemTaxMaster? @relation(fields: [itemDefaultTaxId], references: [taxId], onUpdate: Cascade, onDelete: Restrict)
   prices               ItemPriceMaster[] @relation("ItemPrices")
+  qtyPrices            ItemQtyPrice[] @relation("ItemQtyPrices")
   unitConversions      ItemUnitConversion[] @relation("ItemUnitConversions")
   openingStockDetails  OpeningStockDetail[] @relation("OpeningStockDetailItem")
   physicalStockDetails PhysicalStockDetail[] @relation("PhysicalStockDetailItem")

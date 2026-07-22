@@ -1,4 +1,4 @@
-import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 import {
   InventoryErrorFieldDto,
   InventoryErrorResponseDto,
@@ -63,6 +63,21 @@ export class ItemQtyPricePayloadDto {
   iqp_modified_on!: string;
   @ApiPropertyOptional({ nullable: true })
   iqp_modified_by!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Resolved item_master.item_name_en' })
+  iqp_item_name!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Resolved unit name (item_unit_master.unit_name reached via item_unit_conversion)',
+  })
+  iqp_unit_name!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Resolved company name' })
+  iqp_company_name!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Resolved branch name' })
+  iqp_branch_name!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Resolved price level name' })
+  iqp_price_level_name!: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'Resolved party/customer name' })
+  iqp_party_name!: string | null;
 }
 
 export class ItemQtyPriceDeleteResultDto {
@@ -84,22 +99,13 @@ export class ItemQtyPriceSuccessSingleDto {
   data!: ItemQtyPricePayloadDto;
 }
 
-@ApiExtraModels(ItemQtyPricePayloadDto)
 export class ItemQtyPriceSuccessSaveDto {
   @ApiProperty({ example: true })
   success!: true;
-  @ApiProperty({ example: 'Item qty price created successfully' })
+  @ApiProperty({ example: 'Item qty prices saved successfully' })
   message!: string;
-  @ApiProperty({
-    oneOf: [
-      { $ref: getSchemaPath(ItemQtyPricePayloadDto) },
-      {
-        type: 'array',
-        items: { $ref: getSchemaPath(ItemQtyPricePayloadDto) },
-      },
-    ],
-  })
-  data!: ItemQtyPricePayloadDto | ItemQtyPricePayloadDto[];
+  @ApiProperty({ type: ItemQtyPricePayloadDto, isArray: true })
+  data!: ItemQtyPricePayloadDto[];
 }
 
 export class ItemQtyPriceSuccessListDto {

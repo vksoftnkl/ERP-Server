@@ -36,6 +36,29 @@ import { RequestContextService } from '../../../common/request-context/request-c
 const ITEM_QTY_PRICE_TABLE_NAME = 'item qty price';
 const ITEM_QTY_PRICE_AUDIT_SCREEN_NAME = 'Item Qty Price Master';
 
+// Joins that resolve the foreign-key ids to their display names for the GET
+// responses. iqp_item_unit_id holds an iuc_id, so the unit name is reached
+// through item_unit_conversion -> unit.
+const ITEM_QTY_PRICE_INCLUDE = {
+  item: { select: { itemNameEn: true } },
+  itemUnitConversion: { select: { unit: { select: { unit_name: true } } } },
+  company: { select: { compName: true } },
+  branch: { select: { brName: true } },
+  priceLevel: { select: { iplName: true } },
+  party: { select: { cusName: true } },
+} satisfies Prisma.ItemQtyPriceInclude;
+
+// toPayload also runs on plain rows (create/update/delete audit trail) where the
+// joins above are absent, so every relation is optional here.
+type ItemQtyPriceWithNames = ItemQtyPrice & {
+  item?: { itemNameEn: string } | null;
+  itemUnitConversion?: { unit: { unit_name: string } | null } | null;
+  company?: { compName: string } | null;
+  branch?: { brName: string } | null;
+  priceLevel?: { iplName: string } | null;
+  party?: { cusName: string | null } | null;
+};
+
 @Injectable()
 export class ItemsQtyPriceMasterService {
   constructor(
@@ -98,7 +121,7 @@ export class ItemsQtyPriceMasterService {
       ...(queryDto.iqp_price_level !== undefined && { iqpPriceLevel: queryDto.iqp_price_level }),
       ...(queryDto.iqp_is_active !== undefined && { iqpIsActive: queryDto.iqp_is_active }),
     };
-    return runInventoryListQuery<ItemQtyPrice, ItemQtyPriceListItem>(
+    return runInventoryListQuery<ItemQtyPriceWithNames, ItemQtyPriceListItem>(
       { page, limit },
       {
         configuredGridFn: () =>
@@ -114,6 +137,7 @@ export class ItemsQtyPriceMasterService {
         findManyFn: () =>
           this.prisma.itemQtyPrice.findMany({
             where,
+            include: ITEM_QTY_PRICE_INCLUDE,
             // Group a slab ladder by item + unit, then order low → high by lower
             // bound; iqp_id keeps ties stable.
             orderBy: [
@@ -133,6 +157,7 @@ export class ItemsQtyPriceMasterService {
   async getById(iqpId: string): Promise<ItemQtyPricePayload> {
     const record = await this.prisma.itemQtyPrice.findFirst({
       where: { iqpId, iqpIsDeleted: false },
+      include: ITEM_QTY_PRICE_INCLUDE,
     });
     if (!record) {
       this.throwNotFound(iqpId);
@@ -187,6 +212,7 @@ export class ItemsQtyPriceMasterService {
     // Find regardless of current deleted state so a delete can be undone.
     const existing = await tx.itemQtyPrice.findFirst({
       where: { iqpId },
+      include: ITEM_QTY_PRICE_INCLUDE,
     });
     if (!existing) {
       this.throwNotFound(iqpId);
@@ -264,7 +290,7 @@ export class ItemsQtyPriceMasterService {
     };
     this.applyOptionalFields(data, saveItemQtyPriceDto);
 
-    const created = await tx.itemQtyPrice.create({ data });
+    const created = await tx.itemQtyPrice.create({ data, include: ITEM_QTY_PRICE_INCLUDE });
     const payload = this.toPayload(created);
 
     await this.auditLogService.logEntityChange(
@@ -294,6 +320,7 @@ export class ItemsQtyPriceMasterService {
 
     const existing = await tx.itemQtyPrice.findFirst({
       where: { iqpId, iqpIsDeleted: false },
+      include: ITEM_QTY_PRICE_INCLUDE,
     });
     if (!existing) {
       this.throwNotFound(iqpId);
@@ -328,7 +355,11 @@ export class ItemsQtyPriceMasterService {
     };
     this.applyOptionalFields(data, saveItemQtyPriceDto);
 
-    const updated = await tx.itemQtyPrice.update({ where: { iqpId }, data });
+    const updated = await tx.itemQtyPrice.update({
+      where: { iqpId },
+      data,
+      include: ITEM_QTY_PRICE_INCLUDE,
+    });
     const payload = this.toPayload(updated);
 
     await this.auditLogService.logEntityChange(
@@ -446,7 +477,7 @@ export class ItemsQtyPriceMasterService {
     return parsedDate;
   }
 
-  private toPayload(record: ItemQtyPrice): ItemQtyPricePayload {
+  private toPayload(record: ItemQtyPriceWithNames): ItemQtyPricePayload {
     return {
       iqp_id: record.iqpId,
       iqp_company_id: record.iqpCompanyId,
@@ -471,6 +502,14 @@ export class ItemsQtyPriceMasterService {
       iqp_created_by: record.iqpCreatedBy,
       iqp_modified_on: record.iqpModifiedOn.toISOString(),
       iqp_modified_by: record.iqpModifiedBy,
+      // Resolved foreign-key display names (only populated on the GET/save paths
+      // that join the relations; null on plain audit-trail rows).
+      iqp_item_name: record.item?.itemNameEn ?? null,
+      iqp_unit_name: record.itemUnitConversion?.unit?.unit_name ?? null,
+      iqp_company_name: record.company?.compName ?? null,
+      iqp_branch_name: record.branch?.brName ?? null,
+      iqp_price_level_name: record.priceLevel?.iplName ?? null,
+      iqp_party_name: record.party?.cusName ?? null,
     };
   }
 

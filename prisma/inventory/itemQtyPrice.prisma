@@ -24,10 +24,18 @@ model ItemQtyPrice {
   iqpCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("iqp_created_on")
   iqpModifiedBy   String?   @db.VarChar(100) @map("iqp_modified_by")
   iqpModifiedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("iqp_modified_on")
+  // Relations
+  item                ItemMaster         @relation("ItemQtyPrices", fields: [iqpItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_item")
+  itemUnitConversion  ItemUnitConversion @relation("ItemQtyPriceUnitConversion", fields: [iqpItemUnitId], references: [iucId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_item_unit")
+  company             Company?           @relation("CompanyItemQtyPrices", fields: [iqpCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_company_id")
+  branch              BranchMaster?      @relation("BranchItemQtyPrices", fields: [iqpBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_branch_id")
+  priceLevel          ItemPriceLevel?    @relation("ItemQtyPricePriceLevel", fields: [iqpPriceLevel], references: [iplId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_price_level")
+  party               Customer?          @relation("CustomerItemQtyPrices", fields: [iqpPartyId], references: [cusId], onUpdate: Cascade, onDelete: Restrict, map: "fk_iqp_party_id")
   @@map("item_qty_price")
   @@schema("inventory")
-  // iqp_item_id / iqp_store_id FKs are deliberately not enforced at the DB
-  // level yet (left commented in the source DDL) — no Prisma relation added.
+  // iqp_item_id, iqp_item_unit_id, iqp_company_id, iqp_branch_id, iqp_price_level
+  // and iqp_party_id are now Prisma relations (see above); run a migration to
+  // create the FK constraints at the DB level.
   // CHECK constraints (ck_iqp_qty_range, ck_iqp_qty_nonneg, ck_iqp_date_range,
   // ck_iqp_mode) are not expressible in Prisma schema.
   // DB-only EXCLUDE USING gist constraint ex_iqp_no_overlap (requires the

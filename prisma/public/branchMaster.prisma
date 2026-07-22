@@ -80,6 +80,7 @@ model BranchMaster {
   physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailBranch")
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailBranch")
   itemPrices            ItemPriceMaster[] @relation("BranchItemPrices")
+  itemQtyPrices         ItemQtyPrice[]    @relation("BranchItemQtyPrices")
   freightCharges        SaleFreightCharge[] @relation("BranchFreightCharges")
   loadingCharges        SaleLoadingCharge[] @relation("BranchLoadingCharges")
   loyaltySchemes        LoyaltyScheme[]

@@ -1408,6 +1408,7 @@ Table item_master {
   baseUnit item_unit_master
   defaultTax item_tax_master
   prices item_price_master [not null]
+  qtyPrices item_qty_price [not null]
   unitConversions item_unit_conversion [not null]
   openingStockDetails opening_stock_detail [not null]
   physicalStockDetails physical_stock_detail [not null]
@@ -1432,6 +1433,7 @@ Table item_price_levels {
   iplModifiedOn DateTime [default: `now()`, not null]
   iplModifiedBy String [not null]
   customers customers [not null]
+  itemQtyPrices item_qty_price [not null]
   saleQuotations sale_quotation [not null]
   saleQuotationItems sale_quotation_item [not null]
 }
@@ -1509,6 +1511,12 @@ Table item_qty_price {
   iqpCreatedOn DateTime [default: `now()`, not null]
   iqpModifiedBy String
   iqpModifiedOn DateTime [default: `now()`, not null]
+  item item_master [not null]
+  itemUnitConversion item_unit_conversion [not null]
+  company companys
+  branch branch_master
+  priceLevel item_price_levels
+  party customers
 }
 
 Table item_reorders {
@@ -1738,6 +1746,7 @@ Table item_unit_conversion {
   itemEanCodes item_ean_codes [not null]
   itemReorders item_reorders [not null]
   itemPrices item_price_master [not null]
+  itemQtyPrices item_qty_price [not null]
 }
 
 Table item_unit_master {
@@ -1973,6 +1982,7 @@ Table branch_master {
   physicalStockDetails physical_stock_detail [not null]
   physicalStockBatchDetails physical_stock_batch_detail [not null]
   itemPrices item_price_master [not null]
+  itemQtyPrices item_qty_price [not null]
   freightCharges sale_freight_charges [not null]
   loadingCharges sale_loading_charges [not null]
   loyaltySchemes loyalty_sch_list [not null]
@@ -2061,6 +2071,7 @@ Table companys {
   custGroup cust_groups [not null]
   itemMaster item_master [not null]
   itemPrices item_price_master [not null]
+  itemQtyPrices item_qty_price [not null]
   freightCharges sale_freight_charges [not null]
   loadingCharges sale_loading_charges [not null]
   deviceMasters device_master [not null]
@@ -2400,6 +2411,7 @@ Table customers {
   company companys
   priceLevel item_price_levels [not null]
   saleQuotations sale_quotation [not null]
+  itemQtyPrices item_qty_price [not null]
 }
 
 Table cust_groups {
@@ -3550,6 +3562,18 @@ Ref: item_price_master.ipmBranchId > branch_master.brId [delete: Restrict]
 Ref: item_price_master.ipmUcUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_price_master.ipmGodownId > godown_locations.gdlId [delete: Restrict]
+
+Ref: item_qty_price.iqpItemId > item_master.itemId [delete: Restrict]
+
+Ref: item_qty_price.iqpItemUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: item_qty_price.iqpCompanyId > companys.compId [delete: Restrict]
+
+Ref: item_qty_price.iqpBranchId > branch_master.brId [delete: Restrict]
+
+Ref: item_qty_price.iqpPriceLevel > item_price_levels.iplId [delete: Restrict]
+
+Ref: item_qty_price.iqpPartyId > customers.cusId [delete: Restrict]
 
 Ref: item_reorders.irItemId > item_master.itemId [delete: Restrict]
 

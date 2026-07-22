@@ -14,8 +14,8 @@ item + unit, optionally scoped by company, branch, party and price level.
 
 ## Endpoints (versioned, bearer auth)
 
-- `POST /item-qty-prices/create` — create or update by `iqp_id` presence. Accepts a
-  single object or an array (the whole batch runs in one transaction).
+- `POST /item-qty-prices/create` — accepts an **array** of rows; each element is created,
+  or updated when it carries an `iqp_id`. The whole batch runs in one transaction.
 - `GET /item-qty-prices/get` — with `iqp_id` returns a single row; otherwise returns a
   filtered, paginated list. Filters: `iqp_item_id`, `iqp_item_unit_id`, `iqp_company_id`,
   `iqp_branch_id`, `iqp_party_id`, `iqp_price_level`, `iqp_is_active`, plus
@@ -23,6 +23,16 @@ item + unit, optionally scoped by company, branch, party and price level.
   fallback ordered by item → unit → lower bound.
 - `DELETE /item-qty-prices/delete` — toggles soft delete/restore by `iqp_id` (query param
   or body), single or array.
+
+## Resolved names
+
+The payload carries the display name for each foreign key alongside its id, resolved via
+Prisma joins on the GET (`getById` + Prisma-fallback list) and save paths:
+`iqp_item_name`, `iqp_unit_name`, `iqp_company_name`, `iqp_branch_name`,
+`iqp_price_level_name`, `iqp_party_name`. `iqp_item_unit_id` stores an `iuc_id`, so
+`iqp_unit_name` is the underlying `item_unit_master.unit_name` reached through
+`item_unit_conversion`. Names are `null` when the relation is empty or when the list is
+served from an admin-configured grid (whose columns come from its own SQL).
 
 ## Notes
 

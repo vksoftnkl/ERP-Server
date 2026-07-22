@@ -91,6 +91,7 @@ model Company {
   custGroup             CustGroup[]
   itemMaster            ItemMaster[]
   itemPrices            ItemPriceMaster[] @relation("CompanyItemPrices")
+  itemQtyPrices         ItemQtyPrice[]    @relation("CompanyItemQtyPrices")
   freightCharges        SaleFreightCharge[] @relation("CompanyFreightCharges")
   loadingCharges        SaleLoadingCharge[] @relation("CompanyLoadingCharges")
   deviceMasters         DeviceMaster[]

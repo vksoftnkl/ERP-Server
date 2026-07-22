@@ -73,36 +73,26 @@ export class ItemsQtyPriceMasterController {
 
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update item qty price (by iqp_id presence)' })
+  @ApiOperation({
+    summary: 'Create or update item qty prices (array; each row updates when iqp_id is present)',
+  })
   @ApiBody({
     schema: {
-      oneOf: [
-        { $ref: getSchemaPath(SaveItemQtyPriceDto) },
-        {
-          type: 'array',
-          items: { $ref: getSchemaPath(SaveItemQtyPriceDto) },
-        },
-      ],
+      type: 'array',
+      items: { $ref: getSchemaPath(SaveItemQtyPriceDto) },
     },
   })
   @ApiCreatedResponse({ type: ItemQtyPriceSuccessSaveDto })
   @ApiBadRequestResponse({ type: ItemQtyPriceErrorResponseDto })
   @ApiConflictResponse({ type: ItemQtyPriceErrorResponseDto })
   @ApiNotFoundResponse({ type: ItemQtyPriceErrorResponseDto })
-  async save(
-    @Body() body: unknown,
-  ): Promise<ItemQtyPriceSuccessResponse<ItemQtyPricePayload | ItemQtyPricePayload[]>> {
-    const saveItemQtyPriceDto = await validateSingleOrArrayDto(body, SaveItemQtyPriceDto);
-    const data = await this.itemsQtyPriceMasterService.save(saveItemQtyPriceDto);
-    const isArray = Array.isArray(saveItemQtyPriceDto);
+  async save(@Body() body: unknown): Promise<ItemQtyPriceSuccessResponse<ItemQtyPricePayload[]>> {
+    const saveItemQtyPriceDtos = await this.resolveSavePayload(body);
+    const data = await this.itemsQtyPriceMasterService.save(saveItemQtyPriceDtos);
 
     return {
       success: true,
-      message: isArray
-        ? 'Item qty prices saved successfully'
-        : saveItemQtyPriceDto.iqp_id
-          ? 'Item qty price updated successfully'
-          : 'Item qty price created successfully',
+      message: 'Item qty prices saved successfully',
       data,
     };
   }
@@ -112,6 +102,7 @@ export class ItemsQtyPriceMasterController {
   @ApiOperation({
     summary: 'Get item qty price by iqp_id, or list with optional filters/pagination',
   })
+  @ApiQuery({ name: 'iqp_item_id', required: false, schema: { type: 'string', format: 'uuid' } })
   @ApiOkResponse({
     schema: {
       oneOf: [
@@ -180,6 +171,16 @@ export class ItemsQtyPriceMasterController {
       message: this.buildToggleDeleteMessage(data),
       data,
     };
+  }
+
+  private async resolveSavePayload(body: unknown): Promise<SaveItemQtyPriceDto[]> {
+    if (!Array.isArray(body)) {
+      throw new BadRequestException({
+        message: ['Request payload must be an array of item qty prices'],
+      });
+    }
+
+    return (await validateSingleOrArrayDto(body, SaveItemQtyPriceDto)) as SaveItemQtyPriceDto[];
   }
 
   private buildToggleDeleteMessage(

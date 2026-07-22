@@ -34,6 +34,14 @@ export interface ItemQtyPricePayload {
   iqp_created_by: string | null;
   iqp_modified_on: string;
   iqp_modified_by: string | null;
+  // Resolved foreign-key display names (populated on GET/save responses).
+  // iqp_unit_name is item_unit_master.unit_name reached via item_unit_conversion.
+  iqp_item_name: string | null;
+  iqp_unit_name: string | null;
+  iqp_company_name: string | null;
+  iqp_branch_name: string | null;
+  iqp_price_level_name: string | null;
+  iqp_party_name: string | null;
 }
 
 export type ItemQtyPriceListItem = ItemQtyPricePayload | Record<string, unknown>;
