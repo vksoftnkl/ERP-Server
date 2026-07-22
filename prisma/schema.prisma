@@ -4401,9 +4401,9 @@ model SaleQuotation {
   sqIsDeleted        Boolean   @default(false) @map("sq_is_deleted")
   sqSyncDate         DateTime? @db.Timestamptz(6) @map("sq_sync_date")
   sqCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("sq_created_on")
-  sqCreatedBy        String    @db.Uuid @map("sq_created_by")
+  sqCreatedBy        String    @db.Text @map("sq_created_by")
   sqModifiedOn       DateTime? @db.Timestamptz(6) @map("sq_modified_on")
-  sqModifiedBy       String?   @db.Uuid @map("sq_modified_by")
+  sqModifiedBy       String?   @db.Text @map("sq_modified_by")
 
   // Relations
   parentQuote SaleQuotation?      @relation("SaleQuotationRevisions", fields: [sqParentQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sq_parent")
@@ -4540,9 +4540,9 @@ model SaleQuotationItem {
   sqiIsDeleted       Boolean   @default(false) @map("sqi_is_deleted")
   sqiSyncDate        DateTime? @db.Timestamptz(6) @map("sqi_sync_date")
   sqiCreatedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("sqi_created_on")
-  sqiCreatedBy       String    @db.Uuid @map("sqi_created_by")
+  sqiCreatedBy       String    @db.Text @map("sqi_created_by")
   sqiModifiedOn      DateTime? @db.Timestamptz(6) @map("sqi_modified_on")
-  sqiModifiedBy      String?   @db.Uuid @map("sqi_modified_by")
+  sqiModifiedBy      String?   @db.Text @map("sqi_modified_by")
 
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
