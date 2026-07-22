@@ -22,7 +22,6 @@ import {
   toNumber,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-
 const EMPLOYEE_MASTER_TABLE_NAME = 'emp_master';
 const EMPLOYEE_MASTER_AUDIT_SCREEN_NAME = 'Employee Master';
 const VALIDATION_FAILED_MESSAGE = 'Validation failed';
@@ -73,9 +72,7 @@ const EMPLOYEE_MASTER_OPTIONAL_FIELDS = [
   'empRemarks',
   'empIsActive',
 ];
-
 type EmployeeMasterWriteClient = SettingsWriteClient;
-
 @Injectable()
 export class EmployeeMasterService {
   constructor(
@@ -103,7 +100,6 @@ export class EmployeeMasterService {
     const relatedNames = await this.resolveRelatedNames(this.prisma, record);
     return { ...payload, ...relatedNames };
   }
-
   private async resolveRelatedNames(
     client: EmployeeMasterWriteClient,
     record: Pick<
@@ -142,7 +138,6 @@ export class EmployeeMasterService {
           })
         : null,
     ]);
-
     return {
       empCompanyName: company?.compName ?? null,
       empBranchName: branch?.brName ?? null,
@@ -150,7 +145,6 @@ export class EmployeeMasterService {
       empDesignationName: designation?.edName ?? null,
     };
   }
-
   async softDelete(empId: string): Promise<{ empId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.employeeMaster.findFirst({
@@ -388,7 +382,6 @@ export class EmployeeMasterService {
       ]);
     }
   }
-
   private applyOptionalFields(
     data: Prisma.EmployeeMasterUncheckedCreateInput | Prisma.EmployeeMasterUncheckedUpdateInput,
     saveEmployeeMasterDto: SaveEmployeeMasterDto,
@@ -397,24 +390,19 @@ export class EmployeeMasterService {
       empPhoto: (value) => this.decodePhoto(value as string | null | undefined),
     });
   }
-
   private normalizeRequiredValue(value: string, field: string): string {
     return normalizeRequiredText<EmployeeMasterErrorDetail>(
       value,
       field,
       `${field} must not be empty`,
-    );
-  }
-
+    ); }
   private decodePhoto(value: string | null | undefined): Prisma.Bytes | null | undefined {
     if (value === undefined) {
       return undefined;
     }
-
     if (value === null) {
       return null;
     }
-
     const trimmed = value.trim();
     if (!trimmed) {
       return null;

@@ -16,12 +16,11 @@ model SaleQuotationItem {
   sqiSrcUnitId       String?   @db.Uuid @map("sqi_src_unit_id")
   sqiSrcDocRefno     String?   @db.VarChar(100) @map("sqi_src_doc_refno")
   sqiSrcItemQty      Decimal?  @db.Decimal(15, 3) @map("sqi_src_item_qty")
-  sqiItemUnitId      String?   @db.Uuid @map("sqi_item_unit_id")
+  
   sqiLineNo          Int       @map("sqi_line_no")
   sqiItemId          String    @db.Uuid @map("sqi_item_id")
-  sqiItemCode        String?   @db.VarChar(50) @map("sqi_item_code")
-  sqiItemName        String?   @db.VarChar(200) @map("sqi_item_name")
   sqiUnitId          String    @db.Uuid @map("sqi_unit_id")
+  sqiItemUnitId      String    @db.Uuid @map("sqi_item_unit_id")
   sqiHsnCode         String?   @db.VarChar(8) @map("sqi_hsn_code")
   sqiPriceLevel      Int       @map("sqi_price_level")
   sqiEanCode         String?   @db.VarChar(100) @map("sqi_ean_code")
@@ -37,10 +36,10 @@ model SaleQuotationItem {
   sqiIsService       Boolean   @default(false) @map("sqi_is_service")
 
   // quantities
-  sqiQty             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty")
-  sqiQtyLength       Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_length")
-  sqiItemWeight      Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_item_weight")
-  sqiQtyConverted    Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_converted")
+  sqiQtyCase             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_case")
+  sqiQtyBill             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_bill")
+  sqiQtyLength           Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_qty_length")
+  sqiQtyNetQty           Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_net_qty")
   sqiAvailableStock  Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_available_stock")
 
   // rate / price

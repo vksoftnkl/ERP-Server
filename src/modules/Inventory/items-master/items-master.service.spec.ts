@@ -360,11 +360,14 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(savedRows(priceService.save)[0].ipm_item_id).toBe(ITEM_ID);
   });
 
-  it('takes the company from the token, letting the body omit item_company_id', async () => {
-    requestContextService.getCompanyId.mockReturnValue(COMPANY_ID);
+  it('always takes item_company_id from the body, ignoring the token company', async () => {
+    // Even when the token carries a company, it must never silently override
+    // (or stand in for) the body's item_company_id.
+    requestContextService.getCompanyId.mockReturnValue('019c6f6c-be87-7a11-8905-36092c46aaff');
     prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
 
     await service.saveComposite({
+      item_company_id: COMPANY_ID,
       item_name_en: 'Widget',
       item_group_id: GROUP_ID,
     });
@@ -372,16 +375,24 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(prisma.itemMaster.create.mock.calls[0][0].data.itemCompanyId).toBe(COMPANY_ID);
   });
 
-  it('rejects a create with no item_company_id when the token carries no company', async () => {
-    // Unscoped super-admin token: nothing to fall back on, and the column is
-    // NOT NULL, so this must fail before it reaches Prisma.
+  it('rejects a create with no item_company_id in the body', async () => {
     await expect(
       service.saveComposite({
         item_name_en: 'Widget',
         item_group_id: GROUP_ID,
-      }),
+      } as SaveItemCompositeDto),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.itemMaster.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an update with no item_company_id in the body', async () => {
+    prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+
+    const { item_company_id: _omitted, ...rest } = fullCompositeDto();
+    const dto = { ...rest, item_id: ITEM_ID } as SaveItemCompositeDto;
+
+    await expect(service.saveComposite(dto)).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.itemMaster.update).not.toHaveBeenCalled();
   });
 
   it('does not call child services when no child arrays are provided', async () => {

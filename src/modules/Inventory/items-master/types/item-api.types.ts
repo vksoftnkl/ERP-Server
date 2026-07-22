@@ -44,7 +44,7 @@ export interface BulkLoadItemPayload {
 
 export interface ItemPayload {
   item_id: string;
-  item_company_id: string;
+  item_company_id: string | null;
   item_branch_id: string | null;
   item_code: string | null;
   item_sku: string | null;

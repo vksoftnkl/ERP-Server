@@ -1341,7 +1341,7 @@ Table item_gst_units {
 
 Table item_master {
   itemId String [pk]
-  itemCompanyId String [not null]
+  itemCompanyId String
   itemBranchId String
   itemCode String
   itemSku String
@@ -1413,7 +1413,7 @@ Table item_master {
   physicalStockBatchDetails physical_stock_batch_detail [not null]
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
-  company companys [not null]
+  company companys
   loyaltySchemeGifts loyalty_sch_gift [not null]
   saleQuotationItems sale_quotation_item [not null]
 }
@@ -2824,12 +2824,10 @@ Table sale_quotation_item {
   sqiSrcUnitId String
   sqiSrcDocRefno String
   sqiSrcItemQty Decimal
-  sqiItemUnitId String
   sqiLineNo Int [not null]
   sqiItemId String [not null]
-  sqiItemCode String
-  sqiItemName String
   sqiUnitId String [not null]
+  sqiItemUnitId String [not null]
   sqiHsnCode String
   sqiPriceLevel Int [not null]
   sqiEanCode String
@@ -2841,10 +2839,10 @@ Table sale_quotation_item {
   sqiIsFree Boolean [not null, default: false]
   sqiFreeType String
   sqiIsService Boolean [not null, default: false]
-  sqiQty Decimal [not null, default: 0]
-  sqiQtyLength Decimal [not null, default: 0]
-  sqiItemWeight Decimal [default: 0]
-  sqiQtyConverted Decimal [not null, default: 0]
+  sqiQtyCase Decimal [not null, default: 0]
+  sqiQtyBill Decimal [not null, default: 0]
+  sqiQtyLength Decimal [default: 0]
+  sqiQtyNetQty Decimal [not null, default: 0]
   sqiAvailableStock Decimal [not null, default: 0]
   sqiRate Decimal [not null, default: 0]
   sqiRatePreTax Decimal [not null, default: 0]

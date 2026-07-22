@@ -2355,7 +2355,7 @@ model ItemGstUnits {
 // ----- prisma/inventory/itemMaster.prisma -----
 model ItemMaster {
   itemId               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("item_id")
-  itemCompanyId        String   @db.Uuid @map("item_company_id")
+  itemCompanyId        String?  @db.Uuid @map("item_company_id")
   itemBranchId         String?  @db.Uuid @map("item_branch_id")
   // Names / Codes
   itemCode             String?  @db.VarChar(50)  @map("item_code")
@@ -2436,7 +2436,7 @@ model ItemMaster {
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailItem")
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
-  company              Company @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+  company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   loyaltySchemeGifts   LoyaltySchemeGift[]
   saleQuotationItems   SaleQuotationItem[]
   @@map("item_master")
@@ -4241,6 +4241,12 @@ model SaleFreightCharge {
   branch        BranchMaster? @relation("BranchFreightCharges", fields: [frBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_fr_branch_id")
 
   @@index([frIsActive], name: "idx_fr_active")
+  // DB-only partial unique index uq_fr_slab_scope (migration 20260721140000):
+  // (frCompanyId, frBranchId, frFromKm, frToKm, frFromWeight, frToWeight),
+  // NULLS NOT DISTINCT, WHERE fr_is_deleted = false. Prisma cannot express the
+  // WHERE predicate; declaring it as @@unique here would make `migrate dev`
+  // regenerate it without the predicate and fail on the existing name.
+  // Do NOT add @@unique for it.
   @@map("sale_freight_charges")
   @@schema("sales")
 }
@@ -4436,12 +4442,11 @@ model SaleQuotationItem {
   sqiSrcUnitId       String?   @db.Uuid @map("sqi_src_unit_id")
   sqiSrcDocRefno     String?   @db.VarChar(100) @map("sqi_src_doc_refno")
   sqiSrcItemQty      Decimal?  @db.Decimal(15, 3) @map("sqi_src_item_qty")
-  sqiItemUnitId      String?   @db.Uuid @map("sqi_item_unit_id")
+  
   sqiLineNo          Int       @map("sqi_line_no")
   sqiItemId          String    @db.Uuid @map("sqi_item_id")
-  sqiItemCode        String?   @db.VarChar(50) @map("sqi_item_code")
-  sqiItemName        String?   @db.VarChar(200) @map("sqi_item_name")
   sqiUnitId          String    @db.Uuid @map("sqi_unit_id")
+  sqiItemUnitId      String    @db.Uuid @map("sqi_item_unit_id")
   sqiHsnCode         String?   @db.VarChar(8) @map("sqi_hsn_code")
   sqiPriceLevel      Int       @map("sqi_price_level")
   sqiEanCode         String?   @db.VarChar(100) @map("sqi_ean_code")
@@ -4457,10 +4462,10 @@ model SaleQuotationItem {
   sqiIsService       Boolean   @default(false) @map("sqi_is_service")
 
   // quantities
-  sqiQty             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty")
-  sqiQtyLength       Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_length")
-  sqiItemWeight      Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_item_weight")
-  sqiQtyConverted    Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_converted")
+  sqiQtyCase             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_case")
+  sqiQtyBill             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_bill")
+  sqiQtyLength           Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_qty_length")
+  sqiQtyNetQty           Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_net_qty")
   sqiAvailableStock  Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_available_stock")
 
   // rate / price

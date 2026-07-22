@@ -9,8 +9,8 @@ export { InventoryErrorResponseDto as ItemErrorResponseDto };
 export class ItemPayloadDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  item_company_id!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  item_company_id!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   item_branch_id!: string | null;
   @ApiPropertyOptional({ nullable: true })

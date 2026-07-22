@@ -8,6 +8,7 @@ import {
   OptionalInteger,
   OptionalTrimmedString,
   OptionalUuid,
+  RequiredUuid,
   toTrimmedString,
 } from 'src/common/dto/dtoDecorators';
 
@@ -62,17 +63,9 @@ export class SaveItemDto {
   @OptionalUuid()
   item_id?: string;
 
-  // Company-bound tokens supply this from the access token and ignore whatever
-  // the body sends (see ItemsMasterService.applyOptionalFields), so it is only
-  // read for unscoped super-admin tokens — which is also the only case where
-  // omitting it is an error.
-  @ApiPropertyOptional({
-    format: 'uuid',
-    description:
-      'Company UUID this item belongs to. Taken from the access token; only super-admin / unscoped tokens need to send it.',
-  })
-  @OptionalUuid()
-  item_company_id?: string;
+  @ApiProperty({ format: 'uuid', description: 'Company UUID this item belongs to.' })
+  @RequiredUuid()
+  item_company_id!: string;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
