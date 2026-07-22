@@ -4868,3 +4868,15 @@ Error: Cannot use a pool after calling end on the pool
     at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
     at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
 2026-07-20T10:19:00.050Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-07-22T12:53:12.550Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=76&page=1&limit=17
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-07-22T12:53:12.904Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=76&page=1&limit=16
+Error: Cannot use a pool after calling end on the pool
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)

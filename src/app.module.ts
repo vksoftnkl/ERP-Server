@@ -51,6 +51,7 @@ import { CityModule } from './modules/sales/city/city.module';
 import { StateModule } from './modules/sales/state/state.module';
 import { CustomerModule } from './modules/sales/customer/customer.module';
 import { CustomerGroupModule } from './modules/sales/customer-group/customer-group.module';
+import { SaleAgentModule } from './modules/sales/sale-agent/sale-agent.module';
 import { QuotationModule } from './modules/sales/quotation/quotation.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
 import { DeviceListMasterModule } from './modules/fixed/device-list-master/device-list-master.module';
@@ -164,6 +165,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     SaleLoadingChargeModule,
     CustomerModule,
     CustomerGroupModule,
+    SaleAgentModule,
     QuotationModule,
     BankListModule,
     DeviceListMasterModule,
