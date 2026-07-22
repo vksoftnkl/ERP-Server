@@ -54,6 +54,7 @@ import { ItemsTaxMasterModule } from 'src/modules/Inventory/items-tax-master/ite
 import { ItemsPriceMasterModule } from 'src/modules/Inventory/items-price-master/items-price-master.module';
 import { ItemUnitConversionModule } from 'src/modules/Inventory/item-unit-conversion/item-unit-conversion.module';
 import { ItemsReorderMasterModule } from 'src/modules/Inventory/items-reorder-master/items-reorder-master.module';
+import { ItemsQtyPriceMasterModule } from 'src/modules/Inventory/items-qty-price-master/items-qty-price-master.module';
 import { ItemsTaxHistoryMasterModule } from 'src/modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from 'src/modules/Inventory/items-master/items-master.module';
 import { ItemsEanCodeMasterModule } from 'src/modules/Inventory/items-ean-code-master/items-ean-code-master.module';
@@ -152,6 +153,12 @@ export const swaggerModuleDocuments = [
     title: 'Item Reorders API',
     description: 'Item reorders module endpoints',
     include: [ItemsReorderMasterModule],
+  },
+  {
+    path: 'item-qty-prices',
+    title: 'Item Qty Prices API',
+    description: 'Item qty prices module endpoints',
+    include: [ItemsQtyPriceMasterModule],
   },
   {
     path: 'item-tax-histories',

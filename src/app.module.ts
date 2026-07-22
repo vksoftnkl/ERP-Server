@@ -81,6 +81,7 @@ import { ItemsGstUnitsMasterModule } from './modules/Inventory/items-gst-units-m
 import { ItemsPriceMasterModule } from './modules/Inventory/items-price-master/items-price-master.module';
 import { ItemUnitConversionModule } from './modules/Inventory/item-unit-conversion/item-unit-conversion.module';
 import { ItemsReorderMasterModule } from './modules/Inventory/items-reorder-master/items-reorder-master.module';
+import { ItemsQtyPriceMasterModule } from './modules/Inventory/items-qty-price-master/items-qty-price-master.module';
 import { ItemsTaxHistoryMasterModule } from './modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from './modules/Inventory/items-master/items-master.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
@@ -135,6 +136,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemUnitConversionModule,
     ItemPriceDetailsModule,
     ItemsReorderMasterModule,
+    ItemsQtyPriceMasterModule,
     ItemsTaxHistoryMasterModule,
     ItemsMasterModule,
     AccountsGroupModule,
