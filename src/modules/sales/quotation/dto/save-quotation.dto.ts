@@ -315,6 +315,14 @@ export class SaveQuotationDto {
   @NullableStringStrict(250)
   sqCancelReason?: string | null;
 
+  @ApiPropertyOptional({ nullable: true })
+  @NullableNumber()
+  sqMrpSavings?: string | number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableNumber()
+  sqMrpSavingsPerc?: string | number | null;
+
   @ApiPropertyOptional({ maxLength: 500, nullable: true })
   @NullableStringStrict(500)
   sqRemarks?: string | null;

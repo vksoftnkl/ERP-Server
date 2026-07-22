@@ -1,6 +1,5 @@
 // Batch/expiry/available_stock here are INFORMATIONAL (availability shown while
 // quoting). A quote allocates NO stock -- allocation happens at DC/invoice.
-// sqiQtyConverted tracks how much of this quote line has become an order.
 model SaleQuotationItem {
   sqiId              String    @id(map: "pk_sale_quotation_item") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sqi_id")
 
@@ -19,7 +18,6 @@ model SaleQuotationItem {
   
   sqiLineNo          Int       @map("sqi_line_no")
   sqiItemId          String    @db.Uuid @map("sqi_item_id")
-  sqiUnitId          String    @db.Uuid @map("sqi_unit_id")
   sqiItemUnitId      String    @db.Uuid @map("sqi_item_unit_id")
   sqiHsnCode         String?   @db.VarChar(8) @map("sqi_hsn_code")
   sqiPriceLevel      Int       @map("sqi_price_level")
@@ -36,10 +34,11 @@ model SaleQuotationItem {
   sqiIsService       Boolean   @default(false) @map("sqi_is_service")
 
   // quantities
-  sqiQtyCase             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_case")
-  sqiQtyBill             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_bill")
-  sqiQtyLength           Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_qty_length")
-  sqiQtyNetQty           Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_qty_net_qty")
+  sqiCaseQty             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_case_qty")
+  sqiBillQty             Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_bill_qty")
+  sqiLengthQty           Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_length_qty")
+  sqiNetQty           Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_net_qty")
+  sqiWeightQty           Decimal?  @default(0) @db.Decimal(15, 3) @map("sqi_weight_qty")
   sqiAvailableStock  Decimal   @default(0) @db.Decimal(15, 3) @map("sqi_available_stock")
 
   // rate / price
@@ -104,11 +103,12 @@ model SaleQuotationItem {
   sqiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sqi_cost_pre_tax")
   sqiQuotePreTax     Decimal?  @db.Decimal(15, 2) @map("sqi_quote_pre_tax")
   sqiProfitPreTax    Decimal?  @db.Decimal(15, 2) @map("sqi_profit_pre_tax")
-
+  sqiMrpSavings      Decimal?  @db.Decimal(15, 3) @map("sqi_mrp_savings")
+  sqiMrpSavingsPerc  Decimal?  @db.Decimal(15, 4) @map("sqi_mrp_savings_perc")
   // scheme ref (display only on a quote)
   sqiSchemeId        String?   @db.Uuid @map("sqi_scheme_id")
   sqiSchemeName      String?   @db.VarChar(150) @map("sqi_scheme_name")
-
+  
   sqiRemarks         String?   @db.VarChar(250) @map("sqi_remarks")
   sqiIsDeleted       Boolean   @default(false) @map("sqi_is_deleted")
   sqiSyncDate        DateTime? @db.Timestamptz(6) @map("sqi_sync_date")
@@ -120,7 +120,7 @@ model SaleQuotationItem {
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
-  unit       Unit           @relation(fields: [sqiUnitId], references: [unit_id], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_unit")
+  unit       Unit           @relation(fields: [sqiItemUnitId], references: [unit_id], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit_id")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
   itemUnitConversion ItemUnitConversion? @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
   // ux_sqi_quote_line (unique line no per quote among non-deleted rows) is a

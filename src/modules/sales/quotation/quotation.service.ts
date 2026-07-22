@@ -21,7 +21,6 @@ import {
   throwSalesNotFound,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-
 const QUOTATION_TABLE_NAME = 'sale_quotation';
 const QUOTATION_ITEM_TABLE_NAME = 'sale_quotation_item';
 const QUOTATION_AUDIT_SCREEN_NAME = 'Sale Quotation';
@@ -89,9 +88,10 @@ const QUOTATION_OPTIONAL_FIELDS = [
   'sqStatus',
   'sqRejectReason',
   'sqCancelReason',
+  'sqMrpSavings',
+  'sqMrpSavingsPerc',
   'sqRemarks',
 ];
-
 // Line-item fields copied straight through when present on the payload. The
 // scope keys (quote/company/branch/tenant/accYear/lineNo/priceLevel) are set
 // explicitly from the parent, so they are intentionally excluded here.
@@ -101,9 +101,6 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiSrcUnitId',
   'sqiSrcDocRefno',
   'sqiSrcItemQty',
-  'sqiItemUnitId',
-  'sqiItemCode',
-  'sqiItemName',
   'sqiHsnCode',
   'sqiEanCode',
   'sqiBatchNo',
@@ -114,10 +111,11 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiIsFree',
   'sqiFreeType',
   'sqiIsService',
-  'sqiQty',
-  'sqiQtyLength',
-  'sqiItemWeight',
-  'sqiQtyConverted',
+  'sqiCaseQty',
+  'sqiBillQty',
+  'sqiLengthQty',
+  'sqiNetQty',
+  'sqiWeightQty',
   'sqiAvailableStock',
   'sqiRate',
   'sqiRatePreTax',
@@ -172,11 +170,12 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiCostPreTax',
   'sqiQuotePreTax',
   'sqiProfitPreTax',
+  'sqiMrpSavings',
+  'sqiMrpSavingsPerc',
   'sqiSchemeId',
   'sqiSchemeName',
   'sqiRemarks',
 ];
-
 // The immutable scope inherited by every line from its parent quotation.
 interface QuotationScope {
   sqId: string;
@@ -186,9 +185,7 @@ interface QuotationScope {
   sqAccYear: string;
   sqPriceLevel: number;
 }
-
 type QuotationWriteClient = SalesWriteClient;
-
 @Injectable()
 export class QuotationService {
   constructor(
@@ -196,14 +193,12 @@ export class QuotationService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
   ) {}
-
   async save(saveQuotationDto: SaveQuotationDto): Promise<QuotationPayload> {
     if (saveQuotationDto.sqId) {
       return this.updateQuotation(saveQuotationDto);
     }
     return this.createQuotation(saveQuotationDto);
   }
-
   async getById(sqId: string): Promise<QuotationPayload> {
     const record = await this.prisma.saleQuotation.findFirst({
       where: {
@@ -217,7 +212,6 @@ export class QuotationService {
         },
       },
     });
-
     if (!record) {
       throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
         'Quotation not found',
@@ -225,10 +219,8 @@ export class QuotationService {
         `No active quotation found with id ${sqId}`,
       );
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(sqId: string): Promise<{ sqId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.saleQuotation.findFirst({
@@ -237,7 +229,6 @@ export class QuotationService {
           sqIsDeleted: false,
         },
       });
-
       if (!existing) {
         throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
           'Quotation not found',
@@ -245,10 +236,8 @@ export class QuotationService {
           `No active quotation found with id ${sqId}`,
         );
       }
-
       const modifiedOn = new Date();
       const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-
       const result = await tx.saleQuotation.updateMany({
         where: {
           sqId,
@@ -260,7 +249,6 @@ export class QuotationService {
           sqModifiedBy: actor,
         },
       });
-
       if (result.count === 0) {
         throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
           'Quotation not found',
@@ -268,7 +256,6 @@ export class QuotationService {
           `No active quotation found with id ${sqId}`,
         );
       }
-
       // Cascade the soft delete to the quotation's line items so no line stays
       // active while the header is logically deleted.
       await tx.saleQuotationItem.updateMany({
@@ -282,7 +269,6 @@ export class QuotationService {
           sqiModifiedBy: actor,
         },
       });
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -290,7 +276,6 @@ export class QuotationService {
         sqModifiedOn: modifiedOn,
         sqModifiedBy: actor,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'delete',
@@ -306,33 +291,27 @@ export class QuotationService {
         },
         tx,
       );
-
       return {
         sqId,
         deleted: true,
       };
     });
   }
-
   private async createQuotation(saveQuotationDto: SaveQuotationDto): Promise<QuotationPayload> {
     const normalizedCustName = normalizeRequiredText<QuotationErrorDetail, QuotationErrorResponse>(
       saveQuotationDto.sqCustName ?? '',
       'sqCustName',
     );
-
     const normalizedRefno = normalizeRequiredText<QuotationErrorDetail, QuotationErrorResponse>(
       saveQuotationDto.sqQuoteRefno ?? '',
       'sqQuoteRefno',
     );
-
     const now = new Date();
     const createdBy = resolveActor(
       saveQuotationDto.sqCreatedBy,
       this.requestContextService.getUserId(),
     );
-
     const quoteDate = saveQuotationDto.sqQuoteDate ? new Date(saveQuotationDto.sqQuoteDate) : now;
-
     const data: Prisma.SaleQuotationUncheckedCreateInput = {
       sqCompanyId: saveQuotationDto.sqCompanyId,
       sqBranchId: saveQuotationDto.sqBranchId,
@@ -348,16 +327,12 @@ export class QuotationService {
       sqCreatedBy: createdBy,
       sqStatus: saveQuotationDto.sqStatus || 'DRAFT',
     };
-
     this.applyOptionalFields(data, saveQuotationDto);
-
     data.sqCustName = normalizedCustName;
     data.sqQuoteRefno = normalizedRefno;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const created = await tx.saleQuotation.create({ data });
-
         const scope: QuotationScope = {
           sqId: created.sqId,
           sqCompanyId: created.sqCompanyId,
@@ -366,11 +341,8 @@ export class QuotationService {
           sqAccYear: created.sqAccYear,
           sqPriceLevel: created.sqPriceLevel,
         };
-
         const items = await this.syncItems(tx, scope, saveQuotationDto.items, createdBy);
-
         const payload = this.toPayload({ ...created, items });
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -386,7 +358,6 @@ export class QuotationService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -403,10 +374,8 @@ export class QuotationService {
       throw error;
     }
   }
-
   private async updateQuotation(saveQuotationDto: SaveQuotationDto): Promise<QuotationPayload> {
     const sqId = saveQuotationDto.sqId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.saleQuotation.findFirst({
@@ -415,7 +384,6 @@ export class QuotationService {
             sqIsDeleted: false,
           },
         });
-
         if (!existing) {
           throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
             'Quotation not found',
@@ -423,25 +391,20 @@ export class QuotationService {
             `No active quotation found with id ${sqId}`,
           );
         }
-
         const now = new Date();
         const modifiedBy = resolveActor(
           saveQuotationDto.sqModifiedBy,
           this.requestContextService.getUserId(),
         );
-
         const data: Prisma.SaleQuotationUncheckedUpdateInput = {
           sqModifiedOn: now,
           sqModifiedBy: modifiedBy,
         };
-
         this.applyOptionalFields(data, saveQuotationDto);
-
         const updated = await tx.saleQuotation.update({
           where: { sqId },
           data,
         });
-
         const scope: QuotationScope = {
           sqId: updated.sqId,
           sqCompanyId: updated.sqCompanyId,
@@ -450,11 +413,8 @@ export class QuotationService {
           sqAccYear: updated.sqAccYear,
           sqPriceLevel: updated.sqPriceLevel,
         };
-
         const items = await this.syncItems(tx, scope, saveQuotationDto.items, modifiedBy);
-
         const payload = this.toPayload({ ...updated, items });
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -470,7 +430,6 @@ export class QuotationService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -487,7 +446,6 @@ export class QuotationService {
       throw error;
     }
   }
-
   // Reconciles the quotation's line items with the payload array:
   //   - a line carrying sqiId updates that existing line
   //   - a line without sqiId is created
@@ -503,17 +461,14 @@ export class QuotationService {
       where: { sqiQuoteId: scope.sqId, sqiIsDeleted: false },
       orderBy: { sqiLineNo: 'asc' },
     });
-
     if (inputItems === undefined) {
       return existing;
     }
-
     const existingMap = new Map(existing.map((item) => [item.sqiId, item]));
     const keptIds = new Set<string>();
     const seenLineNos = new Set<number>();
     const now = new Date();
     const persisted: SaleQuotationItem[] = [];
-
     for (const [index, inputItem] of inputItems.entries()) {
       const lineNo = inputItem.sqiLineNo ?? index + 1;
       if (seenLineNos.has(lineNo)) {
@@ -528,7 +483,6 @@ export class QuotationService {
         );
       }
       seenLineNos.add(lineNo);
-
       if (inputItem.sqiId) {
         const existingItem = existingMap.get(inputItem.sqiId);
         if (!existingItem) {
@@ -538,22 +492,19 @@ export class QuotationService {
             `No active quotation line found with id ${inputItem.sqiId} on this quotation`,
           );
         }
-
         const updateData: Prisma.SaleQuotationItemUncheckedUpdateInput = {
           sqiLineNo: lineNo,
           sqiItemId: inputItem.sqiItemId ?? existingItem.sqiItemId,
-          sqiUnitId: inputItem.sqiUnitId ?? existingItem.sqiUnitId,
+          sqiItemUnitId: inputItem.sqiItemUnitId ?? existingItem.sqiItemUnitId,
           sqiPriceLevel: inputItem.sqiPriceLevel ?? scope.sqPriceLevel,
           sqiModifiedOn: now,
           sqiModifiedBy: resolveActor(inputItem.sqiModifiedBy, actorId),
         };
         applyPresentFields(updateData, inputItem, QUOTATION_ITEM_OPTIONAL_FIELDS);
-
         const updated = await tx.saleQuotationItem.update({
           where: { sqiId: inputItem.sqiId },
           data: updateData,
         });
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -561,7 +512,7 @@ export class QuotationService {
             screenName: QUOTATION_AUDIT_SCREEN_NAME,
             screenType: 'transaction',
             pk: updated.sqiId,
-            displayName: updated.sqiItemName || `Line ${updated.sqiLineNo}`,
+            displayName: `Line ${updated.sqiLineNo}`,
             originalRecord: this.toItemPayload(existingItem),
             modifiedRecord: this.toItemPayload(updated),
             userId: resolveActor(inputItem.sqiModifiedBy, actorId),
@@ -569,12 +520,10 @@ export class QuotationService {
           },
           tx,
         );
-
         keptIds.add(updated.sqiId);
         persisted.push(updated);
         continue;
       }
-
       const createData: Prisma.SaleQuotationItemUncheckedCreateInput = {
         sqiQuoteId: scope.sqId,
         sqiCompanyId: inputItem.sqiCompanyId ?? scope.sqCompanyId,
@@ -583,15 +532,13 @@ export class QuotationService {
         sqiAccYear: inputItem.sqiAccYear ?? scope.sqAccYear,
         sqiLineNo: lineNo,
         sqiItemId: this.requireItemField(inputItem.sqiItemId, 'sqiItemId'),
-        sqiUnitId: this.requireItemField(inputItem.sqiUnitId, 'sqiUnitId'),
+        sqiItemUnitId: this.requireItemField(inputItem.sqiItemUnitId, 'sqiItemUnitId'),
         sqiPriceLevel: inputItem.sqiPriceLevel ?? scope.sqPriceLevel,
         sqiCreatedOn: now,
         sqiCreatedBy: resolveActor(inputItem.sqiCreatedBy, actorId),
       };
       applyPresentFields(createData, inputItem, QUOTATION_ITEM_OPTIONAL_FIELDS);
-
       const created = await tx.saleQuotationItem.create({ data: createData });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'New',
@@ -599,7 +546,7 @@ export class QuotationService {
           screenName: QUOTATION_AUDIT_SCREEN_NAME,
           screenType: 'transaction',
           pk: created.sqiId,
-          displayName: created.sqiItemName || `Line ${created.sqiLineNo}`,
+          displayName: `Line ${created.sqiLineNo}`,
           originalRecord: null,
           modifiedRecord: this.toItemPayload(created),
           userId: created.sqiCreatedBy,
@@ -607,11 +554,9 @@ export class QuotationService {
         },
         tx,
       );
-
       keptIds.add(created.sqiId);
       persisted.push(created);
     }
-
     // Any previously active line not present in the payload is soft deleted.
     const removed = existing.filter((item) => !keptIds.has(item.sqiId));
     for (const removedItem of removed) {
@@ -623,7 +568,6 @@ export class QuotationService {
           sqiModifiedBy: actorId,
         },
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'delete',
@@ -631,7 +575,7 @@ export class QuotationService {
           screenName: QUOTATION_AUDIT_SCREEN_NAME,
           screenType: 'transaction',
           pk: deleted.sqiId,
-          displayName: removedItem.sqiItemName || `Line ${removedItem.sqiLineNo}`,
+          displayName: `Line ${removedItem.sqiLineNo}`,
           originalRecord: this.toItemPayload(removedItem),
           modifiedRecord: this.toItemPayload(deleted),
           userId: actorId,
@@ -640,10 +584,8 @@ export class QuotationService {
         tx,
       );
     }
-
     return persisted.sort((left, right) => left.sqiLineNo - right.sqiLineNo);
   }
-
   private requireItemField(value: string | undefined, field: string): string {
     if (!value) {
       throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
@@ -654,14 +596,12 @@ export class QuotationService {
     }
     return value;
   }
-
   private applyOptionalFields(
     data: Prisma.SaleQuotationUncheckedCreateInput | Prisma.SaleQuotationUncheckedUpdateInput,
     dto: SaveQuotationDto,
   ): void {
     applyPresentFields(data, dto, QUOTATION_OPTIONAL_FIELDS);
   }
-
   private toPayload(record: SaleQuotation & { items?: SaleQuotationItem[] }): QuotationPayload {
     const { sqCreatedOn, sqModifiedOn, sqQuoteDatetime, sqSyncDate, items, ...rest } = record;
     return {
@@ -673,7 +613,6 @@ export class QuotationService {
       items: items ? items.map((item) => this.toItemPayload(item)) : [],
     };
   }
-
   private toItemPayload(record: SaleQuotationItem): QuotationItemPayload {
     const { sqiCreatedOn, sqiModifiedOn, sqiSyncDate, ...rest } = record;
     return {

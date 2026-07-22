@@ -111,7 +111,8 @@ model SaleQuotation {
   sqCancelledOn      DateTime? @db.Timestamptz(6) @map("sq_cancelled_on")
   sqCancelledBy      String?   @db.Uuid @map("sq_cancelled_by")
   sqCancelReason     String?   @db.VarChar(250) @map("sq_cancel_reason")
-
+  sqMrpSavings       Decimal?   @default(0) @db.Decimal(15,3) @map("sq_mrp_savings")
+  sqMrpSavingsPerc   Decimal?   @default(0) @db.Decimal(15,4) @map("sq_mrp_savings_perc")
   // print / device / sync + audit
   sqPrintCount       Int       @default(0) @map("sq_print_count")
   sqDeviceType       String?   @db.VarChar(20) @map("sq_device_type")

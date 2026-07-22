@@ -2794,6 +2794,8 @@ Table sale_quotation {
   sqCancelledOn DateTime
   sqCancelledBy String
   sqCancelReason String
+  sqMrpSavings Decimal [default: 0]
+  sqMrpSavingsPerc Decimal [default: 0]
   sqPrintCount Int [not null, default: 0]
   sqDeviceType String
   sqDeviceId String
@@ -2826,7 +2828,6 @@ Table sale_quotation_item {
   sqiSrcItemQty Decimal
   sqiLineNo Int [not null]
   sqiItemId String [not null]
-  sqiUnitId String [not null]
   sqiItemUnitId String [not null]
   sqiHsnCode String
   sqiPriceLevel Int [not null]
@@ -2839,10 +2840,11 @@ Table sale_quotation_item {
   sqiIsFree Boolean [not null, default: false]
   sqiFreeType String
   sqiIsService Boolean [not null, default: false]
-  sqiQtyCase Decimal [not null, default: 0]
-  sqiQtyBill Decimal [not null, default: 0]
-  sqiQtyLength Decimal [default: 0]
-  sqiQtyNetQty Decimal [not null, default: 0]
+  sqiCaseQty Decimal [not null, default: 0]
+  sqiBillQty Decimal [not null, default: 0]
+  sqiLengthQty Decimal [default: 0]
+  sqiNetQty Decimal [not null, default: 0]
+  sqiWeightQty Decimal [default: 0]
   sqiAvailableStock Decimal [not null, default: 0]
   sqiRate Decimal [not null, default: 0]
   sqiRatePreTax Decimal [not null, default: 0]
@@ -2897,6 +2899,8 @@ Table sale_quotation_item {
   sqiCostPreTax Decimal
   sqiQuotePreTax Decimal
   sqiProfitPreTax Decimal
+  sqiMrpSavings Decimal
+  sqiMrpSavingsPerc Decimal
   sqiSchemeId String
   sqiSchemeName String
   sqiRemarks String
@@ -3629,7 +3633,7 @@ Ref: sale_quotation_item.sqiQuoteId > sale_quotation.sqId [delete: No Action]
 
 Ref: sale_quotation_item.sqiItemId > item_master.itemId [delete: Restrict]
 
-Ref: sale_quotation_item.sqiUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: sale_quotation_item.sqiItemUnitId > item_unit_master.unit_id [delete: Restrict]
 
 Ref: sale_quotation_item.sqiPriceLevel > item_price_levels.iplId [delete: Restrict]
 

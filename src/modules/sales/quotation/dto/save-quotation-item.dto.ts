@@ -67,9 +67,9 @@ export class SaveQuotationItemDto {
   @NullableNumber()
   sqiSrcItemQty?: string | number | null;
 
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  @NullableUuid()
-  sqiItemUnitId?: string | null;
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  sqiItemUnitId!: string;
 
   @ApiPropertyOptional({ description: 'Defaults to the 1-based position within the items array' })
   @OptionalInteger()
@@ -78,18 +78,6 @@ export class SaveQuotationItemDto {
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   sqiItemId!: string;
-
-  @ApiPropertyOptional({ maxLength: 50, nullable: true })
-  @NullableStringStrict(50)
-  sqiItemCode?: string | null;
-
-  @ApiPropertyOptional({ maxLength: 200, nullable: true })
-  @NullableStringStrict(200)
-  sqiItemName?: string | null;
-
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  sqiUnitId!: string;
 
   @ApiPropertyOptional({ maxLength: 8, nullable: true })
   @NullableStringStrict(8)
@@ -137,19 +125,23 @@ export class SaveQuotationItemDto {
 
   @ApiPropertyOptional()
   @OptionalNumber()
-  sqiQty?: string | number;
+  sqiCaseQty?: string | number;
 
   @ApiPropertyOptional()
   @OptionalNumber()
-  sqiQtyLength?: string | number;
+  sqiBillQty?: string | number;
+
+  @ApiPropertyOptional()
+  @OptionalNumber()
+  sqiLengthQty?: string | number;
+
+  @ApiPropertyOptional()
+  @OptionalNumber()
+  sqiNetQty?: string | number;
 
   @ApiPropertyOptional({ nullable: true })
   @NullableNumber()
-  sqiItemWeight?: string | number | null;
-
-  @ApiPropertyOptional()
-  @OptionalNumber()
-  sqiQtyConverted?: string | number;
+  sqiWeightQty?: string | number | null;
 
   @ApiPropertyOptional()
   @OptionalNumber()
@@ -366,6 +358,14 @@ export class SaveQuotationItemDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableNumber()
   sqiProfitPreTax?: string | number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableNumber()
+  sqiMrpSavings?: string | number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @NullableNumber()
+  sqiMrpSavingsPerc?: string | number | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
