@@ -165,7 +165,7 @@ export class MasterLookupController {
   @CacheTTL(60)
   @ApiOperation({
     summary:
-      'Resolve an item into a single sale-lookup row: effective price for the requested price level, tax block, stock, reorder and quantity-wise rates. unit_id selects the unit rate, else the unit-slno rule applies (retail item → highest unit, else base unit); customer_id applies a customer rate to price levels 1–4; godown_id overrides the sale godown; enable_loading sums stock across all godowns; regional returns the local-language name; acccyear scopes stock.',
+      'Resolve an item into a single sale-lookup row: effective price for the requested price level, tax block, stock, reorder and quantity-wise rates. unit_id selects the unit rate, else the unit-slno rule applies (retail item → highest unit, else base unit); customer_id applies a customer rate to price levels 1–4; godown_id overrides the sale godown; regional returns the local-language name; acccyear scopes stock.',
   })
   @ApiQuery({ name: 'item_id', required: true, schema: { type: 'string', format: 'uuid' } })
   @ApiQuery({ name: 'company_id', required: true, schema: { type: 'string', format: 'uuid' } })
@@ -190,12 +190,6 @@ export class MasterLookupController {
     schema: { type: 'string', format: 'uuid' },
   })
   @ApiQuery({ name: 'acccyear', required: false, schema: { type: 'string', maxLength: 9 } })
-  @ApiQuery({
-    name: 'enable_loading',
-    required: false,
-    description: 'Loading mode. When true, stock is summed across ALL godowns; when false/absent it is scoped to the resolved godown.',
-    schema: { type: 'boolean' },
-  })
   @ApiQuery({
     name: 'regional',
     required: false,

@@ -53,7 +53,6 @@ import { UnitsMasterModule } from 'src/modules/Inventory/units-master/units-mast
 import { ItemsTaxMasterModule } from 'src/modules/Inventory/items-tax-master/items-tax-master.module';
 import { ItemsPriceMasterModule } from 'src/modules/Inventory/items-price-master/items-price-master.module';
 import { ItemUnitConversionModule } from 'src/modules/Inventory/item-unit-conversion/item-unit-conversion.module';
-import { ItemsQtywiseRatesMasterModule } from 'src/modules/Inventory/items-qtywise-rates-master/items-qtywise-rates-master.module';
 import { ItemsReorderMasterModule } from 'src/modules/Inventory/items-reorder-master/items-reorder-master.module';
 import { ItemsTaxHistoryMasterModule } from 'src/modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from 'src/modules/Inventory/items-master/items-master.module';
@@ -147,12 +146,6 @@ export const swaggerModuleDocuments = [
     title: 'Item Price Details API',
     description: 'Item price details module endpoints',
     include: [ItemPriceDetailsModule],
-  },
-  {
-    path: 'item-qtywise-rates',
-    title: 'Item Qtywise Rates API',
-    description: 'Item qtywise rates module endpoints',
-    include: [ItemsQtywiseRatesMasterModule],
   },
   {
     path: 'item-reorders',

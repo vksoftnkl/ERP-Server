@@ -1482,33 +1482,32 @@ Table item_price_master {
   itemUnitConversion item_unit_conversion [not null]
   godown godown_locations
   openingStockBaseUomDetails opening_stock_detail [not null]
-  qtywiseRates item_qtywise_rates [not null]
 }
 
-Table item_qtywise_rates {
-  iqrId String [pk]
-  iqrBranchId String
-  iqrUnitRateId String [not null]
-  iqrPriceLevel Int [not null]
-  iqrStartQty Decimal [not null]
-  iqrEndQty Decimal
-  iqrEachQty Decimal [not null]
-  iqrSalesPrice Decimal [not null, default: 0]
-  iqrPriceWot Decimal [not null, default: 0]
-  iqrPriceMargin Decimal [not null, default: 0]
-  iqrDiscPerc Decimal [not null, default: 0]
-  iqrDiscQty Decimal [not null, default: 0]
-  iqrValidFrom DateTime
-  iqrValidTo DateTime
-  iqrPriority Int [not null, default: 0]
-  iqrIsActive Boolean [not null, default: true]
-  iqrIsDeleted Boolean [not null, default: false]
-  iqrCreatedOn DateTime [default: `now()`, not null]
-  iqrCreatedBy String
-  iqrModifiedOn DateTime [default: `now()`, not null]
-  iqrModifiedBy String
-  iqrRemarks String
-  unitRate item_price_master [not null]
+Table item_qty_price {
+  iqpId String [pk]
+  iqpCompanyId String
+  iqpBranchId String
+  iqpPartyId String
+  iqpPriceLevel Int
+  iqpItemId String [not null]
+  iqpItemUnitId String [not null]
+  iqpFromQty Decimal [not null, default: 0]
+  iqpToQty Decimal
+  iqpPriceMode String [not null, default: 'P']
+  iqpDiscPct Decimal
+  iqpFlatOff Decimal
+  iqpPrice Decimal
+  iqpIsTaxIncl Boolean [not null, default: false]
+  iqpEffectiveFrom DateTime [not null]
+  iqpEffectiveTo DateTime
+  iqpIsActive Boolean [not null, default: true]
+  iqpIsDeleted Boolean [not null, default: false]
+  iqpSyncDate DateTime
+  iqpCreatedBy String
+  iqpCreatedOn DateTime [default: `now()`, not null]
+  iqpModifiedBy String
+  iqpModifiedOn DateTime [default: `now()`, not null]
 }
 
 Table item_reorders {
@@ -2654,6 +2653,34 @@ Table loyalty_sch_points {
   unit item_unit_master
 }
 
+Table sale_agents {
+  saId String [pk]
+  saCompanyId String [not null]
+  saBranchId String
+  saGroupId String [not null]
+  saCode String
+  saName String [not null]
+  saAlias String
+  saMobile1 String
+  saMobile2 String
+  saAddr1 String
+  saAddr2 String
+  saCity String
+  saDistrict String
+  saState String
+  saPincode String
+  saPanNo String
+  saGstin String
+  saRemarks String
+  saIsActive Boolean [not null, default: true]
+  saIsDeleted Boolean [not null, default: false]
+  saSyncDate DateTime
+  saCreatedBy String
+  saCreatedOn DateTime [default: `now()`, not null]
+  saModifiedBy String
+  saModifiedOn DateTime [default: `now()`, not null]
+}
+
 Table sale_agent_groups {
   saGrpId String [pk]
   saGrpName String [not null]
@@ -3520,8 +3547,6 @@ Ref: item_price_master.ipmBranchId > branch_master.brId [delete: Restrict]
 Ref: item_price_master.ipmUcUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: item_price_master.ipmGodownId > godown_locations.gdlId [delete: Restrict]
-
-Ref: item_qtywise_rates.iqrUnitRateId > item_price_master.ipmId [delete: Restrict]
 
 Ref: item_reorders.irItemId > item_master.itemId [delete: Restrict]
 

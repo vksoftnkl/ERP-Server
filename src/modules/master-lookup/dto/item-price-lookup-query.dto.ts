@@ -33,12 +33,6 @@ export class ItemPriceLookupQueryDto {
   @OptionalTrimmedString(9)
   acccyear?: string;
   @ApiPropertyOptional({
-    description:
-      'Loading mode (legacy ienable_loading). When true, stock is summed across ALL godowns; when false/absent it is scoped to the resolved godown.',
-  })
-  @OptionalQueryBoolean()
-  enable_loading?: boolean;
-  @ApiPropertyOptional({
     description: 'Regional name (legacy iregional). When true, returns item_name_ta, else the English name.',
   })
   @OptionalQueryBoolean()

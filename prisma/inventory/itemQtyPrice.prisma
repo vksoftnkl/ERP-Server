@@ -1,0 +1,43 @@
+model ItemQtyPrice {
+  iqpId           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("iqp_id")
+  iqpCompanyId    String?   @db.Uuid @map("iqp_company_id")
+  iqpBranchId     String?   @db.Uuid @map("iqp_branch_id")
+  iqpPartyId      String?   @db.Uuid @map("iqp_party_id")
+  iqpPriceLevel   Int?      @map("iqp_price_level")
+  iqpItemId       String    @db.Uuid @map("iqp_item_id")
+  iqpItemUnitId   String    @db.Uuid @map("iqp_item_unit_id")
+
+  // slab: lower bound inclusive, upper bound exclusive (NULL = "& above")
+  iqpFromQty      Decimal   @default(0) @db.Decimal(14, 3) @map("iqp_from_qty")
+  iqpToQty        Decimal?  @db.Decimal(14, 3) @map("iqp_to_qty")
+
+  // discount type: P = by % | R = by qty (flat off) | F = fixed price
+  iqpPriceMode    String    @default("P") @db.Char(1) @map("iqp_price_mode")
+  iqpDiscPct      Decimal?  @db.Decimal(6, 3) @map("iqp_disc_pct")
+  iqpFlatOff      Decimal?  @db.Decimal(14, 3) @map("iqp_flat_off")
+  iqpPrice        Decimal?  @db.Decimal(14, 3) @map("iqp_price")
+
+  iqpIsTaxIncl    Boolean   @default(false) @map("iqp_is_tax_incl")
+  iqpEffectiveFrom DateTime @db.Date @map("iqp_effective_from")
+  iqpEffectiveTo  DateTime? @db.Date @map("iqp_effective_to")
+  iqpIsActive     Boolean   @default(true) @map("iqp_is_active")
+  iqpIsDeleted    Boolean   @default(false) @map("iqp_is_deleted")
+  iqpSyncDate     DateTime? @db.Timestamptz(6) @map("iqp_sync_date")
+  iqpCreatedBy    String?   @db.VarChar(100) @map("iqp_created_by")
+  iqpCreatedOn    DateTime  @default(now()) @db.Timestamptz(6) @map("iqp_created_on")
+  iqpModifiedBy   String?   @db.VarChar(100) @map("iqp_modified_by")
+  iqpModifiedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("iqp_modified_on")
+
+  @@map("item_qty_price")
+  @@schema("inventory")
+  // iqp_item_id / iqp_store_id FKs are deliberately not enforced at the DB
+  // level yet (left commented in the source DDL) — no Prisma relation added.
+  // CHECK constraints (ck_iqp_qty_range, ck_iqp_qty_nonneg, ck_iqp_date_range,
+  // ck_iqp_mode) are not expressible in Prisma schema.
+  // DB-only EXCLUDE USING gist constraint ex_iqp_no_overlap (requires the
+  // btree_gist extension) prevents overlapping active qty+date slabs per
+  // company/branch/item/price_level/unit; not expressible in Prisma schema.
+  // DB-only partial index ix_iqp_lookup on (iqp_item_id, iqp_company_id,
+  // iqp_effective_from DESC) WHERE iqp_is_deleted = false AND iqp_is_active =
+  // true is not expressible in Prisma schema.
+}

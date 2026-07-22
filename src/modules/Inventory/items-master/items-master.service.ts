@@ -503,17 +503,7 @@ export class ItemsMasterService {
         },
       ]);
     }
-    // item_company_id must always be supplied by the caller — it is never
-    // inferred from the access token, so a missing value is a client error.
-    const companyId = saveItemDto.item_company_id;
-    if (!companyId) {
-      throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
-        {
-          field: 'item_company_id',
-          message: 'item_company_id is required',
-        },
-      ]);
-    }
+    const companyId = saveItemDto.item_company_id ?? null;
     const now = new Date();
     const createdBy = resolveActor(saveItemDto.item_created_by, this.requestContextService.getUserId());
     const modifiedBy = resolveActor(saveItemDto.item_modified_by, createdBy);
@@ -568,17 +558,7 @@ export class ItemsMasterService {
         },
       ]);
     }
-    // item_company_id must always be supplied by the caller — it is never
-    // inferred from the access token, so a missing value is a client error.
-    const companyId = saveItemDto.item_company_id;
-    if (!companyId) {
-      throwInventoryBadRequest<ItemErrorDetail>('Validation failed', [
-        {
-          field: 'item_company_id',
-          message: 'item_company_id is required',
-        },
-      ]);
-    }
+    const companyId = saveItemDto.item_company_id ?? null;
     const update = async (client: Prisma.TransactionClient) => {
       const existing = await client.itemMaster.findFirst({
         where: {

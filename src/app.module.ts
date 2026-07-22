@@ -80,7 +80,6 @@ import { ItemsEanCodeMasterModule } from './modules/Inventory/items-ean-code-mas
 import { ItemsGstUnitsMasterModule } from './modules/Inventory/items-gst-units-master/items-gst-units-master.module';
 import { ItemsPriceMasterModule } from './modules/Inventory/items-price-master/items-price-master.module';
 import { ItemUnitConversionModule } from './modules/Inventory/item-unit-conversion/item-unit-conversion.module';
-import { ItemsQtywiseRatesMasterModule } from './modules/Inventory/items-qtywise-rates-master/items-qtywise-rates-master.module';
 import { ItemsReorderMasterModule } from './modules/Inventory/items-reorder-master/items-reorder-master.module';
 import { ItemsTaxHistoryMasterModule } from './modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from './modules/Inventory/items-master/items-master.module';
@@ -135,7 +134,6 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemsPriceMasterModule,
     ItemUnitConversionModule,
     ItemPriceDetailsModule,
-    ItemsQtywiseRatesMasterModule,
     ItemsReorderMasterModule,
     ItemsTaxHistoryMasterModule,
     ItemsMasterModule,

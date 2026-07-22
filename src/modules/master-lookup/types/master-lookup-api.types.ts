@@ -111,6 +111,8 @@ export interface ItemPriceLookupPayload {
   // Item flags
   allow_promo: boolean;
   add_freight: boolean;
+  loading_type: 'Y' | 'N';
+  freight_type: 'Y' | 'N';
   item_group_id: string;
   item_category_id: string | null;
   weigh_scale: boolean;

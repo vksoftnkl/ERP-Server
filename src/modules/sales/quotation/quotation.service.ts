@@ -199,10 +199,18 @@ export class QuotationService {
     }
     return this.createQuotation(saveQuotationDto);
   }
-  async getById(sqId: string): Promise<QuotationPayload> {
+  async getById(
+    sqId: string,
+    sqCompanyId: string,
+    sqBranchId: string,
+    sqAccYear: string,
+  ): Promise<QuotationPayload> {
     const record = await this.prisma.saleQuotation.findFirst({
       where: {
         sqId,
+        sqCompanyId,
+        sqBranchId,
+        sqAccYear,
         sqIsDeleted: false,
       },
       include: {

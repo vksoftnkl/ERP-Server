@@ -67,13 +67,19 @@ export class QuotationController {
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get quotation by id' })
   @ApiQuery({ name: 'sqId', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'sqCompanyId', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'sqBranchId', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'sqAccYear', schema: { type: 'string' } })
   @ApiOkResponse({ type: QuotationSuccessSingleDto })
   @ApiBadRequestResponse({ type: QuotationErrorResponseDto })
   @ApiNotFoundResponse({ type: QuotationErrorResponseDto })
   async getById(
     @Query('sqId', new ParseUUIDPipe({ version: '7' })) sqId: string,
+    @Query('sqCompanyId', new ParseUUIDPipe({ version: '7' })) sqCompanyId: string,
+    @Query('sqBranchId', new ParseUUIDPipe({ version: '7' })) sqBranchId: string,
+    @Query('sqAccYear') sqAccYear: string,
   ): Promise<QuotationSuccessResponse<QuotationPayload>> {
-    const data = await this.quotationService.getById(sqId);
+    const data = await this.quotationService.getById(sqId, sqCompanyId, sqBranchId, sqAccYear);
     return {
       success: true,
       message: 'Quotation fetched successfully',

@@ -375,6 +375,10 @@ export class ItemPriceLookupPayloadDto {
   allow_promo!: boolean;
   @ApiProperty()
   add_freight!: boolean;
+  @ApiProperty({ enum: ['Y', 'N'] })
+  loading_type!: 'Y' | 'N';
+  @ApiProperty({ enum: ['Y', 'N'] })
+  freight_type!: 'Y' | 'N';
   @ApiProperty({ format: 'uuid' })
   item_group_id!: string;
   @ApiProperty({ format: 'uuid', nullable: true })

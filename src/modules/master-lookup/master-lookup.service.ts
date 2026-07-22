@@ -419,8 +419,8 @@ export class MasterLookupService {
    *    highest slno row, a non-retail item takes the base row (slno 0).
    *  - godown (legacy `isale_no`): an explicit godown_id overrides the rate's
    *    own godown for both the godown row and the stock scope.
-   *  - stock (legacy `ienable_loading`): when enable_loading is set, stock is
-   *    summed across ALL godowns; otherwise it is scoped to the resolved godown.
+   *  - stock: scoped to the resolved godown; a godown-less price row sums
+   *    across all godowns since there is nothing to scope it to.
    *  - customer rate (legacy `CSR.csr_disc_qty`): the customer discount is
    *    subtracted ONLY from the A/B/C/D sales prices (levels 1–4), never from
    *    max/min/cost (levels 5/6/7).
@@ -438,7 +438,6 @@ export class MasterLookupService {
   async getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload> {
     const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
     const priceLevel = query.price_level;
-    const enableLoading = query.enable_loading ?? false;
     const regional = query.regional ?? false;
 
     // 1. Item + candidate unit-rate rows (legacy: item_master ⋈ item_unit_rates).
@@ -522,11 +521,9 @@ export class MasterLookupService {
               isbUnitId: rateUnitId,
               isbCompanyId: company_id,
               isbBranchId: branch_id,
-              // Legacy `ienable_loading`: loading mode sums across all godowns;
-              // otherwise stock is scoped to the resolved godown.
-              // A godown-less price row is not godown-scoped, so its stock sums
-              // across all godowns exactly as loading mode does.
-              ...(enableLoading || !godownId ? {} : { isbGodownId: godownId }),
+              // A godown-less price row is not godown-scoped, so its stock
+              // sums across all godowns.
+              ...(godownId ? { isbGodownId: godownId } : {}),
             },
           })
         : Promise.resolve(null),
@@ -573,6 +570,8 @@ export class MasterLookupService {
 
       allow_promo: itemRecord.itemAllowPromo,
       add_freight: itemRecord.itemAllowFreight,
+      loading_type: itemRecord.itemAllowLoading ? 'Y' : 'N',
+      freight_type: itemRecord.itemAllowFreight ? 'Y' : 'N',
       item_group_id: itemRecord.itemGroupId,
       item_category_id: itemRecord.itemCategoryId,
       weigh_scale: itemRecord.itemWeighScale,

@@ -36,7 +36,6 @@ import {
   GspProviderMasterSuccessResponse,
 } from './types/gsp-provider-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('GSP Provider Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -45,7 +44,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(GspProviderMasterExceptionFilter)
 export class GspProviderMasterController {
   constructor(private readonly gspProviderMasterService: GspProviderMasterService) { }
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update GSP provider (by gspProviderId presence)' })
@@ -57,7 +55,6 @@ export class GspProviderMasterController {
     @Body() saveGspProviderMasterDto: SaveGspProviderMasterDto,
   ): Promise<GspProviderMasterSuccessResponse<GspProviderMasterPayload>> {
     const data = await this.gspProviderMasterService.save(saveGspProviderMasterDto);
-
     return {
       success: true,
       message: saveGspProviderMasterDto.gspProviderId
@@ -66,7 +63,6 @@ export class GspProviderMasterController {
       data,
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get GSP provider by id' })
@@ -78,14 +74,12 @@ export class GspProviderMasterController {
     @Query('gspProviderId', new ParseUUIDPipe({ version: '7' })) gspProviderId: string,
   ): Promise<GspProviderMasterSuccessResponse<GspProviderMasterPayload>> {
     const data = await this.gspProviderMasterService.getById(gspProviderId);
-
     return {
       success: true,
       message: 'GSP provider fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete GSP provider by id' })
@@ -97,7 +91,6 @@ export class GspProviderMasterController {
     @Query('gspProviderId', new ParseUUIDPipe({ version: '7' })) gspProviderId: string,
   ): Promise<GspProviderMasterSuccessResponse<{ gspProviderId: string; deleted: true }>> {
     const data = await this.gspProviderMasterService.softDelete(gspProviderId);
-
     return {
       success: true,
       message: 'GSP provider deleted successfully',
