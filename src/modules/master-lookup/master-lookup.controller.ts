@@ -19,6 +19,7 @@ import {
   FiscalYearOption,
   FreightChargeOption,
   ItemPriceLookupPayload,
+  ItemUnitOption,
   LOOKUP_MODULE_KEYS,
   MasterLookupDataPayload,
   MasterLookupSuccessResponse,
@@ -31,6 +32,7 @@ import {
   FreightChargeListSuccessDto,
   ItemPriceLookupPayloadDto,
   ItemPriceLookupSuccessDto,
+  ItemUnitOptionListSuccessDto,
   MasterLookupSuccessDto,
   NameIdOptionListSuccessDto,
 } from './dto/master-lookup-response.dto';
@@ -159,6 +161,20 @@ export class MasterLookupController {
       message: `Item fetched successfully for barcode ${query.barcode}`,
       data,
     };
+  }
+  @Get('units/by-item/:itemId')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary:
+      "Get an item's units from item_unit_conversion joined to item_unit_master. Returns itemUnitId (iuc_id), unitId (unit_id) and unitName (unit_name) for each active, non-deleted conversion, in unit-slno order (base unit first).",
+  })
+  @ApiParam({ name: 'itemId', type: String, description: 'UUID of the item' })
+  @ApiOkResponse({ type: ItemUnitOptionListSuccessDto })
+  async getUnitsByItem(
+    @Param('itemId') itemId: string,
+  ): Promise<MasterLookupSuccessResponse<ItemUnitOption[]>> {
+    const data = await this.masterLookupService.getUnitsByItem(itemId);
+    return { success: true, message: `Units fetched for item ${itemId}`, data };
   }
   @Get('item-price')
   @Version(API_VERSION)

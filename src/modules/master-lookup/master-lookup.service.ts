@@ -27,6 +27,7 @@ import {
   FiscalYearOption,
   FreightChargeOption,
   ItemPriceLookupPayload,
+  ItemUnitOption,
   LookupModuleKey,
   LOOKUP_MODULE_ALIASES,
   LOOKUP_MODULE_KEYS,
@@ -304,6 +305,28 @@ export class MasterLookupService {
       itemStatus: item.itemIsActive,
       weighScale: item.itemWeighScale,
     };
+  }
+  /**
+   * Resolve an item into its selling/purchase units from `item_unit_conversion`
+   * joined to `item_unit_master`. Returns active, non-deleted conversion rows in
+   * unit-slno order (base unit first). `itemUnitId` is the conversion PK (iuc_id)
+   * that sale/quotation lines reference, `unitId`/`unitName` come from the unit.
+   */
+  async getUnitsByItem(itemId: string): Promise<ItemUnitOption[]> {
+    const rows = await this.prisma.itemUnitConversion.findMany({
+      where: { iucItemId: itemId, iucIsActive: true, iucIsDeleted: false },
+      orderBy: [{ iucUnitSlno: 'asc' }],
+      select: {
+        iucId: true,
+        iucUnitId: true,
+        unit: { select: { unit_name: true } },
+      },
+    });
+    return rows.map((row) => ({
+      itemUnitId: row.iucId,
+      unitId: row.iucUnitId,
+      unitName: row.unit.unit_name,
+    }));
   }
   /**
    * Port of the legacy PL/pgSQL `iflag = 7` customer-detail cursor onto the

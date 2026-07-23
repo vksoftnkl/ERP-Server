@@ -160,6 +160,19 @@ export interface ItemPriceLookupPayload {
   igst_output_ledger_id: string | null;
   cess_output_ledger_id: string | null;
 }
+/**
+ * A single unit option for an item, resolved from `item_unit_conversion` joined
+ * to `item_unit_master`. `itemUnitId` is the conversion row PK (iuc_id) used by
+ * downstream sale/quotation lines that reference the conversion, not the raw unit.
+ */
+export interface ItemUnitOption {
+  /** item_unit_conversion PK (iuc_id) — the item-scoped unit reference. */
+  itemUnitId: string;
+  /** item_unit_master PK (unit_id) — the underlying unit. */
+  unitId: string;
+  /** Unit name from item_unit_master (unit_name). */
+  unitName: string;
+}
 export interface AccountsLookupPayload {
   companies: NameIdOption[];
   companyGroups: NameIdOption[];

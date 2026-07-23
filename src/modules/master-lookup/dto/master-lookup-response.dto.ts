@@ -223,6 +223,28 @@ export class BarcodeItemLookupSuccessDto {
   data!: BarcodeItemLookupDto;
 }
 
+export class ItemUnitOptionDto {
+  @ApiProperty({ format: 'uuid', description: 'item_unit_conversion PK (iuc_id)' })
+  itemUnitId!: string;
+
+  @ApiProperty({ format: 'uuid', description: 'item_unit_master PK (unit_id)' })
+  unitId!: string;
+
+  @ApiProperty({ example: 'PCS', description: 'Unit name (unit_name)' })
+  unitName!: string;
+}
+
+export class ItemUnitOptionListSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+
+  @ApiProperty({ example: 'Units fetched successfully for item' })
+  message!: string;
+
+  @ApiProperty({ type: [ItemUnitOptionDto] })
+  data!: ItemUnitOptionDto[];
+}
+
 export class CustomerDetailDto {
   @ApiProperty({ format: 'uuid' })
   cust_id!: string;
