@@ -277,22 +277,17 @@ export class ItemsQtyPriceMasterService {
     const createdBy = resolveActor(
       saveItemQtyPriceDto.iqp_created_by,
       this.requestContextService.getUserId(),
-    );
-    const modifiedBy = resolveActor(saveItemQtyPriceDto.iqp_modified_by, createdBy);
+    );   
     const data: Prisma.ItemQtyPriceUncheckedCreateInput = {
       iqpItemId: saveItemQtyPriceDto.iqp_item_id,
       iqpItemUnitId: saveItemQtyPriceDto.iqp_item_unit_id,
       iqpEffectiveFrom: effectiveFrom,
       iqpCreatedOn: now,
       iqpCreatedBy: createdBy,
-      iqpModifiedOn: now,
-      iqpModifiedBy: modifiedBy,
     };
     this.applyOptionalFields(data, saveItemQtyPriceDto);
-
     const created = await tx.itemQtyPrice.create({ data, include: ITEM_QTY_PRICE_INCLUDE });
     const payload = this.toPayload(created);
-
     await this.auditLogService.logEntityChange(
       {
         action: 'New',
@@ -308,16 +303,13 @@ export class ItemsQtyPriceMasterService {
       },
       tx,
     );
-
     return payload;
   }
-
   private async updateItemQtyPrice(
     tx: Prisma.TransactionClient,
     saveItemQtyPriceDto: SaveItemQtyPriceDto,
   ): Promise<ItemQtyPricePayload> {
     const iqpId = saveItemQtyPriceDto.iqp_id!;
-
     const existing = await tx.itemQtyPrice.findFirst({
       where: { iqpId, iqpIsDeleted: false },
       include: ITEM_QTY_PRICE_INCLUDE,
@@ -325,7 +317,6 @@ export class ItemsQtyPriceMasterService {
     if (!existing) {
       this.throwNotFound(iqpId);
     }
-
     const nextEffectiveFrom = this.parseRequiredDate(
       saveItemQtyPriceDto.iqp_effective_from,
       'iqp_effective_from',
@@ -334,7 +325,6 @@ export class ItemsQtyPriceMasterService {
       ? (this.parseOptionalDate(saveItemQtyPriceDto.iqp_effective_to, 'iqp_effective_to') ?? null)
       : existing.iqpEffectiveTo;
     this.validateDateRange(nextEffectiveFrom, nextEffectiveTo);
-
     const nextFromQty = hasOwnProperty(saveItemQtyPriceDto, 'iqp_from_qty')
       ? (saveItemQtyPriceDto.iqp_from_qty ?? 0)
       : toNumber(existing.iqpFromQty);
@@ -342,7 +332,6 @@ export class ItemsQtyPriceMasterService {
       ? (saveItemQtyPriceDto.iqp_to_qty ?? null)
       : toNullableNumber(existing.iqpToQty);
     this.validateQtyRange(nextFromQty, nextToQty);
-
     const data: Prisma.ItemQtyPriceUncheckedUpdateInput = {
       iqpItemId: saveItemQtyPriceDto.iqp_item_id,
       iqpItemUnitId: saveItemQtyPriceDto.iqp_item_unit_id,
@@ -354,14 +343,12 @@ export class ItemsQtyPriceMasterService {
       ),
     };
     this.applyOptionalFields(data, saveItemQtyPriceDto);
-
     const updated = await tx.itemQtyPrice.update({
       where: { iqpId },
       data,
       include: ITEM_QTY_PRICE_INCLUDE,
     });
     const payload = this.toPayload(updated);
-
     await this.auditLogService.logEntityChange(
       {
         action: 'update',
@@ -377,10 +364,8 @@ export class ItemsQtyPriceMasterService {
       },
       tx,
     );
-
     return payload;
   }
-
   private applyOptionalFields(
     data: Prisma.ItemQtyPriceUncheckedCreateInput | Prisma.ItemQtyPriceUncheckedUpdateInput,
     saveItemQtyPriceDto: SaveItemQtyPriceDto,
@@ -417,7 +402,6 @@ export class ItemsQtyPriceMasterService {
     if (hasOwnProperty(saveItemQtyPriceDto, 'iqp_sync_date'))
       data.iqpSyncDate = this.parseOptionalDate(saveItemQtyPriceDto.iqp_sync_date, 'iqp_sync_date');
   }
-
   private validateDateRange(effectiveFrom: Date, effectiveTo: Date | null): void {
     if (!effectiveTo) {
       return;
@@ -431,7 +415,6 @@ export class ItemsQtyPriceMasterService {
       ]);
     }
   }
-
   private validateQtyRange(fromQty: number, toQty: number | null): void {
     if (toQty === null) {
       return;
@@ -447,7 +430,6 @@ export class ItemsQtyPriceMasterService {
       ]);
     }
   }
-
   private parseRequiredDate(value: string, fieldName: string): Date {
     const parsedDate = new Date(value);
     if (Number.isNaN(parsedDate.getTime())) {
@@ -457,7 +439,6 @@ export class ItemsQtyPriceMasterService {
     }
     return parsedDate;
   }
-
   private parseOptionalDate(
     value: string | null | undefined,
     fieldName: string,
@@ -476,7 +457,6 @@ export class ItemsQtyPriceMasterService {
     }
     return parsedDate;
   }
-
   private toPayload(record: ItemQtyPriceWithNames): ItemQtyPricePayload {
     return {
       iqp_id: record.iqpId,
@@ -512,13 +492,11 @@ export class ItemsQtyPriceMasterService {
       iqp_party_name: record.party?.cusName ?? null,
     };
   }
-
   private buildDisplayName(record: ItemQtyPrice): string {
     const levelSegment = record.iqpPriceLevel ?? 'ALL';
     const upperSegment = record.iqpToQty !== null ? toNumber(record.iqpToQty) : 'ABOVE';
     return `${record.iqpItemId}:${record.iqpItemUnitId}:L${levelSegment}:[${toNumber(record.iqpFromQty)}-${upperSegment})`;
   }
-
   private handleWriteError(error: unknown): void {
     throwOnUniqueConstraintError<ItemQtyPriceErrorDetail>(error, 'Item qty price already exists', [
       { field: 'iqp_item_id', message: 'Duplicate qty price slab is not allowed' },
@@ -532,7 +510,6 @@ export class ItemsQtyPriceMasterService {
       ]);
     }
   }
-
   private throwNotFound(iqpId: string): never {
     throwInventoryNotFound<ItemQtyPriceErrorDetail>(
       'Item qty price not found',
