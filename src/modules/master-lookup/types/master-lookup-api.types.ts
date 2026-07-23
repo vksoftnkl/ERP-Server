@@ -1,6 +1,5 @@
 import type { ModuleApiSuccessResponse } from 'src/common/types/module-api.types';
 export type MasterLookupSuccessResponse<TData> = ModuleApiSuccessResponse<TData, never, never>;
-
 export interface NameIdOption {
   id: string;
   name: string;
@@ -100,14 +99,12 @@ export interface ItemPriceLookupPayload {
   // NULL when the selected price row is not scoped to a godown.
   godown_id: string | null;
   godown_name: string;
-
   // Identity / naming
   item_code: string | null;
   /** Regional name (item_name_ta) when the `regional` flag is set, else the English name. */
   item_name: string;
   item_com_code: string | null;
   barcode: string | null;
-
   // Item flags
   allow_promo: boolean;
   add_freight: boolean;
@@ -119,7 +116,6 @@ export interface ItemPriceLookupPayload {
   batch_config: number;
   service_item: 'Y' | 'N';
   allow_negative_stock: boolean;
-
   // Pricing (effective = selected price level − customer disc qty)
   /** Selected price column: 1=A, 2=B, 3=C, 4=D, 5=MRP/max, 6=min, 7=cost. */
   price_level: number;
@@ -133,20 +129,16 @@ export interface ItemPriceLookupPayload {
   /** Legacy item-group price-level scheme discount — no equivalent column in the current schema, always null. */
   sch_discount: number | null;
   addl_cess: number;
-
   // Unit
   unit_desc: string | null;
   unit_weight: number;
   unit_loading: number;
   decimal_count: number;
-
   // Loyalty
   loyalty_pv: number;
-
   // Stock (null when no accounting year supplied)
   stock: number | null;
   reorder_qty: number | null;
-
   // Tax — perc fields are zeroed when the company has GST disabled
   gst_rate: number;
   cess_perc: number;

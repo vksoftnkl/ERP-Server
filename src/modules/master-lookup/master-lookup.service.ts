@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { ItemPriceMaster, Prisma } from '@prisma/client';
-
 /**
  * item_price_master.ipm_uc_unit_id is a FK to item_unit_conversion(iuc_id), not a
  * raw unit_id, so every price row is loaded with its conversion: iucUnitId is
@@ -462,7 +461,6 @@ export class MasterLookupService {
     const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
     const priceLevel = query.price_level;
     const regional = query.regional ?? false;
-
     // 1. Item + candidate unit-rate rows (legacy: item_master ⋈ item_unit_rates).
     const [itemRecord, priceRows] = await Promise.all([
       this.prisma.itemMaster.findFirst({
@@ -489,7 +487,6 @@ export class MasterLookupService {
         `No active item found for id ${item_id}`,
       );
     }
-
     // 2. Pick the unit rate: an explicit unit wins, otherwise the legacy
     //    unit-slno rule (retail item → highest slno, else base row, slno 0).
     const rate = this.selectUnitRate(priceRows, itemRecord.itemRetailItem, unit_id);
@@ -502,10 +499,8 @@ export class MasterLookupService {
           : `No active price row configured for item ${item_id}`,
       );
     }
-
     // Legacy `isale_no`: an explicit sale godown overrides the rate's own godown.
     const godownId = query.godown_id ?? rate.ipmGodownId;
-
     // 3. Everything that hangs off the chosen item / rate (legacy lateral joins).
     // The rate's unit now arrives with the row, via its conversion.
     const unit = rate.itemUnitConversion.unit;
@@ -551,7 +546,6 @@ export class MasterLookupService {
           })
         : Promise.resolve(null),
     ]);
-
     // 4. Derived values.
     const gstApplicable = company?.compGstApplicable ?? false;
     const basePrice = this.priceForLevel(rate, priceLevel);
@@ -560,15 +554,12 @@ export class MasterLookupService {
     const customerDiscQty =
       custRate && priceLevel >= 1 && priceLevel <= 4 ? toNumber(custRate.csrDiscQty) : 0;
     const salesPrice = basePrice - customerDiscQty;
-
     // Legacy `iregional`: regional name falls back to English when unset.
     const itemName = regional
       ? (itemRecord.itemNameTa ?? itemRecord.itemNameEn)
       : itemRecord.itemNameEn;
-
     const stock = stockSum ? toNullableNumber(stockSum._sum.isbClosingQty ?? 0) : null;
     const reorderQty = reorder ? toNumber(reorder.irMinLevel) - (stock ?? 0) : null;
-
     // Legacy allow_negative_stock: service items always allow; otherwise it is
     // blocked only when godown, company and item all disallow it.
     const allowNegativeStock = itemRecord.itemIsService
@@ -578,19 +569,16 @@ export class MasterLookupService {
           company?.compNegStkApl === false &&
           itemRecord.itemAllowNegStock === false
         );
-
     return {
       item_id: itemRecord.itemId,
       unit_id: rateUnitId,
       unit_rate_id: rate.ipmId,
       godown_id: godownId ?? null,
       godown_name: godown?.gdlName ?? '',
-
       item_code: itemRecord.itemCode,
       item_name: itemName,
       item_com_code: itemRecord.itemSku,
       barcode: itemRecord.itemDefaultBarcode,
-
       allow_promo: itemRecord.itemAllowPromo,
       add_freight: itemRecord.itemAllowFreight,
       loading_type: itemRecord.itemAllowLoading ? 'Y' : 'N',
@@ -601,7 +589,6 @@ export class MasterLookupService {
       batch_config: itemRecord.itemBatchConfig,
       service_item: itemRecord.itemIsService ? 'Y' : 'N',
       allow_negative_stock: allowNegativeStock,
-
       price_level: priceLevel,
       sales_price: salesPrice,
       cost_price: toNumber(rate.ipmCostPrice),
@@ -612,19 +599,15 @@ export class MasterLookupService {
       disc_qty: toNumber(rate.ipmDiscQty),
       sch_discount: null,
       addl_cess: toNumber(rate.ipmAddlCess),
-
       unit_desc: unit?.unit_description ?? null,
       unit_weight: toNullableNumber(unit?.unit_weight ?? null) ?? 0,
       unit_loading: itemRecord.itemAllowLoading
         ? (toNullableNumber(unit?.unit_loading ?? null) ?? 0)
         : 0,
       decimal_count: unit?.unit_decimal_count ?? 0,
-
       loyalty_pv: itemRecord.itemAllowLoyalty ? toNumber(rate.ipmLoyaltyPoints) : 0,
-
       stock,
       reorder_qty: reorderQty,
-
       gst_rate: gstApplicable && tax ? toNumber(tax.taxGstRateTotal) : 0,
       cess_perc: gstApplicable && tax ? toNumber(tax.taxCessPerc) : 0,
       cess_unit: gstApplicable && tax ? toNumber(tax.taxCessUnit) : 0,

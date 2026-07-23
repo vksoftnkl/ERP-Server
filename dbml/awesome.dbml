@@ -1502,8 +1502,8 @@ Table item_qty_price {
   iqpFlatOff Decimal
   iqpPrice Decimal
   iqpIsTaxIncl Boolean [not null, default: false]
-  iqpEffectiveFrom DateTime [not null]
-  iqpEffectiveTo DateTime
+  iqpEffectiveFrom DateTime
+  iqpEffectiveTo DateTime [not null]
   iqpIsActive Boolean [not null, default: true]
   iqpIsDeleted Boolean [not null, default: false]
   iqpSyncDate DateTime
