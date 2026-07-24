@@ -1502,8 +1502,8 @@ Table item_qty_price {
   iqpFlatOff Decimal
   iqpPrice Decimal
   iqpIsTaxIncl Boolean [not null, default: false]
-  iqpEffectiveFrom DateTime
-  iqpEffectiveTo DateTime [not null]
+  iqpEffectiveFrom DateTime [not null]
+  iqpEffectiveTo DateTime
   iqpIsActive Boolean [not null, default: true]
   iqpIsDeleted Boolean [not null, default: false]
   iqpSyncDate DateTime
@@ -1987,6 +1987,7 @@ Table branch_master {
   loadingCharges sale_loading_charges [not null]
   loyaltySchemes loyalty_sch_list [not null]
   deviceMasters device_master [not null]
+  saleAgents sale_agents [not null]
 }
 
 Table companys {
@@ -2090,6 +2091,7 @@ Table companys {
   physicalStockDetails physical_stock_detail [not null]
   physicalStockBatchDetails physical_stock_batch_detail [not null]
   loyaltySchemes loyalty_sch_list [not null]
+  saleAgents sale_agents [not null]
 }
 
 Table company_group_master {
@@ -2691,6 +2693,9 @@ Table sale_agents {
   saCreatedBy String
   saCreatedOn DateTime [default: `now()`, not null]
   saModifiedBy String
+  company companys [not null]
+  branch branch_master
+  group sale_agent_groups [not null]
   saModifiedOn DateTime [default: `now()`, not null]
 }
 
@@ -2707,6 +2712,7 @@ Table sale_agent_groups {
   saGrpCreatedBy String [not null]
   saGrpModifiedOn DateTime
   saGrpModifiedBy String
+  saleAgents sale_agents [not null]
 }
 
 Table sale_freight_charges {
@@ -3664,6 +3670,12 @@ Ref: loyalty_sch_party.lpsLsId > loyalty_sch_list.lsId [delete: Cascade]
 Ref: loyalty_sch_points.lsptLsId > loyalty_sch_list.lsId [delete: Cascade]
 
 Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: sale_agents.saCompanyId > companys.compId [delete: Restrict]
+
+Ref: sale_agents.saBranchId > branch_master.brId [delete: Restrict]
+
+Ref: sale_agents.saGroupId > sale_agent_groups.saGrpId [delete: Restrict]
 
 Ref: sale_freight_charges.frCompanyId > companys.compId [delete: Restrict]
 

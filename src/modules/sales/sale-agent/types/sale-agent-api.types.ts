@@ -1,12 +1,14 @@
 export type { SalesErrorDetail as SaleAgentErrorDetail } from 'src/common/types/module-api.types';
 export type { SalesErrorResponse as SaleAgentErrorResponse } from 'src/common/types/module-api.types';
 export type { SalesSuccessResponse as SaleAgentSuccessResponse } from 'src/common/types/module-api.types';
-
 export interface SaleAgentPayload {
   saId: string;
   saCompanyId: string;
+  saCompanyName: string | null;
   saBranchId: string | null;
+  saBranchName: string | null;
   saGroupId: string;
+  saGroupName: string | null;
   saCode: string | null;
   saName: string;
   saAlias: string | null;

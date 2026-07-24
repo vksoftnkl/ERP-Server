@@ -25,7 +25,7 @@ export interface ItemQtyPricePayload {
   iqp_flat_off: number | null;
   iqp_price: number | null;
   iqp_is_tax_incl: boolean;
-  iqp_effective_from: string;
+  iqp_effective_from: string | null;
   iqp_effective_to: string | null;
   iqp_is_active: boolean;
   iqp_is_deleted: boolean;

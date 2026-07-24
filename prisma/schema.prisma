@@ -2553,8 +2553,8 @@ model ItemQtyPrice {
   iqpFlatOff      Decimal?  @db.Decimal(14, 3) @map("iqp_flat_off")
   iqpPrice        Decimal?  @db.Decimal(14, 3) @map("iqp_price")
   iqpIsTaxIncl    Boolean   @default(false) @map("iqp_is_tax_incl")
-  iqpEffectiveFrom DateTime? @db.Date @map("iqp_effective_from")
-  iqpEffectiveTo  DateTime @db.Date @map("iqp_effective_to")
+  iqpEffectiveFrom DateTime @db.Date @map("iqp_effective_from")
+  iqpEffectiveTo  DateTime? @db.Date @map("iqp_effective_to")
   iqpIsActive     Boolean   @default(true) @map("iqp_is_active")
   iqpIsDeleted    Boolean   @default(false) @map("iqp_is_deleted")
   iqpSyncDate     DateTime? @db.Timestamptz(6) @map("iqp_sync_date")
@@ -3261,6 +3261,7 @@ model BranchMaster {
   loadingCharges        SaleLoadingCharge[] @relation("BranchLoadingCharges")
   loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
+  saleAgents            SaleAgent[]       @relation("BranchSaleAgents")
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
@@ -3380,6 +3381,7 @@ model Company {
   physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailCompany")
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
   loyaltySchemes        LoyaltyScheme[]
+  saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
   @@map("companys")
   @@schema("public")
 }
@@ -4227,8 +4229,13 @@ model SaleAgent {
   saCreatedBy   String?   @db.VarChar(100) @map("sa_created_by")
   saCreatedOn   DateTime  @default(now()) @db.Timestamptz(6) @map("sa_created_on")
   saModifiedBy  String?   @db.VarChar(100) @map("sa_modified_by")
-  saModifiedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("sa_modified_on")
 
+  // Relations
+  company       Company        @relation("CompanySaleAgents", fields: [saCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sa_company_id")
+  branch        BranchMaster?  @relation("BranchSaleAgents", fields: [saBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sa_branch_id")
+  group         SaleAgentGroup @relation(fields: [saGroupId], references: [saGrpId], onUpdate: Cascade, onDelete: Restrict, map: "fk_sa_group_id")
+  saModifiedOn  DateTime  @default(now()) @db.Timestamptz(6) @map("sa_modified_on")
+  
   @@map("sale_agents")
   @@schema("sales")
   // DB-only partial index ix_sale_agents_active on (sa_is_active) WHERE
@@ -4249,6 +4256,9 @@ model SaleAgentGroup {
   saGrpCreatedBy  String    @db.Uuid @map("sa_grp_created_by")
   saGrpModifiedOn DateTime? @db.Timestamptz @map("sa_grp_modified_on")
   saGrpModifiedBy String?   @db.Uuid @map("sa_grp_modified_by")
+
+  // Relations
+  saleAgents      SaleAgent[]
 
   @@index([saGrpId], map: "idx_sale_agent_groups_id")
   @@index([saGrpName], map: "idx_sale_agent_groups_name")

@@ -473,7 +473,7 @@ export class ItemsQtyPriceMasterService {
       iqp_flat_off: toNullableNumber(record.iqpFlatOff),
       iqp_price: toNullableNumber(record.iqpPrice),
       iqp_is_tax_incl: record.iqpIsTaxIncl,
-      iqp_effective_from: record.iqpEffectiveFrom.toISOString(),
+      iqp_effective_from: record.iqpEffectiveFrom?.toISOString(),
       iqp_effective_to: record.iqpEffectiveTo ? record.iqpEffectiveTo.toISOString() : null,
       iqp_is_active: record.iqpIsActive,
       iqp_is_deleted: record.iqpIsDeleted,
