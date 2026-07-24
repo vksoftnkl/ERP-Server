@@ -70,6 +70,14 @@ export const NullableUpperString = (exactLength?: number) =>
     IsString(),
     ...(exactLength !== undefined ? [Length(exactLength, exactLength)] : []),
   );
+export const NullableUpperMaxString = (maxLength?: number) =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toNullableUpperString(value)),
+    SkipOnNullish(),
+    IsString(),
+    ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
+  );
 export const NullableEmail = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),

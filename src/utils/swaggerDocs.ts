@@ -21,6 +21,7 @@ import { AreaModule } from '../modules/sales/area/area.module';
 import { SaleFreightChargeModule } from '../modules/sales/sale-freight-charges/sale-freight-charges.module';
 import { SaleLoadingChargeModule } from '../modules/sales/sale-loading-charges/sale-loading-charges.module';
 import { CityModule } from '../modules/sales/city/city.module';
+import { SaleAgentModule } from '../modules/sales/sale-agent/sale-agent.module';
 import { CustomerGroupModule } from '../modules/sales/customer-group/customer-group.module';
 import { CustomerModule } from '../modules/sales/customer/customer.module';
 import { QuotationModule } from '../modules/sales/quotation/quotation.module';
@@ -32,6 +33,7 @@ import { ItemPriceDetailsModule } from '../modules/Inventory/item-price-details/
 import { UsersModule } from '../modules/users/users.module';
 import { MasterLookupModule } from '../modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from '../modules/master/batch-prefix/batch-prefix.module';
+import { ChargeMasterModule } from '../modules/master/charge-master/charge-master.module';
 import { SupplierGroupModule } from '../modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from '../modules/purchase/suppliers/suppliers.module';
 import { StateModule } from '../modules/sales/state/state.module';
@@ -87,6 +89,12 @@ export const swaggerModuleDocuments = [
     title: 'Batch Prefix API',
     description: 'Batch prefix module endpoints',
     include: [BatchPrefixModule],
+  },
+  {
+    path: 'charges',
+    title: 'Charge Master API',
+    description: 'Charge master (shared sales/purchase additional charges) endpoints',
+    include: [ChargeMasterModule],
   },
   {
     path: 'items-group-master',
@@ -370,6 +378,12 @@ export const swaggerModuleDocuments = [
     title: 'Cities API',
     description: 'Cities module endpoints',
     include: [CityModule],
+  },
+  {
+    path: 'sale-agents',
+    title: 'Sale Agents API',
+    description: 'Sale agents module endpoints',
+    include: [SaleAgentModule],
   },
   {
     path: 'states',

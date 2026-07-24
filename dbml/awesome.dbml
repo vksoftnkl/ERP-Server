@@ -139,6 +139,7 @@ Table acc_ledger_master {
   voucherHeaderParties acc_voucher_header [not null]
   accountingEntries acc_vouchers [not null]
   oppositeAccountingEntries acc_vouchers [not null]
+  chargeMasters charge_master [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -1990,6 +1991,37 @@ Table branch_master {
   saleAgents sale_agents [not null]
 }
 
+Table charge_master {
+  chgId String [pk]
+  chgName String [not null]
+  chgCode String [unique]
+  chgModule String [not null]
+  chgRole String
+  chgMethod String [not null]
+  chgType String [not null, default: 'ADD']
+  chgApplyOn String [not null]
+  chgDefaultRate Decimal [default: 0]
+  chgLandingCost Boolean [not null, default: false]
+  chgCostAlloc String
+  chgLedgerCode String [not null]
+  chgTaxApl Boolean [not null, default: false]
+  chgBeforeTax Boolean [not null, default: false]
+  chgSepPost Boolean [not null, default: false]
+  chgManParty Boolean [not null, default: false]
+  chgDispOrder Int [default: 0]
+  chgAutoApply Boolean [not null, default: false]
+  chgIsActive Boolean [not null, default: true]
+  chgIsDeleted Boolean [not null, default: false]
+  chgSyncDate DateTime
+  chgCreatedOn DateTime [default: `now()`, not null]
+  chgCreatedBy String
+  chgModifiedOn DateTime
+  chgModifiedBy String
+  ledger acc_ledger_master [not null]
+
+  Note: 'Shared "additional charges" master for both Sales and Purchase.'
+}
+
 Table companys {
   compId String [pk]
   compCode String [unique]
@@ -3624,6 +3656,8 @@ Ref: opening_stock_header.oshCompanyId > companys.compId
 Ref: opening_stock_header.oshBranchId > branch_master.brId
 
 Ref: branch_master.brCompId > companys.compId
+
+Ref: charge_master.chgLedgerCode > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: companys.compStylesheetId > app_theme_master.thmId
 

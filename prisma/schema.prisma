@@ -202,6 +202,7 @@ model AccLedgerMaster {
   voucherHeaderParties     AccVoucherHeader[]
   accountingEntries        AccVoucher[]           @relation("AccVoucherLedger")
   oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
+  chargeMasters            ChargeMaster[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -3266,6 +3267,49 @@ model BranchMaster {
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
   @@schema("public")
+}
+
+// ----- prisma/public/chargeMaster.prisma -----
+/// Shared "additional charges" master for both Sales and Purchase.
+model ChargeMaster {
+  chgId           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("chg_id")
+  chgName         String    @db.VarChar(100)                                        @map("chg_name")
+  chgCode         String?   @unique(map: "uq_charge_code") @db.VarChar(50)          @map("chg_code")
+  chgModule       String    @db.Char(1)                                             @map("chg_module")       // 'P'urchase / 'S'ales / 'B'oth
+  chgRole         String?   @db.VarChar(15)                                         @map("chg_role")         // FREIGHT | LOADING | UNLOADING | CASH_DISC | OTHERS | NONE
+  chgMethod       String    @db.VarChar(10)                                         @map("chg_method")       // FIXED | PERCENT
+  chgType         String    @default("ADD") @db.VarChar(10)                         @map("chg_type")         // ADD | DEDUCT
+  chgApplyOn      String    @db.VarChar(10)                                         @map("chg_apply_on")     // FLAT | QTY | VALUE | WEIGHT
+  chgDefaultRate  Decimal?  @default(0) @db.Decimal(14, 4)                          @map("chg_default_rate")
+  chgLandingCost  Boolean   @default(false)                                         @map("chg_landing_cost") // purchase only
+  chgCostAlloc    String?   @db.VarChar(10)                                         @map("chg_cost_alloc")   // VALUE | QTY | WEIGHT (only when landing_cost)
+  chgLedgerCode   String    @db.Uuid                                                @map("chg_ledger_code")  // GL ledger mapping
+  chgTaxApl       Boolean   @default(false)                                         @map("chg_tax_apl")      // charge itself taxable
+  chgBeforeTax    Boolean   @default(false)                                         @map("chg_before_tax")   // deduct/add before tax calc?
+  chgSepPost      Boolean   @default(false)                                         @map("chg_sep_post")     // post to own ledger vs absorb
+  chgManParty     Boolean   @default(false)                                         @map("chg_man_party")    // requires a party (e.g. freight vendor)
+  chgDispOrder    Int?      @default(0)                                             @map("chg_disp_order")   // grid ordering
+  chgAutoApply    Boolean   @default(false)                                         @map("chg_auto_apply")   // auto-load into new entry
+  chgIsActive     Boolean   @default(true)                                          @map("chg_is_active")
+  chgIsDeleted    Boolean   @default(false)                                         @map("chg_is_deleted")
+  chgSyncDate     DateTime? @db.Timestamptz                                         @map("chg_sync_date")
+  chgCreatedOn    DateTime  @default(now()) @db.Timestamptz                         @map("chg_created_on")
+  chgCreatedBy    String?   @db.Uuid                                                @map("chg_created_by")
+  chgModifiedOn   DateTime? @db.Timestamptz                                         @map("chg_modified_on")
+  chgModifiedBy   String?   @db.Uuid                                                @map("chg_modified_by")
+  // Relations
+  ledger          AccLedgerMaster @relation(fields: [chgLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict)
+  @@index([chgLedgerCode], name: "idx_chg_ledger_code")
+  @@map("charge_master")
+  @@schema("public")
+  // DB-only constraints not expressible in the Prisma schema (see migration
+  // 20260724120000_create_charge_master); do NOT declare them here or
+  // `migrate dev` will regenerate/drift them:
+  //   - CHECK ck_chg_module / ck_chg_role / ck_chg_method / ck_chg_type /
+  //     ck_chg_apply_on / ck_chg_cost_alloc  (enum-style value guards)
+  //   - Partial UNIQUE index uq_charge_role on (chg_role, chg_module)
+  //     WHERE chg_role IN ('FREIGHT','LOADING','UNLOADING','CASH_DISC','OTHERS')
+  //       AND chg_is_deleted = false  (one such role per module)
 }
 
 // ----- prisma/public/company.prisma -----

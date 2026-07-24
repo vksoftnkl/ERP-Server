@@ -65,6 +65,7 @@ import { StockAdjReasonsModule } from './modules/fixed/stock-adj-reasons/stock-a
 import { MasterLookupModule } from './modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from './modules/master/batch-prefix/batch-prefix.module';
 import { WidgetMasterModule } from './modules/master/widget-master/widget-master.module';
+import { ChargeMasterModule } from './modules/master/charge-master/charge-master.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
 import { OpeningStockModule } from './modules/stocks/opening-stock/opening-stock.module';
 import { PhysicalStockModule } from './modules/stocks/physical-stock/physical-stock.module';
@@ -179,6 +180,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     MasterLookupModule,
     BatchPrefixModule,
     WidgetMasterModule,
+    ChargeMasterModule,
     OpeningStockModule,
     PhysicalStockModule,
     ItemStockBalanceModule,
