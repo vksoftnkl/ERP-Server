@@ -3302,14 +3302,16 @@ model ChargeMaster {
   @@index([chgLedgerCode], name: "idx_chg_ledger_code")
   @@map("charge_master")
   @@schema("public")
-  // DB-only constraints not expressible in the Prisma schema (see migration
-  // 20260724120000_create_charge_master); do NOT declare them here or
-  // `migrate dev` will regenerate/drift them:
-  //   - CHECK ck_chg_module / ck_chg_role / ck_chg_method / ck_chg_type /
-  //     ck_chg_apply_on / ck_chg_cost_alloc  (enum-style value guards)
+  // DB-only constraint not expressible in the Prisma schema (see migration
+  // 20260724120000_create_charge_master); do NOT declare it here or
+  // `migrate dev` will regenerate/drift it:
   //   - Partial UNIQUE index uq_charge_role on (chg_role, chg_module)
   //     WHERE chg_role IN ('FREIGHT','LOADING','UNLOADING','CASH_DISC','OTHERS')
   //       AND chg_is_deleted = false  (one such role per module)
+  // The enum-style value guards on chg_module / chg_role / chg_method /
+  // chg_type / chg_apply_on / chg_cost_alloc are NOT in the DB: the CHECK
+  // constraints were dropped in 20260724130000_drop_charge_master_check_constraints
+  // and the charge-master module enforces them (CHARGE_VALUE_GUARDS).
 }
 
 // ----- prisma/public/company.prisma -----

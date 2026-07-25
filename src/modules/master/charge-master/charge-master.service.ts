@@ -4,12 +4,17 @@ import {  ConfiguredGridSqlService} from '../../../common/configured-grid-sql/co
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { GetChargeMasterQueryDto } from './dto/get-charge-master-query.dto';
 import { SaveChargeMasterDto } from './dto/save-charge-master.dto';
 import {
   CHARGE_UNIQUE_ROLES,
+  CHARGE_VALUE_GUARDS,
+  ChargeGuardedValues,
+  ChargeLedgerDetail,
   ChargeMasterDeleteResult,
   ChargeMasterErrorDetail,
   ChargeMasterPayload,
+  resolveChargeModules,
 } from './types/charge-master-api.types';
 import {
   DEFAULT_ACTOR,
@@ -45,6 +50,14 @@ const CHARGE_OPTIONAL_FIELDS = [
   'chgAutoApply',
   'chgIsActive',
 ];
+// Columns pulled from the mapped acc_ledger_master row and echoed on the
+// payload (display label + the GST attributes the charge inherits).
+const CHARGE_LEDGER_SELECT = {
+  ledName: true,
+  ledHsnSac: true,
+  ledGstRate: true,
+  ledTaxability: true,
+} as const satisfies Prisma.AccLedgerMasterSelect;
 type ChargeMasterWriteClient = MasterWriteClient;
 @Injectable()
 export class ChargeMasterService {
@@ -60,15 +73,51 @@ export class ChargeMasterService {
     }
     return this.createCharge(saveChargeMasterDto);
   }
+  // Single endpoint, two lookups: by id it answers with one charge, by module
+  // with every active charge that module can apply.
+  async get(
+    getChargeMasterQueryDto: GetChargeMasterQueryDto,
+  ): Promise<ChargeMasterPayload | ChargeMasterPayload[]> {
+    const { chgId, chgModule } = getChargeMasterQueryDto;
+    if (chgId && chgModule) {
+      throwMasterBadRequest<ChargeMasterErrorDetail>('Ambiguous charge lookup', [
+        { field: 'chgId', message: 'Send either chgId or chgModule, not both' },
+      ]);
+    }
+    if (chgId) {
+      return this.getById(chgId);
+    }
+    if (chgModule) {
+      return this.getByModule(chgModule);
+    }
+    throwMasterBadRequest<ChargeMasterErrorDetail>('Missing charge lookup', [
+      { field: 'chgId', message: 'Either chgId or chgModule is required' },
+    ]);
+  }
   async getById(chgId: string): Promise<ChargeMasterPayload> {
     const record = await this.prisma.chargeMaster.findFirst({
       where: { chgId, chgIsDeleted: false },
-      include: { ledger: { select: { ledName: true } } },
+      include: { ledger: { select: CHARGE_LEDGER_SELECT } },
     });
     if (!record) {
       this.throwNotFound(chgId);
     }
-    return this.toPayload(record, record.ledger?.ledName ?? null);
+    return this.toPayload(record, record.ledger ?? null);
+  }
+  // Lookup for the purchase / sales entry screens: only charges that are usable
+  // right now, so soft-deleted and inactive rows are left out. Ordered by the
+  // display order the master defines, with unordered rows last.
+  async getByModule(chgModule: string): Promise<ChargeMasterPayload[]> {
+    const records = await this.prisma.chargeMaster.findMany({
+      where: {
+        chgIsDeleted: false,
+        chgIsActive: true,
+        chgModule: { in: [...resolveChargeModules(chgModule)] },
+      },
+      include: { ledger: { select: CHARGE_LEDGER_SELECT } },
+      orderBy: [{ chgDispOrder: { sort: 'asc', nulls: 'last' } }, { chgName: 'asc' }],
+    });
+    return records.map((record) => this.toPayload(record, record.ledger ?? null));
   }
   async softDelete(chgId: string): Promise<ChargeMasterDeleteResult> {
     return this.prisma.$transaction(async (tx) => {
@@ -129,6 +178,7 @@ export class ChargeMasterService {
     const normalizedCode = normalizeNullableString(saveChargeMasterDto.chgCode) ?? null;
     const role = saveChargeMasterDto.chgRole ?? null;
     const module = saveChargeMasterDto.chgModule;
+    this.ensureValuesAreAllowed(this.guardedValues(saveChargeMasterDto));
     const data: Prisma.ChargeMasterUncheckedCreateInput = {
       chgName: normalizedName,
       chgModule: module,
@@ -195,6 +245,9 @@ export class ChargeMasterService {
         const nextRole = hasOwnProperty(saveChargeMasterDto, 'chgRole')
           ? (saveChargeMasterDto.chgRole ?? null)
           : existing.chgRole;
+        this.ensureValuesAreAllowed(
+          this.guardedValues(saveChargeMasterDto, { chgModule: nextModule, chgRole: nextRole }),
+        );
         const ledgerName = await this.ensureLedgerExists(tx, saveChargeMasterDto.chgLedgerCode);
         await this.ensureCodeIsUnique(tx, nextCode, chgId);
         await this.ensureRoleIsUnique(tx, nextRole, nextModule, chgId);
@@ -219,9 +272,9 @@ export class ChargeMasterService {
             screenType: 'master',
             pk: chgId,
             displayName: payload.chgName,
-            // Audit tracks stored columns only; chgLedgerName is a derived
-            // display label, so keep it out of both snapshots to avoid a
-            // spurious "changed" diff on every update.
+            // Audit tracks stored columns only; chgLedgerName and the led*
+            // tax fields are derived from the ledger, so keep them out of both
+            // snapshots to avoid a spurious "changed" diff on every update.
             originalRecord: this.toPayload(existing),
             modifiedRecord: this.toPayload(updated),
             userId: actor,
@@ -238,22 +291,22 @@ export class ChargeMasterService {
   }
   // chg_ledger_code has a DB foreign key to acc_ledger_master, but that only
   // guarantees the row exists — not that it is active. Verify it is not
-  // soft-deleted to reject orphan mappings early, and return the ledger name so
-  // callers can echo it back in the payload.
+  // soft-deleted to reject orphan mappings early, and return the ledger detail
+  // so callers can echo it back in the payload.
   private async ensureLedgerExists(
     tx: ChargeMasterWriteClient,
     ledgerCode: string,
-  ): Promise<string> {
+  ): Promise<ChargeLedgerDetail> {
     const ledger = await tx.accLedgerMaster.findFirst({
       where: { ledId: ledgerCode, ledIsDeleted: false },
-      select: { ledName: true },
+      select: CHARGE_LEDGER_SELECT,
     });
     if (!ledger) {
       throwMasterBadRequest<ChargeMasterErrorDetail>('Ledger does not exist', [
         { field: 'chgLedgerCode', message: `No active ledger found with id ${ledgerCode}` },
       ]);
     }
-    return ledger.ledName;
+    return ledger;
   }
   private async ensureCodeIsUnique(
     tx: ChargeMasterWriteClient,
@@ -276,6 +329,60 @@ export class ChargeMasterService {
         { field: 'chgCode', message: 'Duplicate charge code is not allowed' },
       ]);
     }
+  }
+  // Replaces the dropped CHECK constraints ck_chg_module / ck_chg_role /
+  // ck_chg_method / ck_chg_type / ck_chg_apply_on / ck_chg_cost_alloc (see
+  // migration 20260724130000_drop_charge_master_check_constraints). The DTO's
+  // @IsIn lists already reject bad values on the HTTP path; repeating the check
+  // on the write path keeps the invariant for any other caller of the service
+  // now that the database no longer backstops it.
+  private ensureValuesAreAllowed(values: ChargeGuardedValues): void {
+    const details: ChargeMasterErrorDetail[] = [];
+    for (const guard of CHARGE_VALUE_GUARDS) {
+      const value = values[guard.field];
+      if (value === undefined) {
+        continue;
+      }
+      if (value === null) {
+        if (!guard.nullable) {
+          details.push({ field: guard.field, message: `${guard.field} is required` });
+        }
+        continue;
+      }
+      if (!(guard.allowed as readonly string[]).includes(value)) {
+        details.push({
+          field: guard.field,
+          message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
+        });
+      }
+    }
+    if (details.length > 0) {
+      throwMasterBadRequest<ChargeMasterErrorDetail>('Invalid charge value', details);
+    }
+  }
+  // Picks the values the guards apply to out of the request. Optional columns
+  // are reported as undefined when absent so a partial update is not judged on
+  // values it never sent; `overrides` carries the merged values an update
+  // resolved against the stored row.
+  private guardedValues(
+    saveChargeMasterDto: SaveChargeMasterDto,
+    overrides: ChargeGuardedValues = {},
+  ): ChargeGuardedValues {
+    return {
+      chgModule: saveChargeMasterDto.chgModule,
+      chgRole: hasOwnProperty(saveChargeMasterDto, 'chgRole')
+        ? (saveChargeMasterDto.chgRole ?? null)
+        : undefined,
+      chgMethod: saveChargeMasterDto.chgMethod,
+      chgType: hasOwnProperty(saveChargeMasterDto, 'chgType')
+        ? (saveChargeMasterDto.chgType ?? null)
+        : undefined,
+      chgApplyOn: saveChargeMasterDto.chgApplyOn,
+      chgCostAlloc: hasOwnProperty(saveChargeMasterDto, 'chgCostAlloc')
+        ? (saveChargeMasterDto.chgCostAlloc ?? null)
+        : undefined,
+      ...overrides,
+    };
   }
   // Mirrors the DB-only partial unique index uq_charge_role: at most one
   // FREIGHT/LOADING/UNLOADING/CASH_DISC/OTHERS charge per module among non-deleted
@@ -333,7 +440,10 @@ export class ChargeMasterService {
       `No active charge found with id ${chgId}`,
     );
   }
-  private toPayload(record: ChargeMaster, ledgerName: string | null = null): ChargeMasterPayload {
+  private toPayload(
+    record: ChargeMaster,
+    ledger: ChargeLedgerDetail | null = null,
+  ): ChargeMasterPayload {
     return {
       chgId: record.chgId,
       chgName: record.chgName,
@@ -347,7 +457,10 @@ export class ChargeMasterService {
       chgLandingCost: record.chgLandingCost,
       chgCostAlloc: record.chgCostAlloc,
       chgLedgerCode: record.chgLedgerCode,
-      chgLedgerName: ledgerName,
+      chgLedgerName: ledger?.ledName ?? null,
+      ledHsnSac: ledger?.ledHsnSac ?? null,
+      ledGstRate: toNullableNumber(ledger?.ledGstRate ?? null),
+      ledTaxability: ledger?.ledTaxability ?? null,
       chgTaxApl: record.chgTaxApl,
       chgBeforeTax: record.chgBeforeTax,
       chgSepPost: record.chgSepPost,

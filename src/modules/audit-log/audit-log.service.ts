@@ -78,6 +78,7 @@ type AuditReferenceLookupType =
   | 'supplierGroup'
   | 'tenderType'
   | 'unit'
+  | 'unitConversion'
   | 'unitRate';
 type AuditReferenceNameLookup = Partial<Record<AuditReferenceLookupType, ReadonlyMap<string, string>>>;
 const normalizeAuditFieldLookupToken = (value: string): string =>
@@ -160,6 +161,8 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
     'Item EAN Code Master',
     createAuditReferenceTypeMap([
       ['Godown ID', 'godownLocation'],
+      // ean_uc_unit_id points at item_unit_conversion, not the unit master.
+      ['Unit ID', 'unitConversion'],
     ]),
   ],
   [
@@ -170,9 +173,19 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
     ]),
   ],
   [
+    'Item Price Master',
+    createAuditReferenceTypeMap([
+      ['Godown ID', 'godownLocation'],
+      // ipm_uc_unit_id points at item_unit_conversion, not the unit master.
+      ['Unit ID', 'unitConversion'],
+    ]),
+  ],
+  [
     'Item Reorder Master',
     createAuditReferenceTypeMap([
       ['Godown ID', 'godownLocation'],
+      // ir_uc_unit_id points at item_unit_conversion, not the unit master.
+      ['Unit ID', 'unitConversion'],
     ]),
   ],
   [
@@ -181,6 +194,65 @@ const SCREEN_AUDIT_FIELD_REFERENCE_TYPES = new Map<
       ['Parent Section ID', 'itemSection'],
       ['Path IDs', 'itemSection'],
     ]),
+  ],
+]);
+/**
+ * A composite screen edits its own row plus child rows that live in their own
+ * tables and are audited under their own screen names with their own primary
+ * keys. `record_pk` on the list endpoint carries the *parent* id, so the child
+ * log rows are found by translating that parent id into the child PKs at query
+ * time. Soft-deleted children are deliberately included — their history is
+ * still part of the parent's trail.
+ */
+type RelatedAuditScreen = {
+  screenName: string;
+  findChildPks: (prisma: PrismaService, parentPk: string) => Promise<string[]>;
+};
+const RELATED_AUDIT_SCREENS_BY_SCREEN_NAME = new Map<string, readonly RelatedAuditScreen[]>([
+  [
+    'Item Master',
+    [
+      {
+        screenName: 'Item Unit Conversion Master',
+        findChildPks: async (prisma, itemId) => {
+          const rows = await prisma.itemUnitConversion.findMany({
+            where: { iucItemId: itemId },
+            select: { iucId: true },
+          });
+          return rows.map((row) => row.iucId);
+        },
+      },
+      {
+        screenName: 'Item Price Master',
+        findChildPks: async (prisma, itemId) => {
+          const rows = await prisma.itemPriceMaster.findMany({
+            where: { ipmItemId: itemId },
+            select: { ipmId: true },
+          });
+          return rows.map((row) => row.ipmId);
+        },
+      },
+      {
+        screenName: 'Item EAN Code Master',
+        findChildPks: async (prisma, itemId) => {
+          const rows = await prisma.itemEanCode.findMany({
+            where: { eanItemId: itemId },
+            select: { eanId: true },
+          });
+          return rows.map((row) => row.eanId);
+        },
+      },
+      {
+        screenName: 'Item Reorder Master',
+        findChildPks: async (prisma, itemId) => {
+          const rows = await prisma.itemReorder.findMany({
+            where: { irItemId: itemId },
+            select: { irId: true },
+          });
+          return rows.map((row) => row.irId);
+        },
+      },
+    ],
   ],
 ]);
 @Injectable()
@@ -220,7 +292,7 @@ export class AuditLogService {
   const includeTotal = queryDto.include_total === true; // opt-in to avoid COUNT(*)
 
   // ── 2. Build WHERE clause ──────────────────────────────────────────────────
-  const where = this.buildWhereClause(queryDto);
+  const where = await this.buildWhereClause(queryDto);
 
   // ── 3. Consistent ORDER BY (must match the composite index) ───────────────
   const orderBy: Prisma.AuditLogOrderByWithRelationInput[] = [
@@ -282,7 +354,9 @@ export class AuditLogService {
 
 // ─── Extracted: WHERE builder ─────────────────────────────────────────────────
 
-private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereInput {
+private async buildWhereClause(
+  queryDto: ListAuditLogQueryDto,
+): Promise<Prisma.AuditLogWhereInput> {
   const where: Prisma.AuditLogWhereInput = {};
 
   if (queryDto.action?.trim()) {
@@ -294,12 +368,12 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
     where.logScreenId = queryDto.screen_id;
   }
 
-  if (queryDto.screen_name?.trim()) {
-    where.auditScreen = { is: { screenName: queryDto.screen_name.trim() } };
-  }
-
-  if (queryDto.record_pk?.trim()) {
-    where.logPk = queryDto.record_pk.trim();
+  // screen_name + record_pk are resolved together: on a composite screen the
+  // record's trail spans the parent screen and its child screens.
+  // AND (not OR) so the scope filter can't be widened by the `search` OR below.
+  const recordScopeFilter = await this.buildRecordScopeFilter(queryDto);
+  if (recordScopeFilter) {
+    where.AND = [recordScopeFilter];
   }
 
   // ── Date range ──────────────────────────────────────────────────────────────
@@ -335,6 +409,54 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
 
   return where;
 }
+
+  /**
+   * Builds the `screen_name` / `record_pk` part of the WHERE clause. For a
+   * composite screen queried by a single record (e.g. `Item Master` +
+   * `record_pk=<item_id>`) the filter also matches the logs its child screens
+   * wrote — item unit conversions, prices, EAN codes and reorders — by
+   * translating the item id into each child table's primary keys.
+   */
+  private async buildRecordScopeFilter(
+    queryDto: ListAuditLogQueryDto,
+  ): Promise<Prisma.AuditLogWhereInput | null> {
+    const screenName = queryDto.screen_name?.trim();
+    const recordPk = queryDto.record_pk?.trim();
+    const screenFilter: Prisma.AuditLogWhereInput = screenName
+      ? { auditScreen: { is: { screenName } } }
+      : {};
+    if (!recordPk) {
+      return screenName ? screenFilter : null;
+    }
+    const relatedScreens = screenName
+      ? RELATED_AUDIT_SCREENS_BY_SCREEN_NAME.get(screenName)
+      : undefined;
+    // Child PKs are looked up by a UUID parent id; anything else can only be
+    // the parent screen's own key.
+    if (!relatedScreens || !UUID_PATTERN.test(recordPk)) {
+      return { ...screenFilter, logPk: recordPk };
+    }
+    const relatedFilters = await Promise.all(
+      relatedScreens.map(async (relatedScreen): Promise<Prisma.AuditLogWhereInput | null> => {
+        const childPks = await relatedScreen.findChildPks(this.prisma, recordPk);
+        if (childPks.length === 0) {
+          return null;
+        }
+        return {
+          auditScreen: { is: { screenName: relatedScreen.screenName } },
+          logPk: { in: childPks },
+        };
+      }),
+    );
+    return {
+      OR: [
+        { ...screenFilter, logPk: recordPk },
+        ...relatedFilters.filter(
+          (relatedFilter): relatedFilter is Prisma.AuditLogWhereInput => relatedFilter !== null,
+        ),
+      ],
+    };
+  }
   async createAuditLog(input: CreateAuditLogInput, tx?: Prisma.TransactionClient): Promise<void> {
     const client = tx ?? this.prisma;
     const action = this.normalizeAction(input.action);
@@ -1221,6 +1343,28 @@ private buildWhereClause(queryDto: ListAuditLogQueryDto): Prisma.AuditLogWhereIn
           },
         });
         return new Map(units.map((unit) => [unit.unit_id, unit.unit_name]));
+      }
+      case 'unitConversion': {
+        // Child tables store iuc_id where the UI shows a unit, so resolve one
+        // hop out to the unit behind the conversion.
+        const conversions = await this.prisma.itemUnitConversion.findMany({
+          where: {
+            iucId: {
+              in: [...ids],
+            },
+          },
+          select: {
+            iucId: true,
+            unit: {
+              select: {
+                unit_name: true,
+              },
+            },
+          },
+        });
+        return new Map(
+          conversions.map((conversion) => [conversion.iucId, conversion.unit.unit_name]),
+        );
       }
       case 'unitRate': {
         const unitRates = await this.prisma.itemPriceMaster.findMany({

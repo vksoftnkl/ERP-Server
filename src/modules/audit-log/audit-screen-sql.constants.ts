@@ -170,6 +170,10 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
     // Composite Item Master screen: the item row plus its per-unit
     // conversion rows and the EAN / reorder / price rows that hang off
     // each unit conversion (all joined on item_unit_conversion.iuc_id).
+    // ItemsMasterService only ever passes the item payload, so the child
+    // columns below are null on an Item Master log row — the children's own
+    // changes are logged under their own screens and pulled into the same
+    // feed by RELATED_AUDIT_SCREENS_BY_SCREEN_NAME in AuditLogService.
     'Item Master',
     buildAuditSql(
       [
@@ -248,6 +252,79 @@ export const AUDIT_SCREEN_SQL_BY_NAME = new Map<string, string>([
         ['ipm.ipm_profit_type', 'Profit Type'],
       ],
     ),
+  ],
+  [
+    // Child of Item Master: one row per item + unit. Surfaced on the Item
+    // Master audit trail through the related-screen expansion in
+    // AuditLogService (record_pk carries the item id, not iuc_id).
+    'Item Unit Conversion Master',
+    buildAuditSql('inventory.item_unit_conversion', [
+      ['iuc_item_id', 'Item ID'],
+      ['iuc_unit_id', 'Unit ID'],
+      ['iuc_base_unit_id', 'Base Unit ID'],
+      ['iuc_to_base_factor', 'To-Base Factor'],
+      ['iuc_unit_factor', 'Unit Factor'],
+      ['iuc_unit_slno', 'Sl No'],
+      ['iuc_is_default_unit', 'Is Default Unit'],
+      ['iuc_is_base_unit', 'Is Base Unit'],
+      ['iuc_is_big_unit', 'Is Big Unit'],
+      ['iuc_uom_weight', 'UOM Weight'],
+      ['iuc_uom_remarks', 'UOM Remarks'],
+      ['iuc_is_active', 'Is Active'],
+      ['iuc_is_deleted', 'Is Deleted'],
+      ['iuc_sync_date', 'Sync Date'],
+      ['iuc_created_on', 'Created On'],
+      ['iuc_created_by', 'Created By'],
+      ['iuc_updated_on', 'Modified On'],
+      ['iuc_updated_by', 'Modified By'],
+    ]),
+  ],
+  [
+    // Child of Item Master. ipm_uc_unit_id is a FK to item_unit_conversion
+    // (iuc_id), so its 'Unit ID' label resolves through the unitConversion
+    // lookup, not the unit master.
+    'Item Price Master',
+    buildAuditSql('inventory.item_price_master', [
+      ['ipm_company_id', 'Company ID'],
+      ['ipm_branch_id', 'Branch ID'],
+      ['ipm_item_id', 'Item ID'],
+      ['ipm_uc_unit_id', 'Unit ID'],
+      ['ipm_godown_id', 'Godown ID'],
+      ['ipm_sl_no', 'Sl No'],
+      ['ipm_cost_price', 'Cost Price'],
+      ['ipm_cost_wot', 'Cost Without Tax'],
+      ['ipm_sales_price_a', 'Sales Price A'],
+      ['ipm_sales_price_b', 'Sales Price B'],
+      ['ipm_sales_price_c', 'Sales Price C'],
+      ['ipm_sales_price_d', 'Sales Price D'],
+      ['ipm_price_a_wot', 'Price A Without Tax'],
+      ['ipm_price_b_wot', 'Price B Without Tax'],
+      ['ipm_price_c_wot', 'Price C Without Tax'],
+      ['ipm_price_d_wot', 'Price D Without Tax'],
+      ['ipm_price_a_markup_perc', 'Price A Markup %'],
+      ['ipm_price_b_markup_perc', 'Price B Markup %'],
+      ['ipm_price_c_markup_perc', 'Price C Markup %'],
+      ['ipm_price_d_markup_perc', 'Price D Markup %'],
+      ['ipm_max_price', 'Max Price'],
+      ['ipm_min_price', 'Min Price'],
+      ['ipm_disc_perc', 'Discount %'],
+      ['ipm_disc_qty', 'Discount Qty'],
+      ['ipm_addl_cess', 'Additional Cess'],
+      ['ipm_profit_type', 'Profit Type'],
+      ['ipm_round_off', 'Round Off'],
+      ['ipm_loading_charge', 'Loading Charge'],
+      ['ipm_freight_charge', 'Freight Charge'],
+      ['ipm_loyalty_points', 'Loyalty Points'],
+      ['ipm_uom_remarks', 'UOM Remarks'],
+      ['ipm_cost_remarks', 'Cost Remarks'],
+      ['ipm_is_active', 'Is Active'],
+      ['ipm_is_deleted', 'Is Deleted'],
+      ['ipm_sync_date', 'Sync Date'],
+      ['ipm_created_on', 'Created On'],
+      ['ipm_created_by', 'Created By'],
+      ['ipm_updated_on', 'Modified On'],
+      ['ipm_updated_by', 'Modified By'],
+    ]),
   ],
   [
     'Item EAN Code Master',

@@ -18,7 +18,19 @@ type PrismaMock = {
   branchMaster: {
     findMany: jest.Mock;
   };
-  user: {
+  userMaster: {
+    findMany: jest.Mock;
+  };
+  itemUnitConversion: {
+    findMany: jest.Mock;
+  };
+  itemPriceMaster: {
+    findMany: jest.Mock;
+  };
+  itemEanCode: {
+    findMany: jest.Mock;
+  };
+  itemReorder: {
     findMany: jest.Mock;
   };
   auditScreen: {
@@ -35,6 +47,10 @@ type PrismaMock = {
 
 type AuditLogCreateCallArgs = {
   data: Record<string, unknown>;
+};
+
+type AuditLogFindManyCallArgs = {
+  where: Record<string, unknown>;
 };
 
 type RequestContextServiceMock = {
@@ -60,10 +76,22 @@ describe('AuditLogService', () => {
         findMany: jest.fn(),
       },
       branchMaster: {
-        findMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
       },
-      user: {
-        findMany: jest.fn(),
+      userMaster: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      itemUnitConversion: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      itemPriceMaster: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      itemEanCode: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      itemReorder: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
       auditScreen: {
         findFirst: jest.fn(),
@@ -90,6 +118,11 @@ describe('AuditLogService', () => {
   const getCreateArgs = (prismaMock: PrismaMock): AuditLogCreateCallArgs => {
     const createCalls = prismaMock.auditLog.create.mock.calls as AuditLogCreateCallArgs[][];
     return createCalls[0][0];
+  };
+
+  const getListWhere = (prismaMock: PrismaMock): Record<string, unknown> => {
+    const findManyCalls = prismaMock.auditLog.findMany.mock.calls as AuditLogFindManyCallArgs[][];
+    return findManyCalls[0][0].where;
   };
 
   it('captureScreenSnapshot returns null when no SQL-template snapshot is used', async () => {
@@ -471,21 +504,12 @@ describe('AuditLogService', () => {
       record_pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
       page: 1,
       limit: 20,
+      include_total: true,
     });
 
-    expect(prisma.auditLog.count).toHaveBeenCalledWith({
-      where: {
-        auditScreen: {
-          is: {
-            screenName: 'Item Group Master',
-          },
-        },
-        logPk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
-      },
-    });
-    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
+    const expectedWhere = {
+      AND: [
+        {
           auditScreen: {
             is: {
               screenName: 'Item Group Master',
@@ -493,6 +517,14 @@ describe('AuditLogService', () => {
           },
           logPk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
         },
+      ],
+    };
+    expect(prisma.auditLog.count).toHaveBeenCalledWith({
+      where: expectedWhere,
+    });
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expectedWhere,
       }),
     );
     expect(result.items).toHaveLength(1);
@@ -522,10 +554,10 @@ describe('AuditLogService', () => {
         },
       },
     ]);
-    prisma.user.findMany.mockResolvedValue([
+    prisma.userMaster.findMany.mockResolvedValue([
       {
-        user_id: '019d6f6c-be87-7a11-8905-36092c46fd06',
-        user_name: 'Admin User',
+        usrId: '019d6f6c-be87-7a11-8905-36092c46fd06',
+        usrDisplayName: 'Admin User',
       },
     ]);
     prisma.branchMaster.findMany.mockResolvedValue([
@@ -541,11 +573,12 @@ describe('AuditLogService', () => {
       date_to: '2026-02-28',
       page: 1,
       limit: 20,
+      include_total: true,
     });
 
     expect(prisma.auditLog.count).toHaveBeenCalledTimes(1);
     expect(prisma.auditLog.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.user.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.userMaster.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.branchMaster.findMany).toHaveBeenCalledTimes(1);
     expect(result.meta.total).toBe(1);
     expect(result.items[0].log_action).toBe('New');
@@ -568,6 +601,7 @@ describe('AuditLogService', () => {
       record_pk: 'missing-record',
       page: 1,
       limit: 20,
+      include_total: true,
     });
 
     expect(result).toEqual({
@@ -577,10 +611,16 @@ describe('AuditLogService', () => {
         limit: 20,
         total: 0,
         total_pages: 0,
+        next_cursor: null,
       },
     });
-    expect(prisma.user.findMany).not.toHaveBeenCalled();
-    expect(prisma.branchMaster.findMany).not.toHaveBeenCalled();
+    // No rows means no ids to enrich, so the name lookups run against empty sets.
+    expect(prisma.userMaster.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { usrId: { in: [] } } }),
+    );
+    expect(prisma.branchMaster.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { brId: { in: [] } } }),
+    );
   });
 
   it('list resolves configured audit reference fields to names inside audit payloads', async () => {
@@ -704,6 +744,59 @@ describe('AuditLogService', () => {
         pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('list widens an Item Master record filter to its child screens', async () => {
+    const itemId = '019f9412-0b08-7c22-b88b-4eae922d5269';
+    const iucId = '019f9412-0b08-7c22-b88b-4eae922d5270';
+    const ipmId = '019f9412-0b08-7c22-b88b-4eae922d5271';
+    const eanId = '019f9412-0b08-7c22-b88b-4eae922d5272';
+    const irId = '019f9412-0b08-7c22-b88b-4eae922d5273';
+
+    prisma.itemUnitConversion.findMany.mockResolvedValue([{ iucId }]);
+    prisma.itemPriceMaster.findMany.mockResolvedValue([{ ipmId }]);
+    prisma.itemEanCode.findMany.mockResolvedValue([{ eanId }]);
+    prisma.itemReorder.findMany.mockResolvedValue([{ irId }]);
+    prisma.auditLog.findMany.mockResolvedValue([]);
+
+    await service.list({
+      screen_name: 'Item Master',
+      record_pk: itemId,
+      page: 1,
+      limit: 20,
+    });
+
+    const where = getListWhere(prisma) as { AND: { OR: unknown[] }[] };
+
+    expect(where.AND[0].OR).toEqual([
+      { auditScreen: { is: { screenName: 'Item Master' } }, logPk: itemId },
+      {
+        auditScreen: { is: { screenName: 'Item Unit Conversion Master' } },
+        logPk: { in: [iucId] },
+      },
+      { auditScreen: { is: { screenName: 'Item Price Master' } }, logPk: { in: [ipmId] } },
+      { auditScreen: { is: { screenName: 'Item EAN Code Master' } }, logPk: { in: [eanId] } },
+      { auditScreen: { is: { screenName: 'Item Reorder Master' } }, logPk: { in: [irId] } },
+    ]);
+  });
+
+  it('list keeps a plain record filter for screens without child screens', async () => {
+    const itgId = '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678';
+    prisma.auditLog.findMany.mockResolvedValue([]);
+
+    await service.list({
+      screen_name: 'Item Group Master',
+      record_pk: itgId,
+      page: 1,
+      limit: 20,
+    });
+
+    const where = getListWhere(prisma) as { AND: unknown[] };
+
+    expect(where.AND).toEqual([
+      { auditScreen: { is: { screenName: 'Item Group Master' } }, logPk: itgId },
+    ]);
+    expect(prisma.itemUnitConversion.findMany).not.toHaveBeenCalled();
   });
 
   it('logEntityChange fails for update when originalRecord is missing', async () => {

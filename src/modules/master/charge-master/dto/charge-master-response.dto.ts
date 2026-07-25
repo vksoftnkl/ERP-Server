@@ -48,6 +48,24 @@ export class ChargeMasterPayloadDto {
   chgLedgerCode!: string;
   @ApiPropertyOptional({ maxLength: 200, nullable: true, description: 'Name of the mapped GL ledger' })
   chgLedgerName!: string | null;
+  @ApiPropertyOptional({
+    maxLength: 10,
+    nullable: true,
+    description: 'HSN/SAC code of the mapped GL ledger',
+  })
+  ledHsnSac!: string | null;
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'GST rate of the mapped GL ledger',
+  })
+  ledGstRate!: number | null;
+  @ApiPropertyOptional({
+    maxLength: 15,
+    nullable: true,
+    description: 'Taxability of the mapped GL ledger',
+  })
+  ledTaxability!: string | null;
   @ApiProperty()
   chgTaxApl!: boolean;
   @ApiProperty()
@@ -74,6 +92,14 @@ export class ChargeMasterPayloadDto {
   chgModifiedOn!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   chgModifiedBy!: string | null;
+}
+export class ChargeMasterSuccessManyDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Charges fetched successfully' })
+  message!: string;
+  @ApiProperty({ type: ChargeMasterPayloadDto, isArray: true })
+  data!: ChargeMasterPayloadDto[];
 }
 export class ChargeMasterListMetaDto {
   @ApiProperty({ example: 1 })

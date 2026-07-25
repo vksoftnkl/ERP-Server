@@ -15,20 +15,24 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { ChargeMasterExceptionFilter } from './charge-master-exception.filter';
 import {
   ChargeMasterErrorResponseDto,
   ChargeMasterSuccessDeleteDto,
+  ChargeMasterSuccessManyDto,
   ChargeMasterSuccessSingleDto,
 } from './dto/charge-master-response.dto';
+import { GetChargeMasterQueryDto } from './dto/get-charge-master-query.dto';
 import { SaveChargeMasterDto } from './dto/save-charge-master.dto';
 import { ChargeMasterService } from './charge-master.service';
 import {
@@ -66,18 +70,30 @@ export class ChargeMasterController {
   }
   @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get charge by id' })
-  @ApiQuery({ name: 'chgId', schema: { type: 'string', format: 'uuid' } })
-  @ApiOkResponse({ type: ChargeMasterSuccessSingleDto })
+  @ApiOperation({
+    summary: 'Get charge by id, or every active charge for a module',
+    description:
+      'Send exactly one of `chgId` (returns a single charge) or `chgModule` (returns an array). ' +
+      'A module lookup also picks up `B` (both) charges: P → P + B, S → S + B, B → B.',
+  })
+  @ApiExtraModels(ChargeMasterSuccessSingleDto, ChargeMasterSuccessManyDto)
+  @ApiOkResponse({
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(ChargeMasterSuccessSingleDto) },
+        { $ref: getSchemaPath(ChargeMasterSuccessManyDto) },
+      ],
+    },
+  })
   @ApiBadRequestResponse({ type: ChargeMasterErrorResponseDto })
   @ApiNotFoundResponse({ type: ChargeMasterErrorResponseDto })
-  async getById(
-    @Query('chgId', new ParseUUIDPipe()) chgId: string,
-  ): Promise<ChargeMasterSuccessResponse<ChargeMasterPayload>> {
-    const data = await this.chargeMasterService.getById(chgId);
+  async get(
+    @Query() getChargeMasterQueryDto: GetChargeMasterQueryDto,
+  ): Promise<ChargeMasterSuccessResponse<ChargeMasterPayload | ChargeMasterPayload[]>> {
+    const data = await this.chargeMasterService.get(getChargeMasterQueryDto);
     return {
       success: true,
-      message: 'Charge fetched successfully',
+      message: Array.isArray(data) ? 'Charges fetched successfully' : 'Charge fetched successfully',
       data,
     };
   }

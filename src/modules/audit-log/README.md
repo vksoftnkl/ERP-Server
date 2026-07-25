@@ -38,7 +38,8 @@ API for browsing those logs.
 - `action` — `New` / `insert` / `update` / `approve` / `cancel` (`New` is normalized to `insert`).
 - `screen_id` — filter by audit screen id.
 - `screen_name` — exact audit screen name.
-- `record_pk` — exact primary-key value of the audited record.
+- `record_pk` — exact primary-key value of the audited record. On a **composite screen** it is also
+  expanded to the record's child screens (see below).
 - `date_from` / `date_to` — ISO or date-only (`YYYY-MM-DD`); date-only bounds expand to full-day
   start/end. `date_from` must be `<= date_to`.
 - `search` — case-insensitive contains across table name, pk, display name, notes and screen name.
@@ -49,6 +50,23 @@ API for browsing those logs.
 Ordering is fixed to `logDate desc, logId desc` (matching the composite index). Each returned item
 enriches the raw row: `insert` is shown back as `"New"`, snapshot columns are renamed to their
 labels, and id references (user, branch, and many masters) are resolved to display names.
+
+#### Composite screens (`RELATED_AUDIT_SCREENS_BY_SCREEN_NAME`)
+
+Some screens save a parent row plus child rows that live in other tables. Each child is audited
+under its **own** screen name with its **own** primary key, so filtering only on the parent's
+`record_pk` would hide those changes. When `screen_name` names a composite screen and `record_pk`
+is a UUID, the service translates the parent id into each child table's primary keys and matches
+them too (soft-deleted children included — their history still belongs to the parent's trail):
+
+| Parent screen | Child screens (table → PK looked up by) |
+| --- | --- |
+| `Item Master` | `Item Unit Conversion Master` (`item_unit_conversion` → `iuc_item_id`), `Item Price Master` (`item_price_master` → `ipm_item_id`), `Item EAN Code Master` (`item_ean_codes` → `ean_item_id`), `Item Reorder Master` (`item_reorders` → `ir_item_id`) |
+
+So `GET /list?screen_name=Item Master&record_pk=<item_id>` returns the item's own changes **and**
+its unit-conversion, price, EAN-code and reorder changes in one date-ordered feed. Every other
+screen keeps the plain `screen_name` + `logPk` filter. The expansion is ANDed with the rest of the
+WHERE clause, so `search` cannot widen it back out.
 
 ## Public service API (consumed by other modules)
 
@@ -141,8 +159,14 @@ maps common labels (e.g. `Company ID`, `Item ID`, `Ledger ID`, `Unit ID`) to a l
 account group / item group depending on screen). `fetchAuditReferenceNameMap` batch-loads names for
 each lookup type from its master table (account group, area, branch, category, city, company,
 customer, customer group, employee department/designation, godown, GSP provider, item, item
-brand/group/section/tax, ledger, state, supplier group, tender type, unit, unit rate). Values
-appear both as scalars and as `{ from, to }` diff leaves, and all are resolved in place.
+brand/group/section/tax, ledger, state, supplier group, tender type, unit, unit conversion, unit
+rate). Values appear both as scalars and as `{ from, to }` diff leaves, and all are resolved in
+place.
+
+The `unitConversion` lookup exists because the item children (`item_price_master`,
+`item_ean_codes`, `item_reorders`) store an `item_unit_conversion.iuc_id` in the column the UI
+labels `Unit ID`; it resolves one hop further to the unit behind that conversion. Those three
+screens therefore override `Unit ID` to `unitConversion`.
 
 ## Enums / unions ([types/audit-log.types.ts](types/audit-log.types.ts))
 
