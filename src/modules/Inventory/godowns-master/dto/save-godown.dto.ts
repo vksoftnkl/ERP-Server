@@ -7,6 +7,7 @@ import {
   OptionalBoolean,
   OptionalInteger,
   OptionalNumber,
+  OptionalQueryBoolean,
   OptionalTrimmedString,
   OptionalUuid,
   UUID_PATTERN,
@@ -121,7 +122,7 @@ export class SaveGodownDto {
   @NullableUuid()
   parent_id?: string | null;
   @ApiHideProperty()
-  @OptionalBoolean()
+  @OptionalQueryBoolean()
   is_active?: boolean;
   @ApiHideProperty()
   @OptionalUuid()

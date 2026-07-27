@@ -770,6 +770,9 @@ export class ItemsMasterService {
     if (hasOwnProperty(saveItemDto, 'item_packing_item_ids')) {
       data.itemPackingItemIds = saveItemDto.item_packing_item_ids ?? [];
     }
+    if (hasOwnProperty(saveItemDto, 'item_inclusive_of_tax')) {
+      data.itemInclusiveOfTax = saveItemDto.item_inclusive_of_tax;
+    }
     if (hasOwnProperty(saveItemDto, 'item_is_active')) {
       data.itemIsActive = saveItemDto.item_is_active;
     }
@@ -856,6 +859,7 @@ export class ItemsMasterService {
       item_notes: record.itemNotes,
       item_storage_location: record.itemStorageLocation,
       item_packing_item_ids: record.itemPackingItemIds,
+      item_inclusive_of_tax: record.itemInclusiveOfTax,
       item_is_active: record.itemIsActive,
       item_is_deleted: record.itemIsDeleted,
       item_created_on: record.itemCreatedOn.toISOString(),

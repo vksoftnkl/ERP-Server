@@ -100,7 +100,7 @@ describe('ItemsEanCodeMasterController', () => {
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemEanCodePayload);
 
-    await expect(controller.getById(EAN_ID)).resolves.toEqual({
+    await expect(controller.getById({ ean_id: EAN_ID })).resolves.toEqual({
       success: true,
       message: 'Item EAN code fetched successfully',
       data: itemEanCodePayload,

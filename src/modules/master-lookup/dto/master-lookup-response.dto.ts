@@ -290,20 +290,14 @@ export class ItemPriceLookupPayloadDto {
   allow_promo!: boolean;
   @ApiProperty()
   add_freight!: boolean;
-  @ApiProperty({
-    example: 'Y',
-    description: "Echoes the requested loading type; 'Y' / 'N' from item_allow_loading when none was requested.",
-  })
-  loading_type!: string;
-  @ApiProperty({
-    example: 'Y',
-    description: "Echoes the requested freight type; 'Y' / 'N' from item_allow_freight when none was requested.",
-  })
-  freight_type!: string;
   @ApiProperty({ format: 'uuid' })
   item_group_id!: string;
   @ApiProperty({ format: 'uuid', nullable: true })
   item_category_id!: string | null;
+  @ApiProperty({ format: 'uuid', nullable: true })
+  item_brand_id!: string | null;
+  @ApiProperty({ format: 'uuid', nullable: true })
+  item_section_id!: string | null;
   @ApiProperty()
   weigh_scale!: boolean;
   @ApiProperty({ example: 0 })
@@ -336,7 +330,17 @@ export class ItemPriceLookupPayloadDto {
   @ApiProperty({ example: 0 })
   addl_cess!: number;
   @ApiProperty({ nullable: true })
-  unit_desc!: string | null;
+  unit_name!: string | null;
+  @ApiProperty({
+    format: 'uuid',
+    description: 'Base unit of the item + selected unit conversion row.',
+  })
+  base_unit_id!: string;
+  @ApiProperty({
+    example: 1,
+    description: 'To-base factor: qty in the selected unit × base_factor = qty in the base unit.',
+  })
+  base_factor!: number;
   @ApiProperty({ example: 0 })
   unit_weight!: number;
   @ApiProperty({ example: 0 })

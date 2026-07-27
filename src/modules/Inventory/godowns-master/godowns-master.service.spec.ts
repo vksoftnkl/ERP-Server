@@ -21,6 +21,9 @@ type PrismaMock = {
     update: jest.Mock<Promise<GodownLocation>, [Prisma.GodownLocationUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, [Prisma.GodownLocationUpdateManyArgs]>;
   };
+  branchMaster: {
+    findFirst: jest.Mock<Promise<{ brName: string } | null>, [Prisma.BranchMasterFindFirstArgs]>;
+  };
   gridDetails: {
     findFirst: jest.Mock<
       Promise<{ gridId: bigint; gridSql: string | null } | null>,
@@ -87,6 +90,12 @@ describe('GodownsMasterService', () => {
         update: jest.fn<Promise<GodownLocation>, [Prisma.GodownLocationUpdateArgs]>(),
         updateMany: jest.fn<Promise<Prisma.BatchPayload>, [Prisma.GodownLocationUpdateManyArgs]>(),
       },
+      branchMaster: {
+        findFirst: jest.fn<
+          Promise<{ brName: string } | null>,
+          [Prisma.BranchMasterFindFirstArgs]
+        >(),
+      },
       gridDetails: {
         findFirst: jest.fn<
           Promise<{ gridId: bigint; gridSql: string | null } | null>,
@@ -109,6 +118,7 @@ describe('GodownsMasterService', () => {
     prisma.gridDetails.findFirst.mockResolvedValue(null);
     prisma.gridColumn.findMany.mockResolvedValue([]);
     prisma.godownLocation.findMany.mockResolvedValue([]);
+    prisma.branchMaster.findFirst.mockResolvedValue({ brName: 'Main Branch' });
 
     prisma.$transaction.mockImplementation(
       async (callback: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
@@ -444,6 +454,7 @@ describe('GodownsMasterService', () => {
     expect(result.gdl_id).toBe(GDL_ID);
     expect(result.gdl_is_deleted).toBe(false);
     expect(result.gdl_parent_name).toBeNull();
+    expect(result.gdl_branch_name).toBe('Main Branch');
   });
 
   it('getById resolves the parent name when the location has a parent', async () => {

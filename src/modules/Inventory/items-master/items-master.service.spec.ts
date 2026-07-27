@@ -86,6 +86,7 @@ const makeItemRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =>
     itemNotes: null,
     itemStorageLocation: null,
     itemPackingItemIds: [],
+    itemInclusiveOfTax: false,
     itemIsActive: true,
     itemIsDeleted: false,
     itemCreatedOn: new Date('2026-03-25T10:00:00.000Z'),
@@ -375,24 +376,31 @@ describe('ItemsMasterService composite endpoints', () => {
     expect(prisma.itemMaster.create.mock.calls[0][0].data.itemCompanyId).toBe(COMPANY_ID);
   });
 
-  it('rejects a create with no item_company_id in the body', async () => {
-    await expect(
-      service.saveComposite({
-        item_name_en: 'Widget',
-        item_group_id: GROUP_ID,
-      } as SaveItemCompositeDto),
-    ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.itemMaster.create).not.toHaveBeenCalled();
+  it('creates with a null company when the body omits item_company_id', async () => {
+    // The company scope is optional (item_company_id is nullable): an omitted
+    // company is stored as null rather than borrowed from the token.
+    requestContextService.getCompanyId.mockReturnValue('019c6f6c-be87-7a11-8905-36092c46aaff');
+    prisma.itemMaster.create.mockResolvedValue(makeItemRecord());
+
+    await service.saveComposite({
+      item_name_en: 'Widget',
+      item_group_id: GROUP_ID,
+    } as SaveItemCompositeDto);
+
+    expect(prisma.itemMaster.create.mock.calls[0][0].data.itemCompanyId).toBeNull();
   });
 
-  it('rejects an update with no item_company_id in the body', async () => {
+  it('updates with a null company when the body omits item_company_id', async () => {
+    requestContextService.getCompanyId.mockReturnValue('019c6f6c-be87-7a11-8905-36092c46aaff');
     prisma.itemMaster.findFirst.mockResolvedValue(makeItemRecord());
+    prisma.itemMaster.update.mockResolvedValue(makeItemRecord());
 
     const { item_company_id: _omitted, ...rest } = fullCompositeDto();
     const dto = { ...rest, item_id: ITEM_ID } as SaveItemCompositeDto;
 
-    await expect(service.saveComposite(dto)).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.itemMaster.update).not.toHaveBeenCalled();
+    await service.saveComposite(dto);
+
+    expect(prisma.itemMaster.update.mock.calls[0][0].data.itemCompanyId).toBeNull();
   });
 
   it('does not call child services when no child arrays are provided', async () => {

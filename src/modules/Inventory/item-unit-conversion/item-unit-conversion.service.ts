@@ -577,6 +577,10 @@ export class ItemUnitConversionService {
         const row = effectiveRows[i];
         if (i === 0) {
           row.unitFactor = 1;
+          // The chain is anchored here, so an anchor row that carries no
+          // to-base factor of its own stands in as the 1x reference the next
+          // row's step factor is derived against.
+          row.toBaseFactor = row.toBaseFactor ?? 1;
           cumulativeByUnitId.set(row.unitId, 1);
           continue;
         }
@@ -587,18 +591,16 @@ export class ItemUnitConversionService {
         const currentCumulative = this.roundFactor(previousCumulative * resolvedUnitFactor);
         cumulativeByUnitId.set(row.unitId, currentCumulative);
       }
+      // iuc_to_base_factor reads as "qty in this unit x factor = qty in the base
+      // unit", so it is the row's cumulative expressed relative to the base
+      // row's. When the base unit has no row in the chain there is nothing to
+      // anchor against, and each row keeps the to-base factor it came in with.
       const baseCumulative = cumulativeByUnitId.get(resolvedBaseUnitId);
-      if (!baseCumulative) {
-        throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
-          {
-            field: 'iuc_base_unit_id',
-            message: 'Unable to resolve base unit cumulative factor',
-          },
-        ]);
-      }
       for (const row of effectiveRows) {
         const rowCumulative = cumulativeByUnitId.get(row.unitId)!;
-        row.toBaseFactor = this.roundFactor(baseCumulative / rowCumulative);
+        row.toBaseFactor = baseCumulative
+          ? this.roundFactor(rowCumulative / baseCumulative)
+          : (row.toBaseFactor ?? rowCumulative);
       }
       for (const row of effectiveRows) {
         if (row.saveIndex === undefined) {
@@ -628,12 +630,10 @@ export class ItemUnitConversionService {
     }
     const previousToBaseFactor = this.toPositiveFactor(previousRow.toBaseFactor);
     const currentToBaseFactor = this.toPositiveFactor(currentRow.toBaseFactor);
-    if (
-      previousToBaseFactor !== undefined &&
-      currentToBaseFactor !== undefined &&
-      currentToBaseFactor > 0
-    ) {
-      return this.roundFactor(previousToBaseFactor / currentToBaseFactor);
+    // Both to-base factors count base units per row unit, so the step from the
+    // previous row to this one is how much bigger this unit is.
+    if (previousToBaseFactor !== undefined && currentToBaseFactor !== undefined) {
+      return this.roundFactor(currentToBaseFactor / previousToBaseFactor);
     }
     throwInventoryBadRequest<ItemUnitConversionErrorDetail>('Validation failed', [
       {

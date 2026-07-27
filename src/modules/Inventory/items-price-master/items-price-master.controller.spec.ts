@@ -34,7 +34,7 @@ const itemPricePayload = {
   ipm_disc_perc: 0,
   ipm_disc_qty: 0,
   ipm_addl_cess: 0,
-  ipm_profit_type: 'MANUAL',
+  ipm_profit_type: 'By %',
   ipm_round_off: 0,
   ipm_loading_charge: 0,
   ipm_freight_charge: 0,
@@ -83,7 +83,7 @@ describe('ItemsPriceMasterController', () => {
         ipm_item_id: ITEM_ID,
         ipm_uc_unit_id: UNIT_ID,
         ipm_godown_id: GODOWN_ID,
-        ipm_profit_type: 'MANUAL',
+        ipm_profit_type: 'By %',
       }),
     ).resolves.toEqual({
       success: true,
@@ -101,7 +101,7 @@ describe('ItemsPriceMasterController', () => {
           ipm_item_id: ITEM_ID,
           ipm_uc_unit_id: UNIT_ID,
           ipm_godown_id: GODOWN_ID,
-          ipm_profit_type: 'MANUAL',
+          ipm_profit_type: 'By %',
         },
       ]),
     ).resolves.toEqual({

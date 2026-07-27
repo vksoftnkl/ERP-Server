@@ -120,6 +120,8 @@ export class ItemPayloadDto {
   @ApiProperty({ type: [String] })
   item_packing_item_ids!: string[];
   @ApiProperty()
+  item_inclusive_of_tax!: boolean;
+  @ApiProperty()
   item_is_active!: boolean;
   @ApiProperty()
   item_is_deleted!: boolean;

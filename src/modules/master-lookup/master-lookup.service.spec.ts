@@ -495,7 +495,9 @@ describe('MasterLookupService', () => {
       itemUnitConversion: {
         iucUnitId: `UNIT-${slno}`,
         iucUnitSlno: slno,
-        unit: { unit_description: null, unit_weight: 0, unit_loading: 0, unit_decimal_count: 2 },
+        iucBaseUnitId: 'UNIT-BASE',
+        iucToBaseFactor: slno,
+        unit: { unit_name: `UNIT-${slno}`, unit_weight: 0, unit_loading: 0, unit_decimal_count: 2 },
       },
     });
 
@@ -597,23 +599,28 @@ describe('MasterLookupService', () => {
       expect(result.unit_rate_id).toBe('IPM-2');
     });
 
-    it('echoes the requested loading/freight type and falls back to the item flags', async () => {
-      mockItemPricePrisma(itemRow({ itemAllowLoading: false }), [priceRow('IPM-1', 1, 115)]);
+    it('returns the to-base factor of the selected unit conversion row', async () => {
+      mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
 
-      const echoed = await service.getItemPriceLookup({
+      const result = await service.getItemPriceLookup({
         item_id: ITEM_ID,
-        price_level: 1,
-        loading_type: 'LOCAL',
-      } as never);
-      expect(echoed.loading_type).toBe('LOCAL');
-      expect(echoed.freight_type).toBe('Y');
-
-      mockItemPricePrisma(itemRow({ itemAllowLoading: false }), [priceRow('IPM-1', 1, 115)]);
-      const derived = await service.getItemPriceLookup({
-        item_id: ITEM_ID,
+        unit_id: 'UNIT-2',
         price_level: 1,
       } as never);
-      expect(derived.loading_type).toBe('N');
+
+      expect(result.unit_id).toBe('UNIT-2');
+      expect(result.base_unit_id).toBe('UNIT-BASE');
+      expect(result.base_factor).toBe(2);
+    });
+
+    it('zeroes unit_loading when the item does not allow loading', async () => {
+      mockItemPricePrisma(itemRow({ itemAllowLoading: false }), [priceRow('IPM-1', 1, 115)]);
+
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        price_level: 1,
+      } as never);
+      expect(result.unit_loading).toBe(0);
     });
   });
 });

@@ -62,6 +62,7 @@ model ItemMaster {
   itemNotes            String?  @db.VarChar(250) @map("item_notes")
   itemStorageLocation  String?  @db.VarChar(250) @map("item_storage_location")
   itemPackingItemIds   String[] @db.Uuid @map("item_packing_item_ids")
+  itemInclusiveOfTax   Boolean  @default(false) @map("item_inclusive_of_tax")
   // Status / Audit
   itemIsActive         Boolean  @default(true)  @map("item_is_active")
   itemIsDeleted        Boolean  @default(false) @map("item_is_deleted")

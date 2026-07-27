@@ -89,7 +89,7 @@ describe('ItemsReorderMasterController', () => {
   it('returns wrapped getById response', async () => {
     serviceMock.getById.mockResolvedValue(itemReorderPayload);
 
-    await expect(controller.getById(REORDER_ID)).resolves.toEqual({
+    await expect(controller.getById({ ir_id: REORDER_ID })).resolves.toEqual({
       success: true,
       message: 'Item reorder fetched successfully',
       data: itemReorderPayload,

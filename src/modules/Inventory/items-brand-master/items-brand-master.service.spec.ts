@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemBrandMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemBrandDto } from './dto/save-item-brand.dto';
 import { ItemsBrandMasterService } from './items-brand-master.service';
@@ -257,7 +258,7 @@ describe('ItemsBrandMasterService', () => {
     const updateArgs = prisma.itemBrandMaster.update.mock.calls[0][0];
     expect(updateArgs.where.brand_id).toBe(BRAND_ID);
     expect(updateArgs.data.brand_name).toBe('Updated Brand');
-    expect(updateArgs.data.brand_modified_by).toBe('system');
+    expect(updateArgs.data.brand_modified_by).toBe(DEFAULT_ACTOR);
     expect(result.brand_name).toBe('Updated Brand');
   });
 
@@ -580,7 +581,7 @@ describe('ItemsBrandMasterService', () => {
     expect(updateManyArgs.where.brand_id).toBe(BRAND_ID);
     expect(updateManyArgs.where.brand_is_deleted).toBe(false);
     expect(updateManyArgs.data.brand_is_deleted).toBe(true);
-    expect(updateManyArgs.data.brand_modified_by).toBe('system');
+    expect(updateManyArgs.data.brand_modified_by).toBe(DEFAULT_ACTOR);
 
     expect(prisma.itemBrandMaster.update).toHaveBeenCalledTimes(1);
     const ancestorUpdateArgs = prisma.itemBrandMaster.update.mock.calls[0][0];

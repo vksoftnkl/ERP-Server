@@ -216,6 +216,14 @@ describe('AuthService', () => {
       refresh_token: 'signed-refresh-token',
       token_type: 'Bearer',
       usrId: TEST_USER_ID,
+      user_type: 'USER',
+      user_name: 'John Doe',
+      device_id: null,
+      device_name: null,
+      dev_company_id: null,
+      dev_branch_id: null,
+      dev_user_id: null,
+      device_type: null,
     });
     expect(prismaService.userMaster.findFirst).toHaveBeenCalledWith({
       where: {
@@ -230,11 +238,15 @@ describe('AuthService', () => {
       sub: TEST_USER_ID,
       user_name: 'john.doe',
       sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
+      user_type: 'USER',
+      company_id: TEST_COMPANY_ID,
     });
     expect(tokenService.signRefreshToken).toHaveBeenCalledWith({
       sub: TEST_USER_ID,
       user_name: 'john.doe',
       sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
+      user_type: 'USER',
+      company_id: TEST_COMPANY_ID,
     });
     expect(authSessionService.storeTokenSession).toHaveBeenCalledWith(
       'signed-jwt-token',
@@ -288,6 +300,14 @@ describe('AuthService', () => {
       refresh_token: 'signed-refresh-token',
       token_type: 'Bearer',
       usrId: TEST_USER_ID,
+      user_type: 'USER',
+      user_name: 'John Doe',
+      device_id: null,
+      device_name: null,
+      dev_company_id: null,
+      dev_branch_id: null,
+      dev_user_id: null,
+      device_type: null,
     });
     expect(authSessionService.storeTokenSession).toHaveBeenCalled();
     expect(prismaService.userLoginSession.create).toHaveBeenCalled();

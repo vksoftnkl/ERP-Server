@@ -99,6 +99,7 @@ export interface ItemPayload {
   item_notes: string | null;
   item_storage_location: string | null;
   item_packing_item_ids: string[];
+  item_inclusive_of_tax: boolean;
   item_is_active: boolean;
   item_is_deleted: boolean;
   item_created_on: string;

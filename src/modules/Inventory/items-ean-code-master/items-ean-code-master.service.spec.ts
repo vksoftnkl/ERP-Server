@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemEanCode, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
 import { ItemsEanCodeMasterService } from './items-ean-code-master.service';
@@ -242,7 +243,7 @@ describe('ItemsEanCodeMasterService', () => {
     expect(updateManyArgs.where?.eanId).toBe(EAN_ID);
     expect(updateManyArgs.where?.eanIsDeleted).toBe(false);
     expect(updateManyArgs.data.eanIsDeleted).toBe(true);
-    expect(updateManyArgs.data.eanModifiedBy).toBe('system');
+    expect(updateManyArgs.data.eanModifiedBy).toBe(DEFAULT_ACTOR);
   });
 
   it('toggleDelete restores a previously deleted item ean code', async () => {

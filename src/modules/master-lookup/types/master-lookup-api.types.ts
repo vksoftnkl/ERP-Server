@@ -108,12 +108,10 @@ export interface ItemPriceLookupPayload {
   // Item flags
   allow_promo: boolean;
   add_freight: boolean;
-  /** Echoes the requested loading type; falls back to 'Y' / 'N' from item_allow_loading. */
-  loading_type: string;
-  /** Echoes the requested freight type; falls back to 'Y' / 'N' from item_allow_freight. */
-  freight_type: string;
   item_group_id: string;
   item_category_id: string | null;
+  item_brand_id: string | null;
+  item_section_id: string | null;
   weigh_scale: boolean;
   batch_config: number;
   service_item: 'Y' | 'N';
@@ -132,7 +130,11 @@ export interface ItemPriceLookupPayload {
   sch_discount: number | null;
   addl_cess: number;
   // Unit
-  unit_desc: string | null;
+  unit_name: string | null;
+  /** item_unit_conversion.iuc_base_unit_id for the item + selected unit. */
+  base_unit_id: string;
+  /** item_unit_conversion.iuc_to_base_factor — qty in this unit × factor = qty in the base unit. */
+  base_factor: number;
   unit_weight: number;
   unit_loading: number;
   decimal_count: number;

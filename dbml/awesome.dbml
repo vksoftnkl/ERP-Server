@@ -1398,6 +1398,7 @@ Table item_master {
   itemNotes String
   itemStorageLocation String
   itemPackingItemIds String[] [not null]
+  itemInclusiveOfTax Boolean [not null, default: false]
   itemIsActive Boolean [not null, default: true]
   itemIsDeleted Boolean [not null, default: false]
   itemCreatedOn DateTime [default: `now()`, not null]

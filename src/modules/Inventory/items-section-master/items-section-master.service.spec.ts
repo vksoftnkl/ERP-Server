@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemSectionMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemSectionDto } from './dto/save-item-section.dto';
 import { ItemsSectionMasterService } from './items-section-master.service';
@@ -162,7 +163,7 @@ describe('ItemsSectionMasterService', () => {
     const updateArgs = prisma.itemSectionMaster.update.mock.calls[0][0];
     expect(updateArgs.where.secId).toBe(ITEM_SECTION_ID);
     expect(updateArgs.data.secName).toBe('Updated Section');
-    expect(updateArgs.data.secModifiedBy).toBe('system');
+    expect(updateArgs.data.secModifiedBy).toBe(DEFAULT_ACTOR);
     expect(result.sec_name).toBe('Updated Section');
   });
 
@@ -491,7 +492,7 @@ describe('ItemsSectionMasterService', () => {
     expect(updateManyArgs.where.secId).toBe(ITEM_SECTION_ID);
     expect(updateManyArgs.where.secIsDeleted).toBe(false);
     expect(updateManyArgs.data.secIsDeleted).toBe(true);
-    expect(updateManyArgs.data.secModifiedBy).toBe('system');
+    expect(updateManyArgs.data.secModifiedBy).toBe(DEFAULT_ACTOR);
 
     expect(prisma.itemSectionMaster.update).toHaveBeenCalledTimes(1);
     const ancestorUpdateArgs = prisma.itemSectionMaster.update.mock.calls[0][0];

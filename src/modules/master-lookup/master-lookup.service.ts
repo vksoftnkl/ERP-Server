@@ -569,10 +569,6 @@ export class MasterLookupService {
     const itemName = regional
       ? (itemRecord.itemNameTa ?? itemRecord.itemNameEn)
       : itemRecord.itemNameEn;
-    // Voucher-level loading / freight types: the caller's text is echoed back as
-    // is. Without it the item's own allow flags supply the legacy 'Y' / 'N'.
-    const loadingType = query.loading_type ?? (itemRecord.itemAllowLoading ? 'Y' : 'N');
-    const freightType = query.freight_type ?? (itemRecord.itemAllowFreight ? 'Y' : 'N');
     const stock = stockSum ? toNullableNumber(stockSum._sum.isbClosingQty ?? 0) : null;
     const reorderQty = reorder ? toNumber(reorder.irMinLevel) - (stock ?? 0) : null;
     // Legacy allow_negative_stock: service items always allow; otherwise it is
@@ -596,10 +592,10 @@ export class MasterLookupService {
       barcode: itemRecord.itemDefaultBarcode,
       allow_promo: itemRecord.itemAllowPromo,
       add_freight: itemRecord.itemAllowFreight,
-      loading_type: loadingType,
-      freight_type: freightType,
       item_group_id: itemRecord.itemGroupId,
       item_category_id: itemRecord.itemCategoryId,
+      item_brand_id: itemRecord.itemBrandId,
+      item_section_id: itemRecord.itemSectionId,
       weigh_scale: itemRecord.itemWeighScale,
       batch_config: itemRecord.itemBatchConfig,
       service_item: itemRecord.itemIsService ? 'Y' : 'N',
@@ -614,7 +610,11 @@ export class MasterLookupService {
       disc_qty: toNumber(rate.ipmDiscQty),
       sch_discount: null,
       addl_cess: toNumber(rate.ipmAddlCess),
-      unit_desc: unit?.unit_description ?? null,
+      unit_name: unit?.unit_name ?? null,
+      // The conversion row the rate hangs off is the item + selected unit pair,
+      // so its to-base factor is the one that converts this unit's qty to base.
+      base_unit_id: rate.itemUnitConversion.iucBaseUnitId,
+      base_factor: toNumber(rate.itemUnitConversion.iucToBaseFactor),
       unit_weight: toNullableNumber(unit?.unit_weight ?? null) ?? 0,
       unit_loading: itemRecord.itemAllowLoading
         ? (toNullableNumber(unit?.unit_loading ?? null) ?? 0)

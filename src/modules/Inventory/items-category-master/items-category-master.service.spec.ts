@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { categoryMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemCategoryDto } from './dto/save-item-category.dto';
 import { ItemsCategoryMasterService } from './items-category-master.service';
@@ -158,7 +159,7 @@ describe('ItemsCategoryMasterService', () => {
     const updateArgs = prisma.categoryMaster.update.mock.calls[0][0];
     expect(updateArgs.where.categoryId).toBe(ITEM_CATEGORY_ID);
     expect(updateArgs.data.categoryName).toBe('Updated Category');
-    expect(updateArgs.data.categoryModifiedBy).toBe('system');
+    expect(updateArgs.data.categoryModifiedBy).toBe(DEFAULT_ACTOR);
     expect(result.category_name).toBe('Updated Category');
   });
 
@@ -484,7 +485,7 @@ describe('ItemsCategoryMasterService', () => {
     expect(updateManyArgs.where.categoryId).toBe(ITEM_CATEGORY_ID);
     expect(updateManyArgs.where.categoryIsDeleted).toBe(false);
     expect(updateManyArgs.data.categoryIsDeleted).toBe(true);
-    expect(updateManyArgs.data.categoryModifiedBy).toBe('system');
+    expect(updateManyArgs.data.categoryModifiedBy).toBe(DEFAULT_ACTOR);
 
     expect(prisma.categoryMaster.update).toHaveBeenCalledTimes(1);
     const ancestorUpdateArgs = prisma.categoryMaster.update.mock.calls[0][0];

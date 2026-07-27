@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ItemGroupMaster, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
+import { DEFAULT_ACTOR } from '../../../common/utils/module-shared.utils';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveItemGroupDto } from './dto/save-item-group.dto';
 import { ItemsGroupMasterService } from './items-group-master.service';
@@ -274,7 +275,7 @@ describe('ItemsGroupMasterService', () => {
     const updateArgs = prisma.itemGroupMaster.update.mock.calls[0][0];
     expect(updateArgs.where.itgId).toBe(ITEM_GROUP_ID);
     expect(updateArgs.data.itgName).toBe('Updated Group');
-    expect(updateArgs.data.itgModifiedBy).toBe('system');
+    expect(updateArgs.data.itgModifiedBy).toBe(DEFAULT_ACTOR);
     expect(result.itg_name).toBe('Updated Group');
   });
   it('rejects duplicate name with 409', async () => {
@@ -582,7 +583,7 @@ describe('ItemsGroupMasterService', () => {
     expect(updateManyArgs.where.itgId).toBe(ITEM_GROUP_ID);
     expect(updateManyArgs.where.itgIsDeleted).toBe(false);
     expect(updateManyArgs.data.itgIsDeleted).toBe(true);
-    expect(updateManyArgs.data.itgModifiedBy).toBe('system');
+    expect(updateManyArgs.data.itgModifiedBy).toBe(DEFAULT_ACTOR);
 
     expect(prisma.itemGroupMaster.update).toHaveBeenCalledTimes(1);
     const ancestorUpdateArgs = prisma.itemGroupMaster.update.mock.calls[0][0];
