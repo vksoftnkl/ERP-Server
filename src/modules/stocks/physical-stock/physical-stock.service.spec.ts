@@ -31,6 +31,7 @@ describe('PhysicalStockService', () => {
     physicalStockBatchDetail: {
       create: jest.Mock;
       deleteMany: jest.Mock;
+      findMany: jest.Mock;
       updateMany: jest.Mock;
     };
   };
@@ -61,6 +62,7 @@ describe('PhysicalStockService', () => {
       physicalStockBatchDetail: {
         create: jest.fn().mockResolvedValue({}),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findMany: jest.fn().mockResolvedValue([]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
@@ -322,16 +324,30 @@ function makeHeaderRecord() {
     psCompanyId: COMPANY_ID,
     psBranchId: BRANCH_ID,
     psGodownId: GODOWN_ID,
+    psDocRefNo: 'PHY-STK-TEST-001',
+    psDocNo: 1001n,
+    psDocDate: new Date('2026-05-09T00:00:00.000Z'),
+    psStatus: 'DRAFT',
+    psTotalLines: 1,
+    psTotalBookValue: 1000,
+    psTotalCountedValue: 800,
+    psNetVarianceValue: -200,
+    psDeviceType: null,
+    psDeviceId: null,
+    psCounterId: null,
+    psSessionId: null,
+    psRemarks: null,
+    psIsActive: true,
+    psIsDeleted: false,
+    psCreatedOn: new Date('2026-05-09T10:00:00.000Z'),
     psCreatedBy: USER_ID,
+    psModifiedOn: null,
     psModifiedBy: null,
   };
 }
 function makeDocumentRecord() {
   return {
-    psId: HEADER_ID,
-    psDocRefNo: 'PHY-STK-TEST-001',
-    psDocNo: 1001n,
-    psDocDate: new Date('2026-05-09T00:00:00.000Z'),
+    ...makeHeaderRecord(),
     details: [
       {
         psdId: DETAIL_ID,

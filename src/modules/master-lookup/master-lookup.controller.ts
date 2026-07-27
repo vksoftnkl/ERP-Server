@@ -42,6 +42,7 @@ import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
 import { FreightChargeQueryDto } from './dto/freight-charge-query.dto';
 import { BarcodeLookupQueryDto } from './dto/barcode-lookup-query.dto';
 import { ItemPriceLookupQueryDto } from './dto/item-price-lookup-query.dto';
+import { ItemPriceRefreshQueryDto } from './dto/item-price-refresh-query.dto';
 import { API_VERSION } from '../../common/constants/api-version';
 @ApiTags('Master Lookup')
 @ApiBearerAuth('access-token')
@@ -247,6 +248,41 @@ export class MasterLookupController {
     @Query() query: ItemPriceLookupQueryDto,
   ): Promise<MasterLookupSuccessResponse<ItemPriceLookupPayload>> {
     const data = await this.masterLookupService.getItemPriceLookup(query);
+    return {
+      success: true,
+      message: 'Item price lookup fetched successfully',
+      data,
+    };
+  }
+  @Get('item-price/refresh')
+  @Version(API_VERSION)
+  // An explicit refresh action: it has to show edits made in the same session,
+  // so it opts out of the controller's cache TTL (0 = never served from cache).
+  @CacheTTL(0)
+  @ApiOperation({
+    summary:
+      "Cycle an item's unit and re-read its price row. Resolves the unit after unit_id in the item's item_unit_conversion list — ordered by to-base factor (base unit first), wrapping around after the last unit — then returns the item-price lookup for that unit, so the payload is identical in shape to /item-price and every price, tax and unit field belongs to the resolved unit. A stale unit_id that the item does not carry falls back to its first unit; an item with no conversion rows falls back to the requested unit. Never cached.",
+  })
+  @ApiQuery({ name: 'item_id', required: true, schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({
+    name: 'unit_id',
+    required: true,
+    description: 'The unit currently on screen. The response returns the NEXT one.',
+    schema: { type: 'string', format: 'uuid' },
+  })
+  @ApiQuery({
+    name: 'price_level',
+    required: true,
+    description: '1=A, 2=B, 3=C, 4=D, 5=MRP/max, 6=min, 7=cost',
+    schema: { type: 'integer', minimum: 1, maximum: 7 },
+  })
+  @ApiOkResponse({ type: ItemPriceLookupSuccessDto })
+  @ApiBadRequestResponse({ type: HttpErrorResponseDto })
+  @ApiNotFoundResponse({ type: HttpErrorResponseDto })
+  async refreshItemPriceLookup(
+    @Query() query: ItemPriceRefreshQueryDto,
+  ): Promise<MasterLookupSuccessResponse<ItemPriceLookupPayload>> {
+    const data = await this.masterLookupService.refreshItemPriceLookup(query);
     return {
       success: true,
       message: 'Item price lookup fetched successfully',

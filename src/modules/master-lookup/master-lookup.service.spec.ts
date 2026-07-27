@@ -622,5 +622,142 @@ describe('MasterLookupService', () => {
       } as never);
       expect(result.unit_loading).toBe(0);
     });
+
+    describe('refreshItemPriceLookup (unit cycling)', () => {
+      type ConversionRow = { iucId: string; iucUnitId: string; iucIsDeleted: boolean };
+
+      const conversion = (slno: number, isDeleted = false): ConversionRow => ({
+        iucId: `IUC-${slno}`,
+        iucUnitId: `UNIT-${slno}`,
+        iucIsDeleted: isDeleted,
+      });
+
+      /**
+       * Stands in for item_unit_conversion, honouring the soft-delete filter of
+       * the where clause so the cycle order is tested against what the query
+       * would actually return.
+       */
+      const mockConversions = (rows: ConversionRow[]) => {
+        const findMany = jest
+          .fn()
+          .mockImplementation(({ where }: { where: { iucIsDeleted?: boolean } }) =>
+            Promise.resolve(
+              where.iucIsDeleted === false ? rows.filter((row) => !row.iucIsDeleted) : rows,
+            ),
+          );
+        Object.assign(prisma as unknown as Record<string, unknown>, {
+          itemUnitConversion: { findMany },
+        });
+        return findMany;
+      };
+
+      const refresh = (unitId: string) =>
+        service.refreshItemPriceLookup({
+          item_id: ITEM_ID,
+          unit_id: unitId,
+          price_level: 1,
+        } as never);
+
+      it('returns the second unit when the first one is selected', async () => {
+        mockItemPricePrisma(itemRow(), [
+          priceRow('IPM-1', 1, 115),
+          priceRow('IPM-2', 2, 250),
+          priceRow('IPM-3', 3, 400),
+        ]);
+        mockConversions([conversion(1), conversion(2), conversion(3)]);
+
+        const result = await refresh('UNIT-1');
+
+        expect(result.unit_id).toBe('UNIT-2');
+      });
+
+      it('wraps around to the first unit when the last one is selected', async () => {
+        mockItemPricePrisma(itemRow(), [
+          priceRow('IPM-1', 1, 115),
+          priceRow('IPM-2', 2, 250),
+          priceRow('IPM-3', 3, 400),
+        ]);
+        mockConversions([conversion(1), conversion(2), conversion(3)]);
+
+        const result = await refresh('UNIT-3');
+
+        expect(result.unit_id).toBe('UNIT-1');
+      });
+
+      it('returns the requested unit when the item has only one', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        mockConversions([conversion(1)]);
+
+        const result = await refresh('UNIT-1');
+
+        expect(result.unit_id).toBe('UNIT-1');
+      });
+
+      it('falls back to the first unit when the requested one is not the item’s', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
+        mockConversions([conversion(1), conversion(2)]);
+
+        const result = await refresh('UNIT-OTHER-ITEM');
+
+        expect(result.unit_id).toBe('UNIT-1');
+      });
+
+      it('returns the requested unit when the item has no conversion rows', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-2', 2, 250)]);
+        mockConversions([]);
+
+        const result = await refresh('UNIT-2');
+
+        expect(result.unit_id).toBe('UNIT-2');
+      });
+
+      it('skips soft-deleted conversion rows in the cycle order', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-3', 3, 400)]);
+        const findMany = mockConversions([conversion(1), conversion(2, true), conversion(3)]);
+
+        const result = await refresh('UNIT-1');
+
+        expect(result.unit_id).toBe('UNIT-3');
+        expect(findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { iucItemId: ITEM_ID, iucIsDeleted: false },
+            orderBy: [{ iucToBaseFactor: 'asc' }, { iucId: 'asc' }],
+          }),
+        );
+      });
+
+      it('returns the price and unit block of the resolved unit, not the requested one', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
+        mockConversions([conversion(1), conversion(2)]);
+
+        const requested = await service.getItemPriceLookup({
+          item_id: ITEM_ID,
+          unit_id: 'UNIT-1',
+          price_level: 1,
+        } as never);
+        const resolved = await refresh('UNIT-1');
+
+        expect(resolved.unit_id).toBe('UNIT-2');
+        expect(resolved.unit_rate_id).toBe('IPM-2');
+        expect(resolved.base_factor).toBe(2);
+        expect(resolved.sales_price).toBe(250);
+        expect(resolved.base_factor).not.toBe(requested.base_factor);
+        expect(resolved.sales_price).not.toBe(requested.sales_price);
+      });
+
+      it('returns exactly the keys the item-price lookup returns', async () => {
+        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
+        mockConversions([conversion(1), conversion(2)]);
+
+        const lookup = await service.getItemPriceLookup({
+          item_id: ITEM_ID,
+          unit_id: 'UNIT-1',
+          price_level: 1,
+        } as never);
+        const refreshed = await refresh('UNIT-1');
+
+        expect(Object.keys(refreshed)).toEqual(Object.keys(lookup));
+      });
+    });
   });
 });
