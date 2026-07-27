@@ -261,7 +261,7 @@ export class MasterLookupController {
   @CacheTTL(0)
   @ApiOperation({
     summary:
-      "Cycle an item's unit and re-read its price row. Resolves the unit after unit_id in the item's item_unit_conversion list — ordered by to-base factor (base unit first), wrapping around after the last unit — then returns the item-price lookup for that unit, so the payload is identical in shape to /item-price and every price, tax and unit field belongs to the resolved unit. A stale unit_id that the item does not carry falls back to its first unit; an item with no conversion rows falls back to the requested unit. Never cached.",
+      "Cycle an item's unit and re-read its price row. Resolves the unit after unit_id in the item's item_unit_conversion list — ordered by to-base factor (base unit first), wrapping around after the last unit — then returns the item-price lookup for that unit, so the payload is identical in shape to /item-price and every price, tax and unit field belongs to the resolved unit. A stale unit_id that the item does not carry falls back to its first unit; an item with no conversion rows falls back to the requested unit. Takes no scope parameters: the lookup runs without a company, branch, customer, godown or accounting year, at price level A. Never cached.",
   })
   @ApiQuery({ name: 'item_id', required: true, schema: { type: 'string', format: 'uuid' } })
   @ApiQuery({
@@ -269,12 +269,6 @@ export class MasterLookupController {
     required: true,
     description: 'The unit currently on screen. The response returns the NEXT one.',
     schema: { type: 'string', format: 'uuid' },
-  })
-  @ApiQuery({
-    name: 'price_level',
-    required: true,
-    description: '1=A, 2=B, 3=C, 4=D, 5=MRP/max, 6=min, 7=cost',
-    schema: { type: 'integer', minimum: 1, maximum: 7 },
   })
   @ApiOkResponse({ type: ItemPriceLookupSuccessDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })

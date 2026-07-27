@@ -652,11 +652,7 @@ describe('MasterLookupService', () => {
       };
 
       const refresh = (unitId: string) =>
-        service.refreshItemPriceLookup({
-          item_id: ITEM_ID,
-          unit_id: unitId,
-          price_level: 1,
-        } as never);
+        service.refreshItemPriceLookup({ item_id: ITEM_ID, unit_id: unitId });
 
       it('returns the second unit when the first one is selected', async () => {
         mockItemPricePrisma(itemRow(), [
@@ -743,6 +739,19 @@ describe('MasterLookupService', () => {
         expect(resolved.sales_price).toBe(250);
         expect(resolved.base_factor).not.toBe(requested.base_factor);
         expect(resolved.sales_price).not.toBe(requested.sales_price);
+      });
+
+      it('reads at price level A, the level the refresh takes no parameter for', async () => {
+        mockItemPricePrisma(itemRow(), [
+          { ...priceRow('IPM-1', 1, 115), ipmSalesPriceB: 99 },
+          { ...priceRow('IPM-2', 2, 250), ipmSalesPriceB: 199 },
+        ]);
+        mockConversions([conversion(1), conversion(2)]);
+
+        const result = await refresh('UNIT-1');
+
+        expect(result.price_level).toBe(1);
+        expect(result.sales_price).toBe(250);
       });
 
       it('returns exactly the keys the item-price lookup returns', async () => {

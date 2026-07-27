@@ -21,7 +21,6 @@ describe('ItemPriceRefreshQueryDto', () => {
     const dto = plainToInstance(ItemPriceRefreshQueryDto, {
       item_id: ITEM_ID,
       unit_id: UNIT_ID,
-      price_level: 1,
     });
 
     expect(validateSync(dto)).toHaveLength(0);
@@ -30,26 +29,31 @@ describe('ItemPriceRefreshQueryDto', () => {
   it('rejects a missing unit_id', async () => {
     // unit_id is optional on the plain lookup but required here — it is the
     // unit the cycle steps from, so there is nothing to resolve without it.
-    await expect(transformQuery({ item_id: ITEM_ID, price_level: 1 })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(transformQuery({ item_id: ITEM_ID })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects a missing item_id', async () => {
-    await expect(transformQuery({ unit_id: UNIT_ID, price_level: 1 })).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(transformQuery({ unit_id: UNIT_ID })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects a non-UUID unit_id', async () => {
     await expect(
-      transformQuery({ item_id: ITEM_ID, unit_id: 'not-a-uuid', price_level: 1 }),
+      transformQuery({ item_id: ITEM_ID, unit_id: 'not-a-uuid' }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('rejects a non-UUID item_id', async () => {
+    await expect(transformQuery({ item_id: '42', unit_id: UNIT_ID })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects the lookup scope parameters it does not take', async () => {
+    // The global pipe runs with forbidNonWhitelisted, so a caller reusing the
+    // /item-price query string verbatim gets a 400 rather than a silently
+    // ignored scope.
     await expect(
-      transformQuery({ item_id: '42', unit_id: UNIT_ID, price_level: 1 }),
+      transformQuery({ item_id: ITEM_ID, unit_id: UNIT_ID, price_level: 1 }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

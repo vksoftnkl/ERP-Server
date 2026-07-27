@@ -43,6 +43,12 @@ import {
  *  - the item-group price-level scheme discount has no column → `sch_discount`
  *    is always null.
  */
+/**
+ * Price level the unit-cycling refresh reads at. It does not take a level of
+ * its own, so it uses A — the same default the plain lookup documents.
+ */
+const REFRESH_PRICE_LEVEL = 1;
+
 export class ItemPriceLookup {
   constructor(private readonly prisma: PrismaService) {}
 
@@ -52,10 +58,19 @@ export class ItemPriceLookup {
    * item-price lookup for it. The payload is the lookup's own — every price,
    * tax and unit field therefore belongs to the resolved unit, not the
    * requested one.
+   *
+   * The refresh takes only the item and the unit, so the lookup runs unscoped:
+   * no company (GST applies), no branch (rates resolve across all of them), no
+   * customer rate, no godown override and no accounting year (stock is null),
+   * at price level A.
    */
   async refreshItemPriceLookup(query: ItemPriceRefreshQueryDto): Promise<ItemPriceLookupPayload> {
     const unit_id = await this.resolveNextUnitId(query.item_id, query.unit_id);
-    return this.getItemPriceLookup({ ...query, unit_id });
+    return this.getItemPriceLookup({
+      item_id: query.item_id,
+      unit_id,
+      price_level: REFRESH_PRICE_LEVEL,
+    });
   }
 
   /**

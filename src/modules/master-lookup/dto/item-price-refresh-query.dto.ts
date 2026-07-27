@@ -1,17 +1,18 @@
-import { ApiProperty, OmitType } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { RequiredUuid } from 'src/common/dto/dtoDecorators';
-import { ItemPriceLookupQueryDto } from './item-price-lookup-query.dto';
 
 /**
- * Query of the unit-cycling refresh. It is the item-price lookup query with
- * `unit_id` made required: the refresh needs the unit currently on screen to
- * know which one comes next, and every other parameter is passed straight
- * through so the refreshed row carries the same company / branch / customer /
- * godown / price-level context the screen was already showing.
+ * Query of the unit-cycling refresh: the item and the unit currently on screen,
+ * and nothing else. The lookup's remaining scopes (company, branch, customer,
+ * godown, accounting year, price level) are not accepted here — the refresh
+ * runs the lookup at its defaults, so the caller only has to hand back what the
+ * screen already holds.
  */
-export class ItemPriceRefreshQueryDto extends OmitType(ItemPriceLookupQueryDto, [
-  'unit_id',
-] as const) {
+export class ItemPriceRefreshQueryDto {
+  @ApiProperty({ format: 'uuid' })
+  @RequiredUuid()
+  item_id!: string;
+
   @ApiProperty({
     format: 'uuid',
     description:
