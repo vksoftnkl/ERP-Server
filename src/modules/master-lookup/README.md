@@ -55,8 +55,9 @@ price for the requested price level, the tax block, stock, reorder level and neg
 
 - **Unit-rate pick:** an explicit `unit_id` wins; otherwise the unit-slno rule applies — a retail
   item takes the highest `iuc_unit_slno` (largest pack) on the price row's conversion, a
-  non-retail item takes the base row
-  (slno 0).
+  non-retail item takes the lowest (the base unit). The legacy cursor hard-coded slno 0 for the
+  base unit; `item_unit_conversion` numbers an item's units from 1, so the rule is lowest-slno,
+  not `= 0`.
 - **Godown override:** an explicit `godown_id` overrides the rate's own `ipm_godown_id`, both for
   the resolved godown row and the stock scope.
 - **Price level (1–7):** maps to A / B / C / D / max / min / cost. A `customer_id` subtracts the
@@ -66,6 +67,10 @@ price for the requested price level, the tax block, stock, reorder level and neg
 - **Company / branch are optional:** without `branch_id` the item and its price rows resolve across
   all branches; without `company_id` there is no company scope, so GST stays applicable and the
   company leg of the negative-stock rule drops out. A missing one also widens the stock sum.
+- **NULL-branch rates:** a price row (or item) with `ipm_branch_id` / `item_branch_id` NULL applies
+  to every branch, so a `branch_id` lookup picks those up too. When both a branch row and a
+  branch-less one price the same unit, the branch-specific rate wins; the branch-less one only
+  stands in for units the branch does not price itself.
 - **Loading / freight type:** `loading_type` and `freight_type` echo the same-named query params
   (free text, the voucher-level types) as supplied. Without them they fall back to `'Y' | 'N'`,
   mirroring the item's `item_allow_loading` / `item_allow_freight` flags.

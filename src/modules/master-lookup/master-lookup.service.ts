@@ -463,25 +463,29 @@ export class MasterLookupService {
     const regional = query.regional ?? false;
     // 1. Item + candidate unit-rate rows (legacy: item_master ⋈ item_unit_rates).
     //    branch_id is optional: without it the item and its price rows are
-    //    resolved across every branch.
-    const [itemRecord, priceRows] = await Promise.all([
+    //    resolved across every branch. A NULL branch on a row means "applies to
+    //    every branch", so a branch-scoped lookup takes those rows as well.
+    const [itemRecord, branchPriceRows] = await Promise.all([
       this.prisma.itemMaster.findFirst({
         where: {
           itemId: item_id,
-          ...(branch_id ? { itemBranchId: branch_id } : {}),
+          ...(branch_id ? { OR: [{ itemBranchId: branch_id }, { itemBranchId: null }] } : {}),
           itemIsDeleted: false,
         },
       }),
       this.prisma.itemPriceMaster.findMany({
         where: {
           ipmItemId: item_id,
-          ...(branch_id ? { ipmBranchId: branch_id } : {}),
+          ...(branch_id ? { OR: [{ ipmBranchId: branch_id }, { ipmBranchId: null }] } : {}),
           ipmIsDeleted: false,
         },
         include: { itemUnitConversion: { include: { unit: true } } },
-        orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }],
+        orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
       }),
     ]);
+    // Both a branch row and a branch-less one can price the same unit; the
+    // branch-specific rate is the more specific of the two, so it wins.
+    const priceRows = this.preferBranchPriceRows(branchPriceRows, branch_id);
     if (!itemRecord) {
       throwMasterNotFound<MasterErrorDetail>(
         'Item not found',
@@ -633,10 +637,32 @@ export class MasterLookupService {
     };
   }
   /**
+   * Collapses the price rows to one per unit. A row without a branch prices the
+   * unit for every branch, so it stands in only where the requested branch has
+   * no rate of its own — a branch-specific row always beats the branch-less one.
+   * Rows arrive ordered (slno, then ipm_id), so the fallback pick is stable.
+   */
+  private preferBranchPriceRows(
+    priceRows: PriceRowWithUnit[],
+    branchId?: string,
+  ): PriceRowWithUnit[] {
+    if (!branchId) return priceRows;
+    const byUnit = new Map<string, PriceRowWithUnit>();
+    for (const row of priceRows) {
+      const current = byUnit.get(row.ipmUcUnitId);
+      if (!current || (current.ipmBranchId !== branchId && row.ipmBranchId === branchId)) {
+        byUnit.set(row.ipmUcUnitId, row);
+      }
+    }
+    return [...byUnit.values()];
+  }
+  /**
    * Unit-rate selection (legacy WHERE clause). An explicit unit wins. Otherwise
    * the unit-slno rule applies: a retail item takes the row with the highest
-   * slno (largest pack), a non-retail item takes the base row (slno 0). Returns
-   * null when nothing matches.
+   * slno (largest pack), a non-retail item takes the base row — the lowest slno.
+   * The legacy cursor hard-coded slno 0 for the base unit, but item_unit_conversion
+   * numbers an item's units from 1, so matching on 0 found nothing. Returns null
+   * only when the item has no price rows at all.
    */
   private selectUnitRate(
     priceRows: PriceRowWithUnit[],
@@ -654,14 +680,11 @@ export class MasterLookupService {
       );
     }
     // The unit slno the legacy rule keys off lives on the conversion row now.
-    if (isRetailItem) {
-      return priceRows.reduce(
-        (best, row) =>
-          row.itemUnitConversion.iucUnitSlno > best.itemUnitConversion.iucUnitSlno ? row : best,
-        priceRows[0],
-      );
-    }
-    return priceRows.find((row) => row.itemUnitConversion.iucUnitSlno === 0) ?? null;
+    return priceRows.reduce((best, row) => {
+      const slno = row.itemUnitConversion.iucUnitSlno;
+      const bestSlno = best.itemUnitConversion.iucUnitSlno;
+      return isRetailItem ? (slno > bestSlno ? row : best) : slno < bestSlno ? row : best;
+    }, priceRows[0]);
   }
   /** Legacy price-level CASE (1–7 → a/b/c/d/max/min/cost). */
   private priceForLevel(rate: ItemPriceMaster, priceLevel: number): number {

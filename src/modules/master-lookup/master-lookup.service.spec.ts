@@ -471,4 +471,149 @@ describe('MasterLookupService', () => {
     expect(pg.queryReadOnly).not.toHaveBeenCalled();
     expect(prisma.company.findMany).toHaveBeenCalledTimes(1);
   });
+
+  describe('getItemPriceLookup', () => {
+    const ITEM_ID = 'ITEM-1';
+    const priceRow = (ipmId: string, slno: number, priceA: number, branchId: string | null = null) => ({
+      ipmId,
+      ipmItemId: ITEM_ID,
+      ipmBranchId: branchId,
+      ipmUcUnitId: `IUC-${slno}`,
+      ipmGodownId: null,
+      ipmCostPrice: 0,
+      ipmCostWot: 0,
+      ipmSalesPriceA: priceA,
+      ipmSalesPriceB: 0,
+      ipmSalesPriceC: 0,
+      ipmSalesPriceD: 0,
+      ipmMinPrice: 0,
+      ipmMaxPrice: 0,
+      ipmDiscPerc: 0,
+      ipmDiscQty: 0,
+      ipmAddlCess: 0,
+      ipmLoyaltyPoints: 0,
+      itemUnitConversion: {
+        iucUnitId: `UNIT-${slno}`,
+        iucUnitSlno: slno,
+        unit: { unit_description: null, unit_weight: 0, unit_loading: 0, unit_decimal_count: 2 },
+      },
+    });
+
+    const itemRow = (overrides: Record<string, unknown> = {}) => ({
+      itemId: ITEM_ID,
+      itemNameEn: 'A001',
+      itemNameTa: null,
+      itemCode: 'A001',
+      itemSku: null,
+      itemDefaultBarcode: null,
+      itemGroupId: 'GRP-1',
+      itemCategoryId: null,
+      itemDefaultTaxId: null,
+      itemRetailItem: false,
+      itemAllowPromo: false,
+      itemAllowFreight: true,
+      itemAllowLoading: true,
+      itemAllowLoyalty: false,
+      itemAllowNegStock: false,
+      itemIsService: false,
+      itemWeighScale: false,
+      itemBatchConfig: 0,
+      ...overrides,
+    });
+
+    const mockItemPricePrisma = (item: unknown, rows: unknown[]) => {
+      Object.assign(prisma as unknown as Record<string, unknown>, {
+        itemMaster: { ...prisma.itemMaster, findFirst: jest.fn().mockResolvedValue(item) },
+        itemPriceMaster: { findMany: jest.fn().mockResolvedValue(rows) },
+        godownLocation: { findFirst: jest.fn().mockResolvedValue(null) },
+        itemTaxMaster: { findFirst: jest.fn().mockResolvedValue(null) },
+        company: { ...prisma.company, findFirst: jest.fn().mockResolvedValue(null) },
+        custItemRate: { findFirst: jest.fn().mockResolvedValue(null) },
+        itemReorder: { findFirst: jest.fn().mockResolvedValue(null) },
+        itemStockBalance: { aggregate: jest.fn() },
+      });
+    };
+
+    it('picks the lowest-slno price row as the base unit when slno numbering starts at 1', async () => {
+      // item_unit_conversion numbers an item's units from 1, so the legacy
+      // "base unit = slno 0" rule found nothing and the lookup 404'd.
+      mockItemPricePrisma(itemRow(), [priceRow('IPM-2', 2, 250), priceRow('IPM-1', 1, 115)]);
+
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        price_level: 1,
+      } as never);
+
+      expect(result.unit_rate_id).toBe('IPM-1');
+      expect(result.sales_price).toBe(115);
+    });
+
+    it('prefers the branch rate over the branch-less one pricing the same unit', async () => {
+      // A NULL-branch row prices every branch, but the branch's own rate is the
+      // more specific of the two and must not be shadowed by it.
+      mockItemPricePrisma(itemRow(), [
+        priceRow('IPM-BRANCH', 1, 115, 'BRANCH-1'),
+        priceRow('IPM-ALL', 1, 0, null),
+      ]);
+
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        branch_id: 'BRANCH-1',
+        price_level: 1,
+      } as never);
+
+      expect(result.unit_rate_id).toBe('IPM-BRANCH');
+      expect(result.sales_price).toBe(115);
+    });
+
+    it('falls back to a branch-less rate for a unit the branch does not price', async () => {
+      mockItemPricePrisma(itemRow(), [
+        priceRow('IPM-BRANCH', 1, 115, 'BRANCH-1'),
+        priceRow('IPM-ALL', 2, 250, null),
+      ]);
+
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        branch_id: 'BRANCH-1',
+        unit_id: 'UNIT-2',
+        price_level: 1,
+      } as never);
+
+      expect(result.unit_rate_id).toBe('IPM-ALL');
+      expect(result.sales_price).toBe(250);
+    });
+
+    it('picks the highest-slno price row for a retail item', async () => {
+      mockItemPricePrisma(itemRow({ itemRetailItem: true }), [
+        priceRow('IPM-1', 1, 115),
+        priceRow('IPM-2', 2, 250),
+      ]);
+
+      const result = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        price_level: 1,
+      } as never);
+
+      expect(result.unit_rate_id).toBe('IPM-2');
+    });
+
+    it('echoes the requested loading/freight type and falls back to the item flags', async () => {
+      mockItemPricePrisma(itemRow({ itemAllowLoading: false }), [priceRow('IPM-1', 1, 115)]);
+
+      const echoed = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        price_level: 1,
+        loading_type: 'LOCAL',
+      } as never);
+      expect(echoed.loading_type).toBe('LOCAL');
+      expect(echoed.freight_type).toBe('Y');
+
+      mockItemPricePrisma(itemRow({ itemAllowLoading: false }), [priceRow('IPM-1', 1, 115)]);
+      const derived = await service.getItemPriceLookup({
+        item_id: ITEM_ID,
+        price_level: 1,
+      } as never);
+      expect(derived.loading_type).toBe('N');
+    });
+  });
 });
