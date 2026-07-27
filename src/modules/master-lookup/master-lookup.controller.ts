@@ -184,8 +184,20 @@ export class MasterLookupController {
       'Resolve an item into a single sale-lookup row: effective price for the requested price level, tax block, stock, reorder and quantity-wise rates. unit_id selects the unit rate, else the unit-slno rule applies (retail item → highest unit, else base unit); customer_id applies a customer rate to price levels 1–4; godown_id overrides the sale godown; regional returns the local-language name; acccyear scopes stock.',
   })
   @ApiQuery({ name: 'item_id', required: true, schema: { type: 'string', format: 'uuid' } })
-  @ApiQuery({ name: 'company_id', required: true, schema: { type: 'string', format: 'uuid' } })
-  @ApiQuery({ name: 'branch_id', required: true, schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({
+    name: 'company_id',
+    required: false,
+    description:
+      'Scopes GST applicability, the negative-stock rule and stock. Omitted → the item resolves without a company scope.',
+    schema: { type: 'string', format: 'uuid' },
+  })
+  @ApiQuery({
+    name: 'branch_id',
+    required: false,
+    description:
+      'Scopes the item and its price rows to a branch. Omitted → the item resolves across all branches.',
+    schema: { type: 'string', format: 'uuid' },
+  })
   @ApiQuery({
     name: 'unit_id',
     required: false,
@@ -206,6 +218,16 @@ export class MasterLookupController {
     schema: { type: 'string', format: 'uuid' },
   })
   @ApiQuery({ name: 'acccyear', required: false, schema: { type: 'string', maxLength: 9 } })
+  @ApiQuery({
+    name: 'loading_type',
+    required: false,
+    schema: { type: 'string', maxLength: 20 },
+  })
+  @ApiQuery({
+    name: 'freight_type',
+    required: false,
+    schema: { type: 'string', maxLength: 20 },
+  })
   @ApiQuery({
     name: 'regional',
     required: false,

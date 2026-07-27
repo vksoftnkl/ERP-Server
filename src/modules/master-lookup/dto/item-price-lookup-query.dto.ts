@@ -13,12 +13,20 @@ export class ItemPriceLookupQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @OptionalUuid()
   unit_id?: string;
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  company_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  branch_id!: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Scopes the company-driven values (GST applicability, negative-stock rule, stock). When omitted, the item is resolved without a company scope.',
+  })
+  @OptionalUuid()
+  company_id?: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Scopes the item and its price rows to a branch. When omitted, the item is resolved across all branches.',
+  })
+  @OptionalUuid()
+  branch_id?: string;
   @ApiPropertyOptional({ format: 'uuid' })
   @OptionalUuid()
   customer_id?: string;
@@ -37,6 +45,20 @@ export class ItemPriceLookupQueryDto {
   })
   @OptionalQueryBoolean()
   regional?: boolean;
+  @ApiPropertyOptional({
+    maxLength: 20,
+    description:
+      "Voucher-level loading type, returned as-is in loading_type. When omitted, loading_type falls back to 'Y' / 'N' from the item's item_allow_loading flag.",
+  })
+  @OptionalTrimmedString(20)
+  loading_type?: string;
+  @ApiPropertyOptional({
+    maxLength: 20,
+    description:
+      "Voucher-level freight type, returned as-is in freight_type. When omitted, freight_type falls back to 'Y' / 'N' from the item's item_allow_freight flag.",
+  })
+  @OptionalTrimmedString(20)
+  freight_type?: string;
   @ApiProperty({
     minimum: 1,
     maximum: 7,

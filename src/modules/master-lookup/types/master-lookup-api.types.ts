@@ -108,8 +108,10 @@ export interface ItemPriceLookupPayload {
   // Item flags
   allow_promo: boolean;
   add_freight: boolean;
-  loading_type: 'Y' | 'N';
-  freight_type: 'Y' | 'N';
+  /** Echoes the requested loading type; falls back to 'Y' / 'N' from item_allow_loading. */
+  loading_type: string;
+  /** Echoes the requested freight type; falls back to 'Y' / 'N' from item_allow_freight. */
+  freight_type: string;
   item_group_id: string;
   item_category_id: string | null;
   weigh_scale: boolean;

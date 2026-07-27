@@ -290,10 +290,16 @@ export class ItemPriceLookupPayloadDto {
   allow_promo!: boolean;
   @ApiProperty()
   add_freight!: boolean;
-  @ApiProperty({ enum: ['Y', 'N'] })
-  loading_type!: 'Y' | 'N';
-  @ApiProperty({ enum: ['Y', 'N'] })
-  freight_type!: 'Y' | 'N';
+  @ApiProperty({
+    example: 'Y',
+    description: "Echoes the requested loading type; 'Y' / 'N' from item_allow_loading when none was requested.",
+  })
+  loading_type!: string;
+  @ApiProperty({
+    example: 'Y',
+    description: "Echoes the requested freight type; 'Y' / 'N' from item_allow_freight when none was requested.",
+  })
+  freight_type!: string;
   @ApiProperty({ format: 'uuid' })
   item_group_id!: string;
   @ApiProperty({ format: 'uuid', nullable: true })

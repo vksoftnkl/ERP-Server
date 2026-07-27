@@ -44,7 +44,7 @@ All routes are `GET` and wrap their result in `{ success: true, message, data }`
 | `GET` | `/customer-detail` | `?cus_id=&company_id=&branch_id=&regional=` | Resolve one customer into a flat detail row (legacy `iflag=7`). |
 | `GET` | `/freight-charges/charge` | `?distance=` | Freight-charge slabs whose km range covers the distance (legacy `iflag=9`). |
 | `GET` | `/item-by-barcode` | `?barcode=` | Resolve a scanned EAN code to its item + selling unit (legacy `iflag=10`). |
-| `GET` | `/item-price` | `?item_id=&company_id=&branch_id=&price_level=` (+ optional `unit_id`, `customer_id`, `godown_id`, `acccyear`, `regional`) | Resolve one item into a single sale-lookup row — effective price, tax block, stock, reorder (legacy `getItemForSale`). `@CacheTTL(60)`. |
+| `GET` | `/item-price` | `?item_id=&price_level=` (+ optional `company_id`, `branch_id`, `unit_id`, `customer_id`, `godown_id`, `acccyear`, `regional`, `loading_type`, `freight_type`) | Resolve one item into a single sale-lookup row — effective price, tax block, stock, reorder (legacy `getItemForSale`). `@CacheTTL(60)`. |
 | `GET` | `/dropdown/:dropdownId` | Numeric configured-dropdown id | Runs one configured dropdown's stored SQL directly and returns its rows as options. |
 
 ### Item-price sale lookup (`GET /item-price`)
@@ -63,8 +63,12 @@ price for the requested price level, the tax block, stock, reorder level and neg
   matching `cust_item_rates.csr_disc_qty` — but only for levels 1–4 (never max/min/cost).
 - **Stock:** `SUM(isb_closing_qty)` for the item/unit/company/branch and `acccyear`; scoped to the
   resolved godown (a godown-less price row sums across all godowns). `stock` is null without `acccyear`.
-- **Loading / freight type:** `loading_type` and `freight_type` (`'Y' | 'N'`) mirror the item's
-  `item_allow_loading` / `item_allow_freight` flags.
+- **Company / branch are optional:** without `branch_id` the item and its price rows resolve across
+  all branches; without `company_id` there is no company scope, so GST stays applicable and the
+  company leg of the negative-stock rule drops out. A missing one also widens the stock sum.
+- **Loading / freight type:** `loading_type` and `freight_type` echo the same-named query params
+  (free text, the voucher-level types) as supplied. Without them they fall back to `'Y' | 'N'`,
+  mirroring the item's `item_allow_loading` / `item_allow_freight` flags.
 - **Tax:** loaded from `item_tax_master` via the item's `item_default_tax_id`; GST/cess percentages
   are zeroed when the company has GST disabled.
 - **Name:** `regional=true` returns `item_name_ta` (falling back to English), else the English name.

@@ -462,18 +462,20 @@ export class MasterLookupService {
     const priceLevel = query.price_level;
     const regional = query.regional ?? false;
     // 1. Item + candidate unit-rate rows (legacy: item_master ⋈ item_unit_rates).
+    //    branch_id is optional: without it the item and its price rows are
+    //    resolved across every branch.
     const [itemRecord, priceRows] = await Promise.all([
       this.prisma.itemMaster.findFirst({
         where: {
           itemId: item_id,
-          itemBranchId: branch_id,
+          ...(branch_id ? { itemBranchId: branch_id } : {}),
           itemIsDeleted: false,
         },
       }),
       this.prisma.itemPriceMaster.findMany({
         where: {
           ipmItemId: item_id,
-          ipmBranchId: branch_id,
+          ...(branch_id ? { ipmBranchId: branch_id } : {}),
           ipmIsDeleted: false,
         },
         include: { itemUnitConversion: { include: { unit: true } } },
@@ -514,7 +516,9 @@ export class MasterLookupService {
             where: { taxId: itemRecord.itemDefaultTaxId, taxIsDeleted: false },
           })
         : Promise.resolve(null),
-      this.prisma.company.findFirst({ where: { compId: company_id } }),
+      company_id
+        ? this.prisma.company.findFirst({ where: { compId: company_id } })
+        : Promise.resolve(null),
       customer_id
         ? this.prisma.custItemRate.findFirst({
             where: {
@@ -537,8 +541,9 @@ export class MasterLookupService {
               isbItemId: item_id,
               // isb_unit_id holds a raw unit_id, so the conversion's unit.
               isbUnitId: rateUnitId,
-              isbCompanyId: company_id,
-              isbBranchId: branch_id,
+              // A missing company / branch widens the sum to all of them.
+              ...(company_id ? { isbCompanyId: company_id } : {}),
+              ...(branch_id ? { isbBranchId: branch_id } : {}),
               // A godown-less price row is not godown-scoped, so its stock
               // sums across all godowns.
               ...(godownId ? { isbGodownId: godownId } : {}),
@@ -547,7 +552,9 @@ export class MasterLookupService {
         : Promise.resolve(null),
     ]);
     // 4. Derived values.
-    const gstApplicable = company?.compGstApplicable ?? false;
+    // Without a company there is nothing to switch GST off, so the item's own
+    // tax block stands; a supplied company still decides as before.
+    const gstApplicable = company_id ? (company?.compGstApplicable ?? false) : true;
     const basePrice = this.priceForLevel(rate, priceLevel);
     // Legacy: the customer rate discount applies ONLY to the A/B/C/D sales
     // prices (levels 1–4), never to max/min/cost (levels 5/6/7).
@@ -558,6 +565,10 @@ export class MasterLookupService {
     const itemName = regional
       ? (itemRecord.itemNameTa ?? itemRecord.itemNameEn)
       : itemRecord.itemNameEn;
+    // Voucher-level loading / freight types: the caller's text is echoed back as
+    // is. Without it the item's own allow flags supply the legacy 'Y' / 'N'.
+    const loadingType = query.loading_type ?? (itemRecord.itemAllowLoading ? 'Y' : 'N');
+    const freightType = query.freight_type ?? (itemRecord.itemAllowFreight ? 'Y' : 'N');
     const stock = stockSum ? toNullableNumber(stockSum._sum.isbClosingQty ?? 0) : null;
     const reorderQty = reorder ? toNumber(reorder.irMinLevel) - (stock ?? 0) : null;
     // Legacy allow_negative_stock: service items always allow; otherwise it is
@@ -581,8 +592,8 @@ export class MasterLookupService {
       barcode: itemRecord.itemDefaultBarcode,
       allow_promo: itemRecord.itemAllowPromo,
       add_freight: itemRecord.itemAllowFreight,
-      loading_type: itemRecord.itemAllowLoading ? 'Y' : 'N',
-      freight_type: itemRecord.itemAllowFreight ? 'Y' : 'N',
+      loading_type: loadingType,
+      freight_type: freightType,
       item_group_id: itemRecord.itemGroupId,
       item_category_id: itemRecord.itemCategoryId,
       weigh_scale: itemRecord.itemWeighScale,
