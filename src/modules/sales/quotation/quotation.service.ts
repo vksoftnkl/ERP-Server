@@ -1,15 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, SaleQuotation, SaleQuotationItem } from '@prisma/client';
+import { Prisma, SaleChargeDetail, SaleQuotation, SaleQuotationItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { SaveQuotationChargeDto } from './dto/save-quotation-charge.dto';
 import { SaveQuotationDto } from './dto/save-quotation.dto';
 import { SaveQuotationItemDto } from './dto/save-quotation-item.dto';
 import {
+  QUOTATION_CHARGE_DOC_TYPE,
+  QuotationChargePayload,
   QuotationErrorDetail,
   QuotationErrorResponse,
   QuotationItemPayload,
   QuotationPayload,
 } from './types/quotation-api.types';
+import {
+  CHARGE_DETAIL_VALUE_GUARDS,
+  ChargeDetailGuardedValues,
+} from '../../master/charge-master/types/charge-master-api.types';
 import {
   DEFAULT_ACTOR,
   SalesWriteClient,
@@ -17,12 +24,14 @@ import {
   normalizeRequiredText,
   resolveActor,
   throwOnUniqueConstraintError,
+  throwSalesBadRequest,
   throwSalesConflict,
   throwSalesNotFound,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 const QUOTATION_TABLE_NAME = 'sale_quotation';
 const QUOTATION_ITEM_TABLE_NAME = 'sale_quotation_item';
+const QUOTATION_CHARGE_TABLE_NAME = 'sale_charge_detail';
 const QUOTATION_AUDIT_SCREEN_NAME = 'Sale Quotation';
 const QUOTATION_OPTIONAL_FIELDS = [
   'sqSessionId',
@@ -176,6 +185,42 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiSchemeName',
   'sqiRemarks',
 ];
+// Charge-line fields copied straight through when present on the payload. The
+// scope keys (docType/docId/comp/branch/accYear/slno) and the two required
+// references (cdChgId / cdLedgerCode) are set explicitly, so they are
+// intentionally excluded here.
+const QUOTATION_CHARGE_OPTIONAL_FIELDS = [
+  'cdChgName',
+  'cdRole',
+  'cdMethod',
+  'cdType',
+  'cdApplyOn',
+  'cdLandingCost',
+  'cdCostAlloc',
+  'cdBeforeTax',
+  'cdTaxApl',
+  'cdSepPost',
+  'cdUnit',
+  'cdQtyVal',
+  'cdWeight',
+  'cdRate',
+  'cdAmount',
+  'cdTaxCode',
+  'cdHsn',
+  'cdTaxPerc',
+  'cdTaxAmt',
+  'cdSgstPerc',
+  'cdSgstAmt',
+  'cdCgstPerc',
+  'cdCgstAmt',
+  'cdIgstPerc',
+  'cdIgstAmt',
+  'cdCessPerc',
+  'cdCessAmt',
+  'cdNetAmt',
+  'cdRemarks',
+  'cdIsActive',
+];
 // The immutable scope inherited by every line from its parent quotation.
 interface QuotationScope {
   sqId: string;
@@ -184,6 +229,7 @@ interface QuotationScope {
   sqTenantId: string;
   sqAccYear: string;
   sqPriceLevel: number;
+  sqQuoteSlno: bigint;
 }
 type QuotationWriteClient = SalesWriteClient;
 // Only populated when the item was fetched with the item/unit joins (getById);
@@ -237,7 +283,10 @@ export class QuotationService {
         `No active quotation found with id ${sqId}`,
       );
     }
-    return this.toPayload(record);
+    // sale_charge_detail is polymorphic (no FK to sale_quotation), so the
+    // applied charges are fetched by discriminator rather than by `include`.
+    const charges = await this.findCharges(this.prisma, sqId);
+    return this.toPayload({ ...record, charges });
   }
   async softDelete(sqId: string): Promise<{ sqId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -285,6 +334,20 @@ export class QuotationService {
           sqiIsDeleted: true,
           sqiModifiedOn: modifiedOn,
           sqiModifiedBy: actor,
+        },
+      });
+      // Same cascade for the applied charges — an active charge line must never
+      // outlive the document it was charged on.
+      await tx.saleChargeDetail.updateMany({
+        where: {
+          cdDocType: QUOTATION_CHARGE_DOC_TYPE,
+          cdDocId: sqId,
+          cdIsDeleted: false,
+        },
+        data: {
+          cdIsDeleted: true,
+          cdModifiedOn: modifiedOn,
+          cdModifiedBy: actor,
         },
       });
       const originalRecord = this.toPayload(existing);
@@ -358,9 +421,11 @@ export class QuotationService {
           sqTenantId: created.sqTenantId,
           sqAccYear: created.sqAccYear,
           sqPriceLevel: created.sqPriceLevel,
+          sqQuoteSlno: created.sqQuoteSlno,
         };
         const items = await this.syncItems(tx, scope, saveQuotationDto.items, createdBy);
-        const payload = this.toPayload({ ...created, items });
+        const charges = await this.syncCharges(tx, scope, saveQuotationDto.charges, createdBy);
+        const payload = this.toPayload({ ...created, items, charges });
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -430,9 +495,11 @@ export class QuotationService {
           sqTenantId: updated.sqTenantId,
           sqAccYear: updated.sqAccYear,
           sqPriceLevel: updated.sqPriceLevel,
+          sqQuoteSlno: updated.sqQuoteSlno,
         };
         const items = await this.syncItems(tx, scope, saveQuotationDto.items, modifiedBy);
-        const payload = this.toPayload({ ...updated, items });
+        const charges = await this.syncCharges(tx, scope, saveQuotationDto.charges, modifiedBy);
+        const payload = this.toPayload({ ...updated, items, charges });
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -614,6 +681,234 @@ export class QuotationService {
     }
     return value;
   }
+  // The quotation's applied charges, newest reconciliation order (cdSlno). No
+  // relation exists to follow: sale_charge_detail is keyed by the
+  // (cdDocType, cdDocId) discriminator pair, which is also its only index.
+  private findCharges(client: QuotationWriteClient, sqId: string): Promise<SaleChargeDetail[]> {
+    return client.saleChargeDetail.findMany({
+      where: {
+        cdDocType: QUOTATION_CHARGE_DOC_TYPE,
+        cdDocId: sqId,
+        cdIsDeleted: false,
+      },
+      orderBy: { cdSlno: 'asc' },
+    });
+  }
+  // Reconciles the quotation's applied charges with the payload array, exactly
+  // as syncItems does for the line items:
+  //   - a charge carrying cdId updates that existing charge line
+  //   - a charge without cdId is created
+  //   - an existing charge absent from the array is soft deleted
+  // Passing `undefined` (property omitted) leaves the current charges untouched.
+  private async syncCharges(
+    tx: QuotationWriteClient,
+    scope: QuotationScope,
+    inputCharges: SaveQuotationChargeDto[] | undefined,
+    actorId: string,
+  ): Promise<SaleChargeDetail[]> {
+    const existing = await this.findCharges(tx, scope.sqId);
+    if (inputCharges === undefined) {
+      return existing;
+    }
+    const existingMap = new Map(existing.map((charge) => [charge.cdId, charge]));
+    const keptIds = new Set<string>();
+    const seenSlnos = new Set<number>();
+    const now = new Date();
+    const persisted: SaleChargeDetail[] = [];
+    for (const [index, inputCharge] of inputCharges.entries()) {
+      const slno = inputCharge.cdSlno ?? index + 1;
+      if (seenSlnos.has(slno)) {
+        throwSalesConflict<QuotationErrorDetail, QuotationErrorResponse>(
+          'Duplicate quotation charge line number is not allowed',
+          [
+            {
+              field: 'cdSlno',
+              message: `A quotation charge already exists with line number ${slno}`,
+            },
+          ],
+        );
+      }
+      seenSlnos.add(slno);
+      const existingCharge = inputCharge.cdId ? existingMap.get(inputCharge.cdId) : undefined;
+      if (inputCharge.cdId && !existingCharge) {
+        throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
+          'Quotation charge not found',
+          'cdId',
+          `No active quotation charge found with id ${inputCharge.cdId} on this quotation`,
+        );
+      }
+      this.ensureChargeValuesAreAllowed(inputCharge, existingCharge);
+      if (existingCharge) {
+        const updateData: Prisma.SaleChargeDetailUncheckedUpdateInput = {
+          cdSlno: slno,
+          cdChgId: inputCharge.cdChgId ?? existingCharge.cdChgId,
+          cdLedgerCode: inputCharge.cdLedgerCode ?? existingCharge.cdLedgerCode,
+          cdModifiedOn: now,
+          cdModifiedBy: resolveActor(inputCharge.cdModifiedBy, actorId),
+        };
+        applyPresentFields(updateData, inputCharge, QUOTATION_CHARGE_OPTIONAL_FIELDS);
+        if (inputCharge.cdVoucherNo !== undefined) {
+          updateData.cdVoucherNo = this.toVoucherNo(inputCharge.cdVoucherNo);
+        }
+        const updated = await tx.saleChargeDetail.update({
+          where: { cdId: existingCharge.cdId },
+          data: updateData,
+        });
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: QUOTATION_CHARGE_TABLE_NAME,
+            screenName: QUOTATION_AUDIT_SCREEN_NAME,
+            screenType: 'transaction',
+            pk: updated.cdId,
+            displayName: updated.cdChgName || `Charge ${updated.cdSlno ?? slno}`,
+            originalRecord: this.toChargePayload(existingCharge),
+            modifiedRecord: this.toChargePayload(updated),
+            userId: resolveActor(inputCharge.cdModifiedBy, actorId),
+            notes: 'Quotation charge updated',
+          },
+          tx,
+        );
+        keptIds.add(updated.cdId);
+        persisted.push(updated);
+        continue;
+      }
+      const createData: Prisma.SaleChargeDetailUncheckedCreateInput = {
+        cdDocType: QUOTATION_CHARGE_DOC_TYPE,
+        cdDocId: scope.sqId,
+        cdSlno: slno,
+        cdCompId: inputCharge.cdCompId ?? scope.sqCompanyId,
+        cdBranchId: inputCharge.cdBranchId ?? scope.sqBranchId,
+        cdAccYear: inputCharge.cdAccYear ?? scope.sqAccYear,
+        cdVoucherNo:
+          inputCharge.cdVoucherNo === undefined
+            ? scope.sqQuoteSlno
+            : this.toVoucherNo(inputCharge.cdVoucherNo),
+        cdChgId: this.requireChargeField(inputCharge.cdChgId, 'cdChgId'),
+        cdLedgerCode: this.requireChargeField(inputCharge.cdLedgerCode, 'cdLedgerCode'),
+        cdCreatedOn: now,
+        cdCreatedBy: resolveActor(inputCharge.cdCreatedBy, actorId),
+      };
+      applyPresentFields(createData, inputCharge, QUOTATION_CHARGE_OPTIONAL_FIELDS);
+      const created = await tx.saleChargeDetail.create({ data: createData });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'New',
+          tableName: QUOTATION_CHARGE_TABLE_NAME,
+          screenName: QUOTATION_AUDIT_SCREEN_NAME,
+          screenType: 'transaction',
+          pk: created.cdId,
+          displayName: created.cdChgName || `Charge ${created.cdSlno ?? slno}`,
+          originalRecord: null,
+          modifiedRecord: this.toChargePayload(created),
+          userId: created.cdCreatedBy ?? actorId,
+          notes: 'Quotation charge created',
+        },
+        tx,
+      );
+      keptIds.add(created.cdId);
+      persisted.push(created);
+    }
+    // Any previously active charge not present in the payload is soft deleted.
+    const removed = existing.filter((charge) => !keptIds.has(charge.cdId));
+    for (const removedCharge of removed) {
+      const deleted = await tx.saleChargeDetail.update({
+        where: { cdId: removedCharge.cdId },
+        data: {
+          cdIsDeleted: true,
+          cdModifiedOn: now,
+          cdModifiedBy: actorId,
+        },
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'delete',
+          tableName: QUOTATION_CHARGE_TABLE_NAME,
+          screenName: QUOTATION_AUDIT_SCREEN_NAME,
+          screenType: 'transaction',
+          pk: deleted.cdId,
+          displayName: removedCharge.cdChgName || `Charge ${removedCharge.cdSlno ?? ''}`.trim(),
+          originalRecord: this.toChargePayload(removedCharge),
+          modifiedRecord: this.toChargePayload(deleted),
+          userId: actorId,
+          notes: 'Quotation charge soft deleted',
+        },
+        tx,
+      );
+    }
+    return persisted.sort((left, right) => (left.cdSlno ?? 0) - (right.cdSlno ?? 0));
+  }
+  private requireChargeField(value: string | undefined, field: string): string {
+    if (!value) {
+      throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
+        `${field} is required for a new quotation charge`,
+        field,
+        `${field} must be provided when creating a quotation charge`,
+      );
+    }
+    return value;
+  }
+  // cd_voucher_no is a bigint column but JSON carries it as a number/string.
+  private toVoucherNo(value: string | number | null): bigint | null {
+    if (value === null || value === '') {
+      return null;
+    }
+    return BigInt(value);
+  }
+  // Mirrors the DB CHECK constraints on sale_charge_detail (ck_cd_doc_type /
+  // ck_cd_type / ck_cd_method / ck_cd_apply_on / ck_cd_cost_alloc, migration
+  // 20260728140000, plus ck_cd_tax_apl from 20260728130000) so a bad value comes
+  // back as a 400 with the offending field instead of a raw Postgres 23514.
+  // cdDocType is set by the service, not the payload, so only the snapshot
+  // columns are read off the request; on update the stored row supplies the
+  // values the payload did not send, since the constraint judges the merged row.
+  private ensureChargeValuesAreAllowed(
+    inputCharge: SaveQuotationChargeDto,
+    existingCharge: SaleChargeDetail | undefined,
+  ): void {
+    const values: ChargeDetailGuardedValues = {
+      cdDocType: QUOTATION_CHARGE_DOC_TYPE,
+      cdRole: inputCharge.cdRole,
+      cdMethod: inputCharge.cdMethod,
+      cdType: inputCharge.cdType,
+      cdApplyOn: inputCharge.cdApplyOn,
+      cdCostAlloc: inputCharge.cdCostAlloc,
+    };
+    const details: QuotationErrorDetail[] = [];
+    for (const guard of CHARGE_DETAIL_VALUE_GUARDS) {
+      const value = values[guard.field];
+      if (value === undefined) {
+        continue;
+      }
+      if (value === null) {
+        if (!guard.nullable) {
+          details.push({ field: guard.field, message: `${guard.field} is required` });
+        }
+        continue;
+      }
+      if (!(guard.allowed as readonly string[]).includes(value)) {
+        details.push({
+          field: guard.field,
+          message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
+        });
+      }
+    }
+    const taxApl = inputCharge.cdTaxApl ?? existingCharge?.cdTaxApl ?? false;
+    const beforeTax = inputCharge.cdBeforeTax ?? existingCharge?.cdBeforeTax ?? false;
+    if (taxApl && beforeTax) {
+      details.push({
+        field: 'cdTaxApl',
+        message:
+          'cdTaxApl and cdBeforeTax are mutually exclusive: a charge is either taxed at the item rate or carries its own GST',
+      });
+    }
+    if (details.length > 0) {
+      throwSalesBadRequest<QuotationErrorDetail, QuotationErrorResponse>(
+        'Invalid quotation charge value',
+        details,
+      );
+    }
+  }
   private applyOptionalFields(
     data: Prisma.SaleQuotationUncheckedCreateInput | Prisma.SaleQuotationUncheckedUpdateInput,
     dto: SaveQuotationDto,
@@ -621,9 +916,13 @@ export class QuotationService {
     applyPresentFields(data, dto, QUOTATION_OPTIONAL_FIELDS);
   }
   private toPayload(
-    record: SaleQuotation & { items?: SaleQuotationItemWithNames[] },
+    record: SaleQuotation & {
+      items?: SaleQuotationItemWithNames[];
+      charges?: SaleChargeDetail[];
+    },
   ): QuotationPayload {
-    const { sqCreatedOn, sqModifiedOn, sqQuoteDatetime, sqSyncDate, items, ...rest } = record;
+    const { sqCreatedOn, sqModifiedOn, sqQuoteDatetime, sqSyncDate, items, charges, ...rest } =
+      record;
     return {
       ...rest,
       sqCreatedOn: sqCreatedOn?.toISOString(),
@@ -631,6 +930,17 @@ export class QuotationService {
       sqQuoteDatetime: sqQuoteDatetime?.toISOString(),
       sqSyncDate: sqSyncDate?.toISOString() ?? null,
       items: items ? items.map((item) => this.toItemPayload(item)) : [],
+      charges: charges ? charges.map((charge) => this.toChargePayload(charge)) : [],
+    };
+  }
+  private toChargePayload(record: SaleChargeDetail): QuotationChargePayload {
+    const { cdCreatedOn, cdModifiedOn, cdSyncDate, cdVoucherNo, ...rest } = record;
+    return {
+      ...rest,
+      cdCreatedOn: cdCreatedOn?.toISOString(),
+      cdModifiedOn: cdModifiedOn?.toISOString() ?? null,
+      cdSyncDate: cdSyncDate?.toISOString() ?? null,
+      cdVoucherNo: cdVoucherNo?.toString() ?? null,
     };
   }
   private toItemPayload(record: SaleQuotationItemWithNames): QuotationItemPayload {

@@ -790,52 +790,38 @@ describe('MasterLookupService', () => {
         });
         return findMany;
       };
-      const refresh = (unitId: string) =>
-        service.refreshItemPriceLookup({ item_id: ITEM_ID, unit_id: unitId });
-      it('returns the second unit when the first one is selected', async () => {
-        mockItemPricePrisma(itemRow(), [
-          priceRow('IPM-1', 1, 115),
-          priceRow('IPM-2', 2, 250),
-          priceRow('IPM-3', 3, 400),
-        ]);
+      const refresh = (iucId: string) =>
+        service.refreshItemPriceLookup({ item_id: ITEM_ID, iuc_id: iucId });
+      it('returns the second conversion when the first one is selected', async () => {
         mockConversions([conversion(1), conversion(2), conversion(3)]);
-        const result = await refresh('UNIT-1');
-        expect(result.unit_id).toBe('UNIT-2');
+        const result = await refresh('IUC-1');
+        expect(result).toEqual({ item_id: ITEM_ID, iuc_id: 'IUC-2' });
       });
-      it('wraps around to the first unit when the last one is selected', async () => {
-        mockItemPricePrisma(itemRow(), [
-          priceRow('IPM-1', 1, 115),
-          priceRow('IPM-2', 2, 250),
-          priceRow('IPM-3', 3, 400),
-        ]);
+      it('wraps around to the first conversion when the last one is selected', async () => {
         mockConversions([conversion(1), conversion(2), conversion(3)]);
-        const result = await refresh('UNIT-3');
-        expect(result.unit_id).toBe('UNIT-1');
+        const result = await refresh('IUC-3');
+        expect(result.iuc_id).toBe('IUC-1');
       });
-      it('returns the requested unit when the item has only one', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+      it('returns the requested conversion when the item has only one', async () => {
         mockConversions([conversion(1)]);
-        const result = await refresh('UNIT-1');
-        expect(result.unit_id).toBe('UNIT-1');
+        const result = await refresh('IUC-1');
+        expect(result.iuc_id).toBe('IUC-1');
       });
-      it('falls back to the first unit when the requested one is not the item’s', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
+      it('falls back to the first conversion when the requested one is not the item’s', async () => {
         mockConversions([conversion(1), conversion(2)]);
-        const result = await refresh('UNIT-OTHER-ITEM');
-        expect(result.unit_id).toBe('UNIT-1');
+        const result = await refresh('IUC-OTHER-ITEM');
+        expect(result.iuc_id).toBe('IUC-1');
       });
-      it('returns the requested unit when the item has no conversion rows', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-2', 2, 250)]);
+      it('returns the requested conversion when the item has no conversion rows', async () => {
         mockConversions([]);
-        const result = await refresh('UNIT-2');
-        expect(result.unit_id).toBe('UNIT-2');
+        const result = await refresh('IUC-2');
+        expect(result.iuc_id).toBe('IUC-2');
       });
       it('skips soft-deleted conversion rows in the cycle order', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-3', 3, 400)]);
         const findMany = mockConversions([conversion(1), conversion(2, true), conversion(3)]);
-        const result = await refresh('UNIT-1');
+        const result = await refresh('IUC-1');
 
-        expect(result.unit_id).toBe('UNIT-3');
+        expect(result.iuc_id).toBe('IUC-3');
         expect(findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { iucItemId: ITEM_ID, iucIsDeleted: false },
@@ -843,45 +829,23 @@ describe('MasterLookupService', () => {
           }),
         );
       });
-
-      it('returns the price and unit block of the resolved unit, not the requested one', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
-        mockConversions([conversion(1), conversion(2)]);
-
-        const requested = await service.getItemPriceLookup({
-          item_id: ITEM_ID,
-          unit_id: 'UNIT-1',
-          price_level: 1,
-        } as never);
-        const resolved = await refresh('UNIT-1');
-        expect(resolved.unit_id).toBe('UNIT-2');
-        expect(resolved.unit_rate_id).toBe('IPM-2');
-        expect(resolved.base_factor).toBe(2);
-        expect(resolved.sales_price).toBe(250);
-        expect(resolved.base_factor).not.toBe(requested.base_factor);
-        expect(resolved.sales_price).not.toBe(requested.sales_price);
-      });
-      it('reads at price level A, the level the refresh takes no parameter for', async () => {
-        mockItemPricePrisma(itemRow(), [
-          { ...priceRow('IPM-1', 1, 115), ipmSalesPriceB: 99 },
-          { ...priceRow('IPM-2', 2, 250), ipmSalesPriceB: 199 },
-        ]);
+      it('steps the cycle for a caller still holding a raw unit_id', async () => {
         mockConversions([conversion(1), conversion(2)]);
         const result = await refresh('UNIT-1');
-        expect(result.price_level).toBe(1);
-        expect(result.sales_price).toBe(250);
+        expect(result.iuc_id).toBe('IUC-2');
       });
-      it('returns exactly the keys the item-price lookup returns', async () => {
+      it('reads no price row at all', async () => {
+        // The cycle answers from item_unit_conversion alone — the screen
+        // re-reads /item-price itself, with its own scope.
         mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
         mockConversions([conversion(1), conversion(2)]);
-        const lookup = await service.getItemPriceLookup({
-          item_id: ITEM_ID,
-          unit_id: 'UNIT-1',
-          price_level: 1,
-        } as never);
-        const refreshed = await refresh('UNIT-1');
-
-        expect(Object.keys(refreshed)).toEqual(Object.keys(lookup));
+        await refresh('IUC-1');
+        const priceTables = prisma as unknown as {
+          itemPriceMaster: { findMany: jest.Mock };
+          itemMaster: { findFirst: jest.Mock };
+        };
+        expect(priceTables.itemPriceMaster.findMany).not.toHaveBeenCalled();
+        expect(priceTables.itemMaster.findFirst).not.toHaveBeenCalled();
       });
     });
   });

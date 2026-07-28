@@ -17,6 +17,7 @@ import {
   FiscalYearOption,
   FreightChargeOption,
   ItemPriceLookupPayload,
+  ItemUnitCyclePayload,
   ItemUnitOption,
   LookupModuleKey,
   LOOKUP_MODULE_KEYS,
@@ -229,10 +230,10 @@ export class MasterLookupService {
   }
 
   /**
-   * The same lookup, for the unit after the one the caller has selected — the
-   * "cycle unit" action of the entry screens, in one call.
+   * The conversion after the one the caller has selected — the "cycle unit"
+   * action of the entry screens. Returns the next iuc_id only, no price row.
    */
-  async refreshItemPriceLookup(query: ItemPriceRefreshQueryDto): Promise<ItemPriceLookupPayload> {
+  async refreshItemPriceLookup(query: ItemPriceRefreshQueryDto): Promise<ItemUnitCyclePayload> {
     return this.itemPrice.refreshItemPriceLookup(query);
   }
 

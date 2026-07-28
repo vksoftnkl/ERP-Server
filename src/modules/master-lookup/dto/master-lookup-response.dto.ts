@@ -405,3 +405,20 @@ export class ItemPriceLookupSuccessDto {
   @ApiProperty({ type: ItemPriceLookupPayloadDto })
   data!: ItemPriceLookupPayloadDto;
 }
+export class ItemUnitCycleDto {
+  @ApiProperty({ format: 'uuid' })
+  item_id!: string;
+  @ApiProperty({
+    format: 'uuid',
+    description: "item_unit_conversion PK (iuc_id) of the next unit in the item's cycle",
+  })
+  iuc_id!: string;
+}
+export class ItemUnitCycleSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Next item unit fetched successfully' })
+  message!: string;
+  @ApiProperty({ type: ItemUnitCycleDto })
+  data!: ItemUnitCycleDto;
+}

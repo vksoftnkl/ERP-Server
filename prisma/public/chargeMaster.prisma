@@ -27,6 +27,7 @@ model ChargeMaster {
   chgModifiedBy   String?   @db.Uuid                                                @map("chg_modified_by")
   // Relations
   ledger          AccLedgerMaster @relation(fields: [chgLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict)
+  chargeDetails   SaleChargeDetail[]
   @@index([chgLedgerCode], name: "idx_chg_ledger_code")
   @@map("charge_master")
   @@schema("public")

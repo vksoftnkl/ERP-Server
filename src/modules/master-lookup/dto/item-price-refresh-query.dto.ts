@@ -1,11 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { RequiredUuid } from 'src/common/dto/dtoDecorators';
 /**
- * Query of the unit-cycling refresh: the item and the unit currently on screen,
- * and nothing else. The lookup's remaining scopes (company, branch, customer,
- * godown, accounting year, price level) are not accepted here — the refresh
- * runs the lookup at its defaults, so the caller only has to hand back what the
- * screen already holds.
+ * Query of the unit-cycling refresh: the item and the unit conversion currently
+ * on screen, and nothing else. No lookup scope (company, branch, customer,
+ * godown, accounting year, price level) is accepted — the refresh only steps
+ * along the item's unit list and hands back the conversion it lands on.
  */
 export class ItemPriceRefreshQueryDto {
   @ApiProperty({ format: 'uuid' })
@@ -14,8 +13,8 @@ export class ItemPriceRefreshQueryDto {
   @ApiProperty({
     format: 'uuid',
     description:
-      "The unit currently selected on screen. The response returns the NEXT unit in the item's conversion list, wrapping around after the last one.",
+      "item_unit_conversion PK (iuc_id) of the unit currently selected on screen. The response returns the NEXT iuc_id in the item's conversion list, wrapping around after the last one.",
   })
   @RequiredUuid()
-  unit_id!: string;
+  iuc_id!: string;
 }

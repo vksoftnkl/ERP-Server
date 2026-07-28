@@ -19,6 +19,7 @@ import {
   FiscalYearOption,
   FreightChargeOption,
   ItemPriceLookupPayload,
+  ItemUnitCyclePayload,
   ItemUnitOption,
   LOOKUP_MODULE_KEYS,
   MasterLookupDataPayload,
@@ -32,6 +33,7 @@ import {
   FreightChargeListSuccessDto,
   ItemPriceLookupPayloadDto,
   ItemPriceLookupSuccessDto,
+  ItemUnitCycleSuccessDto,
   ItemUnitOptionListSuccessDto,
   MasterLookupSuccessDto,
   NameIdOptionListSuccessDto,
@@ -269,32 +271,33 @@ export class MasterLookupController {
       data,
     };
   }
-  @Get('item-price/refresh')
+  @Get('item-switch-uom')
   @Version(API_VERSION)
   // An explicit refresh action: it has to show edits made in the same session,
   // so it opts out of the controller's cache TTL (0 = never served from cache).
   @CacheTTL(0)
   @ApiOperation({
     summary:
-      "Cycle an item's unit and re-read its price row. Resolves the unit after unit_id in the item's item_unit_conversion list — ordered by to-base factor (base unit first), wrapping around after the last unit — then returns the item-price lookup for that unit, so the payload is identical in shape to /item-price and every price, tax and unit field belongs to the resolved unit. A stale unit_id that the item does not carry falls back to its first unit; an item with no conversion rows falls back to the requested unit. Takes no scope parameters: the lookup runs without a company, branch, customer, godown or accounting year, at price level A. Never cached.",
+      "Cycle an item's unit. Resolves the conversion after iuc_id in the item's item_unit_conversion list — ordered by to-base factor (base unit first), wrapping around after the last unit — and returns that iuc_id only; no price row is read, so the screen re-reads /item-price itself if it needs one. A stale iuc_id the item does not carry falls back to its first conversion; an item with no conversion rows falls back to the requested iuc_id. Never cached.",
   })
   @ApiQuery({ name: 'item_id', required: true, schema: { type: 'string', format: 'uuid' } })
   @ApiQuery({
-    name: 'unit_id',
+    name: 'iuc_id',
     required: true,
-    description: 'The unit currently on screen. The response returns the NEXT one.',
+    description:
+      'The item_unit_conversion (iuc_id) currently on screen. The response returns the NEXT one.',
     schema: { type: 'string', format: 'uuid' },
   })
-  @ApiOkResponse({ type: ItemPriceLookupSuccessDto })
+  @ApiOkResponse({ type: ItemUnitCycleSuccessDto })
   @ApiBadRequestResponse({ type: HttpErrorResponseDto })
   @ApiNotFoundResponse({ type: HttpErrorResponseDto })
   async refreshItemPriceLookup(
     @Query() query: ItemPriceRefreshQueryDto,
-  ): Promise<MasterLookupSuccessResponse<ItemPriceLookupPayload>> {
+  ): Promise<MasterLookupSuccessResponse<ItemUnitCyclePayload>> {
     const data = await this.masterLookupService.refreshItemPriceLookup(query);
     return {
       success: true,
-      message: 'Item price lookup fetched successfully',
+      message: 'Next item unit fetched successfully',
       data,
     };
   }

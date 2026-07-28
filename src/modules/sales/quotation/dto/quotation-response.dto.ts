@@ -19,6 +19,151 @@ export class QuotationErrorResponseDto {
   errors!: QuotationErrorFieldDto[];
 }
 
+// One applied charge line (sale_charge_detail row with cdDocType = 'QUOTATION').
+export class QuotationChargePayloadDto {
+  @ApiProperty({ format: 'uuid' })
+  cdId!: string;
+
+  @ApiProperty({ example: 'QUOTATION', maxLength: 12 })
+  cdDocType!: string;
+
+  @ApiProperty({ format: 'uuid', description: 'The parent quotation (sqId)' })
+  cdDocId!: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdSlno!: number | null;
+
+  @ApiProperty({ format: 'uuid' })
+  cdCompId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  cdBranchId!: string;
+
+  @ApiProperty({ minLength: 9, maxLength: 9 })
+  cdAccYear!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '1',
+    description: 'BigInt serialized as string',
+  })
+  cdVoucherNo!: string | null;
+
+  @ApiProperty({ format: 'uuid', description: 'charge_master.chgId' })
+  cdChgId!: string;
+
+  @ApiPropertyOptional({ maxLength: 100, nullable: true })
+  cdChgName!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  cdRole!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  cdMethod!: string | null;
+
+  @ApiProperty({ maxLength: 10, example: 'ADD' })
+  cdType!: string;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  cdApplyOn!: string | null;
+
+  @ApiProperty({ format: 'uuid' })
+  cdLedgerCode!: string;
+
+  @ApiProperty()
+  cdLandingCost!: boolean;
+
+  @ApiPropertyOptional({ maxLength: 10, nullable: true })
+  cdCostAlloc!: string | null;
+
+  @ApiProperty()
+  cdBeforeTax!: boolean;
+
+  @ApiProperty()
+  cdTaxApl!: boolean;
+
+  @ApiProperty()
+  cdSepPost!: boolean;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  cdUnit!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdQtyVal!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdWeight!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdRate!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdAmount!: number | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  cdTaxCode!: string | null;
+
+  @ApiPropertyOptional({ maxLength: 15, nullable: true })
+  cdHsn!: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdTaxPerc!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdTaxAmt!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdSgstPerc!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdSgstAmt!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdCgstPerc!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdCgstAmt!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdIgstPerc!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdIgstAmt!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdCessPerc!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdCessAmt!: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  cdNetAmt!: number | null;
+
+  @ApiPropertyOptional({ maxLength: 255, nullable: true })
+  cdRemarks!: string | null;
+
+  @ApiProperty()
+  cdIsActive!: boolean;
+
+  @ApiProperty()
+  cdIsDeleted!: boolean;
+
+  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
+  cdSyncDate!: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  cdCreatedOn!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  cdCreatedBy!: string | null;
+
+  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
+  cdModifiedOn!: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  cdModifiedBy!: string | null;
+}
+
 export class QuotationItemPayloadDto {
   @ApiProperty({ format: 'uuid' })
   sqiId!: string;
@@ -73,7 +218,8 @@ export class QuotationItemPayloadDto {
 
   @ApiPropertyOptional({
     nullable: true,
-    description: 'item_unit_master.unit_name reached via item_unit_conversion — only populated on GET',
+    description:
+      'item_unit_master.unit_name reached via item_unit_conversion — only populated on GET',
   })
   sqiUnitName?: string | null;
 
@@ -615,6 +761,9 @@ export class QuotationPayloadDto {
 
   @ApiProperty({ type: QuotationItemPayloadDto, isArray: true })
   items!: QuotationItemPayloadDto[];
+
+  @ApiProperty({ type: QuotationChargePayloadDto, isArray: true })
+  charges!: QuotationChargePayloadDto[];
 }
 
 export class QuotationDeleteResultDto {
@@ -632,7 +781,10 @@ export class QuotationSuccessSingleDto {
   @ApiProperty({ example: 'Quotation fetched successfully' })
   message!: string;
 
-  @ApiProperty({ type: QuotationPayloadDto, description: 'Quotation record including its line items' })
+  @ApiProperty({
+    type: QuotationPayloadDto,
+    description: 'Quotation record including its line items and applied charges',
+  })
   data!: QuotationPayloadDto;
 }
 

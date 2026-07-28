@@ -55,26 +55,27 @@ export function selectUnitRate(
 }
 
 /**
- * Steps one place along an item's unit-conversion list and returns the unit id
- * landed on. `rows` must already be in the cycle order the caller wants; the
- * step wraps around, so the last row's successor is the first one.
+ * Steps one place along an item's unit-conversion list and returns the
+ * conversion id (iuc_id) landed on. `rows` must already be in the cycle order
+ * the caller wants; the step wraps around, so the last row's successor is the
+ * first one.
  *
- * The requested unit is matched on either identifier, the same way
- * `selectUnitRate` does: entry screens hold a unit_id, internal callers may
- * hold the conversion PK (iuc_id).
+ * The requested conversion is matched on either identifier, the same way
+ * `selectUnitRate` does: the screen holds an iuc_id, an internal caller may
+ * still hold the raw unit_id.
  *
  * Two degenerate cases keep the refresh a no-op instead of an error, so an
  * entry screen never breaks on a cycle:
- *  - no conversion rows at all → the requested unit stands.
- *  - the requested unit is not in the list (stale selection) → the first row.
+ *  - no conversion rows at all → the requested id stands.
+ *  - the requested id is not in the list (stale selection) → the first row.
  */
-export function nextUnitIdInCycle(rows: UnitCycleRow[], requestedUnitId: string): string {
-  if (rows.length === 0) return requestedUnitId;
+export function nextIucIdInCycle(rows: UnitCycleRow[], requestedIucId: string): string {
+  if (rows.length === 0) return requestedIucId;
   const index = rows.findIndex(
-    (row) => row.iucUnitId === requestedUnitId || row.iucId === requestedUnitId,
+    (row) => row.iucId === requestedIucId || row.iucUnitId === requestedIucId,
   );
-  if (index === -1) return rows[0].iucUnitId;
-  return rows[(index + 1) % rows.length].iucUnitId;
+  if (index === -1) return rows[0].iucId;
+  return rows[(index + 1) % rows.length].iucId;
 }
 
 /** Legacy price-level CASE (1–7 → a/b/c/d/max/min/cost). */

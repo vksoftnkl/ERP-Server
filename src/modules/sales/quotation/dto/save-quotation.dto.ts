@@ -15,6 +15,7 @@ import {
   RequiredUuid,
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
+import { SaveQuotationChargeDto } from './save-quotation-charge.dto';
 import { SaveQuotationItemDto } from './save-quotation-item.dto';
 
 export class SaveQuotationDto {
@@ -347,4 +348,18 @@ export class SaveQuotationDto {
   @ValidateNested({ each: true })
   @Type(() => SaveQuotationItemDto)
   items?: SaveQuotationItemDto[];
+
+  @ApiPropertyOptional({
+    type: SaveQuotationChargeDto,
+    isArray: true,
+    description:
+      'Applied charge lines (sale_charge_detail). Reconciled exactly like items: lines with cdId are ' +
+      'updated, lines without are created, and existing lines omitted from the array are soft deleted. ' +
+      'Omit the property entirely to leave charges untouched.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaveQuotationChargeDto)
+  charges?: SaveQuotationChargeDto[];
 }

@@ -1,0 +1,101 @@
+/// Per-document applied charges — freight, loading, packing, cash discount, etc.
+/// One row per charge line on a document, shared by every module (sales,
+/// purchase, quotation, GRN, invoice) via the cdDocType discriminator.
+///
+/// Every cd* column except the amounts is a SNAPSHOT taken from ChargeMaster
+/// (and its ledger) at save time, so editing a charge master later never
+/// rewrites what was already invoiced.
+model SaleChargeDetail {
+  cdId            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
+
+  // -- Parent document (polymorphic — no single FK possible) ----------------
+  cdDocType       String    @db.VarChar(12)                                @map("cd_doc_type")   // which module's document
+  cdDocId         String    @db.Uuid                                       @map("cd_doc_id")     // parent document id
+  cdSlno          Int?                                                     @map("cd_slno")       // line order within the document
+
+  // -- Denormalised context (lets the table be queried/reported without
+  //    joining the parent document) -----------------------------------------
+  cdCompId        String    @db.Uuid                                       @map("cd_comp_id")
+  cdBranchId      String    @db.Uuid                                       @map("cd_branch_id")
+  cdAccYear       String    @db.Char(9)                                    @map("cd_acc_year")
+  cdVoucherNo     BigInt?                                                  @map("cd_voucher_no")
+
+  // -- Charge reference + snapshots -----------------------------------------
+  cdChgId         String    @db.Uuid                                       @map("cd_chg_id")     // FK charge_master.chg_id
+  cdChgName       String?   @db.VarChar(100)                               @map("cd_chg_name")   // snapshot, for print/history
+  cdRole          String?   @db.VarChar(15)                                @map("cd_role")       // FREIGHT | LOADING | UNLOADING | CASH_DISC | OTHERS | NONE
+  cdMethod        String?   @db.VarChar(10)                                @map("cd_method")     // how the amount is computed
+  cdType          String    @default("ADD") @db.VarChar(10)                @map("cd_type")       // ADD | DEDUCT (the sign)
+  cdApplyOn       String?   @db.VarChar(10)                                @map("cd_apply_on")   // distribution basis for a FIXED lump sum
+  cdLedgerCode    String    @db.Uuid                                       @map("cd_ledger_code") // GL ledger this charge posts to
+
+  // -- Landing cost + posting flags -----------------------------------------
+  cdLandingCost   Boolean   @default(false)                                @map("cd_landing_cost") // purchase: adds to item landing cost
+  cdCostAlloc     String?   @db.VarChar(10)                                @map("cd_cost_alloc")   // how that landing cost is allocated
+  // The two tax flags are mutually exclusive (ck_cd_tax_apl in the DB).
+  // cdBeforeTax folds the charge into the goods' taxable value, so it is taxed
+  // at each ITEM's own GST rate; cdTaxApl means the charge carries its OWN GST,
+  // after tax. Both at once would tax it twice. Neither = flat, untaxed
+  // adjustment.
+  cdBeforeTax     Boolean   @default(false)                                @map("cd_before_tax")
+  cdTaxApl        Boolean   @default(false)                                @map("cd_tax_apl")
+  cdSepPost       Boolean   @default(false)                                @map("cd_sep_post")     // post to its own ledger vs absorb
+
+  // -- Basis + amounts ------------------------------------------------------
+  cdUnit          String?   @db.VarChar(15)                                @map("cd_unit")
+  cdQtyVal        Decimal?  @db.Decimal(18, 4)                             @map("cd_qty_val")      // qty or value basis keyed on the line
+  cdWeight        Decimal?  @db.Decimal(18, 4)                             @map("cd_weight")       // weight / tonnage basis
+  // rate 0 with a non-zero amount is meaningful, NOT missing data: the operator
+  // priced the charge by typing its total, and the client spreads that total in
+  // the method's own shape rather than deriving a rate. Never add a
+  // rate-is-required constraint.
+  cdRate          Decimal?  @db.Decimal(14, 4)                             @map("cd_rate")         // rate or %, per cdMethod
+  cdAmount        Decimal?  @db.Decimal(14, 4)                             @map("cd_amount")       // charge amount BEFORE tax
+
+  // -- Tax (non-zero only when cdTaxApl AND NOT cdBeforeTax) ----------------
+  cdTaxCode       String?   @db.Uuid                                       @map("cd_tax_code")
+  cdHsn           String?   @db.VarChar(15)                                @map("cd_hsn")          // HSN/SAC, snapshot from the ledger
+  cdTaxPerc       Decimal?  @db.Decimal(9, 4)                              @map("cd_tax_perc")
+  cdTaxAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_tax_amt")
+  cdSgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_sgst_perc")
+  cdSgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_sgst_amt")
+  cdCgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cgst_perc")
+  cdCgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cgst_amt")
+  cdIgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_igst_perc")
+  cdIgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_igst_amt")
+  cdCessPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cess_perc")
+  cdCessAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cess_amt")
+  cdNetAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
+
+  // -- Status + audit -------------------------------------------------------
+  cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
+  cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")
+  cdIsDeleted     Boolean   @default(false)                                @map("cd_is_deleted")
+  cdSyncDate      DateTime? @db.Timestamptz                                @map("cd_sync_date")
+  cdCreatedOn     DateTime  @default(now()) @db.Timestamptz                @map("cd_created_on")
+  cdCreatedBy     String?   @db.Uuid                                       @map("cd_created_by")
+  cdModifiedOn    DateTime? @db.Timestamptz                                @map("cd_modified_on")
+  cdModifiedBy    String?   @db.Uuid                                       @map("cd_modified_by")
+
+  // Relations
+  charge          ChargeMaster @relation(fields: [cdChgId], references: [chgId], onUpdate: NoAction, onDelete: NoAction, map: "fk_cd_charge")
+
+  // Fetch all charge lines for one document (the hot path on entry load).
+  @@index([cdDocType, cdDocId], map: "ix_sale_charge_detail_doc")
+  @@map("sale_charge_detail")
+  @@schema("public")
+  // DB-only constraints not expressible in the Prisma schema (migrations
+  // 20260728130000_create_sale_charge_detail and
+  // 20260728140000_sale_charge_detail_check_constraints); Prisma ignores CHECK
+  // constraints, so they stay DB-side and are mirrored app-side by
+  // CHARGE_DETAIL_VALUE_GUARDS:
+  //   - ck_cd_tax_apl    NOT (cd_tax_apl AND cd_before_tax)
+  //     Taxed at the item rate, or carrying its own GST — never both.
+  //   - ck_cd_doc_type   PURCHASE | SALES | GRN | QUOTATION | INVOICE
+  //   - ck_cd_type       ADD | DEDUCT
+  //   - ck_cd_method     FIXED | QTY | NET_QTY | KG | QTL | TON | PERCENT (nullable)
+  //   - ck_cd_apply_on   FLAT | QTY | VALUE | WEIGHT (nullable)
+  //   - ck_cd_cost_alloc VALUE | QTY | WEIGHT (nullable)
+  // cd_ledger_code / cd_tax_code / cd_comp_id / cd_branch_id carry NO FK by
+  // design (matches the authored DDL) — do not add relations for them.
+}

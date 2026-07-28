@@ -2019,6 +2019,7 @@ Table charge_master {
   chgModifiedOn DateTime
   chgModifiedBy String
   ledger acc_ledger_master [not null]
+  chargeDetails sale_charge_detail [not null]
 
   Note: 'Shared "additional charges" master for both Sales and Purchase.'
 }
@@ -2180,6 +2181,64 @@ Table fiscal_years {
   deletedBy String
   prevFiscalYear fiscal_years
   nextFiscalYears fiscal_years [not null]
+}
+
+Table sale_charge_detail {
+  cdId String [pk]
+  cdDocType String [not null]
+  cdDocId String [not null]
+  cdSlno Int
+  cdCompId String [not null]
+  cdBranchId String [not null]
+  cdAccYear String [not null]
+  cdVoucherNo BigInt
+  cdChgId String [not null]
+  cdChgName String
+  cdRole String
+  cdMethod String
+  cdType String [not null, default: 'ADD']
+  cdApplyOn String
+  cdLedgerCode String [not null]
+  cdLandingCost Boolean [not null, default: false]
+  cdCostAlloc String
+  cdBeforeTax Boolean [not null, default: false]
+  cdTaxApl Boolean [not null, default: false]
+  cdSepPost Boolean [not null, default: false]
+  cdUnit String
+  cdQtyVal Decimal
+  cdWeight Decimal
+  cdRate Decimal
+  cdAmount Decimal
+  cdTaxCode String
+  cdHsn String
+  cdTaxPerc Decimal
+  cdTaxAmt Decimal
+  cdSgstPerc Decimal
+  cdSgstAmt Decimal
+  cdCgstPerc Decimal
+  cdCgstAmt Decimal
+  cdIgstPerc Decimal
+  cdIgstAmt Decimal
+  cdCessPerc Decimal
+  cdCessAmt Decimal
+  cdNetAmt Decimal
+  cdRemarks String
+  cdIsActive Boolean [not null, default: true]
+  cdIsDeleted Boolean [not null, default: false]
+  cdSyncDate DateTime
+  cdCreatedOn DateTime [default: `now()`, not null]
+  cdCreatedBy String
+  cdModifiedOn DateTime
+  cdModifiedBy String
+  charge charge_master [not null]
+
+  Note: 'Per-document applied charges — freight, loading, packing, cash discount, etc.
+One row per charge line on a document, shared by every module (sales,
+purchase, quotation, GRN, invoice) via the cdDocType discriminator.
+
+Every cd* column except the amounts is a SNAPSHOT taken from ChargeMaster
+(and its ledger) at save time, so editing a charge master later never
+rewrites what was already invoiced.'
 }
 
 Table user_master {
@@ -3663,6 +3722,8 @@ Ref: charge_master.chgLedgerCode > acc_ledger_master.ledId [delete: Restrict]
 Ref: companys.compStylesheetId > app_theme_master.thmId
 
 Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
+
+Ref: sale_charge_detail.cdChgId > charge_master.chgId [delete: No Action]
 
 Ref: user_menus.umUserId > user_master.usrId
 

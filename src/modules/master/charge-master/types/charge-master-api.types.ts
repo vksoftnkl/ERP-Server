@@ -68,6 +68,36 @@ export type ChargeGuardedField = (typeof CHARGE_VALUE_GUARDS)[number]['field'];
 // undefined = field absent from the request, so the stored value / column
 // default stands and there is nothing to check.
 export type ChargeGuardedValues = Partial<Record<ChargeGuardedField, string | null | undefined>>;
+// ---------------------------------------------------------------------------
+// sale_charge_detail (the per-document applied charge). Its cd_* enum columns
+// are SNAPSHOTS of the charge master, so the allowed sets are the same lists —
+// but unlike charge_master these ARE still CHECK constraints in the database
+// (ck_cd_doc_type / ck_cd_type / ck_cd_method / ck_cd_apply_on /
+// ck_cd_cost_alloc, migration 20260728140000). The guards below let a module
+// reject a bad value with a 400 before Postgres raises a raw 23514.
+// ---------------------------------------------------------------------------
+// Which module's document a charge line hangs off (cd_doc_id is polymorphic).
+export const CHARGE_DOC_TYPES = ['PURCHASE', 'SALES', 'GRN', 'QUOTATION', 'INVOICE'] as const;
+// One entry per CHECK constraint, in the order the columns are declared, plus
+// cdRole — which has no ck_cd_role in the DB but is still a snapshot of
+// chg_role, so it is worth guarding app-side. `nullable` mirrors the
+// `IS NULL OR ...` shape of ck_cd_method / ck_cd_apply_on / ck_cd_cost_alloc.
+export const CHARGE_DETAIL_VALUE_GUARDS = [
+  { field: 'cdDocType', allowed: CHARGE_DOC_TYPES, nullable: false },
+  { field: 'cdRole', allowed: CHARGE_ROLES, nullable: true },
+  { field: 'cdMethod', allowed: CHARGE_METHODS, nullable: true },
+  { field: 'cdType', allowed: CHARGE_TYPES, nullable: false },
+  { field: 'cdApplyOn', allowed: CHARGE_APPLY_ONS, nullable: true },
+  { field: 'cdCostAlloc', allowed: CHARGE_COST_ALLOCS, nullable: true },
+] as const satisfies ReadonlyArray<{
+  field: string;
+  allowed: readonly string[];
+  nullable: boolean;
+}>;
+export type ChargeDetailGuardedField = (typeof CHARGE_DETAIL_VALUE_GUARDS)[number]['field'];
+export type ChargeDetailGuardedValues = Partial<
+  Record<ChargeDetailGuardedField, string | null | undefined>
+>;
 // Subset of acc_ledger_master selected alongside a charge so the payload can
 // echo the mapped ledger's name and GST attributes.
 export interface ChargeLedgerDetail {

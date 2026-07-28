@@ -9,6 +9,9 @@ product/service, with its rates, discounts and tax breakup).
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `sale_quotation` (`sales` schema) — PK `sqId` (uuidv7)
 - **Line-item table:** `sale_quotation_item` (`sales` schema) — PK `sqiId` (uuidv7), FK `sqiQuoteId → sqId`
+- **Applied-charge table:** `sale_charge_detail` (`public` schema) — PK `cdId`, addressed
+  polymorphically by `(cdDocType = 'QUOTATION', cdDocId = sqId)`; there is **no FK** to
+  `sale_quotation` because the table is shared by every module (sales, purchase, GRN, invoice)
 
 ## Files
 
@@ -20,6 +23,7 @@ product/service, with its rates, discounts and tax breakup).
 | [quotation-exception.filter.ts](quotation-exception.filter.ts) | Registered via `@UseFilters`; a pass-through that re-throws the `HttpException` (error shaping is done in the service) |
 | [dto/save-quotation.dto.ts](dto/save-quotation.dto.ts) | Create/update payload for the header + nested `items[]` |
 | [dto/save-quotation-item.dto.ts](dto/save-quotation-item.dto.ts) | A single quotation line-item entry |
+| [dto/save-quotation-charge.dto.ts](dto/save-quotation-charge.dto.ts) | A single applied-charge entry (`sale_charge_detail` snapshot) |
 | [dto/quotation-response.dto.ts](dto/quotation-response.dto.ts) | Swagger success/error response models |
 | [types/quotation-api.types.ts](types/quotation-api.types.ts) | Payload / response / error TypeScript contracts |
 
@@ -28,8 +32,8 @@ product/service, with its rates, discounts and tax breakup).
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a quotation, chosen by `sqId` presence in the body. |
-| `GET` | `/get` | Fetch one active quotation by `sqId` (query param), including its active line items. |
-| `DELETE` | `/delete` | Soft-delete a quotation by `sqId` (query param), cascading to its line items. |
+| `GET` | `/get` | Fetch one active quotation by `sqId` (query param), including its active line items and applied charges. |
+| `DELETE` | `/delete` | Soft-delete a quotation by `sqId` (query param), cascading to its line items and applied charges. |
 
 Both `/get` and `/delete` take `sqId` as a query parameter validated by `ParseUUIDPipe({ version: '7' })`.
 
@@ -63,6 +67,28 @@ Line items are managed through the `items[]` array on the create/update payload
   the parent scope.
 - Returned line items are sorted by `sqiLineNo` ascending.
 
+### Nested applied charges
+
+Freight / loading / packing / cash-discount lines are managed through the `charges[]` array on the
+same create/update payload (`syncCharges` reconciliation), with **exactly** the item semantics:
+
+- Charge **with** `cdId` → updates that existing charge line (it must belong to this quotation, else
+  a not-found error).
+- Charge **without** `cdId` → inserts a new line; `cdChgId` (the `charge_master` row) and
+  `cdLedgerCode` are required for a new line (`requireChargeField`).
+- An existing active charge **absent** from the array → **soft deleted** (`cdIsDeleted = true`).
+- Omitting the `charges` property entirely (`undefined`) leaves the current charges **untouched**.
+- Scope keys are set by the service: `cdDocType = 'QUOTATION'`, `cdDocId = sqId`, and
+  `cdCompId` / `cdBranchId` / `cdAccYear` / `cdVoucherNo` default to the parent quotation's
+  company / branch / accounting year / `sqQuoteSlno`.
+- `cdSlno` defaults to the 1-based position in the array; a duplicate within one payload raises a
+  conflict on `cdSlno`. Returned charges are sorted by `cdSlno` ascending.
+- Every `cd*` value other than the amounts is a **snapshot** of the charge master taken at save
+  time, so the client sends them explicitly — editing a charge master later never rewrites what was
+  already quoted.
+- `cdVoucherNo` is a `bigint` column and is emitted as a **string** in the response (JSON has no
+  bigint), matching the header's `sqQuoteSlno`.
+
 ### Line numbering & uniqueness
 
 - `sqiLineNo` defaults to the **1-based position** of the item within the `items[]` array when
@@ -79,10 +105,10 @@ Line items are managed through the `items[]` array on the create/update payload
 ### Soft delete
 
 - `DELETE /delete` sets `sqIsDeleted = true` (plus `sqModifiedOn` / `sqModifiedBy`) on the header,
-  then cascades the same to all its active line items so no line stays active under a logically
-  deleted header. Rows are never hard-deleted.
+  then cascades the same to all its active line items **and applied charges** so nothing stays
+  active under a logically deleted header. Rows are never hard-deleted.
 - `GET /get` and the update lookups only ever see rows with `sqIsDeleted = false` (and items with
-  `sqiIsDeleted = false`).
+  `sqiIsDeleted = false`, charges with `cdIsDeleted = false`).
 
 ### Validation
 
@@ -92,6 +118,16 @@ Line items are managed through the `items[]` array on the create/update payload
   required non-empty strings; nested `items[]` are validated per-element (`@ValidateNested`), each
   requiring `sqiItemId` and `sqiItemUnitId` as UUIDs (`sqiItemUnitId` references
   `item_unit_conversion.iucId`, not `item_unit_master.unit_id`).
+- Nested `charges[]` are validated the same way, each requiring `cdChgId` and `cdLedgerCode` as
+  UUIDs. The enum-style columns are `@IsIn`-checked against the shared charge-master value sets
+  (`CHARGE_ROLES` / `CHARGE_METHODS` / `CHARGE_TYPES` / `CHARGE_APPLY_ONS` /
+  `CHARGE_COST_ALLOCS`).
+- `ensureChargeValuesAreAllowed` re-checks those values on the write path (against
+  `CHARGE_DETAIL_VALUE_GUARDS`) plus the mutually-exclusive `cdTaxApl` / `cdBeforeTax` pair, so the
+  DB CHECK constraints `ck_cd_doc_type` / `ck_cd_type` / `ck_cd_method` / `ck_cd_apply_on` /
+  `ck_cd_cost_alloc` / `ck_cd_tax_apl` surface as a 400 with the offending field rather than a raw
+  Postgres 23514. On update the stored row supplies whatever the payload omitted, since the
+  constraint judges the merged row.
 
 ### Audit logging
 
@@ -101,6 +137,8 @@ Line items are managed through the `items[]` array on the create/update payload
     `screenName = 'Sale Quotation'`, `screenType = 'transaction'`.
   - Each line-item insert/update/soft-delete is logged separately against
     `sale_quotation_item`.
+  - Each applied-charge insert/update/soft-delete is logged separately against
+    `sale_charge_detail`, displayed as `cdChgName` (falling back to `Charge <cdSlno>`).
 - The acting user is resolved from the payload's `sqCreatedBy` / `sqModifiedBy`, then the request
   context user (`RequestContextService.getUserId()`), falling back to `DEFAULT_ACTOR`
   (`resolveActor`).
@@ -108,7 +146,7 @@ Line items are managed through the `items[]` array on the create/update payload
 ### Response shape
 
 Success responses follow `{ success: true, message, data }` (`QuotationSuccessResponse`), where
-`data` is the quotation payload (header fields with date-times serialized to ISO strings, plus an
-`items[]` array). Errors use `{ success: false, message, errors: [{ field, message }] }`
+`data` is the quotation payload (header fields with date-times serialized to ISO strings, plus
+`items[]` and `charges[]` arrays). Errors use `{ success: false, message, errors: [{ field, message }] }`
 (`QuotationErrorResponse`), produced by the shared sales helpers rather than by the exception
 filter.

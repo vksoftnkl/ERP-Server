@@ -9,10 +9,10 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { ItemPriceLookupQueryDto } from '../dto/item-price-lookup-query.dto';
 import { ItemPriceRefreshQueryDto } from '../dto/item-price-refresh-query.dto';
 import { DEFAULT_LOADING_QTY, DEFAULT_LOADING_TYPE } from '../master-lookup.constants';
-import { ItemPriceLookupPayload } from '../types/master-lookup-api.types';
+import { ItemPriceLookupPayload, ItemUnitCyclePayload } from '../types/master-lookup-api.types';
 import { PriceRowWithUnit } from '../types/master-lookup-internal.types';
 import {
-  nextUnitIdInCycle,
+  nextIucIdInCycle,
   preferBranchPriceRows,
   priceForLevel,
   selectUnitRate,
@@ -50,54 +50,39 @@ type LoadingChargeResolution = Pick<ItemPriceLookupPayload, 'loading_charge' | '
  *  - the item-group price-level scheme discount has no column → `sch_discount`
  *    is always null.
  */
-/**
- * Price level the unit-cycling refresh reads at. It does not take a level of
- * its own, so it uses A — the same default the plain lookup documents.
- */
-const REFRESH_PRICE_LEVEL = 1;
-
 export class ItemPriceLookup {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * "Cycle unit" on an entry screen: step from the unit the caller currently has
-   * selected to the next one the item is configured for, then return the plain
-   * item-price lookup for it. The payload is the lookup's own — every price,
-   * tax and unit field therefore belongs to the resolved unit, not the
-   * requested one.
-   *
-   * The refresh takes only the item and the unit, so the lookup runs unscoped:
-   * no company (GST applies), no branch (rates resolve across all of them), no
-   * customer rate, no godown override and no accounting year (stock is null),
-   * at price level A.
+   * "Cycle unit" on an entry screen: step from the conversion the caller
+   * currently has selected to the next one the item is configured for, and
+   * return that iuc_id. Nothing is priced — the screen decides whether to
+   * re-read /item-price for the new unit, and with which scope.
    */
-  async refreshItemPriceLookup(query: ItemPriceRefreshQueryDto): Promise<ItemPriceLookupPayload> {
-    const unit_id = await this.resolveNextUnitId(query.item_id, query.unit_id);
-    return this.getItemPriceLookup({
+  async refreshItemPriceLookup(query: ItemPriceRefreshQueryDto): Promise<ItemUnitCyclePayload> {
+    return {
       item_id: query.item_id,
-      unit_id,
-      price_level: REFRESH_PRICE_LEVEL,
-    });
+      iuc_id: await this.resolveNextIucId(query.item_id, query.iuc_id),
+    };
   }
 
   /**
-   * The unit one step along the item's conversion list from `unitId`.
+   * The conversion one step along the item's unit list from `iucId`.
    *
    * The order has to be stable or the cycle would visit units differently on
    * each call: to-base factor ascending puts the base unit first and the packs
    * above it, with the conversion PK breaking ties.
    *
    * item_unit_conversion is keyed by item alone — it carries no company or
-   * branch column — so the cycle is not scoped further; the caller's company /
-   * branch still scope the price row the lookup then resolves.
+   * branch column — so the cycle is not scoped further.
    */
-  private async resolveNextUnitId(itemId: string, unitId: string): Promise<string> {
+  private async resolveNextIucId(itemId: string, iucId: string): Promise<string> {
     const rows = await this.prisma.itemUnitConversion.findMany({
       where: { iucItemId: itemId, iucIsDeleted: false },
       orderBy: [{ iucToBaseFactor: 'asc' }, { iucId: 'asc' }],
       select: { iucId: true, iucUnitId: true },
     });
-    return nextUnitIdInCycle(rows, unitId);
+    return nextIucIdInCycle(rows, iucId);
   }
 
   /**

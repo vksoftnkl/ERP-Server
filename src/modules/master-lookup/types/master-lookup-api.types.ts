@@ -95,6 +95,16 @@ export interface BarcodeItemLookup {
   weighScale: boolean;
 }
 /**
+ * Result of the unit-cycling refresh: the item asked about and the conversion
+ * row (iuc_id) one step along its unit list. Nothing is priced here — the
+ * screen re-reads /item-price itself with the returned iuc_id if it needs to.
+ */
+export interface ItemUnitCyclePayload {
+  item_id: string;
+  /** item_unit_conversion PK (iuc_id) of the next unit in the cycle. */
+  iuc_id: string;
+}
+/**
  * Flat, fully-resolved sale-lookup row — the port of the legacy PL/pgSQL
  * `getItemForSale` cursor onto the current UUID schema. It resolves ONE item +
  * ONE unit rate (the pricing hub `item_price_master` row) into a single row
