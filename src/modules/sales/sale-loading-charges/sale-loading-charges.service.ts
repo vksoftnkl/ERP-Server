@@ -11,10 +11,12 @@ import {
 import {
   DEFAULT_ACTOR,
   applyPresentFields,
+  isExclusionConstraintError,
   isForeignKeyConstraintError,
   resolveActor,
   throwOnUniqueConstraintError,
   throwSalesBadRequest,
+  throwSalesConflict,
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
@@ -274,6 +276,21 @@ export class SaleLoadingChargeService {
         },
       ],
     );
+    // excl_ilc_slab_overlap: the slab covers weights an existing one already
+    // covers for this company/branch. Without this leg Prisma's unknown-error
+    // shape would reach the filter as a 500 — see isExclusionConstraintError.
+    if (isExclusionConstraintError(error)) {
+      throwSalesConflict<SaleLoadingChargeErrorDetail, SaleLoadingChargeErrorResponse>(
+        'Overlapping sale loading charge slab',
+        [
+          {
+            field: 'ilcFromWeight',
+            message:
+              'Weight range overlaps an existing slab for this company/branch. Slabs may touch at a boundary (0-100, 100-200) but not overlap.',
+          },
+        ],
+      );
+    }
     if (isForeignKeyConstraintError(error)) {
       throwSalesBadRequest<SaleLoadingChargeErrorDetail, SaleLoadingChargeErrorResponse>(
         'Invalid relation reference',

@@ -1,6 +1,5 @@
 import { CONFIGURED_SQL_TABLE_REPLACEMENTS } from '../master-lookup.constants';
 import { DropdownLookupConfig } from '../types/master-lookup-internal.types';
-
 /**
  * The SQL statements to try for a configured dropdown, regional first, each one
  * already sanitised and rewritten. Duplicates are collapsed so identical
@@ -12,7 +11,6 @@ export function resolveConfiguredSqlCandidates(config: DropdownLookupConfig): st
     .filter((value): value is string => Boolean(value));
   return Array.from(new Set(candidates));
 }
-
 /**
  * Sanitises one stored statement, or returns undefined when it cannot be run:
  * only a single SELECT/WITH statement is accepted, and the known editor
@@ -36,7 +34,6 @@ export function normalizeConfiguredSql(value: string | null | undefined): string
   }
   return normalizeConfiguredSqlTableReferences(normalized);
 }
-
 function normalizeConfiguredSqlTableReferences(sql: string): string {
   return CONFIGURED_SQL_TABLE_REPLACEMENTS.reduce(
     (current, [pattern, replacement]) => current.replace(pattern, replacement),

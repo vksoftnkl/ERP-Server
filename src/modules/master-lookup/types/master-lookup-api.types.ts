@@ -14,6 +14,25 @@ export interface FiscalYearOption {
   isCurrent: boolean;
 }
 /**
+ * Voucher-level loading mode. It decides where the item-price lookup resolves
+ * `loading_charge` from:
+ *  - `manual`     — nothing is resolved; the user types the charge in.
+ *  - `item_basis` — the charge stored on the item's price row.
+ *  - `auto`       — the weight slab in `sale_loading_charges`.
+ */
+export type LoadingType = 'manual' | 'item_basis' | 'auto';
+
+/**
+ * Where the resolved `loading_charge` came from. `AUTO_NO_SLAB` is `auto` that
+ * found no slab for the weight — distinct from a slab that charges nothing.
+ */
+export type LoadingChargeSource =
+  | 'MANUAL'
+  | 'ITEM_PRICE_MASTER'
+  | 'LOADING_CHARGE_MASTER'
+  | 'AUTO_NO_SLAB';
+
+/**
  * A freight-charge slab row (`sale_freight_charges`). `iflag = 9` returns the
  * slabs matching a given distance. Loading/unloading charges are weight-slab
  * based and live separately in `sale_loading_charges`.
@@ -135,9 +154,21 @@ export interface ItemPriceLookupPayload {
   base_unit_id: string;
   /** item_unit_conversion.iuc_to_base_factor — qty in this unit × factor = qty in the base unit. */
   base_factor: number;
-  unit_weight: number;
+  /** item_unit_conversion.iuc_uom_weight for the item + selected unit. */
+  iuc_uom_weight: number;
   unit_loading: number;
   decimal_count: number;
+  // Loading charge — resolved server-side from `loading_type`. Every key below
+  // is present in all three modes; only the values differ.
+  /** Resolved charge. NULL means "nothing to apply" — manual entry, an unset master value, or no matching slab. */
+  loading_charge: number | null;
+  loading_charge_source: LoadingChargeSource;
+  /** Whether the entry screen lets the user type the charge in. Only a resolved master value locks the field. */
+  loading_charge_editable: boolean;
+  /** sale_loading_charges PK of the matched slab — `auto` only, else null. */
+  loading_slab_id: string | null;
+  /** Weight the slab was matched on — `auto` only, else null (manual / item_basis ignore weight). */
+  resolved_weight: number | null;
   // Loyalty
   loyalty_pv: number;
   // Stock (null when no accounting year supplied)

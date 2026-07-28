@@ -44,7 +44,7 @@ All routes are `GET` and wrap their result in `{ success: true, message, data }`
 | `GET` | `/customer-detail` | `?cus_id=&company_id=&branch_id=&regional=` | Resolve one customer into a flat detail row (legacy `iflag=7`). |
 | `GET` | `/freight-charges/charge` | `?distance=` | Freight-charge slabs whose km range covers the distance (legacy `iflag=9`). |
 | `GET` | `/item-by-barcode` | `?barcode=` | Resolve a scanned EAN code to its item + selling unit (legacy `iflag=10`). |
-| `GET` | `/item-price` | `?item_id=&price_level=` (+ optional `company_id`, `branch_id`, `unit_id`, `customer_id`, `godown_id`, `acccyear`, `regional`, `loading_type`, `freight_type`) | Resolve one item into a single sale-lookup row — effective price, tax block, stock, reorder (legacy `getItemForSale`). `@CacheTTL(60)`. |
+| `GET` | `/item-price` | `?item_id=&price_level=` (+ optional `company_id`, `branch_id`, `unit_id`, `customer_id`, `godown_id`, `acccyear`, `regional`, `loading_type`, `weight`, `qty`, `freight_type`) | Resolve one item into a single sale-lookup row — effective price, tax block, stock, reorder, resolved loading charge (legacy `getItemForSale`). `@CacheTTL(60)`. |
 | `GET` | `/dropdown/:dropdownId` | Numeric configured-dropdown id | Runs one configured dropdown's stored SQL directly and returns its rows as options. |
 
 ### Item-price sale lookup (`GET /item-price`)
@@ -71,12 +71,54 @@ price for the requested price level, the tax block, stock, reorder level and neg
   to every branch, so a `branch_id` lookup picks those up too. When both a branch row and a
   branch-less one price the same unit, the branch-specific rate wins; the branch-less one only
   stands in for units the branch does not price itself.
-- **Loading / freight type:** `loading_type` and `freight_type` echo the same-named query params
-  (free text, the voucher-level types) as supplied. Without them they fall back to `'Y' | 'N'`,
-  mirroring the item's `item_allow_loading` / `item_allow_freight` flags.
+- **Loading charge:** resolved server-side from `loading_type` — see below. `freight_type` is
+  accepted but not yet resolved; it does not appear in the payload.
 - **Tax:** loaded from `item_tax_master` via the item's `item_default_tax_id`; GST/cess percentages
   are zeroed when the company has GST disabled.
 - **Name:** `regional=true` returns `item_name_ta` (falling back to English), else the English name.
+
+#### Loading charge resolution (`loading_type`)
+
+The charge the voucher line should carry is resolved here rather than on the client. All three
+modes return the same five keys, so a screen reads one shape and branches only on
+`loading_charge_editable`:
+
+| Key | Meaning |
+| --- | --- |
+| `loading_charge` | The charge, or `null` when nothing was resolved. **Never 0-as-unknown.** |
+| `loading_charge_source` | `MANUAL` \| `ITEM_PRICE_MASTER` \| `LOADING_CHARGE_MASTER` \| `AUTO_NO_SLAB` |
+| `loading_charge_editable` | Whether the screen should unlock the field for user entry |
+| `loading_slab_id` | `sale_loading_charges` PK of the matched slab (`auto` only, else `null`) |
+| `resolved_weight` | Weight the slab was matched on (`auto` only, else `null`) |
+
+- **`manual`** (also what an omitted `loading_type` resolves as) — nothing is looked up, no query
+  runs against `sale_loading_charges`. Returns `null` / `MANUAL` / editable, so the user types the
+  charge in.
+- **`item_basis`** — `item_price_master.ipm_loading_charge` off the price row already selected, as
+  stored. No weight, no qty, no slab. Read-only on the screen. The column is `NOT NULL DEFAULT 0`,
+  so a stored `0` is indistinguishable from "never configured" and is reported as `null`.
+- **`auto`** — matches a weight slab in `sale_loading_charges`. Requires `company_id` **and**
+  `branch_id` (400 without them: an unscoped slab match would be a cross-tenant read). The charge
+  is **flat per slab** — `ilc_load_chrg` applies whole, unmultiplied by weight or qty, since the
+  master carries no charge-mode column.
+  - **Weight:** an explicit `weight` wins (including `0`). Otherwise it is derived as the resolved
+    unit's `iuc_uom_weight` × `qty` (default 1) — `item_master` has no weight column of its own.
+    Neither available → **400**. The arithmetic stays on `Prisma.Decimal`, so `48.5 × 3` is
+    `145.5`, not `145.49999999999997`.
+  - **Slab match:** half-open — `from_weight <= weight < to_weight` — so a weight sitting exactly
+    on a boundary belongs to the slab it opens, never to the one it closes. `ilc_is_deleted = false`
+    and `ilc_is_active = true` are part of the query, not a post-fetch filter.
+  - **Scope precedence:** both scope columns are nullable (NULL company = a global default, NULL
+    branch = every branch of the company), so up to four scopes can match one weight. They rank
+    company before branch: `company + branch` > `company, any branch` > `branch only` > `global`.
+  - **No slab:** `null` / `AUTO_NO_SLAB` / editable — the charge is unknown, not zero.
+  - Overlapping slabs within one scope are prevented in the DB by the GiST exclusion constraint
+    `excl_ilc_slab_overlap` (migration `20260728120000`); the lookup's own oldest-PK tie-break is
+    only a fallback for data predating it.
+
+An unknown `loading_type` is a 400 that names the allowed values. `item_allow_loading` does **not**
+gate this block — it only zeroes the separate `unit_loading` field, which is the unit master's own
+per-unit rate and unrelated to the resolved charge.
 
 ### Selecting a master (`module` query param)
 

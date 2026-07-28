@@ -64,6 +64,16 @@ of the former `freight-charges` module; distance-based freight rates now live in
   "Sale loading charge not found" (`throwSalesNotFound`).
 - **Reads exclude deleted rows** — `getById` and the delete/update lookups filter on
   `ilcIsDeleted: false`.
+- **Slabs may not overlap** — the DB constraint `excl_ilc_slab_overlap` (a GiST exclusion
+  constraint, migration `20260728120000`) rejects any non-deleted row whose weight range overlaps
+  another row's for the same company/branch. The range is half-open, so slabs may *touch* at a
+  boundary (`0–100` then `100–200`) — only a genuine overlap is refused. NULL company/branch is
+  treated as its own "global" scope rather than as never-conflicting. Create/update map the
+  violation to a `409` **"Overlapping sale loading charge slab"** on `ilcFromWeight`
+  (`isExclusionConstraintError`); without that mapping Prisma reports it as an unknown error and
+  the filter would answer `500`. The constraint is what lets the item-price lookup's `auto`
+  loading-charge resolution match exactly one slab per weight — see
+  [master-lookup](../../master-lookup/README.md#loading-charge-resolution-loading_type).
 - **Decimal fields are normalized** in responses: `ilcFromWeight`, `ilcToWeight`, `ilcLoadChrg`,
   and `ilcUnloadChrg` are converted to numbers (`toNumber`), returning `null` for absent/zero
   values.

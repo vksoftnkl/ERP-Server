@@ -82,7 +82,7 @@ const makeItemMasterRecord = (overrides: Partial<ItemMaster> = {}): ItemMaster =
     itemNotes: null,
     itemStorageLocation: null,
     itemPackingItemIds: [],
-    itemInclusiveOfTax: false,
+    itemInclTax: true,
     itemIsActive: true,
     itemIsDeleted: false,
     itemCreatedOn: new Date('2026-03-25T10:00:00.000Z'),

@@ -23,7 +23,6 @@ import {
   resolveRowLookupKeys,
 } from '../utils/lookup-key.utils';
 import { serializeLookupRow, toOption } from '../utils/lookup-option.utils';
-
 /**
  * Runs the dropdowns configured in `dropdown_details`: it matches a stored
  * record to a lookup module by name, executes its SQL, and maps the result rows
@@ -35,7 +34,6 @@ export class ConfiguredDropdownLookup {
     private readonly prisma: PrismaService,
     private readonly pg: PgService,
   ) {}
-
   /** The configured dropdown of every lookup module that has one. */
   async loadConfigsByModule(): Promise<Map<LookupModuleKey, DropdownLookupConfig>> {
     const records = await this.prisma.dropdownDetails.findMany({
@@ -50,7 +48,6 @@ export class ConfiguredDropdownLookup {
     }
     return configs;
   }
-
   /** One configured dropdown by its id, regardless of any module mapping. */
   async loadConfigById(dropdownId: number): Promise<DropdownLookupConfig | null> {
     const record = await this.prisma.dropdownDetails.findUnique({
@@ -59,7 +56,6 @@ export class ConfiguredDropdownLookup {
     });
     return record ? this.toConfig(record) : null;
   }
-
   /**
    * Runs the config's SQL candidates in order and maps the first result set that
    * comes back. Returns null when none of them is runnable, which is the signal
@@ -77,7 +73,6 @@ export class ConfiguredDropdownLookup {
     }
     return null;
   }
-
   /** Exact name match first, then a match on the normalized token form. */
   private findRecordForModule(
     module: LookupModuleKey,
@@ -95,7 +90,6 @@ export class ConfiguredDropdownLookup {
       normalizedAliases.includes(normalizeLookupToken(record.dropdownName)),
     );
   }
-
   private toConfig(record: DropdownRecord): DropdownLookupConfig {
     return {
       dropdownId: record.dropdownId,
@@ -114,7 +108,6 @@ export class ConfiguredDropdownLookup {
         })),
     };
   }
-
   private mapRowsToOptions(rows: LookupRow[], config: DropdownLookupConfig): NameIdOption[] {
     return rows
       .map((row) => ({ row, option: this.mapRowToOption(row, config.dropdownColumns) }))
@@ -122,7 +115,6 @@ export class ConfiguredDropdownLookup {
       .sort((left, right) => this.compareRows(left, right, config))
       .map((item) => item.option);
   }
-
   /**
    * The whole row is returned alongside the resolved `{ id, name }`, so callers
    * keep every configured column. Rows without an id column are dropped.
@@ -145,7 +137,6 @@ export class ConfiguredDropdownLookup {
       ...toOption(idValue, nameValue, { fallbackNameToId: false }),
     };
   }
-
   /** Sorts by the configured sort column when the rows carry it, else by name. */
   private compareRows(
     left: { row: LookupRow; option: NameIdOption },

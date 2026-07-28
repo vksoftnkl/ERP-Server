@@ -1,5 +1,6 @@
 import {
   MasterErrorDetail,
+  throwMasterBadRequest,
   throwMasterNotFound,
   toNullableNumber,
   toNumber,
@@ -7,13 +8,26 @@ import {
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { ItemPriceLookupQueryDto } from '../dto/item-price-lookup-query.dto';
 import { ItemPriceRefreshQueryDto } from '../dto/item-price-refresh-query.dto';
+import { DEFAULT_LOADING_QTY, DEFAULT_LOADING_TYPE } from '../master-lookup.constants';
 import { ItemPriceLookupPayload } from '../types/master-lookup-api.types';
+import { PriceRowWithUnit } from '../types/master-lookup-internal.types';
 import {
   nextUnitIdInCycle,
   preferBranchPriceRows,
   priceForLevel,
   selectUnitRate,
 } from '../utils/item-price.utils';
+import { resolveLoadingWeight, selectLoadingSlab } from '../utils/loading-charge.utils';
+
+/** The loading-charge block of the payload, resolved as one unit. */
+type LoadingChargeResolution = Pick<
+  ItemPriceLookupPayload,
+  | 'loading_charge'
+  | 'loading_charge_source'
+  | 'loading_charge_editable'
+  | 'loading_slab_id'
+  | 'resolved_weight'
+>;
 
 /**
  * Port of the legacy PL/pgSQL `getItemForSale` cursor onto the current UUID
@@ -93,6 +107,113 @@ export class ItemPriceLookup {
     return nextUnitIdInCycle(rows, unitId);
   }
 
+  /**
+   * Resolves the loading charge the voucher line should carry, server-side.
+   *
+   * The three modes return the same five keys — a screen reads one shape and
+   * decides nothing itself; `loading_charge_editable` alone tells it whether to
+   * unlock the field. A null charge always means "nothing resolved", never
+   * "zero": `AUTO_NO_SLAB` (no slab covers the weight) and an unset master
+   * value are both null, so a real 0 charge configured on a slab stays 0.
+   *
+   *  - `manual`     resolves nothing and touches no table.
+   *  - `item_basis` reads item_price_master.ipm_loading_charge off the rate row
+   *    already selected. The column is NOT NULL DEFAULT 0, so "not configured"
+   *    is indistinguishable from a stored 0 — 0 is reported as null.
+   *  - `auto` matches a sale_loading_charges weight slab. Both scope columns
+   *    are required here even though they are optional on the lookup itself:
+   *    an unscoped slab match would be a cross-tenant read.
+   */
+  private async resolveLoadingCharge(
+    query: ItemPriceLookupQueryDto,
+    rate: PriceRowWithUnit,
+  ): Promise<LoadingChargeResolution> {
+    const loadingType = query.loading_type ?? DEFAULT_LOADING_TYPE;
+    if (loadingType === 'manual') {
+      return {
+        loading_charge: null,
+        loading_charge_source: 'MANUAL',
+        loading_charge_editable: true,
+        loading_slab_id: null,
+        resolved_weight: null,
+      };
+    }
+    if (loadingType === 'item_basis') {
+      const charge = toNumber(rate.ipmLoadingCharge);
+      return {
+        // Weight plays no part here: the item's own charge stands as stored.
+        loading_charge: charge > 0 ? charge : null,
+        loading_charge_source: 'ITEM_PRICE_MASTER',
+        loading_charge_editable: false,
+        loading_slab_id: null,
+        resolved_weight: null,
+      };
+    }
+    const { company_id, branch_id } = query;
+    if (!company_id || !branch_id) {
+      throwMasterBadRequest<MasterErrorDetail>('Validation failed', [
+        {
+          field: company_id ? 'branch_id' : 'company_id',
+          message: "loading_type 'auto' requires both company_id and branch_id",
+        },
+      ]);
+    }
+    const weight = resolveLoadingWeight(
+      query.weight,
+      query.qty ?? DEFAULT_LOADING_QTY,
+      rate.itemUnitConversion.iucUomWeight,
+    );
+    if (weight === null) {
+      throwMasterBadRequest<MasterErrorDetail>('Validation failed', [
+        {
+          field: 'weight',
+          message: `loading_type 'auto' needs a weight: none was supplied and the item's unit conversion carries no UOM weight to derive one from`,
+        },
+      ]);
+    }
+    // Half-open slab match (from <= weight < to), so a weight sitting exactly on
+    // a boundary belongs to one slab only — the one it opens, not the one it
+    // closes. Both scope legs allow NULL: a NULL branch prices every branch of
+    // the company and a NULL company is a global default, neither of which can
+    // be another tenant's row. selectLoadingSlab then ranks the matches.
+    const slabs = await this.prisma.saleLoadingCharge.findMany({
+      where: {
+        ilcIsDeleted: false,
+        ilcIsActive: true,
+        ilcFromWeight: { lte: weight },
+        ilcToWeight: { gt: weight },
+        AND: [
+          { OR: [{ ilcCompId: company_id }, { ilcCompId: null }] },
+          { OR: [{ ilcBranchId: branch_id }, { ilcBranchId: null }] },
+        ],
+      },
+      select: { ilcId: true, ilcCompId: true, ilcBranchId: true, ilcLoadChrg: true },
+      orderBy: { ilcId: 'asc' },
+    });
+    const slab = selectLoadingSlab(slabs, company_id, branch_id);
+    const resolvedWeight = toNumber(weight);
+    if (!slab) {
+      // No slab covers this weight — the charge is unknown, not zero, so the
+      // screen unlocks the field rather than billing 0.
+      return {
+        loading_charge: null,
+        loading_charge_source: 'AUTO_NO_SLAB',
+        loading_charge_editable: true,
+        loading_slab_id: null,
+        resolved_weight: resolvedWeight,
+      };
+    }
+    return {
+      // Flat per slab: the slab's charge applies whole, unmultiplied by weight
+      // or qty. sale_loading_charges carries no charge-mode column to vary that.
+      loading_charge: toNullableNumber(slab.ilcLoadChrg),
+      loading_charge_source: 'LOADING_CHARGE_MASTER',
+      loading_charge_editable: false,
+      loading_slab_id: slab.ilcId,
+      resolved_weight: resolvedWeight,
+    };
+  }
+
   async getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload> {
     const { item_id, unit_id, company_id, branch_id, customer_id, acccyear } = query;
     const priceLevel = query.price_level;
@@ -147,7 +268,7 @@ export class ItemPriceLookup {
     // The rate's unit now arrives with the row, via its conversion.
     const unit = rate.itemUnitConversion.unit;
     const rateUnitId = rate.itemUnitConversion.iucUnitId;
-    const [godown, tax, company, custRate, reorder, stockSum] = await Promise.all([
+    const [godown, tax, company, custRate, reorder, stockSum, loading] = await Promise.all([
       godownId
         ? this.prisma.godownLocation.findFirst({ where: { gdlId: godownId } })
         : Promise.resolve(null),
@@ -190,6 +311,9 @@ export class ItemPriceLookup {
             },
           })
         : Promise.resolve(null),
+      // Reads sale_loading_charges only in `auto` mode; the other two modes
+      // resolve from what is already in hand.
+      this.resolveLoadingCharge(query, rate),
     ]);
     // 4. Derived values.
     // Without a company there is nothing to switch GST off, so the item's own
@@ -251,11 +375,14 @@ export class ItemPriceLookup {
       // so its to-base factor is the one that converts this unit's qty to base.
       base_unit_id: rate.itemUnitConversion.iucBaseUnitId,
       base_factor: toNumber(rate.itemUnitConversion.iucToBaseFactor),
-      unit_weight: toNullableNumber(unit?.unit_weight ?? null) ?? 0,
+      // Weight is the item's own per-unit UOM weight from the conversion row,
+      // not the unit master's generic weight.
+      iuc_uom_weight: toNumber(rate.itemUnitConversion.iucUomWeight),
       unit_loading: itemRecord.itemAllowLoading
         ? (toNullableNumber(unit?.unit_loading ?? null) ?? 0)
         : 0,
       decimal_count: unit?.unit_decimal_count ?? 0,
+      ...loading,
       loyalty_pv: itemRecord.itemAllowLoyalty ? toNumber(rate.ipmLoyaltyPoints) : 0,
       stock,
       reorder_qty: reorderQty,

@@ -297,9 +297,9 @@ export class SaveItemDto {
   @IsUUID('all', { each: true })
   item_packing_item_ids?: string[];
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({ default: true })
   @OptionalBoolean()
-  item_inclusive_of_tax?: boolean;
+  item_incl_tax?: boolean;
 
   @ApiPropertyOptional({ default: true })
   @OptionalBoolean()

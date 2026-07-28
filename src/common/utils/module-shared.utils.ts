@@ -75,6 +75,23 @@ export function isUniqueConstraintError(error: unknown): boolean {
 export function isForeignKeyConstraintError(error: unknown): boolean {
   return isPrismaErrorCode(error, 'P2003');
 }
+/**
+ * A GiST exclusion constraint violation (SQLSTATE 23P01) — e.g. a weight slab
+ * overlapping one that already exists.
+ *
+ * Prisma has no error code for these: an ORM write that trips one surfaces as a
+ * `PrismaClientUnknownRequestError` whose `code` is undefined, with the
+ * SQLSTATE readable only inside the driver message. Matching the message is
+ * therefore the only way to tell it apart from a genuine internal error and
+ * answer 409 instead of 500.
+ */
+export function isExclusionConstraintError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('message' in error)) {
+    return false;
+  }
+  const { message } = error as { message?: unknown };
+  return typeof message === 'string' && message.includes('23P01');
+}
 export function isPrismaErrorCode(error: unknown, code: string): boolean {
   if (typeof error !== 'object' || error === null || !('code' in error)) {
     return false;

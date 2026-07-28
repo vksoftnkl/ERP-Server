@@ -20,6 +20,19 @@ export type UnitCycleRow = {
   iucUnitId: string;
 };
 
+/**
+ * One `sale_loading_charges` slab reduced to what the `auto` resolution ranks
+ * and reads: its scope (for the branch/company specificity rule), its PK (for
+ * traceability) and the flat charge. The weight range is not carried — the
+ * query has already matched it.
+ */
+export type LoadingSlabRow = {
+  ilcId: string;
+  ilcCompId: string | null;
+  ilcBranchId: string | null;
+  ilcLoadChrg: Prisma.Decimal | null;
+};
+
 /** Fetches one module's options straight from its Prisma table. */
 export type ModuleFetcher = () => Promise<NameIdOption[]>;
 

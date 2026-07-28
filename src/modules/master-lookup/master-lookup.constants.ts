@@ -1,4 +1,17 @@
-import { LookupModuleKey } from './types/master-lookup-api.types';
+import { LoadingType, LookupModuleKey } from './types/master-lookup-api.types';
+
+/**
+ * Accepted `loading_type` values, in the order the 400 message lists them.
+ * Omitting the param is `manual` — the mode that resolves nothing — so an
+ * existing caller that never sent it keeps its old behaviour.
+ */
+export const LOADING_TYPES: readonly LoadingType[] = ['manual', 'item_basis', 'auto'];
+
+/** `loading_type` a request without one is resolved as. */
+export const DEFAULT_LOADING_TYPE: LoadingType = 'manual';
+
+/** Quantity `auto` derives a weight with when the caller sends none. */
+export const DEFAULT_LOADING_QTY = 1;
 
 /** Dropped when normalizing a dropdown/module name, so "Item Master" ≡ "items". */
 export const LOOKUP_NAME_NOISE_TOKENS = new Set(['master', 'lookup', 'dropdown']);

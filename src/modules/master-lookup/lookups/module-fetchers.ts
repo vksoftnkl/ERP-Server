@@ -2,7 +2,6 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { LookupModuleKey, NameIdOption } from '../types/master-lookup-api.types';
 import { ModuleFetcher } from '../types/master-lookup-internal.types';
 import { toOption } from '../utils/lookup-option.utils';
-
 /**
  * The per-module Prisma queries behind every lookup — the fallback used whenever
  * a module has no configured dropdown, or its configured SQL will not run.
@@ -331,7 +330,6 @@ export function buildModuleFetchers(prisma: PrismaService): Record<LookupModuleK
     ),
   };
 }
-
 /** Maps a Prisma table query to `{ id, name }` options. */
 function simpleFetcher<T>(
   queryFn: () => Promise<T[]>,

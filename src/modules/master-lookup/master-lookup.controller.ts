@@ -222,7 +222,22 @@ export class MasterLookupController {
   @ApiQuery({
     name: 'loading_type',
     required: false,
-    schema: { type: 'string', maxLength: 20 },
+    description:
+      "How loading_charge is resolved. manual = not resolved, the user types it in; item_basis = the item price row's own charge; auto = the sale_loading_charges weight slab, which additionally requires company_id and branch_id. Omitted is manual.",
+    schema: { type: 'string', enum: ['manual', 'item_basis', 'auto'], default: 'manual' },
+  })
+  @ApiQuery({
+    name: 'weight',
+    required: false,
+    description:
+      "Weight the auto slab is matched on. Omitted, it is derived from the resolved unit's iuc_uom_weight × qty; auto 400s when neither is available.",
+    schema: { type: 'number', minimum: 0 },
+  })
+  @ApiQuery({
+    name: 'qty',
+    required: false,
+    description: 'Line quantity the derived weight is computed with. Defaults to 1.',
+    schema: { type: 'number', minimum: 0, default: 1 },
   })
   @ApiQuery({
     name: 'freight_type',

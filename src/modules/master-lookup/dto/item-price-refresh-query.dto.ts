@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { RequiredUuid } from 'src/common/dto/dtoDecorators';
-
 /**
  * Query of the unit-cycling refresh: the item and the unit currently on screen,
  * and nothing else. The lookup's remaining scopes (company, branch, customer,
@@ -12,7 +11,6 @@ export class ItemPriceRefreshQueryDto {
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   item_id!: string;
-
   @ApiProperty({
     format: 'uuid',
     description:

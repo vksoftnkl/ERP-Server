@@ -135,7 +135,7 @@ export class ItemPriceDetailsService {
       item_notes: record.itemNotes,
       item_storage_location: record.itemStorageLocation,
       item_packing_item_ids: record.itemPackingItemIds,
-      item_inclusive_of_tax: record.itemInclusiveOfTax,
+      item_incl_tax: record.itemInclTax,
       item_is_active: record.itemIsActive,
       item_is_deleted: record.itemIsDeleted,
       item_created_on: record.itemCreatedOn.toISOString(),

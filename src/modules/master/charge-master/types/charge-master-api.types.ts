@@ -27,7 +27,7 @@ export const CHARGE_ROLES = [
   'OTHERS',
   'NONE',
 ] as const;
-export const CHARGE_METHODS = ['FIXED', 'PERCENT'] as const;
+export const CHARGE_METHODS = ['FIXED', 'PERCENT','QTY','NET_QTY','KG','QTL','TON'] as const;
 export const CHARGE_TYPES = ['ADD', 'DEDUCT'] as const;
 export const CHARGE_APPLY_ONS = ['FLAT', 'QTY', 'VALUE', 'WEIGHT'] as const;
 export const CHARGE_COST_ALLOCS = ['VALUE', 'QTY', 'WEIGHT'] as const;

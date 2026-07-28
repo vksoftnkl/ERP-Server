@@ -67,7 +67,7 @@ const itemPriceDetailPayload = {
     item_notes: null,
     item_storage_location: null,
     item_packing_item_ids: [],
-    item_inclusive_of_tax: false,
+    item_incl_tax: true,
     item_is_active: true,
     item_is_deleted: false,
     item_created_on: '2026-02-20T10:00:00.000Z',

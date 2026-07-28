@@ -1,11 +1,35 @@
+import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsIn, IsOptional } from 'class-validator';
+import { toOptionalTrimmedString } from 'src/common/dto/DtoTransforms';
 import {
+  OptionalNumber,
   OptionalQueryBoolean,
   OptionalTrimmedString,
   OptionalUuid,
   RequiredInteger,
   RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
+import {
+  DEFAULT_LOADING_QTY,
+  DEFAULT_LOADING_TYPE,
+  LOADING_TYPES,
+} from '../master-lookup.constants';
+import { LoadingType } from '../types/master-lookup-api.types';
+/**
+ * `loading_type` as a closed set. The value is lower-cased before matching so a
+ * screen sending `AUTO` is not rejected, and the rejection message spells the
+ * allowed values out — the caller cannot guess them from a bare "invalid value".
+ */
+const OptionalLoadingType = () =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toOptionalTrimmedString(value)?.toLowerCase()),
+    IsIn(LOADING_TYPES, {
+      message: `loading_type must be one of: ${LOADING_TYPES.join(', ')}`,
+    }),
+  );
 export class ItemPriceLookupQueryDto {
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
@@ -46,12 +70,27 @@ export class ItemPriceLookupQueryDto {
   @OptionalQueryBoolean()
   regional?: boolean;
   @ApiPropertyOptional({
-    maxLength: 20,
+    enum: LOADING_TYPES,
+    default: DEFAULT_LOADING_TYPE,
     description:
-      "Voucher-level loading type, returned as-is in loading_type. When omitted, loading_type falls back to 'Y' / 'N' from the item's item_allow_loading flag.",
+      "Voucher-level loading mode the loading charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own charge; auto = the weight slab in sale_loading_charges, which also requires company_id and branch_id. Omitted is manual.",
   })
-  @OptionalTrimmedString(20)
-  loading_type?: string;
+  @OptionalLoadingType()
+  loading_type?: LoadingType;
+  @ApiPropertyOptional({
+    minimum: 0,
+    description:
+      "Line weight the auto slab is matched on. Optional: without it the weight is derived from the resolved unit's iuc_uom_weight × qty. Ignored by manual and item_basis.",
+  })
+  @OptionalNumber(0)
+  weight?: number;
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: DEFAULT_LOADING_QTY,
+    description: 'Line quantity the derived weight is computed with. Defaults to 1.',
+  })
+  @OptionalNumber(0)
+  qty?: number;
   @ApiPropertyOptional({
     maxLength: 20,
     description:

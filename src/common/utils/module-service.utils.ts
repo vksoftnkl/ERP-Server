@@ -13,6 +13,7 @@ export {
   buildErrorResponse as buildMasterErrorResponse,
   buildErrorResponse as buildSettingsErrorResponse,
   hasOwnProperty,
+  isExclusionConstraintError,
   isForeignKeyConstraintError,
   isPrismaErrorCode,
   isUniqueConstraintError,
