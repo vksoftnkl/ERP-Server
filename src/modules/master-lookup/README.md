@@ -74,26 +74,23 @@ price for the requested price level, the tax block, stock, reorder level and neg
 - **Loading charge:** resolved server-side from `loading_type` — see below. `freight_type` is
   accepted but not yet resolved; it does not appear in the payload.
 - **Tax:** loaded from `item_tax_master` via the item's `item_default_tax_id`; GST/cess percentages
-  are zeroed when the company has GST disabled.
+  are zeroed when the company has GST disabled. `item_incl_tax` is the exception — it comes straight
+  off `item_master` and tells the caller whether the returned prices already carry tax, so the GST
+  toggle does not change it.
 - **Name:** `regional=true` returns `item_name_ta` (falling back to English), else the English name.
 
 #### Loading charge resolution (`loading_type`)
 
 The charge the voucher line should carry is resolved here rather than on the client. All three
-modes return the same five keys, so a screen reads one shape and branches only on
-`loading_charge_editable`:
+modes return the same two keys, so a screen reads one shape:
 
 | Key | Meaning |
 | --- | --- |
 | `loading_charge` | The charge, or `null` when nothing was resolved. **Never 0-as-unknown.** |
-| `loading_charge_source` | `MANUAL` \| `ITEM_PRICE_MASTER` \| `LOADING_CHARGE_MASTER` \| `AUTO_NO_SLAB` |
-| `loading_charge_editable` | Whether the screen should unlock the field for user entry |
-| `loading_slab_id` | `sale_loading_charges` PK of the matched slab (`auto` only, else `null`) |
 | `resolved_weight` | Weight the slab was matched on (`auto` only, else `null`) |
 
 - **`manual`** (also what an omitted `loading_type` resolves as) — nothing is looked up, no query
-  runs against `sale_loading_charges`. Returns `null` / `MANUAL` / editable, so the user types the
-  charge in.
+  runs against `sale_loading_charges`. Returns `null`, so the user types the charge in.
 - **`item_basis`** — `item_price_master.ipm_loading_charge` off the price row already selected, as
   stored. No weight, no qty, no slab. Read-only on the screen. The column is `NOT NULL DEFAULT 0`,
   so a stored `0` is indistinguishable from "never configured" and is reported as `null`.
@@ -111,14 +108,14 @@ modes return the same five keys, so a screen reads one shape and branches only o
   - **Scope precedence:** both scope columns are nullable (NULL company = a global default, NULL
     branch = every branch of the company), so up to four scopes can match one weight. They rank
     company before branch: `company + branch` > `company, any branch` > `branch only` > `global`.
-  - **No slab:** `null` / `AUTO_NO_SLAB` / editable — the charge is unknown, not zero.
+  - **No slab:** `null` — the charge is unknown, not zero.
   - Overlapping slabs within one scope are prevented in the DB by the GiST exclusion constraint
     `excl_ilc_slab_overlap` (migration `20260728120000`); the lookup's own oldest-PK tie-break is
     only a fallback for data predating it.
 
 An unknown `loading_type` is a 400 that names the allowed values. `item_allow_loading` does **not**
-gate this block — it only zeroes the separate `unit_loading` field, which is the unit master's own
-per-unit rate and unrelated to the resolved charge.
+gate this block, and the unit master's own per-unit rate (`unit_loading`) is no longer returned by
+this lookup — the resolved charge above is the only loading value in the payload.
 
 ### Selecting a master (`module` query param)
 

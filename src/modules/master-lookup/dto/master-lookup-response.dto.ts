@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { LoadingChargeSource } from '../types/master-lookup-api.types';
 export class NameIdOptionDto {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -347,8 +346,6 @@ export class ItemPriceLookupPayloadDto {
     description: 'UOM weight of the item + selected unit conversion row.',
   })
   iuc_uom_weight!: number;
-  @ApiProperty({ example: 0 })
-  unit_loading!: number;
   @ApiProperty({ example: 2 })
   decimal_count!: number;
   @ApiProperty({
@@ -358,23 +355,6 @@ export class ItemPriceLookupPayloadDto {
       'Resolved loading charge. Null means nothing was resolved — manual entry, an unset item master value, or no slab covering the weight. Never 0-as-unknown.',
   })
   loading_charge!: number | null;
-  @ApiProperty({
-    enum: ['MANUAL', 'ITEM_PRICE_MASTER', 'LOADING_CHARGE_MASTER', 'AUTO_NO_SLAB'],
-    example: 'LOADING_CHARGE_MASTER',
-    description: 'Where loading_charge came from. AUTO_NO_SLAB = auto found no slab for the weight.',
-  })
-  loading_charge_source!: LoadingChargeSource;
-  @ApiProperty({
-    example: false,
-    description: 'True when the screen should let the user type the charge in (manual, AUTO_NO_SLAB).',
-  })
-  loading_charge_editable!: boolean;
-  @ApiProperty({
-    format: 'uuid',
-    nullable: true,
-    description: 'sale_loading_charges PK of the matched slab — auto only, else null.',
-  })
-  loading_slab_id!: string | null;
   @ApiProperty({
     example: 145.5,
     nullable: true,
@@ -388,6 +368,12 @@ export class ItemPriceLookupPayloadDto {
   stock!: number | null;
   @ApiProperty({ nullable: true, example: 0 })
   reorder_qty!: number | null;
+  @ApiProperty({
+    example: true,
+    description:
+      "Item's own item_incl_tax flag — whether the returned prices are tax-inclusive. Not affected by the company GST toggle.",
+  })
+  item_incl_tax!: boolean;
   @ApiProperty({ example: 0 })
   gst_rate!: number;
   @ApiProperty({ example: 0 })

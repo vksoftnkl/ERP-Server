@@ -462,7 +462,7 @@ describe('MasterLookupService', () => {
         iucBaseUnitId: 'UNIT-BASE',
         iucToBaseFactor: slno,
         iucUomWeight: 0,
-        unit: { unit_name: `UNIT-${slno}`, unit_weight: 0, unit_loading: 0, unit_decimal_count: 2 },
+        unit: { unit_name: `UNIT-${slno}`, unit_weight: 0, unit_decimal_count: 2 },
       },
     });
     const itemRow = (overrides: Record<string, unknown> = {}) => ({
@@ -484,6 +484,7 @@ describe('MasterLookupService', () => {
       itemIsService: false,
       itemWeighScale: false,
       itemBatchConfig: 0,
+      itemInclTax: true,
       ...overrides,
     });
     const mockItemPricePrisma = (item: unknown, rows: unknown[]) => {
@@ -561,13 +562,17 @@ describe('MasterLookupService', () => {
       expect(result.base_unit_id).toBe('UNIT-BASE');
       expect(result.base_factor).toBe(2);
     });
-    it('zeroes unit_loading when the item does not allow loading', async () => {
-      mockItemPricePrisma(itemRow({ itemAllowLoading: false }), [priceRow('IPM-1', 1, 115)]);
+    it("returns the item's item_incl_tax flag even when GST is not applicable", async () => {
+      // The GST toggle zeroes the perc fields, but whether the item's stored
+      // prices already include tax is the item's own property — it must survive.
+      mockItemPricePrisma(itemRow({ itemInclTax: true }), [priceRow('IPM-1', 1, 115)]);
       const result = await service.getItemPriceLookup({
         item_id: ITEM_ID,
+        company_id: 'COMP-1',
         price_level: 1,
       } as never);
-      expect(result.unit_loading).toBe(0);
+      expect(result.gst_rate).toBe(0);
+      expect(result.item_incl_tax).toBe(true);
     });
     describe('loading charge resolution', () => {
       const COMPANY_ID = 'COMP-1';
@@ -616,16 +621,13 @@ describe('MasterLookupService', () => {
           weight: 500,
         });
         expect(result.loading_charge).toBeNull();
-        expect(result.loading_charge_source).toBe('MANUAL');
-        expect(result.loading_charge_editable).toBe(true);
-        expect(result.loading_slab_id).toBeNull();
         expect(result.resolved_weight).toBeNull();
         expect(slabQuery()).not.toHaveBeenCalled();
       });
       it('treats an omitted loading_type as manual, so a caller that never sent one is unchanged', async () => {
         mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
         const result = await lookup({ company_id: COMPANY_ID, branch_id: BRANCH_ID });
-        expect(result.loading_charge_source).toBe('MANUAL');
+        expect(result.loading_charge).toBeNull();
         expect(slabQuery()).not.toHaveBeenCalled();
       });
       it('returns the item price master charge as stored for item_basis, weight ignored', async () => {
@@ -634,9 +636,6 @@ describe('MasterLookupService', () => {
         ]);
         const result = await lookup({ loading_type: 'item_basis', weight: 500, qty: 4 });
         expect(result.loading_charge).toBe(42.75);
-        expect(result.loading_charge_source).toBe('ITEM_PRICE_MASTER');
-        expect(result.loading_charge_editable).toBe(false);
-        expect(result.loading_slab_id).toBeNull();
         expect(result.resolved_weight).toBeNull();
         expect(slabQuery()).not.toHaveBeenCalled();
       });
@@ -646,10 +645,9 @@ describe('MasterLookupService', () => {
         mockItemPricePrisma(itemRow(), [{ ...priceRow('IPM-1', 1, 115), ipmLoadingCharge: 0 }]);
         const result = await lookup({ loading_type: 'item_basis' });
         expect(result.loading_charge).toBeNull();
-        expect(result.loading_charge_source).toBe('ITEM_PRICE_MASTER');
-        expect(result.loading_charge_editable).toBe(false);
+        expect(result.loading_charge).not.toBe(0);
       });
-      it('returns the matched slab charge and its id for auto', async () => {
+      it('returns the matched slab charge for auto', async () => {
         mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
         mockSlabs([slab('ILC-1', 250)]);
         const result = await lookup({
@@ -659,9 +657,6 @@ describe('MasterLookupService', () => {
           weight: 145.5,
         });
         expect(result.loading_charge).toBe(250);
-        expect(result.loading_charge_source).toBe('LOADING_CHARGE_MASTER');
-        expect(result.loading_charge_editable).toBe(false);
-        expect(result.loading_slab_id).toBe('ILC-1');
         expect(result.resolved_weight).toBe(145.5);
       });
       it('matches slabs half-open, so a boundary weight opens one slab and closes none', async () => {
@@ -714,10 +709,10 @@ describe('MasterLookupService', () => {
           branch_id: BRANCH_ID,
           weight: 145.5,
         });
-        expect(result.loading_slab_id).toBe('ILC-BRANCH');
+        // The branch slab's charge, not the company-wide 100.
         expect(result.loading_charge).toBe(250);
       });
-      it('returns AUTO_NO_SLAB and an editable null when no slab covers the weight', async () => {
+      it('returns a null charge, never 0, when no slab covers the weight', async () => {
         mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
         mockSlabs([]);
         const result = await lookup({
@@ -728,9 +723,6 @@ describe('MasterLookupService', () => {
         });
         expect(result.loading_charge).toBeNull();
         expect(result.loading_charge).not.toBe(0);
-        expect(result.loading_charge_source).toBe('AUTO_NO_SLAB');
-        expect(result.loading_charge_editable).toBe(true);
-        expect(result.loading_slab_id).toBeNull();
         expect(result.resolved_weight).toBe(9999);
       });
       it('derives the weight from the unit UOM weight × qty when none is supplied', async () => {

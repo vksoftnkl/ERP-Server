@@ -20,14 +20,7 @@ import {
 import { resolveLoadingWeight, selectLoadingSlab } from '../utils/loading-charge.utils';
 
 /** The loading-charge block of the payload, resolved as one unit. */
-type LoadingChargeResolution = Pick<
-  ItemPriceLookupPayload,
-  | 'loading_charge'
-  | 'loading_charge_source'
-  | 'loading_charge_editable'
-  | 'loading_slab_id'
-  | 'resolved_weight'
->;
+type LoadingChargeResolution = Pick<ItemPriceLookupPayload, 'loading_charge' | 'resolved_weight'>;
 
 /**
  * Port of the legacy PL/pgSQL `getItemForSale` cursor onto the current UUID
@@ -110,11 +103,10 @@ export class ItemPriceLookup {
   /**
    * Resolves the loading charge the voucher line should carry, server-side.
    *
-   * The three modes return the same five keys — a screen reads one shape and
-   * decides nothing itself; `loading_charge_editable` alone tells it whether to
-   * unlock the field. A null charge always means "nothing resolved", never
-   * "zero": `AUTO_NO_SLAB` (no slab covers the weight) and an unset master
-   * value are both null, so a real 0 charge configured on a slab stays 0.
+   * The three modes return the same two keys — a screen reads one shape and
+   * decides nothing itself. A null charge always means "nothing resolved", never
+   * "zero": no slab covering the weight and an unset master value are both null,
+   * so a real 0 charge configured on a slab stays 0.
    *
    *  - `manual`     resolves nothing and touches no table.
    *  - `item_basis` reads item_price_master.ipm_loading_charge off the rate row
@@ -132,9 +124,6 @@ export class ItemPriceLookup {
     if (loadingType === 'manual') {
       return {
         loading_charge: null,
-        loading_charge_source: 'MANUAL',
-        loading_charge_editable: true,
-        loading_slab_id: null,
         resolved_weight: null,
       };
     }
@@ -143,9 +132,6 @@ export class ItemPriceLookup {
       return {
         // Weight plays no part here: the item's own charge stands as stored.
         loading_charge: charge > 0 ? charge : null,
-        loading_charge_source: 'ITEM_PRICE_MASTER',
-        loading_charge_editable: false,
-        loading_slab_id: null,
         resolved_weight: null,
       };
     }
@@ -197,9 +183,6 @@ export class ItemPriceLookup {
       // screen unlocks the field rather than billing 0.
       return {
         loading_charge: null,
-        loading_charge_source: 'AUTO_NO_SLAB',
-        loading_charge_editable: true,
-        loading_slab_id: null,
         resolved_weight: resolvedWeight,
       };
     }
@@ -207,9 +190,6 @@ export class ItemPriceLookup {
       // Flat per slab: the slab's charge applies whole, unmultiplied by weight
       // or qty. sale_loading_charges carries no charge-mode column to vary that.
       loading_charge: toNullableNumber(slab.ilcLoadChrg),
-      loading_charge_source: 'LOADING_CHARGE_MASTER',
-      loading_charge_editable: false,
-      loading_slab_id: slab.ilcId,
       resolved_weight: resolvedWeight,
     };
   }
@@ -378,14 +358,14 @@ export class ItemPriceLookup {
       // Weight is the item's own per-unit UOM weight from the conversion row,
       // not the unit master's generic weight.
       iuc_uom_weight: toNumber(rate.itemUnitConversion.iucUomWeight),
-      unit_loading: itemRecord.itemAllowLoading
-        ? (toNullableNumber(unit?.unit_loading ?? null) ?? 0)
-        : 0,
       decimal_count: unit?.unit_decimal_count ?? 0,
       ...loading,
       loyalty_pv: itemRecord.itemAllowLoyalty ? toNumber(rate.ipmLoyaltyPoints) : 0,
       stock,
       reorder_qty: reorderQty,
+      // Straight off the item — the GST toggle zeroes the perc fields below but
+      // does not change whether the item's stored prices include tax.
+      item_incl_tax: itemRecord.itemInclTax,
       gst_rate: gstApplicable && tax ? toNumber(tax.taxGstRateTotal) : 0,
       cess_perc: gstApplicable && tax ? toNumber(tax.taxCessPerc) : 0,
       cess_unit: gstApplicable && tax ? toNumber(tax.taxCessUnit) : 0,
