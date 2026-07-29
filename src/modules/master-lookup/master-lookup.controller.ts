@@ -61,13 +61,29 @@ export class MasterLookupController {
       'Get id-name lookup data for all accounts/master modules, or one module via query parameter',
   })
   @ApiQuery({ name: 'module', required: false, enum: LOOKUP_MODULE_KEYS })
+  @ApiQuery({
+    name: 'id',
+    required: false,
+    description:
+      "Narrows the result to the row carrying this id in the module's own table. With `module` it reads that one master by id; without one, every module is searched. Nothing matching is an empty list, not a 404.",
+    schema: { type: 'string' },
+  })
   @ApiOkResponse({ type: MasterLookupSuccessDto })
   async getAllAccountsAndMasterNameIds(
     @Query() queryDto: MasterLookupQueryDto,
   ): Promise<MasterLookupSuccessResponse<MasterLookupDataPayload>> {
-    const data = await this.masterLookupService.getAllAccountsAndMasterNameIds(queryDto.module);
-    const message = queryDto.module
-      ? `Name-id data fetched successfully for module ${queryDto.module}`
+    const data = await this.masterLookupService.getAllAccountsAndMasterNameIds(
+      queryDto.module,
+      queryDto.id,
+    );
+    const scope = [
+      queryDto.module ? `module ${queryDto.module}` : null,
+      queryDto.id ? `id ${queryDto.id}` : null,
+    ]
+      .filter(Boolean)
+      .join(' and ');
+    const message = scope
+      ? `Name-id data fetched successfully for ${scope}`
       : 'Name-id data fetched successfully';
     return { success: true, message, data };
   }
@@ -77,11 +93,18 @@ export class MasterLookupController {
     summary: 'Get id-name lookup data for all master modules as a flat array',
   })
   @ApiQuery({ name: 'module', required: false, enum: LOOKUP_MODULE_KEYS })
+  @ApiQuery({
+    name: 'id',
+    required: false,
+    description:
+      "Narrows the result to the row carrying this id in the module's own table — e.g. ?module=companyGroups&id=<cog_group_id>. Without `module`, every master module is searched. Nothing matching is an empty list, not a 404.",
+    schema: { type: 'string' },
+  })
   @ApiOkResponse({ type: NameIdOptionListSuccessDto })
   async getAllMasters(
     @Query() queryDto: MasterLookupQueryDto,
   ): Promise<MasterLookupSuccessResponse<NameIdOption[]>> {
-    const data = await this.masterLookupService.getAllMasters(queryDto.module);
+    const data = await this.masterLookupService.getAllMasters(queryDto.module, queryDto.id);
     const message = 'Data fetched successfully';
     return { success: true, message, data };
   }
@@ -225,26 +248,15 @@ export class MasterLookupController {
     name: 'loading_type',
     required: false,
     description:
-      "How loading_charge is resolved. manual = not resolved, the user types it in; item_basis = the item price row's own charge; auto = the sale_loading_charges weight slab, which additionally requires company_id and branch_id. Omitted is manual.",
+      "How loading_charge is resolved. manual = not resolved, the user types it in; item_basis = the item price row's own charge; auto = the sale_loading_charges weight slab matched on the resolved unit's iuc_uom_weight, which additionally requires company_id and branch_id. Omitted is manual.",
     schema: { type: 'string', enum: ['manual', 'item_basis', 'auto'], default: 'manual' },
-  })
-  @ApiQuery({
-    name: 'weight',
-    required: false,
-    description:
-      "Weight the auto slab is matched on. Omitted, it is derived from the resolved unit's iuc_uom_weight × qty; auto 400s when neither is available.",
-    schema: { type: 'number', minimum: 0 },
-  })
-  @ApiQuery({
-    name: 'qty',
-    required: false,
-    description: 'Line quantity the derived weight is computed with. Defaults to 1.',
-    schema: { type: 'number', minimum: 0, default: 1 },
   })
   @ApiQuery({
     name: 'freight_type',
     required: false,
-    schema: { type: 'string', maxLength: 20 },
+    description:
+      "How freight_charge is resolved. manual = not resolved, the user types it in; item_basis = the item price row's own ipm_freight_charge. Omitted is manual. No auto: freight slabs are distance-matched, which this lookup has no distance for — use /freight-charges/charge.",
+    schema: { type: 'string', enum: ['manual', 'item_basis'], default: 'manual' },
   })
   @ApiQuery({
     name: 'regional',
@@ -278,7 +290,7 @@ export class MasterLookupController {
   @CacheTTL(0)
   @ApiOperation({
     summary:
-      "Cycle an item's unit. Resolves the conversion after iuc_id in the item's item_unit_conversion list — ordered by to-base factor (base unit first), wrapping around after the last unit — and returns that iuc_id only; no price row is read, so the screen re-reads /item-price itself if it needs one. A stale iuc_id the item does not carry falls back to its first conversion; an item with no conversion rows falls back to the requested iuc_id. Never cached.",
+      "Cycle an item's unit. Resolves the conversion after iuc_id in the item's item_unit_conversion list — ordered by iuc_unit_slno, the item's own unit order, wrapping around after the last unit — and returns that iuc_id only; no price row is read, so the screen re-reads /item-price itself if it needs one. A stale iuc_id the item does not carry falls back to its first conversion; an item with no conversion rows falls back to the requested iuc_id. Never cached.",
   })
   @ApiQuery({ name: 'item_id', required: true, schema: { type: 'string', format: 'uuid' } })
   @ApiQuery({

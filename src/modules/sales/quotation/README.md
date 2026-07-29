@@ -119,9 +119,10 @@ same create/update payload (`syncCharges` reconciliation), with **exactly** the 
   requiring `sqiItemId` and `sqiItemUnitId` as UUIDs (`sqiItemUnitId` references
   `item_unit_conversion.iucId`, not `item_unit_master.unit_id`).
 - Nested `charges[]` are validated the same way, each requiring `cdChgId` and `cdLedgerCode` as
-  UUIDs. The enum-style columns are `@IsIn`-checked against the shared charge-master value sets
-  (`CHARGE_ROLES` / `CHARGE_METHODS` / `CHARGE_TYPES` / `CHARGE_APPLY_ONS` /
-  `CHARGE_COST_ALLOCS`).
+  UUIDs. The enum columns are `@IsEnum`-checked against the shared charge enums
+  (`ChargeRole` / `ChargeMethod` / `ChargeType` / `ChargeApplyOn` / `ChargeCostAlloc` in
+  `master/charge-master/types/charge-enum.ts`, where `ChargeDocType.QUOTATION` — the discriminator
+  this module writes — also lives).
 - `ensureChargeValuesAreAllowed` re-checks those values on the write path (against
   `CHARGE_DETAIL_VALUE_GUARDS`) plus the mutually-exclusive `cdTaxApl` / `cdBeforeTax` pair, so the
   DB CHECK constraints `ck_cd_doc_type` / `ck_cd_type` / `ck_cd_method` / `ck_cd_apply_on` /

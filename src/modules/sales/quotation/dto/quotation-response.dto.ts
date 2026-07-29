@@ -1,96 +1,76 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
+import {
+  ChargeApplyOn,
+  ChargeCostAlloc,
+  ChargeDocType,
+  ChargeMethod,
+  ChargeRole,
+  ChargeType,
+} from '../../../master/charge-master/types/charge-enum';
 export class QuotationErrorFieldDto {
   @ApiProperty({ example: 'sqQuoteRefno' })
   field!: string;
-
   @ApiProperty({ example: 'Duplicate quotation reference number is not allowed' })
   message!: string;
 }
-
 export class QuotationErrorResponseDto {
   @ApiProperty({ example: false })
   success!: false;
-
   @ApiProperty({ example: 'Validation failed' })
   message!: string;
-
   @ApiProperty({ type: QuotationErrorFieldDto, isArray: true })
   errors!: QuotationErrorFieldDto[];
 }
-
 // One applied charge line (sale_charge_detail row with cdDocType = 'QUOTATION').
 export class QuotationChargePayloadDto {
   @ApiProperty({ format: 'uuid' })
   cdId!: string;
-
-  @ApiProperty({ example: 'QUOTATION', maxLength: 12 })
-  cdDocType!: string;
-
+  @ApiProperty({ enum: ChargeDocType, enumName: 'ChargeDocType', example: ChargeDocType.QUOTATION })
+  cdDocType!: ChargeDocType;
   @ApiProperty({ format: 'uuid', description: 'The parent quotation (sqId)' })
   cdDocId!: string;
-
   @ApiPropertyOptional({ nullable: true })
   cdSlno!: number | null;
-
   @ApiProperty({ format: 'uuid' })
   cdCompId!: string;
-
   @ApiProperty({ format: 'uuid' })
   cdBranchId!: string;
-
   @ApiProperty({ minLength: 9, maxLength: 9 })
   cdAccYear!: string;
-
   @ApiPropertyOptional({
     nullable: true,
     example: '1',
     description: 'BigInt serialized as string',
   })
   cdVoucherNo!: string | null;
-
   @ApiProperty({ format: 'uuid', description: 'charge_master.chgId' })
   cdChgId!: string;
-
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   cdChgName!: string | null;
-
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  cdRole!: string | null;
-
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  cdMethod!: string | null;
-
-  @ApiProperty({ maxLength: 10, example: 'ADD' })
-  cdType!: string;
-
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  cdApplyOn!: string | null;
-
+  @ApiPropertyOptional({ enum: ChargeRole, enumName: 'ChargeRole', nullable: true })
+  cdRole!: ChargeRole | null;
+  @ApiPropertyOptional({ enum: ChargeMethod, enumName: 'ChargeMethod', nullable: true })
+  cdMethod!: ChargeMethod | null;
+  @ApiProperty({ enum: ChargeType, enumName: 'ChargeType', example: ChargeType.ADD })
+  cdType!: ChargeType;
+  @ApiPropertyOptional({ enum: ChargeApplyOn, enumName: 'ChargeApplyOn', nullable: true })
+  cdApplyOn!: ChargeApplyOn | null;
   @ApiProperty({ format: 'uuid' })
   cdLedgerCode!: string;
-
   @ApiProperty()
   cdLandingCost!: boolean;
-
-  @ApiPropertyOptional({ maxLength: 10, nullable: true })
-  cdCostAlloc!: string | null;
-
+  @ApiPropertyOptional({ enum: ChargeCostAlloc, enumName: 'ChargeCostAlloc', nullable: true })
+  cdCostAlloc!: ChargeCostAlloc | null;
   @ApiProperty()
   cdBeforeTax!: boolean;
-
   @ApiProperty()
   cdTaxApl!: boolean;
-
   @ApiProperty()
   cdSepPost!: boolean;
-
   @ApiPropertyOptional({ maxLength: 15, nullable: true })
   cdUnit!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   cdQtyVal!: number | null;
-
   @ApiPropertyOptional({ nullable: true })
   cdWeight!: number | null;
 

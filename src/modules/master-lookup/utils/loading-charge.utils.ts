@@ -4,29 +4,22 @@ import { LoadingSlabRow } from '../types/master-lookup-internal.types';
 /**
  * Weight the `auto` slab match runs against.
  *
- * An explicitly supplied weight wins, even when it is 0 — the caller weighed
- * the line and 0 is an answer. Only an absent one is derived, from the item's
- * own per-unit UOM weight (item_unit_conversion.iuc_uom_weight) times the
- * quantity; item_master carries no weight column of its own.
+ * The lookup takes no weight of its own: it is always the item's per-unit UOM
+ * weight (item_unit_conversion.iuc_uom_weight) on the conversion the selected
+ * rate hangs off, since item_master carries no weight column. Line quantity
+ * plays no part — the slab charge is flat per slab, so scaling the match weight
+ * by qty would only push a line into a heavier slab, not multiply the charge.
  *
- * Returns null when nothing is derivable — an item whose conversion row has no
+ * Returns null when there is nothing to match on — a conversion row without a
  * UOM weight cannot be slab-matched, which the caller turns into a 400 rather
  * than silently charging nothing.
  *
- * The arithmetic stays on Prisma.Decimal so a 3-decimal UOM weight times a
- * fractional qty does not pick up a binary-float tail before it reaches the
- * numeric comparison in the query.
+ * The value stays a Prisma.Decimal so a 3-decimal UOM weight reaches the
+ * numeric comparison in the query without a binary-float tail.
  */
-export function resolveLoadingWeight(
-  weight: number | undefined,
-  qty: number,
-  uomWeight: Prisma.Decimal | number,
-): Prisma.Decimal | null {
-  if (weight !== undefined) {
-    return new Prisma.Decimal(weight);
-  }
-  const derived = new Prisma.Decimal(uomWeight).mul(qty);
-  return derived.gt(0) ? derived : null;
+export function resolveLoadingWeight(uomWeight: Prisma.Decimal | number): Prisma.Decimal | null {
+  const weight = new Prisma.Decimal(uomWeight);
+  return weight.gt(0) ? weight : null;
 }
 
 /**

@@ -435,6 +435,74 @@ describe('MasterLookupService', () => {
     expect(pg.queryReadOnly).not.toHaveBeenCalled();
     expect(prisma.company.findMany).toHaveBeenCalledTimes(1);
   });
+  describe('id filter', () => {
+    const configuredCustomerGroups = (rows: unknown[]) => {
+      prisma.dropdownDetails.findMany.mockResolvedValue([
+        {
+          dropdownId: 3,
+          dropdownName: 'customerGroups',
+          dropdownSql: 'SELECT cgr_id, cgr_name FROM sales.cust_groups',
+          dropdownSqlRegional: null,
+          dropdownSortColumn: null,
+          dropdownSortOrder: null,
+          dropdownColumns: [],
+        },
+      ]);
+      pg.queryReadOnly.mockResolvedValue(pgRows(rows));
+    };
+    it('returns only the master row carrying the id', async () => {
+      prisma.itemMaster.findMany.mockResolvedValue([
+        { itemId: 'ITEM-1', itemNameEn: 'Milk' },
+        { itemId: 'ITEM-2', itemNameEn: 'Sugar' },
+      ]);
+      const result = await service.getAllMasters('items', 'ITEM-2');
+      expect(result).toEqual([{ id: 'ITEM-2', name: 'Sugar' }]);
+    });
+    it('returns an empty list when no row carries the id', async () => {
+      prisma.itemMaster.findMany.mockResolvedValue([{ itemId: 'ITEM-1', itemNameEn: 'Milk' }]);
+      await expect(service.getAllMasters('items', 'ITEM-9')).resolves.toEqual([]);
+    });
+    it('returns the whole module list when no id is given', async () => {
+      prisma.itemMaster.findMany.mockResolvedValue([
+        { itemId: 'ITEM-1', itemNameEn: 'Milk' },
+        { itemId: 'ITEM-2', itemNameEn: 'Sugar' },
+      ]);
+      const result = await service.getAllMasters('items');
+      expect(result).toEqual([
+        { id: 'ITEM-1', name: 'Milk' },
+        { id: 'ITEM-2', name: 'Sugar' },
+      ]);
+    });
+    it('matches the id a configured dropdown produced, not the underlying table PK', async () => {
+      configuredCustomerGroups([
+        { cgr_id: 'CGR-1', cgr_name: 'Retail' },
+        { cgr_id: 'CGR-2', cgr_name: 'Wholesale' },
+      ]);
+      const result = await service.getAllMasters('customerGroups', 'CGR-2');
+      expect(result).toEqual([{ id: 'CGR-2', name: 'Wholesale' }]);
+      expect(prisma.custGroup.findMany).not.toHaveBeenCalled();
+    });
+    it('narrows the single-module payload of the accounts/masters endpoint', async () => {
+      prisma.company.findMany.mockResolvedValue([
+        { compId: 'COMP-1', compName: 'Acme Pvt Ltd' },
+        { compId: 'COMP-2', compName: 'Globex' },
+      ]);
+      const result = await service.getAllAccountsAndMasterNameIds('companies', 'COMP-1');
+      expect(result).toEqual({
+        scope: 'accounts',
+        module: 'companies',
+        items: [{ id: 'COMP-1', name: 'Acme Pvt Ltd' }],
+      });
+    });
+    it('matches a numeric option id sent as a string', async () => {
+      configuredCustomerGroups([
+        { cgr_id: 1, cgr_name: 'Retail' },
+        { cgr_id: 2, cgr_name: 'Wholesale' },
+      ]);
+      const result = await service.getAllMasters('customerGroups', '2');
+      expect(result).toEqual([{ id: '2', name: 'Wholesale' }]);
+    });
+  });
   describe('getItemPriceLookup', () => {
     const ITEM_ID = 'ITEM-1';
     const priceRow = (ipmId: string, slno: number, priceA: number, branchId: string | null = null) => ({
@@ -456,7 +524,9 @@ describe('MasterLookupService', () => {
       ipmAddlCess: 0,
       ipmLoyaltyPoints: 0,
       ipmLoadingCharge: 0,
+      ipmFreightCharge: 0,
       itemUnitConversion: {
+        iucId: `IUC-${slno}`,
         iucUnitId: `UNIT-${slno}`,
         iucUnitSlno: slno,
         iucBaseUnitId: 'UNIT-BASE',
@@ -508,7 +578,7 @@ describe('MasterLookupService', () => {
         item_id: ITEM_ID,
         price_level: 1,
       } as never);
-      expect(result.unit_rate_id).toBe('IPM-1');
+      expect(result.item_uc_id).toBe('IUC-1');
       expect(result.sales_price).toBe(115);
     });
     it('prefers the branch rate over the branch-less one pricing the same unit', async () => {
@@ -523,7 +593,7 @@ describe('MasterLookupService', () => {
         branch_id: 'BRANCH-1',
         price_level: 1,
       } as never);
-      expect(result.unit_rate_id).toBe('IPM-BRANCH');
+      // Both rows price the same conversion, so the price is what tells them apart.
       expect(result.sales_price).toBe(115);
     });
     it('falls back to a branch-less rate for a unit the branch does not price', async () => {
@@ -537,7 +607,7 @@ describe('MasterLookupService', () => {
         unit_id: 'UNIT-2',
         price_level: 1,
       } as never);
-      expect(result.unit_rate_id).toBe('IPM-ALL');
+      expect(result.item_uc_id).toBe('IUC-2');
       expect(result.sales_price).toBe(250);
     });
     it('picks the highest-slno price row for a retail item', async () => {
@@ -549,7 +619,7 @@ describe('MasterLookupService', () => {
         item_id: ITEM_ID,
         price_level: 1,
       } as never);
-      expect(result.unit_rate_id).toBe('IPM-2');
+      expect(result.item_uc_id).toBe('IUC-2');
     });
     it('returns the to-base factor of the selected unit conversion row', async () => {
       mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115), priceRow('IPM-2', 2, 250)]);
@@ -558,7 +628,7 @@ describe('MasterLookupService', () => {
         unit_id: 'UNIT-2',
         price_level: 1,
       } as never);
-      expect(result.unit_id).toBe('UNIT-2');
+      expect(result.item_uc_id).toBe('IUC-2');
       expect(result.base_unit_id).toBe('UNIT-BASE');
       expect(result.base_factor).toBe(2);
     });
@@ -588,7 +658,11 @@ describe('MasterLookupService', () => {
         ilcBranchId: scope.branch === undefined ? BRANCH_ID : scope.branch,
         ilcLoadChrg,
       });
-      /** The item's per-unit UOM weight is the only weight an omitted `weight` can be derived from. */
+      /**
+       * The conversion's per-unit UOM weight is the only weight the slab match
+       * runs against — the lookup takes none from the caller — so every `auto`
+       * case sets it here rather than passing a weight in the query.
+       */
       const withUomWeight = (row: ReturnType<typeof priceRow>, iucUomWeight: number) => ({
         ...row,
         itemUnitConversion: { ...row.itemUnitConversion, iucUomWeight },
@@ -613,12 +687,13 @@ describe('MasterLookupService', () => {
         service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query } as never);
 
       it('resolves nothing and reads no slab for manual', async () => {
-        mockItemPricePrisma(itemRow(), [{ ...priceRow('IPM-1', 1, 115), ipmLoadingCharge: 99 }]);
+        mockItemPricePrisma(itemRow(), [
+          withUomWeight({ ...priceRow('IPM-1', 1, 115), ipmLoadingCharge: 99 }, 500),
+        ]);
         const result = await lookup({
           loading_type: 'manual',
           company_id: COMPANY_ID,
           branch_id: BRANCH_ID,
-          weight: 500,
         });
         expect(result.loading_charge).toBeNull();
         expect(result.resolved_weight).toBeNull();
@@ -632,9 +707,9 @@ describe('MasterLookupService', () => {
       });
       it('returns the item price master charge as stored for item_basis, weight ignored', async () => {
         mockItemPricePrisma(itemRow(), [
-          { ...priceRow('IPM-1', 1, 115), ipmLoadingCharge: 42.75 },
+          withUomWeight({ ...priceRow('IPM-1', 1, 115), ipmLoadingCharge: 42.75 }, 500),
         ]);
-        const result = await lookup({ loading_type: 'item_basis', weight: 500, qty: 4 });
+        const result = await lookup({ loading_type: 'item_basis' });
         expect(result.loading_charge).toBe(42.75);
         expect(result.resolved_weight).toBeNull();
         expect(slabQuery()).not.toHaveBeenCalled();
@@ -648,24 +723,22 @@ describe('MasterLookupService', () => {
         expect(result.loading_charge).not.toBe(0);
       });
       it('returns the matched slab charge for auto', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
         mockSlabs([slab('ILC-1', 250)]);
         const result = await lookup({
           loading_type: 'auto',
           company_id: COMPANY_ID,
           branch_id: BRANCH_ID,
-          weight: 145.5,
         });
         expect(result.loading_charge).toBe(250);
         expect(result.resolved_weight).toBe(145.5);
       });
       it('matches slabs half-open, so a boundary weight opens one slab and closes none', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 100)]);
         await lookup({
           loading_type: 'auto',
           company_id: COMPANY_ID,
           branch_id: BRANCH_ID,
-          weight: 100,
         });
         const where = slabWhere();
         // from <= 100 < to: the 0–100 slab excludes 100, the 100–200 slab takes it.
@@ -673,24 +746,22 @@ describe('MasterLookupService', () => {
         expect(where.ilcToWeight.gt.toString()).toBe('100');
       });
       it('excludes soft-deleted and inactive slabs in the query, not after the fetch', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 50)]);
         await lookup({
           loading_type: 'auto',
           company_id: COMPANY_ID,
           branch_id: BRANCH_ID,
-          weight: 50,
         });
         const where = slabWhere();
         expect(where.ilcIsDeleted).toBe(false);
         expect(where.ilcIsActive).toBe(true);
       });
       it('scopes the slab query to the caller company and branch', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 50)]);
         await lookup({
           loading_type: 'auto',
           company_id: COMPANY_ID,
           branch_id: BRANCH_ID,
-          weight: 50,
         });
         const where = slabWhere();
         // A NULL leg is the master's "applies to all" scope, never another tenant.
@@ -700,44 +771,56 @@ describe('MasterLookupService', () => {
         ]);
       });
       it('prefers the branch slab over the company-wide one when both match', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
         // Company-wide row first, so the pick is the specificity rule and not the order.
         mockSlabs([slab('ILC-COMPANY', 100, { branch: null }), slab('ILC-BRANCH', 250)]);
         const result = await lookup({
           loading_type: 'auto',
           company_id: COMPANY_ID,
           branch_id: BRANCH_ID,
-          weight: 145.5,
         });
         // The branch slab's charge, not the company-wide 100.
         expect(result.loading_charge).toBe(250);
       });
       it('returns a null charge, never 0, when no slab covers the weight', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 9999)]);
         mockSlabs([]);
         const result = await lookup({
           loading_type: 'auto',
           company_id: COMPANY_ID,
           branch_id: BRANCH_ID,
-          weight: 9999,
         });
         expect(result.loading_charge).toBeNull();
         expect(result.loading_charge).not.toBe(0);
         expect(result.resolved_weight).toBe(9999);
       });
-      it('derives the weight from the unit UOM weight × qty when none is supplied', async () => {
-        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 48.5)]);
+      it("matches on the UOM weight of the selected unit, not the item's first conversion", async () => {
+        // The slab is matched per unit: a 5 KG pack and a 60 KG pack of the same
+        // item land in different slabs, so the weight has to follow the unit the
+        // rate was picked for and not whichever conversion sorts first.
+        mockItemPricePrisma(itemRow(), [
+          withUomWeight(priceRow('IPM-1', 1, 115), 5),
+          withUomWeight(priceRow('IPM-2', 2, 250), 60),
+        ]);
         mockSlabs([slab('ILC-1', 250)]);
         const result = await lookup({
           loading_type: 'auto',
           company_id: COMPANY_ID,
           branch_id: BRANCH_ID,
-          qty: 3,
+          unit_id: 'UNIT-2',
         });
-        // Decimal arithmetic: 48.5 × 3 is 145.5, not 145.49999999999997.
-        expect(result.resolved_weight).toBe(145.5);
+        expect(result.resolved_weight).toBe(60);
       });
-      it('rejects auto with neither a weight nor a derivable one', async () => {
+      it('carries the UOM weight through as a Decimal, not a binary float', async () => {
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 48.505)]);
+        mockSlabs([slab('ILC-1', 250)]);
+        await lookup({ loading_type: 'auto', company_id: COMPANY_ID, branch_id: BRANCH_ID });
+        // The query compares against 48.505 exactly — no float tail reaches the numeric.
+        const where = slabWhere();
+        expect(where.ilcFromWeight.lte.toString()).toBe('48.505');
+        expect(where.ilcToWeight.gt.toString()).toBe('48.505');
+      });
+      it('rejects auto when the conversion carries no UOM weight to match on', async () => {
         mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 0)]);
         await expect(
           lookup({ loading_type: 'auto', company_id: COMPANY_ID, branch_id: BRANCH_ID }),
@@ -745,24 +828,76 @@ describe('MasterLookupService', () => {
         expect(slabQuery()).not.toHaveBeenCalled();
       });
       it('rejects auto without the company and branch scope the slab match needs', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
-        await expect(lookup({ loading_type: 'auto', weight: 145.5 })).rejects.toBeInstanceOf(
-          BadRequestException,
-        );
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
+        await expect(lookup({ loading_type: 'auto' })).rejects.toBeInstanceOf(BadRequestException);
         await expect(
-          lookup({ loading_type: 'auto', company_id: COMPANY_ID, weight: 145.5 }),
+          lookup({ loading_type: 'auto', company_id: COMPANY_ID }),
         ).rejects.toBeInstanceOf(BadRequestException);
         expect(slabQuery()).not.toHaveBeenCalled();
       });
       it('returns the same keys in all three modes', async () => {
-        mockItemPricePrisma(itemRow(), [priceRow('IPM-1', 1, 115)]);
+        mockItemPricePrisma(itemRow(), [withUomWeight(priceRow('IPM-1', 1, 115), 145.5)]);
         mockSlabs([slab('ILC-1', 250)]);
-        const scope = { company_id: COMPANY_ID, branch_id: BRANCH_ID, weight: 145.5 };
+        const scope = { company_id: COMPANY_ID, branch_id: BRANCH_ID };
         const manual = await lookup({ ...scope, loading_type: 'manual' });
         const itemBasis = await lookup({ ...scope, loading_type: 'item_basis' });
         const auto = await lookup({ ...scope, loading_type: 'auto' });
         expect(Object.keys(itemBasis)).toEqual(Object.keys(manual));
         expect(Object.keys(auto)).toEqual(Object.keys(manual));
+      });
+    });
+    describe('freight charge resolution', () => {
+      const withFreight = (row: ReturnType<typeof priceRow>, ipmFreightCharge: number) => ({
+        ...row,
+        ipmFreightCharge,
+      });
+      const lookup = (query: Record<string, unknown>) =>
+        service.getItemPriceLookup({ item_id: ITEM_ID, price_level: 1, ...query } as never);
+
+      it('resolves nothing for manual, even with a charge on the price row', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
+        const result = await lookup({ freight_type: 'manual' });
+        expect(result.freight_charge).toBeNull();
+      });
+      it('treats an omitted freight_type as manual, so a caller that never sent one is unchanged', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
+        const result = await lookup({});
+        expect(result.freight_charge).toBeNull();
+      });
+      it('returns ipm_freight_charge as stored for item_basis', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120.5)]);
+        const result = await lookup({ freight_type: 'item_basis' });
+        expect(result.freight_charge).toBe(120.5);
+      });
+      it('reports an unset item_basis charge as null, not 0', async () => {
+        // ipm_freight_charge is NOT NULL DEFAULT 0, so a stored 0 is how "never
+        // configured" looks — it must not reach the screen as a real 0 charge.
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 0)]);
+        const result = await lookup({ freight_type: 'item_basis' });
+        expect(result.freight_charge).toBeNull();
+        expect(result.freight_charge).not.toBe(0);
+      });
+      it('reads the charge off the selected unit rate, not the first price row', async () => {
+        mockItemPricePrisma(itemRow(), [
+          withFreight(priceRow('IPM-1', 1, 115), 20),
+          withFreight(priceRow('IPM-2', 2, 250), 90),
+        ]);
+        const result = await lookup({ freight_type: 'item_basis', unit_id: 'UNIT-2' });
+        expect(result.freight_charge).toBe(90);
+      });
+      it('does not let item_allow_freight gate the resolution — add_freight rides along separately', async () => {
+        mockItemPricePrisma(itemRow({ itemAllowFreight: false }), [
+          withFreight(priceRow('IPM-1', 1, 115), 120),
+        ]);
+        const result = await lookup({ freight_type: 'item_basis' });
+        expect(result.freight_charge).toBe(120);
+        expect(result.add_freight).toBe(false);
+      });
+      it('returns the same keys in both modes', async () => {
+        mockItemPricePrisma(itemRow(), [withFreight(priceRow('IPM-1', 1, 115), 120)]);
+        const manual = await lookup({ freight_type: 'manual' });
+        const itemBasis = await lookup({ freight_type: 'item_basis' });
+        expect(Object.keys(itemBasis)).toEqual(Object.keys(manual));
       });
     });
     describe('refreshItemPriceLookup (unit cycling)', () => {
@@ -825,9 +960,20 @@ describe('MasterLookupService', () => {
         expect(findMany).toHaveBeenCalledWith(
           expect.objectContaining({
             where: { iucItemId: ITEM_ID, iucIsDeleted: false },
-            orderBy: [{ iucToBaseFactor: 'asc' }, { iucId: 'asc' }],
+            orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
           }),
         );
+      });
+      it('cycles in the item’s unit order, not by to-base factor', async () => {
+        // An item whose extra units are fractions of base (1 KG, 0.5 KG, 0.1 KG)
+        // sorts factor-ascending in the exact reverse of its configured list, so
+        // ordering the cycle by factor would step backwards — from the first
+        // unit straight to the third.
+        const findMany = mockConversions([conversion(1), conversion(2), conversion(3)]);
+        await refresh('IUC-1');
+        const { orderBy } = findMany.mock.calls[0][0] as { orderBy: Record<string, string>[] };
+        expect(orderBy[0]).toEqual({ iucUnitSlno: 'asc' });
+        expect(JSON.stringify(orderBy)).not.toContain('iucToBaseFactor');
       });
       it('steps the cycle for a caller still holding a raw unit_id', async () => {
         mockConversions([conversion(1), conversion(2)]);

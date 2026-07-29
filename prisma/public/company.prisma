@@ -111,6 +111,7 @@ model Company {
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
   loyaltySchemes        LoyaltyScheme[]
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
+  chargeDetails         SaleChargeDetail[] @relation("CompanyChargeDetails")
   @@map("companys")
   @@schema("public")
 }

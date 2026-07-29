@@ -54,25 +54,35 @@ export class MasterLookupService {
 
   // ─── Module option lookups ──────────────────────────────────────────────────
 
-  /** Every accounts/masters module's options, or just one when `module` is given. */
-  async getAllAccountsAndMasterNameIds(module?: LookupModuleKey): Promise<MasterLookupDataPayload> {
+  /**
+   * Every accounts/masters module's options, or just one when `module` is given.
+   * `id` narrows each module to the row carrying it (see {@link fetchModuleItems}).
+   */
+  async getAllAccountsAndMasterNameIds(
+    module?: LookupModuleKey,
+    id?: string,
+  ): Promise<MasterLookupDataPayload> {
     const configuredDropdowns = await this.configuredDropdowns.loadConfigsByModule();
     if (module) {
-      const items = await this.fetchModuleItems(module, configuredDropdowns);
+      const items = await this.fetchModuleItems(module, configuredDropdowns, id);
       return this.toSingleModulePayload(module, items);
     }
-    const byModule = await this.fetchModules(LOOKUP_MODULE_KEYS, configuredDropdowns);
+    const byModule = await this.fetchModules(LOOKUP_MODULE_KEYS, configuredDropdowns, id);
     return {
       accounts: pickModules(byModule, ACCOUNT_LOOKUP_MODULE_KEYS),
       masters: pickModules(byModule, MASTER_LOOKUP_MODULE_KEYS),
     };
   }
 
-  /** The master modules' options flattened into one `{ id, name }` list. */
-  async getAllMasters(module?: LookupModuleKey): Promise<NameIdOption[]> {
+  /**
+   * The master modules' options flattened into one `{ id, name }` list. `id`
+   * narrows it to the single row carrying that id — one entry when the module
+   * owns it, none when it does not.
+   */
+  async getAllMasters(module?: LookupModuleKey, id?: string): Promise<NameIdOption[]> {
     const configuredDropdowns = await this.configuredDropdowns.loadConfigsByModule();
     const moduleKeys: readonly LookupModuleKey[] = module ? [module] : MASTER_LOOKUP_MODULE_KEYS;
-    const byModule = await this.fetchModules(moduleKeys, configuredDropdowns);
+    const byModule = await this.fetchModules(moduleKeys, configuredDropdowns, id);
     return Object.values(byModule)
       .flat()
       .map((item) => ({ id: item.id, name: item.name }));
@@ -242,17 +252,35 @@ export class MasterLookupService {
   private async fetchModules<TKey extends LookupModuleKey>(
     moduleKeys: readonly TKey[],
     configuredDropdowns: Map<LookupModuleKey, DropdownLookupConfig>,
+    id?: string,
   ): Promise<Record<TKey, NameIdOption[]>> {
     const entries = await Promise.all(
       moduleKeys.map(
-        async (key) => [key, await this.fetchModuleItems(key, configuredDropdowns)] as const,
+        async (key) => [key, await this.fetchModuleItems(key, configuredDropdowns, id)] as const,
       ),
     );
     return Object.fromEntries(entries) as Record<TKey, NameIdOption[]>;
   }
 
-  /** The configured dropdown of a module, falling back to its Prisma query. */
+  /**
+   * The configured dropdown of a module, falling back to its Prisma query.
+   *
+   * `id` is matched on the produced option id rather than pushed into the query:
+   * a module's option id is not always its table PK (hsnCodes key on hsn_code,
+   * stateCodes on state_code) and a configured dropdown's id column is whatever
+   * its stored SQL selects. Matching what the caller was handed keeps a by-id
+   * read consistent with the list it came from, on both paths.
+   */
   private async fetchModuleItems(
+    module: LookupModuleKey,
+    configuredDropdowns: Map<LookupModuleKey, DropdownLookupConfig>,
+    id?: string,
+  ): Promise<NameIdOption[]> {
+    const items = await this.fetchAllModuleItems(module, configuredDropdowns);
+    return id === undefined ? items : items.filter((item) => String(item.id) === id);
+  }
+
+  private async fetchAllModuleItems(
     module: LookupModuleKey,
     configuredDropdowns: Map<LookupModuleKey, DropdownLookupConfig>,
   ): Promise<NameIdOption[]> {

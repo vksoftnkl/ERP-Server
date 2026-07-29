@@ -34,6 +34,7 @@ import { UsersModule } from '../modules/users/users.module';
 import { MasterLookupModule } from '../modules/master-lookup/master-lookup.module';
 import { BatchPrefixModule } from '../modules/master/batch-prefix/batch-prefix.module';
 import { ChargeMasterModule } from '../modules/master/charge-master/charge-master.module';
+import { ChargeDetailModule } from '../modules/master/charge-detail/charge-detail.module';
 import { SupplierGroupModule } from '../modules/purchase/supplier-group/supplier-group.module';
 import { SuppliersModule } from '../modules/purchase/suppliers/suppliers.module';
 import { StateModule } from '../modules/sales/state/state.module';
@@ -95,6 +96,12 @@ export const swaggerModuleDocuments = [
     title: 'Charge Master API',
     description: 'Charge master (shared sales/purchase additional charges) endpoints',
     include: [ChargeMasterModule],
+  },
+  {
+    path: 'charge-details',
+    title: 'Charge Detail API',
+    description: 'Per-document applied charge lines (sale_charge_detail) endpoints',
+    include: [ChargeDetailModule],
   },
   {
     path: 'items-group-master',

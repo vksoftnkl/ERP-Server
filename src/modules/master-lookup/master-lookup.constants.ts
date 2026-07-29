@@ -1,4 +1,4 @@
-import { LoadingType, LookupModuleKey } from './types/master-lookup-api.types';
+import { FreightType, LoadingType, LookupModuleKey } from './types/master-lookup-api.types';
 
 /**
  * Accepted `loading_type` values, in the order the 400 message lists them.
@@ -10,8 +10,14 @@ export const LOADING_TYPES: readonly LoadingType[] = ['manual', 'item_basis', 'a
 /** `loading_type` a request without one is resolved as. */
 export const DEFAULT_LOADING_TYPE: LoadingType = 'manual';
 
-/** Quantity `auto` derives a weight with when the caller sends none. */
-export const DEFAULT_LOADING_QTY = 1;
+/**
+ * Accepted `freight_type` values. No `auto`: freight slabs are matched on
+ * distance, which the item-price lookup is never given.
+ */
+export const FREIGHT_TYPES: readonly FreightType[] = ['manual', 'item_basis'];
+
+/** `freight_type` a request without one is resolved as. */
+export const DEFAULT_FREIGHT_TYPE: FreightType = 'manual';
 
 /** Dropped when normalizing a dropdown/module name, so "Item Master" ≡ "items". */
 export const LOOKUP_NAME_NOISE_TOKENS = new Set(['master', 'lookup', 'dropdown']);

@@ -270,10 +270,11 @@ export class CustomerDetailSuccessDto {
 export class ItemPriceLookupPayloadDto {
   @ApiProperty({ format: 'uuid' })
   item_id!: string;
-  @ApiProperty({ format: 'uuid' })
-  unit_id!: string;
-  @ApiProperty({ format: 'uuid', description: 'item_price_master PK (ipm_id) the rate was taken from' })
-  unit_rate_id!: string;
+  @ApiProperty({
+    format: 'uuid',
+    description: 'item_unit_conversion PK (iuc_id) the selected rate hangs off',
+  })
+  item_uc_id!: string;
   @ApiProperty({ format: 'uuid' })
   godown_id!: string;
   @ApiProperty()
@@ -359,9 +360,16 @@ export class ItemPriceLookupPayloadDto {
     example: 145.5,
     nullable: true,
     description:
-      'Weight the slab was matched on (supplied weight, else iuc_uom_weight × qty). Null for manual and item_basis, which ignore weight.',
+      "Weight the slab was matched on — the selected unit's iuc_uom_weight. Null for manual and item_basis, which ignore weight.",
   })
   resolved_weight!: number | null;
+  @ApiProperty({
+    example: 120,
+    nullable: true,
+    description:
+      'Resolved freight charge (item_price_master.ipm_freight_charge). Null means nothing was resolved — manual entry or an unset item master value. Never 0-as-unknown.',
+  })
+  freight_charge!: number | null;
   @ApiProperty({ example: 0 })
   loyalty_pv!: number;
   @ApiProperty({ nullable: true, example: 0 })

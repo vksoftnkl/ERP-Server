@@ -23,6 +23,18 @@ export interface FiscalYearOption {
 export type LoadingType = 'manual' | 'item_basis' | 'auto';
 
 /**
+ * Voucher-level freight mode. It decides where the item-price lookup resolves
+ * `freight_charge` from:
+ *  - `manual`     — nothing is resolved; the user types the charge in.
+ *  - `item_basis` — the charge stored on the item's price row.
+ *
+ * There is no `auto` counterpart to `LoadingType`'s: freight slabs
+ * (`sale_freight_charges`) are matched on distance, which this lookup is never
+ * given — `GET /freight-charges/charge?distance=` resolves those.
+ */
+export type FreightType = 'manual' | 'item_basis';
+
+/**
  * A freight-charge slab row (`sale_freight_charges`). `iflag = 9` returns the
  * slabs matching a given distance. Loading/unloading charges are weight-slab
  * based and live separately in `sale_loading_charges`.
@@ -112,9 +124,11 @@ export interface ItemUnitCyclePayload {
  */
 export interface ItemPriceLookupPayload {
   item_id: string;
-  unit_id: string;
-  /** item_price_master PK (ipm_id) — the pricing hub the rate was taken from. */
-  unit_rate_id: string;
+  /**
+   * item_unit_conversion PK (iuc_id) of the conversion the selected rate hangs
+   * off — the item-scoped unit reference the entry screens carry.
+   */
+  item_uc_id: string;
   // NULL when the selected price row is not scoped to a godown.
   godown_id: string | null;
   godown_name: string;
@@ -163,6 +177,10 @@ export interface ItemPriceLookupPayload {
   loading_charge: number | null;
   /** Weight the slab was matched on — `auto` only, else null (manual / item_basis ignore weight). */
   resolved_weight: number | null;
+  // Freight charge — resolved server-side from `freight_type`. Present in both
+  // modes; only the value differs.
+  /** Resolved charge (item_price_master.ipm_freight_charge). NULL means "nothing to apply" — manual entry or an unset master value. */
+  freight_charge: number | null;
   // Loyalty
   loyalty_pv: number;
   // Stock (null when no accounting year supplied)

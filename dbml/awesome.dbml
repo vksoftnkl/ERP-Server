@@ -140,6 +140,7 @@ Table acc_ledger_master {
   accountingEntries acc_vouchers [not null]
   oppositeAccountingEntries acc_vouchers [not null]
   chargeMasters charge_master [not null]
+  chargeDetails sale_charge_detail [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -1990,6 +1991,7 @@ Table branch_master {
   loyaltySchemes loyalty_sch_list [not null]
   deviceMasters device_master [not null]
   saleAgents sale_agents [not null]
+  chargeDetails sale_charge_detail [not null]
 }
 
 Table charge_master {
@@ -2126,6 +2128,7 @@ Table companys {
   physicalStockBatchDetails physical_stock_batch_detail [not null]
   loyaltySchemes loyalty_sch_list [not null]
   saleAgents sale_agents [not null]
+  chargeDetails sale_charge_detail [not null]
 }
 
 Table company_group_master {
@@ -2231,6 +2234,9 @@ Table sale_charge_detail {
   cdModifiedOn DateTime
   cdModifiedBy String
   charge charge_master [not null]
+  ledger acc_ledger_master [not null]
+  company companys [not null]
+  branch branch_master [not null]
 
   Note: 'Per-document applied charges — freight, loading, packing, cash discount, etc.
 One row per charge line on a document, shared by every module (sales,
@@ -2945,6 +2951,9 @@ Table sale_quotation {
   sqCreatedBy String [not null]
   sqModifiedOn DateTime
   sqModifiedBy String
+  sqFreightCalcType String
+  sqLoadingCalcType String
+  sqDiscAlterBase Boolean
   parentQuote sale_quotation
   revisions sale_quotation [not null]
   items sale_quotation_item [not null]
@@ -3051,6 +3060,9 @@ Table sale_quotation_item {
   sqiCreatedBy String [not null]
   sqiModifiedOn DateTime
   sqiModifiedBy String
+  sqiNetGross Decimal
+  sqiChrgBeforeTax Decimal
+  sqiChrgAfterTax Decimal
   quote sale_quotation [not null]
   item item_master [not null]
   priceLevel item_price_levels [not null]
@@ -3724,6 +3736,12 @@ Ref: companys.compStylesheetId > app_theme_master.thmId
 Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
 
 Ref: sale_charge_detail.cdChgId > charge_master.chgId [delete: No Action]
+
+Ref: sale_charge_detail.cdLedgerCode > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: sale_charge_detail.cdCompId > companys.compId [delete: Restrict]
+
+Ref: sale_charge_detail.cdBranchId > branch_master.brId [delete: Restrict]
 
 Ref: user_menus.umUserId > user_master.usrId
 

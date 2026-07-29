@@ -78,17 +78,29 @@ model SaleChargeDetail {
   cdModifiedBy    String?   @db.Uuid                                       @map("cd_modified_by")
 
   // Relations
-  charge          ChargeMaster @relation(fields: [cdChgId], references: [chgId], onUpdate: NoAction, onDelete: NoAction, map: "fk_cd_charge")
+  charge          ChargeMaster    @relation(fields: [cdChgId], references: [chgId], onUpdate: NoAction, onDelete: NoAction, map: "fk_cd_charge")
+  // The GL ledger the charge posts to. Restrict on delete: a ledger that has
+  // been posted to on any document must not disappear from under it.
+  ledger          AccLedgerMaster @relation(fields: [cdLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_ledger")
+  company         Company         @relation("CompanyChargeDetails", fields: [cdCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_company")
+  branch          BranchMaster    @relation("BranchChargeDetails", fields: [cdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_branch")
 
   // Fetch all charge lines for one document (the hot path on entry load).
   @@index([cdDocType, cdDocId], map: "ix_sale_charge_detail_doc")
+  @@index([cdChgId], map: "ix_sale_charge_detail_chg")
+  @@index([cdLedgerCode], map: "ix_sale_charge_detail_ledger")
+  @@index([cdCompId], map: "ix_sale_charge_detail_comp")
+  @@index([cdBranchId], map: "ix_sale_charge_detail_branch")
   @@map("sale_charge_detail")
   @@schema("public")
   // DB-only constraints not expressible in the Prisma schema (migrations
   // 20260728130000_create_sale_charge_detail and
   // 20260728140000_sale_charge_detail_check_constraints); Prisma ignores CHECK
-  // constraints, so they stay DB-side and are mirrored app-side by
-  // CHARGE_DETAIL_VALUE_GUARDS:
+  // constraints, so they stay DB-side. The value sets are mirrored app-side as
+  // the TypeScript enums in
+  // src/modules/master/charge-master/types/charge-enum.ts (ChargeDocType /
+  // ChargeType / ChargeMethod / ChargeApplyOn / ChargeCostAlloc), which the DTOs
+  // and CHARGE_DETAIL_VALUE_GUARDS both read — keep the two in step:
   //   - ck_cd_tax_apl    NOT (cd_tax_apl AND cd_before_tax)
   //     Taxed at the item rate, or carrying its own GST — never both.
   //   - ck_cd_doc_type   PURCHASE | SALES | GRN | QUOTATION | INVOICE
@@ -96,6 +108,7 @@ model SaleChargeDetail {
   //   - ck_cd_method     FIXED | QTY | NET_QTY | KG | QTL | TON | PERCENT (nullable)
   //   - ck_cd_apply_on   FLAT | QTY | VALUE | WEIGHT (nullable)
   //   - ck_cd_cost_alloc VALUE | QTY | WEIGHT (nullable)
-  // cd_ledger_code / cd_tax_code / cd_comp_id / cd_branch_id carry NO FK by
-  // design (matches the authored DDL) — do not add relations for them.
+  // cd_ledger_code / cd_comp_id / cd_branch_id gained their FKs in migration
+  // 20260728150000_sale_charge_detail_relations. cd_tax_code still carries NO
+  // FK: the value is a snapshot and no module writes it from a tax master yet.
 }

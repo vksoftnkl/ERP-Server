@@ -5,6 +5,23 @@ import type {
   ModuleApiSuccessResponse,
 } from 'src/common/types/module-api.types';
 import type { ModuleListMeta } from 'src/common/types/module-list.types';
+import {
+  ChargeApplyOn,
+  ChargeCostAlloc,
+  ChargeDocType,
+  ChargeMethod,
+  ChargeRole,
+  ChargeType,
+} from './charge-enum';
+// Re-exported so a consumer can reach the enums through either entry point.
+export {
+  ChargeApplyOn,
+  ChargeCostAlloc,
+  ChargeDocType,
+  ChargeMethod,
+  ChargeRole,
+  ChargeType,
+} from './charge-enum';
 export type ChargeMasterErrorDetail = ModuleApiErrorDetail;
 export type ChargeMasterErrorResponse = ModuleApiErrorResponse<ChargeMasterErrorDetail>;
 export type ChargeMasterSuccessResponse<
@@ -18,19 +35,17 @@ export type ChargeMasterListMeta = ModuleListMeta;
 // ck_chg_type / ck_chg_apply_on / ck_chg_cost_alloc), dropped in migration
 // 20260724130000_drop_charge_master_check_constraints — the module is now the
 // only place they are enforced.
+//
+// Every set except chgModule is defined by an enum in ./charge-enum (the cd_*
+// columns are snapshots of these, so they share one definition); the arrays here
+// are the runtime lists the `@IsIn` decorators and the guards below consume, and
+// are derived from the enums so the two can never drift.
 export const CHARGE_MODULES = ['P', 'S', 'B'] as const;
-export const CHARGE_ROLES = [
-  'FREIGHT',
-  'LOADING',
-  'UNLOADING',
-  'CASH_DISC',
-  'OTHERS',
-  'NONE',
-] as const;
-export const CHARGE_METHODS = ['FIXED', 'PERCENT','QTY','NET_QTY','KG','QTL','TON'] as const;
-export const CHARGE_TYPES = ['ADD', 'DEDUCT'] as const;
-export const CHARGE_APPLY_ONS = ['FLAT', 'QTY', 'VALUE', 'WEIGHT'] as const;
-export const CHARGE_COST_ALLOCS = ['VALUE', 'QTY', 'WEIGHT'] as const;
+export const CHARGE_ROLES = Object.values(ChargeRole);
+export const CHARGE_METHODS = Object.values(ChargeMethod);
+export const CHARGE_TYPES = Object.values(ChargeType);
+export const CHARGE_APPLY_ONS = Object.values(ChargeApplyOn);
+export const CHARGE_COST_ALLOCS = Object.values(ChargeCostAlloc);
 // A charge tagged B ("both") is shared by purchase and sales, so a lookup for
 // either module has to pick it up as well; a lookup for B stays exact.
 export const CHARGE_MODULE_LOOKUP = {
@@ -70,14 +85,14 @@ export type ChargeGuardedField = (typeof CHARGE_VALUE_GUARDS)[number]['field'];
 export type ChargeGuardedValues = Partial<Record<ChargeGuardedField, string | null | undefined>>;
 // ---------------------------------------------------------------------------
 // sale_charge_detail (the per-document applied charge). Its cd_* enum columns
-// are SNAPSHOTS of the charge master, so the allowed sets are the same lists —
-// but unlike charge_master these ARE still CHECK constraints in the database
+// are SNAPSHOTS of the charge master, so they reuse the same enums — but unlike
+// charge_master these ARE still CHECK constraints in the database
 // (ck_cd_doc_type / ck_cd_type / ck_cd_method / ck_cd_apply_on /
 // ck_cd_cost_alloc, migration 20260728140000). The guards below let a module
 // reject a bad value with a 400 before Postgres raises a raw 23514.
 // ---------------------------------------------------------------------------
 // Which module's document a charge line hangs off (cd_doc_id is polymorphic).
-export const CHARGE_DOC_TYPES = ['PURCHASE', 'SALES', 'GRN', 'QUOTATION', 'INVOICE'] as const;
+export const CHARGE_DOC_TYPES = Object.values(ChargeDocType);
 // One entry per CHECK constraint, in the order the columns are declared, plus
 // cdRole — which has no ck_cd_role in the DB but is still a snapshot of
 // chg_role, so it is worth guarding app-side. `nullable` mirrors the

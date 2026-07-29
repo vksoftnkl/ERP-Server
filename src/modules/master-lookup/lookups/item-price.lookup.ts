@@ -8,7 +8,7 @@ import {
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { ItemPriceLookupQueryDto } from '../dto/item-price-lookup-query.dto';
 import { ItemPriceRefreshQueryDto } from '../dto/item-price-refresh-query.dto';
-import { DEFAULT_LOADING_QTY, DEFAULT_LOADING_TYPE } from '../master-lookup.constants';
+import { DEFAULT_FREIGHT_TYPE, DEFAULT_LOADING_TYPE } from '../master-lookup.constants';
 import { ItemPriceLookupPayload, ItemUnitCyclePayload } from '../types/master-lookup-api.types';
 import { PriceRowWithUnit } from '../types/master-lookup-internal.types';
 import {
@@ -69,9 +69,15 @@ export class ItemPriceLookup {
   /**
    * The conversion one step along the item's unit list from `iucId`.
    *
-   * The order has to be stable or the cycle would visit units differently on
-   * each call: to-base factor ascending puts the base unit first and the packs
-   * above it, with the conversion PK breaking ties.
+   * The order is the item's own unit serial (iuc_unit_slno) — the order the
+   * unit list is configured and displayed in, and the one /item-price already
+   * ranks its price rows by — so "next" here is the next unit on screen. The
+   * conversion PK breaks ties, since slno is not unique per item.
+   *
+   * NOT to-base factor: that only happens to put the base unit first when the
+   * item's other units are larger than base (BOX = 12 PCS). An item whose extra
+   * units are fractions of base (0.5 KG, 0.1 KG) sorts factor-ascending in the
+   * exact reverse of its list, and the cycle would then skip backwards.
    *
    * item_unit_conversion is keyed by item alone — it carries no company or
    * branch column — so the cycle is not scoped further.
@@ -79,7 +85,7 @@ export class ItemPriceLookup {
   private async resolveNextIucId(itemId: string, iucId: string): Promise<string> {
     const rows = await this.prisma.itemUnitConversion.findMany({
       where: { iucItemId: itemId, iucIsDeleted: false },
-      orderBy: [{ iucToBaseFactor: 'asc' }, { iucId: 'asc' }],
+      orderBy: [{ iucUnitSlno: 'asc' }, { iucId: 'asc' }],
       select: { iucId: true, iucUnitId: true },
     });
     return nextIucIdInCycle(rows, iucId);
@@ -97,9 +103,11 @@ export class ItemPriceLookup {
    *  - `item_basis` reads item_price_master.ipm_loading_charge off the rate row
    *    already selected. The column is NOT NULL DEFAULT 0, so "not configured"
    *    is indistinguishable from a stored 0 — 0 is reported as null.
-   *  - `auto` matches a sale_loading_charges weight slab. Both scope columns
-   *    are required here even though they are optional on the lookup itself:
-   *    an unscoped slab match would be a cross-tenant read.
+   *  - `auto` matches a sale_loading_charges weight slab on the selected
+   *    conversion's own UOM weight — the lookup takes no weight or qty from the
+   *    caller. Both scope columns are required here even though they are
+   *    optional on the lookup itself: an unscoped slab match would be a
+   *    cross-tenant read.
    */
   private async resolveLoadingCharge(
     query: ItemPriceLookupQueryDto,
@@ -129,16 +137,12 @@ export class ItemPriceLookup {
         },
       ]);
     }
-    const weight = resolveLoadingWeight(
-      query.weight,
-      query.qty ?? DEFAULT_LOADING_QTY,
-      rate.itemUnitConversion.iucUomWeight,
-    );
+    const weight = resolveLoadingWeight(rate.itemUnitConversion.iucUomWeight);
     if (weight === null) {
       throwMasterBadRequest<MasterErrorDetail>('Validation failed', [
         {
-          field: 'weight',
-          message: `loading_type 'auto' needs a weight: none was supplied and the item's unit conversion carries no UOM weight to derive one from`,
+          field: 'item_id',
+          message: `loading_type 'auto' needs a weight: the item's unit conversion carries no UOM weight to match a slab on`,
         },
       ]);
     }
@@ -172,11 +176,38 @@ export class ItemPriceLookup {
       };
     }
     return {
-      // Flat per slab: the slab's charge applies whole, unmultiplied by weight
-      // or qty. sale_loading_charges carries no charge-mode column to vary that.
+      // Flat per slab: the slab's charge applies whole, unmultiplied by the
+      // weight. sale_loading_charges carries no charge-mode column to vary that.
       loading_charge: toNullableNumber(slab.ilcLoadChrg),
       resolved_weight: resolvedWeight,
     };
+  }
+
+  /**
+   * Resolves the freight charge the voucher line should carry, the same way
+   * `resolveLoadingCharge` does for loading: one key, one shape, whichever mode
+   * the voucher is in. A null charge always means "nothing resolved", never
+   * "zero", so the screen unlocks the field instead of billing 0.
+   *
+   *  - `manual`     resolves nothing and touches no column.
+   *  - `item_basis` reads item_price_master.ipm_freight_charge off the rate row
+   *    already selected. The column is NOT NULL DEFAULT 0, so "not configured"
+   *    is indistinguishable from a stored 0 — 0 is reported as null.
+   *
+   * There is no `auto` mode: sale_freight_charges is distance-slab based and
+   * this lookup is never given a distance — /freight-charges/charge resolves
+   * those. item_allow_freight does not gate this either; it rides along as
+   * `add_freight` for the screen to act on.
+   */
+  private resolveFreightCharge(
+    query: ItemPriceLookupQueryDto,
+    rate: PriceRowWithUnit,
+  ): number | null {
+    if ((query.freight_type ?? DEFAULT_FREIGHT_TYPE) === 'manual') {
+      return null;
+    }
+    const charge = toNumber(rate.ipmFreightCharge);
+    return charge > 0 ? charge : null;
   }
 
   async getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload> {
@@ -307,8 +338,9 @@ export class ItemPriceLookup {
         );
     return {
       item_id: itemRecord.itemId,
-      unit_id: rateUnitId,
-      unit_rate_id: rate.ipmId,
+      // The conversion PK, not the raw unit: it is what the screens hold and
+      // what /item-price-refresh cycles over.
+      item_uc_id: rate.itemUnitConversion.iucId,
       godown_id: godownId ?? null,
       godown_name: godown?.gdlName ?? '',
       item_code: itemRecord.itemCode,
@@ -345,6 +377,8 @@ export class ItemPriceLookup {
       iuc_uom_weight: toNumber(rate.itemUnitConversion.iucUomWeight),
       decimal_count: unit?.unit_decimal_count ?? 0,
       ...loading,
+      // Resolved off the rate row already in hand, so no extra query.
+      freight_charge: this.resolveFreightCharge(query, rate),
       loyalty_pv: itemRecord.itemAllowLoyalty ? toNumber(rate.ipmLoyaltyPoints) : 0,
       stock,
       reorder_qty: reorderQty,

@@ -112,6 +112,12 @@ model SaleQuotation {
   sqCreatedBy        String    @db.Text @map("sq_created_by")
   sqModifiedOn       DateTime? @db.Timestamptz(6) @map("sq_modified_on")
   sqModifiedBy       String?   @db.Text @map("sq_modified_by")
+  // charge calculation preferences -- ChargeMethod snapshot
+  // (FIXED / QTY / NET_QTY / KG / QTL / TON / PERCENT), no DB check constraint
+  sqFreightCalcType  String?   @db.VarChar(12) @map("sq_freight_calc_type")
+  sqLoadingCalcType  String?   @db.VarChar(12) @map("sq_loading_calc_type")
+  // true = discounts change the basis the charges are computed on
+  sqDiscAlterBase    Boolean?  @map("sq_disc_alter_base")
   // Relations
   parentQuote SaleQuotation?      @relation("SaleQuotationRevisions", fields: [sqParentQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sq_parent")
   revisions   SaleQuotation[]     @relation("SaleQuotationRevisions")

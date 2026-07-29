@@ -33,7 +33,6 @@ import {
 } from './dto/quotation-response.dto';
 import { QuotationPayload, QuotationSuccessResponse } from './types/quotation-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Quotations')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -42,7 +41,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(QuotationExceptionFilter)
 export class QuotationController {
   constructor(private readonly quotationService: QuotationService) {}
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update quotation (by sqId presence)' })
@@ -62,7 +60,6 @@ export class QuotationController {
       data,
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get quotation by id' })
@@ -86,7 +83,6 @@ export class QuotationController {
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete quotation by id' })

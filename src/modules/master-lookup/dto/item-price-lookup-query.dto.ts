@@ -4,7 +4,6 @@ import { Transform } from 'class-transformer';
 import { IsIn, IsOptional } from 'class-validator';
 import { toOptionalTrimmedString } from 'src/common/dto/DtoTransforms';
 import {
-  OptionalNumber,
   OptionalQueryBoolean,
   OptionalTrimmedString,
   OptionalUuid,
@@ -12,22 +11,24 @@ import {
   RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
 import {
-  DEFAULT_LOADING_QTY,
+  DEFAULT_FREIGHT_TYPE,
   DEFAULT_LOADING_TYPE,
+  FREIGHT_TYPES,
   LOADING_TYPES,
 } from '../master-lookup.constants';
-import { LoadingType } from '../types/master-lookup-api.types';
+import { FreightType, LoadingType } from '../types/master-lookup-api.types';
 /**
- * `loading_type` as a closed set. The value is lower-cased before matching so a
- * screen sending `AUTO` is not rejected, and the rejection message spells the
- * allowed values out — the caller cannot guess them from a bare "invalid value".
+ * A voucher-level charge mode (`loading_type`, `freight_type`) as a closed set.
+ * The value is lower-cased before matching so a screen sending `AUTO` is not
+ * rejected, and the rejection message spells the allowed values out — the caller
+ * cannot guess them from a bare "invalid value".
  */
-const OptionalLoadingType = () =>
+const OptionalChargeMode = (field: string, values: readonly string[]) =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toOptionalTrimmedString(value)?.toLowerCase()),
-    IsIn(LOADING_TYPES, {
-      message: `loading_type must be one of: ${LOADING_TYPES.join(', ')}`,
+    IsIn(values, {
+      message: `${field} must be one of: ${values.join(', ')}`,
     }),
   );
 export class ItemPriceLookupQueryDto {
@@ -75,29 +76,16 @@ export class ItemPriceLookupQueryDto {
     description:
       "Voucher-level loading mode the loading charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own charge; auto = the weight slab in sale_loading_charges, which also requires company_id and branch_id. Omitted is manual.",
   })
-  @OptionalLoadingType()
+  @OptionalChargeMode('loading_type', LOADING_TYPES)
   loading_type?: LoadingType;
   @ApiPropertyOptional({
-    minimum: 0,
+    enum: FREIGHT_TYPES,
+    default: DEFAULT_FREIGHT_TYPE,
     description:
-      "Line weight the auto slab is matched on. Optional: without it the weight is derived from the resolved unit's iuc_uom_weight × qty. Ignored by manual and item_basis.",
+      "Voucher-level freight mode the freight charge is resolved with. manual = nothing resolved (user types it in); item_basis = the item price row's own ipm_freight_charge. Omitted is manual. There is no auto: freight slabs are matched on distance, which this lookup is not given.",
   })
-  @OptionalNumber(0)
-  weight?: number;
-  @ApiPropertyOptional({
-    minimum: 0,
-    default: DEFAULT_LOADING_QTY,
-    description: 'Line quantity the derived weight is computed with. Defaults to 1.',
-  })
-  @OptionalNumber(0)
-  qty?: number;
-  @ApiPropertyOptional({
-    maxLength: 20,
-    description:
-      "Voucher-level freight type, returned as-is in freight_type. When omitted, freight_type falls back to 'Y' / 'N' from the item's item_allow_freight flag.",
-  })
-  @OptionalTrimmedString(20)
-  freight_type?: string;
+  @OptionalChargeMode('freight_type', FREIGHT_TYPES)
+  freight_type?: FreightType;
   @ApiProperty({
     minimum: 1,
     maximum: 7,

@@ -35,6 +35,13 @@ migration `20260724120000_create_charge_master`).
   `20260724130000_drop_charge_master_check_constraints`, so this module is the
   only place the allowed values are defined. `chgRole` and `chgCostAlloc` accept
   `null`; fields absent from an update request are left untouched.
+  - Every set except `chgModule` is defined by an enum in
+    [`types/charge-enum.ts`](types/charge-enum.ts) — `ChargeRole`, `ChargeMethod`,
+    `ChargeType`, `ChargeApplyOn`, `ChargeCostAlloc`, plus `ChargeDocType` for the
+    `sale_charge_detail` discriminator. The `CHARGE_*` arrays this module's `@IsIn`
+    lists and guards consume are derived from those enums, so the two cannot
+    drift; the charge-detail DTOs type their `cd_*` fields with the enums directly
+    (`@IsEnum`).
 - **Uniqueness**
   - `chgCode` — unique (case-insensitive) among non-deleted rows.
   - `chgRole` — at most one of `FREIGHT / LOADING / UNLOADING / CASH_DISC /

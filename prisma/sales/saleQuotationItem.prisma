@@ -105,6 +105,10 @@ model SaleQuotationItem {
   sqiCreatedBy       String    @db.Text @map("sqi_created_by")
   sqiModifiedOn      DateTime? @db.Timestamptz(6) @map("sqi_modified_on")
   sqiModifiedBy      String?   @db.Text @map("sqi_modified_by")
+  // line net/gross basis + charges split by where they land relative to tax
+  sqiNetGross        Decimal?  @db.Decimal(14, 4) @map("sqi_net_gross")
+  sqiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sqi_chrg_before_tax")
+  sqiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sqi_chrg_after_tax")
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")

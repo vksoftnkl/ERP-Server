@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum } from 'class-validator';
 import {
   NullableNumber,
@@ -8,58 +8,77 @@ import {
   OptionalInteger,
   OptionalUpperMaxString,
   OptionalUuid,
-  RequiredUuid,
 } from 'src/common/dto/dtoDecorators';
 import {
   ChargeApplyOn,
   ChargeCostAlloc,
+  ChargeDocType,
   ChargeMethod,
   ChargeRole,
   ChargeType,
-} from '../../../master/charge-master/types/charge-enum';
+} from '../types/charge-detail-api.types';
 
-// One applied charge line on a quotation (sale_charge_detail row with
-// cdDocType = 'QUOTATION'). Every cd* value except the amounts is a SNAPSHOT of
-// the charge master taken at save time, so the client sends them explicitly
-// rather than the server re-reading the master on each save.
-export class SaveQuotationChargeDto {
+// One sale_charge_detail row. Nothing is required by the decorators: a create
+// needs the document scope plus the two references, an update needs only cdId
+// and the fields that change, so "required on create" is enforced in the service
+// (ChargeDetailService.requireField) where the stored row is available to fill
+// the gaps.
+export class SaveChargeDetailDto {
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'When provided, updates the existing charge line; otherwise a new line is created',
+    description: 'When provided, updates that charge line; otherwise a new line is created',
   })
   @OptionalUuid()
   cdId?: string;
 
-  @ApiPropertyOptional({ description: 'Defaults to the 1-based position within the charges array' })
+  @ApiPropertyOptional({
+    enum: ChargeDocType,
+    enumName: 'ChargeDocType',
+    description: "Parent document's module. Required on create, immutable afterwards",
+  })
+  @OptionalUpperMaxString(12)
+  @IsEnum(ChargeDocType)
+  cdDocType?: ChargeDocType;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Parent document id. Required on create, immutable afterwards',
+  })
+  @OptionalUuid()
+  cdDocId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Line order within the document. Defaults to the next free number',
+  })
   @OptionalInteger()
   cdSlno?: number;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Defaults to the parent quotation scope' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Required on create' })
   @OptionalUuid()
   cdCompId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Defaults to the parent quotation scope' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Required on create' })
   @OptionalUuid()
   cdBranchId?: string;
 
   @ApiPropertyOptional({
     minLength: 9,
     maxLength: 9,
-    description: 'Defaults to the parent quotation scope',
+    description: 'Accounting year, e.g. 2026-2027. Required on create',
   })
   @NullableStringStrict(9)
   cdAccYear?: string;
 
-  @ApiPropertyOptional({
-    nullable: true,
-    description: "Defaults to the quotation's sqQuoteSlno",
-  })
+  @ApiPropertyOptional({ nullable: true, description: "Parent document's voucher number" })
   @NullableNumber()
   cdVoucherNo?: string | number | null;
 
-  @ApiProperty({ format: 'uuid', description: 'charge_master.chgId' })
-  @RequiredUuid()
-  cdChgId!: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'charge_master.chgId. Required on create',
+  })
+  @OptionalUuid()
+  cdChgId?: string;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true, description: 'Snapshot of chgName' })
   @NullableStringStrict(100)
@@ -95,9 +114,12 @@ export class SaveQuotationChargeDto {
   @IsEnum(ChargeApplyOn)
   cdApplyOn?: ChargeApplyOn | null;
 
-  @ApiProperty({ format: 'uuid', description: 'GL ledger this charge posts to' })
-  @RequiredUuid()
-  cdLedgerCode!: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'GL ledger this charge posts to. Required on create',
+  })
+  @OptionalUuid()
+  cdLedgerCode?: string;
 
   @ApiPropertyOptional({ default: false, description: 'Purchase: adds to item landing cost' })
   @OptionalBoolean()

@@ -1,9 +1,8 @@
 import { SaleChargeDetail, SaleQuotation, SaleQuotationItem } from '@prisma/client';
-
+import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
 // sale_charge_detail is polymorphic — a quotation's applied charges are the rows
 // carrying this discriminator plus cdDocId = sqId (see ck_cd_doc_type).
-export const QUOTATION_CHARGE_DOC_TYPE = 'QUOTATION';
-
+export const QUOTATION_CHARGE_DOC_TYPE = ChargeDocType.QUOTATION;
 export type QuotationPayload = Omit<
   SaleQuotation,
   'sqCreatedOn' | 'sqModifiedOn' | 'sqQuoteDatetime' | 'sqSyncDate'
@@ -15,7 +14,6 @@ export type QuotationPayload = Omit<
   items?: QuotationItemPayload[];
   charges?: QuotationChargePayload[];
 };
-
 export type QuotationItemPayload = Omit<
   SaleQuotationItem,
   'sqiCreatedOn' | 'sqiModifiedOn' | 'sqiSyncDate'
@@ -26,7 +24,6 @@ export type QuotationItemPayload = Omit<
   sqiItemName?: string | null;
   sqiUnitName?: string | null;
 };
-
 // cdVoucherNo is a bigint column; it is emitted as a string because JSON has no
 // bigint (same convention as the header's sqQuoteSlno).
 export type QuotationChargePayload = Omit<
@@ -38,19 +35,16 @@ export type QuotationChargePayload = Omit<
   cdSyncDate?: string | null;
   cdVoucherNo?: string | null;
 };
-
 export type QuotationErrorDetail = {
   field: string;
   message: string;
 };
-
 export type QuotationErrorResponse = {
   statusCode?: number;
   success: false;
   message: string;
   errors: QuotationErrorDetail[];
 };
-
 export type QuotationSuccessResponse<T> = {
   success: true;
   message: string;
