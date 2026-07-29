@@ -6,8 +6,10 @@ import {
   NullableInteger,
   NullableNumber,
   NullableStringStrict,
+  NullableUpperMaxString,
   NullableUuid,
   OptionalBoolean,
+  OptionalDateString,
   OptionalInteger,
   OptionalNumber,
   OptionalUuid,
@@ -34,9 +36,13 @@ export class SaveQuotationDto {
   @RequiredUuid()
   sqBranchId!: string;
 
-  @ApiProperty({ format: 'uuid' })
-  @RequiredUuid()
-  sqTenantId!: string;
+  // Nullable since 20260729070445. Every property still needs at least one
+  // class-validator decorator: whitelist + forbidNonWhitelisted reject an
+  // undecorated one as "should not exist" rather than letting it through.
+  // NullableUuid folds null/''/omitted into null and skips the pattern for them.
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sqTenantId?: string | null;
 
   @ApiProperty({ minLength: 9, maxLength: 9 })
   @TrimmedString(9)
@@ -62,18 +68,25 @@ export class SaveQuotationDto {
   @RequiredInteger()
   sqQuoteSlno!: number;
 
-  @ApiProperty({ maxLength: 100 })
-  @TrimmedString(100)
-  @IsNotEmpty()
-  sqQuoteRefno!: string;
+  @ApiProperty({ maxLength: 100, nullable: true })
+  @NullableStringStrict(100)
+  sqQuoteRefno?: string | null;
 
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableStringStrict(100)
   sqUsrRefno?: string | null;
 
-  @ApiPropertyOptional({ type: 'string', format: 'date' })
-  @NullableDateString()
+  @ApiPropertyOptional({ type: 'string', format: 'date', description: "Defaults to today's date" })
+  @OptionalDateString()
   sqQuoteDate?: string;
+
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'date-time',
+    description: 'Defaults to the save time',
+  })
+  @OptionalDateString()
+  sqQuoteDatetime?: string;
 
   @ApiPropertyOptional({ type: 'string', format: 'date', nullable: true })
   @NullableDateString()
@@ -102,6 +115,10 @@ export class SaveQuotationDto {
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableStringStrict(100)
   sqSrcDocRefno?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  sqSrcDocDate?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
@@ -147,6 +164,14 @@ export class SaveQuotationDto {
   @ApiPropertyOptional({ minLength: 2, maxLength: 2, nullable: true })
   @NullableStringStrict(2)
   sqPosStcd?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 100,
+    nullable: true,
+    description: 'Snapshot of the state name',
+  })
+  @NullableStringStrict(100)
+  sqStateName?: string | null;
 
   @ApiPropertyOptional({ maxLength: 150, nullable: true })
   @NullableStringStrict(150)
@@ -300,17 +325,65 @@ export class SaveQuotationDto {
   @NullableStringStrict(250)
   sqDeliveryTerms?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  @NullableStringStrict(250)
+  @ApiPropertyOptional({ nullable: true, description: 'Free text, no length limit' })
+  @NullableStringStrict()
   sqTermsConditions?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 20,
+    nullable: true,
+    description: 'DRAFT / SENT / ACCEPTED / REJECTED / EXPIRED / CONVERTED / CANCELLED',
+  })
   @NullableStringStrict(20)
   sqStatus?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  sqSentOn?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  sqAcceptedOn?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  sqRejectedOn?: string | null;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   sqRejectReason?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: 30,
+    nullable: true,
+    description: 'Document the quotation was converted into',
+  })
+  @NullableStringStrict(30)
+  sqConvertedDocType?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sqConvertedDocId?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  sqConvertedOn?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  sqApprovedOn?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sqApprovedBy?: string | null;
+
+  @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
+  @NullableDateString()
+  sqCancelledOn?: string | null;
+
+  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @NullableUuid()
+  sqCancelledBy?: string | null;
 
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
@@ -324,17 +397,55 @@ export class SaveQuotationDto {
   @NullableNumber()
   sqMrpSavingsPerc?: string | number | null;
 
+  @ApiPropertyOptional()
+  @OptionalInteger()
+  sqPrintCount?: number;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableStringStrict(20)
+  sqDeviceType?: string | null;
+
+  // Text column (see 20260729070000): a device fingerprint / hostname, not a
+  // uuid, and not length-capped the way sqDeviceType is.
+  @ApiPropertyOptional({ nullable: true, description: 'Originating device identifier' })
+  @NullableStringStrict()
+  sqDeviceId?: string | null;
+
   @ApiPropertyOptional({ maxLength: 500, nullable: true })
   @NullableStringStrict(500)
   sqRemarks?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid' })
-  @OptionalUuid()
-  sqCreatedBy?: string;
+  // sq_created_by / sq_modified_by are text columns, not uuid: resolveActor falls
+  // back to DEFAULT_ACTOR, which is the nil uuid and would not survive the uuid
+  // pattern. Free text, no length cap, matching the column.
+  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @NullableStringStrict()
+  sqCreatedBy?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid' })
-  @OptionalUuid()
-  sqModifiedBy?: string;
+  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @NullableStringStrict()
+  sqModifiedBy?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'How the freight charge is computed (snapshot of the charge master method)',
+  })
+  @NullableUpperMaxString(12)
+  sqFreightCalcType?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'How the loading charge is computed (snapshot of the charge master method)',
+  })
+  @NullableUpperMaxString(12)
+  sqLoadingCalcType?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'true = discounts change the basis the charges are computed on',
+  })
+  @OptionalBoolean()
+  sqDiscAlterBase?: boolean | null;
 
   @ApiPropertyOptional({
     type: SaveQuotationItemDto,

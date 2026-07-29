@@ -93,23 +93,26 @@ export const NullableDateString = () =>
     SkipOnNullish(),
     IsDateString(),
   );
+// UUID_PATTERN spells out the nil/max alternatives, so the default Matches
+// message ("must match /…/ regular expression") is unreadable — name the rule.
+const UUID_MESSAGE = { message: '$property must be a valid UUID' };
 export const NullableUuid = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toNullableUuid(value)),
     SkipOnNullish(),
-    Matches(UUID_PATTERN),
+    Matches(UUID_PATTERN, UUID_MESSAGE),
   );
 export const OptionalUuid = () =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toOptionalUuid(value)),
-    Matches(UUID_PATTERN),
+    Matches(UUID_PATTERN, UUID_MESSAGE),
   );
 export const RequiredUuid = () =>
   applyDecorators(
     Transform(({ value }) => toRequiredUuid(value)),
-    Matches(UUID_PATTERN),
+    Matches(UUID_PATTERN, UUID_MESSAGE),
   );
 export const OptionalDateString = () =>
   applyDecorators(

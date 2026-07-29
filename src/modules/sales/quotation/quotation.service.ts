@@ -19,6 +19,7 @@ import {
 } from '../../master/charge-master/types/charge-master-api.types';
 import {
   DEFAULT_ACTOR,
+  PresentFieldTransform,
   SalesWriteClient,
   applyPresentFields,
   normalizeRequiredText,
@@ -38,6 +39,8 @@ const QUOTATION_OPTIONAL_FIELDS = [
   'sqCategoryId',
   'sqDocType',
   'sqUsrRefno',
+  'sqQuoteDate',
+  'sqQuoteDatetime',
   'sqValidUntil',
   'sqValidityDays',
   'sqRevisionNo',
@@ -56,6 +59,7 @@ const QUOTATION_OPTIONAL_FIELDS = [
   'sqCustGstType',
   'sqCustStcd',
   'sqPosStcd',
+  'sqStateName',
   'sqContactPerson',
   'sqContactPhone',
   'sqHasLoad',
@@ -95,11 +99,27 @@ const QUOTATION_OPTIONAL_FIELDS = [
   'sqDeliveryTerms',
   'sqTermsConditions',
   'sqStatus',
+  'sqSentOn',
+  'sqAcceptedOn',
+  'sqRejectedOn',
   'sqRejectReason',
+  'sqConvertedDocType',
+  'sqConvertedDocId',
+  'sqConvertedOn',
+  'sqApprovedOn',
+  'sqApprovedBy',
+  'sqCancelledOn',
+  'sqCancelledBy',
   'sqCancelReason',
   'sqMrpSavings',
   'sqMrpSavingsPerc',
+  'sqPrintCount',
+  'sqDeviceType',
+  'sqDeviceId',
   'sqRemarks',
+  'sqFreightCalcType',
+  'sqLoadingCalcType',
+  'sqDiscAlterBase',
 ];
 // Line-item fields copied straight through when present on the payload. The
 // scope keys (quote/company/branch/tenant/accYear/lineNo/priceLevel) are set
@@ -184,6 +204,9 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiSchemeId',
   'sqiSchemeName',
   'sqiRemarks',
+  'sqiNetGross',
+  'sqiChrgBeforeTax',
+  'sqiChrgAfterTax',
 ];
 // Charge-line fields copied straight through when present on the payload. The
 // scope keys (docType/docId/comp/branch/accYear/slno) and the two required
@@ -221,12 +244,55 @@ const QUOTATION_CHARGE_OPTIONAL_FIELDS = [
   'cdRemarks',
   'cdIsActive',
 ];
+// Every date / timestamptz column reachable from the payload. JSON carries them
+// as ISO strings, Prisma wants Date objects, so each one is converted on the way
+// in (and a malformed value comes back as a 400 naming the field).
+const QUOTATION_DATE_FIELDS = [
+  'sqQuoteDate',
+  'sqQuoteDatetime',
+  'sqValidUntil',
+  'sqSrcDocDate',
+  'sqSentOn',
+  'sqAcceptedOn',
+  'sqRejectedOn',
+  'sqConvertedOn',
+  'sqApprovedOn',
+  'sqCancelledOn',
+];
+const QUOTATION_ITEM_DATE_FIELDS = ['sqiBatchDate', 'sqiExpiryDate'];
+function toDateOrNull(value: unknown, field: string): Date | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === '') {
+    return null;
+  }
+  const dateValue = new Date(value as string);
+  if (Number.isNaN(dateValue.getTime())) {
+    throwSalesBadRequest<QuotationErrorDetail, QuotationErrorResponse>('Validation failed', [
+      {
+        field,
+        message: `${field} must be a valid ISO date`,
+      },
+    ]);
+  }
+  return dateValue;
+}
+function buildDateTransforms(
+  fields: readonly string[],
+): Partial<Record<string, PresentFieldTransform>> {
+  return Object.fromEntries(
+    fields.map((field) => [field, (value: unknown) => toDateOrNull(value, field)]),
+  );
+}
+const QUOTATION_DATE_TRANSFORMS = buildDateTransforms(QUOTATION_DATE_FIELDS);
+const QUOTATION_ITEM_DATE_TRANSFORMS = buildDateTransforms(QUOTATION_ITEM_DATE_FIELDS);
 // The immutable scope inherited by every line from its parent quotation.
 interface QuotationScope {
   sqId: string;
   sqCompanyId: string;
   sqBranchId: string;
-  sqTenantId: string;
+  sqTenantId: string | null;
   sqAccYear: string;
   sqPriceLevel: number;
   sqQuoteSlno: bigint;
@@ -411,6 +477,7 @@ export class QuotationService {
     this.applyOptionalFields(data, saveQuotationDto);
     data.sqCustName = normalizedCustName;
     data.sqQuoteRefno = normalizedRefno;
+    data.sqQuoteDate = quoteDate;
     try {
       return await this.prisma.$transaction(async (tx) => {
         const created = await tx.saleQuotation.create({ data });
@@ -585,7 +652,12 @@ export class QuotationService {
           sqiModifiedOn: now,
           sqiModifiedBy: resolveActor(inputItem.sqiModifiedBy, actorId),
         };
-        applyPresentFields(updateData, inputItem, QUOTATION_ITEM_OPTIONAL_FIELDS);
+        applyPresentFields(
+          updateData,
+          inputItem,
+          QUOTATION_ITEM_OPTIONAL_FIELDS,
+          QUOTATION_ITEM_DATE_TRANSFORMS,
+        );
         const updated = await tx.saleQuotationItem.update({
           where: { sqiId: inputItem.sqiId },
           data: updateData,
@@ -622,7 +694,12 @@ export class QuotationService {
         sqiCreatedOn: now,
         sqiCreatedBy: resolveActor(inputItem.sqiCreatedBy, actorId),
       };
-      applyPresentFields(createData, inputItem, QUOTATION_ITEM_OPTIONAL_FIELDS);
+      applyPresentFields(
+        createData,
+        inputItem,
+        QUOTATION_ITEM_OPTIONAL_FIELDS,
+        QUOTATION_ITEM_DATE_TRANSFORMS,
+      );
       const created = await tx.saleQuotationItem.create({ data: createData });
       await this.auditLogService.logEntityChange(
         {
@@ -913,7 +990,7 @@ export class QuotationService {
     data: Prisma.SaleQuotationUncheckedCreateInput | Prisma.SaleQuotationUncheckedUpdateInput,
     dto: SaveQuotationDto,
   ): void {
-    applyPresentFields(data, dto, QUOTATION_OPTIONAL_FIELDS);
+    applyPresentFields(data, dto, QUOTATION_OPTIONAL_FIELDS, QUOTATION_DATE_TRANSFORMS);
   }
   private toPayload(
     record: SaleQuotation & {

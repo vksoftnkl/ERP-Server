@@ -7,15 +7,12 @@ import {
   ItemBatchStockErrorResponse,
   ItemBatchStockPayload,
 } from './types/item-batch-stock-api.types';
-
 type ItemBatchStockWithBatchMaster = Prisma.ItemBatchStockGetPayload<{
   include: { batch: true };
 }>;
-
 @Injectable()
 export class ItemBatchStockService {
   constructor(private readonly prisma: PrismaService) {}
-
   async getByScope(queryDto: GetItemBatchStockQueryDto): Promise<ItemBatchStockPayload[]> {
     const unitFactorsByUnitId = await this.getItemPriceUnitFactors(
       queryDto.ibs_item_id,
@@ -24,7 +21,6 @@ export class ItemBatchStockService {
     const stockUnitIds = Array.from(
       new Set([queryDto.ibs_unit_id, ...unitFactorsByUnitId.keys()]),
     );
-
     const where: Prisma.ItemBatchStockWhereInput = {
       ibsAccYear: queryDto.ibs_acc_year,
       ibsCompanyId: queryDto.ibs_company_id,
@@ -35,14 +31,12 @@ export class ItemBatchStockService {
       ibsIsActive: queryDto.ibs_is_active ?? true,
       ibsIsDeleted: queryDto.ibs_is_deleted ?? false,
     };
-
     if (queryDto.ibs_batch_id) {
       where.ibsBatchId = queryDto.ibs_batch_id;
     }
     if (queryDto.ibs_stock_bucket) {
       where.ibsStockBucket = queryDto.ibs_stock_bucket;
     }
-
     const normalizedSearch = queryDto.search?.trim();
     if (normalizedSearch) {
       const contains = { contains: normalizedSearch, mode: 'insensitive' as const };
@@ -54,7 +48,6 @@ export class ItemBatchStockService {
         { batch: { is: { btmBarcode: contains } } },
       ];
     }
-
     const records = await this.prisma.itemBatchStock.findMany({
       where,
       include: { batch: true },
@@ -65,14 +58,12 @@ export class ItemBatchStockService {
         { ibsBatchId: 'asc' },
       ],
     });
-
     if (records.length === 0) {
       this.throwItemBatchStockNotFound(queryDto);
     }
     if (unitFactorsByUnitId.size === 0) {
       this.throwItemPriceMasterNotFound(queryDto.ibs_item_id, queryDto.ibs_unit_id);
     }
-
     return records.map((record) =>
       this.toPayload(record, this.getUnitFactorForStockUnit(record, queryDto, unitFactorsByUnitId)),
     );
@@ -161,7 +152,6 @@ export class ItemBatchStockService {
       },
       orderBy: [{ itemUnitConversion: { iucUnitSlno: 'asc' } }, { ipmId: 'asc' }],
     });
-
     const factorsByUnitId = new Map<string, number>();
     for (const record of records) {
       const unitFactor = this.toNumber(record.itemUnitConversion.iucUnitFactor);

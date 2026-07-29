@@ -3,7 +3,7 @@ model SaleQuotation {
   // scope
   sqCompanyId        String    @db.Uuid @map("sq_company_id")
   sqBranchId         String    @db.Uuid @map("sq_branch_id")
-  sqTenantId         String    @db.Uuid @map("sq_tenant_id")
+  sqTenantId         String?   @db.Uuid @map("sq_tenant_id")
   sqAccYear          String    @db.Char(9) @map("sq_acc_year")
   sqSessionId        String?   @db.Uuid @map("sq_session_id")
   sqCategoryId       String?   @db.Uuid @map("sq_category_id")
@@ -11,7 +11,7 @@ model SaleQuotation {
   // document identity
   sqDocType          String    @default("QUOTATION") @db.VarChar(30) @map("sq_doc_type")
   sqQuoteSlno        BigInt    @map("sq_quote_slno")
-  sqQuoteRefno       String    @db.VarChar(100) @map("sq_quote_refno")
+  sqQuoteRefno       String   @db.VarChar(100) @map("sq_quote_refno")
   sqUsrRefno         String?   @db.VarChar(100) @map("sq_usr_refno")
   sqQuoteDate        DateTime  @db.Date @map("sq_quote_date")
   sqQuoteDatetime    DateTime  @default(now()) @db.Timestamptz(6) @map("sq_quote_datetime")
@@ -104,7 +104,9 @@ model SaleQuotation {
   // print / device / sync + audit
   sqPrintCount       Int       @default(0) @map("sq_print_count")
   sqDeviceType       String?   @db.VarChar(20) @map("sq_device_type")
-  sqDeviceId         String?   @db.Uuid @map("sq_device_id")
+  // Free text, not a uuid: clients identify the originating device with a
+  // fingerprint / hostname string, which no uuid column can hold.
+  sqDeviceId         String?   @db.Text @map("sq_device_id")
   sqRemarks          String?   @db.VarChar(500) @map("sq_remarks")
   sqIsDeleted        Boolean   @default(false) @map("sq_is_deleted")
   sqSyncDate         DateTime? @db.Timestamptz(6) @map("sq_sync_date")

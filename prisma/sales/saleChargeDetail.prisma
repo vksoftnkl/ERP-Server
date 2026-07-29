@@ -92,7 +92,7 @@ model SaleChargeDetail {
   @@index([cdCompId], map: "ix_sale_charge_detail_comp")
   @@index([cdBranchId], map: "ix_sale_charge_detail_branch")
   @@map("sale_charge_detail")
-  @@schema("public")
+  @@schema("sales")
   // DB-only constraints not expressible in the Prisma schema (migrations
   // 20260728130000_create_sale_charge_detail and
   // 20260728140000_sale_charge_detail_check_constraints); Prisma ignores CHECK

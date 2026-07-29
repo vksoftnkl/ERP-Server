@@ -6,8 +6,15 @@ export const toTrimmedString = (value: unknown): string => {
   return value.trim();
 };
 
+// The version ([1-8]) and variant ([89ab]) nibbles only exist on *generated*
+// UUIDs. RFC 9562 §5.9/§5.10 define two special values that carry neither and
+// are still valid uuids Postgres accepts: nil (all zeroes) and max (all ones).
+// The nil one is not hypothetical here — DEFAULT_ACTOR is exactly that, so a
+// payload echoing back a default actor/tenant id has to pass. Both are admitted
+// explicitly rather than by loosening the nibble classes, which would let
+// genuinely malformed ids through.
 export const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|0{8}-0{4}-0{4}-0{4}-0{12}|f{8}-f{4}-f{4}-f{4}-f{12})$/i;
 
 export const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d(\.\d{1,6})?)?$/;
 

@@ -5,7 +5,9 @@ model SaleQuotationItem {
   sqiQuoteId         String    @db.Uuid @map("sqi_quote_id")
   sqiCompanyId       String    @db.Uuid @map("sqi_company_id")
   sqiBranchId        String    @db.Uuid @map("sqi_branch_id")
-  sqiTenantId        String    @db.Uuid @map("sqi_tenant_id")
+  // Nullable to follow sq_tenant_id: a line inherits the header's tenant, so it
+  // cannot be NOT NULL once the header's is optional.
+  sqiTenantId        String?   @db.Uuid @map("sqi_tenant_id")
   sqiAccYear         String    @db.Char(9) @map("sqi_acc_year")
   // source (enquiry line -> quote line) -- polymorphic, no FK
   sqiSrcDocType      String?   @db.VarChar(30) @map("sqi_src_doc_type")

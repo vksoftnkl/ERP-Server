@@ -382,11 +382,24 @@ export class SaveQuotationItemDto {
   @NullableStringStrict(250)
   sqiRemarks?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid' })
-  @OptionalUuid()
-  sqiCreatedBy?: string;
+  // Text columns, not uuid — same as the header's sqCreatedBy / sqModifiedBy.
+  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @NullableStringStrict()
+  sqiCreatedBy?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid' })
-  @OptionalUuid()
-  sqiModifiedBy?: string;
+  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @NullableStringStrict()
+  sqiModifiedBy?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Line net/gross basis the charges sit on' })
+  @NullableNumber()
+  sqiNetGross?: string | number | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Line charges landing before tax' })
+  @NullableNumber()
+  sqiChrgBeforeTax?: string | number | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Line charges landing after tax' })
+  @NullableNumber()
+  sqiChrgAfterTax?: string | number | null;
 }
