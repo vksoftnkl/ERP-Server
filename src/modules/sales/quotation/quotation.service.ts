@@ -30,6 +30,11 @@ import {
   throwSalesNotFound,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+// accounts.acc_voucher_types row "Quo" / Sales Quotation. Its numbering format
+// (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
+// quotation numbers are drawn from.
+const QUOTATION_VCHR_TYPE_ID = 21;
 const QUOTATION_TABLE_NAME = 'sale_quotation';
 const QUOTATION_ITEM_TABLE_NAME = 'sale_quotation_item';
 const QUOTATION_CHARGE_TABLE_NAME = 'sale_charge_detail';
@@ -449,37 +454,44 @@ export class QuotationService {
       saveQuotationDto.sqCustName ?? '',
       'sqCustName',
     );
-    const normalizedRefno = normalizeRequiredText<QuotationErrorDetail, QuotationErrorResponse>(
-      saveQuotationDto.sqQuoteRefno ?? '',
-      'sqQuoteRefno',
-    );
     const now = new Date();
     const createdBy = resolveActor(
       saveQuotationDto.sqCreatedBy,
       this.requestContextService.getUserId(),
     );
     const quoteDate = saveQuotationDto.sqQuoteDate ? new Date(saveQuotationDto.sqQuoteDate) : now;
-    const data: Prisma.SaleQuotationUncheckedCreateInput = {
-      sqCompanyId: saveQuotationDto.sqCompanyId,
-      sqBranchId: saveQuotationDto.sqBranchId,
-      sqTenantId: saveQuotationDto.sqTenantId,
-      sqAccYear: saveQuotationDto.sqAccYear,
-      sqPriceLevel: saveQuotationDto.sqPriceLevel,
-      sqQuoteSlno: saveQuotationDto.sqQuoteSlno,
-      sqQuoteRefno: normalizedRefno,
-      sqQuoteDate: quoteDate,
-      sqCustName: normalizedCustName,
-      sqUserId: saveQuotationDto.sqUserId,
-      sqCreatedOn: now,
-      sqCreatedBy: createdBy,
-      sqStatus: saveQuotationDto.sqStatus || 'DRAFT',
-    };
-    this.applyOptionalFields(data, saveQuotationDto);
-    data.sqCustName = normalizedCustName;
-    data.sqQuoteRefno = normalizedRefno;
-    data.sqQuoteDate = quoteDate;
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Voucher type 21 numbers the document: the running number consumed from
+        // accounts.acc_voucher_seq becomes sqQuoteSlno and its printable form
+        // becomes sqQuoteRefno. Both are server-assigned — the voucher type is
+        // AUTO-numbered with manual numbers disallowed, so whatever the client
+        // sent for either field is ignored.
+        const quoteNumber = await allocateVoucherNumber(tx, {
+          vchrTypeId: QUOTATION_VCHR_TYPE_ID,
+          companyId: saveQuotationDto.sqCompanyId,
+          branchId: saveQuotationDto.sqBranchId,
+          accYear: saveQuotationDto.sqAccYear,
+          documentDate: quoteDate,
+        });
+        const data: Prisma.SaleQuotationUncheckedCreateInput = {
+          sqCompanyId: saveQuotationDto.sqCompanyId,
+          sqBranchId: saveQuotationDto.sqBranchId,
+          sqTenantId: saveQuotationDto.sqTenantId,
+          sqAccYear: saveQuotationDto.sqAccYear,
+          sqPriceLevel: saveQuotationDto.sqPriceLevel,
+          sqQuoteSlno: quoteNumber.lastNo,
+          sqQuoteRefno: quoteNumber.refno,
+          sqQuoteDate: quoteDate,
+          sqCustName: normalizedCustName,
+          sqUserId: saveQuotationDto.sqUserId,
+          sqCreatedOn: now,
+          sqCreatedBy: createdBy,
+          sqStatus: saveQuotationDto.sqStatus || 'DRAFT',
+        };
+        this.applyOptionalFields(data, saveQuotationDto);
+        data.sqCustName = normalizedCustName;
+        data.sqQuoteDate = quoteDate;
         const created = await tx.saleQuotation.create({ data });
         const scope: QuotationScope = {
           sqId: created.sqId,

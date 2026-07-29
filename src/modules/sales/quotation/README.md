@@ -44,12 +44,48 @@ Both `/get` and `/delete` take `sqId` as a query parameter validated by `ParseUU
   are all-or-nothing).
 - On **update**, the header must still be active (`sqIsDeleted = false`) or a not-found error is
   raised.
-- On **create**, `sqCustName` and `sqQuoteRefno` are normalized via `normalizeRequiredText`
-  (trimmed and required-non-empty), `sqQuoteDate` defaults to *now* when omitted, and `sqStatus`
-  defaults to `'DRAFT'`.
+- On **create**, `sqCustName` is normalized via `normalizeRequiredText` (trimmed and
+  required-non-empty), `sqQuoteSlno` / `sqQuoteRefno` are **server-assigned** (see
+  [Document numbering](#document-numbering)), `sqQuoteDate` defaults to *now* when omitted, and
+  `sqStatus` defaults to `'DRAFT'`.
 - Optional header fields are copied through only when present on the payload
   (`applyPresentFields` over the `QUOTATION_OPTIONAL_FIELDS` list); absent fields are left as-is
   on update.
+
+### Document numbering
+
+`sqQuoteSlno` and `sqQuoteRefno` are **not** client-supplied. On create the service consumes the
+next number from `accounts.acc_voucher_seq` through
+[`allocateVoucherNumber`](../../../common/Sequence/voucher-sequence.helper.ts), using the
+`Quo` / *Sales Quotation* voucher type (`vchr_type_id = 21`, `QUOTATION_VCHR_TYPE_ID`):
+
+- The counter is scoped to `(vchr_type_id 21, company, branch, accounting year, device code
+  `MAIN`, period key)`. The period key comes from the voucher type's reset frequency — `ALL` for
+  `NEVER`, the accounting year for `YEARLY` (what type 21 uses today), otherwise the quote date's
+  month or day.
+- The consumed running number becomes `sqQuoteSlno`; its printable form —
+  `seq_voucher_prefix` + the number zero-padded to `seq_no_width` + `seq_voucher_suffix` — becomes
+  `sqQuoteRefno` and is stamped back onto `seq_last_refno`. The row's `seq_company_code` /
+  `seq_branch_code` are a format snapshot only and are **not** part of the printed number; company
+  and branch are already part of the scope the counter runs in. With the current configuration the
+  numbers read `quo00001`, `quo00002`, …
+- The sequence row is **created on first use**, seeded from the voucher type's
+  `vchr_no_prefix` / `vchr_no_suffix` / `vchr_no_width` plus the company's and branch's codes.
+  Editing the voucher type afterwards never rewrites numbers already issued from that row.
+- Because type 21 is `AUTO`-numbered with `vchr_allow_manual_no = false`, anything the client sends
+  for `sqQuoteSlno` / `sqQuoteRefno` is **ignored**. Both fields remain on the DTO (marked
+  `readOnly`) only so `forbidNonWhitelisted` does not reject clients that still send them.
+- Neither field is in `QUOTATION_OPTIONAL_FIELDS`, so an **update never renumbers** a quotation —
+  the reference number is immutable once issued.
+- A sequence row that has been deactivated (`seq_is_active = false`) or soft-deleted makes the save
+  fail with a 400 naming the row, rather than silently reviving it.
+- The number is allocated inside the caller's transaction, under a `pg_advisory_xact_lock` keyed on
+  the sequence scope, so concurrent saves cannot hand out the same number or race each other into
+  creating the row twice.
+
+> Switching voucher type 21 to a `DAILY` / `MONTHLY` reset would restart the counter inside an
+> accounting year and collide with `ux_sq_slno`, which is unique per
+> `(company, branch, accYear, sqQuoteSlno)`. Keep it `YEARLY` (or `NEVER`).
 
 ### Nested line items
 
@@ -114,8 +150,9 @@ same create/update payload (`syncCharges` reconciliation), with **exactly** the 
 
 - Enforced by the DTO decorators under the global `ValidationPipe`: `sqCompanyId`, `sqBranchId`,
   `sqTenantId`, `sqUserId` are required UUIDs; `sqAccYear` is a fixed 9-char string; `sqPriceLevel`
-  and `sqQuoteSlno` are required integers; `sqQuoteRefno` (max 100) and `sqCustName` (max 200) are
-  required non-empty strings; nested `items[]` are validated per-element (`@ValidateNested`), each
+  is a required integer; `sqCustName` (max 200) is a required non-empty string; `sqQuoteSlno` and
+  `sqQuoteRefno` are accepted but ignored (see [Document numbering](#document-numbering));
+  nested `items[]` are validated per-element (`@ValidateNested`), each
   requiring `sqiItemId` and `sqiItemUnitId` as UUIDs (`sqiItemUnitId` references
   `item_unit_conversion.iucId`, not `item_unit_master.unit_id`).
 - Nested `charges[]` are validated the same way, each requiring `cdChgId` and `cdLedgerCode` as
