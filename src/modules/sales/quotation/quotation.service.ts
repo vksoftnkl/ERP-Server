@@ -1010,14 +1010,25 @@ export class QuotationService {
       charges?: SaleChargeDetail[];
     },
   ): QuotationPayload {
-    const { sqCreatedOn, sqModifiedOn, sqQuoteDatetime, sqSyncDate, items, charges, ...rest } =
-      record;
+    const {
+      sqCreatedOn,
+      sqModifiedOn,
+      sqQuoteDatetime,
+      sqSyncDate,
+      sqQuoteSlno,
+      items,
+      charges,
+      ...rest
+    } = record;
     return {
       ...rest,
       sqCreatedOn: sqCreatedOn?.toISOString(),
       sqModifiedOn: sqModifiedOn?.toISOString() ?? null,
       sqQuoteDatetime: sqQuoteDatetime?.toISOString(),
       sqSyncDate: sqSyncDate?.toISOString() ?? null,
+      // bigint column — stringified here for the same reason cdVoucherNo is:
+      // JSON has no bigint and res.json() throws on one.
+      sqQuoteSlno: sqQuoteSlno.toString(),
       items: items ? items.map((item) => this.toItemPayload(item)) : [],
       charges: charges ? charges.map((charge) => this.toChargePayload(charge)) : [],
     };

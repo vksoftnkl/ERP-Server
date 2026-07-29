@@ -334,9 +334,11 @@ export class SaveQuotationDto {
   @ApiPropertyOptional({ maxLength: 500, nullable: true })
   @NullableStringStrict(500)
   sqRemarks?: string | null;
-  // sq_created_by / sq_modified_by are text columns, not uuid: resolveActor falls
-  // back to DEFAULT_ACTOR, which is the nil uuid and would not survive the uuid
-  // pattern. Free text, no length cap, matching the column.
+  // sq_created_by / sq_modified_by are text columns, not uuid: the actor is
+  // whatever resolveActor settles on — a user id, but equally a name or login the
+  // caller passed — so the uuid pattern does not fit. (The nil uuid DEFAULT_ACTOR
+  // falls back to is not the reason: UUID_PATTERN spells it out as an allowed
+  // alternative.) Free text, no length cap, matching the column.
   @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
   @NullableStringStrict()
   sqCreatedBy?: string | null;

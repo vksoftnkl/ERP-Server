@@ -5,10 +5,11 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { PrismaService } from '../../database/prisma/prisma.service';
 export const DEFAULT_ACTOR = '00000000-0000-0000-0000-000000000000';
 export const DEFAULT_PAGE = 1;
@@ -174,9 +175,11 @@ export abstract class ModuleExceptionFilter<
   TErrorDetail extends ModuleErrorDetail,
   TErrorResponse extends ModuleErrorResponse<TErrorDetail>,
 > implements ExceptionFilter {
+  private readonly logger = new Logger(ModuleExceptionFilter.name);
   protected constructor(private readonly fieldNamePattern: RegExp) {}
   catch(exception: unknown, host: ArgumentsHost): void {
-    const response = host.switchToHttp().getResponse<Response>();
+    const httpContext = host.switchToHttp();
+    const response = httpContext.getResponse<Response>();
     if (exception instanceof HttpException) {
       const statusCode = exception.getStatus();
       const rawResponse = exception.getResponse();
@@ -197,6 +200,15 @@ export abstract class ModuleExceptionFilter<
         );
       return;
     }
+    // A module filter is controller-scoped, so it wins over the global
+    // AllExceptionsFilter and nothing else logs what actually failed. Without
+    // this the client gets a bare "Internal server error" and the server log
+    // shows only the status line — the stack is the whole diagnosis.
+    const request = httpContext.getRequest<Request>();
+    this.logger.error(
+      `${request.method} ${request.url}`,
+      exception instanceof Error ? exception.stack : JSON.stringify(exception),
+    );
     response
       .status(HttpStatus.INTERNAL_SERVER_ERROR)
       .json(buildErrorResponse<TErrorDetail, TErrorResponse>('Internal server error'));

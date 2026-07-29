@@ -113,11 +113,12 @@ export class QuotationChargePayloadDto {
   cdSyncDate!: string | null;
   @ApiProperty({ format: 'date-time' })
   cdCreatedOn!: string;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  // Text columns, not uuid — the actor may be an id or a name.
+  @ApiPropertyOptional({ nullable: true })
   cdCreatedBy!: string | null;
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   cdModifiedOn!: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
+  @ApiPropertyOptional({ nullable: true })
   cdModifiedBy!: string | null;
 }
 export class QuotationItemPayloadDto {

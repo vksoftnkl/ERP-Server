@@ -232,11 +232,15 @@ export class SaveChargeDetailDto {
   @OptionalBoolean()
   cdIsActive?: boolean;
 
-  @ApiPropertyOptional({ format: 'uuid' })
-  @OptionalUuid()
-  cdCreatedBy?: string;
+  // cd_created_by / cd_modified_by became text columns in migration
+  // 20260729121956: the actor is whatever resolveActor settles on — a user id,
+  // but equally a name or login the caller passed — so the uuid pattern no
+  // longer fits. Free text, no length cap, matching the column.
+  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @NullableStringStrict()
+  cdCreatedBy?: string | null;
 
-  @ApiPropertyOptional({ format: 'uuid' })
-  @OptionalUuid()
-  cdModifiedBy?: string;
+  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @NullableStringStrict()
+  cdModifiedBy?: string | null;
 }

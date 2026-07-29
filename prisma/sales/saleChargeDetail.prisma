@@ -7,19 +7,16 @@
 /// rewrites what was already invoiced.
 model SaleChargeDetail {
   cdId            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
-
   // -- Parent document (polymorphic — no single FK possible) ----------------
   cdDocType       String    @db.VarChar(12)                                @map("cd_doc_type")   // which module's document
   cdDocId         String    @db.Uuid                                       @map("cd_doc_id")     // parent document id
   cdSlno          Int?                                                     @map("cd_slno")       // line order within the document
-
   // -- Denormalised context (lets the table be queried/reported without
   //    joining the parent document) -----------------------------------------
   cdCompId        String    @db.Uuid                                       @map("cd_comp_id")
   cdBranchId      String    @db.Uuid                                       @map("cd_branch_id")
   cdAccYear       String    @db.Char(9)                                    @map("cd_acc_year")
   cdVoucherNo     BigInt?                                                  @map("cd_voucher_no")
-
   // -- Charge reference + snapshots -----------------------------------------
   cdChgId         String    @db.Uuid                                       @map("cd_chg_id")     // FK charge_master.chg_id
   cdChgName       String?   @db.VarChar(100)                               @map("cd_chg_name")   // snapshot, for print/history
@@ -28,7 +25,6 @@ model SaleChargeDetail {
   cdType          String    @default("ADD") @db.VarChar(10)                @map("cd_type")       // ADD | DEDUCT (the sign)
   cdApplyOn       String?   @db.VarChar(10)                                @map("cd_apply_on")   // distribution basis for a FIXED lump sum
   cdLedgerCode    String    @db.Uuid                                       @map("cd_ledger_code") // GL ledger this charge posts to
-
   // -- Landing cost + posting flags -----------------------------------------
   cdLandingCost   Boolean   @default(false)                                @map("cd_landing_cost") // purchase: adds to item landing cost
   cdCostAlloc     String?   @db.VarChar(10)                                @map("cd_cost_alloc")   // how that landing cost is allocated
@@ -40,7 +36,6 @@ model SaleChargeDetail {
   cdBeforeTax     Boolean   @default(false)                                @map("cd_before_tax")
   cdTaxApl        Boolean   @default(false)                                @map("cd_tax_apl")
   cdSepPost       Boolean   @default(false)                                @map("cd_sep_post")     // post to its own ledger vs absorb
-
   // -- Basis + amounts ------------------------------------------------------
   cdUnit          String?   @db.VarChar(15)                                @map("cd_unit")
   cdQtyVal        Decimal?  @db.Decimal(18, 4)                             @map("cd_qty_val")      // qty or value basis keyed on the line
@@ -51,7 +46,6 @@ model SaleChargeDetail {
   // rate-is-required constraint.
   cdRate          Decimal?  @db.Decimal(14, 4)                             @map("cd_rate")         // rate or %, per cdMethod
   cdAmount        Decimal?  @db.Decimal(14, 4)                             @map("cd_amount")       // charge amount BEFORE tax
-
   // -- Tax (non-zero only when cdTaxApl AND NOT cdBeforeTax) ----------------
   cdTaxCode       String?   @db.Uuid                                       @map("cd_tax_code")
   cdHsn           String?   @db.VarChar(15)                                @map("cd_hsn")          // HSN/SAC, snapshot from the ledger
@@ -66,17 +60,15 @@ model SaleChargeDetail {
   cdCessPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cess_perc")
   cdCessAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cess_amt")
   cdNetAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
-
   // -- Status + audit -------------------------------------------------------
   cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
   cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")
   cdIsDeleted     Boolean   @default(false)                                @map("cd_is_deleted")
   cdSyncDate      DateTime? @db.Timestamptz                                @map("cd_sync_date")
   cdCreatedOn     DateTime  @default(now()) @db.Timestamptz                @map("cd_created_on")
-  cdCreatedBy     String?   @db.Uuid                                       @map("cd_created_by")
+  cdCreatedBy     String?   @db.Text                                   @map("cd_created_by")
   cdModifiedOn    DateTime? @db.Timestamptz                                @map("cd_modified_on")
-  cdModifiedBy    String?   @db.Uuid                                       @map("cd_modified_by")
-
+  cdModifiedBy    String?   @db.Text                                      @map("cd_modified_by")
   // Relations
   charge          ChargeMaster    @relation(fields: [cdChgId], references: [chgId], onUpdate: NoAction, onDelete: NoAction, map: "fk_cd_charge")
   // The GL ledger the charge posts to. Restrict on delete: a ledger that has
@@ -84,7 +76,6 @@ model SaleChargeDetail {
   ledger          AccLedgerMaster @relation(fields: [cdLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_ledger")
   company         Company         @relation("CompanyChargeDetails", fields: [cdCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_company")
   branch          BranchMaster    @relation("BranchChargeDetails", fields: [cdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_branch")
-
   // Fetch all charge lines for one document (the hot path on entry load).
   @@index([cdDocType, cdDocId], map: "ix_sale_charge_detail_doc")
   @@index([cdChgId], map: "ix_sale_charge_detail_chg")

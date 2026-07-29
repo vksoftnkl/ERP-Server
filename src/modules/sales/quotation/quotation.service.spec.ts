@@ -542,4 +542,14 @@ describe('QuotationService — quotation numbering', () => {
     expect(data).not.toHaveProperty('sqQuoteRefno');
     expect(data).not.toHaveProperty('sqQuoteSlno');
   });
+
+  // sq_quote_slno is bigint. Handing the raw bigint back made res.json() throw
+  // once the save transaction had already committed, so the caller saw a 500 for
+  // a quotation that was written — the payload has to survive JSON.stringify.
+  it('serializes sqQuoteSlno as a string so the response is JSON-encodable', async () => {
+    const payload = await service.save(baseDto());
+
+    expect(payload.sqQuoteSlno).toBe('42');
+    expect(() => JSON.stringify(payload)).not.toThrow();
+  });
 });

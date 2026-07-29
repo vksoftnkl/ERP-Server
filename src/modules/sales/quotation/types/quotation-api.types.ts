@@ -3,14 +3,19 @@ import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
 // sale_charge_detail is polymorphic — a quotation's applied charges are the rows
 // carrying this discriminator plus cdDocId = sqId (see ck_cd_doc_type).
 export const QUOTATION_CHARGE_DOC_TYPE = ChargeDocType.QUOTATION;
+// sqQuoteSlno is a bigint column; it is emitted as a string because JSON has no
+// bigint. Leaving it a bigint makes res.json() throw AFTER the save transaction
+// has committed, so the caller sees a 500 for a quotation that was in fact
+// written — the failure mode this Omit exists to prevent.
 export type QuotationPayload = Omit<
   SaleQuotation,
-  'sqCreatedOn' | 'sqModifiedOn' | 'sqQuoteDatetime' | 'sqSyncDate'
+  'sqCreatedOn' | 'sqModifiedOn' | 'sqQuoteDatetime' | 'sqSyncDate' | 'sqQuoteSlno'
 > & {
   sqCreatedOn?: string;
   sqModifiedOn?: string | null;
   sqQuoteDatetime?: string;
   sqSyncDate?: string | null;
+  sqQuoteSlno: string;
   items?: QuotationItemPayload[];
   charges?: QuotationChargePayload[];
 };
