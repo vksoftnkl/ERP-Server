@@ -296,6 +296,22 @@ export const toNullableUpperString = (value: unknown): string | null | undefined
   return normalized.toUpperCase();
 };
 
+export const toLowerTrimmed = (value: unknown): unknown => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  return value.trim().toLowerCase();
+};
+
+export const toNullableLowerString = (value: unknown): string | null | undefined => {
+  const normalized = toNullableString(value);
+  if (normalized === undefined || normalized === null) {
+    return normalized;
+  }
+
+  return normalized.toLowerCase();
+};
+
 export const toOptionalIdString = (value: unknown): string | undefined => {
   if (value === undefined || value === null || value === '') {
     return undefined;

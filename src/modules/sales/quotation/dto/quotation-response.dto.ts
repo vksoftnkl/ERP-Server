@@ -575,21 +575,23 @@ export class QuotationPayloadDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqModifiedBy!: string | null;
 
+  // Not typed as ChargeMethod: these two are stored lower case (the save DTO
+  // lower-cases them), so they never match an uppercase enum member.
   @ApiPropertyOptional({
-    enum: ChargeMethod,
-    enumName: 'ChargeMethod',
     nullable: true,
-    description: 'How the freight charge is computed (snapshot of the charge master method)',
+    example: 'fixed',
+    description:
+      'How the freight charge is computed (snapshot of the charge master method), lower case',
   })
-  sqFreightCalcType!: ChargeMethod | null;
+  sqFreightCalcType!: string | null;
 
   @ApiPropertyOptional({
-    enum: ChargeMethod,
-    enumName: 'ChargeMethod',
     nullable: true,
-    description: 'How the loading charge is computed (snapshot of the charge master method)',
+    example: 'fixed',
+    description:
+      'How the loading charge is computed (snapshot of the charge master method), lower case',
   })
-  sqLoadingCalcType!: ChargeMethod | null;
+  sqLoadingCalcType!: string | null;
 
   @ApiPropertyOptional({
     nullable: true,

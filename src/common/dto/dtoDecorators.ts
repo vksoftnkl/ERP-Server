@@ -24,6 +24,7 @@ import {
   toNullableIdString,
   toNullableInteger,
   toNullableIntegerStrict,
+  toNullableLowerString,
   toNullableNumberStrict,
   toNullableString,
   toNullableStringStrict,
@@ -74,6 +75,16 @@ export const NullableUpperMaxString = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toNullableUpperString(value)),
+    SkipOnNullish(),
+    IsString(),
+    ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
+  );
+// Lowercase counterpart of NullableUpperMaxString, for columns whose stored form
+// is lower case rather than upper.
+export const NullableLowerMaxString = (maxLength?: number) =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toNullableLowerString(value)),
     SkipOnNullish(),
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),

@@ -4,9 +4,10 @@ import { IsArray, IsNotEmpty, IsOptional, ValidateNested } from 'class-validator
 import {
   NullableDateString,
   NullableInteger,
+  NullableLowerMaxString,
   NullableNumber,
+  NullableString,
   NullableStringStrict,
-  NullableUpperMaxString,
   NullableUuid,
   OptionalBoolean,
   OptionalDateString,
@@ -345,17 +346,24 @@ export class SaveQuotationDto {
   @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
   @NullableStringStrict()
   sqModifiedBy?: string | null;
+  // Stored lower case, unlike the cd*/chg* method columns these snapshot: the
+  // transform normalizes whatever case the client sends, so 'FIXED', 'Fixed' and
+  // 'fixed' all persist as 'fixed'.
   @ApiPropertyOptional({
     nullable: true,
-    description: 'How the freight charge is computed (snapshot of the charge master method)',
+    example: 'fixed',
+    description:
+      'How the freight charge is computed (snapshot of the charge master method), stored lower case',
   })
-  @NullableUpperMaxString(12)
+  @NullableString(12)
   sqFreightCalcType?: string | null;
   @ApiPropertyOptional({
     nullable: true,
-    description: 'How the loading charge is computed (snapshot of the charge master method)',
+    example: 'fixed',
+    description:
+      'How the loading charge is computed (snapshot of the charge master method), stored lower case',
   })
-  @NullableUpperMaxString(12)
+  @NullableString(12)
   sqLoadingCalcType?: string | null;
   @ApiPropertyOptional({
     nullable: true,
