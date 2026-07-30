@@ -322,4 +322,18 @@ export class SaveQuotationItemDto {
   @ApiPropertyOptional({ nullable: true, description: 'Line charges landing after tax' })
   @NullableNumber()
   sqiChrgAfterTax?: string | number | null;
+
+  @ApiPropertyOptional({
+    description: 'Snapshot of item_unit_conversion.iucToBaseFactor for sqiItemUnitId',
+  })
+  @OptionalNumber()
+  sqiToBaseFactor?: string | number;
+
+  @ApiPropertyOptional()
+  @OptionalNumber()
+  sqiRateDiff?: string | number;
+
+  @ApiPropertyOptional()
+  @OptionalBoolean()
+  sqiHasFreight?: boolean;
 }

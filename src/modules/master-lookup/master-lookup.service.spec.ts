@@ -15,6 +15,9 @@ type PrismaMock = {
   company: {
     findMany: jest.Mock;
   };
+  priceLevel: {
+    findMany: jest.Mock;
+  };
 };
 type PgMock = {
   queryReadOnly: jest.Mock;
@@ -36,6 +39,9 @@ describe('MasterLookupService', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       company: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      priceLevel: {
         findMany: jest.fn().mockResolvedValue([]),
       },
     };
@@ -176,6 +182,87 @@ describe('MasterLookupService', () => {
     });
     expect(pg.queryReadOnly).toHaveBeenCalledTimes(1);
     expect(prisma.custGroup.findMany).not.toHaveBeenCalled();
+  });
+  it('returns price levels in id order, not the configured sort column order', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 34,
+        dropdownName: 'PRICE LEVELS',
+        dropdownSql: 'SELECT ipl_id, ipl_name FROM inventory.item_price_levels',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'ipl_name',
+        dropdownSortOrder: 'asc',
+        dropdownColumns: [
+          {
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'ipl_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: false,
+          },
+          {
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'ipl_name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
+          },
+        ],
+      },
+    ]);
+    // Rows come back name-ascending, the order the configured sort column asks for.
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        { ipl_id: 6, ipl_name: 'Min.Price Sale' },
+        { ipl_id: 5, ipl_name: 'MRP Sale' },
+        { ipl_id: 2, ipl_name: 'Retail Price' },
+        { ipl_id: 10, ipl_name: 'Special Price' },
+        { ipl_id: 1, ipl_name: 'WS Price' },
+      ]),
+    );
+    const result = await service.getAllMasters('priceLevels');
+    // Numeric id order — "10" last, not between "1" and "2".
+    expect(result).toEqual([
+      { id: '1', name: 'WS Price' },
+      { id: '2', name: 'Retail Price' },
+      { id: '5', name: 'MRP Sale' },
+      { id: '6', name: 'Min.Price Sale' },
+      { id: '10', name: 'Special Price' },
+    ]);
+    expect(prisma.priceLevel.findMany).not.toHaveBeenCalled();
+  });
+  it('keeps the configured sort column order for modules that are not id-ordered', async () => {
+    prisma.dropdownDetails.findMany.mockResolvedValue([
+      {
+        dropdownId: 33,
+        dropdownName: 'CUSTOMER GROUPS',
+        dropdownSql: 'SELECT cgr_id, cgr_name FROM sales.cust_groups',
+        dropdownSqlRegional: null,
+        dropdownSortColumn: 'cgr_name',
+        dropdownSortOrder: 'asc',
+        dropdownColumns: [
+          {
+            dropdownColumnsNo: 1,
+            dropdownColumnsName: 'cgr_id',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: false,
+          },
+          {
+            dropdownColumnsNo: 2,
+            dropdownColumnsName: 'cgr_name',
+            dropdownColumnsAlias: null,
+            dropdownColumnsFilter: true,
+          },
+        ],
+      },
+    ]);
+    pg.queryReadOnly.mockResolvedValue(
+      pgRows([
+        { cgr_id: '3', cgr_name: 'Retail' },
+        { cgr_id: '1', cgr_name: 'Wholesale' },
+        { cgr_id: '2', cgr_name: 'Hotel' },
+      ]),
+    );
+    const result = await service.getAllMasters('customerGroups');
+    expect(result.map((item) => item.name)).toEqual(['Hotel', 'Retail', 'Wholesale']);
   });
   it('falls back to Prisma table queries when configured dropdown SQL is unusable', async () => {
     prisma.dropdownDetails.findMany.mockResolvedValue([

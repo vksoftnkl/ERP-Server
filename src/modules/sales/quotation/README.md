@@ -188,3 +188,20 @@ Success responses follow `{ success: true, message, data }` (`QuotationSuccessRe
 `items[]` and `charges[]` arrays). Errors use `{ success: false, message, errors: [{ field, message }] }`
 (`QuotationErrorResponse`), produced by the shared sales helpers rather than by the exception
 filter.
+
+### Resolved master names (GET only)
+
+`/get` also returns the display name behind each master id on the header, so the client does not
+have to call the lookup APIs to render a stored quotation. They are **read-only** — never accepted
+on `/create` — and are `null` on the create/update responses, exactly like the line items'
+`sqiItemName` / `sqiUnitName`.
+
+| Response field | Source | Reached by |
+| --- | --- | --- |
+| `sqCustAreaName` | `sales.area_master.arm_name` | `custArea` relation on `sqCustAreaId` |
+| `sqCustAreaDistanceKm` | `sales.area_master.arm_distance_km` | same relation |
+| `sqSalesmanName` | `public.employee_master.emp_name` | `salesman` relation on `sqSalesmanId` |
+| `sqAgentName` | `sales.sale_agents.sa_name` | separate `findUnique` — `sq_agent_id` has **no FK** |
+
+A soft-deleted or inactive master row still resolves: a stored quotation must keep showing the
+area/salesman/agent it was raised under after that master is retired.

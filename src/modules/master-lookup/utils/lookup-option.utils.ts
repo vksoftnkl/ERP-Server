@@ -20,6 +20,20 @@ export function toOption(
   };
 }
 
+/**
+ * Orders options by id ascending, numerically ("2" before "10") so integer-keyed
+ * masters read `1, 2, 3, …`. Returns a new array; the rest of each option (the
+ * configured row's extra columns) is untouched.
+ */
+export function sortOptionsById(options: NameIdOption[]): NameIdOption[] {
+  return [...options].sort((left, right) =>
+    String(left.id).localeCompare(String(right.id), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    }),
+  );
+}
+
 /** Configured dropdown rows are returned whole, so JSON-hostile values are converted. */
 export function serializeLookupRow(row: LookupRow): Record<string, unknown> {
   return Object.fromEntries(

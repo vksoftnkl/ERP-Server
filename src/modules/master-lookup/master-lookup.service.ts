@@ -9,6 +9,7 @@ import { ConfiguredDropdownLookup } from './lookups/configured-dropdown.lookup';
 import { CustomerDetailLookup } from './lookups/customer-detail.lookup';
 import { ItemPriceLookup } from './lookups/item-price.lookup';
 import { buildModuleFetchers } from './lookups/module-fetchers';
+import { ID_ORDERED_LOOKUP_MODULES } from './master-lookup.constants';
 import {
   ACCOUNT_LOOKUP_MODULE_KEYS,
   AccountsLookupModuleKey,
@@ -27,8 +28,12 @@ import {
   SingleModuleLookupPayload,
 } from './types/master-lookup-api.types';
 import { DropdownLookupConfig, ModuleFetcher } from './types/master-lookup-internal.types';
-import { toDateOnly, toFreightChargeOption, toOption } from './utils/lookup-option.utils';
-
+import {
+  sortOptionsById,
+  toDateOnly,
+  toFreightChargeOption,
+  toOption,
+} from './utils/lookup-option.utils';
 /**
  * Read-only lookups behind the master-lookup endpoints. Option lists come from
  * the dropdowns configured in `dropdown_details` where one exists, and from the
@@ -41,7 +46,6 @@ export class MasterLookupService {
   private readonly configuredDropdowns: ConfiguredDropdownLookup;
   private readonly customerDetail: CustomerDetailLookup;
   private readonly itemPrice: ItemPriceLookup;
-
   constructor(
     private readonly prisma: PrismaService,
     pg: PgService,
@@ -51,9 +55,7 @@ export class MasterLookupService {
     this.customerDetail = new CustomerDetailLookup(prisma);
     this.itemPrice = new ItemPriceLookup(prisma);
   }
-
   // ─── Module option lookups ──────────────────────────────────────────────────
-
   /**
    * Every accounts/masters module's options, or just one when `module` is given.
    * `id` narrows each module to the row carrying it (see {@link fetchModuleItems}).
@@ -73,7 +75,6 @@ export class MasterLookupService {
       masters: pickModules(byModule, MASTER_LOOKUP_MODULE_KEYS),
     };
   }
-
   /**
    * The master modules' options flattened into one `{ id, name }` list. `id`
    * narrows it to the single row carrying that id — one entry when the module
@@ -87,16 +88,13 @@ export class MasterLookupService {
       .flat()
       .map((item) => ({ id: item.id, name: item.name }));
   }
-
   /** Options of one configured dropdown by id, empty when it is missing or unusable. */
   async getDropdownSqlData(dropdownId: number): Promise<NameIdOption[]> {
     const config = await this.configuredDropdowns.loadConfigById(dropdownId);
     if (!config) return [];
     return (await this.configuredDropdowns.fetchItems(config)) ?? [];
   }
-
   // ─── Scoped lookups ─────────────────────────────────────────────────────────
-
   async getBranchesByCompany(companyId: string): Promise<NameIdOption[]> {
     const rows = await this.prisma.branchMaster.findMany({
       where: {
@@ -109,7 +107,6 @@ export class MasterLookupService {
     });
     return rows.map((row) => toOption(row.brId, row.brName));
   }
-
   async getFiscalYearsByCompany(companyId: string): Promise<FiscalYearOption[]> {
     const rows = await this.prisma.fiscalYear.findMany({
       where: {
@@ -135,7 +132,6 @@ export class MasterLookupService {
       isCurrent: row.fyIsCurrent,
     }));
   }
-
   /**
    * Legacy `iflag = 9`: the active freight-charge slabs whose km range covers the
    * given distance (distance BETWEEN fr_from_km AND fr_to_km).
@@ -152,7 +148,6 @@ export class MasterLookupService {
     });
     return rows.map((row) => toFreightChargeOption(row));
   }
-
   /**
    * Legacy `iflag = 10` (barcode): resolve a scanned EAN code to its item and
    * selling unit. Matches item_ean_codes.ean_code case-insensitively (legacy
@@ -205,7 +200,6 @@ export class MasterLookupService {
       weighScale: item.itemWeighScale,
     };
   }
-
   /**
    * Resolve an item into its selling/purchase units from `item_unit_conversion`
    * joined to `item_unit_master`. Returns active, non-deleted conversion rows in
@@ -228,17 +222,14 @@ export class MasterLookupService {
       unitName: row.unit.unit_name,
     }));
   }
-
   /** Legacy `iflag = 7`: one customer's sales profile within a company. */
   async getCustomerDetail(query: CustomerDetailQueryDto): Promise<CustomerDetail> {
     return this.customerDetail.getCustomerDetail(query);
   }
-
   /** Legacy `getItemForSale`: one item + unit rate resolved for a sale line. */
   async getItemPriceLookup(query: ItemPriceLookupQueryDto): Promise<ItemPriceLookupPayload> {
     return this.itemPrice.getItemPriceLookup(query);
   }
-
   /**
    * The conversion after the one the caller has selected — the "cycle unit"
    * action of the entry screens. Returns the next iuc_id only, no price row.
@@ -246,9 +237,7 @@ export class MasterLookupService {
   async refreshItemPriceLookup(query: ItemPriceRefreshQueryDto): Promise<ItemUnitCyclePayload> {
     return this.itemPrice.refreshItemPriceLookup(query);
   }
-
   // ─── Internals ──────────────────────────────────────────────────────────────
-
   private async fetchModules<TKey extends LookupModuleKey>(
     moduleKeys: readonly TKey[],
     configuredDropdowns: Map<LookupModuleKey, DropdownLookupConfig>,
@@ -281,6 +270,16 @@ export class MasterLookupService {
   }
 
   private async fetchAllModuleItems(
+    module: LookupModuleKey,
+    configuredDropdowns: Map<LookupModuleKey, DropdownLookupConfig>,
+  ): Promise<NameIdOption[]> {
+    const items = await this.fetchModuleItemsInSourceOrder(module, configuredDropdowns);
+    // An ordinal module is re-ordered by id whichever path produced it: the
+    // configured dropdown sorts by its own sort column (see ID_ORDERED_LOOKUP_MODULES).
+    return ID_ORDERED_LOOKUP_MODULES.has(module) ? sortOptionsById(items) : items;
+  }
+
+  private async fetchModuleItemsInSourceOrder(
     module: LookupModuleKey,
     configuredDropdowns: Map<LookupModuleKey, DropdownLookupConfig>,
   ): Promise<NameIdOption[]> {

@@ -16,6 +16,13 @@ export type QuotationPayload = Omit<
   sqQuoteDatetime?: string;
   sqSyncDate?: string | null;
   sqQuoteSlno: string;
+  // Master names resolved for the id columns on the header. Like the line
+  // items' sqiItemName/sqiUnitName these are read-only display fields, only
+  // populated on GET — the create/update paths return null for them.
+  sqCustAreaName?: string | null;
+  sqCustAreaDistanceKm?: number | null;
+  sqSalesmanName?: string | null;
+  sqAgentName?: string | null;
   items?: QuotationItemPayload[];
   charges?: QuotationChargePayload[];
 };

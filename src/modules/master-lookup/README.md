@@ -260,6 +260,14 @@ When a dropdown config matches (or via `GET /dropdown/:dropdownId`),
 - **Ordering:** by `dropdownSortColumn` / `dropdownSortOrder` (`DESC` reverses) when present,
   otherwise by option `name`; ties break on `id`, all via locale-aware numeric compare.
 
+### Id-ordered modules
+
+The keys in [`ID_ORDERED_LOOKUP_MODULES`](master-lookup.constants.ts) — currently `priceLevels` —
+are re-sorted by `id` ascending (numeric, so `2` precedes `10`) after they are fetched, on both the
+configured-dropdown and built-in-fetcher paths. Price levels are ordinal (level 1..n is a price
+column's position on an item), while their configured dropdown sorts by `ipl_name`, which would
+hand the caller the levels alphabetically. Every other module keeps its configured/name order.
+
 ## Response shapes
 
 Grounded in [types/master-lookup-api.types.ts](types/master-lookup-api.types.ts) and

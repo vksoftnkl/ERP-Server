@@ -212,6 +212,9 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiNetGross',
   'sqiChrgBeforeTax',
   'sqiChrgAfterTax',
+  'sqiToBaseFactor',
+  'sqiRateDiff',
+  'sqiHasFreight',
 ];
 // Charge-line fields copied straight through when present on the payload. The
 // scope keys (docType/docId/comp/branch/accYear/slno) and the two required
@@ -309,6 +312,14 @@ type SaleQuotationItemWithNames = SaleQuotationItem & {
   item?: { itemNameEn: string } | null;
   itemUnitConversion?: { unit: { unit_name: string } } | null;
 };
+// Same idea for the header's master ids: custArea/salesman come from the
+// getById joins, `agent` from the extra lookup below (sq_agent_id has no FK).
+// Absent on the create/update paths, which pass a plain SaleQuotation row.
+type SaleQuotationWithNames = SaleQuotation & {
+  custArea?: { armName: string; armDistanceKm: number | null } | null;
+  salesman?: { empName: string } | null;
+  agent?: { saName: string } | null;
+};
 @Injectable()
 export class QuotationService {
   constructor(
@@ -345,6 +356,8 @@ export class QuotationService {
             itemUnitConversion: { select: { unit: { select: { unit_name: true } } } },
           },
         },
+        custArea: { select: { armName: true, armDistanceKm: true } },
+        salesman: { select: { empName: true } },
       },
     });
     if (!record) {
@@ -357,7 +370,8 @@ export class QuotationService {
     // sale_charge_detail is polymorphic (no FK to sale_quotation), so the
     // applied charges are fetched by discriminator rather than by `include`.
     const charges = await this.findCharges(this.prisma, sqId);
-    return this.toPayload({ ...record, charges });
+    const agent = await this.findAgent(record.sqAgentId);
+    return this.toPayload({ ...record, charges, agent });
   }
   async softDelete(sqId: string): Promise<{ sqId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -783,6 +797,20 @@ export class QuotationService {
       orderBy: { cdSlno: 'asc' },
     });
   }
+  // sq_agent_id carries no FK to sale_agents (see migration
+  // 20260708130000_add_sale_quotation_master_fkeys), so the agent name cannot
+  // come from an `include` and is looked up on its own. Soft-deleted agents are
+  // still resolved: the quotation must keep displaying the agent it was raised
+  // under even after that master row is retired.
+  private async findAgent(saId: string | null): Promise<{ saName: string } | null> {
+    if (!saId) {
+      return null;
+    }
+    return this.prisma.saleAgent.findUnique({
+      where: { saId },
+      select: { saName: true },
+    });
+  }
   // Reconciles the quotation's applied charges with the payload array, exactly
   // as syncItems does for the line items:
   //   - a charge carrying cdId updates that existing charge line
@@ -1005,7 +1033,7 @@ export class QuotationService {
     applyPresentFields(data, dto, QUOTATION_OPTIONAL_FIELDS, QUOTATION_DATE_TRANSFORMS);
   }
   private toPayload(
-    record: SaleQuotation & {
+    record: SaleQuotationWithNames & {
       items?: SaleQuotationItemWithNames[];
       charges?: SaleChargeDetail[];
     },
@@ -1018,10 +1046,17 @@ export class QuotationService {
       sqQuoteSlno,
       items,
       charges,
+      custArea,
+      salesman,
+      agent,
       ...rest
     } = record;
     return {
       ...rest,
+      sqCustAreaName: custArea?.armName ?? null,
+      sqCustAreaDistanceKm: custArea?.armDistanceKm ?? null,
+      sqSalesmanName: salesman?.empName ?? null,
+      sqAgentName: agent?.saName ?? null,
       sqCreatedOn: sqCreatedOn?.toISOString(),
       sqModifiedOn: sqModifiedOn?.toISOString() ?? null,
       sqQuoteDatetime: sqQuoteDatetime?.toISOString(),

@@ -3063,6 +3063,9 @@ Table sale_quotation_item {
   sqiNetGross Decimal
   sqiChrgBeforeTax Decimal
   sqiChrgAfterTax Decimal
+  sqiToBaseFactor Decimal [not null, default: 0]
+  sqiRateDiff Decimal [not null, default: 0]
+  sqiHasFreight Boolean [not null, default: false]
   quote sale_quotation [not null]
   item item_master [not null]
   priceLevel item_price_levels [not null]

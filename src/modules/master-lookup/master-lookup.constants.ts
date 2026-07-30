@@ -23,6 +23,18 @@ export const DEFAULT_FREIGHT_TYPE: FreightType = 'manual';
 export const LOOKUP_NAME_NOISE_TOKENS = new Set(['master', 'lookup', 'dropdown']);
 
 /**
+ * Modules whose options are ordinal, so the list must come back in id order —
+ * `1, 2, 3, …` — however it was fetched. Price levels are the case: level 1..n
+ * is the position of a price column on an item, and every screen shows them in
+ * that order. Their configured dropdown sorts by `ipl_name`, which would hand
+ * the caller the levels alphabetically, so id order is re-applied afterwards
+ * for these keys only; every other module keeps its configured/name order.
+ */
+export const ID_ORDERED_LOOKUP_MODULES: ReadonlySet<LookupModuleKey> = new Set<LookupModuleKey>([
+  'priceLevels',
+]);
+
+/**
  * Stored dropdown SQL still references tables under their pre-migration schema /
  * name. Each pattern rewrites one of those to the table that exists today.
  */

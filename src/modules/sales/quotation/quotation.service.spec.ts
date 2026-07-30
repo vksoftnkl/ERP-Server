@@ -17,6 +17,9 @@ const LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fe07';
 const CD_ID = '019c6f6c-be87-7a11-8905-36092c46fe08';
 const OTHER_CD_ID = '019c6f6c-be87-7a11-8905-36092c46fe09';
 const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fe0a';
+const AREA_ID = '019c6f6c-be87-7a11-8905-36092c46fe0b';
+const SALESMAN_ID = '019c6f6c-be87-7a11-8905-36092c46fe0c';
+const AGENT_ID = '019c6f6c-be87-7a11-8905-36092c46fe0d';
 const ACC_YEAR = '2026-2027';
 // The quotation voucher type, and the counter it stands at before a save: the
 // next quotation therefore takes number 42 → 'quo00042'.
@@ -180,6 +183,10 @@ type PrismaMock = {
   branchMaster: {
     findFirst: jest.Mock<Promise<{ brCode: string | null } | null>, unknown[]>;
   };
+  // sq_agent_id has no FK, so getById resolves the agent name on its own.
+  saleAgent: {
+    findUnique: jest.Mock<Promise<{ saName: string } | null>, unknown[]>;
+  };
   $queryRaw: jest.Mock<Promise<unknown>, unknown[]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
 };
@@ -258,6 +265,9 @@ const makePrismaMock = (): PrismaMock => {
     },
     branchMaster: {
       findFirst: jest.fn(() => Promise.resolve({ brCode: null })),
+    },
+    saleAgent: {
+      findUnique: jest.fn(() => Promise.resolve({ saName: 'Agent One' })),
     },
     $queryRaw: jest.fn(() => Promise.resolve([{ locked: 1 }])),
     $transaction: jest.fn((cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma)),
@@ -430,6 +440,52 @@ describe('QuotationService — applied charges', () => {
     );
     expect(payload.charges?.[0].cdVoucherNo).toBe('42');
     expect(payload.charges?.[0].cdCreatedOn).toBe('2026-07-28T10:00:00.000Z');
+  });
+
+  it('resolves the area, salesman and agent names on getById', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({
+        sqCustAreaId: AREA_ID,
+        sqSalesmanId: SALESMAN_ID,
+        sqAgentId: AGENT_ID,
+        custArea: { armName: 'North Zone', armDistanceKm: 12 },
+        salesman: { empName: 'Ravi Kumar' },
+      } as unknown as Partial<SaleQuotation>),
+    );
+
+    const payload = await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+    expect(prisma.saleQuotation.findFirst).toHaveBeenCalledWith(
+      containing({
+        include: containing({
+          custArea: { select: { armName: true, armDistanceKm: true } },
+          salesman: { select: { empName: true } },
+        }),
+      }),
+    );
+    // sq_agent_id has no FK, so its name comes from a separate lookup.
+    expect(prisma.saleAgent.findUnique).toHaveBeenCalledWith({
+      where: { saId: AGENT_ID },
+      select: { saName: true },
+    });
+    expect(payload.sqCustAreaName).toBe('North Zone');
+    expect(payload.sqCustAreaDistanceKm).toBe(12);
+    expect(payload.sqSalesmanName).toBe('Ravi Kumar');
+    expect(payload.sqAgentName).toBe('Agent One');
+    // The joined relations themselves must not leak into the payload.
+    expect(payload).not.toHaveProperty('custArea');
+    expect(payload).not.toHaveProperty('salesman');
+    expect(payload).not.toHaveProperty('agent');
+  });
+
+  it('leaves the master names null when the header carries no area/salesman/agent', async () => {
+    const payload = await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+    expect(prisma.saleAgent.findUnique).not.toHaveBeenCalled();
+    expect(payload.sqCustAreaName).toBeNull();
+    expect(payload.sqCustAreaDistanceKm).toBeNull();
+    expect(payload.sqSalesmanName).toBeNull();
+    expect(payload.sqAgentName).toBeNull();
   });
 
   it('cascades the header soft delete to the applied charges', async () => {

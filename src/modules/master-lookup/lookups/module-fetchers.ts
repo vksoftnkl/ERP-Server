@@ -216,7 +216,7 @@ export function buildModuleFetchers(prisma: PrismaService): Record<LookupModuleK
         prisma.priceLevel.findMany({
           where: { priceLvlIsDeleted: false, priceLvlIsActive: true },
           select: { priceLvlId: true, priceLvlName: true, priceLvlShort: true },
-          orderBy: [{ priceLvlName: 'asc' }, { priceLvlId: 'asc' }],
+          orderBy: [{ priceLvlId: 'asc' }],
         }),
       (row) => toOption(String(row.priceLvlId), row.priceLvlName ?? row.priceLvlShort),
     ),

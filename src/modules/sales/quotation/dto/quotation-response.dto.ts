@@ -320,6 +320,14 @@ export class QuotationItemPayloadDto {
   sqiChrgBeforeTax!: number | null;
   @ApiPropertyOptional({ nullable: true, description: 'Line charges landing after tax' })
   sqiChrgAfterTax!: number | null;
+  @ApiProperty({
+    description: 'Snapshot of item_unit_conversion.iucToBaseFactor for sqiItemUnitId',
+  })
+  sqiToBaseFactor!: number;
+  @ApiProperty()
+  sqiRateDiff!: number;
+  @ApiProperty()
+  sqiHasFreight!: boolean;
   @ApiProperty()
   sqiIsDeleted!: boolean;
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
@@ -382,6 +390,16 @@ export class QuotationPayloadDto {
   sqCustId!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqCustAreaId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'area_master.armName for sqCustAreaId — only populated on GET',
+  })
+  sqCustAreaName?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'area_master.armDistanceKm for sqCustAreaId — only populated on GET',
+  })
+  sqCustAreaDistanceKm?: number | null;
   @ApiProperty({ maxLength: 200 })
   sqCustName!: string;
   @ApiPropertyOptional({ maxLength: 500, nullable: true })
@@ -420,8 +438,18 @@ export class QuotationPayloadDto {
   sqUserId!: string;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqSalesmanId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'employee_master.empName for sqSalesmanId — only populated on GET',
+  })
+  sqSalesmanName?: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqAgentId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'sale_agents.saName for sqAgentId — only populated on GET',
+  })
+  sqAgentName?: string | null;
   @ApiProperty()
   sqTotItems!: number;
   @ApiProperty()
