@@ -306,11 +306,33 @@ interface QuotationScope {
   sqQuoteSlno: bigint;
 }
 type QuotationWriteClient = SalesWriteClient;
+// The unique indexes a quotation write can trip, besides ux_sq_quote_no on the
+// reference number. Postgres names the offending index and Prisma passes that
+// name through as P2002 meta.target, which is the only way to tell them apart —
+// see describeDuplicate below.
+const QUOTATION_SLNO_INDEX = 'ux_sq_slno';
+const QUOTATION_ITEM_LINE_INDEX = 'ux_sqi_quote_line';
+// P2002's meta.target is the index name on Postgres, but an array of column
+// names on other connectors — both are flattened to one searchable string.
+function uniqueConstraintTarget(error: unknown): string {
+  const target = (error as { meta?: { target?: unknown } } | null)?.meta?.target;
+  if (Array.isArray(target)) {
+    return target.join(',');
+  }
+  return typeof target === 'string' ? target : '';
+}
 // Only populated when the item was fetched with the item/unit joins (getById);
 // create/update paths pass plain SaleQuotationItem rows where these are absent.
 type SaleQuotationItemWithNames = SaleQuotationItem & {
-  item?: { itemNameEn: string } | null;
-  itemUnitConversion?: { unit: { unit_name: string } } | null;
+  item?: {
+    itemNameEn: string;
+    itemBatchConfig: number;
+    itemGroupId: string;
+    itemBrandId: string | null;
+    itemSectionId: string | null;
+    itemCategoryId: string | null;
+  } | null;
+  itemUnitConversion?: { unit: { unit_name: string; unit_decimal_count: number } } | null;
 };
 // Same idea for the header's master ids: custArea/salesman come from the
 // getById joins, `agent` from the extra lookup below (sq_agent_id has no FK).
@@ -352,8 +374,19 @@ export class QuotationService {
           where: { sqiIsDeleted: false },
           orderBy: { sqiLineNo: 'asc' },
           include: {
-            item: { select: { itemNameEn: true } },
-            itemUnitConversion: { select: { unit: { select: { unit_name: true } } } },
+            item: {
+              select: {
+                itemNameEn: true,
+                itemBatchConfig: true,
+                itemGroupId: true,
+                itemBrandId: true,
+                itemSectionId: true,
+                itemCategoryId: true,
+              },
+            },
+            itemUnitConversion: {
+              select: { unit: { select: { unit_name: true, unit_decimal_count: true } } },
+            },
           },
         },
         custArea: { select: { armName: true, armDistanceKm: true } },
@@ -373,11 +406,19 @@ export class QuotationService {
     const agent = await this.findAgent(record.sqAgentId);
     return this.toPayload({ ...record, charges, agent });
   }
-  async softDelete(sqId: string): Promise<{ sqId: string; deleted: true }> {
+  async softDelete(
+    sqId: string,
+    sqCompanyId: string,
+    sqBranchId: string,
+    sqAccYear: string,
+  ): Promise<{ sqId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.saleQuotation.findFirst({
         where: {
           sqId,
+          sqCompanyId,
+          sqBranchId,
+          sqAccYear,
           sqIsDeleted: false,
         },
       });
@@ -393,6 +434,9 @@ export class QuotationService {
       const result = await tx.saleQuotation.updateMany({
         where: {
           sqId,
+          sqCompanyId,
+          sqBranchId,
+          sqAccYear,
           sqIsDeleted: false,
         },
         data: {
@@ -444,7 +488,10 @@ export class QuotationService {
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'delete',
+          // A soft delete is logged as 'cancel', the way every other module logs
+          // one: audit.audit_log_action has no 'delete' member, so
+          // AuditLogService.normalizeAction answers 400 for it.
+          action: 'cancel',
           tableName: QUOTATION_TABLE_NAME,
           screenName: QUOTATION_AUDIT_SCREEN_NAME,
           screenType: 'transaction',
@@ -537,15 +584,11 @@ export class QuotationService {
         return payload;
       });
     } catch (error: unknown) {
+      const duplicate = this.describeDuplicate(error);
       throwOnUniqueConstraintError<QuotationErrorDetail, QuotationErrorResponse>(
         error,
-        'Quotation already exists',
-        [
-          {
-            field: 'sqQuoteRefno',
-            message: 'Duplicate quotation reference number is not allowed',
-          },
-        ],
+        duplicate.message,
+        duplicate.errors,
       );
       throw error;
     }
@@ -611,15 +654,11 @@ export class QuotationService {
         return payload;
       });
     } catch (error: unknown) {
+      const duplicate = this.describeDuplicate(error);
       throwOnUniqueConstraintError<QuotationErrorDetail, QuotationErrorResponse>(
         error,
-        'Quotation already exists',
-        [
-          {
-            field: 'sqQuoteRefno',
-            message: 'Duplicate quotation reference number is not allowed',
-          },
-        ],
+        duplicate.message,
+        duplicate.errors,
       );
       throw error;
     }
@@ -629,6 +668,14 @@ export class QuotationService {
   //   - a line without sqiId is created
   //   - an existing line absent from the array is soft deleted
   // Passing `undefined` (property omitted) leaves the current lines untouched.
+  //
+  // Order matters, and it is the reason the payload is resolved and validated in
+  // full before the first write: ux_sqi_quote_line is unique on
+  // (sqi_quote_id, sqi_line_no) over the ACTIVE lines only, so which rows are
+  // still active when an insert lands decides whether Postgres rejects it. A
+  // client re-posting its grid without sqiId used to insert line 1 while the old
+  // line 1 was still active — the update failed with a duplicate-key error that
+  // surfaced as a 409 about the quotation reference number.
   private async syncItems(
     tx: QuotationWriteClient,
     scope: QuotationScope,
@@ -643,12 +690,16 @@ export class QuotationService {
       return existing;
     }
     const existingMap = new Map(existing.map((item) => [item.sqiId, item]));
-    const keptIds = new Set<string>();
-    const seenLineNos = new Set<number>();
     const now = new Date();
-    const persisted: SaleQuotationItem[] = [];
-    for (const [index, inputItem] of inputItems.entries()) {
-      const lineNo = inputItem.sqiLineNo ?? index + 1;
+    // Line numbers first: an entry keeps the number it sent, otherwise it takes
+    // its position in the array.
+    const resolvedItems = inputItems.map((inputItem, index) => ({
+      inputItem,
+      lineNo: inputItem.sqiLineNo ?? index + 1,
+    }));
+    const seenLineNos = new Set<number>();
+    const keptIds = new Set<string>();
+    for (const { inputItem, lineNo } of resolvedItems) {
       if (seenLineNos.has(lineNo)) {
         throwSalesConflict<QuotationErrorDetail, QuotationErrorResponse>(
           'Duplicate quotation line number is not allowed',
@@ -662,14 +713,45 @@ export class QuotationService {
       }
       seenLineNos.add(lineNo);
       if (inputItem.sqiId) {
-        const existingItem = existingMap.get(inputItem.sqiId);
-        if (!existingItem) {
+        if (!existingMap.has(inputItem.sqiId)) {
           throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
             'Quotation item not found',
             'sqiId',
             `No active quotation line found with id ${inputItem.sqiId} on this quotation`,
           );
         }
+        keptIds.add(inputItem.sqiId);
+      }
+    }
+    // Retire the lines the payload dropped before inserting anything: leaving
+    // them active would hold their line numbers against the replacements.
+    await this.softDeleteItems(
+      tx,
+      existing.filter((item) => !keptIds.has(item.sqiId)),
+      actorId,
+      now,
+    );
+    // The surviving lines can still be in each other's way when the payload
+    // reorders them (1↔2 renumbers through a state where both rows want 2), so
+    // they are parked above every number the payload asks for and renumbered
+    // down from there. Skipped when no survivor changes number, which is the
+    // usual edit.
+    const reordersItems = resolvedItems.some(
+      ({ inputItem, lineNo }) =>
+        inputItem.sqiId !== undefined && existingMap.get(inputItem.sqiId)?.sqiLineNo !== lineNo,
+    );
+    if (reordersItems && keptIds.size > 0) {
+      await tx.saleQuotationItem.updateMany({
+        where: { sqiId: { in: [...keptIds] } },
+        data: { sqiLineNo: { increment: Math.max(...seenLineNos) + 1 } },
+      });
+    }
+    const persisted: SaleQuotationItem[] = [];
+    for (const { inputItem, lineNo } of resolvedItems) {
+      if (inputItem.sqiId) {
+        // Present — the validation pass above already rejected an id that is not
+        // an active line on this quotation.
+        const existingItem = existingMap.get(inputItem.sqiId)!;
         const updateData: Prisma.SaleQuotationItemUncheckedUpdateInput = {
           sqiLineNo: lineNo,
           sqiItemId: inputItem.sqiItemId ?? existingItem.sqiItemId,
@@ -703,7 +785,6 @@ export class QuotationService {
           },
           tx,
         );
-        keptIds.add(updated.sqiId);
         persisted.push(updated);
         continue;
       }
@@ -742,11 +823,18 @@ export class QuotationService {
         },
         tx,
       );
-      keptIds.add(created.sqiId);
       persisted.push(created);
     }
-    // Any previously active line not present in the payload is soft deleted.
-    const removed = existing.filter((item) => !keptIds.has(item.sqiId));
+    return persisted.sort((left, right) => left.sqiLineNo - right.sqiLineNo);
+  }
+  // Retires the lines the payload no longer carries. Called before the payload
+  // is written so the freed line numbers are available to the replacements.
+  private async softDeleteItems(
+    tx: QuotationWriteClient,
+    removed: SaleQuotationItem[],
+    actorId: string,
+    now: Date,
+  ): Promise<void> {
     for (const removedItem of removed) {
       const deleted = await tx.saleQuotationItem.update({
         where: { sqiId: removedItem.sqiId },
@@ -758,7 +846,7 @@ export class QuotationService {
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'delete',
+          action: 'cancel',
           tableName: QUOTATION_ITEM_TABLE_NAME,
           screenName: QUOTATION_AUDIT_SCREEN_NAME,
           screenType: 'transaction',
@@ -772,7 +860,45 @@ export class QuotationService {
         tx,
       );
     }
-    return persisted.sort((left, right) => left.sqiLineNo - right.sqiLineNo);
+  }
+  // Names the duplicate a P2002 actually is. Every unique violation used to be
+  // reported as a duplicate reference number, which pointed callers at the
+  // voucher number — a field neither save path lets the client set and the
+  // update path never rewrites — when the real clash was a line number.
+  private describeDuplicate(error: unknown): { message: string; errors: QuotationErrorDetail[] } {
+    const target = uniqueConstraintTarget(error);
+    if (target.includes(QUOTATION_ITEM_LINE_INDEX)) {
+      return {
+        message: 'Duplicate quotation line number is not allowed',
+        errors: [
+          {
+            field: 'sqiLineNo',
+            message: 'Another active line on this quotation already uses this line number',
+          },
+        ],
+      };
+    }
+    if (target.includes(QUOTATION_SLNO_INDEX)) {
+      return {
+        message: 'Quotation already exists',
+        errors: [
+          {
+            field: 'sqQuoteSlno',
+            message: 'Duplicate quotation serial number is not allowed',
+          },
+        ],
+      };
+    }
+    // ux_sq_quote_no, and the fallback for a connector that reports no target.
+    return {
+      message: 'Quotation already exists',
+      errors: [
+        {
+          field: 'sqQuoteRefno',
+          message: 'Duplicate quotation reference number is not allowed',
+        },
+      ],
+    };
   }
   private requireItemField(value: string | undefined, field: string): string {
     if (!value) {
@@ -939,7 +1065,7 @@ export class QuotationService {
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'delete',
+          action: 'cancel',
           tableName: QUOTATION_CHARGE_TABLE_NAME,
           screenName: QUOTATION_AUDIT_SCREEN_NAME,
           screenType: 'transaction',
@@ -1087,6 +1213,12 @@ export class QuotationService {
       sqiSyncDate: sqiSyncDate?.toISOString() ?? null,
       sqiItemName: item?.itemNameEn ?? null,
       sqiUnitName: itemUnitConversion?.unit.unit_name ?? null,
+      sqiDecimalCount: itemUnitConversion?.unit.unit_decimal_count ?? null,
+      sqiBatchConfig: item?.itemBatchConfig ?? null,
+      sqiGroupId: item?.itemGroupId ?? null,
+      sqiBrandId: item?.itemBrandId ?? null,
+      sqiSectionId: item?.itemSectionId ?? null,
+      sqiCategoryId: item?.itemCategoryId ?? null,
     };
   }
 }

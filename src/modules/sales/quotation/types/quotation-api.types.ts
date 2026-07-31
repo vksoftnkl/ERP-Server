@@ -35,6 +35,15 @@ export type QuotationItemPayload = Omit<
   sqiSyncDate?: string | null;
   sqiItemName?: string | null;
   sqiUnitName?: string | null;
+  // Item/unit master attributes resolved for the line's sqiItemId and
+  // sqiItemUnitId. Read-only display fields on the same footing as
+  // sqiItemName/sqiUnitName — only populated on GET.
+  sqiDecimalCount?: number | null;
+  sqiBatchConfig?: number | null;
+  sqiGroupId?: string | null;
+  sqiBrandId?: string | null;
+  sqiSectionId?: string | null;
+  sqiCategoryId?: string | null;
 };
 // cdVoucherNo is a bigint column; it is emitted as a string because JSON has no
 // bigint (same convention as the header's sqQuoteSlno).

@@ -1,7 +1,11 @@
 import { IsNotEmpty, IsOptional, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalBoolean, TrimmedString } from 'src/common/dto/dtoDecorators';
+import {
+  OptionalBoolean,
+  OptionalTrimmedString,
+  TrimmedString,
+} from 'src/common/dto/dtoDecorators';
 import { toOptionalIdString } from 'src/common/dto/DtoTransforms';
 export class SaveTenderTypeMasterDto {
   @ApiPropertyOptional({
@@ -13,10 +17,18 @@ export class SaveTenderTypeMasterDto {
   @Matches(/^\d+$/)
   ttmTypeId?: string;
 
-  @ApiProperty({ maxLength: 150 })
-  @TrimmedString(150)
+  @ApiProperty({ maxLength: 50, example: 'CASH' })
+  @TrimmedString(50)
   @IsNotEmpty()
   ttmTypeName!: string;
+
+  @ApiPropertyOptional({
+    maxLength: 50,
+    example: 'Cash',
+    description: 'POS-facing label. Defaults to ttmTypeName when omitted.',
+  })
+  @OptionalTrimmedString(50)
+  ttmDisplayName?: string;
 
   @ApiPropertyOptional()
   @OptionalBoolean()

@@ -25,6 +25,7 @@ import { SaleAgentModule } from '../modules/sales/sale-agent/sale-agent.module';
 import { CustomerGroupModule } from '../modules/sales/customer-group/customer-group.module';
 import { CustomerModule } from '../modules/sales/customer/customer.module';
 import { QuotationModule } from '../modules/sales/quotation/quotation.module';
+import { BillModule } from '../modules/sales/bill/bill.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
 import { HealthModule } from '../modules/health/health.module';
@@ -415,6 +416,12 @@ export const swaggerModuleDocuments = [
     title: 'Quotations API',
     description: 'Single-call sale quotation endpoints with nested line items',
     include: [QuotationModule],
+  },
+  {
+    path: 'bills',
+    title: 'Bills API',
+    description: 'Single-call sale bill (tax invoice) endpoints with nested line items',
+    include: [BillModule],
   },
   {
     path: 'bank-lists',

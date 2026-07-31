@@ -99,7 +99,7 @@ export class AuthService {
       token_type: 'Bearer',
       usrId: user.usrId,
       user_type: user.usrType ?? null,
-      user_name: user.usrDisplayName,
+      user_name: user.usrLoginName,
       device_id: device?.devId ?? null,
       device_name: device?.devDeviceName ?? null,
       dev_company_id: device?.devCompanyId ?? null,

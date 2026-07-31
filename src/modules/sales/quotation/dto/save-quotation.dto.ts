@@ -6,7 +6,6 @@ import {
   NullableInteger,
   NullableLowerMaxString,
   NullableNumber,
-  NullableString,
   NullableStringStrict,
   NullableUuid,
   OptionalBoolean,
@@ -355,7 +354,7 @@ export class SaveQuotationDto {
     description:
       'How the freight charge is computed (snapshot of the charge master method), stored lower case',
   })
-  @NullableString(12)
+  @NullableLowerMaxString(12)
   sqFreightCalcType?: string | null;
   @ApiPropertyOptional({
     nullable: true,
@@ -363,7 +362,7 @@ export class SaveQuotationDto {
     description:
       'How the loading charge is computed (snapshot of the charge master method), stored lower case',
   })
-  @NullableString(12)
+  @NullableLowerMaxString(12)
   sqLoadingCalcType?: string | null;
   @ApiPropertyOptional({
     nullable: true,

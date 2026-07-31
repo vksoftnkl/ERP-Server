@@ -112,6 +112,8 @@ model Company {
   loyaltySchemes        LoyaltyScheme[]
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
   chargeDetails         SaleChargeDetail[] @relation("CompanyChargeDetails")
+  tenderMasters         AccTenderMaster[]
+  tenderDetails         AccTenderDetail[]
   @@map("companys")
   @@schema("public")
 }

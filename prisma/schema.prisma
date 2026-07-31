@@ -196,7 +196,12 @@ model AccLedgerMaster {
   branches                 BranchMaster?          @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
   bankAccounts             AccLedgerBankAccount[]
   shipAddrs                AccShipAddr[]
-  tenders                  AccountTenderMaster[]
+  tenderLedgers            AccTenderMaster[]      @relation("TenderLedger")
+  tenderSettlementLedgers  AccTenderMaster[]      @relation("TenderSettlementLedger")
+  tenderSurchargeLedgers   AccTenderMaster[]      @relation("TenderSurchargeLedger")
+  tenderDetailLedgers      AccTenderDetail[]      @relation("TenderDetailLedger")
+  tenderDetailSettleLedgers AccTenderDetail[]     @relation("TenderDetailSettleLedger")
+  tenderDetailPartyLedgers AccTenderDetail[]      @relation("TenderDetailPartyLedger")
   voucherBillParties       AccVoucherBill[]       @relation("VoucherBillParty")
   voucherDocRegisterParties AccVoucherDocRegister[]
   voucherHeaderParties     AccVoucherHeader[]
@@ -219,53 +224,238 @@ model AccLedgerMaster {
   @@schema("accounts")
 }
 
-// ----- prisma/accounts/AccounttenderMaster.prisma -----
-model AccountTenderMaster {
-  acctndId              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid          @map("acc_tnd_id")
-  acctndTypeId          BigInt                                                             @map("acc_tnd_type_id")
-  acctndName            String                                                             @map("acc_tnd_tnd_name")
-  acctndShortName       String                                                             @map("acc_tnd_tnd_short_name")
-  acctndLedgerId        String    @db.Uuid                                                 @map("acc_tnd_tnd_ledger_id")
-  acctndMinAmount       Decimal   @default(0) @db.Decimal(14, 2)                          @map("acc_tnd_tnd_min_amount")
-  acctndMaxAmount       Decimal?  @db.Decimal(14, 2)                                      @map("acc_tnd_tnd_max_amount")
-  acctndDisplayPosition Int       @default(0)                                             @map("acc_tnd_tnd_display_position")
-  acctndSurchargePerc   Decimal   @default(0) @db.Decimal(6, 3)                          @map("acc_tnd_tnd_surcharge_perc")
-  acctndIsActive        Boolean   @default(true)                                          @map("acc_tnd_tnd_is_active")
-  acctndIsDeleted       Boolean   @default(false)                                         @map("acc_tnd_tnd_is_deleted")
-  acctndRemarks         String?                                                            @map("acc_tnd_tnd_remarks")
-  acctndEditSurcharge   Boolean   @default(false)                                         @map("acc_tnd_tnd_edit_surcharge")
-  acctndEditLedger      Boolean   @default(false)                                         @map("acc_tnd_tnd_edit_ledger")
-  // Audit
-  acctndSyncDate        DateTime? @db.Timestamptz                                         @map("acc_tnd_tnd_sync_date")
-  acctndCreatedOn       DateTime  @default(now()) @db.Timestamptz                         @map("acc_tnd_tnd_created_on")
-  acctndCreatedBy       String?   @db.VarChar(100)                                        @map("acc_tnd_tnd_created_by")
-  acctndModifiedOn      DateTime  @default(now()) @db.Timestamptz                         @map("acc_tnd_tnd_modified_on")
-  acctndModifiedBy      String?   @db.VarChar(100)                                        @map("acc_tnd_tnd_modified_by")
+// ----- prisma/accounts/accountTenderDetail.prisma -----
+// Tender rows for a document (works for DRAFT docs too, before posting).
+// LIST-partitioned by tdAccYear — partitions (e.g. acc_tender_detail_2026_2027)
+// are created separately per accounting year; see the migration for details.
+model AccTenderDetail {
+  tdId                  String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("td_id")
+  tdCompanyId           String    @db.Uuid                                   @map("td_company_id")
+  tdBranchId            String    @db.Uuid                                   @map("td_branch_id")
+  tdTenantId            String?   @db.Uuid                                   @map("td_tenant_id")
+  tdAccYear             String    @db.Char(9)                                @map("td_acc_year")
+
+  // The document this money belongs to (works for DRAFT docs too).
+  tdSrcModule           String    @db.VarChar(20)                            @map("td_src_module")
+  tdSrcDocType          String    @db.VarChar(30)                            @map("td_src_doc_type")
+  tdSrcDocId            String    @db.Uuid                                   @map("td_src_doc_id")
+  tdRowNo               Int                                                  @map("td_row_no")
+  tdDocDate             DateTime  @db.Date                                   @map("td_doc_date")
+  tdPartyLedgerId       String    @db.Uuid                                   @map("td_party_ledger_id")
+
+  // Filled at posting; same accounting year as the tender's document.
+  tdVoucherId           String?   @db.Uuid                                   @map("td_voucher_id")
+
+  // ── What was tendered ────────────────────────────────────────────────
+  tdTenderId            String    @db.Uuid                                   @map("td_tender_id")
+  tdTenderTypeId        Int                                                  @map("td_tender_type_id")
+  tdTenderLedgerId      String    @db.Uuid                                   @map("td_tender_ledger_id")
+  tdDrCr                String    @db.Char(2)                                @map("td_dr_cr")
+  tdAmount              Decimal   @default(0) @db.Decimal(18, 2)             @map("td_amount")
+  tdSurchargePerc       Decimal   @default(0) @db.Decimal(6, 3)              @map("td_surcharge_perc")
+  tdSurchargeAmt        Decimal   @default(0) @db.Decimal(18, 2)             @map("td_surcharge_amt")
+  tdTotalAmt            Decimal   @default(0) @db.Decimal(18, 2)             @map("td_total_amt")
+
+  // ── Cash over-tender / change ────────────────────────────────────────
+  tdReceivedAmt         Decimal   @default(0) @db.Decimal(18, 2)             @map("td_received_amt")
+  tdChangeAmt           Decimal   @default(0) @db.Decimal(18, 2)             @map("td_change_amt")
+
+  // ── Non-cash equivalents (loyalty / voucher) ─────────────────────────
+  tdUnitsUsed           Decimal   @default(0) @db.Decimal(18, 4)             @map("td_units_used")
+  tdConversionRate      Decimal   @default(1) @db.Decimal(10, 4)             @map("td_conversion_rate")
+
+  // ── Instrument / gateway reference (day reconciliation) ──────────────
+  tdRefNo               String?   @db.VarChar(100)                          @map("td_ref_no")
+  tdAuthCode            String?   @db.VarChar(50)                           @map("td_auth_code")
+  tdCardLast4           String?   @db.VarChar(4)                            @map("td_card_last4")
+  tdBankName            String?   @db.VarChar(150)                          @map("td_bank_name")
+  tdPayerVpa            String?   @db.VarChar(100)                          @map("td_payer_vpa")
+  tdInstrumentDate      DateTime? @db.Date                                   @map("td_instrument_date")
+  tdIsPdc               Boolean   @default(false)                            @map("td_is_pdc")
+
+  // ── Settlement ───────────────────────────────────────────────────────
+  tdSettleStatus        String    @default("NA") @db.VarChar(20)             @map("td_settle_status")
+  tdSettleLedgerId      String?   @db.Uuid                                   @map("td_settle_ledger_id")
+  tdExpectedSettleOn    DateTime? @db.Date                                   @map("td_expected_settle_on")
+  tdSettledOn           DateTime? @db.Date                                   @map("td_settled_on")
+  tdSettleAmount        Decimal?  @db.Decimal(18, 2)                        @map("td_settle_amount")
+  tdMdrAmt              Decimal   @default(0) @db.Decimal(18, 2)             @map("td_mdr_amt")
+  tdSettleRefNo         String?   @db.VarChar(100)                          @map("td_settle_ref_no")
+  tdSettleVoucherId     String?   @db.Uuid                                   @map("td_settle_voucher_id")
+
+  // ── Where / who ──────────────────────────────────────────────────────
+  tdSessionId           String?   @db.Uuid                                   @map("td_session_id")
+  tdDeviceId            String?   @db.VarChar(250)                          @map("td_device_id")
+  tdUserId              String    @db.Uuid                                   @map("td_user_id")
+  tdNotes               String?   @db.VarChar(250)                          @map("td_notes")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  tdIsDeleted           Boolean   @default(false)                            @map("td_is_deleted")
+  tdSyncDate            DateTime? @db.Timestamptz                            @map("td_sync_date")
+  tdCreatedOn           DateTime  @default(now()) @db.Timestamptz            @map("td_created_on")
+  tdCreatedBy           String    @db.VarChar(50)                           @map("td_created_by")
+  tdModifiedOn          DateTime? @db.Timestamptz                            @map("td_modified_on")
+  tdModifiedBy          String?   @db.VarChar(50)                           @map("td_modified_by")
+
   // Relations
-  tenderType  AccountTenderTypes @relation(fields: [acctndTypeId], references: [accttTypeId])
-  ledger      AccLedgerMaster    @relation(fields: [acctndLedgerId], references: [ledId])
-  @@index([acctndTypeId],          name: "idx_tnd_master_type")
-  @@index([acctndLedgerId],        name: "idx_tnd_master_ledger")
-  @@index([acctndDisplayPosition], name: "idx_tnd_master_position")
+  company               Company          @relation(fields: [tdCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_company")
+  branch                BranchMaster     @relation(fields: [tdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_branch")
+  user                  UserMaster       @relation(fields: [tdUserId], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_user")
+  tender                AccTenderMaster  @relation(fields: [tdTenderId], references: [tndId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_tender")
+  tenderType            AccTenderType    @relation(fields: [tdTenderTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_tender_type")
+  ledger                AccLedgerMaster  @relation("TenderDetailLedger", fields: [tdTenderLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_ledger")
+  settleLedger          AccLedgerMaster? @relation("TenderDetailSettleLedger", fields: [tdSettleLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_settle_ledger")
+  partyLedger           AccLedgerMaster  @relation("TenderDetailPartyLedger", fields: [tdPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_party_ledger")
+  // fk_td_voucher — the spec's REFERENCES (avh_voucher_id, avh_acc_year) can't
+  // be created: acc_voucher_header has no unique constraint on that exact
+  // 2-column pair (only on avh_voucher_id alone, and on a 4-column tenant
+  // tuple). Every other FK to acc_voucher_header in this codebase references
+  // avh_voucher_id alone (see AccountVoucherHeader.prisma), so this does too.
+  voucher               AccVoucherHeader? @relation("TenderDetailVoucher", fields: [tdVoucherId], references: [avhVoucherId], onUpdate: Cascade, onDelete: SetNull, map: "fk_td_voucher")
+  settleVoucher         AccVoucherHeader? @relation("TenderDetailSettleVoucher", fields: [tdSettleVoucherId], references: [avhVoucherId], onUpdate: Cascade, onDelete: SetNull, map: "fk_td_settle_voucher")
+  // No relation fields for:
+  //   tdTenantId    — no Tenant model exists in this schema (same as sb_tenant_id / sq_tenant_id).
+  //   tdSessionId   — user_login_sessions.uls_session_id is nullable and not unique,
+  //                   so it is not a valid FK target (avh_session_id is likewise unmapped).
+  //   tdDeviceId    — VarChar(250) free text, not a device_master id.
+  //   tdSrcDocId    — polymorphic; the target table varies by tdSrcModule/tdSrcDocType.
+
+  @@id([tdId, tdAccYear], map: "pk_acc_tender_detail")
+  // No CREATE INDEX statements were specified for this table beyond the PK —
+  // matching the given DDL exactly (unlike acc_tender_master, which listed
+  // explicit lookup indexes).
+  // CHECK constraints (DB-only): ck_td_src_module, ck_td_src_doc_type, ck_td_dr_cr,
+  //   ck_td_settle_status, ck_td_amounts, ck_td_row_no, ck_td_total_amt,
+  //   ck_td_cash_change, ck_td_units, ck_td_settle_amount, ck_td_mdr,
+  //   ck_td_settled_on, ck_td_pdc, ck_td_card_last4
+  @@map("acc_tender_detail")
+  @@schema("accounts")
+}
+
+// ----- prisma/accounts/accountTenderMaster.prisma -----
+// Tenant-scoped concrete tender a cashier picks (e.g. "HDFC Card", "GPay"), mapped to its posting ledger.
+model AccTenderMaster {
+  tndId                   String    @id(map: "pk_acc_tender_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tnd_id")
+
+  // tenant scope
+  tndCompanyId            String    @db.Uuid                                       @map("tnd_company_id")
+  tndBranchId             String?   @db.Uuid                                       @map("tnd_branch_id")
+
+  // identity
+  tndTypeId               Int                                                      @map("tnd_type_id")
+  tndName                 String    @db.VarChar(100)                               @map("tnd_name")
+  tndShortName            String    @db.VarChar(30)                                @map("tnd_short_name")
+
+  // accounting
+  tndLedgerId             String    @db.Uuid                                       @map("tnd_ledger_id")
+  tndSettlementLedgerId   String?   @db.Uuid                                       @map("tnd_settlement_ledger_id")
+  tndSettlementDays       Int       @default(0) @db.SmallInt                       @map("tnd_settlement_days")
+  tndBankAccountId        String?   @db.Uuid                                       @map("tnd_bank_account_id")
+
+  // limits
+  tndMinAmount            Decimal   @default(0) @db.Decimal(14, 2)                 @map("tnd_min_amount")
+  tndMaxAmount            Decimal?  @db.Decimal(14, 2)                             @map("tnd_max_amount")
+  tndDailyLimit           Decimal?  @db.Decimal(14, 2)                             @map("tnd_daily_limit")
+
+  // surcharge / MDR
+  tndSurchargePerc        Decimal   @default(0) @db.Decimal(6, 3)                  @map("tnd_surcharge_perc")
+  tndSurchargeAmount      Decimal   @default(0) @db.Decimal(14, 2)                 @map("tnd_surcharge_amount")
+  tndSurchargeLedgerId    String?   @db.Uuid                                       @map("tnd_surcharge_ledger_id")
+  tndEditSurcharge        Boolean   @default(false)                                @map("tnd_edit_surcharge")
+  tndEditLedger           Boolean   @default(false)                                @map("tnd_edit_ledger")
+
+  // payment instrument details
+  tndUpiVpa               String?   @db.VarChar(100)                               @map("tnd_upi_vpa")
+  tndUpiQrPayload         String?                                                  @map("tnd_upi_qr_payload")
+  tndMerchantId           String?   @db.VarChar(50)                                @map("tnd_merchant_id")
+  tndTerminalId           String?   @db.VarChar(50)                                @map("tnd_terminal_id")
+  tndConversionRate       Decimal   @default(1) @db.Decimal(10, 4)                 @map("tnd_conversion_rate")
+
+  // behaviour overrides (NULL = inherit from tender type)
+  tndNeedsRef             Boolean?                                                 @map("tnd_needs_ref")
+  tndAllowChange          Boolean?                                                 @map("tnd_allow_change")
+  tndAllowInReturn        Boolean?                                                 @map("tnd_allow_in_return")
+  tndOpenCashDrawer       Boolean   @default(false)                                @map("tnd_open_cash_drawer")
+  tndIsDefault            Boolean   @default(false)                                @map("tnd_is_default")
+
+  // POS presentation
+  tndDisplayPosition      Int       @default(0)                                    @map("tnd_display_position")
+  tndHotkey               String?   @db.VarChar(10)                                @map("tnd_hotkey")
+  tndColour               String?   @db.VarChar(9)                                 @map("tnd_colour")
+
+  // validity
+  tndEffectiveFrom        DateTime? @db.Date                                       @map("tnd_effective_from")
+  tndEffectiveTo          DateTime? @db.Date                                       @map("tnd_effective_to")
+
+  tndRemarks              String?   @db.VarChar(250)                               @map("tnd_remarks")
+  tndIsActive             Boolean   @default(true)                                 @map("tnd_is_active")
+  tndIsDeleted            Boolean   @default(false)                                @map("tnd_is_deleted")
+  // Tally sync identity — referenced by ix_tnd_tally_guid but missing from the
+  // original DDL; added to match the sibling *_tally_guid columns elsewhere
+  // (acc_ledger_master.led_tally_guid, acc_group.acc_group_tally_guid).
+  tndTallyGuid            String?   @db.VarChar(64)                                @map("tnd_tally_guid")
+
+  // audit
+  tndSyncDate             DateTime? @db.Timestamptz                                @map("tnd_sync_date")
+  tndCreatedOn            DateTime  @default(now()) @db.Timestamptz                @map("tnd_created_on")
+  tndCreatedBy            String?   @db.VarChar(50)                                @map("tnd_created_by")
+  tndModifiedOn           DateTime? @db.Timestamptz                                @map("tnd_modified_on")
+  tndModifiedBy           String?   @db.VarChar(50)                                @map("tnd_modified_by")
+
+  // Relations
+  company                 Company               @relation(fields: [tndCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_company")
+  branch                  BranchMaster?         @relation(fields: [tndBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_branch")
+  tenderType              AccTenderType         @relation(fields: [tndTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_type")
+  ledger                  AccLedgerMaster       @relation("TenderLedger", fields: [tndLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_ledger")
+  settlementLedger        AccLedgerMaster?      @relation("TenderSettlementLedger", fields: [tndSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_settlement_ledger")
+  surchargeLedger         AccLedgerMaster?      @relation("TenderSurchargeLedger", fields: [tndSurchargeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_surcharge_ledger")
+  bankAccount             AccLedgerBankAccount? @relation(fields: [tndBankAccountId], references: [lbaId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_bank_account")
+  tenderDetails           AccTenderDetail[]
+
+  @@index([tndTypeId], map: "ix_tnd_type")
+  @@index([tndLedgerId], map: "ix_tnd_ledger")
+  // Partial indexes — enforced via raw SQL migration, not expressible in Prisma schema:
+  //   ux_tnd_name               UNIQUE (tnd_company_id, COALESCE(tnd_branch_id, zero-uuid), lower(tnd_name))      WHERE tnd_is_deleted = false
+  //   ux_tnd_short_name         UNIQUE (tnd_company_id, COALESCE(tnd_branch_id, zero-uuid), lower(tnd_short_name)) WHERE tnd_is_deleted = false
+  //   ux_tnd_default            UNIQUE (tnd_company_id, COALESCE(tnd_branch_id, zero-uuid))                        WHERE tnd_is_default = true AND tnd_is_active = true AND tnd_is_deleted = false
+  //   ux_tnd_hotkey             UNIQUE (tnd_company_id, COALESCE(tnd_branch_id, zero-uuid), tnd_hotkey)            WHERE tnd_hotkey IS NOT NULL AND tnd_is_deleted = false
+  //   ix_tnd_company_branch     btree (tnd_company_id, tnd_branch_id)         WHERE tnd_is_deleted = false
+  //   ix_tnd_settlement_ledger  btree (tnd_settlement_ledger_id)              WHERE tnd_settlement_ledger_id IS NOT NULL
+  //   ix_tnd_position           btree (tnd_company_id, tnd_display_position)  WHERE tnd_is_active = true AND tnd_is_deleted = false
+  //   ix_tnd_tally_guid         btree (tnd_tally_guid)                        WHERE tnd_tally_guid IS NOT NULL
+  // CHECK constraints (DB-only): ck_tnd_amount_range, ck_tnd_min_amount, ck_tnd_daily_limit,
+  //   ck_tnd_surcharge_perc, ck_tnd_surcharge_amt, ck_tnd_settlement_days, ck_tnd_conversion_rate,
+  //   ck_tnd_effective_range, ck_tnd_colour
   @@map("acc_tender_master")
   @@schema("accounts")
 }
 
-// ----- prisma/accounts/AccountTenderTypes.prisma -----
-model AccountTenderTypes {
-  accttTypeId         BigInt    @id @default(autoincrement())         @map("acc_ttm_type_id")
-  accttTypeName       String                                          @map("acc_ttm_type_name")
-  accttTypeShortName  String                                          @map("acc_ttm_type_short_name")
-  accttTypeIsActive   Boolean   @default(true)                        @map("acc_ttm_type_is_active")  // fixed: was acctTypeIsActive
-  accttTypeIsDeleted  Boolean   @default(false)                       @map("acc_ttm_type_is_deleted")
-  accttTypeSyncDate   DateTime? @db.Timestamptz                       @map("acc_ttm_type_sync_date")
-  accttTypeCreatedOn  DateTime  @default(now()) @db.Timestamptz       @map("acc_ttm_type_created_on")
-  accttTypeCreatedBy  String?   @db.VarChar(100)                      @map("acc_ttm_type_created_by")
-  accttTypeModifiedOn DateTime  @default(now()) @db.Timestamptz       @map("acc_ttm_type_modified_on")
-  accttTypeModifiedBy String?   @db.VarChar(100)                      @map("acc_ttm_type_modified_by")
+// ----- prisma/accounts/accountTenderTypes.prisma -----
+// Fixed catalogue of tender behaviours (CASH, CARD, UPI, ...). Tenant-agnostic.
+model AccTenderType {
+  ttmTypeId         Int       @id(map: "pk_acc_tender_types")                  @map("ttm_type_id")
+  ttmTypeName       String    @unique(map: "ux_ttm_name") @db.VarChar(50)      @map("ttm_type_name")
+  ttmDisplayName    String    @db.VarChar(50)                                  @map("ttm_display_name")
+  ttmIsCash         Boolean   @default(false)                                  @map("ttm_is_cash")
+  ttmNeedsRef       Boolean   @default(false)                                  @map("ttm_needs_ref")
+  ttmRefLabel       String?   @db.VarChar(30)                                  @map("ttm_ref_label")
+  ttmSaleOnly       Boolean   @default(false)                                  @map("ttm_sale_only")
+  ttmAllowChange    Boolean   @default(false)                                  @map("ttm_allow_change")
+  ttmAllowInReturn  Boolean   @default(true)                                   @map("ttm_allow_in_return")
+  ttmDisplayOrder   Int       @default(0)                                      @map("ttm_display_order")
+  ttmIsActive       Boolean   @default(true)                                   @map("ttm_is_active")
+  ttmIsDeleted      Boolean   @default(false)                                  @map("ttm_is_deleted")
+  ttmSyncDate       DateTime? @db.Timestamptz                                  @map("ttm_sync_date")
+  ttmCreatedOn      DateTime  @default(now()) @db.Timestamptz                  @map("ttm_created_on")
+  ttmCreatedBy      String?   @db.VarChar(50)                                  @map("ttm_created_by")
+  ttmModifiedOn     DateTime? @db.Timestamptz                                  @map("ttm_modified_on")
+  ttmModifiedBy     String?   @db.VarChar(50)                                  @map("ttm_modified_by")
   // Relations
-  accttTenders AccountTenderMaster[]  // fixed: was TenderMaster[]
-  @@index([accttTypeIsActive], name: "idx_acc_ttm_type_is_active")
+  tenders           AccTenderMaster[]
+  tenderDetails     AccTenderDetail[]
+  // Partial index — enforced via raw SQL migration, not expressible in Prisma schema:
+  //   ix_ttm_display_order  btree (ttm_display_order)  WHERE ttm_is_active = true AND ttm_is_deleted = false
+  // CHECK constraint (DB-only): ck_ttm_ref_label — ttm_needs_ref = false OR ttm_ref_label IS NOT NULL
   @@map("acc_tender_types")
   @@schema("accounts")
 }
@@ -1122,6 +1312,8 @@ model AccVoucherHeader {
   vouchers               AccVoucher[]
   openingStockHeaders    OpeningStockHeader[] @relation("OpeningStockHeaderVoucher")
   openingStockDetails    OpeningStockDetail[] @relation("OpeningStockDetailVoucher")
+  tenderDetails          AccTenderDetail[]    @relation("TenderDetailVoucher")
+  settleTenderDetails    AccTenderDetail[]    @relation("TenderDetailSettleVoucher")
 
   @@unique([avhCompanyId, avhBranchId, avhAccYear, avhVoucherId], map: "uq_acc_voucher_header_voucher_id")
   @@unique([avhCompanyId, avhBranchId, avhAccYear, avhVoucherTypeId, avhVoucherRefno], map: "uq_acc_voucher_header_voucher_refno")
@@ -1427,6 +1619,7 @@ model AccLedgerBankAccount {
   // Relations
   company             Company?         @relation(fields: [lbaCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   ledger              AccLedgerMaster @relation(fields: [lbaLedgerId], references: [ledId])
+  tenderMasters       AccTenderMaster[]
 
   @@index([lbaLedgerId],  name: "idx_lba_ledger")
   @@index([lbaCompanyId], name: "idx_lba_company")
@@ -1947,6 +2140,7 @@ model StateCode {
   modifiedBy    String?   @db.VarChar(100)                                    @map("modified_by")
   // Relations
   saleQuotations SaleQuotation[]
+  saleBills      SaleBill[]
 
   @@index([isActive],  name: "idx_state_codes_active")
   @@index([stateName], name: "idx_state_codes_name")
@@ -2445,6 +2639,7 @@ model ItemMaster {
   company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   loyaltySchemeGifts   LoyaltySchemeGift[]
   saleQuotationItems   SaleQuotationItem[]
+  saleBillItems        SaleBillItem[]
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
@@ -2472,6 +2667,8 @@ model ItemPriceLevel {
   itemQtyPrices ItemQtyPrice[] @relation("ItemQtyPricePriceLevel")
   saleQuotations     SaleQuotation[]
   saleQuotationItems SaleQuotationItem[]
+  saleBills          SaleBill[]     @relation("SaleBillPriceLevel")
+  saleBillItems      SaleBillItem[] @relation("SaleBillItemPriceLevel")
   @@map("item_price_levels")
   @@schema("inventory")
 }
@@ -2940,6 +3137,7 @@ model ItemUnitConversion {
   unit               Unit       @relation("IucUnit", fields: [iucUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_unit_id")
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
   saleQuotationItem  SaleQuotationItem[] @relation("SaleQuotationItemUnitConversion")
+  saleBillItems      SaleBillItem[]      @relation("SaleBillItemUnitConversion")
   itemEanCodes       ItemEanCode[]       @relation("ItemEanCodeUnitConversion")
   itemReorders       ItemReorder[]       @relation("ItemReorderUnitConversion")
   itemPrices         ItemPriceMaster[]   @relation("ItemPriceMasterUnitConversion")
@@ -3266,6 +3464,8 @@ model BranchMaster {
   deviceMasters         DeviceMaster[]
   saleAgents            SaleAgent[]       @relation("BranchSaleAgents")
   chargeDetails         SaleChargeDetail[] @relation("BranchChargeDetails")
+  tenderMasters         AccTenderMaster[]
+  tenderDetails         AccTenderDetail[]
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
@@ -3433,6 +3633,8 @@ model Company {
   loyaltySchemes        LoyaltyScheme[]
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
   chargeDetails         SaleChargeDetail[] @relation("CompanyChargeDetails")
+  tenderMasters         AccTenderMaster[]
+  tenderDetails         AccTenderDetail[]
   @@map("companys")
   @@schema("public")
 }
@@ -3600,6 +3802,7 @@ model UserMaster {
   vouchers               AccVoucher[]
   userMenus              UserMenus[]
   deviceMasters          DeviceMaster[]
+  tenderDetails          AccTenderDetail[]
 
   // ── Indexes ────────────────────────────────────────────────────────────────
   //   CREATE UNIQUE INDEX uix_user_login_name
@@ -3903,6 +4106,7 @@ model Customer {
   company              Company?       @relation(fields: [cusCompanyId], references: [compId])
   priceLevel           ItemPriceLevel @relation("CustomerPriceLevel", fields: [cusPriceLevelId], references: [iplId])
   saleQuotations       SaleQuotation[]
+  saleBills            SaleBill[]
   itemQtyPrices        ItemQtyPrice[] @relation("CustomerItemQtyPrices")
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")
@@ -4315,6 +4519,303 @@ model SaleAgentGroup {
   @@index([saGrpName], map: "idx_sale_agent_groups_name")
   @@index([saGrpIsActive, saGrpIsDeleted], map: "idx_sale_agent_groups_active_deleted")
   @@map("sale_agent_groups")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleBill.prisma -----
+model SaleBill {
+  sbId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sb_id")
+  sbCompanyId        String    @db.Uuid @map("sb_company_id")
+  sbBranchId         String    @db.Uuid @map("sb_branch_id")
+  sbTenantId         String?   @db.Uuid @map("sb_tenant_id")
+  sbAccYear          String    @db.Char(9) @map("sb_acc_year")
+  // Where it was raised. Counter is NOT NULL: in an offline chain the
+  // counter owns the document and its number series.
+  sbSessionId        String?   @db.Uuid @map("sb_session_id")
+  sbCounterId        String    @db.Uuid @map("sb_counter_id")
+  sbDeviceType       String    @db.VarChar(20) @map("sb_device_type")
+  sbDeviceId         String    @db.Text @map("sb_device_id")
+  // Document identity
+  sbDocType          String    @default("TAX_INVOICE") @db.VarChar(30) @map("sb_doc_type")
+  sbBillType         String    @default("CASH") @db.VarChar(20) @map("sb_bill_type") // CASH | CREDIT
+  sbCategoryId       String?   @db.Uuid @map("sb_category_id")
+  sbPriceLevel       Int       @map("sb_price_level")
+  sbBillSlno         BigInt    @map("sb_bill_slno") // per company/branch/year/COUNTER
+  sbBillRefno        String    @db.VarChar(100) @map("sb_bill_refno")
+  sbUsrRefno         String?   @db.VarChar(100) @map("sb_usr_refno")
+  sbBillDate         DateTime  @db.Date @map("sb_bill_date")
+  sbBillDatetime     DateTime  @default(now()) @db.Timestamptz(6) @map("sb_bill_datetime")
+  sbDueDays          Int?      @map("sb_due_days")
+  sbDueDate          DateTime? @db.Date @map("sb_due_date")
+  // Where it came from: quotation, sales order, delivery challan.
+  sbSrcDocType       String?   @db.VarChar(30) @map("sb_src_doc_type")
+  sbSrcDocId         String?   @db.Uuid @map("sb_src_doc_id")
+  sbSrcDocRefno      String?   @db.VarChar(100) @map("sb_src_doc_refno")
+  sbSrcDocDate       DateTime? @db.Date @map("sb_src_doc_date")
+  // Customer, snapshotted at billing time
+  sbCustId           String    @db.Uuid @map("sb_cust_id")
+  sbCustName         String    @db.VarChar(200) @map("sb_cust_name")
+  sbCustAddr         String?   @db.VarChar(500) @map("sb_cust_addr")
+  sbCustPlace        String?   @db.VarChar(100) @map("sb_cust_place")
+  sbCustPin          String?   @db.VarChar(10) @map("sb_cust_pin")
+  sbCustPhone        String?   @db.VarChar(20) @map("sb_cust_phone")
+  sbCustGstin        String?   @db.VarChar(15) @map("sb_cust_gstin")
+  sbCustGstType      String?   @db.VarChar(20) @map("sb_cust_gst_type")
+  sbCustStcd         String?   @db.Char(2) @map("sb_cust_stcd")
+  sbPosStcd          String?   @db.Char(2) @map("sb_pos_stcd") // place of supply: CGST+SGST vs IGST
+  sbStateName        String?   @db.VarChar(100) @map("sb_state_name")
+  // Options carried on the document
+  sbHasLoad          Boolean   @default(false) @map("sb_has_load")
+  sbHasUnload        Boolean   @default(false) @map("sb_has_unload")
+  sbHasFreight       Boolean   @default(false) @map("sb_has_freight")
+  sbHasPromo         Boolean   @default(false) @map("sb_has_promo")
+  sbHasComm          Boolean   @default(false) @map("sb_has_comm")
+  sbHasLoyalty       Boolean   @default(false) @map("sb_has_loyalty")
+  // People
+  sbUserId           String    @db.Uuid @map("sb_user_id")
+  sbSalesmanId       String[]  @db.Uuid @map("sb_salesman_id")
+  sbAgentId          String?   @db.Uuid @map("sb_agent_id")
+  sbAgentCommPerc    Decimal?  @db.Decimal(15, 4) @map("sb_agent_comm_perc")
+  sbAgentCommAmt     Decimal?  @db.Decimal(15, 2) @map("sb_agent_comm_amt")
+  // Delivery
+  sbDriverId         String?   @db.Uuid @map("sb_driver_id")
+  sbLoadmanId        String[]  @db.Uuid @map("sb_loadman_id")
+  sbPackedId         String[]  @db.Uuid @map("sb_packed_id")
+  sbSupervisorId     String?   @db.Uuid @map("sb_supervisor_id")
+  sbVehicleId        String?   @db.Uuid @map("sb_vehicle_id")
+  sbVehicleNo        String?   @db.VarChar(20) @map("sb_vehicle_no")
+  // Quantities
+  sbTotItems         Int       @default(0) @map("sb_tot_items") // printed LINES, not split rows
+  sbTotWeight        Decimal   @default(0) @db.Decimal(15, 3) @map("sb_tot_weight")
+  sbTotBags          Decimal   @default(0) @db.Decimal(15, 3) @map("sb_tot_bags")
+  // Money
+  sbGrossAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sb_gross_amt")
+  sbItemDisc         Decimal   @default(0) @db.Decimal(15, 2) @map("sb_item_disc")
+  sbSplDisc          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_spl_disc")
+  sbSchDisc          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_sch_disc")
+  sbBillSchDisc      Decimal   @default(0) @db.Decimal(15, 2) @map("sb_bill_sch_disc")
+  sbAddlDisc1        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_addl_disc1")
+  sbAddlDisc2        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_addl_disc2")
+  sbCashDisc         Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cash_disc")
+  sbTaxableAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_taxable_amt") // POST-charge
+  sbCgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cgst_amt")
+  sbSgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_sgst_amt")
+  sbIgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_igst_amt")
+  sbCessAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cess_amt")
+  sbTaxAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("sb_tax_amt")
+  // Roll-ups of sales.sale_doc_charge rows (reporting without a join).
+  sbFreightAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_freight_amt")
+  sbLoadAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_load_amt")
+  sbUnloadAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_unload_amt")
+  sbOtherAmt1        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_other_amt1")
+  sbOtherAmt2        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_other_amt2")
+  sbRoundOff         Decimal   @default(0) @db.Decimal(15, 2) @map("sb_round_off")
+  sbBillAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_bill_amt")
+  // Costing (never printed; drives margin reports)
+  sbTotalCost        Decimal?  @db.Decimal(15, 2) @map("sb_total_cost")
+  sbMarginAmt        Decimal?  @db.Decimal(15, 2) @map("sb_margin_amt")
+  sbMarginAmtWot     Decimal?  @db.Decimal(15, 2) @map("sb_margin_amt_wot")
+  sbMarginPerc       Decimal?  @db.Decimal(15, 4) @map("sb_margin_perc")
+  sbMrpSavings       Decimal?  @default(0) @db.Decimal(15, 3) @map("sb_mrp_savings")
+  sbMrpSavingsPerc   Decimal?  @default(0) @db.Decimal(15, 4) @map("sb_mrp_savings_perc")
+  // Settlement roll-ups. Tender rows live in accounts.acc_tender_detail;
+  // these are caches so a counter can balance without a join. sb_balance_amt
+  // mirrors accounts.acc_voucher_bills once posted.
+  sbPayMode          String?   @db.VarChar(20) @map("sb_pay_mode") // dominant mode, quick filters
+  sbCreditAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_credit_amt")
+  sbSurchargeAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sb_surcharge_amt")
+  sbTenderAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_tender_amt")
+  sbRefundAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_refund_amt")
+  sbAdvanceAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_advance_amt")
+  sbPaidAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_paid_amt")
+  sbBalanceAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_balance_amt")
+  sbPayStatus        String    @default("UNPAID") @db.VarChar(20) @map("sb_pay_status")
+  // Return caches (sales.sale_return is the document)
+  sbReturnedAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sb_returned_amt")
+  sbReturnStatus     String?   @db.VarChar(20) @map("sb_return_status") // NULL|PARTIAL|FULL
+  // Terms
+  sbPaymentTerms     String?   @db.VarChar(250) @map("sb_payment_terms")
+  sbDeliveryTerms    String?   @db.VarChar(250) @map("sb_delivery_terms")
+  sbTermsConditions  String?   @map("sb_terms_conditions")
+  sbRemarks          String?   @db.VarChar(500) @map("sb_remarks")
+  // Pricing policy, snapshotted as this document was billed
+  sbFreightCalcType  String?   @db.VarChar(12) @map("sb_freight_calc_type")
+  sbLoadingCalcType  String?   @db.VarChar(12) @map("sb_loading_calc_type")
+  sbDiscAlterBase    Boolean?  @map("sb_disc_alter_base")
+  sbRoundOffStep     Decimal   @default(1) @db.Decimal(15, 2) @map("sb_round_off_step")
+  // Lifecycle
+  sbStatus           String    @default("DRAFT") @db.VarChar(20) @map("sb_status")
+  sbPostedOn         DateTime? @db.Timestamptz(6) @map("sb_posted_on")
+  sbPostedVoucherId  String?   @db.Uuid @map("sb_posted_voucher_id") // accounts.acc_voucher_header
+  sbApprovedOn       DateTime? @db.Timestamptz(6) @map("sb_approved_on")
+  sbApprovedBy       String?   @db.Uuid @map("sb_approved_by")
+  sbCancelledOn      DateTime? @db.Timestamptz(6) @map("sb_cancelled_on")
+  sbCancelledBy      String?   @db.Uuid @map("sb_cancelled_by")
+  sbCancelReason     String?   @db.VarChar(250) @map("sb_cancel_reason")
+  sbVersionNo        Int       @default(1) @map("sb_version_no")
+  sbPrintCount       Int       @default(0) @map("sb_print_count")
+  // Audit
+  sbIsDeleted        Boolean   @default(false) @map("sb_is_deleted")
+  sbSyncDate         DateTime? @db.Timestamptz(6) @map("sb_sync_date")
+  sbCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("sb_created_on")
+  sbCreatedBy        String    @db.VarChar @map("sb_created_by")
+  sbModifiedOn       DateTime? @db.Timestamptz(6) @map("sb_modified_on")
+  sbModifiedBy       String?   @db.VarChar @map("sb_modified_by")
+  // Relations
+  items      SaleBillItem[]
+  customer   Customer       @relation(fields: [sbCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_cust")
+  posState   StateCode?     @relation(fields: [sbPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_pos_state")
+  priceLevel ItemPriceLevel @relation("SaleBillPriceLevel", fields: [sbPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_price_level")
+  // ck_sb_doc_type, ck_sb_bill_type, ck_sb_status, ck_sb_pay_status and
+  // ck_sb_return_status were dropped before the migration was ever applied
+  // and are enforced in the application layer instead
+  // (BillService.ensureBillValuesAreAllowed).
+  @@id([sbId, sbAccYear], map: "pk_sale_bill")
+  @@map("sale_bill")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleBillItem.prisma -----
+// Lines -- one row per BATCH ALLOCATION. Printed line = GROUP BY sbi_line_no;
+// stock/GST reads rows as they are.
+model SaleBillItem {
+  sbiId              String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sbi_id")
+  sbiBillId          String    @db.Uuid @map("sbi_bill_id")
+  sbiCompanyId       String    @db.Uuid @map("sbi_company_id")
+  sbiBranchId        String    @db.Uuid @map("sbi_branch_id")
+  sbiTenantId        String?   @db.Uuid @map("sbi_tenant_id")
+  sbiAccYear         String    @db.Char(9) @map("sbi_acc_year")
+  // The printed line, and which allocation within it. Non-batch items are
+  // always (line, 1).
+  sbiLineNo          Int       @map("sbi_line_no")
+  sbiSplitNo         Int       @default(1) @map("sbi_split_no")
+  // Which line of which source document this came from (order/quotation).
+  sbiSrcDocType      String?   @db.VarChar(30) @map("sbi_src_doc_type")
+  sbiSrcDocId        String?   @db.Uuid @map("sbi_src_doc_id")
+  sbiSrcDocRefno     String?   @db.VarChar(100) @map("sbi_src_doc_refno")
+  sbiSrcItemQty      Decimal?  @db.Decimal(15, 3) @map("sbi_src_item_qty")
+  sbiSrcFreeQty      Decimal?  @db.Decimal(15, 3) @map("sbi_src_free_qty")
+  // What is being sold
+  sbiItemId          String    @db.Uuid @map("sbi_item_id")
+  sbiItemUnitId      String    @db.Uuid @map("sbi_item_unit_id")
+  sbiToBaseFactor    Decimal   @default(0) @db.Decimal(15, 6) @map("sbi_to_base_factor")
+  sbiHsnCode         String?   @db.VarChar(8) @map("sbi_hsn_code")
+  sbiPriceLevel      Int       @map("sbi_price_level")
+  sbiEanCode         String?   @db.VarChar(100) @map("sbi_ean_code")
+  // Where the stock came from. sbi_stock_id points at the inventory
+  // batch/stock row the quantity was taken from, so a reversal knows exactly
+  // what to put back.
+  sbiGodownId        String    @db.Uuid @map("sbi_godown_id")
+  sbiStockId         String    @db.Uuid @map("sbi_stock_id")
+  sbiBatchNo         String?   @db.VarChar(100) @map("sbi_batch_no")
+  sbiBatchDate       DateTime? @db.Date @map("sbi_batch_date")
+  sbiExpiryDate      DateTime? @db.Date @map("sbi_expiry_date")
+  sbiSerialNo        String?   @db.VarChar(100) @map("sbi_serial_no")
+  // Flags
+  sbiIsTaxIncl       Boolean   @default(false) @map("sbi_is_tax_incl")
+  sbiIsPromo         Boolean   @default(false) @map("sbi_is_promo")
+  sbiIsFree          Boolean   @default(false) @map("sbi_is_free")
+  sbiFreeType        String?   @db.VarChar(20) @map("sbi_free_type") // NULL / SCHEME / SAMPLE / REPLACEMENT (app-layer only, ck_sbi_free_type dropped)
+  sbiIsService       Boolean   @default(false) @map("sbi_is_service")
+  sbiHasFreight      Boolean   @default(false) @map("sbi_has_freight")
+  // Quantities (of THIS allocation)
+  sbiCaseQty         Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_case_qty")
+  sbiBillQty         Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_bill_qty")
+  sbiLengthQty       Decimal?  @default(0) @db.Decimal(15, 3) @map("sbi_length_qty")
+  sbiNetQty          Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_net_qty")
+  sbiWeightQty       Decimal?  @default(0) @db.Decimal(15, 3) @map("sbi_weight_qty")
+  sbiAvailableStock  Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_available_stock")
+  sbiReturnQty       Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_return_qty") // cache from sale_return
+  // Rates
+  sbiRate            Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_rate")
+  sbiRatePreTax      Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_rate_pre_tax")
+  sbiRateDiff        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_rate_diff")
+  sbiActPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_act_price")
+  sbiMaxPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_max_price") // MRP
+  sbiMinPrice        Decimal?  @db.Decimal(15, 4) @map("sbi_min_price")
+  sbiCostPrice       Decimal?  @db.Decimal(15, 4) @map("sbi_cost_price")
+  sbiCostPreTax      Decimal?  @db.Decimal(15, 2) @map("sbi_cost_pre_tax")
+  // Discounts
+  sbiItemDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_item_disc_perc")
+  sbiItemDiscQty     Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_item_disc_qty")
+  sbiItemDiscAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_item_disc_amt")
+  sbiSplDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_spl_disc_perc")
+  sbiSplDiscQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_spl_disc_qty")
+  sbiSplDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_spl_disc_amt")
+  sbiSchDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_sch_disc_perc")
+  sbiSchDiscQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_sch_disc_qty")
+  sbiSchDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_sch_disc_amt")
+  sbiBillSchPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_bill_sch_perc")
+  sbiBillSchQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_bill_sch_qty")
+  sbiBillSchAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_bill_sch_amt")
+  sbiAddlDisc1Perc   Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_addl_disc1_perc")
+  sbiAddlDisc1Amt    Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_addl_disc1_amt")
+  sbiAddlDisc2Perc   Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_addl_disc2_perc")
+  sbiAddlDisc2Amt    Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_addl_disc2_amt")
+  sbiCashDiscPerc    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_cash_disc_perc")
+  sbiCashDiscAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_cash_disc_amt")
+  // The charge-distribution trio. Goods value after line discounts
+  // (pre-charge, pre-tax), then this line's signed share of the
+  // before/after-tax charges.
+  sbiGrossAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_gross_amt")
+  sbiNetGross        Decimal?  @db.Decimal(14, 4) @map("sbi_net_gross")
+  sbiChrgBeforeTax   Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_before_tax")
+  sbiChrgAfterTax    Decimal?  @db.Decimal(14, 4) @map("sbi_chrg_after_tax")
+  // Tax (on the POST-charge taxable)
+  sbiTaxableAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_taxable_amt")
+  sbiTaxPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_tax_perc")
+  sbiTaxAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_tax_amt")
+  sbiCgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_cgst_perc")
+  sbiCgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_cgst_amt")
+  sbiSgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_sgst_perc")
+  sbiSgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_sgst_amt")
+  sbiIgstPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_igst_perc")
+  sbiIgstAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_igst_amt")
+  sbiCessPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_cess_perc")
+  sbiCessPerUnit     Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_cess_per_unit")
+  sbiCessAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_cess_amt")
+  sbiAcessPerc       Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_acess_perc")
+  sbiAcessPerUnit    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_acess_per_unit")
+  sbiAcessAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_acess_amt")
+  // Per-line charges
+  sbiFreightQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_freight_qty")
+  sbiFreightAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_freight_amt")
+  sbiLoadQty         Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_load_qty")
+  sbiLoadAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_load_amt")
+  sbiUnloadQty       Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_unload_qty")
+  sbiUnloadAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_unload_amt")
+  sbiRoundOff        Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_round_off")
+  sbiNetAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_net_amt")
+  // Costing / margin, PER UNIT
+  sbiSoldPrice       Decimal?  @db.Decimal(15, 4) @map("sbi_sold_price")
+  sbiSoldPreTax      Decimal?  @db.Decimal(15, 2) @map("sbi_sold_pre_tax")
+  sbiItemProfit      Decimal?  @db.Decimal(15, 2) @map("sbi_item_profit")
+  sbiProfitPreTax    Decimal?  @db.Decimal(15, 2) @map("sbi_profit_pre_tax")
+  sbiMrpSavings      Decimal?  @db.Decimal(15, 3) @map("sbi_mrp_savings")
+  sbiMrpSavingsPerc  Decimal?  @db.Decimal(15, 4) @map("sbi_mrp_savings_perc")
+  // Attribution
+  sbiSalesmanId      String?   @db.Uuid @map("sbi_salesman_id")
+  sbiSchemeId        String?   @db.Uuid @map("sbi_scheme_id")
+  sbiSchemeName      String?   @db.VarChar(150) @map("sbi_scheme_name")
+  sbiRemarks         String?   @db.VarChar(250) @map("sbi_remarks")
+  // Audit
+  sbiIsDeleted       Boolean   @default(false) @map("sbi_is_deleted")
+  sbiSyncDate        DateTime? @db.Timestamptz(6) @map("sbi_sync_date")
+  sbiCreatedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("sbi_created_on")
+  sbiCreatedBy       String    @db.Uuid @map("sbi_created_by")
+  sbiModifiedOn      DateTime? @db.Timestamptz(6) @map("sbi_modified_on")
+  sbiModifiedBy      String?   @db.Uuid @map("sbi_modified_by")
+  // Relations
+  bill               SaleBill           @relation(fields: [sbiBillId, sbiAccYear], references: [sbId, sbAccYear], onDelete: Cascade, onUpdate: Cascade, map: "fk_sbi_bill")
+  item               ItemMaster         @relation(fields: [sbiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item")
+  priceLevel         ItemPriceLevel     @relation("SaleBillItemPriceLevel", fields: [sbiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_price_level")
+  // sbiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
+  itemUnitConversion ItemUnitConversion @relation("SaleBillItemUnitConversion", fields: [sbiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item_unit")
+  // ck_sbi_free_type, ck_sbi_split_no and ck_sbi_batch_split were dropped
+  // before the migration was ever applied and are enforced in the
+  // application layer instead (BillService.ensureBillItemValuesAreAllowed).
+  @@id([sbiId, sbiAccYear], map: "pk_sale_bill_item")
+  @@map("sale_bill_item")
   @@schema("sales")
 }
 

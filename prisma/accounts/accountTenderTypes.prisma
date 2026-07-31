@@ -1,0 +1,28 @@
+// Fixed catalogue of tender behaviours (CASH, CARD, UPI, ...). Tenant-agnostic.
+model AccTenderType {
+  ttmTypeId         Int       @id(map: "pk_acc_tender_types")                  @map("ttm_type_id")
+  ttmTypeName       String    @unique(map: "ux_ttm_name") @db.VarChar(50)      @map("ttm_type_name")
+  ttmDisplayName    String    @db.VarChar(50)                                  @map("ttm_display_name")
+  ttmIsCash         Boolean   @default(false)                                  @map("ttm_is_cash")
+  ttmNeedsRef       Boolean   @default(false)                                  @map("ttm_needs_ref")
+  ttmRefLabel       String?   @db.VarChar(30)                                  @map("ttm_ref_label")
+  ttmSaleOnly       Boolean   @default(false)                                  @map("ttm_sale_only")
+  ttmAllowChange    Boolean   @default(false)                                  @map("ttm_allow_change")
+  ttmAllowInReturn  Boolean   @default(true)                                   @map("ttm_allow_in_return")
+  ttmDisplayOrder   Int       @default(0)                                      @map("ttm_display_order")
+  ttmIsActive       Boolean   @default(true)                                   @map("ttm_is_active")
+  ttmIsDeleted      Boolean   @default(false)                                  @map("ttm_is_deleted")
+  ttmSyncDate       DateTime? @db.Timestamptz                                  @map("ttm_sync_date")
+  ttmCreatedOn      DateTime  @default(now()) @db.Timestamptz                  @map("ttm_created_on")
+  ttmCreatedBy      String?   @db.VarChar(50)                                  @map("ttm_created_by")
+  ttmModifiedOn     DateTime? @db.Timestamptz                                  @map("ttm_modified_on")
+  ttmModifiedBy     String?   @db.VarChar(50)                                  @map("ttm_modified_by")
+  // Relations
+  tenders           AccTenderMaster[]
+  tenderDetails     AccTenderDetail[]
+  // Partial index — enforced via raw SQL migration, not expressible in Prisma schema:
+  //   ix_ttm_display_order  btree (ttm_display_order)  WHERE ttm_is_active = true AND ttm_is_deleted = false
+  // CHECK constraint (DB-only): ck_ttm_ref_label — ttm_needs_ref = false OR ttm_ref_label IS NOT NULL
+  @@map("acc_tender_types")
+  @@schema("accounts")
+}

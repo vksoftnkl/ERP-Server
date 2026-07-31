@@ -12,6 +12,7 @@ model StateCode {
   modifiedBy    String?   @db.VarChar(100)                                    @map("modified_by")
   // Relations
   saleQuotations SaleQuotation[]
+  saleBills      SaleBill[]
 
   @@index([isActive],  name: "idx_state_codes_active")
   @@index([stateName], name: "idx_state_codes_name")

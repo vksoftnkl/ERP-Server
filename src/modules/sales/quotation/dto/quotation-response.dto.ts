@@ -164,6 +164,41 @@ export class QuotationItemPayloadDto {
       'item_unit_master.unit_name reached via item_unit_conversion — only populated on GET',
   })
   sqiUnitName?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'item_unit_master.unit_decimal_count reached via item_unit_conversion — only populated on GET',
+  })
+  sqiDecimalCount?: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'item_master.item_batch_config for sqiItemId — only populated on GET',
+  })
+  sqiBatchConfig?: number | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'item_master.item_group_id for sqiItemId — only populated on GET',
+  })
+  sqiGroupId?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'item_master.item_brand_id for sqiItemId — only populated on GET',
+  })
+  sqiBrandId?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'item_master.item_section_id for sqiItemId — only populated on GET',
+  })
+  sqiSectionId?: string | null;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'item_master.item_category_id for sqiItemId — only populated on GET',
+  })
+  sqiCategoryId?: string | null;
   @ApiPropertyOptional({ maxLength: 8, nullable: true })
   sqiHsnCode!: string | null;
   @ApiProperty()
@@ -470,139 +505,94 @@ export class QuotationPayloadDto {
   sqAddlDisc1!: number;
   @ApiProperty()
   sqAddlDisc2!: number;
-
   @ApiProperty()
   sqTaxableAmt!: number;
-
   @ApiProperty()
   sqCgstAmt!: number;
-
   @ApiProperty()
   sqSgstAmt!: number;
-
   @ApiProperty()
   sqIgstAmt!: number;
-
   @ApiProperty()
   sqCessAmt!: number;
-
   @ApiProperty()
   sqTaxAmt!: number;
-
   @ApiProperty()
   sqFreightAmt!: number;
-
   @ApiProperty()
   sqLoadAmt!: number;
-
   @ApiProperty()
   sqUnloadAmt!: number;
-
   @ApiProperty()
   sqOtherAmt1!: number;
-
   @ApiProperty()
   sqOtherAmt2!: number;
-
   @ApiProperty()
   sqRoundOff!: number;
-
   @ApiProperty()
   sqQuoteAmt!: number;
-
   @ApiPropertyOptional({ nullable: true })
   sqTotalCost!: number | null;
-
   @ApiPropertyOptional({ nullable: true })
   sqMarginAmt!: number | null;
-
   @ApiPropertyOptional({ nullable: true })
   sqMarginPerc!: number | null;
-
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   sqPaymentTerms!: string | null;
-
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   sqDeliveryTerms!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   sqTermsConditions!: string | null;
-
   @ApiProperty({ maxLength: 20 })
   sqStatus!: string;
-
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   sqSentOn!: string | null;
-
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   sqAcceptedOn!: string | null;
-
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   sqRejectedOn!: string | null;
-
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   sqRejectReason!: string | null;
-
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   sqConvertedDocType!: string | null;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqConvertedDocId!: string | null;
-
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   sqConvertedOn!: string | null;
-
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   sqApprovedOn!: string | null;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqApprovedBy!: string | null;
-
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   sqCancelledOn!: string | null;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqCancelledBy!: string | null;
-
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   sqCancelReason!: string | null;
-
   @ApiPropertyOptional({ nullable: true })
   sqMrpSavings!: number | null;
-
   @ApiPropertyOptional({ nullable: true })
   sqMrpSavingsPerc!: number | null;
-
   @ApiProperty()
   sqPrintCount!: number;
-
   @ApiPropertyOptional({ maxLength: 20, nullable: true })
   sqDeviceType!: string | null;
-
   @ApiPropertyOptional({ nullable: true, description: 'Originating device identifier' })
   sqDeviceId!: string | null;
-
   @ApiPropertyOptional({ maxLength: 500, nullable: true })
   sqRemarks!: string | null;
-
   @ApiProperty()
   sqIsDeleted!: boolean;
-
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   sqSyncDate!: string | null;
-
   @ApiProperty()
   sqCreatedOn!: string;
-
   @ApiProperty({ format: 'uuid' })
   sqCreatedBy!: string;
-
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })
   sqModifiedOn!: string | null;
-
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqModifiedBy!: string | null;
-
   // Not typed as ChargeMethod: these two are stored lower case (the save DTO
   // lower-cases them), so they never match an uppercase enum member.
   @ApiPropertyOptional({
@@ -612,7 +602,6 @@ export class QuotationPayloadDto {
       'How the freight charge is computed (snapshot of the charge master method), lower case',
   })
   sqFreightCalcType!: string | null;
-
   @ApiPropertyOptional({
     nullable: true,
     example: 'fixed',
@@ -620,49 +609,38 @@ export class QuotationPayloadDto {
       'How the loading charge is computed (snapshot of the charge master method), lower case',
   })
   sqLoadingCalcType!: string | null;
-
   @ApiPropertyOptional({
     nullable: true,
     description: 'true = discounts change the basis the charges are computed on',
   })
   sqDiscAlterBase!: boolean | null;
-
   @ApiProperty({ type: QuotationItemPayloadDto, isArray: true })
   items!: QuotationItemPayloadDto[];
-
   @ApiProperty({ type: QuotationChargePayloadDto, isArray: true })
   charges!: QuotationChargePayloadDto[];
 }
-
 export class QuotationDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
   sqId!: string;
-
   @ApiProperty({ example: true })
   deleted!: true;
 }
-
 export class QuotationSuccessSingleDto {
   @ApiProperty({ example: true })
   success!: true;
-
   @ApiProperty({ example: 'Quotation fetched successfully' })
   message!: string;
-
   @ApiProperty({
     type: QuotationPayloadDto,
     description: 'Quotation record including its line items and applied charges',
   })
   data!: QuotationPayloadDto;
 }
-
 export class QuotationSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;
-
   @ApiProperty({ example: 'Quotation deleted successfully' })
   message!: string;
-
   @ApiProperty({ type: QuotationDeleteResultDto })
   data!: QuotationDeleteResultDto;
 }

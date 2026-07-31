@@ -133,7 +133,12 @@ Table acc_ledger_master {
   branches branch_master
   bankAccounts acc_ledger_bank_accounts [not null]
   shipAddrs acc_ship_addrs [not null]
-  tenders acc_tender_master [not null]
+  tenderLedgers acc_tender_master [not null]
+  tenderSettlementLedgers acc_tender_master [not null]
+  tenderSurchargeLedgers acc_tender_master [not null]
+  tenderDetailLedgers acc_tender_detail [not null]
+  tenderDetailSettleLedgers acc_tender_detail [not null]
+  tenderDetailPartyLedgers acc_tender_detail [not null]
   voucherBillParties acc_voucher_bills [not null]
   voucherDocRegisterParties acc_voucher_doc_register [not null]
   voucherHeaderParties acc_voucher_header [not null]
@@ -148,42 +153,145 @@ Table acc_ledger_master {
   }
 }
 
-Table acc_tender_master {
-  acctndId String [pk]
-  acctndTypeId BigInt [not null]
-  acctndName String [not null]
-  acctndShortName String [not null]
-  acctndLedgerId String [not null]
-  acctndMinAmount Decimal [not null, default: 0]
-  acctndMaxAmount Decimal
-  acctndDisplayPosition Int [not null, default: 0]
-  acctndSurchargePerc Decimal [not null, default: 0]
-  acctndIsActive Boolean [not null, default: true]
-  acctndIsDeleted Boolean [not null, default: false]
-  acctndRemarks String
-  acctndEditSurcharge Boolean [not null, default: false]
-  acctndEditLedger Boolean [not null, default: false]
-  acctndSyncDate DateTime
-  acctndCreatedOn DateTime [default: `now()`, not null]
-  acctndCreatedBy String
-  acctndModifiedOn DateTime [default: `now()`, not null]
-  acctndModifiedBy String
+Table acc_tender_detail {
+  tdId String [not null]
+  tdCompanyId String [not null]
+  tdBranchId String [not null]
+  tdTenantId String
+  tdAccYear String [not null]
+  tdSrcModule String [not null]
+  tdSrcDocType String [not null]
+  tdSrcDocId String [not null]
+  tdRowNo Int [not null]
+  tdDocDate DateTime [not null]
+  tdPartyLedgerId String [not null]
+  tdVoucherId String
+  tdTenderId String [not null]
+  tdTenderTypeId Int [not null]
+  tdTenderLedgerId String [not null]
+  tdDrCr String [not null]
+  tdAmount Decimal [not null, default: 0]
+  tdSurchargePerc Decimal [not null, default: 0]
+  tdSurchargeAmt Decimal [not null, default: 0]
+  tdTotalAmt Decimal [not null, default: 0]
+  tdReceivedAmt Decimal [not null, default: 0]
+  tdChangeAmt Decimal [not null, default: 0]
+  tdUnitsUsed Decimal [not null, default: 0]
+  tdConversionRate Decimal [not null, default: 1]
+  tdRefNo String
+  tdAuthCode String
+  tdCardLast4 String
+  tdBankName String
+  tdPayerVpa String
+  tdInstrumentDate DateTime
+  tdIsPdc Boolean [not null, default: false]
+  tdSettleStatus String [not null, default: 'NA']
+  tdSettleLedgerId String
+  tdExpectedSettleOn DateTime
+  tdSettledOn DateTime
+  tdSettleAmount Decimal
+  tdMdrAmt Decimal [not null, default: 0]
+  tdSettleRefNo String
+  tdSettleVoucherId String
+  tdSessionId String
+  tdDeviceId String
+  tdUserId String [not null]
+  tdNotes String
+  tdIsDeleted Boolean [not null, default: false]
+  tdSyncDate DateTime
+  tdCreatedOn DateTime [default: `now()`, not null]
+  tdCreatedBy String [not null]
+  tdModifiedOn DateTime
+  tdModifiedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  user user_master [not null]
+  tender acc_tender_master [not null]
   tenderType acc_tender_types [not null]
   ledger acc_ledger_master [not null]
+  settleLedger acc_ledger_master
+  partyLedger acc_ledger_master [not null]
+  voucher acc_voucher_header
+  settleVoucher acc_voucher_header
+
+  indexes {
+    (tdId, tdAccYear) [pk]
+  }
+}
+
+Table acc_tender_master {
+  tndId String [pk]
+  tndCompanyId String [not null]
+  tndBranchId String
+  tndTypeId Int [not null]
+  tndName String [not null]
+  tndShortName String [not null]
+  tndLedgerId String [not null]
+  tndSettlementLedgerId String
+  tndSettlementDays Int [not null, default: 0]
+  tndBankAccountId String
+  tndMinAmount Decimal [not null, default: 0]
+  tndMaxAmount Decimal
+  tndDailyLimit Decimal
+  tndSurchargePerc Decimal [not null, default: 0]
+  tndSurchargeAmount Decimal [not null, default: 0]
+  tndSurchargeLedgerId String
+  tndEditSurcharge Boolean [not null, default: false]
+  tndEditLedger Boolean [not null, default: false]
+  tndUpiVpa String
+  tndUpiQrPayload String
+  tndMerchantId String
+  tndTerminalId String
+  tndConversionRate Decimal [not null, default: 1]
+  tndNeedsRef Boolean
+  tndAllowChange Boolean
+  tndAllowInReturn Boolean
+  tndOpenCashDrawer Boolean [not null, default: false]
+  tndIsDefault Boolean [not null, default: false]
+  tndDisplayPosition Int [not null, default: 0]
+  tndHotkey String
+  tndColour String
+  tndEffectiveFrom DateTime
+  tndEffectiveTo DateTime
+  tndRemarks String
+  tndIsActive Boolean [not null, default: true]
+  tndIsDeleted Boolean [not null, default: false]
+  tndTallyGuid String
+  tndSyncDate DateTime
+  tndCreatedOn DateTime [default: `now()`, not null]
+  tndCreatedBy String
+  tndModifiedOn DateTime
+  tndModifiedBy String
+  company companys [not null]
+  branch branch_master
+  tenderType acc_tender_types [not null]
+  ledger acc_ledger_master [not null]
+  settlementLedger acc_ledger_master
+  surchargeLedger acc_ledger_master
+  bankAccount acc_ledger_bank_accounts
+  tenderDetails acc_tender_detail [not null]
 }
 
 Table acc_tender_types {
-  accttTypeId BigInt [pk, increment]
-  accttTypeName String [not null]
-  accttTypeShortName String [not null]
-  accttTypeIsActive Boolean [not null, default: true]
-  accttTypeIsDeleted Boolean [not null, default: false]
-  accttTypeSyncDate DateTime
-  accttTypeCreatedOn DateTime [default: `now()`, not null]
-  accttTypeCreatedBy String
-  accttTypeModifiedOn DateTime [default: `now()`, not null]
-  accttTypeModifiedBy String
-  accttTenders acc_tender_master [not null]
+  ttmTypeId Int [pk]
+  ttmTypeName String [unique, not null]
+  ttmDisplayName String [not null]
+  ttmIsCash Boolean [not null, default: false]
+  ttmNeedsRef Boolean [not null, default: false]
+  ttmRefLabel String
+  ttmSaleOnly Boolean [not null, default: false]
+  ttmAllowChange Boolean [not null, default: false]
+  ttmAllowInReturn Boolean [not null, default: true]
+  ttmDisplayOrder Int [not null, default: 0]
+  ttmIsActive Boolean [not null, default: true]
+  ttmIsDeleted Boolean [not null, default: false]
+  ttmSyncDate DateTime
+  ttmCreatedOn DateTime [default: `now()`, not null]
+  ttmCreatedBy String
+  ttmModifiedOn DateTime
+  ttmModifiedBy String
+  tenders acc_tender_master [not null]
+  tenderDetails acc_tender_detail [not null]
 }
 
 Table acc_voucher_bills {
@@ -585,6 +693,8 @@ Table acc_voucher_header {
   vouchers acc_vouchers [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
+  tenderDetails acc_tender_detail [not null]
+  settleTenderDetails acc_tender_detail [not null]
 
   indexes {
     (avhCompanyId, avhBranchId, avhAccYear, avhVoucherId) [unique]
@@ -754,6 +864,7 @@ Table acc_ledger_bank_accounts {
   lbaRemarks String
   company companys
   ledger acc_ledger_master [not null]
+  tenderMasters acc_tender_master [not null]
 }
 
 Table audit_log {
@@ -1075,6 +1186,7 @@ Table state_codes {
   modifiedOn DateTime [default: `now()`, not null]
   modifiedBy String
   saleQuotations sale_quotation [not null]
+  saleBills sale_bill [not null]
 }
 
 Table stock_adj_reasons {
@@ -1421,6 +1533,7 @@ Table item_master {
   company companys
   loyaltySchemeGifts loyalty_sch_gift [not null]
   saleQuotationItems sale_quotation_item [not null]
+  saleBillItems sale_bill_item [not null]
 }
 
 Table item_price_levels {
@@ -1439,6 +1552,8 @@ Table item_price_levels {
   itemQtyPrices item_qty_price [not null]
   saleQuotations sale_quotation [not null]
   saleQuotationItems sale_quotation_item [not null]
+  saleBills sale_bill [not null]
+  saleBillItems sale_bill_item [not null]
 }
 
 Table item_price_master {
@@ -1746,6 +1861,7 @@ Table item_unit_conversion {
   unit item_unit_master [not null]
   baseUnit item_unit_master [not null]
   saleQuotationItem sale_quotation_item [not null]
+  saleBillItems sale_bill_item [not null]
   itemEanCodes item_ean_codes [not null]
   itemReorders item_reorders [not null]
   itemPrices item_price_master [not null]
@@ -1992,6 +2108,8 @@ Table branch_master {
   deviceMasters device_master [not null]
   saleAgents sale_agents [not null]
   chargeDetails sale_charge_detail [not null]
+  tenderMasters acc_tender_master [not null]
+  tenderDetails acc_tender_detail [not null]
 }
 
 Table charge_master {
@@ -2129,6 +2247,8 @@ Table companys {
   loyaltySchemes loyalty_sch_list [not null]
   saleAgents sale_agents [not null]
   chargeDetails sale_charge_detail [not null]
+  tenderMasters acc_tender_master [not null]
+  tenderDetails acc_tender_detail [not null]
 }
 
 Table company_group_master {
@@ -2229,6 +2349,7 @@ Table user_master {
   vouchers acc_vouchers [not null]
   userMenus user_menus [not null]
   deviceMasters device_master [not null]
+  tenderDetails acc_tender_detail [not null]
 }
 
 Table user_menus {
@@ -2450,6 +2571,7 @@ Table customers {
   company companys
   priceLevel item_price_levels [not null]
   saleQuotations sale_quotation [not null]
+  saleBills sale_bill [not null]
   itemQtyPrices item_qty_price [not null]
 }
 
@@ -2750,6 +2872,252 @@ Table sale_agent_groups {
   saGrpModifiedOn DateTime
   saGrpModifiedBy String
   saleAgents sale_agents [not null]
+}
+
+Table sale_bill {
+  sbId String [not null]
+  sbCompanyId String [not null]
+  sbBranchId String [not null]
+  sbTenantId String
+  sbAccYear String [not null]
+  sbSessionId String
+  sbCounterId String [not null]
+  sbDeviceType String [not null]
+  sbDeviceId String [not null]
+  sbDocType String [not null, default: 'TAX_INVOICE']
+  sbBillType String [not null, default: 'CASH']
+  sbCategoryId String
+  sbPriceLevel Int [not null]
+  sbBillSlno BigInt [not null]
+  sbBillRefno String [not null]
+  sbUsrRefno String
+  sbBillDate DateTime [not null]
+  sbBillDatetime DateTime [default: `now()`, not null]
+  sbDueDays Int
+  sbDueDate DateTime
+  sbSrcDocType String
+  sbSrcDocId String
+  sbSrcDocRefno String
+  sbSrcDocDate DateTime
+  sbCustId String [not null]
+  sbCustName String [not null]
+  sbCustAddr String
+  sbCustPlace String
+  sbCustPin String
+  sbCustPhone String
+  sbCustGstin String
+  sbCustGstType String
+  sbCustStcd String
+  sbPosStcd String
+  sbStateName String
+  sbHasLoad Boolean [not null, default: false]
+  sbHasUnload Boolean [not null, default: false]
+  sbHasFreight Boolean [not null, default: false]
+  sbHasPromo Boolean [not null, default: false]
+  sbHasComm Boolean [not null, default: false]
+  sbHasLoyalty Boolean [not null, default: false]
+  sbUserId String [not null]
+  sbSalesmanId String[] [not null]
+  sbAgentId String
+  sbAgentCommPerc Decimal
+  sbAgentCommAmt Decimal
+  sbDriverId String
+  sbLoadmanId String[] [not null]
+  sbPackedId String[] [not null]
+  sbSupervisorId String
+  sbVehicleId String
+  sbVehicleNo String
+  sbTotItems Int [not null, default: 0]
+  sbTotWeight Decimal [not null, default: 0]
+  sbTotBags Decimal [not null, default: 0]
+  sbGrossAmt Decimal [not null, default: 0]
+  sbItemDisc Decimal [not null, default: 0]
+  sbSplDisc Decimal [not null, default: 0]
+  sbSchDisc Decimal [not null, default: 0]
+  sbBillSchDisc Decimal [not null, default: 0]
+  sbAddlDisc1 Decimal [not null, default: 0]
+  sbAddlDisc2 Decimal [not null, default: 0]
+  sbCashDisc Decimal [not null, default: 0]
+  sbTaxableAmt Decimal [not null, default: 0]
+  sbCgstAmt Decimal [not null, default: 0]
+  sbSgstAmt Decimal [not null, default: 0]
+  sbIgstAmt Decimal [not null, default: 0]
+  sbCessAmt Decimal [not null, default: 0]
+  sbTaxAmt Decimal [not null, default: 0]
+  sbFreightAmt Decimal [not null, default: 0]
+  sbLoadAmt Decimal [not null, default: 0]
+  sbUnloadAmt Decimal [not null, default: 0]
+  sbOtherAmt1 Decimal [not null, default: 0]
+  sbOtherAmt2 Decimal [not null, default: 0]
+  sbRoundOff Decimal [not null, default: 0]
+  sbBillAmt Decimal [not null, default: 0]
+  sbTotalCost Decimal
+  sbMarginAmt Decimal
+  sbMarginAmtWot Decimal
+  sbMarginPerc Decimal
+  sbMrpSavings Decimal [default: 0]
+  sbMrpSavingsPerc Decimal [default: 0]
+  sbPayMode String
+  sbCreditAmt Decimal [not null, default: 0]
+  sbSurchargeAmt Decimal [not null, default: 0]
+  sbTenderAmt Decimal [not null, default: 0]
+  sbRefundAmt Decimal [not null, default: 0]
+  sbAdvanceAmt Decimal [not null, default: 0]
+  sbPaidAmt Decimal [not null, default: 0]
+  sbBalanceAmt Decimal [not null, default: 0]
+  sbPayStatus String [not null, default: 'UNPAID']
+  sbReturnedAmt Decimal [not null, default: 0]
+  sbReturnStatus String
+  sbPaymentTerms String
+  sbDeliveryTerms String
+  sbTermsConditions String
+  sbRemarks String
+  sbFreightCalcType String
+  sbLoadingCalcType String
+  sbDiscAlterBase Boolean
+  sbRoundOffStep Decimal [not null, default: 1]
+  sbStatus String [not null, default: 'DRAFT']
+  sbPostedOn DateTime
+  sbPostedVoucherId String
+  sbApprovedOn DateTime
+  sbApprovedBy String
+  sbCancelledOn DateTime
+  sbCancelledBy String
+  sbCancelReason String
+  sbVersionNo Int [not null, default: 1]
+  sbPrintCount Int [not null, default: 0]
+  sbIsDeleted Boolean [not null, default: false]
+  sbSyncDate DateTime
+  sbCreatedOn DateTime [default: `now()`, not null]
+  sbCreatedBy String [not null]
+  sbModifiedOn DateTime
+  sbModifiedBy String
+  items sale_bill_item [not null]
+  customer customers [not null]
+  posState state_codes
+  priceLevel item_price_levels [not null]
+
+  indexes {
+    (sbId, sbAccYear) [pk]
+  }
+}
+
+Table sale_bill_item {
+  sbiId String [not null]
+  sbiBillId String [not null]
+  sbiCompanyId String [not null]
+  sbiBranchId String [not null]
+  sbiTenantId String
+  sbiAccYear String [not null]
+  sbiLineNo Int [not null]
+  sbiSplitNo Int [not null, default: 1]
+  sbiSrcDocType String
+  sbiSrcDocId String
+  sbiSrcDocRefno String
+  sbiSrcItemQty Decimal
+  sbiSrcFreeQty Decimal
+  sbiItemId String [not null]
+  sbiItemUnitId String [not null]
+  sbiToBaseFactor Decimal [not null, default: 0]
+  sbiHsnCode String
+  sbiPriceLevel Int [not null]
+  sbiEanCode String
+  sbiGodownId String [not null]
+  sbiStockId String [not null]
+  sbiBatchNo String
+  sbiBatchDate DateTime
+  sbiExpiryDate DateTime
+  sbiSerialNo String
+  sbiIsTaxIncl Boolean [not null, default: false]
+  sbiIsPromo Boolean [not null, default: false]
+  sbiIsFree Boolean [not null, default: false]
+  sbiFreeType String
+  sbiIsService Boolean [not null, default: false]
+  sbiHasFreight Boolean [not null, default: false]
+  sbiCaseQty Decimal [not null, default: 0]
+  sbiBillQty Decimal [not null, default: 0]
+  sbiLengthQty Decimal [default: 0]
+  sbiNetQty Decimal [not null, default: 0]
+  sbiWeightQty Decimal [default: 0]
+  sbiAvailableStock Decimal [not null, default: 0]
+  sbiReturnQty Decimal [not null, default: 0]
+  sbiRate Decimal [not null, default: 0]
+  sbiRatePreTax Decimal [not null, default: 0]
+  sbiRateDiff Decimal [not null, default: 0]
+  sbiActPrice Decimal
+  sbiMaxPrice Decimal
+  sbiMinPrice Decimal
+  sbiCostPrice Decimal
+  sbiCostPreTax Decimal
+  sbiItemDiscPerc Decimal [not null, default: 0]
+  sbiItemDiscQty Decimal [not null, default: 0]
+  sbiItemDiscAmt Decimal [not null, default: 0]
+  sbiSplDiscPerc Decimal [not null, default: 0]
+  sbiSplDiscQty Decimal [not null, default: 0]
+  sbiSplDiscAmt Decimal [not null, default: 0]
+  sbiSchDiscPerc Decimal [not null, default: 0]
+  sbiSchDiscQty Decimal [not null, default: 0]
+  sbiSchDiscAmt Decimal [not null, default: 0]
+  sbiBillSchPerc Decimal [not null, default: 0]
+  sbiBillSchQty Decimal [not null, default: 0]
+  sbiBillSchAmt Decimal [not null, default: 0]
+  sbiAddlDisc1Perc Decimal [not null, default: 0]
+  sbiAddlDisc1Amt Decimal [not null, default: 0]
+  sbiAddlDisc2Perc Decimal [not null, default: 0]
+  sbiAddlDisc2Amt Decimal [not null, default: 0]
+  sbiCashDiscPerc Decimal [not null, default: 0]
+  sbiCashDiscAmt Decimal [not null, default: 0]
+  sbiGrossAmt Decimal [not null, default: 0]
+  sbiNetGross Decimal
+  sbiChrgBeforeTax Decimal
+  sbiChrgAfterTax Decimal
+  sbiTaxableAmt Decimal [not null, default: 0]
+  sbiTaxPerc Decimal [not null, default: 0]
+  sbiTaxAmt Decimal [not null, default: 0]
+  sbiCgstPerc Decimal [not null, default: 0]
+  sbiCgstAmt Decimal [not null, default: 0]
+  sbiSgstPerc Decimal [not null, default: 0]
+  sbiSgstAmt Decimal [not null, default: 0]
+  sbiIgstPerc Decimal [not null, default: 0]
+  sbiIgstAmt Decimal [not null, default: 0]
+  sbiCessPerc Decimal [not null, default: 0]
+  sbiCessPerUnit Decimal [not null, default: 0]
+  sbiCessAmt Decimal [not null, default: 0]
+  sbiAcessPerc Decimal [not null, default: 0]
+  sbiAcessPerUnit Decimal [not null, default: 0]
+  sbiAcessAmt Decimal [not null, default: 0]
+  sbiFreightQty Decimal [not null, default: 0]
+  sbiFreightAmt Decimal [not null, default: 0]
+  sbiLoadQty Decimal [not null, default: 0]
+  sbiLoadAmt Decimal [not null, default: 0]
+  sbiUnloadQty Decimal [not null, default: 0]
+  sbiUnloadAmt Decimal [not null, default: 0]
+  sbiRoundOff Decimal [not null, default: 0]
+  sbiNetAmt Decimal [not null, default: 0]
+  sbiSoldPrice Decimal
+  sbiSoldPreTax Decimal
+  sbiItemProfit Decimal
+  sbiProfitPreTax Decimal
+  sbiMrpSavings Decimal
+  sbiMrpSavingsPerc Decimal
+  sbiSalesmanId String
+  sbiSchemeId String
+  sbiSchemeName String
+  sbiRemarks String
+  sbiIsDeleted Boolean [not null, default: false]
+  sbiSyncDate DateTime
+  sbiCreatedOn DateTime [default: `now()`, not null]
+  sbiCreatedBy String [not null]
+  sbiModifiedOn DateTime
+  sbiModifiedBy String
+  bill sale_bill [not null]
+  item item_master [not null]
+  priceLevel item_price_levels [not null]
+  itemUnitConversion item_unit_conversion [not null]
+
+  indexes {
+    (sbiId, sbiAccYear) [pk]
+  }
 }
 
 Table sale_charge_detail {
@@ -3532,9 +3900,39 @@ Ref: acc_ledger_master.ledGroupId > account_groups.accGroupId [delete: Restrict]
 
 Ref: acc_ledger_master.ledBranchId > branch_master.brId [delete: Restrict]
 
-Ref: acc_tender_master.acctndTypeId > acc_tender_types.accttTypeId
+Ref: acc_tender_detail.tdCompanyId > companys.compId [delete: Restrict]
 
-Ref: acc_tender_master.acctndLedgerId > acc_ledger_master.ledId
+Ref: acc_tender_detail.tdBranchId > branch_master.brId [delete: Restrict]
+
+Ref: acc_tender_detail.tdUserId > user_master.usrId [delete: Restrict]
+
+Ref: acc_tender_detail.tdTenderId > acc_tender_master.tndId [delete: Restrict]
+
+Ref: acc_tender_detail.tdTenderTypeId > acc_tender_types.ttmTypeId [delete: Restrict]
+
+Ref: acc_tender_detail.tdTenderLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tender_detail.tdSettleLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tender_detail.tdPartyLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tender_detail.tdVoucherId > acc_voucher_header.avhVoucherId [delete: Set Null]
+
+Ref: acc_tender_detail.tdSettleVoucherId > acc_voucher_header.avhVoucherId [delete: Set Null]
+
+Ref: acc_tender_master.tndCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_tender_master.tndBranchId > branch_master.brId [delete: Restrict]
+
+Ref: acc_tender_master.tndTypeId > acc_tender_types.ttmTypeId [delete: Restrict]
+
+Ref: acc_tender_master.tndLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tender_master.tndSettlementLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tender_master.tndSurchargeLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tender_master.tndBankAccountId > acc_ledger_bank_accounts.lbaId [delete: Restrict]
 
 Ref: acc_voucher_bills.avbdVoucherId > acc_voucher_header.avhVoucherId [delete: Cascade]
 
@@ -3785,6 +4183,20 @@ Ref: sale_agents.saCompanyId > companys.compId [delete: Restrict]
 Ref: sale_agents.saBranchId > branch_master.brId [delete: Restrict]
 
 Ref: sale_agents.saGroupId > sale_agent_groups.saGrpId [delete: Restrict]
+
+Ref: sale_bill.sbCustId > customers.cusId [delete: Restrict]
+
+Ref: sale_bill.sbPosStcd > state_codes.stateCode [delete: Restrict]
+
+Ref: sale_bill.sbPriceLevel > item_price_levels.iplId [delete: Restrict]
+
+Ref: sale_bill_item.(sbiBillId, sbiAccYear) > sale_bill.(sbId, sbAccYear) [delete: Cascade]
+
+Ref: sale_bill_item.sbiItemId > item_master.itemId [delete: Restrict]
+
+Ref: sale_bill_item.sbiPriceLevel > item_price_levels.iplId [delete: Restrict]
+
+Ref: sale_bill_item.sbiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: sale_charge_detail.cdChgId > charge_master.chgId [delete: No Action]
 

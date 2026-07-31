@@ -35,7 +35,10 @@ product/service, with its rates, discounts and tax breakup).
 | `GET` | `/get` | Fetch one active quotation by `sqId` (query param), including its active line items and applied charges. |
 | `DELETE` | `/delete` | Soft-delete a quotation by `sqId` (query param), cascading to its line items and applied charges. |
 
-Both `/get` and `/delete` take `sqId` as a query parameter validated by `ParseUUIDPipe({ version: '7' })`.
+Both `/get` and `/delete` take the same query scope — `sqId`, `sqCompanyId` and `sqBranchId`
+validated by `ParseUUIDPipe({ version: '7' })`, plus `sqAccYear` as a plain string. A quotation is
+only found when all four match, so an id from another company, branch or accounting year answers
+not-found rather than reading or deleting across tenants.
 
 ### Create / update semantics
 
@@ -98,6 +101,12 @@ Line items are managed through the `items[]` array on the create/update payload
   new line (`requireItemField`).
 - An existing active line **absent** from the array → **soft deleted** (`sqiIsDeleted = true`).
 - Omitting the `items` property entirely (`undefined`) leaves the current lines **untouched**.
+- **Write order** (why `syncItems` validates the whole array before writing anything):
+  `ux_sqi_quote_line` is unique over the **active** lines only, so the replaced lines are soft
+  deleted **first** — a client re-posting its grid without `sqiId` reuses line numbers 1..n, and
+  those numbers have to be free before the inserts land. Surviving lines that the payload
+  **reorders** are then parked above every requested number in one `updateMany` before being
+  renumbered down, so a 1↔2 swap never passes through a state where both rows want the same number.
 - Scope keys (`sqiQuoteId`, `sqiCompanyId`, `sqiBranchId`, `sqiTenantId`, `sqiAccYear`,
   `sqiPriceLevel`) are inherited from the parent quotation; any values sent on the item default to
   the parent scope.
@@ -134,15 +143,20 @@ same create/update payload (`syncCharges` reconciliation), with **exactly** the 
   non-deleted lines.
 - Header reference number `sqQuoteRefno` is unique per `(sqCompanyId, sqBranchId, sqAccYear,
   sqQuoteRefno, sqRevisionNo)` among non-deleted rows (`ux_sq_quote_no`); `sqQuoteSlno` is unique
-  per `(sqCompanyId, sqBranchId, sqAccYear, sqQuoteSlno)` (`ux_sq_slno`). A unique-constraint
-  violation is mapped to a "Duplicate quotation reference number is not allowed" conflict on
-  `sqQuoteRefno` (`throwOnUniqueConstraintError`).
+  per `(sqCompanyId, sqBranchId, sqAccYear, sqQuoteSlno)` (`ux_sq_slno`).
+- A unique-constraint violation (P2002) is reported as the duplicate it actually is, resolved from
+  the index Postgres names in `meta.target` (`describeDuplicate`): `ux_sqi_quote_line` → conflict on
+  `sqiLineNo`, `ux_sq_slno` → conflict on `sqQuoteSlno`, otherwise → "Duplicate quotation reference
+  number is not allowed" on `sqQuoteRefno`. Mapping every violation to the refno is what once made a
+  line-number clash on update look like the server renumbering the quotation.
 
 ### Soft delete
 
 - `DELETE /delete` sets `sqIsDeleted = true` (plus `sqModifiedOn` / `sqModifiedBy`) on the header,
   then cascades the same to all its active line items **and applied charges** so nothing stays
   active under a logically deleted header. Rows are never hard-deleted.
+- The header is matched on `(sqId, sqCompanyId, sqBranchId, sqAccYear)`; the cascades key off
+  `sqId` alone, which is already the header's primary key. A mismatched scope deletes nothing.
 - `GET /get` and the update lookups only ever see rows with `sqIsDeleted = false` (and items with
   `sqiIsDeleted = false`, charges with `cdIsDeleted = false`).
 
@@ -171,8 +185,13 @@ same create/update payload (`syncCharges` reconciliation), with **exactly** the 
 
 - **Every mutation is audited** via `AuditLogService.logEntityChange` inside the same transaction,
   capturing original vs. modified records.
-  - Header: actions `New` / `update` / `delete`, `tableName = 'sale_quotation'`,
+  - Header: actions `New` / `update` / `cancel`, `tableName = 'sale_quotation'`,
     `screenName = 'Sale Quotation'`, `screenType = 'transaction'`.
+  - A **soft delete is logged as `cancel`**, at every level (header, line, charge). The
+    `audit.audit_log_action` enum is `insert | update | approve | cancel` — it has no `delete`
+    member, so `AuditLogService.normalizeAction` answers
+    `400 Unsupported audit action: delete` and takes the whole save down with it. This is the
+    convention every other module already follows.
   - Each line-item insert/update/soft-delete is logged separately against
     `sale_quotation_item`.
   - Each applied-charge insert/update/soft-delete is logged separately against
@@ -205,3 +224,18 @@ on `/create` — and are `null` on the create/update responses, exactly like the
 
 A soft-deleted or inactive master row still resolves: a stored quotation must keep showing the
 area/salesman/agent it was raised under after that master is retired.
+
+Each line item carries the same kind of resolved fields for its own masters, so the client can
+render quantity/rate inputs (decimal places, batch behaviour) and group/brand-driven UI without a
+second round trip:
+
+| Response field | Source | Reached by |
+| --- | --- | --- |
+| `sqiItemName` | `inventory.item_master.item_name_en` | `item` relation on `sqiItemId` |
+| `sqiBatchConfig` | `inventory.item_master.item_batch_config` | same relation |
+| `sqiGroupId` | `inventory.item_master.item_group_id` | same relation |
+| `sqiBrandId` | `inventory.item_master.item_brand_id` | same relation |
+| `sqiSectionId` | `inventory.item_master.item_section_id` | same relation |
+| `sqiCategoryId` | `inventory.item_master.item_category_id` | same relation |
+| `sqiUnitName` | `inventory.item_unit_master.unit_name` | `itemUnitConversion` → `unit` on `sqiItemUnitId` |
+| `sqiDecimalCount` | `inventory.item_unit_master.unit_decimal_count` | same relation chain |

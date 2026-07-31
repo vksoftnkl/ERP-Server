@@ -103,7 +103,12 @@ model AccLedgerMaster {
   branches                 BranchMaster?          @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
   bankAccounts             AccLedgerBankAccount[]
   shipAddrs                AccShipAddr[]
-  tenders                  AccountTenderMaster[]
+  tenderLedgers            AccTenderMaster[]      @relation("TenderLedger")
+  tenderSettlementLedgers  AccTenderMaster[]      @relation("TenderSettlementLedger")
+  tenderSurchargeLedgers   AccTenderMaster[]      @relation("TenderSurchargeLedger")
+  tenderDetailLedgers      AccTenderDetail[]      @relation("TenderDetailLedger")
+  tenderDetailSettleLedgers AccTenderDetail[]     @relation("TenderDetailSettleLedger")
+  tenderDetailPartyLedgers AccTenderDetail[]      @relation("TenderDetailPartyLedger")
   voucherBillParties       AccVoucherBill[]       @relation("VoucherBillParty")
   voucherDocRegisterParties AccVoucherDocRegister[]
   voucherHeaderParties     AccVoucherHeader[]

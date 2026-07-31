@@ -1,5 +1,11 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { AccVoucherSeq, Prisma, SaleChargeDetail, SaleQuotation } from '@prisma/client';
+import {
+  AccVoucherSeq,
+  Prisma,
+  SaleChargeDetail,
+  SaleQuotation,
+  SaleQuotationItem,
+} from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,6 +23,10 @@ const LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fe07';
 const CD_ID = '019c6f6c-be87-7a11-8905-36092c46fe08';
 const OTHER_CD_ID = '019c6f6c-be87-7a11-8905-36092c46fe09';
 const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fe0a';
+const LINE_A_ID = '019c6f6c-be87-7a11-8905-36092c46fe10';
+const LINE_B_ID = '019c6f6c-be87-7a11-8905-36092c46fe11';
+const ITEM_MASTER_ID = '019c6f6c-be87-7a11-8905-36092c46fe12';
+const ITEM_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fe13';
 const AREA_ID = '019c6f6c-be87-7a11-8905-36092c46fe0b';
 const SALESMAN_ID = '019c6f6c-be87-7a11-8905-36092c46fe0c';
 const AGENT_ID = '019c6f6c-be87-7a11-8905-36092c46fe0d';
@@ -126,6 +136,27 @@ const makeCharge = (overrides: Partial<SaleChargeDetail> = {}): SaleChargeDetail
     ...overrides,
   }) as SaleChargeDetail;
 
+const makeItem = (overrides: Partial<SaleQuotationItem> = {}): SaleQuotationItem =>
+  ({
+    sqiId: LINE_A_ID,
+    sqiQuoteId: QUOTE_ID,
+    sqiCompanyId: COMPANY_ID,
+    sqiBranchId: BRANCH_ID,
+    sqiTenantId: TENANT_ID,
+    sqiAccYear: ACC_YEAR,
+    sqiLineNo: 1,
+    sqiItemId: ITEM_MASTER_ID,
+    sqiItemUnitId: ITEM_UNIT_ID,
+    sqiPriceLevel: 1,
+    sqiIsDeleted: false,
+    sqiSyncDate: null,
+    sqiCreatedOn: new Date('2026-07-28T10:00:00.000Z'),
+    sqiCreatedBy: USER_ID,
+    sqiModifiedOn: null,
+    sqiModifiedBy: null,
+    ...overrides,
+  }) as unknown as SaleQuotationItem;
+
 const baseDto = (overrides: Partial<SaveQuotationDto> = {}): SaveQuotationDto =>
   ({
     sqCompanyId: COMPANY_ID,
@@ -141,6 +172,11 @@ const baseDto = (overrides: Partial<SaveQuotationDto> = {}): SaveQuotationDto =>
   }) as SaveQuotationDto;
 
 type QuotationCreateArgs = { data: Prisma.SaleQuotationUncheckedCreateInput };
+type ItemCreateArgs = { data: Prisma.SaleQuotationItemUncheckedCreateInput };
+type ItemUpdateArgs = {
+  where: { sqiId: string };
+  data: Prisma.SaleQuotationItemUncheckedUpdateInput;
+};
 type ChargeCreateArgs = { data: Prisma.SaleChargeDetailUncheckedCreateInput };
 type ChargeUpdateArgs = {
   where: { cdId: string };
@@ -159,7 +195,9 @@ type PrismaMock = {
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
   saleQuotationItem: {
-    findMany: jest.Mock<Promise<never[]>, unknown[]>;
+    findMany: jest.Mock<Promise<SaleQuotationItem[]>, unknown[]>;
+    create: jest.Mock<Promise<SaleQuotationItem>, [ItemCreateArgs]>;
+    update: jest.Mock<Promise<SaleQuotationItem>, [ItemUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
   saleChargeDetail: {
@@ -213,7 +251,18 @@ const makePrismaMock = (): PrismaMock => {
       updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
     saleQuotationItem: {
-      findMany: jest.fn(() => Promise.resolve([])),
+      findMany: jest.fn(() => Promise.resolve([] as SaleQuotationItem[])),
+      create: jest.fn(({ data }: ItemCreateArgs) =>
+        Promise.resolve(makeItem(data as unknown as Partial<SaleQuotationItem>)),
+      ),
+      update: jest.fn(({ where, data }: ItemUpdateArgs) =>
+        Promise.resolve(
+          makeItem({
+            ...(data as unknown as Partial<SaleQuotationItem>),
+            sqiId: where.sqiId,
+          }),
+        ),
+      ),
       updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
     saleChargeDetail: {
@@ -488,8 +537,83 @@ describe('QuotationService — applied charges', () => {
     expect(payload.sqAgentName).toBeNull();
   });
 
+  it('resolves the item and unit master attributes on each line on getById', async () => {
+    const GROUP_ID = '019c6f6c-be87-7a11-8905-36092c46fe20';
+    const BRAND_ID = '019c6f6c-be87-7a11-8905-36092c46fe21';
+    const SECTION_ID = '019c6f6c-be87-7a11-8905-36092c46fe22';
+    const CATEGORY_ID = '019c6f6c-be87-7a11-8905-36092c46fe23';
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({
+        items: [
+          {
+            ...makeItem(),
+            item: {
+              itemNameEn: 'Cement OPC 53',
+              itemBatchConfig: 2,
+              itemGroupId: GROUP_ID,
+              itemBrandId: BRAND_ID,
+              itemSectionId: SECTION_ID,
+              itemCategoryId: CATEGORY_ID,
+            },
+            itemUnitConversion: { unit: { unit_name: 'BAG', unit_decimal_count: 3 } },
+          },
+        ],
+      } as unknown as Partial<SaleQuotation>),
+    );
+
+    const payload = await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+    const line = payload.items?.[0];
+    expect(line?.sqiItemName).toBe('Cement OPC 53');
+    expect(line?.sqiUnitName).toBe('BAG');
+    expect(line?.sqiDecimalCount).toBe(3);
+    expect(line?.sqiBatchConfig).toBe(2);
+    expect(line?.sqiGroupId).toBe(GROUP_ID);
+    expect(line?.sqiBrandId).toBe(BRAND_ID);
+    expect(line?.sqiSectionId).toBe(SECTION_ID);
+    expect(line?.sqiCategoryId).toBe(CATEGORY_ID);
+    // The joined relations themselves must not leak into the line payload.
+    expect(line).not.toHaveProperty('item');
+    expect(line).not.toHaveProperty('itemUnitConversion');
+  });
+
+  it('leaves the line master attributes null when the item/unit joins came back empty', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(
+      makeQuotation({ items: [makeItem()] } as unknown as Partial<SaleQuotation>),
+    );
+
+    const line = (await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR)).items?.[0];
+
+    expect(line?.sqiDecimalCount).toBeNull();
+    expect(line?.sqiBatchConfig).toBeNull();
+    expect(line?.sqiGroupId).toBeNull();
+    expect(line?.sqiBrandId).toBeNull();
+    expect(line?.sqiSectionId).toBeNull();
+    expect(line?.sqiCategoryId).toBeNull();
+  });
+
+  it("logs soft deletes as 'cancel', the action audit.audit_log_action actually has", async () => {
+    prisma.saleQuotationItem.findMany.mockResolvedValue([
+      makeItem({ sqiId: LINE_A_ID, sqiLineNo: 1 }),
+    ]);
+    prisma.saleChargeDetail.findMany.mockResolvedValue([makeCharge()]);
+
+    // Drops the line and the charge, then retires the header.
+    await service.save(baseDto({ sqId: QUOTE_ID, items: [], charges: [] }));
+    await service.softDelete(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+    // 'delete' is not a member of the enum: AuditLogService.normalizeAction
+    // answers 400 'Unsupported audit action: delete' instead of writing the row,
+    // which failed the whole save it was logging.
+    const auditActions = (auditLogService.logEntityChange.mock.calls as [{ action: string }][]).map(
+      ([entry]) => entry.action,
+    );
+    expect(auditActions).toContain('cancel');
+    expect(auditActions).not.toContain('delete');
+  });
+
   it('cascades the header soft delete to the applied charges', async () => {
-    await service.softDelete(QUOTE_ID);
+    await service.softDelete(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
     expect(prisma.saleChargeDetail.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -497,6 +621,128 @@ describe('QuotationService — applied charges', () => {
         data: containing({ cdIsDeleted: true }),
       }),
     );
+  });
+});
+
+// ux_sqi_quote_line is unique on (sqi_quote_id, sqi_line_no) over the ACTIVE
+// lines, so an update that writes the payload before retiring what it replaces
+// collides with itself. These cover the ordering that keeps it from happening.
+describe('QuotationService — line item reconciliation on update', () => {
+  let service: QuotationService;
+  let prisma: PrismaMock;
+
+  const activeLines = () => [
+    makeItem({ sqiId: LINE_A_ID, sqiLineNo: 1 }),
+    makeItem({ sqiId: LINE_B_ID, sqiLineNo: 2 }),
+  ];
+  const newLine = () => ({ sqiItemId: ITEM_MASTER_ID, sqiItemUnitId: ITEM_UNIT_ID });
+  const firstCallOrder = (mock: jest.Mock): number => mock.mock.invocationCallOrder[0];
+  const lastCallOrder = (mock: jest.Mock): number =>
+    mock.mock.invocationCallOrder[mock.mock.invocationCallOrder.length - 1];
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new QuotationService(
+      prisma as unknown as PrismaService,
+      { logEntityChange: jest.fn(() => Promise.resolve(undefined)) } as unknown as AuditLogService,
+      { getUserId: () => USER_ID } as unknown as RequestContextService,
+    );
+  });
+
+  it('retires the replaced lines before inserting a re-posted grid, freeing their line numbers', async () => {
+    prisma.saleQuotationItem.findMany.mockResolvedValue(activeLines());
+
+    await service.save(baseDto({ sqId: QUOTE_ID, items: [newLine(), newLine()] }));
+
+    expect(prisma.saleQuotationItem.update).toHaveBeenCalledWith(
+      containing({ where: { sqiId: LINE_A_ID }, data: containing({ sqiIsDeleted: true }) }),
+    );
+    expect(prisma.saleQuotationItem.update).toHaveBeenCalledWith(
+      containing({ where: { sqiId: LINE_B_ID }, data: containing({ sqiIsDeleted: true }) }),
+    );
+    // Both soft deletes land before the first insert reuses line number 1.
+    expect(lastCallOrder(prisma.saleQuotationItem.update)).toBeLessThan(
+      firstCallOrder(prisma.saleQuotationItem.create),
+    );
+    expect(prisma.saleQuotationItem.create.mock.calls.map(([{ data }]) => data.sqiLineNo)).toEqual([
+      1, 2,
+    ]);
+  });
+
+  it('parks the surviving lines above every requested number when the payload reorders them', async () => {
+    prisma.saleQuotationItem.findMany.mockResolvedValue(activeLines());
+
+    await service.save(
+      baseDto({
+        sqId: QUOTE_ID,
+        items: [
+          { ...newLine(), sqiId: LINE_B_ID, sqiLineNo: 1 },
+          { ...newLine(), sqiId: LINE_A_ID, sqiLineNo: 2 },
+        ],
+      }),
+    );
+
+    // Swapping 1 and 2 renumbers through a state where both rows want the same
+    // number unless they are moved out of the index's way first.
+    expect(prisma.saleQuotationItem.updateMany).toHaveBeenCalledWith({
+      where: { sqiId: { in: [LINE_B_ID, LINE_A_ID] } },
+      data: { sqiLineNo: { increment: 3 } },
+    });
+    expect(firstCallOrder(prisma.saleQuotationItem.updateMany)).toBeLessThan(
+      firstCallOrder(prisma.saleQuotationItem.update),
+    );
+  });
+
+  it('skips the parking pass when the payload keeps every line where it is', async () => {
+    prisma.saleQuotationItem.findMany.mockResolvedValue(activeLines());
+
+    await service.save(
+      baseDto({
+        sqId: QUOTE_ID,
+        items: [
+          { ...newLine(), sqiId: LINE_A_ID, sqiLineNo: 1 },
+          { ...newLine(), sqiId: LINE_B_ID, sqiLineNo: 2 },
+        ],
+      }),
+    );
+
+    expect(prisma.saleQuotationItem.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('reports a line-number clash as one rather than as a duplicate reference number', async () => {
+    prisma.saleQuotationItem.create.mockRejectedValue(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target: 'ux_sqi_quote_line' },
+      }),
+    );
+
+    const error = (await service
+      .save(baseDto({ sqId: QUOTE_ID, items: [newLine()] }))
+      .catch((caught: unknown) => caught)) as ConflictException;
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.getResponse()).toEqual(
+      containing({
+        message: 'Duplicate quotation line number is not allowed',
+        errors: [containing({ field: 'sqiLineNo' })],
+      }),
+    );
+  });
+
+  it('never renumbers the quotation on update — the refno and slno stay put', async () => {
+    prisma.saleQuotationItem.findMany.mockResolvedValue(activeLines());
+
+    await service.save(baseDto({ sqId: QUOTE_ID, sqQuoteRefno: 'CLIENT-1', items: [newLine()] }));
+
+    // No number is drawn from the sequence, and the client's refno is dropped
+    // rather than written over the one the quotation was created with.
+    expect(prisma.accVoucherSeq.update).not.toHaveBeenCalled();
+    const [[updateArgs]] = prisma.saleQuotation.update.mock.calls as unknown as [
+      [{ data: Record<string, unknown> }],
+    ];
+    expect(updateArgs.data).not.toHaveProperty('sqQuoteRefno');
+    expect(updateArgs.data).not.toHaveProperty('sqQuoteSlno');
   });
 });
 

@@ -1311,22 +1311,22 @@ private async buildWhereClause(
         return new Map(groups.map((group) => [group.spgId, group.spgName]));
       }
       case 'tenderType': {
-        const tenderTypeIds = ids.map((id) => BigInt(id));
-        const tenderTypes = await this.prisma.accountTenderTypes.findMany({
+        const tenderTypeIds = ids.map((id) => Number(id)).filter((id) => Number.isInteger(id));
+        const tenderTypes = await this.prisma.accTenderType.findMany({
           where: {
-            accttTypeId: {
+            ttmTypeId: {
               in: tenderTypeIds,
             },
           },
           select: {
-            accttTypeId: true,
-            accttTypeName: true,
+            ttmTypeId: true,
+            ttmTypeName: true,
           },
         });
         return new Map(
           tenderTypes.map((tenderType) => [
-            tenderType.accttTypeId.toString(),
-            tenderType.accttTypeName,
+            tenderType.ttmTypeId.toString(),
+            tenderType.ttmTypeName,
           ]),
         );
       }

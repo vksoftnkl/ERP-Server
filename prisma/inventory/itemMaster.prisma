@@ -86,6 +86,7 @@ model ItemMaster {
   company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   loyaltySchemeGifts   LoyaltySchemeGift[]
   saleQuotationItems   SaleQuotationItem[]
+  saleBillItems        SaleBillItem[]
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)

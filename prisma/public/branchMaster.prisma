@@ -87,6 +87,8 @@ model BranchMaster {
   deviceMasters         DeviceMaster[]
   saleAgents            SaleAgent[]       @relation("BranchSaleAgents")
   chargeDetails         SaleChargeDetail[] @relation("BranchChargeDetails")
+  tenderMasters         AccTenderMaster[]
+  tenderDetails         AccTenderDetail[]
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")

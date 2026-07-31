@@ -118,21 +118,21 @@ export function buildModuleFetchers(prisma: PrismaService): Record<LookupModuleK
     ),
     tenderTypes: simpleFetcher(
       () =>
-        prisma.accountTenderTypes.findMany({
-          where: { accttTypeIsDeleted: false, accttTypeIsActive: true },
-          select: { accttTypeId: true, accttTypeName: true },
-          orderBy: [{ accttTypeName: 'asc' }, { accttTypeId: 'asc' }],
+        prisma.accTenderType.findMany({
+          where: { ttmIsDeleted: false, ttmIsActive: true },
+          select: { ttmTypeId: true, ttmTypeName: true },
+          orderBy: [{ ttmTypeName: 'asc' }, { ttmTypeId: 'asc' }],
         }),
-      (row) => toOption(String(row.accttTypeId), row.accttTypeName),
+      (row) => toOption(String(row.ttmTypeId), row.ttmTypeName),
     ),
     tenders: simpleFetcher(
       () =>
-        prisma.accountTenderMaster.findMany({
-          where: { acctndIsDeleted: false, acctndIsActive: true },
-          select: { acctndId: true, acctndName: true },
-          orderBy: [{ acctndName: 'asc' }, { acctndId: 'asc' }],
+        prisma.accTenderMaster.findMany({
+          where: { tndIsDeleted: false, tndIsActive: true },
+          select: { tndId: true, tndName: true },
+          orderBy: [{ tndName: 'asc' }, { tndId: 'asc' }],
         }),
-      (row) => toOption(row.acctndId, row.acctndName),
+      (row) => toOption(row.tndId, row.tndName),
     ),
     gspProviders: simpleFetcher(
       () =>

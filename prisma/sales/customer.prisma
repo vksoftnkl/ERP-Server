@@ -90,6 +90,7 @@ model Customer {
   company              Company?       @relation(fields: [cusCompanyId], references: [compId])
   priceLevel           ItemPriceLevel @relation("CustomerPriceLevel", fields: [cusPriceLevelId], references: [iplId])
   saleQuotations       SaleQuotation[]
+  saleBills            SaleBill[]
   itemQtyPrices        ItemQtyPrice[] @relation("CustomerItemQtyPrices")
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")

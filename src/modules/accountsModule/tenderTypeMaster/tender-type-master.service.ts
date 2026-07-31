@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AccountTenderTypes, Prisma } from '@prisma/client';
+import { AccTenderType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveTenderTypeMasterDto } from './dto/save-tender-type-master.dto';
@@ -19,7 +19,6 @@ import {
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 const TENDER_TYPE_MASTER_TABLE_NAME = 'tender type';
-const LEGACY_TENDER_TYPE_MASTER_TABLE_NAME = 'tender_type_master';
 const TENDER_TYPE_MASTER_AUDIT_SCREEN_NAME = 'Tender Type Master';
 type TenderTypeMasterWriteClient = AccountsWriteClient;
 @Injectable()
@@ -36,10 +35,10 @@ export class TenderTypeMasterService {
     return this.createTenderType(saveTenderTypeMasterDto);
   }
   async getById(ttmTypeId: string): Promise<TenderTypeMasterPayload> {
-    const record = await this.prisma.accountTenderTypes.findFirst({
+    const record = await this.prisma.accTenderType.findFirst({
       where: {
-        accttTypeId: this.parseTenderTypeId(ttmTypeId, 'ttmTypeId'),
-        accttTypeIsDeleted: false,
+        ttmTypeId: this.parseTenderTypeId(ttmTypeId, 'ttmTypeId'),
+        ttmIsDeleted: false,
       },
     });
     if (!record) {
@@ -54,10 +53,10 @@ export class TenderTypeMasterService {
   async softDelete(ttmTypeId: string): Promise<{ ttmTypeId: string; deleted: true }> {
     const tenderTypeId = this.parseTenderTypeId(ttmTypeId, 'ttmTypeId');
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.accountTenderTypes.findFirst({
+      const existing = await tx.accTenderType.findFirst({
         where: {
-          accttTypeId: tenderTypeId,
-          accttTypeIsDeleted: false,
+          ttmTypeId: tenderTypeId,
+          ttmIsDeleted: false,
         },
       });
       if (!existing) {
@@ -67,10 +66,10 @@ export class TenderTypeMasterService {
           `No active tender type found with id ${ttmTypeId}`,
         );
       }
-      const activeTendersCount = await tx.accountTenderMaster.count({
+      const activeTendersCount = await tx.accTenderMaster.count({
         where: {
-          acctndTypeId: tenderTypeId,
-          acctndIsDeleted: false,
+          tndTypeId: tenderTypeId,
+          tndIsDeleted: false,
         },
       });
       if (activeTendersCount > 0) {
@@ -85,16 +84,16 @@ export class TenderTypeMasterService {
         );
       }
       const modifiedOn = new Date();
-      const result = await tx.accountTenderTypes.updateMany({
+      const result = await tx.accTenderType.updateMany({
         where: {
-          accttTypeId: tenderTypeId,
-          accttTypeIsDeleted: false,
+          ttmTypeId: tenderTypeId,
+          ttmIsDeleted: false,
         },
         data: {
-          accttTypeIsDeleted: true,
-          accttTypeIsActive: false,
-          accttTypeModifiedOn: modifiedOn,
-          accttTypeModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+          ttmIsDeleted: true,
+          ttmIsActive: false,
+          ttmModifiedOn: modifiedOn,
+          ttmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
       if (result.count === 0) {
@@ -107,10 +106,10 @@ export class TenderTypeMasterService {
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
-        accttTypeIsDeleted: true,
-        accttTypeIsActive: false,
-        accttTypeModifiedOn: modifiedOn,
-        accttTypeModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        ttmIsDeleted: true,
+        ttmIsActive: false,
+        ttmModifiedOn: modifiedOn,
+        ttmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
       await this.auditLogService.logEntityChange(
         {
@@ -119,7 +118,7 @@ export class TenderTypeMasterService {
           screenName: TENDER_TYPE_MASTER_AUDIT_SCREEN_NAME,
           screenType: 'master',
           pk: ttmTypeId,
-          displayName: existing.accttTypeName,
+          displayName: existing.ttmTypeName,
           originalRecord,
           modifiedRecord,
           userId: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
@@ -144,16 +143,17 @@ export class TenderTypeMasterService {
         );
         await this.ensureNameIsUnique(tx, ttmTypeName);
         const now = new Date();
-        const data: Prisma.AccountTenderTypesUncheckedCreateInput = {
-          accttTypeName: ttmTypeName,
-          accttTypeShortName: this.buildShortName(ttmTypeName),
-          accttTypeCreatedOn: now,
-          accttTypeCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        const data: Prisma.AccTenderTypeUncheckedCreateInput = {
+          ttmTypeId: await this.allocateTypeId(tx),
+          ttmTypeName,
+          ttmDisplayName: this.buildDisplayName(saveTenderTypeMasterDto, ttmTypeName),
+          ttmCreatedOn: now,
+          ttmCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveTenderTypeMasterDto, 'ttmIsActive')) {
-          data.accttTypeIsActive = saveTenderTypeMasterDto.ttmIsActive;
+          data.ttmIsActive = saveTenderTypeMasterDto.ttmIsActive;
         }
-        const created = await tx.accountTenderTypes.create({ data });
+        const created = await tx.accTenderType.create({ data });
         const payload = this.toPayload(created);
         await this.auditLogService.logEntityChange(
           {
@@ -188,10 +188,10 @@ export class TenderTypeMasterService {
     const tenderTypeId = this.parseTenderTypeId(ttmTypeId, 'ttmTypeId');
     try {
       return this.prisma.$transaction(async (tx) => {
-        const existing = await tx.accountTenderTypes.findFirst({
+        const existing = await tx.accTenderType.findFirst({
           where: {
-            accttTypeId: tenderTypeId,
-            accttTypeIsDeleted: false,
+            ttmTypeId: tenderTypeId,
+            ttmIsDeleted: false,
           },
         });
         if (!existing) {
@@ -206,18 +206,18 @@ export class TenderTypeMasterService {
           'ttmTypeName',
         );
         await this.ensureNameIsUnique(tx, ttmTypeName, tenderTypeId);
-        const data: Prisma.AccountTenderTypesUncheckedUpdateInput = {
-          accttTypeName: ttmTypeName,
-          accttTypeShortName: this.buildShortName(ttmTypeName),
-          accttTypeModifiedOn: new Date(),
-          accttTypeModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
+        const data: Prisma.AccTenderTypeUncheckedUpdateInput = {
+          ttmTypeName,
+          ttmDisplayName: this.buildDisplayName(saveTenderTypeMasterDto, ttmTypeName),
+          ttmModifiedOn: new Date(),
+          ttmModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
         if (hasOwnProperty(saveTenderTypeMasterDto, 'ttmIsActive')) {
-          data.accttTypeIsActive = saveTenderTypeMasterDto.ttmIsActive;
+          data.ttmIsActive = saveTenderTypeMasterDto.ttmIsActive;
         }
-        const updated = await tx.accountTenderTypes.update({
+        const updated = await tx.accTenderType.update({
           where: {
-            accttTypeId: tenderTypeId,
+            ttmTypeId: tenderTypeId,
           },
           data,
         });
@@ -248,28 +248,41 @@ export class TenderTypeMasterService {
       throw error;
     }
   }
+  // acc_tender_types.ttm_type_id has no sequence — it is a fixed, tenant-agnostic
+  // catalogue whose baseline rows are seeded by migration with explicit ids
+  // (1..11), so a caller-created row takes max + 1. Runs inside the caller's
+  // transaction; the pk collision two concurrent creates would race for surfaces
+  // as the same unique-constraint error the name check already handles.
+  private async allocateTypeId(tx: TenderTypeMasterWriteClient): Promise<number> {
+    const highest = await tx.accTenderType.aggregate({
+      _max: { ttmTypeId: true },
+    });
+    return (highest._max.ttmTypeId ?? 0) + 1;
+  }
   private async ensureNameIsUnique(
     tx: TenderTypeMasterWriteClient,
     ttmTypeName: string,
-    excludeTtmTypeId?: bigint,
+    excludeTtmTypeId?: number,
   ): Promise<void> {
-    const existing = await tx.accountTenderTypes.findFirst({
+    const existing = await tx.accTenderType.findFirst({
       where: {
-        accttTypeIsDeleted: false,
-        accttTypeName: {
+        // ux_ttm_name is a plain UNIQUE on ttm_type_name — unlike the tender
+        // master's partial indexes it does NOT exclude soft-deleted rows, so a
+        // deleted type still reserves its name and must be matched here.
+        ttmTypeName: {
           equals: ttmTypeName,
           mode: 'insensitive',
         },
         ...(excludeTtmTypeId
           ? {
-              accttTypeId: {
+              ttmTypeId: {
                 not: excludeTtmTypeId,
               },
             }
           : {}),
       },
       select: {
-        accttTypeId: true,
+        ttmTypeId: true,
       },
     });
     if (existing) {
@@ -278,10 +291,14 @@ export class TenderTypeMasterService {
       ]);
     }
   }
-  private buildShortName(value: string): string {
-    return value;
+  private buildDisplayName(
+    saveTenderTypeMasterDto: SaveTenderTypeMasterDto,
+    ttmTypeName: string,
+  ): string {
+    const provided = saveTenderTypeMasterDto.ttmDisplayName?.trim();
+    return provided || ttmTypeName;
   }
-  private parseTenderTypeId(value: string, field: string): bigint {
+  private parseTenderTypeId(value: string, field: string): number {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {
       throwAccountsBadRequest<TenderTypeMasterErrorDetail>('Validation failed', [
@@ -291,19 +308,31 @@ export class TenderTypeMasterService {
         },
       ]);
     }
-    return BigInt(normalized);
+    const parsed = Number(normalized);
+    // ttm_type_id is a 32-bit integer column; anything wider is a client error
+    // rather than a lookup that simply misses.
+    if (!Number.isSafeInteger(parsed) || parsed > 2147483647) {
+      throwAccountsBadRequest<TenderTypeMasterErrorDetail>('Validation failed', [
+        {
+          field,
+          message: `${field} must be a valid numeric identifier`,
+        },
+      ]);
+    }
+    return parsed;
   }
-  private toPayload(record: AccountTenderTypes): TenderTypeMasterPayload {
+  private toPayload(record: AccTenderType): TenderTypeMasterPayload {
     return {
-      ttmTypeId: record.accttTypeId.toString(),
-      ttmTypeName: record.accttTypeName,
-      ttmIsActive: record.accttTypeIsActive,
-      ttmIsDeleted: record.accttTypeIsDeleted,
-      ttmSyncDate: record.accttTypeSyncDate ? record.accttTypeSyncDate.toISOString() : null,
-      ttmCreatedOn: record.accttTypeCreatedOn.toISOString(),
-      ttmCreatedBy: record.accttTypeCreatedBy,
-      ttmModifiedOn: record.accttTypeModifiedOn.toISOString(),
-      ttmModifiedBy: record.accttTypeModifiedBy,
+      ttmTypeId: record.ttmTypeId.toString(),
+      ttmTypeName: record.ttmTypeName,
+      ttmDisplayName: record.ttmDisplayName,
+      ttmIsActive: record.ttmIsActive,
+      ttmIsDeleted: record.ttmIsDeleted,
+      ttmSyncDate: record.ttmSyncDate ? record.ttmSyncDate.toISOString() : null,
+      ttmCreatedOn: record.ttmCreatedOn.toISOString(),
+      ttmCreatedBy: record.ttmCreatedBy,
+      ttmModifiedOn: record.ttmModifiedOn ? record.ttmModifiedOn.toISOString() : null,
+      ttmModifiedBy: record.ttmModifiedBy,
     };
   }
 }

@@ -110,6 +110,8 @@ model AccVoucherHeader {
   vouchers               AccVoucher[]
   openingStockHeaders    OpeningStockHeader[] @relation("OpeningStockHeaderVoucher")
   openingStockDetails    OpeningStockDetail[] @relation("OpeningStockDetailVoucher")
+  tenderDetails          AccTenderDetail[]    @relation("TenderDetailVoucher")
+  settleTenderDetails    AccTenderDetail[]    @relation("TenderDetailSettleVoucher")
 
   @@unique([avhCompanyId, avhBranchId, avhAccYear, avhVoucherId], map: "uq_acc_voucher_header_voucher_id")
   @@unique([avhCompanyId, avhBranchId, avhAccYear, avhVoucherTypeId, avhVoucherRefno], map: "uq_acc_voucher_header_voucher_refno")

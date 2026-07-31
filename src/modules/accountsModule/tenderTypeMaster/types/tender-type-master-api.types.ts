@@ -4,11 +4,14 @@ export type { AccountsSuccessResponse as TenderTypeMasterSuccessResponse } from 
 export interface TenderTypeMasterPayload {
   ttmTypeId: string;
   ttmTypeName: string;
+  ttmDisplayName: string;
   ttmIsActive: boolean;
   ttmIsDeleted: boolean;
   ttmSyncDate: string | null;
   ttmCreatedOn: string;
   ttmCreatedBy: string | null;
-  ttmModifiedOn: string;
+  // acc_tender_types.ttm_modified_on is nullable — a row that has never been
+  // updated since its migration seed carries no modification timestamp.
+  ttmModifiedOn: string | null;
   ttmModifiedBy: string | null;
 }

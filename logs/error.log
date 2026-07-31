@@ -4881,3 +4881,5 @@ Error: Cannot use a pool after calling end on the pool
     at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
     at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
 2026-07-28T14:02:57.829Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-07-31T04:23:12.861Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-07-31T04:52:30.465Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

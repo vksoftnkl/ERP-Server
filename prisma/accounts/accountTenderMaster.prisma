@@ -1,0 +1,96 @@
+// Tenant-scoped concrete tender a cashier picks (e.g. "HDFC Card", "GPay"), mapped to its posting ledger.
+model AccTenderMaster {
+  tndId                   String    @id(map: "pk_acc_tender_master") @default(dbgenerated("uuidv7()")) @db.Uuid @map("tnd_id")
+
+  // tenant scope
+  tndCompanyId            String    @db.Uuid                                       @map("tnd_company_id")
+  tndBranchId             String?   @db.Uuid                                       @map("tnd_branch_id")
+
+  // identity
+  tndTypeId               Int                                                      @map("tnd_type_id")
+  tndName                 String    @db.VarChar(100)                               @map("tnd_name")
+  tndShortName            String    @db.VarChar(30)                                @map("tnd_short_name")
+
+  // accounting
+  tndLedgerId             String    @db.Uuid                                       @map("tnd_ledger_id")
+  tndSettlementLedgerId   String?   @db.Uuid                                       @map("tnd_settlement_ledger_id")
+  tndSettlementDays       Int       @default(0) @db.SmallInt                       @map("tnd_settlement_days")
+  tndBankAccountId        String?   @db.Uuid                                       @map("tnd_bank_account_id")
+
+  // limits
+  tndMinAmount            Decimal   @default(0) @db.Decimal(14, 2)                 @map("tnd_min_amount")
+  tndMaxAmount            Decimal?  @db.Decimal(14, 2)                             @map("tnd_max_amount")
+  tndDailyLimit           Decimal?  @db.Decimal(14, 2)                             @map("tnd_daily_limit")
+
+  // surcharge / MDR
+  tndSurchargePerc        Decimal   @default(0) @db.Decimal(6, 3)                  @map("tnd_surcharge_perc")
+  tndSurchargeAmount      Decimal   @default(0) @db.Decimal(14, 2)                 @map("tnd_surcharge_amount")
+  tndSurchargeLedgerId    String?   @db.Uuid                                       @map("tnd_surcharge_ledger_id")
+  tndEditSurcharge        Boolean   @default(false)                                @map("tnd_edit_surcharge")
+  tndEditLedger           Boolean   @default(false)                                @map("tnd_edit_ledger")
+
+  // payment instrument details
+  tndUpiVpa               String?   @db.VarChar(100)                               @map("tnd_upi_vpa")
+  tndUpiQrPayload         String?                                                  @map("tnd_upi_qr_payload")
+  tndMerchantId           String?   @db.VarChar(50)                                @map("tnd_merchant_id")
+  tndTerminalId           String?   @db.VarChar(50)                                @map("tnd_terminal_id")
+  tndConversionRate       Decimal   @default(1) @db.Decimal(10, 4)                 @map("tnd_conversion_rate")
+
+  // behaviour overrides (NULL = inherit from tender type)
+  tndNeedsRef             Boolean?                                                 @map("tnd_needs_ref")
+  tndAllowChange          Boolean?                                                 @map("tnd_allow_change")
+  tndAllowInReturn        Boolean?                                                 @map("tnd_allow_in_return")
+  tndOpenCashDrawer       Boolean   @default(false)                                @map("tnd_open_cash_drawer")
+  tndIsDefault            Boolean   @default(false)                                @map("tnd_is_default")
+
+  // POS presentation
+  tndDisplayPosition      Int       @default(0)                                    @map("tnd_display_position")
+  tndHotkey               String?   @db.VarChar(10)                                @map("tnd_hotkey")
+  tndColour               String?   @db.VarChar(9)                                 @map("tnd_colour")
+
+  // validity
+  tndEffectiveFrom        DateTime? @db.Date                                       @map("tnd_effective_from")
+  tndEffectiveTo          DateTime? @db.Date                                       @map("tnd_effective_to")
+
+  tndRemarks              String?   @db.VarChar(250)                               @map("tnd_remarks")
+  tndIsActive             Boolean   @default(true)                                 @map("tnd_is_active")
+  tndIsDeleted            Boolean   @default(false)                                @map("tnd_is_deleted")
+  // Tally sync identity — referenced by ix_tnd_tally_guid but missing from the
+  // original DDL; added to match the sibling *_tally_guid columns elsewhere
+  // (acc_ledger_master.led_tally_guid, acc_group.acc_group_tally_guid).
+  tndTallyGuid            String?   @db.VarChar(64)                                @map("tnd_tally_guid")
+
+  // audit
+  tndSyncDate             DateTime? @db.Timestamptz                                @map("tnd_sync_date")
+  tndCreatedOn            DateTime  @default(now()) @db.Timestamptz                @map("tnd_created_on")
+  tndCreatedBy            String?   @db.VarChar(50)                                @map("tnd_created_by")
+  tndModifiedOn           DateTime? @db.Timestamptz                                @map("tnd_modified_on")
+  tndModifiedBy           String?   @db.VarChar(50)                                @map("tnd_modified_by")
+
+  // Relations
+  company                 Company               @relation(fields: [tndCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_company")
+  branch                  BranchMaster?         @relation(fields: [tndBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_branch")
+  tenderType              AccTenderType         @relation(fields: [tndTypeId], references: [ttmTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_type")
+  ledger                  AccLedgerMaster       @relation("TenderLedger", fields: [tndLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_ledger")
+  settlementLedger        AccLedgerMaster?      @relation("TenderSettlementLedger", fields: [tndSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_settlement_ledger")
+  surchargeLedger         AccLedgerMaster?      @relation("TenderSurchargeLedger", fields: [tndSurchargeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_surcharge_ledger")
+  bankAccount             AccLedgerBankAccount? @relation(fields: [tndBankAccountId], references: [lbaId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_bank_account")
+  tenderDetails           AccTenderDetail[]
+
+  @@index([tndTypeId], map: "ix_tnd_type")
+  @@index([tndLedgerId], map: "ix_tnd_ledger")
+  // Partial indexes — enforced via raw SQL migration, not expressible in Prisma schema:
+  //   ux_tnd_name               UNIQUE (tnd_company_id, COALESCE(tnd_branch_id, zero-uuid), lower(tnd_name))      WHERE tnd_is_deleted = false
+  //   ux_tnd_short_name         UNIQUE (tnd_company_id, COALESCE(tnd_branch_id, zero-uuid), lower(tnd_short_name)) WHERE tnd_is_deleted = false
+  //   ux_tnd_default            UNIQUE (tnd_company_id, COALESCE(tnd_branch_id, zero-uuid))                        WHERE tnd_is_default = true AND tnd_is_active = true AND tnd_is_deleted = false
+  //   ux_tnd_hotkey             UNIQUE (tnd_company_id, COALESCE(tnd_branch_id, zero-uuid), tnd_hotkey)            WHERE tnd_hotkey IS NOT NULL AND tnd_is_deleted = false
+  //   ix_tnd_company_branch     btree (tnd_company_id, tnd_branch_id)         WHERE tnd_is_deleted = false
+  //   ix_tnd_settlement_ledger  btree (tnd_settlement_ledger_id)              WHERE tnd_settlement_ledger_id IS NOT NULL
+  //   ix_tnd_position           btree (tnd_company_id, tnd_display_position)  WHERE tnd_is_active = true AND tnd_is_deleted = false
+  //   ix_tnd_tally_guid         btree (tnd_tally_guid)                        WHERE tnd_tally_guid IS NOT NULL
+  // CHECK constraints (DB-only): ck_tnd_amount_range, ck_tnd_min_amount, ck_tnd_daily_limit,
+  //   ck_tnd_surcharge_perc, ck_tnd_surcharge_amt, ck_tnd_settlement_days, ck_tnd_conversion_rate,
+  //   ck_tnd_effective_range, ck_tnd_colour
+  @@map("acc_tender_master")
+  @@schema("accounts")
+}

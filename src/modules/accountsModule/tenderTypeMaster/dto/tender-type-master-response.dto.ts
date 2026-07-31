@@ -16,8 +16,10 @@ export class TenderTypeMasterErrorResponseDto {
 export class TenderTypeMasterPayloadDto {
   @ApiProperty({ example: '1' })
   ttmTypeId!: string;
-  @ApiProperty()
+  @ApiProperty({ example: 'CASH' })
   ttmTypeName!: string;
+  @ApiProperty({ example: 'Cash' })
+  ttmDisplayName!: string;
   @ApiProperty()
   ttmIsActive!: boolean;
   @ApiProperty()
@@ -28,8 +30,8 @@ export class TenderTypeMasterPayloadDto {
   ttmCreatedOn!: string;
   @ApiPropertyOptional({ nullable: true })
   ttmCreatedBy!: string | null;
-  @ApiProperty()
-  ttmModifiedOn!: string;
+  @ApiPropertyOptional({ nullable: true })
+  ttmModifiedOn!: string | null;
   @ApiPropertyOptional({ nullable: true })
   ttmModifiedBy!: string | null;
 }

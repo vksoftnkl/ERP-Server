@@ -1,0 +1,151 @@
+model SaleBill {
+  sbId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sb_id")
+  sbCompanyId        String    @db.Uuid @map("sb_company_id")
+  sbBranchId         String    @db.Uuid @map("sb_branch_id")
+  sbTenantId         String?   @db.Uuid @map("sb_tenant_id")
+  sbAccYear          String    @db.Char(9) @map("sb_acc_year")
+  // Where it was raised. Counter is NOT NULL: in an offline chain the
+  // counter owns the document and its number series.
+  sbSessionId        String?   @db.Uuid @map("sb_session_id")
+  sbCounterId        String    @db.Uuid @map("sb_counter_id")
+  sbDeviceType       String    @db.VarChar(20) @map("sb_device_type")
+  sbDeviceId         String    @db.Text @map("sb_device_id")
+  // Document identity
+  sbDocType          String    @default("TAX_INVOICE") @db.VarChar(30) @map("sb_doc_type")
+  sbBillType         String    @default("CASH") @db.VarChar(20) @map("sb_bill_type") // CASH | CREDIT
+  sbCategoryId       String?   @db.Uuid @map("sb_category_id")
+  sbPriceLevel       Int       @map("sb_price_level")
+  sbBillSlno         BigInt    @map("sb_bill_slno") // per company/branch/year/COUNTER
+  sbBillRefno        String    @db.VarChar(100) @map("sb_bill_refno")
+  sbUsrRefno         String?   @db.VarChar(100) @map("sb_usr_refno")
+  sbBillDate         DateTime  @db.Date @map("sb_bill_date")
+  sbBillDatetime     DateTime  @default(now()) @db.Timestamptz(6) @map("sb_bill_datetime")
+  sbDueDays          Int?      @map("sb_due_days")
+  sbDueDate          DateTime? @db.Date @map("sb_due_date")
+  // Where it came from: quotation, sales order, delivery challan.
+  sbSrcDocType       String?   @db.VarChar(30) @map("sb_src_doc_type")
+  sbSrcDocId         String?   @db.Uuid @map("sb_src_doc_id")
+  sbSrcDocRefno      String?   @db.VarChar(100) @map("sb_src_doc_refno")
+  sbSrcDocDate       DateTime? @db.Date @map("sb_src_doc_date")
+  // Customer, snapshotted at billing time
+  sbCustId           String    @db.Uuid @map("sb_cust_id")
+  sbCustName         String    @db.VarChar(200) @map("sb_cust_name")
+  sbCustAddr         String?   @db.VarChar(500) @map("sb_cust_addr")
+  sbCustPlace        String?   @db.VarChar(100) @map("sb_cust_place")
+  sbCustPin          String?   @db.VarChar(10) @map("sb_cust_pin")
+  sbCustPhone        String?   @db.VarChar(20) @map("sb_cust_phone")
+  sbCustGstin        String?   @db.VarChar(15) @map("sb_cust_gstin")
+  sbCustGstType      String?   @db.VarChar(20) @map("sb_cust_gst_type")
+  sbCustStcd         String?   @db.Char(2) @map("sb_cust_stcd")
+  sbPosStcd          String?   @db.Char(2) @map("sb_pos_stcd") // place of supply: CGST+SGST vs IGST
+  sbStateName        String?   @db.VarChar(100) @map("sb_state_name")
+  // Options carried on the document
+  sbHasLoad          Boolean   @default(false) @map("sb_has_load")
+  sbHasUnload        Boolean   @default(false) @map("sb_has_unload")
+  sbHasFreight       Boolean   @default(false) @map("sb_has_freight")
+  sbHasPromo         Boolean   @default(false) @map("sb_has_promo")
+  sbHasComm          Boolean   @default(false) @map("sb_has_comm")
+  sbHasLoyalty       Boolean   @default(false) @map("sb_has_loyalty")
+  // People
+  sbUserId           String    @db.Uuid @map("sb_user_id")
+  sbSalesmanId       String[]  @db.Uuid @map("sb_salesman_id")
+  sbAgentId          String?   @db.Uuid @map("sb_agent_id")
+  sbAgentCommPerc    Decimal?  @db.Decimal(15, 4) @map("sb_agent_comm_perc")
+  sbAgentCommAmt     Decimal?  @db.Decimal(15, 2) @map("sb_agent_comm_amt")
+  // Delivery
+  sbDriverId         String?   @db.Uuid @map("sb_driver_id")
+  sbLoadmanId        String[]  @db.Uuid @map("sb_loadman_id")
+  sbPackedId         String[]  @db.Uuid @map("sb_packed_id")
+  sbSupervisorId     String?   @db.Uuid @map("sb_supervisor_id")
+  sbVehicleId        String?   @db.Uuid @map("sb_vehicle_id")
+  sbVehicleNo        String?   @db.VarChar(20) @map("sb_vehicle_no")
+  // Quantities
+  sbTotItems         Int       @default(0) @map("sb_tot_items") // printed LINES, not split rows
+  sbTotWeight        Decimal   @default(0) @db.Decimal(15, 3) @map("sb_tot_weight")
+  sbTotBags          Decimal   @default(0) @db.Decimal(15, 3) @map("sb_tot_bags")
+  // Money
+  sbGrossAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("sb_gross_amt")
+  sbItemDisc         Decimal   @default(0) @db.Decimal(15, 2) @map("sb_item_disc")
+  sbSplDisc          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_spl_disc")
+  sbSchDisc          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_sch_disc")
+  sbBillSchDisc      Decimal   @default(0) @db.Decimal(15, 2) @map("sb_bill_sch_disc")
+  sbAddlDisc1        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_addl_disc1")
+  sbAddlDisc2        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_addl_disc2")
+  sbCashDisc         Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cash_disc")
+  sbTaxableAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_taxable_amt") // POST-charge
+  sbCgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cgst_amt")
+  sbSgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_sgst_amt")
+  sbIgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_igst_amt")
+  sbCessAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_cess_amt")
+  sbTaxAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("sb_tax_amt")
+  // Roll-ups of sales.sale_doc_charge rows (reporting without a join).
+  sbFreightAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_freight_amt")
+  sbLoadAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_load_amt")
+  sbUnloadAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_unload_amt")
+  sbOtherAmt1        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_other_amt1")
+  sbOtherAmt2        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_other_amt2")
+  sbRoundOff         Decimal   @default(0) @db.Decimal(15, 2) @map("sb_round_off")
+  sbBillAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_bill_amt")
+  // Costing (never printed; drives margin reports)
+  sbTotalCost        Decimal?  @db.Decimal(15, 2) @map("sb_total_cost")
+  sbMarginAmt        Decimal?  @db.Decimal(15, 2) @map("sb_margin_amt")
+  sbMarginAmtWot     Decimal?  @db.Decimal(15, 2) @map("sb_margin_amt_wot")
+  sbMarginPerc       Decimal?  @db.Decimal(15, 4) @map("sb_margin_perc")
+  sbMrpSavings       Decimal?  @default(0) @db.Decimal(15, 3) @map("sb_mrp_savings")
+  sbMrpSavingsPerc   Decimal?  @default(0) @db.Decimal(15, 4) @map("sb_mrp_savings_perc")
+  // Settlement roll-ups. Tender rows live in accounts.acc_tender_detail;
+  // these are caches so a counter can balance without a join. sb_balance_amt
+  // mirrors accounts.acc_voucher_bills once posted.
+  sbPayMode          String?   @db.VarChar(20) @map("sb_pay_mode") // dominant mode, quick filters
+  sbCreditAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_credit_amt")
+  sbSurchargeAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("sb_surcharge_amt")
+  sbTenderAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_tender_amt")
+  sbRefundAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sb_refund_amt")
+  sbAdvanceAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_advance_amt")
+  sbPaidAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("sb_paid_amt")
+  sbBalanceAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("sb_balance_amt")
+  sbPayStatus        String    @default("UNPAID") @db.VarChar(20) @map("sb_pay_status")
+  // Return caches (sales.sale_return is the document)
+  sbReturnedAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sb_returned_amt")
+  sbReturnStatus     String?   @db.VarChar(20) @map("sb_return_status") // NULL|PARTIAL|FULL
+  // Terms
+  sbPaymentTerms     String?   @db.VarChar(250) @map("sb_payment_terms")
+  sbDeliveryTerms    String?   @db.VarChar(250) @map("sb_delivery_terms")
+  sbTermsConditions  String?   @map("sb_terms_conditions")
+  sbRemarks          String?   @db.VarChar(500) @map("sb_remarks")
+  // Pricing policy, snapshotted as this document was billed
+  sbFreightCalcType  String?   @db.VarChar(12) @map("sb_freight_calc_type")
+  sbLoadingCalcType  String?   @db.VarChar(12) @map("sb_loading_calc_type")
+  sbDiscAlterBase    Boolean?  @map("sb_disc_alter_base")
+  sbRoundOffStep     Decimal   @default(1) @db.Decimal(15, 2) @map("sb_round_off_step")
+  // Lifecycle
+  sbStatus           String    @default("DRAFT") @db.VarChar(20) @map("sb_status")
+  sbPostedOn         DateTime? @db.Timestamptz(6) @map("sb_posted_on")
+  sbPostedVoucherId  String?   @db.Uuid @map("sb_posted_voucher_id") // accounts.acc_voucher_header
+  sbApprovedOn       DateTime? @db.Timestamptz(6) @map("sb_approved_on")
+  sbApprovedBy       String?   @db.Uuid @map("sb_approved_by")
+  sbCancelledOn      DateTime? @db.Timestamptz(6) @map("sb_cancelled_on")
+  sbCancelledBy      String?   @db.Uuid @map("sb_cancelled_by")
+  sbCancelReason     String?   @db.VarChar(250) @map("sb_cancel_reason")
+  sbVersionNo        Int       @default(1) @map("sb_version_no")
+  sbPrintCount       Int       @default(0) @map("sb_print_count")
+  // Audit
+  sbIsDeleted        Boolean   @default(false) @map("sb_is_deleted")
+  sbSyncDate         DateTime? @db.Timestamptz(6) @map("sb_sync_date")
+  sbCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("sb_created_on")
+  sbCreatedBy        String    @db.VarChar @map("sb_created_by")
+  sbModifiedOn       DateTime? @db.Timestamptz(6) @map("sb_modified_on")
+  sbModifiedBy       String?   @db.VarChar @map("sb_modified_by")
+  // Relations
+  items      SaleBillItem[]
+  customer   Customer       @relation(fields: [sbCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_cust")
+  posState   StateCode?     @relation(fields: [sbPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_pos_state")
+  priceLevel ItemPriceLevel @relation("SaleBillPriceLevel", fields: [sbPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_price_level")
+  // ck_sb_doc_type, ck_sb_bill_type, ck_sb_status, ck_sb_pay_status and
+  // ck_sb_return_status were dropped before the migration was ever applied
+  // and are enforced in the application layer instead
+  // (BillService.ensureBillValuesAreAllowed).
+  @@id([sbId, sbAccYear], map: "pk_sale_bill")
+  @@map("sale_bill")
+  @@schema("sales")
+}
