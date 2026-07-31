@@ -16,6 +16,7 @@ import { GspProviderMasterModule } from '../modules/accountsModule/gspProviderMa
 import { LedgerShippingAddressModule } from '../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from '../modules/accountsModule/tenderTypeMaster/tender-type-master.module';
+import { TenderDetailModule } from '../modules/accountsModule/tenderDetail/tender-detail.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
 import { SaleFreightChargeModule } from '../modules/sales/sale-freight-charges/sale-freight-charges.module';
@@ -272,6 +273,12 @@ export const swaggerModuleDocuments = [
     title: 'Tender Type Master API',
     description: 'Tender type master module endpoints',
     include: [TenderTypeMasterModule],
+  },
+  {
+    path: 'tender-details',
+    title: 'Tender Detail API',
+    description: 'Per-document tender lines (acc_tender_detail) endpoints',
+    include: [TenderDetailModule],
   },
   {
     path: 'sequences',

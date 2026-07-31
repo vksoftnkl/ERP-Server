@@ -55,7 +55,6 @@ const TENDER_MASTER_OPTIONAL_FIELDS = [
   'tndEffectiveTo',
   'tndRemarks',
   'tndIsActive',
-  'tndTallyGuid',
 ] as const;
 // NOT NULL columns carrying a DB default: an explicit null is dropped rather
 // than written, so the default (or the stored value on update) survives instead
@@ -83,7 +82,6 @@ const TENDER_MASTER_TEXT_FIELDS = [
   'tndHotkey',
   'tndColour',
   'tndRemarks',
-  'tndTallyGuid',
 ] as const;
 function dropNullish(value: unknown): unknown {
   return value === null ? undefined : value;
@@ -902,7 +900,6 @@ export class TenderMasterService {
       tndRemarks: record.tndRemarks,
       tndIsActive: record.tndIsActive,
       tndIsDeleted: record.tndIsDeleted,
-      tndTallyGuid: record.tndTallyGuid,
       tndSyncDate: record.tndSyncDate ? record.tndSyncDate.toISOString() : null,
       tndCreatedOn: record.tndCreatedOn.toISOString(),
       tndCreatedBy: record.tndCreatedBy,

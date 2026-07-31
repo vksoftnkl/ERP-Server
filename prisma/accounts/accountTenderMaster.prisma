@@ -55,10 +55,6 @@ model AccTenderMaster {
   tndRemarks              String?   @db.VarChar(250)                               @map("tnd_remarks")
   tndIsActive             Boolean   @default(true)                                 @map("tnd_is_active")
   tndIsDeleted            Boolean   @default(false)                                @map("tnd_is_deleted")
-  // Tally sync identity — referenced by ix_tnd_tally_guid but missing from the
-  // original DDL; added to match the sibling *_tally_guid columns elsewhere
-  // (acc_ledger_master.led_tally_guid, acc_group.acc_group_tally_guid).
-  tndTallyGuid            String?   @db.VarChar(64)                                @map("tnd_tally_guid")
 
   // audit
   tndSyncDate             DateTime? @db.Timestamptz                                @map("tnd_sync_date")
@@ -87,7 +83,6 @@ model AccTenderMaster {
   //   ix_tnd_company_branch     btree (tnd_company_id, tnd_branch_id)         WHERE tnd_is_deleted = false
   //   ix_tnd_settlement_ledger  btree (tnd_settlement_ledger_id)              WHERE tnd_settlement_ledger_id IS NOT NULL
   //   ix_tnd_position           btree (tnd_company_id, tnd_display_position)  WHERE tnd_is_active = true AND tnd_is_deleted = false
-  //   ix_tnd_tally_guid         btree (tnd_tally_guid)                        WHERE tnd_tally_guid IS NOT NULL
   // CHECK constraints (DB-only): ck_tnd_amount_range, ck_tnd_min_amount, ck_tnd_daily_limit,
   //   ck_tnd_surcharge_perc, ck_tnd_surcharge_amt, ck_tnd_settlement_days, ck_tnd_conversion_rate,
   //   ck_tnd_effective_range, ck_tnd_colour

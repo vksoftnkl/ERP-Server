@@ -25,11 +25,32 @@ what was already invoiced.
 ## Notes
 
 - **Relationship to the owning modules** — a document that saves its charge
-  lines as part of one transaction keeps doing so (see
-  `QuotationService.syncCharges`, which reconciles the whole array against
-  `cdDocType = 'QUOTATION'`). This module is for editing a single charge line on
-  its own, and for reading a document's lines without going through the owning
-  module. Both paths write the same table and enforce the same guards.
+  lines as part of its own transaction calls this service rather than writing
+  `sale_charge_detail` itself. Three methods exist for that, all taking the
+  caller's transaction client so the parent header, its lines and its charges
+  commit or roll back together:
+  - `syncDocumentCharges(tx, scope, charges, actorId, audit?)` — reconciles a
+    whole `charges[]` array against one document: a line with `cdId` is updated,
+    one without is created, an existing line missing from the array is soft
+    deleted, and `undefined` leaves the stored lines alone. `cdSlno` defaults to
+    the line's 1-based position; a duplicate within one payload is a 409. The
+    `scope` (`ChargeDocumentScope`) is the parent's `cdDocType` / `cdDocId` plus
+    the `cdCompId` / `cdBranchId` / `cdAccYear` / `cdVoucherNo` each line
+    inherits when it does not send its own — and a line may **not** name a
+    different document (400, the same rule as `ensureDocumentIsUnchanged`).
+  - `findDocumentCharges(client, cdDocType, cdDocId)` — the document's stored
+    lines in `cdSlno` order, ledger name included, readable inside a
+    transaction. `getByDocument` is the same read for a plain HTTP GET.
+  - `softDeleteDocumentCharges(tx, cdDocType, cdDocId, actorId, modifiedOn?)` —
+    retires every line of a document in one statement, for when the parent
+    header is soft deleted.
+
+  Both entry points share one set of writers, one set of guards and one payload
+  shape; the optional `audit` argument (`ChargeDocumentAudit`) only relabels the
+  audit rows, so a charge saved with a bill is logged on the bill's screen
+  (`BillService` passes `BILL_CHARGE_AUDIT`) instead of "Charge Detail".
+  `sales/bill` works this way; `sales/quotation` still has its own `syncCharges`
+  and has not been moved over yet.
 - **`POST /charge-details/create`**
   - Create requires `cdDocType`, `cdDocId`, `cdCompId`, `cdBranchId`,
     `cdAccYear`, `cdChgId` and `cdLedgerCode`. Nothing is marked required in the
@@ -89,5 +110,7 @@ what was already invoiced.
 - **`cdVoucherNo`** is a `bigint` column, carried in and out as a string/number
   so large voucher numbers survive JSON.
 - Audit entries are written under screen name **"Charge Detail"**, screen type
-  `transaction` (auto-created on first write). Add an entry to
-  `audit-screen-sql.constants.ts` if you want field-level projection/snapshots.
+  `transaction` (auto-created on first write) — unless an owning module passed
+  its own `ChargeDocumentAudit`, in which case the row lands on that module's
+  screen. Add an entry to `audit-screen-sql.constants.ts` if you want
+  field-level projection/snapshots.

@@ -256,7 +256,6 @@ Table acc_tender_master {
   tndRemarks String
   tndIsActive Boolean [not null, default: true]
   tndIsDeleted Boolean [not null, default: false]
-  tndTallyGuid String
   tndSyncDate DateTime
   tndCreatedOn DateTime [default: `now()`, not null]
   tndCreatedBy String

@@ -4,7 +4,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ChargeDetailService } from './charge-detail.service';
-import { ChargeDocType, ChargeMethod } from './types/charge-detail-api.types';
+import { ChargeDocType, ChargeDocumentScope, ChargeMethod } from './types/charge-detail-api.types';
 import { SaveChargeDetailDto } from './dto/save-charge-detail.dto';
 
 const CD_ID = '019c6f6c-be87-7a11-8905-36092c46ff01';
@@ -285,6 +285,109 @@ describe('ChargeDetailService', () => {
         BadRequestException,
       );
       await expect(service.get({})).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  // What an owning document (a bill, a quotation) calls inside its own
+  // transaction instead of writing sale_charge_detail itself.
+  describe('syncDocumentCharges', () => {
+    const scope: ChargeDocumentScope = {
+      cdDocType: ChargeDocType.QUOTATION,
+      cdDocId: DOC_ID,
+      cdCompId: COMPANY_ID,
+      cdBranchId: BRANCH_ID,
+      cdAccYear: ACC_YEAR,
+      cdVoucherNo: 42n,
+    };
+    const tx = (): never => prisma as never;
+
+    it('creates a line under the parent scope, numbering it by position', async () => {
+      prisma.saleChargeDetail.findMany.mockResolvedValueOnce([]);
+
+      const payloads = await service.syncDocumentCharges(
+        tx(),
+        scope,
+        [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdChgName: 'Freight' }],
+        USER_ID,
+      );
+
+      expect(prisma.saleChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+        cdDocType: 'QUOTATION',
+        cdDocId: DOC_ID,
+        cdSlno: 1,
+        cdCompId: COMPANY_ID,
+        cdBranchId: BRANCH_ID,
+        cdAccYear: ACC_YEAR,
+        // Inherited from the document, not sent on the line.
+        cdVoucherNo: 42n,
+        cdChgId: CHARGE_ID,
+        cdLedgerCode: LEDGER_ID,
+      });
+      expect(payloads[0].cdLedgerName).toBe('Freight Inward');
+    });
+
+    it('updates a line carrying cdId and soft deletes the ones the payload dropped', async () => {
+      prisma.saleChargeDetail.findMany.mockResolvedValueOnce([
+        makeCharge(),
+        makeCharge({ cdId: OTHER_DOC_ID, cdSlno: 2, cdChgName: 'Loading' }),
+      ]);
+
+      await service.syncDocumentCharges(tx(), scope, [{ cdId: CD_ID, cdAmount: 750 }], USER_ID);
+
+      expect(prisma.saleChargeDetail.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { cdId: CD_ID },
+          data: expect.objectContaining({ cdSlno: 1, cdAmount: 750 }) as unknown,
+        }),
+      );
+      expect(prisma.saleChargeDetail.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { cdId: OTHER_DOC_ID },
+          data: expect.objectContaining({ cdIsDeleted: true, cdIsActive: false }) as unknown,
+        }),
+      );
+    });
+
+    it('leaves the stored lines untouched when the array is omitted', async () => {
+      const payloads = await service.syncDocumentCharges(tx(), scope, undefined, USER_ID);
+
+      expect(payloads).toHaveLength(1);
+      expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
+      expect(prisma.saleChargeDetail.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a line pointing at another document', async () => {
+      await expect(
+        service.syncDocumentCharges(
+          tx(),
+          scope,
+          [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdDocId: OTHER_DOC_ID }],
+          USER_ID,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a duplicate cdSlno within one payload', async () => {
+      await expect(
+        service.syncDocumentCharges(
+          tx(),
+          scope,
+          [
+            { cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdSlno: 1 },
+            { cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdSlno: 1 },
+          ],
+          USER_ID,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('404s on a cdId that is not a line of this document', async () => {
+      prisma.saleChargeDetail.findMany.mockResolvedValueOnce([]);
+
+      await expect(
+        service.syncDocumentCharges(tx(), scope, [{ cdId: CD_ID }], USER_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

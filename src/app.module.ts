@@ -39,6 +39,7 @@ import { UserAdministrationModule } from './modules/settings/userAdministration/
 import { ConfigsModule } from './modules/settings/configs/configs.module';
 import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaster/tender-type-master.module';
+import { TenderDetailModule } from './modules/accountsModule/tenderDetail/tender-detail.module';
 import { LedgerShippingAddressModule } from './modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
 import { GspProviderMasterModule } from './modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { GspCompanyServiceModule } from './modules/settings/gspCompanyService/gsp-company-service.module';
@@ -157,6 +158,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ConfigsModule,
     TenderMasterModule,
     TenderTypeMasterModule,
+    TenderDetailModule,
     GspProviderMasterModule,
     GspCompanyServiceModule,
     SupplierGroupModule,

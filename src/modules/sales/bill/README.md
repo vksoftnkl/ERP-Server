@@ -15,33 +15,50 @@ ALLOCATION, with rates, discounts, tax breakup and the stock it was picked from)
   polymorphically by `(cdDocType = 'INVOICE', cdDocId = sbId)`; a bill IS the tax invoice, so it
   reuses the `INVOICE` discriminator rather than a `BILL` value `ck_cd_doc_type` does not allow.
   There is **no FK** to `sale_bill` because the table is shared by every module (sales, purchase,
-  GRN, quotation).
+  GRN, quotation). It is **owned by [../../master/charge-detail](../../master/charge-detail)** —
+  this module hands that service the `charges[]` array and its own transaction rather than writing
+  the table itself.
+- **Tender table:** `acc_tender_detail` (`accounts` schema) — **partitioned by LIST
+  (`td_acc_year`)**, composite PK `(tdId, tdAccYear)`, addressed polymorphically by
+  `(tdSrcModule = 'SALES', tdSrcDocType = 'SALE_BILL', tdSrcDocId = sbId)`. Also has **no FK** to
+  `sale_bill`, and is likewise **owned by
+  [../../accountsModule/tenderDetail](../../accountsModule/tenderDetail)** — the money the customer
+  handed over, captured on the draft bill and carried through to posting.
 
 This module is the sibling of [../quotation](../quotation) — same reconciliation shape for line
 items and applied charges, same audit/soft-delete conventions — with two structural differences
-called out below: the partitioned/composite-key tables, and how the document is numbered.
+called out below: the partitioned/composite-key tables, and how the document is numbered. A bill
+additionally carries the **tendered amounts** a quotation has no use for: a quote is never paid.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| [bill.module.ts](bill.module.ts) | Module wiring — imports `AuditLogModule`, **exports `BillService`** |
+| [bill.module.ts](bill.module.ts) | Module wiring — imports `AuditLogModule` + `ChargeDetailModule` + `TenderDetailModule`, **exports `BillService`** |
 | [bill.controller.ts](bill.controller.ts) | HTTP routes + Swagger docs |
 | [bill.service.ts](bill.service.ts) | Business logic, persistence, line-item reconciliation, audit logging |
 | [bill-exception.filter.ts](bill-exception.filter.ts) | Registered via `@UseFilters`; a pass-through that re-throws the `HttpException` (error shaping is done in the service) |
-| [dto/save-bill.dto.ts](dto/save-bill.dto.ts) | Create/update payload for the header + nested `items[]` / `charges[]` |
+| [dto/save-bill.dto.ts](dto/save-bill.dto.ts) | Create/update payload for the header + nested `items[]` / `charges[]` / `tenders[]` |
 | [dto/save-bill-item.dto.ts](dto/save-bill-item.dto.ts) | A single bill line-item entry |
-| [dto/save-bill-charge.dto.ts](dto/save-bill-charge.dto.ts) | A single applied-charge entry (`sale_charge_detail` snapshot) |
 | [dto/bill-response.dto.ts](dto/bill-response.dto.ts) | Swagger success/error response models |
+
 | [types/bill-api.types.ts](types/bill-api.types.ts) | Payload / response / error TypeScript contracts |
+
+Charge and tender lines have **no DTO, payload type or writer of their own here** — `charges[]` is
+the charge-detail module's [`SaveChargeDetailDto`](../../master/charge-detail/dto/save-charge-detail.dto.ts)
+and `tenders[]` the tender-detail module's
+[`SaveTenderDetailDto`](../../accountsModule/tenderDetail/dto/save-tender-detail.dto.ts); the rows
+are written and read back by `ChargeDetailService` / `TenderDetailService`. See
+[Nested applied charges](#nested-applied-charges) and
+[Nested tendered amounts](#nested-tendered-amounts).
 
 ## Endpoints
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a bill, chosen by `sbId` presence in the body. |
-| `GET` | `/get` | Fetch one active bill by `sbId` (query param), including its active line items and applied charges. |
-| `DELETE` | `/delete` | Soft-delete a bill by `sbId` (query param), cascading to its line items and applied charges. |
+| `GET` | `/get` | Fetch one active bill by `sbId` (query param), including its active line items, applied charges and tender lines. |
+| `DELETE` | `/delete` | Soft-delete a bill by `sbId` (query param), cascading to its line items, applied charges and tender lines. |
 
 `GET /get` additionally requires `sbCompanyId`, `sbBranchId` and `sbAccYear` as query parameters
 (the row is looked up by all four together); `DELETE /delete` takes only `sbId`.
@@ -49,8 +66,8 @@ called out below: the partitioned/composite-key tables, and how the document is 
 ### Create / update semantics
 
 - **Omit `sbId` → create; include `sbId` → update** the existing bill.
-- Each operation runs inside a single `$transaction` (header, all line items, applied charges, and
-  audit entries are all-or-nothing).
+- Each operation runs inside a single `$transaction` (header, all line items, applied charges,
+  tender lines, and audit entries are all-or-nothing).
 - On **update**, the header must still be active (`sbIsDeleted = false`) or a not-found error is
   raised. Because `sale_bill`'s primary key is the composite `(sbId, sbAccYear)`, the update
   targets that compound key (`sbId_sbAccYear`), resolved from the row `findFirst` already loaded.
@@ -140,13 +157,76 @@ extra fields required for a new line:
 
 ### Nested applied charges
 
-Freight / loading / packing / cash-discount lines are managed through the `charges[]` array on the
-same create/update payload (`syncCharges` reconciliation), with **exactly** the quotation module's
-semantics, `cdDocType = 'INVOICE'` in place of `'QUOTATION'`, and `cdVoucherNo` defaulting to the
-bill's `sbBillSlno` instead of `sqQuoteSlno`. See
-[../quotation/README.md#nested-applied-charges](../quotation/README.md#nested-applied-charges) for
-the full write-up; `ensureChargeValuesAreAllowed` guards the same `CHARGE_DETAIL_VALUE_GUARDS` /
-`cdTaxApl` + `cdBeforeTax` mutual-exclusion rule.
+Freight / loading / packing / cash-discount lines are still sent as the `charges[]` array on the
+same create/update payload, but **this module does not implement them** — `sale_charge_detail` is
+owned by [../../master/charge-detail](../../master/charge-detail), and `BillService` delegates the
+whole array to `ChargeDetailService.syncDocumentCharges(tx, scope, charges, actor, audit)`:
+
+- The **payload entry is `SaveChargeDetailDto`**, the charge-detail module's own create/update DTO
+  — the same body the standalone `POST /charge-details/create` takes. There is no bill-specific
+  charge DTO, payload type or Swagger model.
+- `syncDocumentCharges` takes **the bill's transaction**, so the header, its line items and its
+  charges are still all-or-nothing.
+- Reconciliation is unchanged in shape: a line with `cdId` updates that line, a line without one is
+  created, an existing line absent from the array is soft deleted (`cdIsDeleted = true` **and**
+  `cdIsActive = false`, matching the charge module's own soft delete), and omitting the property
+  entirely leaves the stored charges untouched.
+- `cdSlno` defaults to the line's 1-based position in the array; a duplicate within one payload is
+  a 409 on `cdSlno`.
+- The bill passes its **document scope** (`toChargeScope`): `cdDocType = 'INVOICE'` (a bill IS the
+  tax invoice), `cdDocId = sbId`, and `cdCompId` / `cdBranchId` / `cdAccYear` / `cdVoucherNo`
+  inherited from the header — the last one being the bill's own `sbBillSlno`. A line may override
+  any of those except the document itself: sending a `cdDocType` / `cdDocId` that is not this bill
+  is a 400, the mirror of the standalone endpoint's immutability rule.
+- Every guard the charge module applies on its own endpoints now applies here too:
+  `CHARGE_DETAIL_VALUE_GUARDS` over the snapshot enums, the `cdTaxApl` / `cdBeforeTax` mutual
+  exclusion judged on the merged row, `cdChgId` / `cdLedgerCode` required on a new line, and both
+  references checked to be **active** (a soft-deleted `charge_master` or `acc_ledger_master` row is
+  a 400 naming the field rather than an FK error). Errors surface through the same
+  `{ success, message, errors[] }` shape, and `BillExceptionFilter` already recognises `cd*` fields.
+- Charge rows written during a bill save are audited against the bill (`tableName =
+  'sale_charge_detail'`, `screenName = 'Sale Bill'`, notes `Bill charge created/updated/soft
+  deleted`) — that labelling is the `BILL_CHARGE_AUDIT` argument, not a fork of the writer.
+
+The quotation module still has its own `syncCharges`; see
+[../quotation/README.md#nested-applied-charges](../quotation/README.md#nested-applied-charges).
+
+### Nested tendered amounts
+
+What the customer actually paid with — cash, card, UPI, loyalty points, a voucher, or several at
+once — is sent as the `tenders[]` array on the same create/update payload, and is owned by
+[../../accountsModule/tenderDetail](../../accountsModule/tenderDetail) exactly as the charges are
+owned by the charge module. `BillService` delegates the array to
+`TenderDetailService.syncDocumentTenders(tx, scope, tenders, actor, audit)` inside the bill's own
+transaction, so header + items + charges + tenders remain all-or-nothing.
+
+- The **payload entry is `SaveTenderDetailDto`**, the tender module's own create/update DTO. Only
+  `tdTenderId` (which `acc_tender_master` row the operator picked) is required on a new line.
+- Reconciliation is the same as everywhere else: `tdId` → update, no `tdId` → create, an existing
+  line absent from the array → soft deleted (`tdIsDeleted = true`; this table has no `is_active`
+  column), property omitted → stored tenders untouched. `tdRowNo` defaults to the 1-based position,
+  and a duplicate within one payload is a 409 on `tdRowNo`.
+- The bill passes its **document scope** (`toTenderScope`): `tdSrcModule = 'SALES'`,
+  `tdSrcDocType = 'SALE_BILL'`, `tdSrcDocId = sbId`, plus `tdCompanyId` / `tdBranchId` /
+  `tdTenantId` / `tdAccYear` / `tdDocDate` (the bill's date) / `tdUserId` / `tdSessionId` /
+  `tdDeviceId` inherited from the header, `tdDrCr = 'DR'` (money in on a sale) and
+  `tdPartyLedgerId = sbCustId`. That last default holds because a customer and its account ledger
+  **share one primary key** — every customer is mirrored into `acc_ledger_master` under the same id
+  — so the bill's customer *is* the ledger the money is owed by. Any of these may be overridden per
+  line except the document itself, which is a 400 if it names another document.
+- `tdTenderTypeId` / `tdTenderLedgerId` are snapshotted from the picked tender master when the line
+  does not carry them, `tdTotalAmt` is derived as `round(tdAmount + tdSurchargeAmt, 2)`, and the
+  remaining `ck_td_*` rules are enforced app-side on the merged row — see the tender module's
+  [README](../../accountsModule/tenderDetail/README.md) for the full list.
+- Tender rows written during a bill save are audited against the bill (`tableName =
+  'acc_tender_detail'`, `screenName = 'Sale Bill'`, notes `Bill tender created/updated/soft
+  deleted`) via the `BILL_TENDER_AUDIT` argument.
+- The header's own money columns (`sbTenderAmt`, `sbPaidAmt`, `sbBalanceAmt`, `sbSurchargeAmt`,
+  `sbRefundAmt`, `sbPayMode`, `sbPayStatus`) are **not** recomputed from `tenders[]` — like every
+  other amount on this module they are whatever the client sends. The tender lines are the detail
+  behind them, not their source.
+- `acc_tender_detail` is partitioned by `td_acc_year`, so — exactly like `sale_bill` — **a
+  partition must exist for the bill's accounting year** before a tender can be inserted.
 
 ### Line numbering & uniqueness
 
@@ -164,10 +244,10 @@ the full write-up; `ensureChargeValuesAreAllowed` guards the same `CHARGE_DETAIL
 ### Soft delete
 
 - `DELETE /delete` sets `sbIsDeleted = true` (plus `sbModifiedOn` / `sbModifiedBy`) on the header,
-  then cascades the same to all its active line items **and applied charges** so nothing stays
-  active under a logically deleted header. Rows are never hard-deleted.
+  then cascades the same to all its active line items, **applied charges and tender lines** so
+  nothing stays active under a logically deleted header. Rows are never hard-deleted.
 - `GET /get` and the update lookup only ever see rows with `sbIsDeleted = false` (and items with
-  `sbiIsDeleted = false`, charges with `cdIsDeleted = false`).
+  `sbiIsDeleted = false`, charges with `cdIsDeleted = false`, tenders with `tdIsDeleted = false`).
 
 ### Validation
 
@@ -179,9 +259,17 @@ the full write-up; `ensureChargeValuesAreAllowed` guards the same `CHARGE_DETAIL
   per-element (`@ValidateNested`), each requiring `sbiItemId`, `sbiItemUnitId`, `sbiGodownId` and
   `sbiStockId` as UUIDs (`sbiItemUnitId` references `item_unit_conversion.iucId`, not
   `item_unit_master.unit_id`, same as the quotation module).
-- Nested `charges[]` are validated the same way as the quotation module's, each requiring
-  `cdChgId` and `cdLedgerCode` as UUIDs, with the shared charge enums from
+- Nested `charges[]` are validated by the charge-detail module's own DTO and service guards (see
+  [Nested applied charges](#nested-applied-charges)): `cdChgId` and `cdLedgerCode` are UUIDs
+  required on a new line, and the enum-shaped columns use the shared charge enums from
   `master/charge-master/types/charge-enum.ts`.
+- Nested `tenders[]` likewise carry the tender-detail module's DTO and guards (see
+  [Nested tendered amounts](#nested-tendered-amounts)): `tdTenderId` is a UUID required on a new
+  line, the amount columns are non-negative numbers, `tdRowNo` is at least 1, and the enum-shaped
+  columns use `TenderSrcModule` / `TenderSrcDocType` / `TenderDrCr` / `TenderSettleStatus` from
+  `accountsModule/tenderDetail/types/tender-detail-api.types.ts`. `BillExceptionFilter` recognises
+  `td*` field names alongside `sb*` / `sbi*` / `cd*`, so a nested `tenders.0.tdX` validation error
+  comes back naming the field.
 - `sbSalesmanId`, `sbLoadmanId` and `sbPackedId` are `uuid[]` columns (a bill can have several
   salesmen/loadmen/packers on one document, unlike the quotation header's single `sqSalesmanId`):
   the DTO accepts an array, a comma-separated string, or `null`/`''` to clear it
@@ -197,7 +285,8 @@ the full write-up; `ensureChargeValuesAreAllowed` guards the same `CHARGE_DETAIL
   `SAMPLE` / `REPLACEMENT`, nullable) mirrors `ck_sbi_free_type`, and the cross-field
   `ck_sbi_batch_split` rule (`sbiSplitNo = 1 OR sbiBatchNo IS NOT NULL`) is judged on the line's
   final resolved values — the payload's, falling back to the existing row's on update — the same
-  way `ensureChargeValuesAreAllowed` judges `cdTaxApl` / `cdBeforeTax` on the merged row.
+  way `ChargeDetailService.ensureValuesAreAllowed` judges a charge line's `cdTaxApl` /
+  `cdBeforeTax` on the merged row.
   `ck_sbi_split_no` (`sbiSplitNo >= 1`) is not separately re-checked in the service: the
   `@OptionalInteger(1)` decorator on `SaveBillItemDto.sbiSplitNo` already rejects a smaller value
   at the DTO layer whenever it is sent.
@@ -220,9 +309,14 @@ the full write-up; `ensureChargeValuesAreAllowed` guards the same `CHARGE_DETAIL
 ### Response shape
 
 Success responses follow `{ success: true, message, data }` (`BillSuccessResponse`), where `data`
-is the bill payload (header fields with date-times serialized to ISO strings, plus `items[]` and
-`charges[]` arrays). `sbBillSlno` (bigint) and each charge's `cdVoucherNo` (bigint) are emitted as
-strings because JSON has no bigint. Errors use
+is the bill payload (header fields with date-times serialized to ISO strings, plus `items[]`,
+`charges[]` and `tenders[]` arrays). `sbBillSlno` (bigint) and each charge's `cdVoucherNo` (bigint) are emitted as
+strings because JSON has no bigint. Each entry of `charges[]` is the charge-detail module's
+`ChargeDetailPayload` verbatim — the same object `GET /charge-details/get` answers with, so its
+decimal columns come back as **numbers** and it carries the mapped ledger's `cdLedgerName`
+(read-only, resolved from `acc_ledger_master`, never stored). Each entry of `tenders[]` is likewise
+the tender-detail module's `TenderDetailPayload` verbatim — decimals as numbers, date-only columns
+as `YYYY-MM-DD`, plus the read-only `tdTenderName` / `tdTenderLedgerName`. Errors use
 `{ success: false, message, errors: [{ field, message }] }` (`BillErrorResponse`), produced by the
 shared sales helpers rather than by the exception filter.
 

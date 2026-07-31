@@ -19,7 +19,8 @@ import {
   RequiredUuid,
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
-import { SaveBillChargeDto } from './save-bill-charge.dto';
+import { SaveChargeDetailDto } from '../../../master/charge-detail/dto/save-charge-detail.dto';
+import { SaveTenderDetailDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import { SaveBillItemDto } from './save-bill-item.dto';
 // A nullable array of uuids: undefined leaves the column untouched, null/''
 // clears it, and a non-array/non-string input is left for IsUUID to reject.
@@ -477,16 +478,37 @@ export class SaveBillDto {
   @Type(() => SaveBillItemDto)
   items?: SaveBillItemDto[];
   @ApiPropertyOptional({
-    type: SaveBillChargeDto,
+    type: SaveChargeDetailDto,
     isArray: true,
     description:
-      'Applied charge lines (sale_charge_detail). Reconciled exactly like items: lines with cdId are ' +
-      'updated, lines without are created, and existing lines omitted from the array are soft deleted. ' +
-      'Omit the property entirely to leave charges untouched.',
+      "Applied charge lines, the charge-detail module's own entry (sale_charge_detail). Reconciled " +
+      'exactly like items: lines with cdId are updated, lines without are created, and existing lines ' +
+      'omitted from the array are soft deleted. Omit the property entirely to leave charges untouched. ' +
+      'cdChgId and cdLedgerCode are required on a new line; cdDocType / cdDocId are the parent bill and ' +
+      'must be omitted or match it, and cdCompId / cdBranchId / cdAccYear / cdVoucherNo default to the ' +
+      "bill's own scope.",
   })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => SaveBillChargeDto)
-  charges?: SaveBillChargeDto[];
+  @Type(() => SaveChargeDetailDto)
+  charges?: SaveChargeDetailDto[];
+  @ApiPropertyOptional({
+    type: SaveTenderDetailDto,
+    isArray: true,
+    description:
+      "Tendered amounts, the tender-detail module's own entry (acc_tender_detail): what the " +
+      'customer actually paid with, one line per tender (cash, card, UPI, loyalty, …). Reconciled ' +
+      'exactly like items: lines with tdId are updated, lines without are created, and existing ' +
+      'lines omitted from the array are soft deleted. Omit the property entirely to leave tenders ' +
+      'untouched. tdTenderId is required on a new line; the document triple (tdSrcModule / ' +
+      'tdSrcDocType / tdSrcDocId) is this bill and must be omitted or match it, and tdCompanyId / ' +
+      'tdBranchId / tdTenantId / tdAccYear / tdDocDate / tdPartyLedgerId / tdUserId / tdSessionId / ' +
+      "tdDeviceId / tdDrCr all default to the bill's own scope.",
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaveTenderDetailDto)
+  tenders?: SaveTenderDetailDto[];
 }

@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { Prisma, SaleBill, SaleBillItem, SaleChargeDetail } from '@prisma/client';
+import { AccTenderDetail, Prisma, SaleBill, SaleBillItem, SaleChargeDetail } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
+import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { BillService } from './bill.service';
 import { SaveBillDto } from './dto/save-bill.dto';
 
@@ -17,6 +19,10 @@ const CHARGE_ID = '019c6f6c-be87-7a11-8905-36092c46fa08';
 const LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fa09';
 const CD_ID = '019c6f6c-be87-7a11-8905-36092c46fa0a';
 const OTHER_CD_ID = '019c6f6c-be87-7a11-8905-36092c46fa0b';
+const TENDER_ID = '019c6f6c-be87-7a11-8905-36092c46fa0c';
+const TENDER_LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fa0d';
+const TD_ID = '019c6f6c-be87-7a11-8905-36092c46fa0e';
+const OTHER_TD_ID = '019c6f6c-be87-7a11-8905-36092c46fa0f';
 const LINE_A_ID = '019c6f6c-be87-7a11-8905-36092c46fa10';
 const LINE_B_ID = '019c6f6c-be87-7a11-8905-36092c46fa11';
 const ITEM_MASTER_ID = '019c6f6c-be87-7a11-8905-36092c46fa12';
@@ -104,6 +110,60 @@ const makeCharge = (overrides: Partial<SaleChargeDetail> = {}): SaleChargeDetail
     ...overrides,
   }) as SaleChargeDetail;
 
+const makeTender = (overrides: Partial<AccTenderDetail> = {}): AccTenderDetail =>
+  ({
+    tdId: TD_ID,
+    tdCompanyId: COMPANY_ID,
+    tdBranchId: BRANCH_ID,
+    tdTenantId: TENANT_ID,
+    tdAccYear: ACC_YEAR,
+    tdSrcModule: 'SALES',
+    tdSrcDocType: 'SALE_BILL',
+    tdSrcDocId: BILL_ID,
+    tdRowNo: 1,
+    tdDocDate: new Date('2026-07-28T00:00:00.000Z'),
+    tdPartyLedgerId: CUST_ID,
+    tdVoucherId: null,
+    tdTenderId: TENDER_ID,
+    tdTenderTypeId: 1,
+    tdTenderLedgerId: TENDER_LEDGER_ID,
+    tdDrCr: 'DR',
+    tdAmount: new Prisma.Decimal('500.00'),
+    tdSurchargePerc: new Prisma.Decimal('0.000'),
+    tdSurchargeAmt: new Prisma.Decimal('0.00'),
+    tdTotalAmt: new Prisma.Decimal('500.00'),
+    tdReceivedAmt: new Prisma.Decimal('500.00'),
+    tdChangeAmt: new Prisma.Decimal('0.00'),
+    tdUnitsUsed: new Prisma.Decimal('0.0000'),
+    tdConversionRate: new Prisma.Decimal('1.0000'),
+    tdRefNo: null,
+    tdAuthCode: null,
+    tdCardLast4: null,
+    tdBankName: null,
+    tdPayerVpa: null,
+    tdInstrumentDate: null,
+    tdIsPdc: false,
+    tdSettleStatus: 'NA',
+    tdSettleLedgerId: null,
+    tdExpectedSettleOn: null,
+    tdSettledOn: null,
+    tdSettleAmount: null,
+    tdMdrAmt: new Prisma.Decimal('0.00'),
+    tdSettleRefNo: null,
+    tdSettleVoucherId: null,
+    tdSessionId: null,
+    tdDeviceId: 'till-1',
+    tdUserId: USER_ID,
+    tdNotes: null,
+    tdIsDeleted: false,
+    tdSyncDate: null,
+    tdCreatedOn: new Date('2026-07-28T10:00:00.000Z'),
+    tdCreatedBy: USER_ID,
+    tdModifiedOn: null,
+    tdModifiedBy: null,
+    ...overrides,
+  }) as AccTenderDetail;
+
 const makeItem = (overrides: Partial<SaleBillItem> = {}): SaleBillItem =>
   ({
     sbiId: LINE_A_ID,
@@ -161,6 +221,13 @@ type ChargeUpdateArgs = {
   where: { cdId: string };
   data: Prisma.SaleChargeDetailUncheckedUpdateInput;
 };
+type TenderCreateArgs = { data: Prisma.AccTenderDetailUncheckedCreateInput };
+// acc_tender_detail is partitioned by td_acc_year, so a single-row update
+// addresses the compound key, the way sale_bill does.
+type TenderUpdateArgs = {
+  where: { tdId_tdAccYear: { tdId: string; tdAccYear: string } };
+  data: Prisma.AccTenderDetailUncheckedUpdateInput;
+};
 
 type PrismaMock = {
   saleBill: {
@@ -181,6 +248,24 @@ type PrismaMock = {
     update: jest.Mock<Promise<SaleChargeDetail>, [ChargeUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
+  accTenderDetail: {
+    findMany: jest.Mock<Promise<AccTenderDetail[]>, unknown[]>;
+    create: jest.Mock<Promise<AccTenderDetail>, [TenderCreateArgs]>;
+    update: jest.Mock<Promise<AccTenderDetail>, [TenderUpdateArgs]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  // Read by ChargeDetailService, which owns the bill's charge lines: a charge
+  // may only point at an active charge master / ledger.
+  chargeMaster: { findFirst: jest.Mock<Promise<{ chgId: string } | null>, unknown[]> };
+  accLedgerMaster: { findFirst: jest.Mock<Promise<{ ledName: string } | null>, unknown[]> };
+  // Likewise for TenderDetailService and the bill's tender lines.
+  accTenderMaster: {
+    findFirst: jest.Mock<
+      Promise<{ tndName: string; tndTypeId: number; tndLedgerId: string } | null>,
+      unknown[]
+    >;
+  };
+  accTenderType: { findFirst: jest.Mock<Promise<{ ttmTypeId: number } | null>, unknown[]> };
   $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
 };
 
@@ -237,6 +322,29 @@ const makePrismaMock = (): PrismaMock => {
       ),
       updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
+    accTenderDetail: {
+      findMany: jest.fn(() => Promise.resolve([] as AccTenderDetail[])),
+      create: jest.fn(({ data }: TenderCreateArgs) =>
+        Promise.resolve(makeTender(data as unknown as Partial<AccTenderDetail>)),
+      ),
+      update: jest.fn(({ where, data }: TenderUpdateArgs) =>
+        Promise.resolve(
+          makeTender({
+            ...(data as unknown as Partial<AccTenderDetail>),
+            tdId: where.tdId_tdAccYear.tdId,
+          }),
+        ),
+      ),
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+    },
+    chargeMaster: { findFirst: jest.fn(() => Promise.resolve({ chgId: CHARGE_ID })) },
+    accLedgerMaster: { findFirst: jest.fn(() => Promise.resolve({ ledName: 'Freight Inward' })) },
+    accTenderMaster: {
+      findFirst: jest.fn(() =>
+        Promise.resolve({ tndName: 'Cash', tndTypeId: 1, tndLedgerId: TENDER_LEDGER_ID }),
+      ),
+    },
+    accTenderType: { findFirst: jest.fn(() => Promise.resolve({ ttmTypeId: 1 })) },
     $transaction: jest.fn((cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma)),
   };
   return prisma;
@@ -250,10 +358,26 @@ describe('BillService', () => {
   beforeEach(() => {
     prisma = makePrismaMock();
     auditLogService = { logEntityChange: jest.fn(() => Promise.resolve(undefined)) };
+    const requestContextService = {
+      getUserId: () => USER_ID,
+    } as unknown as RequestContextService;
     service = new BillService(
       prisma as unknown as PrismaService,
       auditLogService as unknown as AuditLogService,
-      { getUserId: () => USER_ID } as unknown as RequestContextService,
+      requestContextService,
+      // The real collaborator, not a stub: the charge lines a bill saves go
+      // through it, so these tests assert on what it writes to
+      // prisma.saleChargeDetail.
+      new ChargeDetailService(
+        prisma as unknown as PrismaService,
+        auditLogService as unknown as AuditLogService,
+        requestContextService,
+      ),
+      new TenderDetailService(
+        prisma as unknown as PrismaService,
+        auditLogService as unknown as AuditLogService,
+        requestContextService,
+      ),
     );
   });
 
@@ -516,6 +640,26 @@ describe('BillService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('rejects a charge mapped to a soft-deleted ledger', async () => {
+      prisma.accLedgerMaster.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.save(baseDto({ charges: [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID }] })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a charge line pointing at another document', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            sbId: BILL_ID,
+            charges: [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID, cdDocId: OTHER_CD_ID }],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it('rejects cdTaxApl and cdBeforeTax set together', async () => {
       await expect(
         service.save(
@@ -528,6 +672,140 @@ describe('BillService', () => {
                 cdBeforeTax: true,
               },
             ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('tendered amounts', () => {
+    it('creates tender lines under SALES / SALE_BILL, defaulting the parent scope', async () => {
+      await service.save(baseDto({ tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500 }] }));
+
+      expect(prisma.accTenderDetail.create).toHaveBeenCalledTimes(1);
+      expect(prisma.accTenderDetail.create.mock.calls[0][0].data).toMatchObject({
+        tdSrcModule: 'SALES',
+        tdSrcDocType: 'SALE_BILL',
+        tdSrcDocId: BILL_ID,
+        tdRowNo: 1,
+        tdCompanyId: COMPANY_ID,
+        tdBranchId: BRANCH_ID,
+        tdTenantId: TENANT_ID,
+        tdAccYear: ACC_YEAR,
+        // Money in on a sale, against the customer's own ledger, captured by
+        // the bill's user / device.
+        tdDrCr: 'DR',
+        tdPartyLedgerId: CUST_ID,
+        tdUserId: USER_ID,
+        tdDeviceId: 'till-1',
+        tdTenderId: TENDER_ID,
+        tdAmount: 500,
+      });
+      // tdTenderTypeId / tdTenderLedgerId are snapshotted from the tender master
+      // when the payload does not carry them.
+      expect(prisma.accTenderDetail.create.mock.calls[0][0].data).toMatchObject({
+        tdTenderTypeId: 1,
+        tdTenderLedgerId: TENDER_LEDGER_ID,
+      });
+    });
+
+    it('derives tdTotalAmt from tdAmount + tdSurchargeAmt', async () => {
+      await service.save(
+        baseDto({
+          tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500, tdSurchargeAmt: 12.345 }],
+        }),
+      );
+
+      const { tdTotalAmt } = prisma.accTenderDetail.create.mock.calls[0][0].data;
+      expect((tdTotalAmt as Prisma.Decimal).toString()).toBe('512.35');
+    });
+
+    it('rejects a tdTotalAmt that is not the sum of the parts', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500, tdTotalAmt: 600 }],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects an inactive tender master', async () => {
+      prisma.accTenderMaster.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.save(baseDto({ tenders: [{ tdTenderId: TENDER_ID, tdAmount: 500 }] })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.accTenderDetail.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects change handed back that exceeds the cash received', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            tenders: [
+              { tdTenderId: TENDER_ID, tdAmount: 500, tdReceivedAmt: 500, tdChangeAmt: 600 },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('updates a tender carrying tdId via the compound key, and soft deletes the omitted rest', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender(),
+        makeTender({ tdId: OTHER_TD_ID, tdRowNo: 2 }),
+      ]);
+
+      await service.save(
+        baseDto({
+          sbId: BILL_ID,
+          tenders: [{ tdId: TD_ID, tdAmount: 750 }],
+        }),
+      );
+
+      expect(prisma.accTenderDetail.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tdId_tdAccYear: { tdId: TD_ID, tdAccYear: ACC_YEAR } },
+          data: containing({ tdRowNo: 1, tdAmount: 750 }),
+        }),
+      );
+      expect(prisma.accTenderDetail.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tdId_tdAccYear: { tdId: OTHER_TD_ID, tdAccYear: ACC_YEAR } },
+          data: containing({ tdIsDeleted: true }),
+        }),
+      );
+    });
+
+    it('leaves the stored tenders untouched when the property is omitted', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+
+      const payload = await service.save(baseDto({ sbId: BILL_ID }));
+
+      expect(prisma.accTenderDetail.create).not.toHaveBeenCalled();
+      expect(prisma.accTenderDetail.update).not.toHaveBeenCalled();
+      expect(payload.tenders).toHaveLength(1);
+    });
+
+    it('rejects a duplicate tdRowNo within one payload', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            tenders: [
+              { tdTenderId: TENDER_ID, tdRowNo: 1 },
+              { tdTenderId: TENDER_ID, tdRowNo: 1 },
+            ],
+          }),
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects a tender line pointing at another document', async () => {
+      await expect(
+        service.save(
+          baseDto({
+            tenders: [{ tdTenderId: TENDER_ID, tdSrcDocId: OTHER_CD_ID }],
           }),
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
@@ -676,7 +954,7 @@ describe('BillService', () => {
   });
 
   describe('softDelete', () => {
-    it('cascades the soft delete to line items and applied charges', async () => {
+    it('cascades the soft delete to line items, applied charges and tenders', async () => {
       const result = await service.softDelete(BILL_ID);
 
       expect(result).toEqual({ sbId: BILL_ID, deleted: true });
@@ -696,6 +974,17 @@ describe('BillService', () => {
         expect.objectContaining({
           where: { cdDocType: 'INVOICE', cdDocId: BILL_ID, cdIsDeleted: false },
           data: containing({ cdIsDeleted: true }),
+        }),
+      );
+      expect(prisma.accTenderDetail.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            tdSrcModule: 'SALES',
+            tdSrcDocType: 'SALE_BILL',
+            tdSrcDocId: BILL_ID,
+            tdIsDeleted: false,
+          },
+          data: containing({ tdIsDeleted: true }),
         }),
       );
       expect(auditLogService.logEntityChange).toHaveBeenCalledWith(

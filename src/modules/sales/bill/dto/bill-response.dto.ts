@@ -1,12 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  ChargeApplyOn,
-  ChargeCostAlloc,
-  ChargeDocType,
-  ChargeMethod,
-  ChargeRole,
-  ChargeType,
-} from '../../../master/charge-master/types/charge-enum';
+// A bill's applied charges are plain sale_charge_detail rows (cdDocType =
+// 'INVOICE' — a bill IS the tax invoice), so the response model is the
+// charge-detail module's, not a bill-specific copy of it.
+import { ChargeDetailPayloadDto } from '../../../master/charge-detail/dto/charge-detail-response.dto';
+// Same for the tendered amounts: plain acc_tender_detail rows (SALES /
+// SALE_BILL), so the response model is the tender-detail module's.
+import { TenderDetailPayloadDto } from '../../../accountsModule/tenderDetail/dto/tender-detail-response.dto';
 export class BillErrorFieldDto {
   @ApiProperty({ example: 'sbCustId' })
   field!: string;
@@ -20,106 +19,6 @@ export class BillErrorResponseDto {
   message!: string;
   @ApiProperty({ type: BillErrorFieldDto, isArray: true })
   errors!: BillErrorFieldDto[];
-}
-// One applied charge line (sale_charge_detail row with cdDocType = 'INVOICE' —
-// a bill IS the tax invoice).
-export class BillChargePayloadDto {
-  @ApiProperty({ format: 'uuid' })
-  cdId!: string;
-  @ApiProperty({ enum: ChargeDocType, enumName: 'ChargeDocType', example: ChargeDocType.INVOICE })
-  cdDocType!: ChargeDocType;
-  @ApiProperty({ format: 'uuid', description: 'The parent bill (sbId)' })
-  cdDocId!: string;
-  @ApiPropertyOptional({ nullable: true })
-  cdSlno!: number | null;
-  @ApiProperty({ format: 'uuid' })
-  cdCompId!: string;
-  @ApiProperty({ format: 'uuid' })
-  cdBranchId!: string;
-  @ApiProperty({ minLength: 9, maxLength: 9 })
-  cdAccYear!: string;
-  @ApiPropertyOptional({
-    nullable: true,
-    example: '1',
-    description: 'BigInt serialized as string',
-  })
-  cdVoucherNo!: string | null;
-  @ApiProperty({ format: 'uuid', description: 'charge_master.chgId' })
-  cdChgId!: string;
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  cdChgName!: string | null;
-  @ApiPropertyOptional({ enum: ChargeRole, enumName: 'ChargeRole', nullable: true })
-  cdRole!: ChargeRole | null;
-  @ApiPropertyOptional({ enum: ChargeMethod, enumName: 'ChargeMethod', nullable: true })
-  cdMethod!: ChargeMethod | null;
-  @ApiProperty({ enum: ChargeType, enumName: 'ChargeType', example: ChargeType.ADD })
-  cdType!: ChargeType;
-  @ApiPropertyOptional({ enum: ChargeApplyOn, enumName: 'ChargeApplyOn', nullable: true })
-  cdApplyOn!: ChargeApplyOn | null;
-  @ApiProperty({ format: 'uuid' })
-  cdLedgerCode!: string;
-  @ApiProperty()
-  cdLandingCost!: boolean;
-  @ApiPropertyOptional({ enum: ChargeCostAlloc, enumName: 'ChargeCostAlloc', nullable: true })
-  cdCostAlloc!: ChargeCostAlloc | null;
-  @ApiProperty()
-  cdBeforeTax!: boolean;
-  @ApiProperty()
-  cdTaxApl!: boolean;
-  @ApiProperty()
-  cdSepPost!: boolean;
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  cdUnit!: string | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdQtyVal!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdWeight!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdRate!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdAmount!: number | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  cdTaxCode!: string | null;
-  @ApiPropertyOptional({ maxLength: 15, nullable: true })
-  cdHsn!: string | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdTaxPerc!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdTaxAmt!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdSgstPerc!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdSgstAmt!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdCgstPerc!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdCgstAmt!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdIgstPerc!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdIgstAmt!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdCessPerc!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdCessAmt!: number | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdNetAmt!: number | null;
-  @ApiPropertyOptional({ maxLength: 255, nullable: true })
-  cdRemarks!: string | null;
-  @ApiProperty()
-  cdIsActive!: boolean;
-  @ApiProperty()
-  cdIsDeleted!: boolean;
-  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
-  cdSyncDate!: string | null;
-  @ApiProperty({ format: 'date-time' })
-  cdCreatedOn!: string;
-  @ApiPropertyOptional({ nullable: true })
-  cdCreatedBy!: string | null;
-  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
-  cdModifiedOn!: string | null;
-  @ApiPropertyOptional({ nullable: true })
-  cdModifiedBy!: string | null;
 }
 export class BillItemPayloadDto {
   @ApiProperty({ format: 'uuid' })
@@ -643,8 +542,10 @@ export class BillPayloadDto {
   sbModifiedBy!: string | null;
   @ApiProperty({ type: BillItemPayloadDto, isArray: true })
   items!: BillItemPayloadDto[];
-  @ApiProperty({ type: BillChargePayloadDto, isArray: true })
-  charges!: BillChargePayloadDto[];
+  @ApiProperty({ type: ChargeDetailPayloadDto, isArray: true })
+  charges!: ChargeDetailPayloadDto[];
+  @ApiProperty({ type: TenderDetailPayloadDto, isArray: true })
+  tenders!: TenderDetailPayloadDto[];
 }
 export class BillDeleteResultDto {
   @ApiProperty({ format: 'uuid' })

@@ -184,7 +184,4 @@ export class SaveTenderMasterDto {
   @ApiPropertyOptional()
   @OptionalBoolean()
   tndIsActive?: boolean;
-  @ApiPropertyOptional({ nullable: true, maxLength: 64, description: 'Tally sync identity.' })
-  @NullableString(64)
-  tndTallyGuid?: string | null;
 }

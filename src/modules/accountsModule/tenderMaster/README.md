@@ -47,7 +47,7 @@ there is no batch mode and no list-all endpoint (`/get` always requires a `tndId
 - **Nullable columns** (`tndBranchId`, `tndSettlementLedgerId`, `tndBankAccountId`, `tndDailyLimit`,
   `tndSurchargeLedgerId`, the UPI/MID/TID fields, `tndNeedsRef` / `tndAllowChange` /
   `tndAllowInReturn`, `tndHotkey`, `tndColour`, `tndEffectiveFrom` / `tndEffectiveTo`,
-  `tndRemarks`, `tndTallyGuid`) accept an explicit `null` to clear them. Blank strings are stored
+  `tndRemarks`) accept an explicit `null` to clear them. Blank strings are stored
   as `NULL`.
 - **NOT NULL columns with a DB default** (`tndSettlementDays`, `tndSurchargePerc`,
   `tndSurchargeAmount`, `tndConversionRate`, `tndEditSurcharge`, `tndEditLedger`,

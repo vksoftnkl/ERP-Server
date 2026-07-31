@@ -11,6 +11,14 @@ export interface TenderMasterPayload {
   tndShortName: string;
   tndLedgerId: string;
   tndSettlementLedgerId: string | null;
+  // Read-only display names resolved for the id columns above. Only the GET
+  // path joins the masters, so create/update/delete return null for all of
+  // them; a null on GET means the id itself is null.
+  tndCompanyName: string | null;
+  tndBranchName: string | null;
+  tndTypeName: string | null;
+  tndLedgerName: string | null;
+  tndSurchargeLedgerName: string | null;
   tndSettlementDays: number;
   tndBankAccountId: string | null;
   tndMinAmount: number;
@@ -42,7 +50,6 @@ export interface TenderMasterPayload {
   tndRemarks: string | null;
   tndIsActive: boolean;
   tndIsDeleted: boolean;
-  tndTallyGuid: string | null;
   tndSyncDate: string | null;
   tndCreatedOn: string;
   tndCreatedBy: string | null;

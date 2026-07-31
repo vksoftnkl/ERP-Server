@@ -100,3 +100,26 @@ export interface ChargeDetailDeleteResult {
   cdId: string;
   deleted: true;
 }
+// The parent document a charge line hangs off, as the owning module knows it.
+// Every field is inherited by each line of that document unless the payload
+// overrides it, so a bill / quotation never has to repeat its own scope on each
+// charge it sends.
+export interface ChargeDocumentScope {
+  cdDocType: ChargeDocType;
+  cdDocId: string;
+  cdCompId: string;
+  cdBranchId: string;
+  cdAccYear: string;
+  // The document's own voucher number (a bill's sbBillSlno, a quotation's
+  // sqQuoteSlno), used when a charge line does not carry one of its own.
+  cdVoucherNo: bigint | null;
+}
+// How an owning module labels the audit rows written for its charge lines, so a
+// charge edited as part of a bill save stays on the bill's screen in the trail
+// instead of the standalone Charge Detail one.
+export interface ChargeDocumentAudit {
+  tableName: string;
+  screenName: string;
+  // Prefixes the audit note: 'Bill charge' reads as "Bill charge created".
+  entityName: string;
+}

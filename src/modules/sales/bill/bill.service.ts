@@ -1,22 +1,27 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, SaleBill, SaleBillItem, SaleChargeDetail } from '@prisma/client';
+import { Prisma, SaleBill, SaleBillItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { SaveBillChargeDto } from './dto/save-bill-charge.dto';
 import { SaveBillDto } from './dto/save-bill.dto';
 import { SaveBillItemDto } from './dto/save-bill-item.dto';
 import {
+  BILL_CHARGE_AUDIT,
   BILL_CHARGE_DOC_TYPE,
+  BILL_TENDER_AUDIT,
+  BILL_TENDER_DR_CR,
+  BILL_TENDER_SRC_DOC_TYPE,
+  BILL_TENDER_SRC_MODULE,
   BillChargePayload,
   BillErrorDetail,
   BillErrorResponse,
   BillItemPayload,
   BillPayload,
+  BillTenderPayload,
 } from './types/bill-api.types';
-import {
-  CHARGE_DETAIL_VALUE_GUARDS,
-  ChargeDetailGuardedValues,
-} from '../../master/charge-master/types/charge-master-api.types';
+import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
+import { ChargeDocumentScope } from '../../master/charge-detail/types/charge-detail-api.types';
+import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
+import { TenderDocumentScope } from '../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import {
   DEFAULT_ACTOR,
   PresentFieldTransform,
@@ -32,7 +37,6 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 const BILL_TABLE_NAME = 'sale_bill';
 const BILL_ITEM_TABLE_NAME = 'sale_bill_item';
-const BILL_CHARGE_TABLE_NAME = 'sale_charge_detail';
 const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
 // Allowed-value sets for the header/line-item columns that used to be DB CHECK
 // constraints (ck_sb_doc_type / ck_sb_bill_type / ck_sb_status /
@@ -262,42 +266,6 @@ const BILL_ITEM_OPTIONAL_FIELDS = [
   'sbiSchemeName',
   'sbiRemarks',
 ];
-// Charge-line fields copied straight through when present on the payload. The
-// scope keys (docType/docId/comp/branch/accYear/slno) and the two required
-// references (cdChgId / cdLedgerCode) are set explicitly, so they are
-// intentionally excluded here.
-const BILL_CHARGE_OPTIONAL_FIELDS = [
-  'cdChgName',
-  'cdRole',
-  'cdMethod',
-  'cdType',
-  'cdApplyOn',
-  'cdLandingCost',
-  'cdCostAlloc',
-  'cdBeforeTax',
-  'cdTaxApl',
-  'cdSepPost',
-  'cdUnit',
-  'cdQtyVal',
-  'cdWeight',
-  'cdRate',
-  'cdAmount',
-  'cdTaxCode',
-  'cdHsn',
-  'cdTaxPerc',
-  'cdTaxAmt',
-  'cdSgstPerc',
-  'cdSgstAmt',
-  'cdCgstPerc',
-  'cdCgstAmt',
-  'cdIgstPerc',
-  'cdIgstAmt',
-  'cdCessPerc',
-  'cdCessAmt',
-  'cdNetAmt',
-  'cdRemarks',
-  'cdIsActive',
-];
 // Every date / timestamptz column reachable from the payload. JSON carries them
 // as ISO strings, Prisma wants Date objects, so each one is converted on the way
 // in (and a malformed value comes back as a 400 naming the field).
@@ -338,7 +306,10 @@ function buildDateTransforms(
 }
 const BILL_DATE_TRANSFORMS = buildDateTransforms(BILL_DATE_FIELDS);
 const BILL_ITEM_DATE_TRANSFORMS = buildDateTransforms(BILL_ITEM_DATE_FIELDS);
-// The immutable scope inherited by every line from its parent bill.
+// The immutable scope inherited by every line from its parent bill. The last
+// five are only read by the tender lines, which snapshot the document's date,
+// party and capture context (acc_tender_detail has no FK back to sale_bill to
+// join them from).
 interface BillScope {
   sbId: string;
   sbCompanyId: string;
@@ -347,6 +318,11 @@ interface BillScope {
   sbAccYear: string;
   sbPriceLevel: number;
   sbBillSlno: bigint;
+  sbBillDate: Date;
+  sbCustId: string;
+  sbUserId: string;
+  sbSessionId: string | null;
+  sbDeviceId: string;
 }
 type BillWriteClient = SalesWriteClient;
 // Only populated when the item was fetched with the item/unit joins (getById);
@@ -368,6 +344,14 @@ export class BillService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
+    // sale_charge_detail is owned by the charge-detail module: the bill hands it
+    // the charges[] array and its own scope rather than writing that table
+    // itself, so both entry points share one set of guards and one audit trail.
+    private readonly chargeDetailService: ChargeDetailService,
+    // Same arrangement for acc_tender_detail and the tenders[] array — the money
+    // the customer actually handed over, captured while the bill is still a
+    // draft and carried through to posting.
+    private readonly tenderDetailService: TenderDetailService,
   ) {}
   async save(saveBillDto: SaveBillDto): Promise<BillPayload> {
     this.ensureBillValuesAreAllowed(saveBillDto);
@@ -420,9 +404,18 @@ export class BillService {
       );
     }
     // sale_charge_detail is polymorphic (no FK to sale_bill), so the applied
-    // charges are fetched by discriminator rather than by `include`.
-    const charges = await this.findCharges(this.prisma, sbId);
-    return this.toPayload({ ...record, charges });
+    // charges are fetched by discriminator rather than by `include` — through
+    // the charge-detail module, which also resolves each line's ledger name.
+    const charges = await this.chargeDetailService.getByDocument(BILL_CHARGE_DOC_TYPE, sbId);
+    // acc_tender_detail is polymorphic for the same reason, and read the same
+    // way — through its own module, which resolves each line's tender and
+    // ledger names.
+    const tenders = await this.tenderDetailService.getByDocument(
+      BILL_TENDER_SRC_MODULE,
+      BILL_TENDER_SRC_DOC_TYPE,
+      sbId,
+    );
+    return this.toPayload({ ...record, charges, tenders });
   }
   async softDelete(sbId: string): Promise<{ sbId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -474,18 +467,23 @@ export class BillService {
       });
       // Same cascade for the applied charges — an active charge line must never
       // outlive the document it was charged on.
-      await tx.saleChargeDetail.updateMany({
-        where: {
-          cdDocType: BILL_CHARGE_DOC_TYPE,
-          cdDocId: sbId,
-          cdIsDeleted: false,
-        },
-        data: {
-          cdIsDeleted: true,
-          cdModifiedOn: modifiedOn,
-          cdModifiedBy: actor,
-        },
-      });
+      await this.chargeDetailService.softDeleteDocumentCharges(
+        tx,
+        BILL_CHARGE_DOC_TYPE,
+        sbId,
+        actor,
+        modifiedOn,
+      );
+      // ... and for the tendered money, so no payment line stays active against
+      // a bill that no longer exists.
+      await this.tenderDetailService.softDeleteDocumentTenders(
+        tx,
+        BILL_TENDER_SRC_MODULE,
+        BILL_TENDER_SRC_DOC_TYPE,
+        sbId,
+        actor,
+        modifiedOn,
+      );
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -563,10 +561,28 @@ export class BillService {
           sbAccYear: created.sbAccYear,
           sbPriceLevel: created.sbPriceLevel,
           sbBillSlno: created.sbBillSlno,
+          sbBillDate: created.sbBillDate,
+          sbCustId: created.sbCustId,
+          sbUserId: created.sbUserId,
+          sbSessionId: created.sbSessionId,
+          sbDeviceId: created.sbDeviceId,
         };
         const items = await this.syncItems(tx, scope, saveBillDto.items, createdBy);
-        const charges = await this.syncCharges(tx, scope, saveBillDto.charges, createdBy);
-        const payload = this.toPayload({ ...created, items, charges });
+        const charges = await this.chargeDetailService.syncDocumentCharges(
+          tx,
+          this.toChargeScope(scope),
+          saveBillDto.charges,
+          createdBy,
+          BILL_CHARGE_AUDIT,
+        );
+        const tenders = await this.tenderDetailService.syncDocumentTenders(
+          tx,
+          this.toTenderScope(scope),
+          saveBillDto.tenders,
+          createdBy,
+          BILL_TENDER_AUDIT,
+        );
+        const payload = this.toPayload({ ...created, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -633,10 +649,28 @@ export class BillService {
           sbAccYear: updated.sbAccYear,
           sbPriceLevel: updated.sbPriceLevel,
           sbBillSlno: updated.sbBillSlno,
+          sbBillDate: updated.sbBillDate,
+          sbCustId: updated.sbCustId,
+          sbUserId: updated.sbUserId,
+          sbSessionId: updated.sbSessionId,
+          sbDeviceId: updated.sbDeviceId,
         };
         const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
-        const charges = await this.syncCharges(tx, scope, saveBillDto.charges, modifiedBy);
-        const payload = this.toPayload({ ...updated, items, charges });
+        const charges = await this.chargeDetailService.syncDocumentCharges(
+          tx,
+          this.toChargeScope(scope),
+          saveBillDto.charges,
+          modifiedBy,
+          BILL_CHARGE_AUDIT,
+        );
+        const tenders = await this.tenderDetailService.syncDocumentTenders(
+          tx,
+          this.toTenderScope(scope),
+          saveBillDto.tenders,
+          modifiedBy,
+          BILL_TENDER_AUDIT,
+        );
+        const payload = this.toPayload({ ...updated, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -968,179 +1002,45 @@ export class BillService {
     }
     return value;
   }
-  // The bill's applied charges, in reconciliation order (cdSlno). No relation
-  // exists to follow: sale_charge_detail is keyed by the (cdDocType, cdDocId)
-  // discriminator pair, which is also its only index.
-  private findCharges(client: BillWriteClient, sbId: string): Promise<SaleChargeDetail[]> {
-    return client.saleChargeDetail.findMany({
-      where: {
-        cdDocType: BILL_CHARGE_DOC_TYPE,
-        cdDocId: sbId,
-        cdIsDeleted: false,
-      },
-      orderBy: { cdSlno: 'asc' },
-    });
+  // The bill's applied charges as the charge-detail module wants them: a bill
+  // IS the tax invoice, so its lines carry the INVOICE discriminator, and every
+  // charge inherits the header's company / branch / accounting year and
+  // defaults its cdVoucherNo to the bill's own number.
+  private toChargeScope(scope: BillScope): ChargeDocumentScope {
+    return {
+      cdDocType: BILL_CHARGE_DOC_TYPE,
+      cdDocId: scope.sbId,
+      cdCompId: scope.sbCompanyId,
+      cdBranchId: scope.sbBranchId,
+      cdAccYear: scope.sbAccYear,
+      cdVoucherNo: scope.sbBillSlno,
+    };
   }
-  // Reconciles the bill's applied charges with the payload array, exactly as
-  // syncItems does for the line items:
-  //   - a charge carrying cdId updates that existing charge line
-  //   - a charge without cdId is created
-  //   - an existing charge absent from the array is soft deleted
-  // Passing `undefined` (property omitted) leaves the current charges untouched.
-  private async syncCharges(
-    tx: BillWriteClient,
-    scope: BillScope,
-    inputCharges: SaveBillChargeDto[] | undefined,
-    actorId: string,
-  ): Promise<SaleChargeDetail[]> {
-    const existing = await this.findCharges(tx, scope.sbId);
-    if (inputCharges === undefined) {
-      return existing;
-    }
-    const existingMap = new Map(existing.map((charge) => [charge.cdId, charge]));
-    const keptIds = new Set<string>();
-    const seenSlnos = new Set<number>();
-    const now = new Date();
-    const persisted: SaleChargeDetail[] = [];
-    for (const [index, inputCharge] of inputCharges.entries()) {
-      const slno = inputCharge.cdSlno ?? index + 1;
-      if (seenSlnos.has(slno)) {
-        throwSalesConflict<BillErrorDetail, BillErrorResponse>(
-          'Duplicate bill charge line number is not allowed',
-          [
-            {
-              field: 'cdSlno',
-              message: `A bill charge already exists with line number ${slno}`,
-            },
-          ],
-        );
-      }
-      seenSlnos.add(slno);
-      const existingCharge = inputCharge.cdId ? existingMap.get(inputCharge.cdId) : undefined;
-      if (inputCharge.cdId && !existingCharge) {
-        throwSalesNotFound<BillErrorDetail, BillErrorResponse>(
-          'Bill charge not found',
-          'cdId',
-          `No active bill charge found with id ${inputCharge.cdId} on this bill`,
-        );
-      }
-      this.ensureChargeValuesAreAllowed(inputCharge, existingCharge);
-      if (existingCharge) {
-        const updateData: Prisma.SaleChargeDetailUncheckedUpdateInput = {
-          cdSlno: slno,
-          cdChgId: inputCharge.cdChgId ?? existingCharge.cdChgId,
-          cdLedgerCode: inputCharge.cdLedgerCode ?? existingCharge.cdLedgerCode,
-          cdModifiedOn: now,
-          cdModifiedBy: resolveActor(inputCharge.cdModifiedBy, actorId),
-        };
-        applyPresentFields(updateData, inputCharge, BILL_CHARGE_OPTIONAL_FIELDS);
-        if (inputCharge.cdVoucherNo !== undefined) {
-          updateData.cdVoucherNo = this.toVoucherNo(inputCharge.cdVoucherNo);
-        }
-        const updated = await tx.saleChargeDetail.update({
-          where: { cdId: existingCharge.cdId },
-          data: updateData,
-        });
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: BILL_CHARGE_TABLE_NAME,
-            screenName: BILL_AUDIT_SCREEN_NAME,
-            screenType: 'transaction',
-            pk: updated.cdId,
-            displayName: updated.cdChgName || `Charge ${updated.cdSlno ?? slno}`,
-            originalRecord: this.toChargePayload(existingCharge),
-            modifiedRecord: this.toChargePayload(updated),
-            userId: resolveActor(inputCharge.cdModifiedBy, actorId),
-            notes: 'Bill charge updated',
-          },
-          tx,
-        );
-        keptIds.add(updated.cdId);
-        persisted.push(updated);
-        continue;
-      }
-      const createData: Prisma.SaleChargeDetailUncheckedCreateInput = {
-        cdDocType: BILL_CHARGE_DOC_TYPE,
-        cdDocId: scope.sbId,
-        cdSlno: slno,
-        cdCompId: inputCharge.cdCompId ?? scope.sbCompanyId,
-        cdBranchId: inputCharge.cdBranchId ?? scope.sbBranchId,
-        cdAccYear: inputCharge.cdAccYear ?? scope.sbAccYear,
-        cdVoucherNo:
-          inputCharge.cdVoucherNo === undefined
-            ? scope.sbBillSlno
-            : this.toVoucherNo(inputCharge.cdVoucherNo),
-        cdChgId: this.requireChargeField(inputCharge.cdChgId, 'cdChgId'),
-        cdLedgerCode: this.requireChargeField(inputCharge.cdLedgerCode, 'cdLedgerCode'),
-        cdCreatedOn: now,
-        cdCreatedBy: resolveActor(inputCharge.cdCreatedBy, actorId),
-      };
-      applyPresentFields(createData, inputCharge, BILL_CHARGE_OPTIONAL_FIELDS);
-      const created = await tx.saleChargeDetail.create({ data: createData });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'New',
-          tableName: BILL_CHARGE_TABLE_NAME,
-          screenName: BILL_AUDIT_SCREEN_NAME,
-          screenType: 'transaction',
-          pk: created.cdId,
-          displayName: created.cdChgName || `Charge ${created.cdSlno ?? slno}`,
-          originalRecord: null,
-          modifiedRecord: this.toChargePayload(created),
-          userId: created.cdCreatedBy ?? actorId,
-          notes: 'Bill charge created',
-        },
-        tx,
-      );
-      keptIds.add(created.cdId);
-      persisted.push(created);
-    }
-    // Any previously active charge not present in the payload is soft deleted.
-    const removed = existing.filter((charge) => !keptIds.has(charge.cdId));
-    for (const removedCharge of removed) {
-      const deleted = await tx.saleChargeDetail.update({
-        where: { cdId: removedCharge.cdId },
-        data: {
-          cdIsDeleted: true,
-          cdModifiedOn: now,
-          cdModifiedBy: actorId,
-        },
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: BILL_CHARGE_TABLE_NAME,
-          screenName: BILL_AUDIT_SCREEN_NAME,
-          screenType: 'transaction',
-          pk: deleted.cdId,
-          displayName: removedCharge.cdChgName || `Charge ${removedCharge.cdSlno ?? ''}`.trim(),
-          originalRecord: this.toChargePayload(removedCharge),
-          modifiedRecord: this.toChargePayload(deleted),
-          userId: actorId,
-          notes: 'Bill charge soft deleted',
-        },
-        tx,
-      );
-    }
-    return persisted.sort((left, right) => (left.cdSlno ?? 0) - (right.cdSlno ?? 0));
-  }
-  private requireChargeField(value: string | undefined, field: string): string {
-    if (!value) {
-      throwSalesNotFound<BillErrorDetail, BillErrorResponse>(
-        `${field} is required for a new bill charge`,
-        field,
-        `${field} must be provided when creating a bill charge`,
-      );
-    }
-    return value;
-  }
-  // cd_voucher_no is a bigint column but JSON carries it as a number/string.
-  private toVoucherNo(value: string | number | null): bigint | null {
-    if (value === null || value === '') {
-      return null;
-    }
-    return BigInt(value);
+  // The same for the tendered money: a bill's tenders are SALES / SALE_BILL rows
+  // pointing at sbId, dated with the bill, raised against the customer's ledger
+  // and captured by the bill's own user / session / device.
+  //
+  // td_party_ledger_id takes sbCustId: a customer row and its account ledger
+  // share one primary key (CustomerService mirrors every customer into
+  // acc_ledger_master under the same id), so the bill's customer IS the ledger
+  // the money is owed by. A line may still name a different party ledger, and
+  // the tender module verifies whichever id it gets.
+  private toTenderScope(scope: BillScope): TenderDocumentScope {
+    return {
+      tdSrcModule: BILL_TENDER_SRC_MODULE,
+      tdSrcDocType: BILL_TENDER_SRC_DOC_TYPE,
+      tdSrcDocId: scope.sbId,
+      tdCompanyId: scope.sbCompanyId,
+      tdBranchId: scope.sbBranchId,
+      tdTenantId: scope.sbTenantId,
+      tdAccYear: scope.sbAccYear,
+      tdDocDate: scope.sbBillDate,
+      tdPartyLedgerId: scope.sbCustId,
+      tdUserId: scope.sbUserId,
+      tdSessionId: scope.sbSessionId,
+      tdDeviceId: scope.sbDeviceId,
+      tdDrCr: BILL_TENDER_DR_CR,
+    };
   }
   // sb_bill_slno is a bigint column, required and client-supplied — see the
   // README's "Bill numbering" section.
@@ -1153,60 +1053,6 @@ export class BillService {
       ]);
     }
   }
-  // Mirrors the DB CHECK constraints on sale_charge_detail (ck_cd_doc_type /
-  // ck_cd_type / ck_cd_method / ck_cd_apply_on / ck_cd_cost_alloc, migration
-  // 20260728140000, plus ck_cd_tax_apl from 20260728130000) so a bad value comes
-  // back as a 400 with the offending field instead of a raw Postgres 23514.
-  // cdDocType is set by the service, not the payload, so only the snapshot
-  // columns are read off the request; on update the stored row supplies the
-  // values the payload did not send, since the constraint judges the merged row.
-  private ensureChargeValuesAreAllowed(
-    inputCharge: SaveBillChargeDto,
-    existingCharge: SaleChargeDetail | undefined,
-  ): void {
-    const values: ChargeDetailGuardedValues = {
-      cdDocType: BILL_CHARGE_DOC_TYPE,
-      cdRole: inputCharge.cdRole,
-      cdMethod: inputCharge.cdMethod,
-      cdType: inputCharge.cdType,
-      cdApplyOn: inputCharge.cdApplyOn,
-      cdCostAlloc: inputCharge.cdCostAlloc,
-    };
-    const details: BillErrorDetail[] = [];
-    for (const guard of CHARGE_DETAIL_VALUE_GUARDS) {
-      const value = values[guard.field];
-      if (value === undefined) {
-        continue;
-      }
-      if (value === null) {
-        if (!guard.nullable) {
-          details.push({ field: guard.field, message: `${guard.field} is required` });
-        }
-        continue;
-      }
-      if (!(guard.allowed as readonly string[]).includes(value)) {
-        details.push({
-          field: guard.field,
-          message: `${guard.field} must be one of: ${guard.allowed.join(', ')}`,
-        });
-      }
-    }
-    const taxApl = inputCharge.cdTaxApl ?? existingCharge?.cdTaxApl ?? false;
-    const beforeTax = inputCharge.cdBeforeTax ?? existingCharge?.cdBeforeTax ?? false;
-    if (taxApl && beforeTax) {
-      details.push({
-        field: 'cdTaxApl',
-        message:
-          'cdTaxApl and cdBeforeTax are mutually exclusive: a charge is either taxed at the item rate or carries its own GST',
-      });
-    }
-    if (details.length > 0) {
-      throwSalesBadRequest<BillErrorDetail, BillErrorResponse>(
-        'Invalid bill charge value',
-        details,
-      );
-    }
-  }
   private applyOptionalFields(
     data: Prisma.SaleBillUncheckedCreateInput | Prisma.SaleBillUncheckedUpdateInput,
     dto: SaveBillDto,
@@ -1216,7 +1062,10 @@ export class BillService {
   private toPayload(
     record: SaleBill & {
       items?: SaleBillItemWithNames[];
-      charges?: SaleChargeDetail[];
+      // Already shaped by ChargeDetailService / TenderDetailService — the bill
+      // passes them through.
+      charges?: BillChargePayload[];
+      tenders?: BillTenderPayload[];
     },
   ): BillPayload {
     const {
@@ -1227,6 +1076,7 @@ export class BillService {
       sbBillSlno,
       items,
       charges,
+      tenders,
       ...rest
     } = record;
     return {
@@ -1239,17 +1089,8 @@ export class BillService {
       // JSON has no bigint and res.json() throws on one.
       sbBillSlno: sbBillSlno.toString(),
       items: items ? items.map((item) => this.toItemPayload(item)) : [],
-      charges: charges ? charges.map((charge) => this.toChargePayload(charge)) : [],
-    };
-  }
-  private toChargePayload(record: SaleChargeDetail): BillChargePayload {
-    const { cdCreatedOn, cdModifiedOn, cdSyncDate, cdVoucherNo, ...rest } = record;
-    return {
-      ...rest,
-      cdCreatedOn: cdCreatedOn?.toISOString(),
-      cdModifiedOn: cdModifiedOn?.toISOString() ?? null,
-      cdSyncDate: cdSyncDate?.toISOString() ?? null,
-      cdVoucherNo: cdVoucherNo?.toString() ?? null,
+      charges: charges ?? [],
+      tenders: tenders ?? [],
     };
   }
   private toItemPayload(record: SaleBillItemWithNames): BillItemPayload {
