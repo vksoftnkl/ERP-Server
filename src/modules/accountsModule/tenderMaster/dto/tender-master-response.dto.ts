@@ -30,6 +30,32 @@ export class TenderMasterPayloadDto {
   tndLedgerId!: string;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   tndSettlementLedgerId!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Resolved on GET only; null on create/update/delete responses',
+  })
+  tndCompanyName!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Resolved on GET only; null on create/update/delete responses',
+  })
+  tndBranchName!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'CARD',
+    description: 'Resolved on GET only; null on create/update/delete responses',
+  })
+  tndTypeName!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Resolved on GET only; null on create/update/delete responses',
+  })
+  tndLedgerName!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Resolved on GET only; null on create/update/delete responses',
+  })
+  tndSurchargeLedgerName!: string | null;
   @ApiProperty()
   tndSettlementDays!: number;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })

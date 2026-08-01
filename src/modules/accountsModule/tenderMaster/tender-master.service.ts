@@ -83,6 +83,15 @@ const TENDER_MASTER_TEXT_FIELDS = [
   'tndColour',
   'tndRemarks',
 ] as const;
+// Master names come from the getById joins only. The create/update/soft-delete
+// paths pass a plain acc_tender_master row, so every name resolves to null there.
+type AccTenderMasterWithNames = AccTenderMaster & {
+  company?: { compName: string } | null;
+  branch?: { brName: string } | null;
+  tenderType?: { ttmTypeName: string } | null;
+  ledger?: { ledName: string } | null;
+  surchargeLedger?: { ledName: string } | null;
+};
 function dropNullish(value: unknown): unknown {
   return value === null ? undefined : value;
 }
@@ -144,6 +153,16 @@ export class TenderMasterService {
       where: {
         tndId,
         tndIsDeleted: false,
+      },
+      // Display names for the id columns. The joins are unfiltered on purpose —
+      // a tender must keep showing the company/branch/type/ledger it was created
+      // against even after that master row is soft-deleted.
+      include: {
+        company: { select: { compName: true } },
+        branch: { select: { brName: true } },
+        tenderType: { select: { ttmTypeName: true } },
+        ledger: { select: { ledName: true } },
+        surchargeLedger: { select: { ledName: true } },
       },
     });
 
@@ -862,7 +881,7 @@ export class TenderMasterService {
     return value === null ? null : value.toISOString().slice(0, 10);
   }
 
-  private toPayload(record: AccTenderMaster): TenderMasterPayload {
+  private toPayload(record: AccTenderMasterWithNames): TenderMasterPayload {
     return {
       tndId: record.tndId,
       tndCompanyId: record.tndCompanyId,
@@ -872,6 +891,11 @@ export class TenderMasterService {
       tndShortName: record.tndShortName,
       tndLedgerId: record.tndLedgerId,
       tndSettlementLedgerId: record.tndSettlementLedgerId,
+      tndCompanyName: record.company?.compName ?? null,
+      tndBranchName: record.branch?.brName ?? null,
+      tndTypeName: record.tenderType?.ttmTypeName ?? null,
+      tndLedgerName: record.ledger?.ledName ?? null,
+      tndSurchargeLedgerName: record.surchargeLedger?.ledName ?? null,
       tndSettlementDays: record.tndSettlementDays,
       tndBankAccountId: record.tndBankAccountId,
       tndMinAmount: this.toOutputNumber(record.tndMinAmount),

@@ -33,7 +33,6 @@ import { TenderMasterExceptionFilter } from './tender-master-exception.filter';
 import { TenderMasterService } from './tender-master.service';
 import { TenderMasterPayload, TenderMasterSuccessResponse } from './types/tender-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Tender Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -41,8 +40,7 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('tender-masters')
 @UseFilters(TenderMasterExceptionFilter)
 export class TenderMasterController {
-  constructor(private readonly tenderMasterService: TenderMasterService) { }
-
+  constructor(private readonly tenderMasterService: TenderMasterService) {}
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update tender (by tndId presence)' })
@@ -54,7 +52,6 @@ export class TenderMasterController {
     @Body() saveTenderMasterDto: SaveTenderMasterDto,
   ): Promise<TenderMasterSuccessResponse<TenderMasterPayload>> {
     const data = await this.tenderMasterService.save(saveTenderMasterDto);
-
     return {
       success: true,
       message: saveTenderMasterDto.tndId
@@ -63,7 +60,6 @@ export class TenderMasterController {
       data,
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get tender by id' })
@@ -75,14 +71,12 @@ export class TenderMasterController {
     @Query('tndId', new ParseUUIDPipe({ version: '7' })) tndId: string,
   ): Promise<TenderMasterSuccessResponse<TenderMasterPayload>> {
     const data = await this.tenderMasterService.getById(tndId);
-
     return {
       success: true,
       message: 'Tender fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete tender by id' })
@@ -94,7 +88,6 @@ export class TenderMasterController {
     @Query('tndId', new ParseUUIDPipe({ version: '7' })) tndId: string,
   ): Promise<TenderMasterSuccessResponse<{ tndId: string; deleted: true }>> {
     const data = await this.tenderMasterService.softDelete(tndId);
-
     return {
       success: true,
       message: 'Tender deleted successfully',

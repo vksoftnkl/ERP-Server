@@ -37,6 +37,24 @@ limits, surcharge/MDR settings, settlement routing, instrument details and POS p
 The body of `/create` is a single object ([SaveTenderMasterDto](dto/save-tender-master.dto.ts)) —
 there is no batch mode and no list-all endpoint (`/get` always requires a `tndId`).
 
+### Resolved master names (GET only)
+
+`GET /get` joins the referenced masters and returns their display names alongside the ids, so a
+screen can render the tender without a second lookup round-trip:
+
+| Name field | Source |
+| --- | --- |
+| `tndCompanyName` | `companys.comp_name` |
+| `tndBranchName` | `branch_master.br_name` |
+| `tndTypeName` | `acc_tender_types.ttm_type_name` (same label the tender-type dropdown serves) |
+| `tndLedgerName` | `acc_ledger_master.led_name` (posting ledger) |
+| `tndSurchargeLedgerName` | `acc_ledger_master.led_name` (surcharge ledger) |
+
+These are **read-only** — they are ignored on write and always come back `null` from
+`/create` and `/delete`, which return the plain row. On `GET`, a `null` name means the id itself is
+`null` (`tndBranchId`, `tndSurchargeLedgerId`). The joins are deliberately unfiltered, so a tender
+keeps displaying a master that has since been soft-deleted.
+
 ### Create / update semantics
 
 - **Omit `tndId` → create; include `tndId` → update** the existing tender.
