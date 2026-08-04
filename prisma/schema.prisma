@@ -4536,8 +4536,8 @@ model SaleBill {
   sbBillType         String    @default("CASH") @db.VarChar(20) @map("sb_bill_type") // CASH | CREDIT
   sbCategoryId       String?   @db.Uuid @map("sb_category_id")
   sbPriceLevel       Int       @map("sb_price_level")
-  sbBillSlno         BigInt    @map("sb_bill_slno") // per company/branch/year/COUNTER
-  sbBillRefno        String    @db.VarChar(100) @map("sb_bill_refno")
+  sbBillSlno         BigInt?    @map("sb_bill_slno") // per company/branch/year/COUNTER
+  sbBillRefno        String?    @db.VarChar(100) @map("sb_bill_refno")
   sbUsrRefno         String?   @db.VarChar(100) @map("sb_usr_refno")
   sbBillDate         DateTime  @db.Date @map("sb_bill_date")
   sbBillDatetime     DateTime  @default(now()) @db.Timestamptz(6) @map("sb_bill_datetime")
@@ -4702,7 +4702,7 @@ model SaleBillItem {
   // batch/stock row the quantity was taken from, so a reversal knows exactly
   // what to put back.
   sbiGodownId        String    @db.Uuid @map("sbi_godown_id")
-  sbiStockId         String    @db.Uuid @map("sbi_stock_id")
+  sbiStockId         String?   @db.Uuid @map("sbi_stock_id")
   sbiBatchNo         String?   @db.VarChar(100) @map("sbi_batch_no")
   sbiBatchDate       DateTime? @db.Date @map("sbi_batch_date")
   sbiExpiryDate      DateTime? @db.Date @map("sbi_expiry_date")

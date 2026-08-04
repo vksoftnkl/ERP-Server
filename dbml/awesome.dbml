@@ -2887,8 +2887,8 @@ Table sale_bill {
   sbBillType String [not null, default: 'CASH']
   sbCategoryId String
   sbPriceLevel Int [not null]
-  sbBillSlno BigInt [not null]
-  sbBillRefno String [not null]
+  sbBillSlno BigInt
+  sbBillRefno String
   sbUsrRefno String
   sbBillDate DateTime [not null]
   sbBillDatetime DateTime [default: `now()`, not null]
@@ -3022,7 +3022,7 @@ Table sale_bill_item {
   sbiPriceLevel Int [not null]
   sbiEanCode String
   sbiGodownId String [not null]
-  sbiStockId String [not null]
+  sbiStockId String
   sbiBatchNo String
   sbiBatchDate DateTime
   sbiExpiryDate DateTime

@@ -31,16 +31,28 @@ limits, surcharge/MDR settings, settlement routing, instrument details and POS p
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a tender, chosen by `tndId` presence in the body. |
+| `GET` | `/list` | Fetch every active tender in one call. |
 | `GET` | `/get` | Fetch one active tender by `tndId` (required UUID v7 query param). |
 | `DELETE` | `/delete` | Soft-delete a tender by `tndId` (required UUID v7 query param). |
 
 The body of `/create` is a single object ([SaveTenderMasterDto](dto/save-tender-master.dto.ts)) —
-there is no batch mode and no list-all endpoint (`/get` always requires a `tndId`).
+there is no batch mode.
 
-### Resolved master names (GET only)
+### List
 
-`GET /get` joins the referenced masters and returns their display names alongside the ids, so a
-screen can render the tender without a second lookup round-trip:
+`GET /list` returns `{ success, message, data }` — every non-deleted tender as a full payload, in
+one response. Unlike the other module lists it takes **no** search, pagination or filter params and
+carries no `meta`; the whole set comes back ordered by `tndDisplayPosition`, then `tndName`, then
+`tndId`.
+
+`moduleName` is the one accepted query param — an optional free string documented for the calling
+screen. It is deliberately not bound to a handler argument and changes nothing about the response;
+it exists so clients can tag the call.
+
+### Resolved master names (read paths only)
+
+`GET /get` and `GET /list` join the referenced masters and return their display names alongside the
+ids, so a screen can render the tender without a second lookup round-trip:
 
 | Name field | Source |
 | --- | --- |

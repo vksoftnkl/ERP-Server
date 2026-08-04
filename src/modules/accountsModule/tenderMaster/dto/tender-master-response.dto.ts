@@ -137,6 +137,14 @@ export class TenderMasterSuccessSingleDto {
   @ApiProperty({ type: TenderMasterPayloadDto })
   data!: TenderMasterPayloadDto;
 }
+export class TenderMasterSuccessListDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Tenders fetched successfully' })
+  message!: string;
+  @ApiProperty({ type: TenderMasterPayloadDto, isArray: true })
+  data!: TenderMasterPayloadDto[];
+}
 export class TenderMasterSuccessDeleteDto {
   @ApiProperty({ example: true })
   success!: true;

@@ -28,7 +28,7 @@ model SaleBillItem {
   // batch/stock row the quantity was taken from, so a reversal knows exactly
   // what to put back.
   sbiGodownId        String    @db.Uuid @map("sbi_godown_id")
-  sbiStockId         String    @db.Uuid @map("sbi_stock_id")
+  sbiStockId         String?   @db.Uuid @map("sbi_stock_id")
   sbiBatchNo         String?   @db.VarChar(100) @map("sbi_batch_no")
   sbiBatchDate       DateTime? @db.Date @map("sbi_batch_date")
   sbiExpiryDate      DateTime? @db.Date @map("sbi_expiry_date")

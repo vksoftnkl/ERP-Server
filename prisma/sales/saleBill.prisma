@@ -15,8 +15,8 @@ model SaleBill {
   sbBillType         String    @default("CASH") @db.VarChar(20) @map("sb_bill_type") // CASH | CREDIT
   sbCategoryId       String?   @db.Uuid @map("sb_category_id")
   sbPriceLevel       Int       @map("sb_price_level")
-  sbBillSlno         BigInt    @map("sb_bill_slno") // per company/branch/year/COUNTER
-  sbBillRefno        String    @db.VarChar(100) @map("sb_bill_refno")
+  sbBillSlno         BigInt?    @map("sb_bill_slno") // per company/branch/year/COUNTER
+  sbBillRefno        String?    @db.VarChar(100) @map("sb_bill_refno")
   sbUsrRefno         String?   @db.VarChar(100) @map("sb_usr_refno")
   sbBillDate         DateTime  @db.Date @map("sb_bill_date")
   sbBillDatetime     DateTime  @default(now()) @db.Timestamptz(6) @map("sb_bill_datetime")

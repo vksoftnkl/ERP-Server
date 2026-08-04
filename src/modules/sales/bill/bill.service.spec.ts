@@ -1,5 +1,12 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { AccTenderDetail, Prisma, SaleBill, SaleBillItem, SaleChargeDetail } from '@prisma/client';
+import {
+  AccTenderDetail,
+  AccVoucherSeq,
+  Prisma,
+  SaleBill,
+  SaleBillItem,
+  SaleChargeDetail,
+} from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -29,7 +36,40 @@ const ITEM_MASTER_ID = '019c6f6c-be87-7a11-8905-36092c46fa12';
 const ITEM_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fa13';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fa14';
 const STOCK_ID = '019c6f6c-be87-7a11-8905-36092c46fa15';
+const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fa16';
 const ACC_YEAR = '2026-2027';
+// The bill voucher type, and the counter it stands at before a save: the next
+// bill therefore takes number 101 → 'bil00101'.
+const BILL_VCHR_TYPE_ID = 22;
+const SEQ_LAST_NO = 100n;
+const BILL_SLNO = SEQ_LAST_NO + 1n;
+const BILL_REFNO = 'bil00101';
+
+const makeSequence = (overrides: Partial<AccVoucherSeq> = {}): AccVoucherSeq =>
+  ({
+    id: SEQ_ID,
+    vchrTypeId: BILL_VCHR_TYPE_ID,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    accYear: ACC_YEAR,
+    deviceId: null,
+    deviceCode: 'MAIN',
+    periodKey: ACC_YEAR,
+    lastNo: SEQ_LAST_NO,
+    voucherPrefix: 'bil',
+    companyCode: 'ABC123',
+    branchCode: 'BR001',
+    voucherSuffix: null,
+    noWidth: 5,
+    lastRefno: null,
+    isActive: true,
+    isDeleted: false,
+    createdOn: new Date('2026-07-28T10:00:00.000Z'),
+    createdBy: null,
+    modifiedOn: null,
+    modifiedBy: null,
+    ...overrides,
+  }) as AccVoucherSeq;
 
 const makeBill = (overrides: Partial<SaleBill> = {}): SaleBill =>
   ({
@@ -42,8 +82,8 @@ const makeBill = (overrides: Partial<SaleBill> = {}): SaleBill =>
     sbDeviceType: 'POS',
     sbDeviceId: 'till-1',
     sbPriceLevel: 1,
-    sbBillSlno: 101n,
-    sbBillRefno: 'B-101',
+    sbBillSlno: BILL_SLNO,
+    sbBillRefno: BILL_REFNO,
     sbBillDate: new Date('2026-07-28T00:00:00.000Z'),
     sbCustId: CUST_ID,
     sbCustName: 'Acme',
@@ -198,8 +238,6 @@ const baseDto = (overrides: Partial<SaveBillDto> = {}): SaveBillDto =>
     sbDeviceType: 'POS',
     sbDeviceId: 'till-1',
     sbPriceLevel: 1,
-    sbBillSlno: 101,
-    sbBillRefno: 'B-101',
     sbCustId: CUST_ID,
     sbCustName: 'Acme',
     sbUserId: USER_ID,
@@ -227,6 +265,10 @@ type TenderCreateArgs = { data: Prisma.AccTenderDetailUncheckedCreateInput };
 type TenderUpdateArgs = {
   where: { tdId_tdAccYear: { tdId: string; tdAccYear: string } };
   data: Prisma.AccTenderDetailUncheckedUpdateInput;
+};
+type SequenceUpdateArgs = {
+  where: { id: string };
+  data: Prisma.AccVoucherSeqUncheckedUpdateInput;
 };
 
 type PrismaMock = {
@@ -266,6 +308,22 @@ type PrismaMock = {
     >;
   };
   accTenderType: { findFirst: jest.Mock<Promise<{ ttmTypeId: number } | null>, unknown[]> };
+  // Reached through allocateVoucherNumber on the create path.
+  accVoucherType: {
+    findFirst: jest.Mock<Promise<unknown>, unknown[]>;
+  };
+  accVoucherSeq: {
+    findFirst: jest.Mock<Promise<AccVoucherSeq | null>, unknown[]>;
+    create: jest.Mock<Promise<AccVoucherSeq>, [{ data: Prisma.AccVoucherSeqUncheckedCreateInput }]>;
+    update: jest.Mock<Promise<AccVoucherSeq>, [SequenceUpdateArgs]>;
+  };
+  company: {
+    findFirst: jest.Mock<Promise<{ compCode: string | null } | null>, unknown[]>;
+  };
+  branchMaster: {
+    findFirst: jest.Mock<Promise<{ brCode: string | null } | null>, unknown[]>;
+  };
+  $queryRaw: jest.Mock<Promise<unknown>, unknown[]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
 };
 
@@ -345,6 +403,42 @@ const makePrismaMock = (): PrismaMock => {
       ),
     },
     accTenderType: { findFirst: jest.fn(() => Promise.resolve({ ttmTypeId: 1 })) },
+    accVoucherType: {
+      findFirst: jest.fn(() =>
+        Promise.resolve({
+          vchrTypeId: BILL_VCHR_TYPE_ID,
+          vchrNoPrefix: 'bil',
+          vchrNoSuffix: null,
+          vchrNoWidth: 5,
+          vchrResetFreq: 'YEARLY',
+        }),
+      ),
+    },
+    accVoucherSeq: {
+      findFirst: jest.fn(() => Promise.resolve(makeSequence())),
+      create: jest.fn(({ data }: { data: Prisma.AccVoucherSeqUncheckedCreateInput }) =>
+        Promise.resolve(makeSequence(data as unknown as Partial<AccVoucherSeq>)),
+      ),
+      // Mirrors Postgres: the first call increments the counter and returns the
+      // consumed number, the second only stamps the printable refno onto it.
+      update: jest.fn(({ data }: SequenceUpdateArgs) => {
+        const increment = (data.lastNo as { increment?: number } | undefined)?.increment;
+        return Promise.resolve(
+          makeSequence(
+            increment === undefined
+              ? { lastRefno: data.lastRefno as string }
+              : { lastNo: SEQ_LAST_NO + BigInt(increment) },
+          ),
+        );
+      }),
+    },
+    company: {
+      findFirst: jest.fn(() => Promise.resolve({ compCode: 'ABC123' })),
+    },
+    branchMaster: {
+      findFirst: jest.fn(() => Promise.resolve({ brCode: 'BR001' })),
+    },
+    $queryRaw: jest.fn(() => Promise.resolve([{ locked: 1 }])),
     $transaction: jest.fn((cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma)),
   };
   return prisma;
@@ -382,27 +476,87 @@ describe('BillService', () => {
   });
 
   describe('create', () => {
-    it('takes sbBillSlno / sbBillRefno straight from the payload — no server sequence', async () => {
+    it('numbers the bill from the voucher sequence for voucher type 22', async () => {
       const payload = await service.save(baseDto());
 
       expect(prisma.saleBill.create).toHaveBeenCalledTimes(1);
       expect(prisma.saleBill.create.mock.calls[0][0].data).toMatchObject({
-        sbBillSlno: 101n,
-        sbBillRefno: 'B-101',
+        sbBillSlno: BILL_SLNO,
+        sbBillRefno: BILL_REFNO,
         sbCustId: CUST_ID,
         sbCustName: 'Acme',
       });
       expect(payload.sbBillSlno).toBe('101');
+      expect(prisma.accVoucherSeq.findFirst).toHaveBeenCalledWith(
+        containing({
+          where: {
+            vchrTypeId: BILL_VCHR_TYPE_ID,
+            companyId: COMPANY_ID,
+            branchId: BRANCH_ID,
+            accYear: ACC_YEAR,
+            deviceCode: 'MAIN',
+            // YEARLY reset → the accounting year is the period bucket.
+            periodKey: ACC_YEAR,
+          },
+        }),
+      );
       expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
         expect.objectContaining({ tableName: 'sale_bill', action: 'New' }),
         expect.anything(),
       );
     });
 
-    it('rejects a non-numeric sbBillSlno', async () => {
-      await expect(service.save(baseDto({ sbBillSlno: 'not-a-number' }))).rejects.toBeInstanceOf(
-        BadRequestException,
+    it('consumes the number atomically and stamps it back as the sequence last refno', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.accVoucherSeq.update).toHaveBeenNthCalledWith(1, {
+        where: { id: SEQ_ID },
+        data: { lastNo: { increment: 1 } },
+      });
+      expect(prisma.accVoucherSeq.update).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: { id: SEQ_ID },
+          data: containing({ lastRefno: BILL_REFNO }),
+        }),
       );
+    });
+
+    it('ignores a client-supplied slno and refno — voucher type 22 forbids manual numbers', async () => {
+      await service.save(baseDto({ sbBillSlno: 7, sbBillRefno: 'HAND-WRITTEN' }));
+
+      expect(prisma.saleBill.create.mock.calls[0][0].data).toMatchObject({
+        sbBillSlno: BILL_SLNO,
+        sbBillRefno: BILL_REFNO,
+      });
+    });
+
+    it('creates the sequence row on first use, seeded from the voucher type format', async () => {
+      prisma.accVoucherSeq.findFirst.mockResolvedValue(null);
+
+      await service.save(baseDto());
+
+      expect(prisma.accVoucherSeq.create.mock.calls[0][0].data).toMatchObject({
+        vchrTypeId: BILL_VCHR_TYPE_ID,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        accYear: ACC_YEAR,
+        deviceCode: 'MAIN',
+        periodKey: ACC_YEAR,
+        lastNo: 0n,
+        voucherPrefix: 'bil',
+        voucherSuffix: null,
+        noWidth: 5,
+        companyCode: 'ABC123',
+        branchCode: 'BR001',
+      });
+    });
+
+    it('refuses to number against a deactivated sequence rather than silently reviving it', async () => {
+      prisma.accVoucherSeq.findFirst.mockResolvedValue(makeSequence({ isActive: false }));
+
+      await expect(service.save(baseDto())).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.saleBill.create).not.toHaveBeenCalled();
     });
 
     it('creates a line item requiring sbiItemId, sbiItemUnitId, sbiGodownId and sbiStockId', async () => {
@@ -566,6 +720,8 @@ describe('BillService', () => {
       const data = prisma.saleBill.update.mock.calls[0][0].data as Record<string, unknown>;
       expect(data).not.toHaveProperty('sbBillSlno');
       expect(data).not.toHaveProperty('sbBillRefno');
+      // An update must not consume a number from the sequence either.
+      expect(prisma.accVoucherSeq.update).not.toHaveBeenCalled();
     });
   });
 
@@ -585,7 +741,7 @@ describe('BillService', () => {
         cdCompId: COMPANY_ID,
         cdBranchId: BRANCH_ID,
         cdAccYear: ACC_YEAR,
-        cdVoucherNo: 101n,
+        cdVoucherNo: BILL_SLNO,
         cdChgId: CHARGE_ID,
         cdLedgerCode: LEDGER_ID,
         cdChgName: 'Freight',

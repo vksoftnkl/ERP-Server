@@ -35,6 +35,11 @@ import {
   throwSalesNotFound,
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
+import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+// accounts.acc_voucher_types row "Bil" / Sales Bill. Its numbering format
+// (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
+// bill numbers are drawn from.
+const BILL_VCHR_TYPE_ID = 22;
 const BILL_TABLE_NAME = 'sale_bill';
 const BILL_ITEM_TABLE_NAME = 'sale_bill_item';
 const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
@@ -66,7 +71,7 @@ type BillGuardedField = (typeof BILL_VALUE_GUARDS)[number]['field'];
 type BillGuardedValues = Partial<Record<BillGuardedField, string | null | undefined>>;
 // Header fields copied straight through when present on the payload. The
 // partition/scope keys (sbCompanyId, sbBranchId, sbAccYear, sbPriceLevel,
-// sbUserId) and the counter-issued number (sbBillSlno / sbBillRefno) are
+// sbUserId) and the server-assigned number (sbBillSlno / sbBillRefno) are
 // intentionally excluded — see the README's "Bill numbering" section.
 const BILL_OPTIONAL_FIELDS = [
   'sbSessionId',
@@ -173,9 +178,9 @@ const BILL_OPTIONAL_FIELDS = [
   'sbPrintCount',
 ];
 // Line-item fields copied straight through when present on the payload. The
-// scope keys (bill/company/branch/tenant/accYear/lineNo/priceLevel) and the
-// four fields required for a new line (sbiItemId, sbiItemUnitId, sbiGodownId,
-// sbiStockId) are set explicitly, so they are intentionally excluded here.
+// scope keys (bill/company/branch/tenant/accYear/lineNo/priceLevel), the three
+// fields required for a new line (sbiItemId, sbiItemUnitId, sbiGodownId) and
+// the nullable sbiStockId are set explicitly, so they are excluded here.
 const BILL_ITEM_OPTIONAL_FIELDS = [
   'sbiSrcDocType',
   'sbiSrcDocId',
@@ -318,7 +323,9 @@ interface BillScope {
   sbTenantId: string | null;
   sbAccYear: string;
   sbPriceLevel: number;
-  sbBillSlno: bigint;
+  // Nullable since sb_bill_slno became nullable: a counter operating without a
+  // number series yet saves the draft unnumbered.
+  sbBillSlno: bigint | null;
   sbBillDate: Date;
   sbCustId: string;
   sbUserId: string;
@@ -524,6 +531,18 @@ export class BillService {
     const billDate = saveBillDto.sbBillDate ? new Date(saveBillDto.sbBillDate) : now;
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Voucher type 22 numbers the document: the running number consumed from
+        // accounts.acc_voucher_seq becomes sbBillSlno and its printable form
+        // becomes sbBillRefno. Both are server-assigned — the voucher type is
+        // AUTO-numbered with manual numbers disallowed, so whatever the client
+        // sent for either field is ignored.
+        const billNumber = await allocateVoucherNumber(tx, {
+          vchrTypeId: BILL_VCHR_TYPE_ID,
+          companyId: saveBillDto.sbCompanyId,
+          branchId: saveBillDto.sbBranchId,
+          accYear: saveBillDto.sbAccYear,
+          documentDate: billDate,
+        });
         const data: Prisma.SaleBillUncheckedCreateInput = {
           sbCompanyId: saveBillDto.sbCompanyId,
           sbBranchId: saveBillDto.sbBranchId,
@@ -533,13 +552,8 @@ export class BillService {
           sbDeviceType: saveBillDto.sbDeviceType,
           sbDeviceId: saveBillDto.sbDeviceId,
           sbPriceLevel: saveBillDto.sbPriceLevel,
-          // Counter-owned document number: taken from the payload, not allocated
-          // from a server sequence — see the README's "Bill numbering" section.
-          sbBillSlno: this.toBillSlno(saveBillDto.sbBillSlno),
-          sbBillRefno: normalizeRequiredText<BillErrorDetail, BillErrorResponse>(
-            saveBillDto.sbBillRefno ?? '',
-            'sbBillRefno',
-          ),
+          sbBillSlno: billNumber.lastNo,
+          sbBillRefno: billNumber.refno,
           sbBillDate: billDate,
           sbCustId: saveBillDto.sbCustId,
           sbCustName: normalizedCustName,
@@ -838,7 +852,8 @@ export class BillService {
         sbiItemId: this.requireItemField(inputItem.sbiItemId, 'sbiItemId'),
         sbiItemUnitId: this.requireItemField(inputItem.sbiItemUnitId, 'sbiItemUnitId'),
         sbiGodownId: this.requireItemField(inputItem.sbiGodownId, 'sbiGodownId'),
-        sbiStockId: this.requireItemField(inputItem.sbiStockId, 'sbiStockId'),
+        // Nullable column: a line with no batch allocation is allowed.
+        sbiStockId: inputItem.sbiStockId ?? null,
         sbiPriceLevel: inputItem.sbiPriceLevel ?? scope.sbPriceLevel,
         sbiCreatedOn: now,
         sbiCreatedBy: resolveActor(inputItem.sbiCreatedBy, actorId),
@@ -907,10 +922,10 @@ export class BillService {
   }
   // Names the duplicate a P2002 actually is. Unlike sale_quotation, sale_bill
   // defines no unique index on (company, branch, accYear, billRefno/billSlno) —
-  // the counter that raises the document is trusted to keep its own series
-  // unique (see the README) — so the only realistic P2002 source is the
-  // partition-aware primary key itself, which should not happen given sbId /
-  // sbiId are uuidv7-generated.
+  // the numbers now come from the voucher sequence, whose own scope constraint
+  // and advisory lock keep them unique (see the README) — so the only realistic
+  // P2002 source is the partition-aware primary key itself, which should not
+  // happen given sbId / sbiId are uuidv7-generated.
   private describeDuplicate(error: unknown): { message: string; errors: BillErrorDetail[] } {
     void error;
     return {
@@ -1041,17 +1056,6 @@ export class BillService {
       tdDrCr: BILL_TENDER_DR_CR,
     };
   }
-  // sb_bill_slno is a bigint column, required and client-supplied — see the
-  // README's "Bill numbering" section.
-  private toBillSlno(value: string | number): bigint {
-    try {
-      return BigInt(value);
-    } catch {
-      return throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Validation failed', [
-        { field: 'sbBillSlno', message: 'sbBillSlno must be a valid integer' },
-      ]);
-    }
-  }
   private applyOptionalFields(
     data: Prisma.SaleBillUncheckedCreateInput | Prisma.SaleBillUncheckedUpdateInput,
     dto: SaveBillDto,
@@ -1086,7 +1090,7 @@ export class BillService {
       sbSyncDate: sbSyncDate?.toISOString() ?? null,
       // bigint column — stringified here for the same reason cdVoucherNo is:
       // JSON has no bigint and res.json() throws on one.
-      sbBillSlno: sbBillSlno.toString(),
+      sbBillSlno: sbBillSlno?.toString() ?? null,
       items: items ? items.map((item) => this.toItemPayload(item)) : [],
       charges: charges ?? [],
       tenders: tenders ?? [],

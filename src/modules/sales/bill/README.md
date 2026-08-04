@@ -77,31 +77,42 @@ are written and read back by `ChargeDetailService` / `TenderDetailService`. See
 - Optional header fields are copied through only when present on the payload
   (`applyPresentFields` over the `BILL_OPTIONAL_FIELDS` list); absent fields are left as-is on
   update. The partition/scope keys (`sbCompanyId`, `sbBranchId`, `sbAccYear`, `sbPriceLevel`,
-  `sbUserId`) and the counter-issued number (`sbBillSlno` / `sbBillRefno`) are **not** in that
+  `sbUserId`) and the server-assigned number (`sbBillSlno` / `sbBillRefno`) are **not** in that
   list — they are immutable after creation.
 
 ### Bill numbering
 
-Unlike [../quotation](../quotation), which allocates `sqQuoteSlno` / `sqQuoteRefno` from a central
-`accounts.acc_voucher_seq` counter inside the save transaction, **`sbBillSlno` and `sbBillRefno`
-are supplied by the client and are required fields on create**:
+Exactly like [../quotation](../quotation), **`sbBillSlno` and `sbBillRefno` are server-assigned**:
+`createBill` calls `allocateVoucherNumber` (`src/common/Sequence/voucher-sequence.helper.ts`)
+inside the save transaction and writes back what it consumed. Whatever the client sends for either
+field is ignored.
 
-- The DDL's own comment on `sb_counter_id` explains why: *"in an offline chain the counter owns
-  the document and its number series"*. A counter/till raising bills offline cannot reach a
-  central sequence in real time the way an always-online quotation save can, so the counter that
-  raised the document (`sbCounterId`) is trusted to keep its own number series unique, not the
-  server.
-- `sbBillSlno` (bigint) accepts a number or numeric string on the wire and is converted with the
-  same `BigInt(value)` coercion the module already uses for `cdVoucherNo` — an invalid value comes
-  back as a 400 naming `sbBillSlno`.
-- `sale_bill` defines **no unique index** on `(company, branch, accYear, billRefno)` or
-  `billSlno` — deliberately, since the DB cannot arbitrate uniqueness across offline counters that
-  have not synced yet. If your deployment raises bills only online, add that partial unique index
-  and extend `describeDuplicate` in `bill.service.ts` to name it, the same way
-  `ux_sq_quote_no` / `ux_sq_slno` are named in the quotation module.
+- The numbers come from the `accounts.acc_voucher_seq` counter for **voucher type 22** (`Bil` /
+  Sales Bill, seeded by `prisma/seed/Acc_Voucher_Types_Sale_Bill.sql`). `lastNo` becomes
+  `sbBillSlno`; its printable form — `prefix + zero-padded number + suffix`, e.g. `bil00001` —
+  becomes `sbBillRefno`.
+- Scope: `(vchrTypeId, companyId, branchId, accYear, deviceCode, periodKey)`. The bill passes no
+  `deviceCode`, so all counters share the default `MAIN` series, and voucher type 22 resets
+  `YEARLY`, so `periodKey` is the accounting year. `sbBillDate` is passed as the document date, so
+  a back-dated bill draws from its own period's bucket rather than today's.
+- The sequence row is created on first use, seeded from the voucher type's format;
+  `prisma/seed/Acc_Voucher_Seq_Sale_Bill.sql` pre-creates it for a known company/branch/year.
+  A row that has been deactivated (`seq_is_active = false` / `seq_is_deleted = true`) makes the
+  save fail with a 400 rather than being silently revived.
+- Concurrency: the helper takes a transaction-scoped advisory lock on the counter and increments
+  with a relative `{ increment: 1 }`, so two simultaneous saves in the same scope cannot draw the
+  same number. The document insert commits in the same transaction as the number it consumed.
+- `sale_bill` defines **no unique index** on `(company, branch, accYear, billRefno)` or `billSlno`;
+  the sequence's own scope constraint is what keeps numbers unique. If you want belt-and-braces,
+  add that partial unique index and extend `describeDuplicate` in `bill.service.ts` to name it,
+  the same way `ux_sq_quote_no` / `ux_sq_slno` are named in the quotation module.
 - Both fields are excluded from `BILL_OPTIONAL_FIELDS`, so an **update never renumbers** a bill —
   the reference number is immutable once issued, exactly like the quotation module's
   `sqQuoteSlno` / `sqQuoteRefno`.
+- Offline counters: `sbCounterId` still records which till raised the document, but it no longer
+  owns the number series — a save now needs to reach the central sequence. A deployment that
+  really raises bills offline should give each counter its own series by passing `deviceCode` into
+  `allocateVoucherNumber`.
 
 ### Partitioning
 

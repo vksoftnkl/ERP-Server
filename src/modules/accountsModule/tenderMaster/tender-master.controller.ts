@@ -26,6 +26,7 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import {
   TenderMasterErrorResponseDto,
   TenderMasterSuccessDeleteDto,
+  TenderMasterSuccessListDto,
   TenderMasterSuccessSingleDto,
 } from './dto/tender-master-response.dto';
 import { SaveTenderMasterDto } from './dto/save-tender-master.dto';
@@ -57,6 +58,30 @@ export class TenderMasterController {
       message: saveTenderMasterDto.tndId
         ? 'Tender updated successfully'
         : 'Tender created successfully',
+      data,
+    };
+  }
+  @Get('list')
+  @Version(API_VERSION)
+  @ApiOperation({ summary: 'List all active tenders' })
+  @ApiQuery({
+    name: 'moduleName',
+    required: false,
+    schema: { type: 'string' },
+    description:
+      'Calling screen. Accepted for the client; the list is the same with or without it.',
+  })
+  @ApiOkResponse({ type: TenderMasterSuccessListDto })
+  @ApiBadRequestResponse({ type: TenderMasterErrorResponseDto })
+  // moduleName is documented for the client but deliberately not bound to a
+  // handler argument — nothing here varies by screen, and leaving it off the
+  // signature keeps it from being validated away. Unknown query params are
+  // ignored, so sending it is always safe.
+  async list(): Promise<TenderMasterSuccessResponse<TenderMasterPayload[]>> {
+    const data = await this.tenderMasterService.list();
+    return {
+      success: true,
+      message: 'Tenders fetched successfully',
       data,
     };
   }

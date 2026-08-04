@@ -15,7 +15,6 @@ import {
   OptionalNumber,
   OptionalUuid,
   RequiredInteger,
-  RequiredNumber,
   RequiredUuid,
   TrimmedString,
 } from 'src/common/dto/dtoDecorators';
@@ -71,10 +70,17 @@ export class SaveBillDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sbSessionId?: string | null;
-  // Counter is required: in an offline chain the counter owns the document and
-  // its number series (see sbBillSlno / sbBillRefno below).
-  @ApiProperty({ format: 'uuid', description: 'The counter/device that raised this document' })
-  sbCounterId!: string;
+  // Records which counter/till raised the document. The number series itself is
+  // no longer counter-owned (see sbBillSlno / sbBillRefno below), and
+  // sb_counter_id is nullable, so a caller with no counter may omit it or send
+  // null.
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'The counter/device that raised this document',
+  })
+  @NullableUuid()
+  sbCounterId?: string | null;
   @ApiProperty({ maxLength: 20 })
   @TrimmedString(20)
   @IsNotEmpty()
@@ -105,20 +111,24 @@ export class SaveBillDto {
   @ApiProperty()
   @RequiredInteger()
   sbPriceLevel!: number;
-  // The counter that raised this document owns the number series (see
-  // sbCounterId), so unlike the quotation module's sqQuoteSlno / sqQuoteRefno
-  // these are supplied by the client, not allocated from a server sequence —
-  // a counter operating offline cannot reach a central counter in real time.
-  @ApiProperty({
-    description:
-      'Bill serial number, owned by the raising counter (per company/branch/year/counter)',
+  // Both are assigned on create from the bill voucher sequence
+  // (accounts.acc_voucher_seq, vchr_type_id 22) and are immutable afterwards.
+  // They stay on the DTO so clients that still send them are not rejected by
+  // forbidNonWhitelisted, but whatever they send is ignored.
+  @ApiPropertyOptional({
+    readOnly: true,
+    description: 'Ignored — assigned from the bill voucher sequence on create',
   })
-  @RequiredNumber()
-  sbBillSlno!: string | number;
-  @ApiProperty({ maxLength: 100 })
-  @TrimmedString(100)
-  @IsNotEmpty()
-  sbBillRefno!: string;
+  @NullableNumber()
+  sbBillSlno?: string | number;
+  @ApiPropertyOptional({
+    readOnly: true,
+    maxLength: 100,
+    nullable: true,
+    description: 'Ignored — generated from the bill voucher sequence on create',
+  })
+  @NullableStringStrict(100)
+  sbBillRefno?: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableStringStrict(100)
   sbUsrRefno?: string | null;

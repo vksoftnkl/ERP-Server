@@ -89,12 +89,15 @@ export class SaveBillItemDto {
   @ApiProperty({ format: 'uuid', description: 'The inventory godown the stock was taken from' })
   @RequiredUuid()
   sbiGodownId!: string;
-  @ApiProperty({
+  // sbi_stock_id is nullable: a line that never touched a batch row (a service
+  // line, or an item the caller has not allocated stock for) may omit it.
+  @ApiPropertyOptional({
     format: 'uuid',
+    nullable: true,
     description: 'The inventory batch/stock row the quantity was taken from',
   })
-  @RequiredUuid()
-  sbiStockId!: string;
+  @NullableUuid()
+  sbiStockId?: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableStringStrict(100)
   sbiBatchNo?: string | null;
@@ -345,11 +348,13 @@ export class SaveBillItemDto {
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   @NullableStringStrict(250)
   sbiRemarks?: string | null;
-  // Uuid columns, unlike the header's text sbCreatedBy / sbModifiedBy.
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Defaults to the caller' })
-  @NullableUuid()
+  // Text columns, exactly like the header's sbCreatedBy / sbModifiedBy: the
+  // actor is whatever resolveActor settles on — a user id, but equally a name
+  // or login the caller passed — so the uuid pattern does not fit.
+  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @NullableStringStrict()
   sbiCreatedBy?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Defaults to the caller' })
-  @NullableUuid()
+  @ApiPropertyOptional({ nullable: true, description: 'Actor id or name; defaults to the caller' })
+  @NullableStringStrict()
   sbiModifiedBy?: string | null;
 }

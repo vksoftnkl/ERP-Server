@@ -92,6 +92,16 @@ type AccTenderMasterWithNames = AccTenderMaster & {
   ledger?: { ledName: string } | null;
   surchargeLedger?: { ledName: string } | null;
 };
+// Display names for the id columns, shared by the read paths. The joins are
+// unfiltered on purpose — a tender must keep showing the company/branch/type/
+// ledger it was created against even after that master row is soft-deleted.
+const TENDER_MASTER_NAME_INCLUDE = {
+  company: { select: { compName: true } },
+  branch: { select: { brName: true } },
+  tenderType: { select: { ttmTypeName: true } },
+  ledger: { select: { ledName: true } },
+  surchargeLedger: { select: { ledName: true } },
+} satisfies Prisma.AccTenderMasterInclude;
 function dropNullish(value: unknown): unknown {
   return value === null ? undefined : value;
 }
@@ -148,22 +158,29 @@ export class TenderMasterService {
     return this.createTender(saveTenderMasterDto);
   }
 
+  // Every active tender in one shot — no paging, filtering or search, so the
+  // caller gets the whole set the way a POS tender strip needs it.
+  async list(): Promise<TenderMasterPayload[]> {
+    const records = await this.prisma.accTenderMaster.findMany({
+      where: {
+        tndIsDeleted: false,
+      },
+      include: TENDER_MASTER_NAME_INCLUDE,
+      // Mirrors the POS tender strip: configured position first, then name for
+      // the ties, with the PK as the final tie-break so the order is stable.
+      orderBy: [{ tndDisplayPosition: 'asc' }, { tndName: 'asc' }, { tndId: 'asc' }],
+    });
+
+    return records.map((record) => this.toPayload(record));
+  }
+
   async getById(tndId: string): Promise<TenderMasterPayload> {
     const record = await this.prisma.accTenderMaster.findFirst({
       where: {
         tndId,
         tndIsDeleted: false,
       },
-      // Display names for the id columns. The joins are unfiltered on purpose —
-      // a tender must keep showing the company/branch/type/ledger it was created
-      // against even after that master row is soft-deleted.
-      include: {
-        company: { select: { compName: true } },
-        branch: { select: { brName: true } },
-        tenderType: { select: { ttmTypeName: true } },
-        ledger: { select: { ledName: true } },
-        surchargeLedger: { select: { ledName: true } },
-      },
+      include: TENDER_MASTER_NAME_INCLUDE,
     });
 
     if (!record) {

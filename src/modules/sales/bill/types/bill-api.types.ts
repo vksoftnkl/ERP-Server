@@ -40,10 +40,10 @@ export const BILL_TENDER_AUDIT: TenderDocumentAudit = {
   screenName: 'Sale Bill',
   entityName: 'Bill tender',
 };
-// sbBillSlno is a bigint column; it is emitted as a string because JSON has no
-// bigint. Leaving it a bigint makes res.json() throw AFTER the save transaction
-// has committed, so the caller sees a 500 for a bill that was in fact written —
-// the failure mode this Omit exists to prevent.
+// sbBillSlno is a nullable bigint column; it is emitted as a string because
+// JSON has no bigint. Leaving it a bigint makes res.json() throw AFTER the save
+// transaction has committed, so the caller sees a 500 for a bill that was in
+// fact written — the failure mode this Omit exists to prevent.
 export type BillPayload = Omit<
   SaleBill,
   'sbCreatedOn' | 'sbModifiedOn' | 'sbBillDatetime' | 'sbSyncDate' | 'sbBillSlno'
@@ -52,7 +52,7 @@ export type BillPayload = Omit<
   sbModifiedOn?: string | null;
   sbBillDatetime?: string;
   sbSyncDate?: string | null;
-  sbBillSlno: string;
+  sbBillSlno: string | null;
   items?: BillItemPayload[];
   charges?: BillChargePayload[];
   tenders?: BillTenderPayload[];

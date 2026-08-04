@@ -311,13 +311,19 @@ export class BillPayloadDto {
   sbCategoryId!: string | null;
   @ApiProperty()
   sbPriceLevel!: number;
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '1',
-    description: 'BigInt serialized as string; owned by the raising counter',
+    nullable: true,
+    description: 'BigInt serialized as string; allocated from the bill voucher sequence',
   })
-  sbBillSlno!: string;
-  @ApiProperty({ maxLength: 100 })
-  sbBillRefno!: string;
+  sbBillSlno!: string | null;
+  @ApiPropertyOptional({
+    example: 'bil00001',
+    maxLength: 100,
+    nullable: true,
+    description: 'Printable bill number generated from the bill voucher sequence',
+  })
+  sbBillRefno!: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   sbUsrRefno!: string | null;
   @ApiProperty({ format: 'date' })
