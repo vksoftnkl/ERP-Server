@@ -21,14 +21,22 @@ import {
 import { SaveChargeDetailDto } from '../../../master/charge-detail/dto/save-charge-detail.dto';
 import { SaveTenderDetailDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
 import { SaveBillItemDto } from './save-bill-item.dto';
-// A nullable array of uuids: undefined leaves the column untouched, null/''
-// clears it, and a non-array/non-string input is left for IsUUID to reject.
-const toNullableUuidArray = (value: unknown): string[] | null | undefined => {
+// An array of uuids: undefined leaves the column untouched, null/'' clears it
+// to an empty array, and a non-array/non-string input is left for IsUUID to
+// reject.
+//
+// null is deliberately NOT passed through. sbSalesmanId/sbLoadmanId/sbPackedId
+// are uuid[] columns (Prisma `String[]`), and a Prisma scalar list has no
+// nullable form: `null` fails to match SaleBillUncheckedCreateInput, Prisma
+// falls back to the checked variant, and the save dies on the misleading
+// "Argument `customer` is missing" instead. An empty array is what "cleared"
+// means for these columns anyway.
+const toUuidArray = (value: unknown): string[] | undefined => {
   if (value === undefined) {
     return undefined;
   }
   if (value === null || value === '') {
-    return null;
+    return [];
   }
   if (Array.isArray(value)) {
     return value.map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)));
@@ -44,7 +52,7 @@ const toNullableUuidArray = (value: unknown): string[] | null | undefined => {
 const NullableUuidArray = () =>
   applyDecorators(
     IsOptional(),
-    Transform(({ value }: { value: unknown }) => toNullableUuidArray(value)),
+    Transform(({ value }: { value: unknown }) => toUuidArray(value)),
     IsArray(),
     IsUUID('all', { each: true }),
   );
@@ -230,7 +238,7 @@ export class SaveBillDto {
   sbUserId!: string;
   @ApiPropertyOptional({ type: [String], format: 'uuid', nullable: true })
   @NullableUuidArray()
-  sbSalesmanId?: string[] | null;
+  sbSalesmanId?: string[];
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sbAgentId?: string | null;
@@ -245,10 +253,10 @@ export class SaveBillDto {
   sbDriverId?: string | null;
   @ApiPropertyOptional({ type: [String], format: 'uuid', nullable: true })
   @NullableUuidArray()
-  sbLoadmanId?: string[] | null;
+  sbLoadmanId?: string[];
   @ApiPropertyOptional({ type: [String], format: 'uuid', nullable: true })
   @NullableUuidArray()
-  sbPackedId?: string[] | null;
+  sbPackedId?: string[];
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sbSupervisorId?: string | null;

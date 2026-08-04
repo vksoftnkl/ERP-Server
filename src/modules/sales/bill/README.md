@@ -71,9 +71,9 @@ are written and read back by `ChargeDetailService` / `TenderDetailService`. See
 - On **update**, the header must still be active (`sbIsDeleted = false`) or a not-found error is
   raised. Because `sale_bill`'s primary key is the composite `(sbId, sbAccYear)`, the update
   targets that compound key (`sbId_sbAccYear`), resolved from the row `findFirst` already loaded.
-- On **create**, `sbCustName` and `sbBillRefno` are normalized via `normalizeRequiredText`
-  (trimmed and required-non-empty), `sbBillDate` defaults to *now* when omitted, and `sbStatus`
-  defaults to `'DRAFT'`.
+- On **create**, `sbCustName` is normalized via `normalizeRequiredText` (trimmed and
+  required-non-empty), `sbBillSlno` / `sbBillRefno` are allocated from the voucher sequence,
+  `sbBillDate` defaults to *now* when omitted, and `sbStatus` defaults to `'DRAFT'`.
 - Optional header fields are copied through only when present on the payload
   (`applyPresentFields` over the `BILL_OPTIONAL_FIELDS` list); absent fields are left as-is on
   update. The partition/scope keys (`sbCompanyId`, `sbBranchId`, `sbAccYear`, `sbPriceLevel`,
@@ -106,9 +106,11 @@ field is ignored.
   the sequence's own scope constraint is what keeps numbers unique. If you want belt-and-braces,
   add that partial unique index and extend `describeDuplicate` in `bill.service.ts` to name it,
   the same way `ux_sq_quote_no` / `ux_sq_slno` are named in the quotation module.
-- Both fields are excluded from `BILL_OPTIONAL_FIELDS`, so an **update never renumbers** a bill —
-  the reference number is immutable once issued, exactly like the quotation module's
-  `sqQuoteSlno` / `sqQuoteRefno`.
+- **Create only.** `allocateVoucherNumber` is called from `createBill` and nowhere else, and both
+  fields are excluded from `BILL_OPTIONAL_FIELDS`, so an **update never renumbers** a bill and
+  never consumes a number from the sequence — a `sbBillSlno` / `sbBillRefno` sent on an update is
+  dropped along with the rest of the non-whitelisted fields. The reference number is immutable
+  once issued, exactly like the quotation module's `sqQuoteSlno` / `sqQuoteRefno`.
 - Offline counters: `sbCounterId` still records which till raised the document, but it no longer
   owns the number series — a save now needs to reach the central sequence. A deployment that
   really raises bills offline should give each counter its own series by passing `deviceCode` into
@@ -130,8 +132,13 @@ partitioned tables in this schema. Consequences that shape this module:
   bill's, though the two are always equal).
 - The `CREATE TABLE ... PARTITION BY LIST` statement only declares the **parent shell**. Postgres
   rejects any insert until at least one child partition exists for that `sbAccYear` value (e.g.
-  `sale_bill_2026_2027`). This module does not create partitions — that is expected to happen via
-  a separate bootstrap migration/script per accounting year before bills can be saved.
+  `sale_bill_2026_2027`). This module does not create partitions — migration
+  `20260804112944_add_acc_year_partitions` is the bootstrap: it defines
+  `public.ensure_acc_year_partitions('YYYY-YYYY')`, which idempotently creates the `sale_bill`,
+  `sale_bill_item` and `acc_tender_detail` partitions for one accounting year, and runs it over
+  every year in `public.fiscal_years`. **Opening a new fiscal year means calling that function
+  again** — until then every save in the new year fails with
+  `no partition of relation "sale_bill" found for row`.
 - The DB originally defined CHECK constraints for the enum-shaped columns (`ck_sb_doc_type`,
   `ck_sb_bill_type`, `ck_sb_status`, `ck_sb_pay_status`, `ck_sb_return_status`, `ck_sbi_free_type`,
   `ck_sbi_split_no`, `ck_sbi_batch_split`). They were dropped from the migration SQL before it was
@@ -265,8 +272,9 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
 - Enforced by the DTO decorators under the global `ValidationPipe`: `sbCompanyId`, `sbBranchId`,
   `sbCounterId`, `sbCustId`, `sbUserId` are required UUIDs; `sbAccYear` is a fixed 9-char string;
   `sbDeviceType` / `sbDeviceId` are required (non-uuid) strings; `sbPriceLevel` is a required
-  integer; `sbBillSlno` is a required number (bigint on the wire); `sbBillRefno` (max 100) and
-  `sbCustName` (max 200) are required non-empty strings; nested `items[]` are validated
+  integer; `sbBillSlno` and `sbBillRefno` are optional and **ignored** (server-assigned — see
+  [Bill numbering](#bill-numbering)); `sbCustName` (max 200) is a required non-empty string;
+  nested `items[]` are validated
   per-element (`@ValidateNested`), each requiring `sbiItemId`, `sbiItemUnitId`, `sbiGodownId` and
   `sbiStockId` as UUIDs (`sbiItemUnitId` references `item_unit_conversion.iucId`, not
   `item_unit_master.unit_id`, same as the quotation module).
@@ -284,7 +292,9 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
 - `sbSalesmanId`, `sbLoadmanId` and `sbPackedId` are `uuid[]` columns (a bill can have several
   salesmen/loadmen/packers on one document, unlike the quotation header's single `sqSalesmanId`):
   the DTO accepts an array, a comma-separated string, or `null`/`''` to clear it
-  (`toNullableUuidArray`), each entry validated as a UUID.
+  (`toUuidArray`), each entry validated as a UUID. "Clear" normalises to `[]`, **not** `null` — a
+  Prisma scalar list has no nullable form, and passing `null` makes the create fall through to the
+  checked input variant and fail with the unrelated-looking `Argument \`customer\` is missing`.
 - `ensureBillValuesAreAllowed` re-checks the header's enum-shaped columns on every save — whatever
   the payload actually sends, an omitted field is left untouched and not re-validated —
   against the value sets the DB's `ck_sb_*` constraints used to define: `sbDocType` (`TAX_INVOICE` /
