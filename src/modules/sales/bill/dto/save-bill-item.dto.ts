@@ -285,6 +285,12 @@ export class SaveBillItemDto {
   @ApiPropertyOptional()
   @OptionalNumber()
   sbiAcessAmt?: string | number;
+  @ApiPropertyOptional({
+    description: "The item's batch configuration, snapshotted onto the line",
+    default: 0,
+  })
+  @OptionalInteger(0)
+  sbiBatchConfig?: number;
   @ApiPropertyOptional()
   @OptionalNumber()
   sbiFreightQty?: string | number;

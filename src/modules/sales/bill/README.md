@@ -335,7 +335,6 @@ via the identical `item` / `itemUnitConversion` → `unit` relations:
 | Response field | Source | Reached by |
 | --- | --- | --- |
 | `sbiItemName` | `inventory.item_master.item_name_en` | `item` relation on `sbiItemId` |
-| `sbiBatchConfig` | `inventory.item_master.item_batch_config` | same relation |
 | `sbiGroupId` | `inventory.item_master.item_group_id` | same relation |
 | `sbiBrandId` | `inventory.item_master.item_brand_id` | same relation |
 | `sbiSectionId` | `inventory.item_master.item_section_id` | same relation |

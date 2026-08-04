@@ -36,7 +36,6 @@ import {
   CompanyGroupMasterSuccessResponse,
 } from './types/company-group-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
-
 @ApiTags('Company Group Master')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -45,7 +44,6 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @UseFilters(CompanyGroupMasterExceptionFilter)
 export class CompanyGroupMasterController {
   constructor(private readonly companyGroupMasterService: CompanyGroupMasterService) {}
-
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Create or update company group (by cogGroupId presence)' })
@@ -57,7 +55,6 @@ export class CompanyGroupMasterController {
     @Body() saveCompanyGroupMasterDto: SaveCompanyGroupMasterDto,
   ): Promise<CompanyGroupMasterSuccessResponse<CompanyGroupMasterPayload>> {
     const data = await this.companyGroupMasterService.save(saveCompanyGroupMasterDto);
-
     return {
       success: true,
       message: saveCompanyGroupMasterDto.cogGroupId
@@ -66,7 +63,6 @@ export class CompanyGroupMasterController {
       data,
     };
   }
-
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Get company group by id' })
@@ -78,14 +74,12 @@ export class CompanyGroupMasterController {
     @Query('cogGroupId', new ParseUUIDPipe({ version: '7' })) cogGroupId: string,
   ): Promise<CompanyGroupMasterSuccessResponse<CompanyGroupMasterPayload>> {
     const data = await this.companyGroupMasterService.getById(cogGroupId);
-
     return {
       success: true,
       message: 'Company group fetched successfully',
       data,
     };
   }
-
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete company group by id' })
@@ -97,7 +91,6 @@ export class CompanyGroupMasterController {
     @Query('cogGroupId', new ParseUUIDPipe({ version: '7' })) cogGroupId: string,
   ): Promise<CompanyGroupMasterSuccessResponse<{ cogGroupId: string; deleted: true }>> {
     const data = await this.companyGroupMasterService.softDelete(cogGroupId);
-
     return {
       success: true,
       message: 'Company group deleted successfully',

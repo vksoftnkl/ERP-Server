@@ -72,11 +72,6 @@ export class BillItemPayloadDto {
   })
   sbiDecimalCount?: number | null;
   @ApiPropertyOptional({
-    nullable: true,
-    description: 'item_master.item_batch_config for sbiItemId — only populated on GET',
-  })
-  sbiBatchConfig?: number | null;
-  @ApiPropertyOptional({
     format: 'uuid',
     nullable: true,
     description: 'item_master.item_group_id for sbiItemId — only populated on GET',
@@ -238,6 +233,8 @@ export class BillItemPayloadDto {
   sbiAcessPerUnit!: number;
   @ApiProperty()
   sbiAcessAmt!: number;
+  @ApiProperty({ description: "The item's batch configuration, snapshotted onto the line" })
+  sbiBatchConfig!: number;
   @ApiProperty()
   sbiFreightQty!: number;
   @ApiProperty()

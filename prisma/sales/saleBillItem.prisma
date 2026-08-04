@@ -99,6 +99,7 @@ model SaleBillItem {
   sbiAcessPerc       Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_acess_perc")
   sbiAcessPerUnit    Decimal   @default(0) @db.Decimal(15, 4) @map("sbi_acess_per_unit")
   sbiAcessAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_acess_amt")
+  sbiBatchConfig     Int       @default(0) @map("sbi_batch_config")
   // Per-line charges
   sbiFreightQty      Decimal   @default(0) @db.Decimal(15, 3) @map("sbi_freight_qty")
   sbiFreightAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("sbi_freight_amt")
@@ -124,9 +125,9 @@ model SaleBillItem {
   sbiIsDeleted       Boolean   @default(false) @map("sbi_is_deleted")
   sbiSyncDate        DateTime? @db.Timestamptz(6) @map("sbi_sync_date")
   sbiCreatedOn       DateTime  @default(now()) @db.Timestamptz(6) @map("sbi_created_on")
-  sbiCreatedBy       String    @db.Uuid @map("sbi_created_by")
+  sbiCreatedBy       String    @db.Text @map("sbi_created_by")
   sbiModifiedOn      DateTime? @db.Timestamptz(6) @map("sbi_modified_on")
-  sbiModifiedBy      String?   @db.Uuid @map("sbi_modified_by")
+  sbiModifiedBy      String?   @db.Text @map("sbi_modified_by")
   // Relations
   bill               SaleBill           @relation(fields: [sbiBillId, sbiAccYear], references: [sbId, sbAccYear], onDelete: Cascade, onUpdate: Cascade, map: "fk_sbi_bill")
   item               ItemMaster         @relation(fields: [sbiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sbi_item")

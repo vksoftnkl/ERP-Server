@@ -70,7 +70,6 @@ export type BillItemPayload = Omit<
   sbiItemName?: string | null;
   sbiUnitName?: string | null;
   sbiDecimalCount?: number | null;
-  sbiBatchConfig?: number | null;
   sbiGroupId?: string | null;
   sbiBrandId?: string | null;
   sbiSectionId?: string | null;

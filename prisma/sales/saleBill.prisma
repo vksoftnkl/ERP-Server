@@ -7,7 +7,7 @@ model SaleBill {
   // Where it was raised. Counter is NOT NULL: in an offline chain the
   // counter owns the document and its number series.
   sbSessionId        String?   @db.Uuid @map("sb_session_id")
-  sbCounterId        String    @db.Uuid @map("sb_counter_id")
+  sbCounterId        String?   @db.Uuid @map("sb_counter_id")
   sbDeviceType       String    @db.VarChar(20) @map("sb_device_type")
   sbDeviceId         String    @db.Text @map("sb_device_id")
   // Document identity

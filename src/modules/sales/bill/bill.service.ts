@@ -247,6 +247,7 @@ const BILL_ITEM_OPTIONAL_FIELDS = [
   'sbiAcessPerc',
   'sbiAcessPerUnit',
   'sbiAcessAmt',
+  'sbiBatchConfig',
   'sbiFreightQty',
   'sbiFreightAmt',
   'sbiLoadQty',
@@ -330,7 +331,6 @@ type BillWriteClient = SalesWriteClient;
 type SaleBillItemWithNames = SaleBillItem & {
   item?: {
     itemNameEn: string;
-    itemBatchConfig: number;
     itemGroupId: string;
     itemBrandId: string | null;
     itemSectionId: string | null;
@@ -382,7 +382,6 @@ export class BillService {
             item: {
               select: {
                 itemNameEn: true,
-                itemBatchConfig: true,
                 itemGroupId: true,
                 itemBrandId: true,
                 itemSectionId: true,
@@ -1103,7 +1102,6 @@ export class BillService {
       sbiItemName: item?.itemNameEn ?? null,
       sbiUnitName: itemUnitConversion?.unit.unit_name ?? null,
       sbiDecimalCount: itemUnitConversion?.unit.unit_decimal_count ?? null,
-      sbiBatchConfig: item?.itemBatchConfig ?? null,
       sbiGroupId: item?.itemGroupId ?? null,
       sbiBrandId: item?.itemBrandId ?? null,
       sbiSectionId: item?.itemSectionId ?? null,

@@ -21,7 +21,6 @@ import { RequestContextService } from '../../../common/request-context/request-c
 const COMPANY_GROUP_MASTER_TABLE_NAME = 'company group master';
 const COMPANY_GROUP_MASTER_AUDIT_SCREEN_NAME = 'Company Group Master';
 type CompanyGroupWriteClient = AccountsWriteClient;
-
 @Injectable()
 export class CompanyGroupMasterService {
   constructor(
@@ -29,17 +28,14 @@ export class CompanyGroupMasterService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
   ) {}
-
   async save(
     saveCompanyGroupMasterDto: SaveCompanyGroupMasterDto,
   ): Promise<CompanyGroupMasterPayload> {
     if (saveCompanyGroupMasterDto.cogGroupId) {
       return this.updateGroup(saveCompanyGroupMasterDto);
     }
-
     return this.createGroup(saveCompanyGroupMasterDto);
   }
-
   async getById(cogGroupId: string): Promise<CompanyGroupMasterPayload> {
     const record = await this.prisma.companyGroupMaster.findFirst({
       where: {
@@ -47,7 +43,6 @@ export class CompanyGroupMasterService {
         cogIsDeleted: false,
       },
     });
-
     if (!record) {
       throwAccountsNotFound<CompanyGroupMasterErrorDetail>(
         'Company group not found',
@@ -55,10 +50,8 @@ export class CompanyGroupMasterService {
         `No active company group found with id ${cogGroupId}`,
       );
     }
-
     return this.toPayload(record);
   }
-
   async softDelete(cogGroupId: string): Promise<{ cogGroupId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.companyGroupMaster.findFirst({
@@ -67,7 +60,6 @@ export class CompanyGroupMasterService {
           cogIsDeleted: false,
         },
       });
-
       if (!existing) {
         throwAccountsNotFound<CompanyGroupMasterErrorDetail>(
           'Company group not found',
@@ -75,7 +67,6 @@ export class CompanyGroupMasterService {
           `No active company group found with id ${cogGroupId}`,
         );
       }
-
       const modifiedOn = new Date();
       const result = await tx.companyGroupMaster.updateMany({
         where: {
@@ -89,7 +80,6 @@ export class CompanyGroupMasterService {
           cogModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         },
       });
-
       if (result.count === 0) {
         throwAccountsNotFound<CompanyGroupMasterErrorDetail>(
           'Company group not found',
@@ -97,7 +87,6 @@ export class CompanyGroupMasterService {
           `No active company group found with id ${cogGroupId}`,
         );
       }
-
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -106,7 +95,6 @@ export class CompanyGroupMasterService {
         cogModifiedOn: modifiedOn,
         cogModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
       });
-
       await this.auditLogService.logEntityChange(
         {
           action: 'cancel',
@@ -122,14 +110,12 @@ export class CompanyGroupMasterService {
         },
         tx,
       );
-
       return {
         cogGroupId,
         deleted: true,
       };
     });
   }
-
   private async createGroup(
     saveCompanyGroupMasterDto: SaveCompanyGroupMasterDto,
   ): Promise<CompanyGroupMasterPayload> {
@@ -140,9 +126,7 @@ export class CompanyGroupMasterService {
           'cogGroupName',
         );
         const companyIds = this.toUniqueIds(saveCompanyGroupMasterDto.cogCompanyIds);
-
         await this.ensureGroupNameIsUnique(tx, groupName);
-
         const now = new Date();
         const data: Prisma.CompanyGroupMasterUncheckedCreateInput = {
           cogGroupName: groupName,
@@ -150,14 +134,11 @@ export class CompanyGroupMasterService {
           cogCreatedOn: now,
           cogCreatedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
-
         if (hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
           data.cogIsActive = saveCompanyGroupMasterDto.cogIsActive;
         }
-
         const created = await tx.companyGroupMaster.create({ data });
         const payload = this.toPayload(created);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -173,7 +154,6 @@ export class CompanyGroupMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -185,12 +165,10 @@ export class CompanyGroupMasterService {
       throw error;
     }
   }
-
   private async updateGroup(
     saveCompanyGroupMasterDto: SaveCompanyGroupMasterDto,
   ): Promise<CompanyGroupMasterPayload> {
     const cogGroupId = saveCompanyGroupMasterDto.cogGroupId!;
-
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.companyGroupMaster.findFirst({
@@ -199,7 +177,6 @@ export class CompanyGroupMasterService {
             cogIsDeleted: false,
           },
         });
-
         if (!existing) {
           throwAccountsNotFound<CompanyGroupMasterErrorDetail>(
             'Company group not found',
@@ -207,26 +184,21 @@ export class CompanyGroupMasterService {
             `No active company group found with id ${cogGroupId}`,
           );
         }
-
         const groupName = normalizeRequiredText<CompanyGroupMasterErrorDetail>(
           saveCompanyGroupMasterDto.cogGroupName,
           'cogGroupName',
         );
         const companyIds = this.toUniqueIds(saveCompanyGroupMasterDto.cogCompanyIds);
-
         await this.ensureGroupNameIsUnique(tx, groupName, cogGroupId);
-
         const data: Prisma.CompanyGroupMasterUncheckedUpdateInput = {
           cogGroupName: groupName,
           cogCompanyIds: companyIds,
           cogModifiedOn: new Date(),
           cogModifiedBy: this.requestContextService.getUserId() ?? DEFAULT_ACTOR,
         };
-
         if (hasOwnProperty(saveCompanyGroupMasterDto, 'cogIsActive')) {
           data.cogIsActive = saveCompanyGroupMasterDto.cogIsActive;
         }
-
         const updated = await tx.companyGroupMaster.update({
           where: {
             cogGroupId,
@@ -234,7 +206,6 @@ export class CompanyGroupMasterService {
           data,
         });
         const payload = this.toPayload(updated);
-
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -250,7 +221,6 @@ export class CompanyGroupMasterService {
           },
           tx,
         );
-
         return payload;
       });
     } catch (error: unknown) {
@@ -262,7 +232,6 @@ export class CompanyGroupMasterService {
       throw error;
     }
   }
-
   private async ensureGroupNameIsUnique(
     tx: CompanyGroupWriteClient,
     cogGroupName: string,
@@ -287,14 +256,12 @@ export class CompanyGroupMasterService {
         cogGroupId: true,
       },
     });
-
     if (existing) {
       throwAccountsConflict<CompanyGroupMasterErrorDetail>('Company group name already exists', [
         { field: 'cogGroupName', message: 'Duplicate cogGroupName is not allowed' },
       ]);
     }
   }
-
   private toUniqueIds(ids: readonly string[]): string[] {
     const uniqueIds: string[] = [];
     const seen = new Set<string>();
@@ -306,7 +273,6 @@ export class CompanyGroupMasterService {
     }
     return uniqueIds;
   }
-
   private toPayload(record: CompanyGroupMaster): CompanyGroupMasterPayload {
     return {
       cogGroupId: record.cogGroupId,

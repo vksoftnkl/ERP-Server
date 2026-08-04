@@ -74,7 +74,6 @@ export class SaveBillDto {
   // Counter is required: in an offline chain the counter owns the document and
   // its number series (see sbBillSlno / sbBillRefno below).
   @ApiProperty({ format: 'uuid', description: 'The counter/device that raised this document' })
-  @RequiredUuid()
   sbCounterId!: string;
   @ApiProperty({ maxLength: 20 })
   @TrimmedString(20)

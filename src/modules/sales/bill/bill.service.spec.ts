@@ -922,7 +922,6 @@ describe('BillService', () => {
               ...makeItem(),
               item: {
                 itemNameEn: 'Widget',
-                itemBatchConfig: 0,
                 itemGroupId: 'group-1',
                 itemBrandId: null,
                 itemSectionId: null,

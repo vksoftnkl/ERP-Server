@@ -2880,7 +2880,7 @@ Table sale_bill {
   sbTenantId String
   sbAccYear String [not null]
   sbSessionId String
-  sbCounterId String [not null]
+  sbCounterId String
   sbDeviceType String [not null]
   sbDeviceId String [not null]
   sbDocType String [not null, default: 'TAX_INVOICE']
@@ -3085,6 +3085,7 @@ Table sale_bill_item {
   sbiAcessPerc Decimal [not null, default: 0]
   sbiAcessPerUnit Decimal [not null, default: 0]
   sbiAcessAmt Decimal [not null, default: 0]
+  sbiBatchConfig Int [not null, default: 0]
   sbiFreightQty Decimal [not null, default: 0]
   sbiFreightAmt Decimal [not null, default: 0]
   sbiLoadQty Decimal [not null, default: 0]

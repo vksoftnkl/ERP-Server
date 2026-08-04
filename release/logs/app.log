@@ -2306,3 +2306,983 @@
 2026-06-03T08:25:08.586Z LOG [InstanceLoader] BranchMasterModule dependencies initialized
 2026-06-03T08:25:08.586Z LOG [InstanceLoader] CompanyMasterModule dependencies initialized
 2026-06-03T08:25:08.592Z LOG [InstanceLoader] CacheModule dependencies initialized
+2026-08-01T13:49:01.633Z LOG [NestFactory] Starting Nest application...
+2026-08-01T13:49:01.656Z LOG [InstanceLoader] RequestContextModule dependencies initialized
+2026-08-01T13:49:01.656Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-08-01T13:49:01.656Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-08-01T13:49:01.656Z LOG [InstanceLoader] DiscoveryModule dependencies initialized
+2026-08-01T13:49:01.657Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-08-01T13:49:01.657Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-08-01T13:49:01.663Z WARN [PgService] DATABASE_READONLY_URL is not set — configured grid/dropdown SQL runs under the primary DB role with session-level read-only enforcement only. Configure a dedicated read-only role for defense in depth.
+2026-08-01T13:49:01.663Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-08-01T13:49:01.663Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-08-01T13:49:01.664Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-08-01T13:49:01.664Z LOG [InstanceLoader] PgModule dependencies initialized
+2026-08-01T13:49:01.669Z LOG [InstanceLoader] SequenceModule dependencies initialized
+2026-08-01T13:49:01.669Z LOG [InstanceLoader] AuditLogModule dependencies initialized
+2026-08-01T13:49:01.669Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-08-01T13:49:01.669Z LOG [InstanceLoader] MenuMasterModule dependencies initialized
+2026-08-01T13:49:01.669Z LOG [InstanceLoader] PriceLevelMasterModule dependencies initialized
+2026-08-01T13:49:01.669Z LOG [InstanceLoader] HsnCodeMasterModule dependencies initialized
+2026-08-01T13:49:01.669Z LOG [InstanceLoader] StockAdjReasonsModule dependencies initialized
+2026-08-01T13:49:01.669Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-08-01T13:49:01.670Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-08-01T13:49:01.670Z LOG [InstanceLoader] ItemsGstUnitsMasterModule dependencies initialized
+2026-08-01T13:49:01.670Z LOG [InstanceLoader] ItemStockBalanceModule dependencies initialized
+2026-08-01T13:49:01.670Z LOG [InstanceLoader] ItemBatchStockModule dependencies initialized
+2026-08-01T13:49:01.670Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] QueueModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] ItemsTaxMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] ItemsTaxHistoryMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] AccountsGroupModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] AccountLedgerMastersModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] LedgerBankAccountModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] LedgerShippingAddressModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] CompanyGroupMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] EmployeeDepartmentMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] EmployeeDesignationMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] EmployeeMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] UserAdministrationModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] TenderMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] TenderTypeMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] TenderDetailModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] GspProviderMasterModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] GspCompanyServiceModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] SupplierGroupModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] CustomerGroupModule dependencies initialized
+2026-08-01T13:49:01.671Z LOG [InstanceLoader] QuotationModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ChargeDetailModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] UiTableMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] PhysicalStockModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] PromotionLoyaltyPointsModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] GodownsMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] WidgetMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsEanCodeMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsCustRatesMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsPriceMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemUnitConversionModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsReorderMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsQtyPriceMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] BankListModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] DeviceListMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] StateCodeMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] UserLoginSessionsModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] BatchPrefixModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ChargeMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] GridDetailsModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] DropdownDetailsModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] MasterLookupModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] StateModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] CityModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] AreaModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] SaleFreightChargeModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] SaleLoadingChargeModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] OpeningStockModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] SuppliersModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] CustomerModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] SaleAgentModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] BillModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemPriceDetailsModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsCategoryMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] BranchMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] CompanyMasterModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ConfigsModule dependencies initialized
+2026-08-01T13:49:01.672Z LOG [InstanceLoader] ItemsMasterModule dependencies initialized
+2026-08-01T13:49:01.678Z LOG [InstanceLoader] CacheModule dependencies initialized
+2026-08-01T13:49:01.678Z LOG [InstanceLoader] RedisModule dependencies initialized
+2026-08-01T13:49:01.678Z LOG [InstanceLoader] ConfiguredGridSqlModule dependencies initialized
+2026-08-01T13:49:01.678Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-08-01T13:49:01.873Z LOG [RoutesResolver] ConfiguredGridSqlController {/api/configured-grid-sql} (version: 1):
+2026-08-01T13:49:01.873Z LOG [RouterExplorer] Mapped {/api/configured-grid-sql/columns, GET} (version: 1) route
+2026-08-01T13:49:01.873Z LOG [RouterExplorer] Mapped {/api/configured-grid-sql/run, GET} (version: 1) route
+2026-08-01T13:49:01.873Z LOG [RoutesResolver] SequenceController {/api/sequences} (version: 1):
+2026-08-01T13:49:01.873Z LOG [RouterExplorer] Mapped {/api/sequences/create, POST} (version: 1) route
+2026-08-01T13:49:01.874Z LOG [RouterExplorer] Mapped {/api/sequences/list, GET} (version: 1) route
+2026-08-01T13:49:01.874Z LOG [RouterExplorer] Mapped {/api/sequences/get, GET} (version: 1) route
+2026-08-01T13:49:01.874Z LOG [RouterExplorer] Mapped {/api/sequences/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.874Z LOG [RoutesResolver] AuditLogController {/api/audit-logs} (version: 1):
+2026-08-01T13:49:01.874Z LOG [RouterExplorer] Mapped {/api/audit-logs/list, GET} (version: 1) route
+2026-08-01T13:49:01.874Z LOG [RoutesResolver] AuditLogController {/api/audit-log} (version: 1):
+2026-08-01T13:49:01.874Z LOG [RouterExplorer] Mapped {/api/audit-log/list, GET} (version: 1) route
+2026-08-01T13:49:01.875Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-08-01T13:49:01.875Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-08-01T13:49:01.875Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-08-01T13:49:01.875Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-08-01T13:49:01.875Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-08-01T13:49:01.876Z LOG [RouterExplorer] Mapped {/api/users/get, GET} (version: 1) route
+2026-08-01T13:49:01.876Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-08-01T13:49:01.876Z LOG [RouterExplorer] Mapped {/api/users/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.876Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-08-01T13:49:01.876Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-08-01T13:49:01.876Z LOG [RouterExplorer] Mapped {/api/item-groups/get, GET} (version: 1) route
+2026-08-01T13:49:01.876Z LOG [RouterExplorer] Mapped {/api/item-groups/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.876Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-08-01T13:49:01.876Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RouterExplorer] Mapped {/api/item-brands/get, GET} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RouterExplorer] Mapped {/api/item-brands/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-08-01T13:49:01.877Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RouterExplorer] Mapped {/api/item-sections/get, GET} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RouterExplorer] Mapped {/api/item-sections/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RoutesResolver] ItemsCategoryMasterController {/api/item-categories} (version: 1):
+2026-08-01T13:49:01.877Z LOG [RouterExplorer] Mapped {/api/item-categories/create, POST} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RouterExplorer] Mapped {/api/item-categories/get, GET} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RouterExplorer] Mapped {/api/item-categories/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.877Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/units/get, GET} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/units/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RoutesResolver] ItemsTaxMasterController {/api/item-taxes} (version: 1):
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/item-taxes/create, POST} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/item-taxes/get, GET} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/item-taxes/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RoutesResolver] ItemsEanCodeMasterController {/api/item-ean-codes} (version: 1):
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/item-ean-codes/create, POST} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/item-ean-codes/get, GET} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RouterExplorer] Mapped {/api/item-ean-codes/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.878Z LOG [RoutesResolver] ItemsGstUnitsMasterController {/api/item-gst-units} (version: 1):
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-gst-units/get, GET} (version: 1) route
+2026-08-01T13:49:01.879Z LOG [RoutesResolver] ItemsCustRatesMasterController {/api/item-cust-rates} (version: 1):
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-cust-rates/create, POST} (version: 1) route
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-cust-rates/list, GET} (version: 1) route
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-cust-rates/get, GET} (version: 1) route
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-cust-rates/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.879Z LOG [RoutesResolver] ItemsPriceMasterController {/api/item-prices} (version: 1):
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-prices/create, POST} (version: 1) route
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-prices/get, GET} (version: 1) route
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-prices/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.879Z LOG [RoutesResolver] ItemUnitConversionController {/api/item-unit-conversions} (version: 1):
+2026-08-01T13:49:01.879Z LOG [RouterExplorer] Mapped {/api/item-unit-conversions/create, POST} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-unit-conversions/get, GET} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-unit-conversions/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RoutesResolver] ItemPriceDetailsController {/api/item-price-details} (version: 1):
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-price-details/get, GET} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-price-details/get-by-barcode, GET} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RoutesResolver] ItemsReorderMasterController {/api/item-reorders} (version: 1):
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-reorders/create, POST} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-reorders/get, GET} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-reorders/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RoutesResolver] ItemsQtyPriceMasterController {/api/item-qty-prices} (version: 1):
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-qty-prices/create, POST} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-qty-prices/get, GET} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RouterExplorer] Mapped {/api/item-qty-prices/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.880Z LOG [RoutesResolver] ItemsTaxHistoryMasterController {/api/item-tax-histories} (version: 1):
+2026-08-01T13:49:01.881Z LOG [RouterExplorer] Mapped {/api/item-tax-histories/create, POST} (version: 1) route
+2026-08-01T13:49:01.881Z LOG [RouterExplorer] Mapped {/api/item-tax-histories/get, GET} (version: 1) route
+2026-08-01T13:49:01.881Z LOG [RouterExplorer] Mapped {/api/item-tax-histories/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.881Z LOG [RoutesResolver] ItemsMasterController {/api/items} (version: 1):
+2026-08-01T13:49:01.881Z LOG [RouterExplorer] Mapped {/api/items/create, POST} (version: 1) route
+2026-08-01T13:49:01.881Z LOG [RouterExplorer] Mapped {/api/items/get, GET} (version: 1) route
+2026-08-01T13:49:01.881Z LOG [RouterExplorer] Mapped {/api/items/bulk-load, GET} (version: 1) route
+2026-08-01T13:49:01.881Z LOG [RouterExplorer] Mapped {/api/items/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.881Z LOG [RoutesResolver] AccountsGroupController {/api/account-groups} (version: 1):
+2026-08-01T13:49:01.881Z LOG [RouterExplorer] Mapped {/api/account-groups/create, POST} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/account-groups/get, GET} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/account-groups/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RoutesResolver] AccountLedgerMastersController {/api/account-ledger-masters} (version: 1):
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/get-bank, GET} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/delete-bank, DELETE} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RoutesResolver] LedgerBankAccountController {/api/ledger-bank-accounts} (version: 1):
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/ledger-bank-accounts/create, POST} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/ledger-bank-accounts/get, GET} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/ledger-bank-accounts/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.882Z LOG [RoutesResolver] LedgerShippingAddressController {/api/ledger-shipping-addresses} (version: 1):
+2026-08-01T13:49:01.882Z LOG [RouterExplorer] Mapped {/api/ledger-shipping-addresses/create, POST} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/ledger-shipping-addresses/get, GET} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/ledger-shipping-addresses/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RoutesResolver] BranchMasterController {/api/branch-masters} (version: 1):
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/branch-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/branch-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/branch-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RoutesResolver] CompanyMasterController {/api/company-masters} (version: 1):
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/company-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/company-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/company-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RoutesResolver] CompanyGroupMasterController {/api/company-group-masters} (version: 1):
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/company-group-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.883Z LOG [RouterExplorer] Mapped {/api/company-group-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/company-group-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RoutesResolver] EmployeeDepartmentMasterController {/api/employee-department-masters} (version: 1):
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-department-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-department-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-department-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RoutesResolver] EmployeeDesignationMasterController {/api/employee-designation-masters} (version: 1):
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-designation-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-designation-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-designation-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RoutesResolver] EmployeeMasterController {/api/employee-masters} (version: 1):
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RouterExplorer] Mapped {/api/employee-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.884Z LOG [RoutesResolver] UserAdministrationController {/api/user-administration} (version: 1):
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/user-administration/create, POST} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/user-administration/get, GET} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/user-administration/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RoutesResolver] ConfigsController {/api/configs} (version: 1):
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/configs/update, POST} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/configs/get, GET} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RoutesResolver] TenderMasterController {/api/tender-masters} (version: 1):
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/tender-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/tender-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/tender-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RoutesResolver] TenderTypeMasterController {/api/tender-type-masters} (version: 1):
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/tender-type-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/tender-type-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.885Z LOG [RouterExplorer] Mapped {/api/tender-type-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RoutesResolver] TenderDetailController {/api/tender-details} (version: 1):
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/tender-details/create, POST} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/tender-details/get, GET} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/tender-details/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RoutesResolver] GspProviderMasterController {/api/gsp-provider-masters} (version: 1):
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/gsp-provider-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/gsp-provider-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/gsp-provider-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RoutesResolver] GspCompanyServiceController {/api/gsp-company-services} (version: 1):
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/gsp-company-services/create, POST} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/gsp-company-services/get, GET} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RouterExplorer] Mapped {/api/gsp-company-services/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.886Z LOG [RoutesResolver] SupplierGroupController {/api/supplier-groups} (version: 1):
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/supplier-groups/create, POST} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/supplier-groups/get, GET} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/supplier-groups/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RoutesResolver] SuppliersController {/api/suppliers} (version: 1):
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/suppliers/create, POST} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/suppliers/get, GET} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/suppliers/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RoutesResolver] StateController {/api/states} (version: 1):
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/states/create, POST} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/states/get, GET} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/states/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.887Z LOG [RoutesResolver] CityController {/api/cities} (version: 1):
+2026-08-01T13:49:01.887Z LOG [RouterExplorer] Mapped {/api/cities/create, POST} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/cities/get, GET} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/cities/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RoutesResolver] AreaController {/api/areas} (version: 1):
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/areas/create, POST} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/areas/get, GET} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/areas/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RoutesResolver] SaleFreightChargeController {/api/sale-freight-charges} (version: 1):
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/sale-freight-charges/create, POST} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/sale-freight-charges/get, GET} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/sale-freight-charges/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RoutesResolver] SaleLoadingChargeController {/api/sale-loading-charges} (version: 1):
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/sale-loading-charges/create, POST} (version: 1) route
+2026-08-01T13:49:01.888Z LOG [RouterExplorer] Mapped {/api/sale-loading-charges/get, GET} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/sale-loading-charges/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RoutesResolver] CustomerController {/api/customers} (version: 1):
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/customers/create, POST} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/customers/get, GET} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/customers/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RoutesResolver] CustomerGroupController {/api/customer-groups} (version: 1):
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/customer-groups/create, POST} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/customer-groups/get, GET} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/customer-groups/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RoutesResolver] SaleAgentController {/api/sale-agents} (version: 1):
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/sale-agents/create, POST} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/sale-agents/get, GET} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RouterExplorer] Mapped {/api/sale-agents/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.889Z LOG [RoutesResolver] QuotationController {/api/quotations} (version: 1):
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/quotations/create, POST} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/quotations/get, GET} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/quotations/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RoutesResolver] BillController {/api/bills} (version: 1):
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/bills/create, POST} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/bills/get, GET} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/bills/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RoutesResolver] ChargeDetailController {/api/charge-details} (version: 1):
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/charge-details/create, POST} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/charge-details/get, GET} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/charge-details/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.890Z LOG [RoutesResolver] BankListController {/api/bank-lists} (version: 1):
+2026-08-01T13:49:01.890Z LOG [RouterExplorer] Mapped {/api/bank-lists/create, POST} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/bank-lists/list, GET} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/bank-lists/get, GET} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/bank-lists/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RoutesResolver] DeviceListMasterController {/api/device-list-masters} (version: 1):
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/device-list-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/device-list-masters/list, GET} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/device-list-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/device-list-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RoutesResolver] MenuMasterController {/api/menu-masters} (version: 1):
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/menu-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/menu-masters/usermenu, GET} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/menu-masters/visibility, PATCH} (version: 1) route
+2026-08-01T13:49:01.891Z LOG [RoutesResolver] PriceLevelMasterController {/api/price-level-masters} (version: 1):
+2026-08-01T13:49:01.891Z LOG [RouterExplorer] Mapped {/api/price-level-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.892Z LOG [RouterExplorer] Mapped {/api/price-level-masters/bulk, PATCH} (version: 1) route
+2026-08-01T13:49:01.892Z LOG [RoutesResolver] HsnCodeMasterController {/api/hsn-code-masters} (version: 1):
+2026-08-01T13:49:01.892Z LOG [RouterExplorer] Mapped {/api/hsn-code-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.892Z LOG [RoutesResolver] StateCodeMasterController {/api/state-code-masters} (version: 1):
+2026-08-01T13:49:01.892Z LOG [RouterExplorer] Mapped {/api/state-code-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.892Z LOG [RouterExplorer] Mapped {/api/state-code-masters/list, GET} (version: 1) route
+2026-08-01T13:49:01.892Z LOG [RouterExplorer] Mapped {/api/state-code-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.892Z LOG [RouterExplorer] Mapped {/api/state-code-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.892Z LOG [RoutesResolver] UiTableMasterController {/api/ui-table-masters} (version: 1):
+2026-08-01T13:49:01.892Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/column-width, PUT} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/visibility-settings, PUT} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/column-delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RoutesResolver] UserLoginSessionsController {/api/user-login-sessions} (version: 1):
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/user-login-sessions/create, POST} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/user-login-sessions/list, GET} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/user-login-sessions/get, GET} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/user-login-sessions/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RoutesResolver] StockAdjReasonsController {/api/stock-adj-reasons} (version: 1):
+2026-08-01T13:49:01.893Z LOG [RouterExplorer] Mapped {/api/stock-adj-reasons/get, GET} (version: 1) route
+2026-08-01T13:49:01.893Z LOG [RoutesResolver] MasterLookupController {/api/master-lookups} (version: 1):
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/name-id/all-accounts-and-masters, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/name-id/all-masters, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/branches/by-company/:companyId, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/fiscal-years/by-company/:companyId, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/customer-detail, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/freight-charges/charge, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/item-by-barcode, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/units/by-item/:itemId, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/item-price, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/item-switch-uom, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RouterExplorer] Mapped {/api/master-lookups/dropdown/:dropdownId, GET} (version: 1) route
+2026-08-01T13:49:01.894Z LOG [RoutesResolver] BatchPrefixController {/api/batch-prefixes} (version: 1):
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/batch-prefixes/create, POST} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/batch-prefixes/list, GET} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/batch-prefixes/get, GET} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/batch-prefixes/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RoutesResolver] WidgetMasterController {/api/widget-masters} (version: 1):
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/widget-masters/create, POST} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/widget-masters/create-bulk, POST} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/widget-masters/get, GET} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/widget-masters/config, GET} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/widget-masters/visibility, PATCH} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RouterExplorer] Mapped {/api/widget-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.895Z LOG [RoutesResolver] ChargeMasterController {/api/charges} (version: 1):
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/charges/create, POST} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/charges/get, GET} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/charges/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RoutesResolver] OpeningStockController {/api/opening-stocks} (version: 1):
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/opening-stocks, POST} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/opening-stocks, GET} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/opening-stocks/get, GET} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/opening-stocks/list, GET} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/opening-stocks, DELETE} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/opening-stocks/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RoutesResolver] PhysicalStockController {/api/physical-stock} (version: 1):
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/physical-stock, POST} (version: 1) route
+2026-08-01T13:49:01.896Z LOG [RouterExplorer] Mapped {/api/physical-stock, GET} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/physical-stock/get, GET} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/physical-stock/list, GET} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/physical-stock/:id, GET} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/physical-stock, DELETE} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/physical-stock/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/physical-stock/:id, DELETE} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RoutesResolver] ItemStockBalanceController {/api/item-stock-balance} (version: 1):
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/item-stock-balance/get, GET} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/item-stock-balance/bulk-list, GET} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/item-stock-balance/batch-options, GET} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RoutesResolver] ItemBatchStockController {/api/item-batch-stock} (version: 1):
+2026-08-01T13:49:01.897Z LOG [RouterExplorer] Mapped {/api/item-batch-stock/get, GET} (version: 1) route
+2026-08-01T13:49:01.897Z LOG [RoutesResolver] PromotionLoyaltyPointsController {/api/promotion-loyalty-points} (version: 1):
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/create, POST} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/get, GET} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/points/create, POST} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/points/get, GET} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/points/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/gifts/create, POST} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/gifts/get, GET} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/gifts/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RoutesResolver] GodownsMasterController {/api/godowns} (version: 1):
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/godowns/create, POST} (version: 1) route
+2026-08-01T13:49:01.898Z LOG [RouterExplorer] Mapped {/api/godowns, GET} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/godowns/get, GET} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/godowns/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RoutesResolver] GridDetailsController {/api/grid-details} (version: 1):
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/grid-details/create, POST} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/grid-details/get, GET} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/grid-details/column-width, PUT} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/grid-details/filter-settings, PUT} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/grid-details/visibility-settings, PUT} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/grid-details/column-delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/grid-details/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RoutesResolver] DropdownDetailsController {/api/dropdown-details} (version: 1):
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/dropdown-details/create, POST} (version: 1) route
+2026-08-01T13:49:01.899Z LOG [RouterExplorer] Mapped {/api/dropdown-details/get, GET} (version: 1) route
+2026-08-01T13:49:01.900Z LOG [RouterExplorer] Mapped {/api/dropdown-details/run, GET} (version: 1) route
+2026-08-01T13:49:01.900Z LOG [RouterExplorer] Mapped {/api/dropdown-details/column-width, PUT} (version: 1) route
+2026-08-01T13:49:01.900Z LOG [RouterExplorer] Mapped {/api/dropdown-details/filter-settings, PUT} (version: 1) route
+2026-08-01T13:49:01.900Z LOG [RouterExplorer] Mapped {/api/dropdown-details/visibility-settings, PUT} (version: 1) route
+2026-08-01T13:49:01.900Z LOG [RouterExplorer] Mapped {/api/dropdown-details/column-delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.900Z LOG [RouterExplorer] Mapped {/api/dropdown-details/delete, DELETE} (version: 1) route
+2026-08-01T13:49:01.900Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-08-01T13:49:01.900Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-08-01T13:49:01.900Z LOG [RouterExplorer] Mapped {/api/auth/refresh, POST} (version: 1) route
+2026-08-01T13:49:01.905Z LOG [NestApplication] Nest application successfully started
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL: http://127.0.0.1:3199/api/docs
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (auth): http://127.0.0.1:3199/api/docs/auth
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (health): http://127.0.0.1:3199/api/docs/health
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (users): http://127.0.0.1:3199/api/docs/users
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (batch-prefixes): http://127.0.0.1:3199/api/docs/batch-prefixes
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (charges): http://127.0.0.1:3199/api/docs/charges
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (charge-details): http://127.0.0.1:3199/api/docs/charge-details
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (items-group-master): http://127.0.0.1:3199/api/docs/items-group-master
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (items-brand-master): http://127.0.0.1:3199/api/docs/items-brand-master
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (items-section-master): http://127.0.0.1:3199/api/docs/items-section-master
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (items-category-master): http://127.0.0.1:3199/api/docs/items-category-master
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (units-master): http://127.0.0.1:3199/api/docs/units-master
+2026-08-01T13:49:02.055Z LOG [Bootstrap] API docs URL (items-tax-master): http://127.0.0.1:3199/api/docs/items-tax-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-cust-rates): http://127.0.0.1:3199/api/docs/item-cust-rates
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-prices): http://127.0.0.1:3199/api/docs/item-prices
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-unit-conversions): http://127.0.0.1:3199/api/docs/item-unit-conversions
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-price-details): http://127.0.0.1:3199/api/docs/item-price-details
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-reorders): http://127.0.0.1:3199/api/docs/item-reorders
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-qty-prices): http://127.0.0.1:3199/api/docs/item-qty-prices
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-tax-histories): http://127.0.0.1:3199/api/docs/item-tax-histories
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (items): http://127.0.0.1:3199/api/docs/items
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (accounts-group): http://127.0.0.1:3199/api/docs/accounts-group
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (account-ledger-masters): http://127.0.0.1:3199/api/docs/account-ledger-masters
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (ledger-bank-accounts): http://127.0.0.1:3199/api/docs/ledger-bank-accounts
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (ledger-shipping-addresses): http://127.0.0.1:3199/api/docs/ledger-shipping-addresses
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (branch-master): http://127.0.0.1:3199/api/docs/branch-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (company-master): http://127.0.0.1:3199/api/docs/company-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (company-group-master): http://127.0.0.1:3199/api/docs/company-group-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (employee-department-master): http://127.0.0.1:3199/api/docs/employee-department-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (employee-designation-master): http://127.0.0.1:3199/api/docs/employee-designation-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (employee-masters): http://127.0.0.1:3199/api/docs/employee-masters
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (user-administration): http://127.0.0.1:3199/api/docs/user-administration
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (configs): http://127.0.0.1:3199/api/docs/configs
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (tender-master): http://127.0.0.1:3199/api/docs/tender-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (tender-type-masters): http://127.0.0.1:3199/api/docs/tender-type-masters
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (tender-details): http://127.0.0.1:3199/api/docs/tender-details
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (sequences): http://127.0.0.1:3199/api/docs/sequences
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (gsp-provider-masters): http://127.0.0.1:3199/api/docs/gsp-provider-masters
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (gsp-company-services): http://127.0.0.1:3199/api/docs/gsp-company-services
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (items-ean-code-master): http://127.0.0.1:3199/api/docs/items-ean-code-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (items-gst-units-master): http://127.0.0.1:3199/api/docs/items-gst-units-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (godowns-master): http://127.0.0.1:3199/api/docs/godowns-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (opening-stocks): http://127.0.0.1:3199/api/docs/opening-stocks
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-stock-balance): http://127.0.0.1:3199/api/docs/item-stock-balance
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (item-batch-stock): http://127.0.0.1:3199/api/docs/item-batch-stock
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (promotion-loyalty-points): http://127.0.0.1:3199/api/docs/promotion-loyalty-points
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (grid-details): http://127.0.0.1:3199/api/docs/grid-details
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (dropdown-details): http://127.0.0.1:3199/api/docs/dropdown-details
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (master-lookups): http://127.0.0.1:3199/api/docs/master-lookups
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (supplier-groups): http://127.0.0.1:3199/api/docs/supplier-groups
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (suppliers): http://127.0.0.1:3199/api/docs/suppliers
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (areas): http://127.0.0.1:3199/api/docs/areas
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (sale-freight-charges): http://127.0.0.1:3199/api/docs/sale-freight-charges
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (sale-loading-charges): http://127.0.0.1:3199/api/docs/sale-loading-charges
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (cities): http://127.0.0.1:3199/api/docs/cities
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (sale-agents): http://127.0.0.1:3199/api/docs/sale-agents
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (states): http://127.0.0.1:3199/api/docs/states
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (customers): http://127.0.0.1:3199/api/docs/customers
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (customer-groups): http://127.0.0.1:3199/api/docs/customer-groups
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (quotations): http://127.0.0.1:3199/api/docs/quotations
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (bills): http://127.0.0.1:3199/api/docs/bills
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (bank-lists): http://127.0.0.1:3199/api/docs/bank-lists
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (device-list-masters): http://127.0.0.1:3199/api/docs/device-list-masters
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (menu-master): http://127.0.0.1:3199/api/docs/menu-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (price-level-master): http://127.0.0.1:3199/api/docs/price-level-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (hsn-code-master): http://127.0.0.1:3199/api/docs/hsn-code-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (state-code-masters): http://127.0.0.1:3199/api/docs/state-code-masters
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (ui-table-master): http://127.0.0.1:3199/api/docs/ui-table-master
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (user-login-sessions): http://127.0.0.1:3199/api/docs/user-login-sessions
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (stock-adj-reasons): http://127.0.0.1:3199/api/docs/stock-adj-reasons
+2026-08-01T13:49:02.056Z LOG [Bootstrap] API docs URL (audit-logs): http://127.0.0.1:3199/api/docs/audit-logs
+2026-08-01T13:49:02.056Z LOG [Bootstrap] DB connected: true
+2026-08-01T13:49:50.226Z LOG [NestFactory] Starting Nest application...
+2026-08-01T13:49:50.252Z LOG [InstanceLoader] RequestContextModule dependencies initialized
+2026-08-01T13:49:50.253Z LOG [InstanceLoader] ThrottlerModule dependencies initialized
+2026-08-01T13:49:50.253Z LOG [InstanceLoader] ConfigHostModule dependencies initialized
+2026-08-01T13:49:50.253Z LOG [InstanceLoader] DiscoveryModule dependencies initialized
+2026-08-01T13:49:50.254Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-08-01T13:49:50.254Z LOG [InstanceLoader] ConfigModule dependencies initialized
+2026-08-01T13:49:50.260Z WARN [PgService] DATABASE_READONLY_URL is not set — configured grid/dropdown SQL runs under the primary DB role with session-level read-only enforcement only. Configure a dedicated read-only role for defense in depth.
+2026-08-01T13:49:50.261Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-08-01T13:49:50.261Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-08-01T13:49:50.261Z LOG [InstanceLoader] PrismaModule dependencies initialized
+2026-08-01T13:49:50.261Z LOG [InstanceLoader] PgModule dependencies initialized
+2026-08-01T13:49:50.267Z LOG [InstanceLoader] SequenceModule dependencies initialized
+2026-08-01T13:49:50.267Z LOG [InstanceLoader] AuditLogModule dependencies initialized
+2026-08-01T13:49:50.267Z LOG [InstanceLoader] UsersModule dependencies initialized
+2026-08-01T13:49:50.267Z LOG [InstanceLoader] MenuMasterModule dependencies initialized
+2026-08-01T13:49:50.267Z LOG [InstanceLoader] PriceLevelMasterModule dependencies initialized
+2026-08-01T13:49:50.267Z LOG [InstanceLoader] HsnCodeMasterModule dependencies initialized
+2026-08-01T13:49:50.267Z LOG [InstanceLoader] StockAdjReasonsModule dependencies initialized
+2026-08-01T13:49:50.267Z LOG [InstanceLoader] HealthModule dependencies initialized
+2026-08-01T13:49:50.268Z LOG [InstanceLoader] BullModule dependencies initialized
+2026-08-01T13:49:50.269Z LOG [InstanceLoader] ItemsGstUnitsMasterModule dependencies initialized
+2026-08-01T13:49:50.269Z LOG [InstanceLoader] ItemStockBalanceModule dependencies initialized
+2026-08-01T13:49:50.269Z LOG [InstanceLoader] ItemBatchStockModule dependencies initialized
+2026-08-01T13:49:50.269Z LOG [InstanceLoader] AuthModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] QueueModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] UnitsMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ItemsTaxMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ItemsTaxHistoryMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] AccountsGroupModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] AccountLedgerMastersModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] LedgerBankAccountModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] LedgerShippingAddressModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] CompanyGroupMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] EmployeeDepartmentMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] EmployeeDesignationMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] EmployeeMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] UserAdministrationModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] TenderMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] TenderTypeMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] TenderDetailModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] GspProviderMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] GspCompanyServiceModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] SupplierGroupModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] CustomerGroupModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] QuotationModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ChargeDetailModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] UiTableMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] PhysicalStockModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] PromotionLoyaltyPointsModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] GodownsMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] WidgetMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ItemsEanCodeMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ItemsCustRatesMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ItemsPriceMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ItemUnitConversionModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ItemsReorderMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ItemsQtyPriceMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] BankListModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] DeviceListMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] StateCodeMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] UserLoginSessionsModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] BatchPrefixModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] ChargeMasterModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] GridDetailsModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] DropdownDetailsModule dependencies initialized
+2026-08-01T13:49:50.270Z LOG [InstanceLoader] MasterLookupModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] StateModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] CityModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] AreaModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] SaleFreightChargeModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] SaleLoadingChargeModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] OpeningStockModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] SuppliersModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] CustomerModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] SaleAgentModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] BillModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] ItemPriceDetailsModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] ItemsGroupMasterModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] ItemsBrandMasterModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] ItemsSectionMasterModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] ItemsCategoryMasterModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] BranchMasterModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] CompanyMasterModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] ConfigsModule dependencies initialized
+2026-08-01T13:49:50.271Z LOG [InstanceLoader] ItemsMasterModule dependencies initialized
+2026-08-01T13:49:50.276Z LOG [InstanceLoader] CacheModule dependencies initialized
+2026-08-01T13:49:50.276Z LOG [InstanceLoader] RedisModule dependencies initialized
+2026-08-01T13:49:50.277Z LOG [InstanceLoader] ConfiguredGridSqlModule dependencies initialized
+2026-08-01T13:49:50.277Z LOG [InstanceLoader] AppModule dependencies initialized
+2026-08-01T13:49:50.470Z LOG [RoutesResolver] ConfiguredGridSqlController {/api/configured-grid-sql} (version: 1):
+2026-08-01T13:49:50.471Z LOG [RouterExplorer] Mapped {/api/configured-grid-sql/columns, GET} (version: 1) route
+2026-08-01T13:49:50.471Z LOG [RouterExplorer] Mapped {/api/configured-grid-sql/run, GET} (version: 1) route
+2026-08-01T13:49:50.471Z LOG [RoutesResolver] SequenceController {/api/sequences} (version: 1):
+2026-08-01T13:49:50.471Z LOG [RouterExplorer] Mapped {/api/sequences/create, POST} (version: 1) route
+2026-08-01T13:49:50.472Z LOG [RouterExplorer] Mapped {/api/sequences/list, GET} (version: 1) route
+2026-08-01T13:49:50.472Z LOG [RouterExplorer] Mapped {/api/sequences/get, GET} (version: 1) route
+2026-08-01T13:49:50.472Z LOG [RouterExplorer] Mapped {/api/sequences/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.472Z LOG [RoutesResolver] AuditLogController {/api/audit-logs} (version: 1):
+2026-08-01T13:49:50.472Z LOG [RouterExplorer] Mapped {/api/audit-logs/list, GET} (version: 1) route
+2026-08-01T13:49:50.472Z LOG [RoutesResolver] AuditLogController {/api/audit-log} (version: 1):
+2026-08-01T13:49:50.472Z LOG [RouterExplorer] Mapped {/api/audit-log/list, GET} (version: 1) route
+2026-08-01T13:49:50.472Z LOG [RoutesResolver] HealthController {/api/health} (version: 1):
+2026-08-01T13:49:50.473Z LOG [RouterExplorer] Mapped {/api/health, GET} (version: 1) route
+2026-08-01T13:49:50.473Z LOG [RoutesResolver] UsersController {/api/users} (version: 1):
+2026-08-01T13:49:50.473Z LOG [RouterExplorer] Mapped {/api/users, POST} (version: 1) route
+2026-08-01T13:49:50.473Z LOG [RouterExplorer] Mapped {/api/users, GET} (version: 1) route
+2026-08-01T13:49:50.473Z LOG [RouterExplorer] Mapped {/api/users/get, GET} (version: 1) route
+2026-08-01T13:49:50.473Z LOG [RouterExplorer] Mapped {/api/users/:id, PATCH} (version: 1) route
+2026-08-01T13:49:50.474Z LOG [RouterExplorer] Mapped {/api/users/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.474Z LOG [RoutesResolver] ItemsGroupMasterController {/api/item-groups} (version: 1):
+2026-08-01T13:49:50.474Z LOG [RouterExplorer] Mapped {/api/item-groups/create, POST} (version: 1) route
+2026-08-01T13:49:50.474Z LOG [RouterExplorer] Mapped {/api/item-groups/get, GET} (version: 1) route
+2026-08-01T13:49:50.474Z LOG [RouterExplorer] Mapped {/api/item-groups/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.474Z LOG [RoutesResolver] ItemsBrandMasterController {/api/item-brands} (version: 1):
+2026-08-01T13:49:50.474Z LOG [RouterExplorer] Mapped {/api/item-brands/create, POST} (version: 1) route
+2026-08-01T13:49:50.474Z LOG [RouterExplorer] Mapped {/api/item-brands/get, GET} (version: 1) route
+2026-08-01T13:49:50.474Z LOG [RouterExplorer] Mapped {/api/item-brands/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.474Z LOG [RoutesResolver] ItemsSectionMasterController {/api/item-sections} (version: 1):
+2026-08-01T13:49:50.475Z LOG [RouterExplorer] Mapped {/api/item-sections/create, POST} (version: 1) route
+2026-08-01T13:49:50.475Z LOG [RouterExplorer] Mapped {/api/item-sections/get, GET} (version: 1) route
+2026-08-01T13:49:50.475Z LOG [RouterExplorer] Mapped {/api/item-sections/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.475Z LOG [RoutesResolver] ItemsCategoryMasterController {/api/item-categories} (version: 1):
+2026-08-01T13:49:50.475Z LOG [RouterExplorer] Mapped {/api/item-categories/create, POST} (version: 1) route
+2026-08-01T13:49:50.475Z LOG [RouterExplorer] Mapped {/api/item-categories/get, GET} (version: 1) route
+2026-08-01T13:49:50.475Z LOG [RouterExplorer] Mapped {/api/item-categories/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.475Z LOG [RoutesResolver] UnitsMasterController {/api/units} (version: 1):
+2026-08-01T13:49:50.475Z LOG [RouterExplorer] Mapped {/api/units/create, POST} (version: 1) route
+2026-08-01T13:49:50.476Z LOG [RouterExplorer] Mapped {/api/units/get, GET} (version: 1) route
+2026-08-01T13:49:50.476Z LOG [RouterExplorer] Mapped {/api/units/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.476Z LOG [RoutesResolver] ItemsTaxMasterController {/api/item-taxes} (version: 1):
+2026-08-01T13:49:50.476Z LOG [RouterExplorer] Mapped {/api/item-taxes/create, POST} (version: 1) route
+2026-08-01T13:49:50.476Z LOG [RouterExplorer] Mapped {/api/item-taxes/get, GET} (version: 1) route
+2026-08-01T13:49:50.476Z LOG [RouterExplorer] Mapped {/api/item-taxes/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.476Z LOG [RoutesResolver] ItemsEanCodeMasterController {/api/item-ean-codes} (version: 1):
+2026-08-01T13:49:50.476Z LOG [RouterExplorer] Mapped {/api/item-ean-codes/create, POST} (version: 1) route
+2026-08-01T13:49:50.476Z LOG [RouterExplorer] Mapped {/api/item-ean-codes/get, GET} (version: 1) route
+2026-08-01T13:49:50.476Z LOG [RouterExplorer] Mapped {/api/item-ean-codes/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RoutesResolver] ItemsGstUnitsMasterController {/api/item-gst-units} (version: 1):
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-gst-units/get, GET} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RoutesResolver] ItemsCustRatesMasterController {/api/item-cust-rates} (version: 1):
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-cust-rates/create, POST} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-cust-rates/list, GET} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-cust-rates/get, GET} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-cust-rates/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RoutesResolver] ItemsPriceMasterController {/api/item-prices} (version: 1):
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-prices/create, POST} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-prices/get, GET} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-prices/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.477Z LOG [RoutesResolver] ItemUnitConversionController {/api/item-unit-conversions} (version: 1):
+2026-08-01T13:49:50.477Z LOG [RouterExplorer] Mapped {/api/item-unit-conversions/create, POST} (version: 1) route
+2026-08-01T13:49:50.478Z LOG [RouterExplorer] Mapped {/api/item-unit-conversions/get, GET} (version: 1) route
+2026-08-01T13:49:50.478Z LOG [RouterExplorer] Mapped {/api/item-unit-conversions/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.478Z LOG [RoutesResolver] ItemPriceDetailsController {/api/item-price-details} (version: 1):
+2026-08-01T13:49:50.478Z LOG [RouterExplorer] Mapped {/api/item-price-details/get, GET} (version: 1) route
+2026-08-01T13:49:50.478Z LOG [RouterExplorer] Mapped {/api/item-price-details/get-by-barcode, GET} (version: 1) route
+2026-08-01T13:49:50.478Z LOG [RoutesResolver] ItemsReorderMasterController {/api/item-reorders} (version: 1):
+2026-08-01T13:49:50.478Z LOG [RouterExplorer] Mapped {/api/item-reorders/create, POST} (version: 1) route
+2026-08-01T13:49:50.478Z LOG [RouterExplorer] Mapped {/api/item-reorders/get, GET} (version: 1) route
+2026-08-01T13:49:50.478Z LOG [RouterExplorer] Mapped {/api/item-reorders/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.478Z LOG [RoutesResolver] ItemsQtyPriceMasterController {/api/item-qty-prices} (version: 1):
+2026-08-01T13:49:50.478Z LOG [RouterExplorer] Mapped {/api/item-qty-prices/create, POST} (version: 1) route
+2026-08-01T13:49:50.479Z LOG [RouterExplorer] Mapped {/api/item-qty-prices/get, GET} (version: 1) route
+2026-08-01T13:49:50.479Z LOG [RouterExplorer] Mapped {/api/item-qty-prices/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.479Z LOG [RoutesResolver] ItemsTaxHistoryMasterController {/api/item-tax-histories} (version: 1):
+2026-08-01T13:49:50.479Z LOG [RouterExplorer] Mapped {/api/item-tax-histories/create, POST} (version: 1) route
+2026-08-01T13:49:50.479Z LOG [RouterExplorer] Mapped {/api/item-tax-histories/get, GET} (version: 1) route
+2026-08-01T13:49:50.479Z LOG [RouterExplorer] Mapped {/api/item-tax-histories/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.479Z LOG [RoutesResolver] ItemsMasterController {/api/items} (version: 1):
+2026-08-01T13:49:50.479Z LOG [RouterExplorer] Mapped {/api/items/create, POST} (version: 1) route
+2026-08-01T13:49:50.479Z LOG [RouterExplorer] Mapped {/api/items/get, GET} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/items/bulk-load, GET} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/items/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RoutesResolver] AccountsGroupController {/api/account-groups} (version: 1):
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/account-groups/create, POST} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/account-groups/get, GET} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/account-groups/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RoutesResolver] AccountLedgerMastersController {/api/account-ledger-masters} (version: 1):
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/get-bank, GET} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RouterExplorer] Mapped {/api/account-ledger-masters/delete-bank, DELETE} (version: 1) route
+2026-08-01T13:49:50.480Z LOG [RoutesResolver] LedgerBankAccountController {/api/ledger-bank-accounts} (version: 1):
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/ledger-bank-accounts/create, POST} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/ledger-bank-accounts/get, GET} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/ledger-bank-accounts/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RoutesResolver] LedgerShippingAddressController {/api/ledger-shipping-addresses} (version: 1):
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/ledger-shipping-addresses/create, POST} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/ledger-shipping-addresses/get, GET} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/ledger-shipping-addresses/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RoutesResolver] BranchMasterController {/api/branch-masters} (version: 1):
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/branch-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/branch-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/branch-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.481Z LOG [RoutesResolver] CompanyMasterController {/api/company-masters} (version: 1):
+2026-08-01T13:49:50.481Z LOG [RouterExplorer] Mapped {/api/company-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/company-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/company-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RoutesResolver] CompanyGroupMasterController {/api/company-group-masters} (version: 1):
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/company-group-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/company-group-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/company-group-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RoutesResolver] EmployeeDepartmentMasterController {/api/employee-department-masters} (version: 1):
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/employee-department-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/employee-department-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/employee-department-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RoutesResolver] EmployeeDesignationMasterController {/api/employee-designation-masters} (version: 1):
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/employee-designation-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.482Z LOG [RouterExplorer] Mapped {/api/employee-designation-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/employee-designation-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RoutesResolver] EmployeeMasterController {/api/employee-masters} (version: 1):
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/employee-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/employee-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/employee-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RoutesResolver] UserAdministrationController {/api/user-administration} (version: 1):
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/user-administration/create, POST} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/user-administration/get, GET} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/user-administration/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RoutesResolver] ConfigsController {/api/configs} (version: 1):
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/configs/update, POST} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RouterExplorer] Mapped {/api/configs/get, GET} (version: 1) route
+2026-08-01T13:49:50.483Z LOG [RoutesResolver] TenderMasterController {/api/tender-masters} (version: 1):
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RoutesResolver] TenderTypeMasterController {/api/tender-type-masters} (version: 1):
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-type-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-type-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-type-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RoutesResolver] TenderDetailController {/api/tender-details} (version: 1):
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-details/create, POST} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-details/get, GET} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/tender-details/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RoutesResolver] GspProviderMasterController {/api/gsp-provider-masters} (version: 1):
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/gsp-provider-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.484Z LOG [RouterExplorer] Mapped {/api/gsp-provider-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/gsp-provider-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RoutesResolver] GspCompanyServiceController {/api/gsp-company-services} (version: 1):
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/gsp-company-services/create, POST} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/gsp-company-services/get, GET} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/gsp-company-services/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RoutesResolver] SupplierGroupController {/api/supplier-groups} (version: 1):
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/supplier-groups/create, POST} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/supplier-groups/get, GET} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/supplier-groups/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RoutesResolver] SuppliersController {/api/suppliers} (version: 1):
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/suppliers/create, POST} (version: 1) route
+2026-08-01T13:49:50.485Z LOG [RouterExplorer] Mapped {/api/suppliers/get, GET} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/suppliers/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RoutesResolver] StateController {/api/states} (version: 1):
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/states/create, POST} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/states/get, GET} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/states/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RoutesResolver] CityController {/api/cities} (version: 1):
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/cities/create, POST} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/cities/get, GET} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/cities/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RoutesResolver] AreaController {/api/areas} (version: 1):
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/areas/create, POST} (version: 1) route
+2026-08-01T13:49:50.486Z LOG [RouterExplorer] Mapped {/api/areas/get, GET} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/areas/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RoutesResolver] SaleFreightChargeController {/api/sale-freight-charges} (version: 1):
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/sale-freight-charges/create, POST} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/sale-freight-charges/get, GET} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/sale-freight-charges/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RoutesResolver] SaleLoadingChargeController {/api/sale-loading-charges} (version: 1):
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/sale-loading-charges/create, POST} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/sale-loading-charges/get, GET} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/sale-loading-charges/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RoutesResolver] CustomerController {/api/customers} (version: 1):
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/customers/create, POST} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/customers/get, GET} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RouterExplorer] Mapped {/api/customers/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.487Z LOG [RoutesResolver] CustomerGroupController {/api/customer-groups} (version: 1):
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/customer-groups/create, POST} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/customer-groups/get, GET} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/customer-groups/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RoutesResolver] SaleAgentController {/api/sale-agents} (version: 1):
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/sale-agents/create, POST} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/sale-agents/get, GET} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/sale-agents/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RoutesResolver] QuotationController {/api/quotations} (version: 1):
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/quotations/create, POST} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/quotations/get, GET} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RouterExplorer] Mapped {/api/quotations/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.488Z LOG [RoutesResolver] BillController {/api/bills} (version: 1):
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/bills/create, POST} (version: 1) route
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/bills/get, GET} (version: 1) route
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/bills/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.489Z LOG [RoutesResolver] ChargeDetailController {/api/charge-details} (version: 1):
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/charge-details/create, POST} (version: 1) route
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/charge-details/get, GET} (version: 1) route
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/charge-details/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.489Z LOG [RoutesResolver] BankListController {/api/bank-lists} (version: 1):
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/bank-lists/create, POST} (version: 1) route
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/bank-lists/list, GET} (version: 1) route
+2026-08-01T13:49:50.489Z LOG [RouterExplorer] Mapped {/api/bank-lists/get, GET} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RouterExplorer] Mapped {/api/bank-lists/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RoutesResolver] DeviceListMasterController {/api/device-list-masters} (version: 1):
+2026-08-01T13:49:50.490Z LOG [RouterExplorer] Mapped {/api/device-list-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RouterExplorer] Mapped {/api/device-list-masters/list, GET} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RouterExplorer] Mapped {/api/device-list-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RouterExplorer] Mapped {/api/device-list-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RoutesResolver] MenuMasterController {/api/menu-masters} (version: 1):
+2026-08-01T13:49:50.490Z LOG [RouterExplorer] Mapped {/api/menu-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RouterExplorer] Mapped {/api/menu-masters/usermenu, GET} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RouterExplorer] Mapped {/api/menu-masters/visibility, PATCH} (version: 1) route
+2026-08-01T13:49:50.490Z LOG [RoutesResolver] PriceLevelMasterController {/api/price-level-masters} (version: 1):
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/price-level-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/price-level-masters/bulk, PATCH} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RoutesResolver] HsnCodeMasterController {/api/hsn-code-masters} (version: 1):
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/hsn-code-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RoutesResolver] StateCodeMasterController {/api/state-code-masters} (version: 1):
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/state-code-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/state-code-masters/list, GET} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/state-code-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/state-code-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RoutesResolver] UiTableMasterController {/api/ui-table-masters} (version: 1):
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/column-width, PUT} (version: 1) route
+2026-08-01T13:49:50.491Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/visibility-settings, PUT} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/column-delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/ui-table-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RoutesResolver] UserLoginSessionsController {/api/user-login-sessions} (version: 1):
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/user-login-sessions/create, POST} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/user-login-sessions/list, GET} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/user-login-sessions/get, GET} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/user-login-sessions/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RoutesResolver] StockAdjReasonsController {/api/stock-adj-reasons} (version: 1):
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/stock-adj-reasons/get, GET} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RoutesResolver] MasterLookupController {/api/master-lookups} (version: 1):
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/master-lookups/name-id/all-accounts-and-masters, GET} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/master-lookups/name-id/all-masters, GET} (version: 1) route
+2026-08-01T13:49:50.492Z LOG [RouterExplorer] Mapped {/api/master-lookups/branches/by-company/:companyId, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/master-lookups/fiscal-years/by-company/:companyId, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/master-lookups/customer-detail, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/master-lookups/freight-charges/charge, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/master-lookups/item-by-barcode, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/master-lookups/units/by-item/:itemId, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/master-lookups/item-price, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/master-lookups/item-switch-uom, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/master-lookups/dropdown/:dropdownId, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RoutesResolver] BatchPrefixController {/api/batch-prefixes} (version: 1):
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/batch-prefixes/create, POST} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/batch-prefixes/list, GET} (version: 1) route
+2026-08-01T13:49:50.493Z LOG [RouterExplorer] Mapped {/api/batch-prefixes/get, GET} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/batch-prefixes/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RoutesResolver] WidgetMasterController {/api/widget-masters} (version: 1):
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/widget-masters/create, POST} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/widget-masters/create-bulk, POST} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/widget-masters/get, GET} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/widget-masters/config, GET} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/widget-masters/visibility, PATCH} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/widget-masters/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RoutesResolver] ChargeMasterController {/api/charges} (version: 1):
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/charges/create, POST} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/charges/get, GET} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RouterExplorer] Mapped {/api/charges/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.494Z LOG [RoutesResolver] OpeningStockController {/api/opening-stocks} (version: 1):
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/opening-stocks, POST} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/opening-stocks, GET} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/opening-stocks/get, GET} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/opening-stocks/list, GET} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/opening-stocks, DELETE} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/opening-stocks/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RoutesResolver] PhysicalStockController {/api/physical-stock} (version: 1):
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/physical-stock, POST} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/physical-stock, GET} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/physical-stock/get, GET} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/physical-stock/list, GET} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/physical-stock/:id, GET} (version: 1) route
+2026-08-01T13:49:50.495Z LOG [RouterExplorer] Mapped {/api/physical-stock, DELETE} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/physical-stock/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/physical-stock/:id, DELETE} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RoutesResolver] ItemStockBalanceController {/api/item-stock-balance} (version: 1):
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/item-stock-balance/get, GET} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/item-stock-balance/bulk-list, GET} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/item-stock-balance/batch-options, GET} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RoutesResolver] ItemBatchStockController {/api/item-batch-stock} (version: 1):
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/item-batch-stock/get, GET} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RoutesResolver] PromotionLoyaltyPointsController {/api/promotion-loyalty-points} (version: 1):
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/create, POST} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/get, GET} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.496Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/points/create, POST} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/points/get, GET} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/points/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/gifts/create, POST} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/gifts/get, GET} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/promotion-loyalty-points/gifts/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RoutesResolver] GodownsMasterController {/api/godowns} (version: 1):
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/godowns/create, POST} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/godowns, GET} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/godowns/get, GET} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/godowns/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RoutesResolver] GridDetailsController {/api/grid-details} (version: 1):
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/grid-details/create, POST} (version: 1) route
+2026-08-01T13:49:50.497Z LOG [RouterExplorer] Mapped {/api/grid-details/get, GET} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/grid-details/column-width, PUT} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/grid-details/filter-settings, PUT} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/grid-details/visibility-settings, PUT} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/grid-details/column-delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/grid-details/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RoutesResolver] DropdownDetailsController {/api/dropdown-details} (version: 1):
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/dropdown-details/create, POST} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/dropdown-details/get, GET} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/dropdown-details/run, GET} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/dropdown-details/column-width, PUT} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/dropdown-details/filter-settings, PUT} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/dropdown-details/visibility-settings, PUT} (version: 1) route
+2026-08-01T13:49:50.498Z LOG [RouterExplorer] Mapped {/api/dropdown-details/column-delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.499Z LOG [RouterExplorer] Mapped {/api/dropdown-details/delete, DELETE} (version: 1) route
+2026-08-01T13:49:50.499Z LOG [RoutesResolver] AuthController {/api/auth} (version: 1):
+2026-08-01T13:49:50.499Z LOG [RouterExplorer] Mapped {/api/auth/login, POST} (version: 1) route
+2026-08-01T13:49:50.499Z LOG [RouterExplorer] Mapped {/api/auth/refresh, POST} (version: 1) route
+2026-08-01T13:49:50.504Z LOG [NestApplication] Nest application successfully started
+2026-08-01T13:49:50.938Z LOG [Bootstrap] API docs URL: http://127.0.0.1:3199/api/docs
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (auth): http://127.0.0.1:3199/api/docs/auth
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (health): http://127.0.0.1:3199/api/docs/health
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (users): http://127.0.0.1:3199/api/docs/users
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (batch-prefixes): http://127.0.0.1:3199/api/docs/batch-prefixes
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (charges): http://127.0.0.1:3199/api/docs/charges
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (charge-details): http://127.0.0.1:3199/api/docs/charge-details
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (items-group-master): http://127.0.0.1:3199/api/docs/items-group-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (items-brand-master): http://127.0.0.1:3199/api/docs/items-brand-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (items-section-master): http://127.0.0.1:3199/api/docs/items-section-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (items-category-master): http://127.0.0.1:3199/api/docs/items-category-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (units-master): http://127.0.0.1:3199/api/docs/units-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (items-tax-master): http://127.0.0.1:3199/api/docs/items-tax-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-cust-rates): http://127.0.0.1:3199/api/docs/item-cust-rates
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-prices): http://127.0.0.1:3199/api/docs/item-prices
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-unit-conversions): http://127.0.0.1:3199/api/docs/item-unit-conversions
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-price-details): http://127.0.0.1:3199/api/docs/item-price-details
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-reorders): http://127.0.0.1:3199/api/docs/item-reorders
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-qty-prices): http://127.0.0.1:3199/api/docs/item-qty-prices
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-tax-histories): http://127.0.0.1:3199/api/docs/item-tax-histories
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (items): http://127.0.0.1:3199/api/docs/items
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (accounts-group): http://127.0.0.1:3199/api/docs/accounts-group
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (account-ledger-masters): http://127.0.0.1:3199/api/docs/account-ledger-masters
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (ledger-bank-accounts): http://127.0.0.1:3199/api/docs/ledger-bank-accounts
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (ledger-shipping-addresses): http://127.0.0.1:3199/api/docs/ledger-shipping-addresses
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (branch-master): http://127.0.0.1:3199/api/docs/branch-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (company-master): http://127.0.0.1:3199/api/docs/company-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (company-group-master): http://127.0.0.1:3199/api/docs/company-group-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (employee-department-master): http://127.0.0.1:3199/api/docs/employee-department-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (employee-designation-master): http://127.0.0.1:3199/api/docs/employee-designation-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (employee-masters): http://127.0.0.1:3199/api/docs/employee-masters
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (user-administration): http://127.0.0.1:3199/api/docs/user-administration
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (configs): http://127.0.0.1:3199/api/docs/configs
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (tender-master): http://127.0.0.1:3199/api/docs/tender-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (tender-type-masters): http://127.0.0.1:3199/api/docs/tender-type-masters
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (tender-details): http://127.0.0.1:3199/api/docs/tender-details
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (sequences): http://127.0.0.1:3199/api/docs/sequences
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (gsp-provider-masters): http://127.0.0.1:3199/api/docs/gsp-provider-masters
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (gsp-company-services): http://127.0.0.1:3199/api/docs/gsp-company-services
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (items-ean-code-master): http://127.0.0.1:3199/api/docs/items-ean-code-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (items-gst-units-master): http://127.0.0.1:3199/api/docs/items-gst-units-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (godowns-master): http://127.0.0.1:3199/api/docs/godowns-master
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (opening-stocks): http://127.0.0.1:3199/api/docs/opening-stocks
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-stock-balance): http://127.0.0.1:3199/api/docs/item-stock-balance
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (item-batch-stock): http://127.0.0.1:3199/api/docs/item-batch-stock
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (promotion-loyalty-points): http://127.0.0.1:3199/api/docs/promotion-loyalty-points
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (grid-details): http://127.0.0.1:3199/api/docs/grid-details
+2026-08-01T13:49:50.939Z LOG [Bootstrap] API docs URL (dropdown-details): http://127.0.0.1:3199/api/docs/dropdown-details
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (master-lookups): http://127.0.0.1:3199/api/docs/master-lookups
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (supplier-groups): http://127.0.0.1:3199/api/docs/supplier-groups
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (suppliers): http://127.0.0.1:3199/api/docs/suppliers
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (areas): http://127.0.0.1:3199/api/docs/areas
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (sale-freight-charges): http://127.0.0.1:3199/api/docs/sale-freight-charges
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (sale-loading-charges): http://127.0.0.1:3199/api/docs/sale-loading-charges
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (cities): http://127.0.0.1:3199/api/docs/cities
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (sale-agents): http://127.0.0.1:3199/api/docs/sale-agents
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (states): http://127.0.0.1:3199/api/docs/states
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (customers): http://127.0.0.1:3199/api/docs/customers
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (customer-groups): http://127.0.0.1:3199/api/docs/customer-groups
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (quotations): http://127.0.0.1:3199/api/docs/quotations
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (bills): http://127.0.0.1:3199/api/docs/bills
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (bank-lists): http://127.0.0.1:3199/api/docs/bank-lists
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (device-list-masters): http://127.0.0.1:3199/api/docs/device-list-masters
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (menu-master): http://127.0.0.1:3199/api/docs/menu-master
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (price-level-master): http://127.0.0.1:3199/api/docs/price-level-master
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (hsn-code-master): http://127.0.0.1:3199/api/docs/hsn-code-master
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (state-code-masters): http://127.0.0.1:3199/api/docs/state-code-masters
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (ui-table-master): http://127.0.0.1:3199/api/docs/ui-table-master
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (user-login-sessions): http://127.0.0.1:3199/api/docs/user-login-sessions
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (stock-adj-reasons): http://127.0.0.1:3199/api/docs/stock-adj-reasons
+2026-08-01T13:49:50.940Z LOG [Bootstrap] API docs URL (audit-logs): http://127.0.0.1:3199/api/docs/audit-logs
+2026-08-01T13:49:50.940Z LOG [Bootstrap] DB connected: true
