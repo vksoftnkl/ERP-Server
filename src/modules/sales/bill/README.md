@@ -362,5 +362,11 @@ via the identical `item` / `itemUnitConversion` → `unit` relations:
 | `sbiCategoryId` | `inventory.item_master.item_category_id` | same relation |
 | `sbiUnitName` | `inventory.item_unit_master.unit_name` | `itemUnitConversion` → `unit` on `sbiItemUnitId` |
 | `sbiDecimalCount` | `inventory.item_unit_master.unit_decimal_count` | same relation chain |
+| `sbiGodownName` | `inventory.godown_locations.gdl_name` | batched `findMany` on the bill's distinct `sbiGodownId`s |
+
+`sbi_godown_id` has no FK to `godown_locations`, so there is no relation to `include` — `getById`
+issues one extra `godownLocation.findMany` over the distinct godown ids on the bill and maps the
+names back onto the lines. A line whose godown row no longer exists comes back with
+`sbiGodownName: null`.
 
 These are read-only — never accepted on `/create` — and are `null` on the create/update responses.

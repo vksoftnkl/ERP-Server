@@ -55,6 +55,7 @@ import { CustomerGroupModule } from './modules/sales/customer-group/customer-gro
 import { SaleAgentModule } from './modules/sales/sale-agent/sale-agent.module';
 import { QuotationModule } from './modules/sales/quotation/quotation.module';
 import { BillModule } from './modules/sales/bill/bill.module';
+import { TransactionHoldModule } from './modules/sales/transaction-hold/transaction-hold.module';
 import { BankListModule } from './modules/fixed/bank-list/bank-list.module';
 import { DeviceListMasterModule } from './modules/fixed/device-list-master/device-list-master.module';
 import { MenuMasterModule } from './modules/fixed/menu-master/menu-master.module';
@@ -173,6 +174,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     SaleAgentModule,
     QuotationModule,
     BillModule,
+    TransactionHoldModule,
     BankListModule,
     DeviceListMasterModule,
     MenuMasterModule,

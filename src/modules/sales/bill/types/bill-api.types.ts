@@ -74,6 +74,9 @@ export type BillItemPayload = Omit<
   sbiBrandId?: string | null;
   sbiSectionId?: string | null;
   sbiCategoryId?: string | null;
+  // Same idea for the line's sbiGodownId, except sale_bill_item has no FK to
+  // inventory.godown_locations, so it is looked up rather than joined.
+  sbiGodownName?: string | null;
 };
 // An applied charge line is exactly what the charge-detail module answers with,
 // whether it was read through this module or its own: decimals as numbers,

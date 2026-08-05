@@ -107,6 +107,11 @@ export class BillItemPayloadDto {
   sbiEanCode!: string | null;
   @ApiProperty({ format: 'uuid', description: 'The inventory godown the stock was taken from' })
   sbiGodownId!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'godown_locations.gdl_name for sbiGodownId — only populated on GET',
+  })
+  sbiGodownName?: string | null;
   @ApiProperty({ format: 'uuid', description: 'The inventory batch/stock row allocated' })
   sbiStockId!: string;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })

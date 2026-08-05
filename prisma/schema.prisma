@@ -3727,6 +3727,109 @@ model FiscalYear {
   @@schema("public")
 }
 
+// ----- prisma/public/transactionHold.prisma -----
+model TransactionHold {
+  // ---- pk ----------------------------------------------------------------
+  thId               String    @id(map: "pk_transaction_hold") @default(dbgenerated("uuidv7()")) @map("th_id") @db.Uuid
+
+  // ---- tenant scope ------------------------------------------------------
+  thCompanyId        String    @map("th_company_id") @db.Uuid
+  thBranchId         String    @map("th_branch_id")  @db.Uuid
+  thAccYear          Int       @map("th_acc_year")   @db.SmallInt
+
+  // ---- identity ----------------------------------------------------------
+  thHoldNo           String    @map("th_hold_no")   @db.VarChar(30)
+  thHoldDate         DateTime  @default(now())          @map("th_hold_date") @db.Timestamptz(6)
+  thDocType          String    @default("SALE_INVOICE") @map("th_doc_type")  @db.VarChar(20)
+
+  // ---- counter / session / device context --------------------------------
+  thCounterId        String?   @map("th_counter_id")  @db.Uuid
+  thSessionId        String?   @map("th_session_id")  @db.Uuid
+  thUserId           String?   @map("th_user_id")     @db.Uuid
+  thDeviceId         String    @map("th_device_id")   @db.VarChar(64)
+  thDeviceType       String    @map("th_device_type") @db.VarChar(20)
+
+  // ---- party snapshot ----------------------------------------------------
+  thCustomerName     String?   @map("th_customer_name") @db.VarChar(150)
+
+  // ---- totals snapshot ---------------------------------------------------
+  thItemCount        Int       @default(0) @map("th_item_count")
+  thTotalQty         Decimal   @default(0) @map("th_total_qty")    @db.Decimal(18, 3)
+  thTotalAmount      Decimal   @default(0) @map("th_total_amount") @db.Decimal(18, 2)
+
+  // ---- hold lifecycle ----------------------------------------------------
+  thStatus           String    @default("HELD") @map("th_status") @db.VarChar(15)
+  thHoldReason       String?   @map("th_hold_reason") @db.VarChar(100)
+  thRemarks          String?   @map("th_remarks")     @db.VarChar(255)
+  thExpiresAt        DateTime? @map("th_expires_at")  @db.Timestamptz(6)
+
+  // ---- concurrency -------------------------------------------------------
+  thLockedBy         String?   @map("th_locked_by")  @db.VarChar(50)
+  thLockedAt         DateTime? @map("th_locked_at")  @db.Timestamptz(6)
+  thResumedBy        String?   @map("th_resumed_by") @db.VarChar(50)
+  thResumedAt        DateTime? @map("th_resumed_at") @db.Timestamptz(6)
+  thResumeCount      Int       @default(0) @map("th_resume_count")
+
+  // ---- conversion trace --------------------------------------------------
+  thConvertedDocType String?   @map("th_converted_doc_type") @db.VarChar(20)
+  thConvertedDocId   String?   @map("th_converted_doc_id")   @db.Uuid
+  thConvertedNo      String?   @map("th_converted_no")       @db.VarChar(30)
+  thConvertedAt      DateTime? @map("th_converted_at")       @db.Timestamptz(6)
+  thConvertedBy      String?   @map("th_converted_by")       @db.VarChar(50)
+
+  // ---- optional soft stock block -----------------------------------------
+  thIsStockReserved  Boolean   @default(false) @map("th_is_stock_reserved")
+
+  // ---- screen state ------------------------------------------------------
+  thUiState          Json?     @map("th_ui_state") @db.JsonB
+
+  // ---- audit -------------------------------------------------------------
+  thIsDeleted        Boolean   @default(false) @map("th_is_deleted")
+  thCreatedBy        String?   @map("th_created_by")  @db.VarChar(50)
+  thCreatedAt        DateTime  @default(now()) @map("th_created_at") @db.Timestamptz(6)
+  thModifiedBy       String?   @map("th_modified_by") @db.VarChar(50)
+  thModifiedAt       DateTime? @map("th_modified_at") @db.Timestamptz(6)
+
+  // ---- indexes -----------------------------------------------------------
+  // Every index on this table is PARTIAL, and Prisma cannot express a WHERE
+  // predicate — a declared @@unique/@@index would drift into a non-partial
+  // CREATE INDEX on the same name on the next migrate dev. They live in
+  // migration 20260804131134_transaction_hold_table_added as raw SQL, and
+  // ux_th_hold_no is additionally enforced app-side (TransactionHoldService
+  // .ensureHoldNoIsUnique) so a duplicate answers 409 instead of a raw 23505:
+  //
+  //   -- hold number unique per company + branch + acc year, per document type
+  //   CREATE UNIQUE INDEX ux_th_hold_no
+  //       ON public.transaction_hold (th_company_id, th_branch_id, th_acc_year, th_doc_type, th_hold_no)
+  //       WHERE th_is_deleted = false;
+  //
+  //   -- main recall-list index
+  //   CREATE INDEX ix_th_list
+  //       ON public.transaction_hold (th_company_id, th_branch_id, th_doc_type, th_status, th_hold_date DESC)
+  //       WHERE th_is_deleted = false;
+  //
+  //   CREATE INDEX ix_th_counter_session
+  //       ON public.transaction_hold (th_counter_id, th_session_id)
+  //       WHERE th_is_deleted = false;
+  //
+  //   CREATE INDEX ix_th_device
+  //       ON public.transaction_hold (th_company_id, th_branch_id, th_device_id)
+  //       WHERE th_is_deleted = false;
+  //
+  //   -- for the expiry / purge job
+  //   CREATE INDEX ix_th_expiry
+  //       ON public.transaction_hold (th_expires_at)
+  //       WHERE th_status IN ('HELD','LOCKED') AND th_is_deleted = false;
+  //
+  //   -- reverse lookup: which hold produced this document
+  //   CREATE INDEX ix_th_converted_doc
+  //       ON public.transaction_hold (th_converted_doc_id)
+  //       WHERE th_converted_doc_id IS NOT NULL;
+
+  @@map("transaction_hold")
+  @@schema("public")
+}
+
 // ----- prisma/public/userMaster.prisma -----
 model UserMaster {
   // ── Primary key ────────────────────────────────────────────────────────────

@@ -323,6 +323,11 @@ type PrismaMock = {
   branchMaster: {
     findFirst: jest.Mock<Promise<{ brCode: string | null } | null>, unknown[]>;
   };
+  // sale_bill_item has no FK to godown_locations, so getById resolves the line's
+  // godown name with its own batched read.
+  godownLocation: {
+    findMany: jest.Mock<Promise<{ gdlId: string; gdlName: string }[]>, unknown[]>;
+  };
   $queryRaw: jest.Mock<Promise<unknown>, unknown[]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
 };
@@ -437,6 +442,9 @@ const makePrismaMock = (): PrismaMock => {
     },
     branchMaster: {
       findFirst: jest.fn(() => Promise.resolve({ brCode: 'BR001' })),
+    },
+    godownLocation: {
+      findMany: jest.fn(() => Promise.resolve([{ gdlId: GODOWN_ID, gdlName: 'Main Godown' }])),
     },
     $queryRaw: jest.fn(() => Promise.resolve([{ locked: 1 }])),
     $transaction: jest.fn((cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma)),
@@ -1070,7 +1078,7 @@ describe('BillService', () => {
   });
 
   describe('getById', () => {
-    it('resolves item/unit master names and returns them alongside the raw ids', async () => {
+    it('resolves item/unit/godown master names and returns them alongside the raw ids', async () => {
       prisma.saleBill.findFirst.mockResolvedValue(
         makeBill({
           items: [
@@ -1096,7 +1104,21 @@ describe('BillService', () => {
         sbiItemName: 'Widget',
         sbiUnitName: 'PCS',
         sbiGroupId: 'group-1',
+        sbiGodownId: GODOWN_ID,
+        sbiGodownName: 'Main Godown',
       });
+      expect(prisma.godownLocation.findMany).toHaveBeenCalledWith(
+        containing({ where: { gdlId: { in: [GODOWN_ID] } } }),
+      );
+    });
+
+    it('returns a null godown name when the godown row is missing', async () => {
+      prisma.saleBill.findFirst.mockResolvedValue(makeBill({ items: [makeItem()] } as never));
+      prisma.godownLocation.findMany.mockResolvedValue([]);
+
+      const payload = await service.getById(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+      expect(payload.items?.[0]?.sbiGodownName).toBeNull();
     });
 
     it('throws not found when no active bill matches', async () => {

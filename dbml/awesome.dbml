@@ -2305,6 +2305,46 @@ Table fiscal_years {
   nextFiscalYears fiscal_years [not null]
 }
 
+Table transaction_hold {
+  thId String [pk]
+  thCompanyId String [not null]
+  thBranchId String [not null]
+  thAccYear Int [not null]
+  thHoldNo String [not null]
+  thHoldDate DateTime [default: `now()`, not null]
+  thDocType String [not null, default: 'SALE_INVOICE']
+  thCounterId String
+  thSessionId String
+  thUserId String
+  thDeviceId String [not null]
+  thDeviceType String [not null]
+  thCustomerName String
+  thItemCount Int [not null, default: 0]
+  thTotalQty Decimal [not null, default: 0]
+  thTotalAmount Decimal [not null, default: 0]
+  thStatus String [not null, default: 'HELD']
+  thHoldReason String
+  thRemarks String
+  thExpiresAt DateTime
+  thLockedBy String
+  thLockedAt DateTime
+  thResumedBy String
+  thResumedAt DateTime
+  thResumeCount Int [not null, default: 0]
+  thConvertedDocType String
+  thConvertedDocId String
+  thConvertedNo String
+  thConvertedAt DateTime
+  thConvertedBy String
+  thIsStockReserved Boolean [not null, default: false]
+  thUiState Json
+  thIsDeleted Boolean [not null, default: false]
+  thCreatedBy String
+  thCreatedAt DateTime [default: `now()`, not null]
+  thModifiedBy String
+  thModifiedAt DateTime
+}
+
 Table user_master {
   usrId String [pk]
   usrCompanyId String

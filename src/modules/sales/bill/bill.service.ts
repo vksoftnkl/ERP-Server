@@ -421,7 +421,11 @@ export class BillService {
       BILL_TENDER_SRC_DOC_TYPE,
       sbId,
     );
-    return this.toPayload({ ...record, charges, tenders });
+    // sbi_godown_id has no FK to inventory.godown_locations either, so the
+    // godown name cannot ride along on the `include` the way sbiItemName does —
+    // it is resolved in one batched lookup over the bill's distinct godowns.
+    const godownNameById = await this.resolveGodownNames(record.items);
+    return this.toPayload({ ...record, charges, tenders }, godownNameById);
   }
   async softDelete(sbId: string): Promise<{ sbId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
@@ -1062,6 +1066,22 @@ export class BillService {
   ): void {
     applyPresentFields(data, dto, BILL_OPTIONAL_FIELDS, BILL_DATE_TRANSFORMS);
   }
+  // One batched read of the godown names the bill's lines point at, keyed by
+  // gdl_id. Empty on the create/update paths, which do not resolve display
+  // names — see toItemPayload.
+  private async resolveGodownNames(
+    items: readonly Pick<SaleBillItem, 'sbiGodownId'>[] = [],
+  ): Promise<Map<string, string>> {
+    const godownIds = [...new Set(items.map((item) => item.sbiGodownId))];
+    if (godownIds.length === 0) {
+      return new Map();
+    }
+    const godowns = await this.prisma.godownLocation.findMany({
+      where: { gdlId: { in: godownIds } },
+      select: { gdlId: true, gdlName: true },
+    });
+    return new Map(godowns.map((godown) => [godown.gdlId, godown.gdlName]));
+  }
   private toPayload(
     record: SaleBill & {
       items?: SaleBillItemWithNames[];
@@ -1070,6 +1090,7 @@ export class BillService {
       charges?: BillChargePayload[];
       tenders?: BillTenderPayload[];
     },
+    godownNameById: Map<string, string> = new Map(),
   ): BillPayload {
     const {
       sbCreatedOn,
@@ -1091,12 +1112,15 @@ export class BillService {
       // bigint column — stringified here for the same reason cdVoucherNo is:
       // JSON has no bigint and res.json() throws on one.
       sbBillSlno: sbBillSlno?.toString() ?? null,
-      items: items ? items.map((item) => this.toItemPayload(item)) : [],
+      items: items ? items.map((item) => this.toItemPayload(item, godownNameById)) : [],
       charges: charges ?? [],
       tenders: tenders ?? [],
     };
   }
-  private toItemPayload(record: SaleBillItemWithNames): BillItemPayload {
+  private toItemPayload(
+    record: SaleBillItemWithNames,
+    godownNameById: Map<string, string> = new Map(),
+  ): BillItemPayload {
     const { sbiCreatedOn, sbiModifiedOn, sbiSyncDate, item, itemUnitConversion, ...rest } = record;
     return {
       ...rest,
@@ -1110,6 +1134,7 @@ export class BillService {
       sbiBrandId: item?.itemBrandId ?? null,
       sbiSectionId: item?.itemSectionId ?? null,
       sbiCategoryId: item?.itemCategoryId ?? null,
+      sbiGodownName: godownNameById.get(record.sbiGodownId) ?? null,
     };
   }
 }
