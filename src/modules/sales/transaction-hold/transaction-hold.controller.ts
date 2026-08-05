@@ -4,6 +4,10 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Param,
   ParseUUIDPipe,
   Post,
   Query,
@@ -15,9 +19,12 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -31,6 +38,7 @@ import {
   TransactionHoldSuccessSingleDto,
 } from './dto/transaction-hold-response.dto';
 import { ListTransactionHoldQueryDto } from './dto/list-transaction-hold-query.dto';
+import { ConvertTransactionHoldDto, LockTransactionHoldDto } from './dto/lock-transaction-hold.dto';
 import { SaveTransactionHoldDto } from './dto/save-transaction-hold.dto';
 import { TransactionHoldService } from './transaction-hold.service';
 import {
@@ -41,6 +49,16 @@ import {
   TransactionHoldSuccessResponse,
 } from './types/transaction-hold-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
+// The edit lock is held by the DEVICE, not the operator, and the device names
+// itself in a header rather than the body so the same value identifies the
+// caller on every lock endpoint and no payload field can disagree with it.
+const DEVICE_ID_HEADER = 'x-device-id';
+const DEVICE_ID_HEADER_DOC = {
+  name: 'X-Device-Id',
+  required: true,
+  description: 'Device taking, holding or spending the edit lock (max 64 chars)',
+  schema: { type: 'string', maxLength: 64 },
+} as const;
 @ApiTags('Transaction Hold')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -112,6 +130,101 @@ export class TransactionHoldController {
       data,
     };
   }
+  @Post(':id/resume')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Resume a hold onto this device, taking its edit lock',
+    description:
+      'HELD → LOCKED, held by the X-Device-Id device. Answers the whole hold including ' +
+      'thUiState so the till can redraw the screen. A hold already LOCKED by another device ' +
+      'answers 409; by the SAME device it answers 200 without a second resume count, so a ' +
+      'retried request is harmless. There is no timeout — the lock lasts until it is released.',
+  })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' }, description: 'thId' })
+  @ApiHeader(DEVICE_ID_HEADER_DOC)
+  @ApiOkResponse({ type: TransactionHoldSuccessSingleDto })
+  @ApiBadRequestResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiNotFoundResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiConflictResponse({ type: TransactionHoldErrorResponseDto })
+  async resume(
+    @Param('id', new ParseUUIDPipe()) thId: string,
+    @Headers(DEVICE_ID_HEADER) deviceId: string | undefined,
+    @Body() lockDto: LockTransactionHoldDto,
+  ): Promise<TransactionHoldSuccessResponse<TransactionHoldPayload>> {
+    const data = await this.transactionHoldService.resumeHold(thId, deviceId, lockDto);
+    return {
+      success: true,
+      message: 'Hold resumed successfully',
+      data,
+    };
+  }
+
+  @Post(':id/release')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Release the edit lock this device holds, without billing',
+    description:
+      'LOCKED → HELD, so another till can recall the same parked bill. Only the device ' +
+      'holding the lock may release it (403 otherwise); a hold that is already HELD answers ' +
+      '200 unchanged. thResumedBy / thResumedAt / thResumeCount are left as the history they are.',
+  })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' }, description: 'thId' })
+  @ApiHeader(DEVICE_ID_HEADER_DOC)
+  @ApiOkResponse({ type: TransactionHoldSuccessSingleDto })
+  @ApiBadRequestResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiForbiddenResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiNotFoundResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiConflictResponse({ type: TransactionHoldErrorResponseDto })
+  async release(
+    @Param('id', new ParseUUIDPipe()) thId: string,
+    @Headers(DEVICE_ID_HEADER) deviceId: string | undefined,
+    @Body() lockDto: LockTransactionHoldDto,
+  ): Promise<TransactionHoldSuccessResponse<TransactionHoldPayload>> {
+    const data = await this.transactionHoldService.releaseHold(thId, deviceId, lockDto);
+    return {
+      success: true,
+      message: 'Hold released successfully',
+      data,
+    };
+  }
+
+  @Post(':id/convert')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Close the hold onto the document it became',
+    description:
+      'LOCKED → CONVERTED (terminal): stamps the conversion trace and drops the lock, so the ' +
+      'parked cart can never be resumed or billed again (409). Only the device holding the ' +
+      'lock may convert it — 403 otherwise, and nothing is written.',
+  })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' }, description: 'thId' })
+  @ApiHeader(DEVICE_ID_HEADER_DOC)
+  @ApiOkResponse({ type: TransactionHoldSuccessSingleDto })
+  @ApiBadRequestResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiForbiddenResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiNotFoundResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiConflictResponse({ type: TransactionHoldErrorResponseDto })
+  async convert(
+    @Param('id', new ParseUUIDPipe()) thId: string,
+    @Headers(DEVICE_ID_HEADER) deviceId: string | undefined,
+    @Body() convertDto: ConvertTransactionHoldDto,
+  ): Promise<TransactionHoldSuccessResponse<TransactionHoldPayload>> {
+    const data = await this.transactionHoldService.convertHold(thId, deviceId, convertDto, {
+      thConvertedDocType: convertDto.thConvertedDocType,
+      thConvertedDocId: convertDto.thConvertedDocId,
+      thConvertedNo: convertDto.thConvertedNo,
+      thConvertedBy: convertDto.thConvertedBy,
+    });
+    return {
+      success: true,
+      message: 'Hold converted successfully',
+      data,
+    };
+  }
+
   @Delete('delete')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete hold by id' })

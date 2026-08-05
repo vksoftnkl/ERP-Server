@@ -27,6 +27,7 @@ import { CustomerGroupModule } from '../modules/sales/customer-group/customer-gr
 import { CustomerModule } from '../modules/sales/customer/customer.module';
 import { QuotationModule } from '../modules/sales/quotation/quotation.module';
 import { BillModule } from '../modules/sales/bill/bill.module';
+import { TransactionHoldModule } from '../modules/sales/transaction-hold/transaction-hold.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
 import { HealthModule } from '../modules/health/health.module';
@@ -429,6 +430,12 @@ export const swaggerModuleDocuments = [
     title: 'Bills API',
     description: 'Single-call sale bill (tax invoice) endpoints with nested line items',
     include: [BillModule],
+  },
+  {
+    path: 'transaction-holds',
+    title: 'Transaction Hold API',
+    description: 'Parked (held) transaction endpoints for public.transaction_hold',
+    include: [TransactionHoldModule],
   },
   {
     path: 'bank-lists',

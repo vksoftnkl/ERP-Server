@@ -165,20 +165,24 @@ export class SaveTransactionHoldDto {
   @NullableDate()
   thExpiresAt?: Date | null;
 
+  // Device id, not a user id: the edit lock is held by the till (X-Device-Id),
+  // which is why this matches thDeviceId's 64 rather than the audit columns' 50.
+  // The lock endpoints (resume / release / convert) are what normally move it —
+  // setting it through this payload bypasses the ownership check.
   @ApiPropertyOptional({
-    maxLength: 50,
+    maxLength: 64,
     nullable: true,
-    description: 'Actor id or name holding the edit lock',
+    description: 'Device id holding the edit lock',
   })
-  @NullableStringStrict(50)
+  @NullableStringStrict(64)
   thLockedBy?: string | null;
 
   @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })
   @NullableDate()
   thLockedAt?: Date | null;
 
-  @ApiPropertyOptional({ maxLength: 50, nullable: true, description: 'Actor id or name' })
-  @NullableStringStrict(50)
+  @ApiPropertyOptional({ maxLength: 64, nullable: true, description: 'Device id' })
+  @NullableStringStrict(64)
   thResumedBy?: string | null;
 
   @ApiPropertyOptional({ type: 'string', format: 'date-time', nullable: true })

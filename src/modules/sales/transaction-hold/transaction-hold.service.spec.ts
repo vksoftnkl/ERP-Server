@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma, TransactionHold } from '@prisma/client';
 import { ConfiguredGridSqlService } from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -7,8 +12,11 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { TransactionHoldService } from './transaction-hold.service';
 import { SaveTransactionHoldDto } from './dto/save-transaction-hold.dto';
 import {
+  TransactionHoldConversion,
   TransactionHoldDeviceType,
   TransactionHoldDocType,
+  TransactionHoldLockScope,
+  TransactionHoldPayload,
   TransactionHoldStatus,
 } from './types/transaction-hold-api.types';
 
@@ -38,7 +46,7 @@ const makeHold = (overrides: Partial<TransactionHold> = {}): TransactionHold =>
     thSessionId: null,
     thUserId: USER_ID,
     thDeviceId: 'TILL-01',
-    thDeviceType: 'POS_TERMINAL',
+    thDeviceType: 'DESKTOP',
     thCustomerName: null,
     thItemCount: 0,
     thTotalQty: new Prisma.Decimal('0.000'),
@@ -74,7 +82,7 @@ const createDto = (overrides: Partial<SaveTransactionHoldDto> = {}): SaveTransac
     thAccYear: ACC_YEAR,
     thHoldNo: 'HLD-001',
     thDeviceId: 'TILL-01',
-    thDeviceType: 'POS_TERMINAL',
+    thDeviceType: 'DESKTOP',
     ...overrides,
   }) as SaveTransactionHoldDto;
 
@@ -82,6 +90,76 @@ type HoldCreateArgs = { data: Prisma.TransactionHoldUncheckedCreateInput };
 type HoldUpdateArgs = {
   where: { thId: string };
   data: Prisma.TransactionHoldUncheckedUpdateInput;
+};
+
+const DEVICE_A = 'TILL-01';
+const DEVICE_B = 'TILL-02';
+const SCOPE: TransactionHoldLockScope = { thCompanyId: COMPANY_ID, thBranchId: BRANCH_ID };
+const CONVERSION: TransactionHoldConversion = {
+  thConvertedDocType: TransactionHoldDocType.SALE_INVOICE,
+  thConvertedDocId: BILL_ID,
+  thConvertedNo: 'INV-101',
+};
+
+type LockWhere = Record<string, unknown>;
+type LockData = Record<string, unknown>;
+type LockPrismaMock = {
+  transactionHold: {
+    findFirst: jest.Mock<Promise<TransactionHold | null>, [{ where: LockWhere }]>;
+    updateMany: jest.Mock<Promise<{ count: number }>, [{ where: LockWhere; data: LockData }]>;
+  };
+  $transaction: jest.Mock<Promise<unknown>, [(tx: LockPrismaMock) => Promise<unknown>]>;
+};
+
+/**
+ * One transaction_hold row backed by an in-memory store, with `updateMany`
+ * behaving the way the DB row does: the WHERE predicate is checked and the row
+ * mutated in the SAME synchronous step, so a second caller that already read a
+ * now-stale copy of the row still fails the predicate — which is exactly the
+ * compare-and-swap the lock relies on. `findFirst` reads the current state, so
+ * a snapshot taken before an update is stale by the time it is used, as it is
+ * against a real database.
+ */
+const createLockHarness = (overrides: Partial<TransactionHold> = {}) => {
+  let row: TransactionHold = makeHold(overrides);
+  const matches = (where: LockWhere): boolean =>
+    Object.entries(where).every(
+      ([field, value]) => (row as unknown as Record<string, unknown>)[field] === value,
+    );
+  const apply = (data: LockData): void => {
+    const next = { ...row } as unknown as Record<string, unknown>;
+    for (const [field, value] of Object.entries(data)) {
+      if (value !== null && typeof value === 'object' && 'increment' in value) {
+        next[field] = (next[field] as number) + (value as { increment: number }).increment;
+        continue;
+      }
+      next[field] = value;
+    }
+    row = next as unknown as TransactionHold;
+  };
+  const prisma: LockPrismaMock = {
+    transactionHold: {
+      findFirst: jest.fn(({ where }: { where: LockWhere }) =>
+        Promise.resolve(matches(where) ? ({ ...row } as TransactionHold) : null),
+      ),
+      updateMany: jest.fn(({ where, data }: { where: LockWhere; data: LockData }) => {
+        if (!matches(where)) {
+          return Promise.resolve({ count: 0 });
+        }
+        apply(data);
+        return Promise.resolve({ count: 1 });
+      }),
+    },
+    $transaction: jest.fn((cb: (tx: LockPrismaMock) => Promise<unknown>) => cb(prisma)),
+  };
+  const audit = { logEntityChange: jest.fn(() => Promise.resolve(undefined)) };
+  const service = new TransactionHoldService(
+    prisma as unknown as PrismaService,
+    audit as unknown as AuditLogService,
+    { loadCandidates: jest.fn() } as unknown as ConfiguredGridSqlService,
+    { getUserId: () => USER_ID } as unknown as RequestContextService,
+  );
+  return { service, prisma, audit, row: () => row };
 };
 
 type PrismaMock = {
@@ -151,7 +229,7 @@ describe('TransactionHoldService', () => {
         thAccYear: ACC_YEAR,
         thHoldNo: 'HLD-001',
         thDeviceId: 'TILL-01',
-        thDeviceType: 'POS_TERMINAL',
+        thDeviceType: 'DESKTOP',
         thCounterId: COUNTER_ID,
         thItemCount: 3,
         thCreatedBy: USER_ID,
@@ -446,6 +524,229 @@ describe('TransactionHoldService', () => {
 
     it('404s when deleting a hold that is not live', async () => {
       await expect(service.softDelete(TH_ID)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // The recall screen greys out rows another till is on, so the list has to
+    // carry the lock state, not just the summary columns.
+    it('carries the lock state on every list row', async () => {
+      prisma.transactionHold.findMany.mockResolvedValueOnce([
+        makeHold({ thStatus: 'LOCKED', thLockedBy: DEVICE_A, thLockedAt: HOLD_DATE }),
+      ]);
+
+      // The recall screen always scopes to its own company / branch, which is
+      // what ix_th_list covers and what takes the query onto the Prisma path.
+      const result = await service.list({ thCompanyId: COMPANY_ID, thBranchId: BRANCH_ID });
+
+      const [row] = result.items as TransactionHoldPayload[];
+      expect(row.thStatus).toBe(TransactionHoldStatus.LOCKED);
+      expect(row.thLockedBy).toBe(DEVICE_A);
+      // …and the till / device the row is in use on, for "In use — <device>".
+      expect(row.thCounterId).toBe(COUNTER_ID);
+      expect(row.thDeviceId).toBe('TILL-01');
+      // Nothing is narrowed away by a select clause.
+      expect(prisma.transactionHold.findMany.mock.calls[0][0]).not.toHaveProperty('select');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Device edit lock: HELD --resume--> LOCKED --convert--> CONVERTED
+  //                                      └----release----> HELD
+  // ---------------------------------------------------------------------------
+  describe('device lock', () => {
+    it('gives the lock to exactly one of two devices racing the same hold', async () => {
+      const lock = createLockHarness();
+
+      // Both calls read the row (still HELD for both — the read gates nothing)
+      // before either writes; only the conditional update decides.
+      const results = await Promise.allSettled([
+        lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE),
+        lock.service.resumeHold(TH_ID, DEVICE_B, SCOPE),
+      ]);
+
+      const won = results.filter((result) => result.status === 'fulfilled');
+      const lost = results.filter((result) => result.status === 'rejected');
+      expect(won).toHaveLength(1);
+      expect(lost).toHaveLength(1);
+      const refusal = lost[0].reason as ConflictException;
+      expect(refusal).toBeInstanceOf(ConflictException);
+      // 409 names the device that actually holds it, so the till can say so.
+      expect(refusal.getResponse()).toMatchObject({
+        message: `Hold is LOCKED by device ${lock.row().thLockedBy ?? ''}`,
+      });
+
+      const winner = won[0].value;
+      expect(lock.row().thStatus).toBe(TransactionHoldStatus.LOCKED);
+      expect(lock.row().thLockedBy).toBe(winner.thLockedBy);
+      // One transition, so one increment — the loser wrote nothing at all.
+      expect(lock.row().thResumeCount).toBe(1);
+    });
+
+    it('hands the screen back on resume, including thUiState', async () => {
+      const uiState = { cart: [{ item: 'PEN', qty: 2 }] };
+      const lock = createLockHarness({ thUiState: uiState as Prisma.JsonValue });
+
+      const resumed = await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+
+      expect(resumed.thStatus).toBe(TransactionHoldStatus.LOCKED);
+      expect(resumed.thLockedBy).toBe(DEVICE_A);
+      expect(resumed.thResumedBy).toBe(DEVICE_A);
+      expect(resumed.thLockedAt).not.toBeNull();
+      expect(resumed.thUiState).toEqual(uiState);
+      expect(lock.audit.logEntityChange).toHaveBeenCalledTimes(1);
+    });
+
+    // A dropped response or a double tap on the recall list must not read as a
+    // second recall.
+    it('is idempotent for the device that already holds the lock', async () => {
+      const lock = createLockHarness();
+
+      const first = await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+      const again = await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+
+      expect(first.thResumeCount).toBe(1);
+      expect(again.thResumeCount).toBe(1);
+      expect(again.thStatus).toBe(TransactionHoldStatus.LOCKED);
+      expect(lock.row().thResumeCount).toBe(1);
+      // The re-entrant path writes nothing, so no second audit entry.
+      expect(lock.audit.logEntityChange).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases back to HELD and clears the lock columns', async () => {
+      const lock = createLockHarness();
+      await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+
+      const released = await lock.service.releaseHold(TH_ID, DEVICE_A, SCOPE);
+
+      expect(released.thStatus).toBe(TransactionHoldStatus.HELD);
+      expect(released.thLockedBy).toBeNull();
+      expect(released.thLockedAt).toBeNull();
+      // Who pulled it and how often is history, not lock state.
+      expect(released.thResumedBy).toBe(DEVICE_A);
+      expect(released.thResumeCount).toBe(1);
+      // …and the freed hold can be taken by the other till.
+      const taken = await lock.service.resumeHold(TH_ID, DEVICE_B, SCOPE);
+      expect(taken.thLockedBy).toBe(DEVICE_B);
+      expect(taken.thResumeCount).toBe(2);
+    });
+
+    it('refuses to let another device release or convert the lock', async () => {
+      const lock = createLockHarness();
+      await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+      const before = lock.row();
+
+      await expect(lock.service.releaseHold(TH_ID, DEVICE_B, SCOPE)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(
+        lock.service.convertHold(TH_ID, DEVICE_B, SCOPE, CONVERSION),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      // Nothing moved: still LOCKED by the device that took it.
+      expect(lock.row()).toEqual(before);
+    });
+
+    it('refuses to convert a hold no device holds', async () => {
+      const lock = createLockHarness();
+
+      await expect(
+        lock.service.convertHold(TH_ID, DEVICE_A, SCOPE, CONVERSION),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(lock.row().thStatus).toBe(TransactionHoldStatus.HELD);
+    });
+
+    // Releasing a hold that is already free is what the caller asked for.
+    it('treats releasing an already free hold as a no-op', async () => {
+      const lock = createLockHarness();
+
+      const released = await lock.service.releaseHold(TH_ID, DEVICE_A, SCOPE);
+
+      expect(released.thStatus).toBe(TransactionHoldStatus.HELD);
+      expect(lock.row().thModifiedAt).toBeNull();
+    });
+
+    it('stamps the conversion trace, drops the lock and closes the hold for good', async () => {
+      const lock = createLockHarness();
+      await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+
+      const converted = await lock.service.convertHold(TH_ID, DEVICE_A, SCOPE, CONVERSION);
+
+      expect(converted.thStatus).toBe(TransactionHoldStatus.CONVERTED);
+      expect(converted.thConvertedDocType).toBe(TransactionHoldDocType.SALE_INVOICE);
+      expect(converted.thConvertedDocId).toBe(BILL_ID);
+      expect(converted.thConvertedNo).toBe('INV-101');
+      expect(converted.thConvertedBy).toBe(USER_ID);
+      expect(converted.thConvertedAt).not.toBeNull();
+      expect(converted.thLockedBy).toBeNull();
+      expect(converted.thLockedAt).toBeNull();
+
+      // Terminal: neither the device that billed it nor any other can reopen it.
+      await expect(lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(lock.service.resumeHold(TH_ID, DEVICE_B, SCOPE)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(
+        lock.service.convertHold(TH_ID, DEVICE_A, SCOPE, CONVERSION),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('never reaches a hold in another company or branch, or a deleted one', async () => {
+      const lock = createLockHarness();
+
+      await expect(
+        lock.service.resumeHold(TH_ID, DEVICE_A, { ...SCOPE, thCompanyId: OTHER_COMPANY_ID }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        lock.service.resumeHold(TH_ID, DEVICE_A, { ...SCOPE, thBranchId: OTHER_TH_ID }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(lock.row().thStatus).toBe(TransactionHoldStatus.HELD);
+
+      const deleted = createLockHarness({ thIsDeleted: true });
+      await expect(deleted.service.resumeHold(TH_ID, DEVICE_A, SCOPE)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      // Every write is keyed on the full scope, not just the id.
+      for (const [{ where }] of lock.prisma.transactionHold.updateMany.mock.calls) {
+        expect(where).toMatchObject({
+          thId: TH_ID,
+          thCompanyId: expect.any(String) as unknown as string,
+          thBranchId: expect.any(String) as unknown as string,
+          thIsDeleted: false,
+        });
+      }
+    });
+
+    it('requires a usable device id', async () => {
+      const lock = createLockHarness();
+
+      await expect(lock.service.resumeHold(TH_ID, undefined, SCOPE)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(lock.service.releaseHold(TH_ID, '   ', SCOPE)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      // th_locked_by is varchar(64) — a longer id would be truncated and then
+      // never match itself on the ownership check.
+      await expect(
+        lock.service.convertHold(TH_ID, 'D'.repeat(65), SCOPE, CONVERSION),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(lock.prisma.transactionHold.updateMany).not.toHaveBeenCalled();
+    });
+
+    // Crash recovery, lock timeouts and the expiry job are deliberately out of
+    // this module: a lock lasts until the device gives it back.
+    it('never touches the expiry columns', async () => {
+      const lock = createLockHarness({ thExpiresAt: new Date('2026-08-05T10:00:00.000Z') });
+
+      await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+      await lock.service.releaseHold(TH_ID, DEVICE_A, SCOPE);
+
+      for (const [{ data }] of lock.prisma.transactionHold.updateMany.mock.calls) {
+        expect(data).not.toHaveProperty('thExpiresAt');
+      }
+      expect(lock.row().thExpiresAt).toEqual(new Date('2026-08-05T10:00:00.000Z'));
     });
   });
 });

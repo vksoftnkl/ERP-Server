@@ -11,7 +11,9 @@ import { ListTransactionHoldQueryDto } from './dto/list-transaction-hold-query.d
 import { SaveTransactionHoldDto } from './dto/save-transaction-hold.dto';
 import {
   TRANSACTION_HOLD_CLOSED_STATUSES,
+  TRANSACTION_HOLD_DOC_TYPES,
   TRANSACTION_HOLD_VALUE_GUARDS,
+  TransactionHoldConversion,
   TransactionHoldDeleteResult,
   TransactionHoldDeviceType,
   TransactionHoldDocType,
@@ -20,6 +22,7 @@ import {
   TransactionHoldHoldNoScope,
   TransactionHoldListItem,
   TransactionHoldListMeta,
+  TransactionHoldLockScope,
   TransactionHoldPayload,
   TransactionHoldScope,
   TransactionHoldStatus,
@@ -39,12 +42,17 @@ import {
   throwOnUniqueConstraintError,
   throwSalesBadRequest,
   throwSalesConflict,
+  throwSalesForbidden,
   throwSalesNotFound,
   toNumber,
 } from 'src/common/utils/module-service.utils';
 const TRANSACTION_HOLD_TABLE_NAME = 'transaction hold';
 const TRANSACTION_HOLD_AUDIT_SCREEN_NAME = 'Transaction Hold';
 const TRANSACTION_HOLD_GRID_ALIAS = 'transaction_hold_grid';
+// th_device_id / th_locked_by / th_resumed_by are all VARCHAR(64), so a longer
+// device id is refused rather than silently truncated into one that would never
+// match itself on the ownership check.
+const DEVICE_ID_MAX_LENGTH = 64;
 // Columns copied verbatim from the DTO (already normalized by its decorators)
 // onto the create/update payload; only keys present on the request are applied,
 // so a partial update stays partial. The scope (thCompanyId / thBranchId /
@@ -234,6 +242,370 @@ export class TransactionHoldService {
       return { thId, deleted: true };
     });
   }
+  /**
+   * Pull a parked hold onto a till and take its edit lock — `HELD` → `LOCKED`.
+   *
+   * The lock holder is the DEVICE (`X-Device-Id`), not the operator: two
+   * operators sharing a till are the same holder, one operator on two tills is
+   * not. Returns the whole hold, `th_ui_state` included, so the till can redraw
+   * the screen it is resuming.
+   *
+   * The transition is a single conditional UPDATE (`th_status = 'HELD'` sits in
+   * the WHERE clause, not in a preceding SELECT), so two tills racing the same
+   * parked bill serialize on the row: Postgres makes the loser re-evaluate the
+   * predicate against the winner's committed row, it matches nothing, and the
+   * loser is told who holds it. A read-then-update would let both pass the
+   * check and both write.
+   */
+  async resumeHold(
+    thId: string,
+    deviceId: string | undefined | null,
+    scope: TransactionHoldLockScope,
+  ): Promise<TransactionHoldPayload> {
+    const device = this.requireDeviceId(deviceId);
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      // Read only to snapshot the "before" side of the audit entry (an update
+      // log needs both sides). It gates nothing — the conditional update below
+      // is what decides whether this device gets the lock — so a row that moves
+      // between this SELECT and that UPDATE still lands on the right answer.
+      const before = await tx.transactionHold.findFirst({ where: this.lockWhere(thId, scope) });
+      const acquired = await tx.transactionHold.updateMany({
+        where: {
+          ...this.lockWhere(thId, scope),
+          // Only a free hold can be taken.
+          thStatus: TransactionHoldStatus.HELD,
+        },
+        data: {
+          thStatus: TransactionHoldStatus.LOCKED,
+          thLockedBy: device,
+          thLockedAt: now,
+          thResumedBy: device,
+          thResumedAt: now,
+          thResumeCount: { increment: 1 },
+          thModifiedAt: now,
+          thModifiedBy: actor,
+        },
+      });
+      if (acquired.count === 0) {
+        return this.resolveResumeFailure(tx, thId, device, scope);
+      }
+      const resumed = await this.readLocked(tx, thId, scope);
+      await this.auditLockTransition(tx, {
+        original: before,
+        modified: resumed,
+        userId: actor,
+        notes: `Hold resumed on device ${device}`,
+      });
+      return this.toPayload(resumed);
+    });
+  }
+
+  /**
+   * Give the edit lock back without billing — `LOCKED` → `HELD`, so the next
+   * till can recall the same parked bill.
+   *
+   * Ownership is part of the WHERE clause (`th_locked_by = <this device>`)
+   * rather than a check before it, so a device can never release a lock another
+   * device holds, whatever it sends.
+   */
+  async releaseHold(
+    thId: string,
+    deviceId: string | undefined | null,
+    scope: TransactionHoldLockScope,
+  ): Promise<TransactionHoldPayload> {
+    const device = this.requireDeviceId(deviceId);
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const before = await tx.transactionHold.findFirst({ where: this.lockWhere(thId, scope) });
+      const released = await tx.transactionHold.updateMany({
+        where: {
+          ...this.lockWhere(thId, scope),
+          thStatus: TransactionHoldStatus.LOCKED,
+          thLockedBy: device,
+        },
+        data: {
+          thStatus: TransactionHoldStatus.HELD,
+          thLockedBy: null,
+          thLockedAt: null,
+          thModifiedAt: now,
+          thModifiedBy: actor,
+        },
+        // th_resumed_by / th_resumed_at and th_resume_count are the history of
+        // who pulled it and how often — releasing the lock does not erase that.
+      });
+      if (released.count === 0) {
+        return this.resolveReleaseFailure(tx, thId, scope);
+      }
+      const free = await this.readLocked(tx, thId, scope);
+      await this.auditLockTransition(tx, {
+        original: before,
+        modified: free,
+        userId: actor,
+        notes: `Hold released by device ${device}`,
+      });
+      return this.toPayload(free);
+    });
+  }
+
+  /**
+   * Close a hold onto the document it became — `LOCKED` → `CONVERTED`, the
+   * terminal state. Stamps the conversion trace and drops the lock, so nothing
+   * can resume the hold again and the parked cart cannot be billed twice.
+   *
+   * Ownership is in the WHERE clause exactly as it is on release: only the
+   * device that resumed the hold may bill it.
+   */
+  async convertHold(
+    thId: string,
+    deviceId: string | undefined | null,
+    scope: TransactionHoldLockScope,
+    conversion: TransactionHoldConversion,
+  ): Promise<TransactionHoldPayload> {
+    const device = this.requireDeviceId(deviceId);
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    this.ensureConversionIsAllowed(conversion);
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const before = await tx.transactionHold.findFirst({ where: this.lockWhere(thId, scope) });
+      const converted = await tx.transactionHold.updateMany({
+        where: {
+          ...this.lockWhere(thId, scope),
+          thStatus: TransactionHoldStatus.LOCKED,
+          thLockedBy: device,
+        },
+        data: {
+          thStatus: TransactionHoldStatus.CONVERTED,
+          thConvertedDocType: conversion.thConvertedDocType,
+          thConvertedDocId: conversion.thConvertedDocId,
+          thConvertedNo: normalizeNullableString(conversion.thConvertedNo) ?? null,
+          thConvertedAt: now,
+          thConvertedBy: resolveActor(conversion.thConvertedBy, actor),
+          // The hold is finished with, so the lock is dropped rather than left
+          // pointing at a till that has moved on.
+          thLockedBy: null,
+          thLockedAt: null,
+          thModifiedAt: now,
+          thModifiedBy: actor,
+        },
+      });
+      if (converted.count === 0) {
+        return this.resolveConvertFailure(tx, thId, scope);
+      }
+      const closed = await this.readLocked(tx, thId, scope);
+      await this.auditLockTransition(tx, {
+        original: before,
+        modified: closed,
+        userId: actor,
+        notes:
+          `Hold converted to ${conversion.thConvertedDocType} ` +
+          `${conversion.thConvertedDocId} on device ${device}`,
+      });
+      return this.toPayload(closed);
+    });
+  }
+
+  // Nothing acquired the lock. The row is read back to say WHY, which is also
+  // where re-entrancy is settled: a device asking for a hold it already holds
+  // gets the screen back rather than a 409, so a retried request (dropped
+  // response, double tap on the recall list) is harmless. It deliberately does
+  // NOT bump th_resume_count a second time — the count is how often the hold
+  // moved between tills, not how often the button was pressed.
+  private async resolveResumeFailure(
+    tx: TransactionHoldWriteClient,
+    thId: string,
+    device: string,
+    scope: TransactionHoldLockScope,
+  ): Promise<TransactionHoldPayload> {
+    const current = await this.readLocked(tx, thId, scope);
+    if (
+      current.thStatus === String(TransactionHoldStatus.LOCKED) &&
+      current.thLockedBy === device
+    ) {
+      return this.toPayload(current);
+    }
+    if (current.thStatus === String(TransactionHoldStatus.LOCKED)) {
+      throwSalesConflict<TransactionHoldErrorDetail>(
+        `Hold is LOCKED by device ${current.thLockedBy ?? 'unknown'}`,
+        [
+          {
+            field: 'thLockedBy',
+            message:
+              `The hold is in use on device ${current.thLockedBy ?? 'unknown'}. ` +
+              'It has to be released there before another device can resume it',
+          },
+        ],
+      );
+    }
+    throwSalesConflict<TransactionHoldErrorDetail>(
+      `Hold is ${current.thStatus} and cannot be resumed`,
+      [
+        {
+          field: 'thStatus',
+          message: `Only a hold in status ${TransactionHoldStatus.HELD} can be resumed`,
+        },
+      ],
+    );
+  }
+
+  // The release did not match. Being already HELD is not a failure — the caller
+  // asked for the state the row is already in (a retried release), so it gets
+  // the row back. Anything else means this device does not hold the lock.
+  private async resolveReleaseFailure(
+    tx: TransactionHoldWriteClient,
+    thId: string,
+    scope: TransactionHoldLockScope,
+  ): Promise<TransactionHoldPayload> {
+    const current = await this.readLocked(tx, thId, scope);
+    if (current.thStatus === String(TransactionHoldStatus.HELD)) {
+      return this.toPayload(current);
+    }
+    this.throwLockOwnershipFailure(current, 'released');
+  }
+
+  // The conversion did not match. Unlike release there is no idempotent path: a
+  // hold that is not locked by this device must not be billed by it, and a hold
+  // already CONVERTED must not be billed twice.
+  private async resolveConvertFailure(
+    tx: TransactionHoldWriteClient,
+    thId: string,
+    scope: TransactionHoldLockScope,
+  ): Promise<never> {
+    const current = await this.readLocked(tx, thId, scope);
+    this.throwLockOwnershipFailure(current, 'converted');
+  }
+
+  // 409 when the hold is finished with (retrying will never help), 403 when it
+  // is simply held by someone else or by nobody — the request is well formed,
+  // the lock just is not this device's to spend.
+  private throwLockOwnershipFailure(current: TransactionHold, action: string): never {
+    if (TRANSACTION_HOLD_CLOSED_STATUSES.includes(current.thStatus)) {
+      throwSalesConflict<TransactionHoldErrorDetail>('Hold is already closed', [
+        {
+          field: 'thStatus',
+          message: `A hold in status ${current.thStatus} cannot be ${action}`,
+        },
+      ]);
+    }
+    throwSalesForbidden<TransactionHoldErrorDetail>('Not locked by this device', [
+      {
+        field: 'thLockedBy',
+        message: current.thLockedBy
+          ? `The hold is locked by device ${current.thLockedBy}, so only that device can ` +
+            `have it ${action}`
+          : `The hold is ${current.thStatus} and has to be resumed on this device before it ` +
+            `can be ${action}`,
+      },
+    ]);
+  }
+
+  // Every lock query is keyed on the tenant scope and skips soft-deleted rows,
+  // so a hold can be neither taken nor spent from another company or branch.
+  private lockWhere(
+    thId: string,
+    scope: TransactionHoldLockScope,
+  ): Prisma.TransactionHoldWhereInput {
+    return {
+      thId,
+      thCompanyId: scope.thCompanyId,
+      thBranchId: scope.thBranchId,
+      thIsDeleted: false,
+    };
+  }
+
+  private async readLocked(
+    tx: TransactionHoldWriteClient,
+    thId: string,
+    scope: TransactionHoldLockScope,
+  ): Promise<TransactionHold> {
+    const record = await tx.transactionHold.findFirst({ where: this.lockWhere(thId, scope) });
+    if (!record) {
+      // Unknown id, soft deleted, or living in another company / branch — all
+      // of them "no such hold here", which is also what keeps a wrong-tenant
+      // probe from confirming the row exists.
+      this.throwNotFound(thId);
+    }
+    return record;
+  }
+
+  // th_locked_by is what release and convert compare against, so the device id
+  // is required and is stored exactly as the till sends it (trimmed only —
+  // upper-casing it would stop it matching itself).
+  private requireDeviceId(deviceId: string | undefined | null): string {
+    const trimmed = deviceId?.trim();
+    if (!trimmed) {
+      throwSalesBadRequest<TransactionHoldErrorDetail>('Device id is required', [
+        {
+          field: 'thDeviceId',
+          message: 'The X-Device-Id header must be sent to resume, release or convert a hold',
+        },
+      ]);
+    }
+    if (trimmed.length > DEVICE_ID_MAX_LENGTH) {
+      throwSalesBadRequest<TransactionHoldErrorDetail>('Device id is too long', [
+        {
+          field: 'thDeviceId',
+          message: `The X-Device-Id header must be at most ${DEVICE_ID_MAX_LENGTH} characters`,
+        },
+      ]);
+    }
+    return trimmed;
+  }
+
+  // The DTO already rejects a bad document type, but the service is exported for
+  // the till flow that raises the document and calls convertHold directly, so
+  // the rule is restated where the write happens.
+  private ensureConversionIsAllowed(conversion: TransactionHoldConversion): void {
+    const details: TransactionHoldErrorDetail[] = [];
+    if (!conversion.thConvertedDocId) {
+      details.push({
+        field: 'thConvertedDocId',
+        message: 'thConvertedDocId is required when converting a hold',
+      });
+    }
+    if (!TRANSACTION_HOLD_DOC_TYPES.includes(conversion.thConvertedDocType)) {
+      details.push({
+        field: 'thConvertedDocType',
+        message: `thConvertedDocType must be one of: ${TRANSACTION_HOLD_DOC_TYPES.join(', ')}`,
+      });
+    }
+    if (details.length > 0) {
+      throwSalesBadRequest<TransactionHoldErrorDetail>('Invalid conversion', details);
+    }
+  }
+
+  private async auditLockTransition(
+    tx: TransactionHoldWriteClient,
+    entry: {
+      original: TransactionHold | null;
+      modified: TransactionHold;
+      userId: string;
+      notes: string;
+    },
+  ): Promise<void> {
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: TRANSACTION_HOLD_TABLE_NAME,
+        screenName: TRANSACTION_HOLD_AUDIT_SCREEN_NAME,
+        screenType: 'transaction',
+        pk: entry.modified.thId,
+        displayName: this.displayName(entry.modified),
+        // The snapshot was taken before the conditional update; on the vanishing
+        // chance the row moved in between, the stored row is the honest "after"
+        // and standing in the "before" keeps the entry writable either way.
+        originalRecord: this.toPayload(entry.original ?? entry.modified),
+        modifiedRecord: this.toPayload(entry.modified),
+        userId: entry.userId,
+        branchId: entry.modified.thBranchId,
+        notes: entry.notes,
+      },
+      tx as Prisma.TransactionClient,
+    );
+  }
+
   private async createHold(
     saveTransactionHoldDto: SaveTransactionHoldDto,
   ): Promise<TransactionHoldPayload> {

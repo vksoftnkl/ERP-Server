@@ -14,12 +14,15 @@ into the UI state — it is stored and handed back verbatim.
 
 ## Endpoints (`/transaction-holds`, `API_VERSION`)
 
-| Method | Path                       | Purpose                                   |
-| ------ | -------------------------- | ----------------------------------------- |
-| POST   | `/transaction-holds/create`| Create (no `thId`) or update (with `thId`)|
-| GET    | `/transaction-holds/list`  | Search / filter / page the held bills     |
-| GET    | `/transaction-holds/get`   | One hold by `thId`                        |
-| DELETE | `/transaction-holds/delete`| Soft delete by `thId`                     |
+| Method | Path                             | Purpose                                    |
+| ------ | -------------------------------- | ------------------------------------------ |
+| POST   | `/transaction-holds/create`      | Create (no `thId`) or update (with `thId`) |
+| GET    | `/transaction-holds/list`        | Search / filter / page the held bills      |
+| GET    | `/transaction-holds/get`         | One hold by `thId`                         |
+| POST   | `/transaction-holds/:id/resume`  | Take the edit lock — `HELD` → `LOCKED`     |
+| POST   | `/transaction-holds/:id/release` | Give it back — `LOCKED` → `HELD`           |
+| POST   | `/transaction-holds/:id/convert` | Bill it — `LOCKED` → `CONVERTED`           |
+| DELETE | `/transaction-holds/delete`      | Soft delete by `thId`                      |
 
 ## Notes
 
@@ -67,7 +70,7 @@ into the UI state — it is stored and handed back verbatim.
   | --- | --- |
   | `ck_th_status` | `TransactionHoldStatus` — `HELD`, `LOCKED`, `RESUMED`, `CONVERTED`, `CANCELLED`, `EXPIRED` |
   | `ck_th_doc_type` | `TransactionHoldDocType` — `SALE_INVOICE`, `POS_BILL`, `DELIVERY_CHALLAN`, `SALE_ORDER`, `SALE_RETURN`, `PURCHASE_INVOICE`, `PURCHASE_ORDER`, `GRN`, `PURCHASE_RETURN` (also the set for `thConvertedDocType`) |
-  | `ck_th_device_type` | `TransactionHoldDeviceType` — `DESKTOP`, `POS_TERMINAL`, `TABLET`, `MOBILE`, `HANDHELD`, `KIOSK` |
+  | `ck_th_device_type` | `TransactionHoldDeviceType` — `DESKTOP`, `WEB`, `MOBILE` |
   | `ck_th_total_amount` | `thTotalAmount >= 0` — DTO decorator on the payload, `ensureValuesAreAllowed` on the merged row |
   | `ck_th_converted` | `thStatus = CONVERTED` requires **both** `thConvertedDocId` and `thConvertedAt` |
 
@@ -117,10 +120,71 @@ into the UI state — it is stored and handed back verbatim.
   mirrors the stored row exactly; a screen needing the company / branch / user
   name resolves it from its own masters.
 - Audit entries are written under screen name **"Transaction Hold"**, screen type
-  `transaction` (auto-created on first write).
-- **Not in scope here** — this is CRUD only. Resuming a hold onto a till
-  (locking it, bumping `th_resume_count`) and converting it into a bill are
-  workflow endpoints: they would set the same columns this module already
-  validates, and `TransactionHoldService` is exported from the module so the
-  flow that raises the document can stamp the conversion trace inside its own
-  transaction.
+  `transaction` (auto-created on first write). Each lock transition writes one
+  `update` entry naming the device (`Hold resumed on device …`).
+
+## The device edit lock
+
+A hold may be open on **one device at a time**. The holder is the **device**
+(the `X-Device-Id` header), not the operator: two operators sharing a till are
+the same holder, one operator on two tills is not.
+
+```
+HELD ──(resume by device)──▶ LOCKED ──(convert)──▶ CONVERTED
+                               │
+                               └──(release)──▶ HELD
+```
+
+- **The lock holder is `th_locked_by`**, which is why it (and `th_resumed_by`)
+  are `varchar(64)` to match `th_device_id` — widened from 50 by migration
+  `20260805110000_widen_transaction_hold_lock_columns`, a bare
+  `ALTER COLUMN … TYPE` so the partial indexes below are left untouched. The
+  device id is stored exactly as sent (trimmed only): upper-casing it would stop
+  it matching itself on the ownership check. Longer than 64 is a 400 rather than
+  a truncation that could never match again.
+- **Every transition is one conditional `updateMany`** — the status it is moving
+  *from* (and, on release / convert, `th_locked_by = <this device>`) sits in the
+  WHERE clause, never in a preceding SELECT. Two tills resuming the same parked
+  bill therefore serialize on the row: Postgres makes the loser re-evaluate the
+  predicate against the winner's committed row, it matches nothing (`count = 0`),
+  and the loser is told who holds it. A read-then-update would let both pass the
+  check and both write. The service *does* read the row first, but only to
+  snapshot the "before" side of the audit entry — that read gates nothing, and
+  the tests prove it by racing two resumes through `Promise.all`.
+- **Resume** (`HELD` → `LOCKED`) bumps `th_resume_count`, stamps
+  `th_locked_by` / `th_locked_at` / `th_resumed_by` / `th_resumed_at`, and
+  answers the whole hold **including `th_ui_state`** so the till can redraw the
+  screen. Locked by another device → **409** naming it; already closed → 409.
+  Locked by the **same** device → **200 without a second increment**, so a
+  retried request or a double tap on the recall list is harmless.
+- **Release** (`LOCKED` → `HELD`) clears `th_locked_by` / `th_locked_at` only —
+  `th_resumed_by` / `th_resumed_at` / `th_resume_count` are history, not lock
+  state. A hold that is already `HELD` answers 200 unchanged (the caller asked
+  for the state it is in); one locked by another device is **403**.
+- **Convert** (`LOCKED` → `CONVERTED`) stamps the conversion trace, drops the
+  lock and closes the hold for good — it can never be resumed or billed again
+  (409). There is no idempotent path: a device that does not hold the lock gets
+  **403** and nothing is written.
+- **Scope and soft delete are part of every lock query** (`th_company_id`,
+  `th_branch_id`, `th_is_deleted = false`), so a hold can be neither taken nor
+  spent from another company or branch — those answer 404, the same as an
+  unknown id, rather than confirming the row exists elsewhere.
+- **No timeouts, no auto-release, no crash recovery.** A `LOCKED` hold stays
+  locked until the device that took it gives it back; `th_expires_at` is not
+  read or written by any of these paths (the column and `ix_th_expiry` exist for
+  a future purge job). A till that dies holding a lock needs an operator to
+  release it — deliberately, so a half-finished bill is never pulled out from
+  under a working till.
+- **`POST /transaction-holds/create` can still write `th_status` / `th_locked_by`
+  directly.** It is the CRUD path and validates the columns rather than the
+  transition, so it bypasses the ownership check; the lock endpoints are the
+  supported way to move them.
+- The recall list already carries `thStatus`, `thLockedBy`, `thCounterId` and
+  `thDeviceId` on every row (the payload mirrors the stored row, nothing is
+  narrowed by a `select`), which is what a screen needs to grey out a `LOCKED`
+  row and show "In use — &lt;device&gt;". A **configured grid** would answer with
+  its own column set instead — there is none for this table today, so the list
+  always takes the Prisma path unless a plain `search` is sent.
+- **Still not in scope here**: raising the document itself. `TransactionHoldService`
+  is exported from the module so the flow that bills a hold can call
+  `convertHold` inside its own transaction.

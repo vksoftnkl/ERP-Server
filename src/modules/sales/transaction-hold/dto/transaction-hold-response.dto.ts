@@ -59,11 +59,17 @@ export class TransactionHoldPayloadDto {
   thRemarks!: string | null;
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   thExpiresAt!: string | null;
-  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  // Device ids (X-Device-Id), so 64 like thDeviceId — not the 50 the audit
+  // actor columns carry.
+  @ApiPropertyOptional({
+    maxLength: 64,
+    nullable: true,
+    description: 'Device holding the edit lock while thStatus is LOCKED',
+  })
   thLockedBy!: string | null;
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   thLockedAt!: string | null;
-  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  @ApiPropertyOptional({ maxLength: 64, nullable: true })
   thResumedBy!: string | null;
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   thResumedAt!: string | null;

@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   ExceptionFilter,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Logger,
@@ -51,6 +52,15 @@ export function throwConflict<
   TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
 >(message: string, errors: TErrorDetail[]): never {
   throw new ConflictException(buildErrorResponse<TErrorDetail, TErrorResponse>(message, errors));
+}
+// 403 — the row exists and the request is well formed, but it belongs to someone
+// else (e.g. an edit lock held by another device). Distinct from a 409: retrying
+// will not help until the holder gives it up.
+export function throwForbidden<
+  TErrorDetail extends ModuleErrorDetail,
+  TErrorResponse extends ModuleErrorResponse<TErrorDetail> = ModuleErrorResponse<TErrorDetail>,
+>(message: string, errors: TErrorDetail[]): never {
+  throw new ForbiddenException(buildErrorResponse<TErrorDetail, TErrorResponse>(message, errors));
 }
 export function throwNotFound<
   TErrorDetail extends ModuleErrorDetail,

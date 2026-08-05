@@ -34,9 +34,12 @@ model TransactionHold {
   thExpiresAt        DateTime? @map("th_expires_at")  @db.Timestamptz(6)
 
   // ---- concurrency -------------------------------------------------------
-  thLockedBy         String?   @map("th_locked_by")  @db.VarChar(50)
+  // th_locked_by / th_resumed_by hold a DEVICE id, so they are VarChar(64) to
+  // match th_device_id — widened from 50 in migration
+  // 20260805110000_widen_transaction_hold_lock_columns.
+  thLockedBy         String?   @map("th_locked_by")  @db.VarChar(64)
   thLockedAt         DateTime? @map("th_locked_at")  @db.Timestamptz(6)
-  thResumedBy        String?   @map("th_resumed_by") @db.VarChar(50)
+  thResumedBy        String?   @map("th_resumed_by") @db.VarChar(64)
   thResumedAt        DateTime? @map("th_resumed_at") @db.Timestamptz(6)
   thResumeCount      Int       @default(0) @map("th_resume_count")
 

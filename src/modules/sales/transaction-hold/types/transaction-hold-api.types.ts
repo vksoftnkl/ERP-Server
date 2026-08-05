@@ -50,7 +50,7 @@ export enum TransactionHoldDocType {
 export enum TransactionHoldDeviceType {
   DESKTOP = 'DESKTOP',
   WEB = 'WEB',
-  MOBILE='MOBILE'
+  MOBILE = 'MOBILE',
 }
 export const TRANSACTION_HOLD_STATUSES = Object.values(TransactionHoldStatus);
 export const TRANSACTION_HOLD_DOC_TYPES = Object.values(TransactionHoldDocType);
@@ -69,6 +69,31 @@ export const TRANSACTION_HOLD_EXPIRABLE_STATUSES = [
   TransactionHoldStatus.HELD,
   TransactionHoldStatus.LOCKED,
 ] as readonly string[];
+// The edit-lock state machine the resume / release / convert endpoints drive.
+// The lock holder is the DEVICE (the X-Device-Id header), not the user: two
+// operators sharing one till are the same holder, one operator on two tills is
+// not.
+//
+//   HELD ──(resume by device)──▶ LOCKED ──(convert)──▶ CONVERTED
+//                                  │
+//                                  └──(release)──▶ HELD
+//
+// There is deliberately NO timeout or auto-release: a LOCKED hold stays locked
+// until the device that took it gives it back. th_expires_at is untouched by
+// these paths.
+export interface TransactionHoldLockScope {
+  thCompanyId: string;
+  thBranchId: string;
+}
+// The document a hold became, stamped onto the conversion trace as the hold
+// closes. th_converted_doc_id is polymorphic (no FK), so the type travels with
+// the id.
+export interface TransactionHoldConversion {
+  thConvertedDocType: TransactionHoldDocType;
+  thConvertedDocId: string;
+  thConvertedNo?: string | null;
+  thConvertedBy?: string | null;
+}
 // One entry per single-column enum CHECK, in the order the columns are declared.
 // `nullable` mirrors the DDL: th_doc_type, th_status and th_device_type are NOT
 // NULL, th_converted_doc_type is nullable until the hold becomes a document.
