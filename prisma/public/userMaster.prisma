@@ -66,6 +66,7 @@ model UserMaster {
   // ── Relations ──────────────────────────────────────────────────────────────
   userMenus              UserMenus[]
   deviceMasters          DeviceMaster[]
+  voucherHeaders         AccVoucherHeader[]
   tenderDetails          AccTenderDetail[]
 
   // ── Indexes ────────────────────────────────────────────────────────────────

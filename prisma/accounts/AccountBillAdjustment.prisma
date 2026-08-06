@@ -1,0 +1,86 @@
+/// Settlement rows: what a receipt, payment, credit note or journal did to a
+/// bill. Not partitioned — a settlement routinely lands in a different FY
+/// from the bill it clears, which is why abaAccYear (FY of the settlement)
+/// and abaVoucherAccYear (FY of the voucher) are separate columns.
+model AccBillAdjustment {
+  abaId                 String    @id(map: "pk_acc_bill_adjustment") @default(dbgenerated("uuidv7()")) @db.Uuid @map("aba_id")
+  abaCompanyId          String    @db.Uuid @map("aba_company_id")
+  // Branch where the money was COLLECTED. May differ from the bill branch —
+  // that is the whole point of the chain-store split.
+  abaBranchId           String    @db.Uuid @map("aba_branch_id")
+  abaTenantId           String?   @db.Uuid @map("aba_tenant_id")
+  abaAccYear            String    @db.Char(9) @map("aba_acc_year")
+
+  // What is being settled
+  abaBillId             String    @db.Uuid @map("aba_bill_id")
+  abaPartyId            String    @db.Uuid @map("aba_party_id")
+  abaSalesmanId         String?   @db.Uuid @map("aba_salesman_id")
+
+  // The voucher doing the settling (header is partitioned, so acc_year too)
+  abaVoucherId          String    @db.Uuid @map("aba_voucher_id")
+  abaVoucherAccYear     String    @db.Char(9) @map("aba_voucher_acc_year")
+  abaVoucherLineId      String?   @db.Uuid @map("aba_voucher_line_id")
+  abaVoucherTypeId      Int       @map("aba_voucher_type_id")
+  abaVoucherNo          BigInt?   @map("aba_voucher_no")
+  abaVoucherRefno       String?   @db.VarChar(50) @map("aba_voucher_refno")
+  abaRowNo              Int       @map("aba_row_no")
+  abaAdjDate            DateTime  @db.Date @map("aba_adj_date")
+
+  // ck_aba_adj_type:
+  //   AGAINST_REF     receipt or payment applied to a bill
+  //   ADVANCE_ADJ     an existing ADVANCE bill applied to a real bill
+  //   DISCOUNT        cash / early-payment discount
+  //   WRITE_OFF       bad debt or rounding write-off
+  //   CREDIT_NOTE     sales return or rate difference
+  //   INTEREST_WAIVER charged interest given up on negotiation
+  abaAdjType            String    @default("AGAINST_REF") @db.VarChar(20) @map("aba_adj_type")
+  abaDrCr               String    @db.Char(2) @map("aba_dr_cr")
+
+  // These three roll up onto AccBill
+  abaAllocAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("aba_alloc_amount")
+  abaDiscAmount         Decimal   @default(0) @db.Decimal(18, 2) @map("aba_disc_amount")
+  abaWriteoffAmount     Decimal   @default(0) @db.Decimal(18, 2) @map("aba_writeoff_amount")
+  abaProfitAmount       Decimal   @default(0) @db.Decimal(18, 2) @map("aba_profit_amount")
+
+  // P&L ledger for the non-cash part: Discount Allowed, Bad Debts Written
+  // Off, Interest Waived.
+  abaEffectLedgerId     String?   @db.Uuid @map("aba_effect_ledger_id")
+
+  // How the money arrived
+  abaSettlementMode     String?   @db.VarChar(20) @map("aba_settlement_mode")
+  abaSettlementLedgerId String    @db.Uuid @map("aba_settlement_ledger_id")
+  abaIsPostDated        Boolean   @default(false) @map("aba_is_post_dated")
+  abaPdcDueDate         DateTime? @db.Date @map("aba_pdc_due_date")
+  abaNarration          String?   @map("aba_narration")
+
+  // Audit
+  abaIsActive           Boolean   @default(true) @map("aba_is_active")
+  abaIsDeleted          Boolean   @default(false) @map("aba_is_deleted")
+  abaSyncDate           DateTime? @db.Timestamptz(6) @map("aba_sync_date")
+  abaCreatedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("aba_created_on")
+  abaCreatedBy          String?   @db.VarChar(50) @map("aba_created_by")
+  abaModifiedOn         DateTime? @db.Timestamptz(6) @map("aba_modified_on")
+  abaModifiedBy         String?   @db.VarChar(50) @map("aba_modified_by")
+
+  // Relations
+  bill                  AccBill          @relation(fields: [abaBillId], references: [ablId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_bill")
+  voucherHeader         AccVoucherHeader @relation(fields: [abaVoucherId, abaVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_aba_voucher")
+  voucherType           AccVoucherType   @relation(fields: [abaVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_voucher_type")
+  party                 AccLedgerMaster  @relation("BillAdjustmentParty", fields: [abaPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_party")
+  effectLedger          AccLedgerMaster? @relation("BillAdjustmentEffectLedger", fields: [abaEffectLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_effect_ledger")
+  settlementLedger      AccLedgerMaster  @relation("BillAdjustmentSettleLedger", fields: [abaSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_settle_ledger")
+
+  @@map("acc_bill_adjustment")
+  @@schema("accounts")
+  // DB-only objects not expressible in the Prisma schema (see migration
+  // 20260806090000_add_voucher_header_bills_pdc):
+  //   - Partial UNIQUE index ux_aba_voucher_row.
+  //   - Partial/covering indexes ix_aba_bill, ix_aba_voucher, ix_aba_party,
+  //     ix_aba_salesman, ix_aba_pdc.
+  //   - CHECK constraints ck_aba_adj_type, ck_aba_dr_cr, ck_aba_row_no,
+  //     ck_aba_acc_year, ck_aba_voucher_acc_year, ck_aba_amounts (the row must
+  //     actually do something), ck_aba_type_amount (the amount column must
+  //     match what the row claims to be), ck_aba_effect_ledger,
+  //     ck_aba_settle_ledger, ck_aba_pdc.
+  //   - No FK on aba_company_id / aba_branch_id / aba_salesman_id.
+}

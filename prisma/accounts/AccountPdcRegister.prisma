@@ -1,0 +1,122 @@
+/// Post-dated cheques and mandates, in both directions. Not partitioned: an
+/// instrument routinely matures, clears or bounces in a later financial year
+/// than the one it was received in.
+///
+/// Two posting modes, per apdPostingMode:
+///   ON_RECEIPT  — a receipt voucher is raised the day the cheque arrives,
+///                 crediting the party and debiting a 'Cheques in Hand'
+///                 control ledger. Bills settle immediately.
+///   ON_CLEARING — nothing is posted until the bank clears it. The party
+///                 stays outstanding and this register row is the only
+///                 record.
+///
+/// Lifecycle: HELD -> DEPOSITED -> CLEARED
+///                              -> BOUNCED -> (re-present or REPLACED)
+///            HELD -> RETURNED / CANCELLED / REPLACED
+model AccPdcRegister {
+  apdId                String    @id(map: "pk_acc_pdc_register") @default(dbgenerated("uuidv7()")) @db.Uuid @map("apd_id")
+  apdCompanyId         String    @db.Uuid @map("apd_company_id")
+  // Branch that took the instrument in
+  apdBranchId          String    @db.Uuid @map("apd_branch_id")
+  apdTenantId          String?   @db.Uuid @map("apd_tenant_id")
+  // FY it was received in
+  apdAccYear           String    @db.Char(9) @map("apd_acc_year")
+
+  // ck_apd_tra_type: R = receivable (a customer's cheque we hold),
+  //                  P = payable (our cheque handed to a supplier)
+  apdTraType           String    @db.Char(1) @map("apd_tra_type")
+  apdPartyId           String    @db.Uuid @map("apd_party_id")
+  apdSalesmanId        String?   @db.Uuid @map("apd_salesman_id")
+
+  // The instrument — ck_apd_instrument:
+  //   CHEQUE | DD | PAY_ORDER | ECS | NACH | UPI_MANDATE
+  apdInstrumentType    String    @default("CHEQUE") @db.VarChar(20) @map("apd_instrument_type")
+  apdInstrumentNo      String    @db.VarChar(30) @map("apd_instrument_no")
+  // The post-date written on the cheque — the maturity date the due-list
+  // works from, not the date it was received.
+  apdInstrumentDate    DateTime  @db.Date @map("apd_instrument_date")
+  apdAmount            Decimal   @db.Decimal(18, 2) @map("apd_amount")
+  apdBankName          String?   @db.VarChar(100) @map("apd_bank_name")
+  apdBankBranch        String?   @db.VarChar(100) @map("apd_bank_branch")
+  apdIfsc              String?   @db.VarChar(11) @map("apd_ifsc")
+  apdMicr              String?   @db.VarChar(9) @map("apd_micr")
+  apdDrawerName        String?   @db.VarChar(150) @map("apd_drawer_name")
+  apdReceivedOn        DateTime  @db.Date @map("apd_received_on")
+
+  // Our own bank ledger: where it will be deposited (R) or drawn on (P)
+  apdBankLedgerId      String?   @db.Uuid @map("apd_bank_ledger_id")
+
+  // Accounting linkage — ck_apd_posting_mode: ON_RECEIPT | ON_CLEARING
+  apdPostingMode       String    @default("ON_CLEARING") @db.VarChar(15) @map("apd_posting_mode")
+  apdVoucherId         String?   @db.Uuid @map("apd_voucher_id")
+  apdVoucherAccYear    String?   @db.Char(9) @map("apd_voucher_acc_year")
+  // acc_tender_detail row. No FK: that table is partitioned on a composite
+  // key this column cannot address on its own.
+  apdTenderId          String?   @db.Uuid @map("apd_tender_id")
+
+  // Lifecycle — ck_apd_status:
+  //   HELD | DEPOSITED | CLEARED | BOUNCED | RETURNED | CANCELLED | REPLACED
+  apdStatus            String    @default("HELD") @db.VarChar(15) @map("apd_status")
+  apdStatusOn          DateTime? @db.Timestamptz(6) @map("apd_status_on")
+  apdStatusBy          String?   @db.VarChar(50) @map("apd_status_by")
+  // How many times it has been sent to the bank — what distinguishes a first
+  // bounce from a repeat.
+  apdPresentCount      Int       @default(0) @map("apd_present_count")
+
+  apdDepositDate       DateTime? @db.Date @map("apd_deposit_date")
+  apdDepositSlipNo     String?   @db.VarChar(50) @map("apd_deposit_slip_no")
+
+  apdClearDate         DateTime? @db.Date @map("apd_clear_date")
+  apdClearVoucherId    String?   @db.Uuid @map("apd_clear_voucher_id")
+  apdClearAccYear      String?   @db.Char(9) @map("apd_clear_acc_year")
+
+  apdBounceDate        DateTime? @db.Date @map("apd_bounce_date")
+  apdBounceReason      String?   @db.VarChar(150) @map("apd_bounce_reason")
+  apdBounceCharges     Decimal   @default(0) @db.Decimal(18, 2) @map("apd_bounce_charges")
+  apdBounceVoucherId   String?   @db.Uuid @map("apd_bounce_voucher_id")
+  apdBounceAccYear     String?   @db.Char(9) @map("apd_bounce_acc_year")
+  apdChargeVoucherId   String?   @db.Uuid @map("apd_charge_voucher_id")
+  apdChargeAccYear     String?   @db.Char(9) @map("apd_charge_acc_year")
+
+  apdReplacedById      String?   @db.Uuid @map("apd_replaced_by_id")
+  apdCancelDate        DateTime? @db.Date @map("apd_cancel_date")
+  apdCancelReason      String?   @db.VarChar(250) @map("apd_cancel_reason")
+  apdRemarks           String?   @map("apd_remarks")
+
+  // Audit
+  apdIsActive          Boolean   @default(true) @map("apd_is_active")
+  apdIsDeleted         Boolean   @default(false) @map("apd_is_deleted")
+  apdSyncDate          DateTime? @db.Timestamptz(6) @map("apd_sync_date")
+  apdCreatedOn         DateTime  @default(now()) @db.Timestamptz(6) @map("apd_created_on")
+  apdCreatedBy         String?   @db.VarChar(50) @map("apd_created_by")
+  apdModifiedOn        DateTime? @db.Timestamptz(6) @map("apd_modified_on")
+  apdModifiedBy        String?   @db.VarChar(50) @map("apd_modified_by")
+
+  // Relations
+  party                AccLedgerMaster   @relation("PdcParty", fields: [apdPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_party")
+  bankLedger           AccLedgerMaster?  @relation("PdcBankLedger", fields: [apdBankLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_bank_ledger")
+
+  receiptVoucher       AccVoucherHeader? @relation("PdcReceiptVoucher", fields: [apdVoucherId, apdVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_voucher")
+  clearVoucher         AccVoucherHeader? @relation("PdcClearVoucher", fields: [apdClearVoucherId, apdClearAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_clear_voucher")
+  bounceVoucher        AccVoucherHeader? @relation("PdcBounceVoucher", fields: [apdBounceVoucherId, apdBounceAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_bounce_voucher")
+  chargeVoucher        AccVoucherHeader? @relation("PdcChargeVoucher", fields: [apdChargeVoucherId, apdChargeAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_charge_voucher")
+
+  replacedBy           AccPdcRegister?   @relation("PdcReplacement", fields: [apdReplacedById], references: [apdId], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_replaced_by")
+  replaces             AccPdcRegister[]  @relation("PdcReplacement")
+
+  @@map("acc_pdc_register")
+  @@schema("accounts")
+  // DB-only objects not expressible in the Prisma schema (see migration
+  // 20260806090000_add_voucher_header_bills_pdc):
+  //   - Partial UNIQUE index ux_apd_instrument — the same cheque number
+  //     cannot be registered twice for one party in one FY.
+  //   - Partial/covering indexes ix_apd_due, ix_apd_party, ix_apd_bank,
+  //     ix_apd_bounced, ix_apd_branch, ix_apd_voucher, ix_apd_replaced.
+  //   - CHECK constraints ck_apd_tra_type, ck_apd_instrument, ck_apd_status,
+  //     ck_apd_posting_mode, ck_apd_amount, ck_apd_charges, ck_apd_present,
+  //     ck_apd_acc_year, ck_apd_dates, ck_apd_deposited, ck_apd_cleared,
+  //     ck_apd_bounced, ck_apd_replaced, ck_apd_cancelled, ck_apd_self,
+  //     ck_apd_posting, ck_apd_seq.
+  //   - No FK on apd_company_id / apd_branch_id / apd_salesman_id /
+  //     apd_tender_id.
+}

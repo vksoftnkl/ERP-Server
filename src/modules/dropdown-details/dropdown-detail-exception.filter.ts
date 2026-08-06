@@ -4,7 +4,6 @@ import {
   DropdownDetailErrorDetail,
   DropdownDetailErrorResponse,
 } from './types/dropdown-detail-api.types';
-
 @Catch()
 export class DropdownDetailExceptionFilter extends FixedExceptionFilter<
   DropdownDetailErrorDetail,

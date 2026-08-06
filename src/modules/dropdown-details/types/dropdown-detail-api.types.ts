@@ -1,7 +1,6 @@
 export type { FixedErrorDetail as DropdownDetailErrorDetail } from 'src/common/types/module-api.types';
 export type { FixedErrorResponse as DropdownDetailErrorResponse } from 'src/common/types/module-api.types';
 export type { FixedSuccessResponse as DropdownDetailSuccessResponse } from 'src/common/types/module-api.types';
-
 export interface DropdownColumnPayload {
   dropdown_columns_id: string;
   dropdown_columns_dropdown_id: string;
@@ -20,7 +19,6 @@ export interface DropdownColumnPayload {
   dropdown_columns_modified_by: string | null;
   dropdown_columns_sync_on: string | null;
 }
-
 export interface DropdownDetailPayload {
   dropdown_id: string;
   dropdown_name: string;
@@ -41,15 +39,12 @@ export interface DropdownDetailPayload {
   dropdown_sync_on: string | null;
   columns: DropdownColumnPayload[];
 }
-
 export type DropdownDetailListItem = DropdownDetailPayload | Record<string, unknown>;
-
 export interface DropdownRunMeta {
   page: number;
   limit: number;
   total: number;
 }
-
 export interface DropdownRunResult {
   items: Record<string, unknown>[];
   meta: DropdownRunMeta;

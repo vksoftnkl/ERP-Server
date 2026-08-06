@@ -7,6 +7,103 @@ Project "Project Name" {
   Note: 'Test project description'
 }
 
+Table acc_bill_adjustment {
+  abaId String [pk]
+  abaCompanyId String [not null]
+  abaBranchId String [not null]
+  abaTenantId String
+  abaAccYear String [not null]
+  abaBillId String [not null]
+  abaPartyId String [not null]
+  abaSalesmanId String
+  abaVoucherId String [not null]
+  abaVoucherAccYear String [not null]
+  abaVoucherLineId String
+  abaVoucherTypeId Int [not null]
+  abaVoucherNo BigInt
+  abaVoucherRefno String
+  abaRowNo Int [not null]
+  abaAdjDate DateTime [not null]
+  abaAdjType String [not null, default: 'AGAINST_REF']
+  abaDrCr String [not null]
+  abaAllocAmount Decimal [not null, default: 0]
+  abaDiscAmount Decimal [not null, default: 0]
+  abaWriteoffAmount Decimal [not null, default: 0]
+  abaProfitAmount Decimal [not null, default: 0]
+  abaEffectLedgerId String
+  abaSettlementMode String
+  abaSettlementLedgerId String [not null]
+  abaIsPostDated Boolean [not null, default: false]
+  abaPdcDueDate DateTime
+  abaNarration String
+  abaIsActive Boolean [not null, default: true]
+  abaIsDeleted Boolean [not null, default: false]
+  abaSyncDate DateTime
+  abaCreatedOn DateTime [default: `now()`, not null]
+  abaCreatedBy String
+  abaModifiedOn DateTime
+  abaModifiedBy String
+  bill acc_bills [not null]
+  voucherHeader acc_voucher_header [not null]
+  voucherType acc_voucher_types [not null]
+  party acc_ledger_master [not null]
+  effectLedger acc_ledger_master
+  settlementLedger acc_ledger_master [not null]
+
+  Note: 'Settlement rows: what a receipt, payment, credit note or journal did to a
+bill. Not partitioned — a settlement routinely lands in a different FY
+from the bill it clears, which is why abaAccYear (FY of the settlement)
+and abaVoucherAccYear (FY of the voucher) are separate columns.'
+}
+
+Table acc_bills {
+  ablId String [pk]
+  ablCompanyId String [not null]
+  ablBranchId String [not null]
+  ablTenantId String
+  ablAccYear String [not null]
+  ablPartyId String [not null]
+  ablSalesmanId String
+  ablAgentId String
+  ablBillType String [not null]
+  ablVoucherId String
+  ablVoucherLineId String
+  ablVoucherTypeId Int [not null]
+  ablVoucherNo BigInt
+  ablDocDate DateTime
+  ablDocRefno String
+  ablBillRefno String [not null]
+  ablBillDate DateTime [not null]
+  ablDueDate DateTime
+  ablCreditDays Int [not null, default: 0]
+  ablGraceDays Int [not null, default: 0]
+  ablDrCr String [not null]
+  ablNarration String
+  ablBillAmount Decimal [not null]
+  ablAllocAmount Decimal [not null, default: 0]
+  ablDiscAmount Decimal [not null, default: 0]
+  ablWriteoffAmount Decimal [not null, default: 0]
+  ablPendingAmount Decimal
+  ablIsActive Boolean [not null, default: true]
+  ablIsDeleted Boolean [not null, default: false]
+  ablSyncDate DateTime
+  ablCreatedOn DateTime [default: `now()`, not null]
+  ablCreatedBy String
+  ablModifiedOn DateTime
+  ablModifiedBy String
+  voucherHeader acc_voucher_header
+  voucherType acc_voucher_types [not null]
+  party acc_ledger_master [not null]
+  adjustments acc_bill_adjustment [not null]
+  voucherLines acc_vouchers [not null]
+
+  Note: 'One row per bill. Never partitioned and never carried forward at year
+end — the same row simply stays open across financial years.
+
+ablAllocAmount / ablDiscAmount / ablWriteoffAmount are maintained from
+AccBillAdjustment and must never be written from application code.'
+}
+
 Table account_groups {
   accGroupId String [pk]
   accGroupCompanyId String
@@ -140,6 +237,16 @@ Table acc_ledger_master {
   tenderDetailSettleLedgers acc_tender_detail [not null]
   tenderDetailPartyLedgers acc_tender_detail [not null]
   voucherDocRegisterParties acc_voucher_doc_register [not null]
+  voucherHeaderParties acc_voucher_header [not null]
+  voucherHeaderOppLedgers acc_voucher_header [not null]
+  accountingEntries acc_vouchers [not null]
+  oppositeAccountingEntries acc_vouchers [not null]
+  billParties acc_bills [not null]
+  billAdjustmentParties acc_bill_adjustment [not null]
+  billAdjustmentEffectLedgers acc_bill_adjustment [not null]
+  billAdjustmentSettleLedgers acc_bill_adjustment [not null]
+  pdcParties acc_pdc_register [not null]
+  pdcBankLedgers acc_pdc_register [not null]
   chargeMasters charge_master [not null]
   chargeDetails sale_charge_detail [not null]
 
@@ -147,6 +254,107 @@ Table acc_ledger_master {
     (ledCompanyId, ledName) [unique]
     (ledCompanyId, ledTallyName) [unique]
   }
+}
+
+Table acc_opening_balance {
+  opId String [pk]
+  opCompanyId String [not null]
+  opBranchId String
+  opAccYear String [not null]
+  opLedgerId String [not null]
+  opAmount Decimal [not null, default: 0]
+  opDrCr String [not null]
+  opSource String [not null, default: 'CARRY_FORWARD']
+  opIsStale Boolean [not null, default: false]
+  opStaleSince DateTime
+  opGeneratedAt DateTime
+  opGeneratedBy String
+  opRemarks String
+  opIsDeleted Boolean [not null, default: false]
+  opCreatedAt DateTime [default: `now()`, not null]
+  opCreatedBy String
+  opModifiedAt DateTime
+  opModifiedBy String
+
+  Note: 'Opening balance per ledger per financial year. Balance-sheet ledgers
+only; P&L ledgers always start at zero.'
+}
+
+Table acc_pdc_register {
+  apdId String [pk]
+  apdCompanyId String [not null]
+  apdBranchId String [not null]
+  apdTenantId String
+  apdAccYear String [not null]
+  apdTraType String [not null]
+  apdPartyId String [not null]
+  apdSalesmanId String
+  apdInstrumentType String [not null, default: 'CHEQUE']
+  apdInstrumentNo String [not null]
+  apdInstrumentDate DateTime [not null]
+  apdAmount Decimal [not null]
+  apdBankName String
+  apdBankBranch String
+  apdIfsc String
+  apdMicr String
+  apdDrawerName String
+  apdReceivedOn DateTime [not null]
+  apdBankLedgerId String
+  apdPostingMode String [not null, default: 'ON_CLEARING']
+  apdVoucherId String
+  apdVoucherAccYear String
+  apdTenderId String
+  apdStatus String [not null, default: 'HELD']
+  apdStatusOn DateTime
+  apdStatusBy String
+  apdPresentCount Int [not null, default: 0]
+  apdDepositDate DateTime
+  apdDepositSlipNo String
+  apdClearDate DateTime
+  apdClearVoucherId String
+  apdClearAccYear String
+  apdBounceDate DateTime
+  apdBounceReason String
+  apdBounceCharges Decimal [not null, default: 0]
+  apdBounceVoucherId String
+  apdBounceAccYear String
+  apdChargeVoucherId String
+  apdChargeAccYear String
+  apdReplacedById String
+  apdCancelDate DateTime
+  apdCancelReason String
+  apdRemarks String
+  apdIsActive Boolean [not null, default: true]
+  apdIsDeleted Boolean [not null, default: false]
+  apdSyncDate DateTime
+  apdCreatedOn DateTime [default: `now()`, not null]
+  apdCreatedBy String
+  apdModifiedOn DateTime
+  apdModifiedBy String
+  party acc_ledger_master [not null]
+  bankLedger acc_ledger_master
+  receiptVoucher acc_voucher_header
+  clearVoucher acc_voucher_header
+  bounceVoucher acc_voucher_header
+  chargeVoucher acc_voucher_header
+  replacedBy acc_pdc_register
+  replaces acc_pdc_register [not null]
+
+  Note: 'Post-dated cheques and mandates, in both directions. Not partitioned: an
+instrument routinely matures, clears or bounces in a later financial year
+than the one it was received in.
+
+Two posting modes, per apdPostingMode:
+ON_RECEIPT  — a receipt voucher is raised the day the cheque arrives,
+crediting the party and debiting a \'Cheques in Hand\'
+control ledger. Bills settle immediately.
+ON_CLEARING — nothing is posted until the bank clears it. The party
+stays outstanding and this register row is the only
+record.
+
+Lifecycle: HELD -> DEPOSITED -> CLEARED
+-> BOUNCED -> (re-present or REPLACED)
+HELD -> RETURNED / CANCELLED / REPLACED'
 }
 
 Table acc_tender_detail {
@@ -572,6 +780,142 @@ Table acc_voucher_doc_register {
   ewaybill acc_voucher_doc_ewaybill
 }
 
+Table acc_voucher_header {
+  avhVoucherId String [not null]
+  avhCompanyId String [not null]
+  avhBranchId String [not null]
+  avhTenantId String
+  avhAccYear String [not null]
+  avhVoucherTypeId Int [not null]
+  avhVoucherNo BigInt
+  avhVoucherSlno BigInt
+  avhVoucherRefno String
+  avhVoucherDate DateTime [not null]
+  avhSrcModule String
+  avhSrcDocType String
+  avhSrcDocId String
+  avhUsrRefno String
+  avhDocRefno String
+  avhDocDate DateTime
+  avhDocAmount Decimal [not null, default: 0]
+  avhAdjustAmount Decimal [not null, default: 0]
+  avhRoundOff Decimal [not null, default: 0]
+  avhTotalDebit Decimal [not null, default: 0]
+  avhTotalCredit Decimal [not null, default: 0]
+  avhPartyId String [not null]
+  avhOppositeLedgerId String
+  avhEmployeeId String[] [not null]
+  avhRemarks String
+  avhAgainstVoucherId String
+  avhAgainstAccYear String
+  avhReversalVoucherId String
+  avhReversalAccYear String
+  avhVoucherStatus String [not null, default: 'DRAFT']
+  avhStatusOn DateTime
+  avhStatusBy String
+  avhPostedOn DateTime
+  avhCancelReason String
+  avhUserId String [not null]
+  avhSessionId String
+  avhDeviceType String
+  avhDeviceId String
+  avhPrintCount Int [not null, default: 0]
+  avhWhatsappStatus String [not null, default: 'NA']
+  avhSmsStatus String [not null, default: 'NA']
+  avhTallyExportStatus String [not null, default: 'PENDING']
+  avhTallyExportedOn DateTime
+  avhTallyGuid String
+  avhTallyErrorMsg String
+  avhIsActive Boolean [not null, default: true]
+  avhIsDeleted Boolean [not null, default: false]
+  avhSyncDate DateTime
+  avhCreatedOn DateTime [default: `now()`, not null]
+  avhCreatedBy String
+  avhModifiedOn DateTime
+  avhModifiedBy String
+  company companys [not null]
+  branch branch_master [not null]
+  voucherType acc_voucher_types [not null]
+  party acc_ledger_master [not null]
+  oppositeLedger acc_ledger_master
+  user user_master [not null]
+  againstVoucher acc_voucher_header
+  againstVouchers acc_voucher_header [not null]
+  reversalVoucher acc_voucher_header
+  reversalVouchers acc_voucher_header [not null]
+  vouchers acc_vouchers [not null]
+  bills acc_bills [not null]
+  billAdjustments acc_bill_adjustment [not null]
+  pdcReceipts acc_pdc_register [not null]
+  pdcClearings acc_pdc_register [not null]
+  pdcBounces acc_pdc_register [not null]
+  pdcCharges acc_pdc_register [not null]
+
+  indexes {
+    (avhVoucherId, avhAccYear) [pk]
+  }
+
+  Note: 'Voucher head. Partitioned by acc_year, so the primary key is the
+composite (avhVoucherId, avhAccYear) and every FK into this table must
+carry both columns.
+
+Status / device / message / tally values are VARCHAR + CHECK in the DB,
+not PG enums — the app layer owns the value sets.
+
+Lifecycle: DRAFT -> APPROVED -> POSTED, or -> CANCELLED. A DRAFT holds no
+voucher number and contributes nothing to any balance.'
+}
+
+Table acc_vouchers {
+  avId String [not null]
+  avVoucherId String [not null]
+  avCompanyId String [not null]
+  avBranchId String [not null]
+  avTenantId String
+  avAccYear String [not null]
+  avVoucherTypeId Int [not null]
+  avVoucherNo BigInt [not null]
+  avRowNo Int [not null]
+  avVoucherDate DateTime [not null]
+  avVoucherRefno String
+  avDocDate DateTime
+  avBillDate DateTime
+  avBillRefno String
+  avBillId String
+  avDrCr String [not null]
+  avLedgerId String [not null]
+  avOppLedgerId String [not null]
+  avAmount Decimal [not null, default: 0]
+  avSignedAmount Decimal
+  avCostCentreId String
+  avRemarks String
+  avSessionId String
+  avUserId String [not null]
+  avReconDate DateTime
+  avReconRefno String
+  avIsReconciled Boolean
+  avIsActive Boolean [not null, default: true]
+  avIsDeleted Boolean [not null, default: false]
+  avSyncDate DateTime
+  avCreatedOn DateTime [default: `now()`, not null]
+  avCreatedBy String
+  avModifiedOn DateTime
+  avModifiedBy String
+  voucherHeader acc_voucher_header [not null]
+  ledger acc_ledger_master [not null]
+  oppositeLedger acc_ledger_master [not null]
+  voucherType acc_voucher_types [not null]
+  bill acc_bills
+
+  indexes {
+    (avId, avAccYear) [pk]
+  }
+
+  Note: 'Double-entry ledger rows. Partitioned by acc_year like the header, so the
+primary key is the composite (avId, avAccYear) and the link back to the
+header carries both columns.'
+}
+
 Table acc_voucher_seq {
   id String [pk]
   vchrTypeId Int [not null]
@@ -634,6 +978,10 @@ Table acc_voucher_types {
   voucherCheques acc_voucher_cheques [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
+  voucherHeaders acc_voucher_header [not null]
+  vouchers acc_vouchers [not null]
+  bills acc_bills [not null]
+  billAdjustments acc_bill_adjustment [not null]
 }
 
 Table acc_ship_addrs {
@@ -1921,6 +2269,7 @@ Table branch_master {
   voucherDocDetails acc_voucher_doc_detail [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
+  voucherHeaders acc_voucher_header [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
   physicalStockHeaders physical_stock_header [not null]
@@ -2062,6 +2411,7 @@ Table companys {
   voucherDocDetails acc_voucher_doc_detail [not null]
   voucherDocRegisters acc_voucher_doc_register [not null]
   voucherSequences acc_voucher_seq [not null]
+  voucherHeaders acc_voucher_header [not null]
   openingStockHeaders opening_stock_header [not null]
   openingStockDetails opening_stock_detail [not null]
   physicalStockHeaders physical_stock_header [not null]
@@ -2210,6 +2560,7 @@ Table user_master {
   usrModifiedBy String
   userMenus user_menus [not null]
   deviceMasters device_master [not null]
+  voucherHeaders acc_voucher_header [not null]
   tenderDetails acc_tender_detail [not null]
 }
 
@@ -3703,6 +4054,24 @@ Enum AuditScreenType {
   other
 }
 
+Ref: acc_bill_adjustment.abaBillId > acc_bills.ablId [delete: Restrict]
+
+Ref: acc_bill_adjustment.(abaVoucherId, abaVoucherAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Cascade]
+
+Ref: acc_bill_adjustment.abaVoucherTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
+
+Ref: acc_bill_adjustment.abaPartyId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_bill_adjustment.abaEffectLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_bill_adjustment.abaSettlementLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_bills.(ablVoucherId, ablAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
+
+Ref: acc_bills.ablVoucherTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
+
+Ref: acc_bills.ablPartyId > acc_ledger_master.ledId [delete: Restrict]
+
 Ref: account_groups.accGroupParentId - account_groups.accGroupId
 
 Ref: account_groups.accGroupCompanyId > companys.compId [delete: Restrict]
@@ -3712,6 +4081,20 @@ Ref: acc_ledger_master.ledCompanyId > companys.compId [delete: Restrict]
 Ref: acc_ledger_master.ledGroupId > account_groups.accGroupId [delete: Restrict]
 
 Ref: acc_ledger_master.ledBranchId > branch_master.brId [delete: Restrict]
+
+Ref: acc_pdc_register.apdPartyId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_pdc_register.apdBankLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_pdc_register.(apdVoucherId, apdVoucherAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
+
+Ref: acc_pdc_register.(apdClearVoucherId, apdClearAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
+
+Ref: acc_pdc_register.(apdBounceVoucherId, apdBounceAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
+
+Ref: acc_pdc_register.(apdChargeVoucherId, apdChargeAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
+
+Ref: acc_pdc_register.apdReplacedById - acc_pdc_register.apdId [delete: Restrict]
 
 Ref: acc_tender_detail.tdCompanyId > companys.compId [delete: Restrict]
 
@@ -3768,6 +4151,32 @@ Ref: acc_voucher_doc_register.gdrBranchId > branch_master.brId
 Ref: acc_voucher_doc_register.gdrPartyId > acc_ledger_master.ledId
 
 Ref: acc_voucher_doc_register.gdrVoucherTypeId > acc_voucher_types.vchrTypeId
+
+Ref: acc_voucher_header.avhCompanyId > companys.compId [delete: Restrict]
+
+Ref: acc_voucher_header.avhBranchId > branch_master.brId [delete: Restrict]
+
+Ref: acc_voucher_header.avhVoucherTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
+
+Ref: acc_voucher_header.avhPartyId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_voucher_header.avhOppositeLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_voucher_header.avhUserId > user_master.usrId [delete: Restrict]
+
+Ref: acc_voucher_header.(avhAgainstVoucherId, avhAgainstAccYear) - acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
+
+Ref: acc_voucher_header.(avhReversalVoucherId, avhReversalAccYear) - acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
+
+Ref: acc_vouchers.(avVoucherId, avAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Cascade]
+
+Ref: acc_vouchers.avLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_vouchers.avOppLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_vouchers.avVoucherTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
+
+Ref: acc_vouchers.avBillId > acc_bills.ablId [delete: Restrict]
 
 Ref: acc_voucher_seq.vchrTypeId > acc_voucher_types.vchrTypeId
 

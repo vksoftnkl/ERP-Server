@@ -1,0 +1,73 @@
+/// Double-entry ledger rows. Partitioned by acc_year like the header, so the
+/// primary key is the composite (avId, avAccYear) and the link back to the
+/// header carries both columns.
+model AccVoucher {
+  avId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("av_id")
+  avVoucherId        String    @db.Uuid @map("av_voucher_id")
+  avCompanyId        String    @db.Uuid @map("av_company_id")
+  avBranchId         String    @db.Uuid @map("av_branch_id")
+  avTenantId         String?   @db.Uuid @map("av_tenant_id")
+  avAccYear          String    @db.Char(9) @map("av_acc_year")
+  avVoucherTypeId    Int       @map("av_voucher_type_id")
+  avVoucherNo        BigInt    @map("av_voucher_no")
+  avRowNo            Int       @map("av_row_no")
+  avVoucherDate      DateTime  @db.Timestamptz(6) @map("av_voucher_date")
+  avVoucherRefno     String?   @db.VarChar(50) @map("av_voucher_refno")
+  avDocDate          DateTime? @db.Date @map("av_doc_date")
+  avBillDate         DateTime? @db.Timestamptz(6) @map("av_bill_date")
+  avBillRefno        String?   @db.VarChar(100) @map("av_bill_refno")
+  avBillId           String?   @db.Uuid @map("av_bill_id")
+
+  // Accounting line — ck_av_dr_cr: DR | CR
+  avDrCr             String    @db.Char(2) @map("av_dr_cr")
+  avLedgerId         String    @db.Uuid @map("av_ledger_id")
+  avOppLedgerId      String    @db.Uuid @map("av_opp_ledger_id")
+  avAmount           Decimal   @default(0) @db.Decimal(18, 2) @map("av_amount")
+  // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
+  // create or update, the write will be rejected by Postgres.
+  avSignedAmount     Decimal?  @db.Decimal(18, 2) @map("av_signed_amount")
+
+  avCostCentreId     String?   @db.Uuid @map("av_cost_centre_id")
+  avRemarks          String?   @map("av_remarks")
+  avSessionId        String?   @db.Uuid @map("av_session_id")
+  avUserId           String    @db.Uuid @map("av_user_id")
+
+  // Bank / cash reconciliation
+  avReconDate        DateTime? @db.Date @map("av_recon_date")
+  avReconRefno       String?   @db.VarChar(50) @map("av_recon_refno")
+  // GENERATED ALWAYS ... STORED in the DB. Read-only, as above.
+  avIsReconciled     Boolean?  @map("av_is_reconciled")
+
+  // Audit
+  avIsActive         Boolean   @default(true) @map("av_is_active")
+  avIsDeleted        Boolean   @default(false) @map("av_is_deleted")
+  avSyncDate         DateTime? @db.Timestamptz(6) @map("av_sync_date")
+  avCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("av_created_on")
+  avCreatedBy        String?   @db.Uuid @map("av_created_by")
+  avModifiedOn       DateTime? @db.Timestamptz(6) @map("av_modified_on")
+  avModifiedBy       String?   @db.Uuid @map("av_modified_by")
+
+  // Relations
+  voucherHeader      AccVoucherHeader @relation(fields: [avVoucherId, avAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_av_header")
+  ledger             AccLedgerMaster  @relation("AccVoucherLedger", fields: [avLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_ledger")
+  oppositeLedger     AccLedgerMaster  @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
+  voucherType        AccVoucherType   @relation(fields: [avVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_voucher_type")
+  bill               AccBill?         @relation(fields: [avBillId], references: [ablId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_bill")
+
+  @@id([avId, avAccYear], map: "pk_acc_vouchers")
+  @@index([avVoucherId, avAccYear], map: "ix_av_voucher")
+  @@map("acc_vouchers")
+  @@schema("accounts")
+  // DB-only objects not expressible in the Prisma schema (see migration
+  // 20260806090000_add_voucher_header_bills_pdc):
+  //   - PARTITION BY LIST (av_acc_year); partition acc_vouchers_2026_2027.
+  //   - Generated columns av_signed_amount (DR positive, CR negative) and
+  //     av_is_reconciled (av_recon_date IS NOT NULL).
+  //   - Partial UNIQUE index ux_av_voucher_row.
+  //   - Partial/covering indexes ix_av_ledger, ix_av_daybook, ix_av_opp_ledger,
+  //     ix_av_bill, ix_av_unrecon.
+  //   - CHECK constraints ck_av_dr_cr, ck_av_amount, ck_av_row_no,
+  //     ck_av_acc_year, ck_av_self, ck_av_recon.
+  //   - No FK on av_company_id / av_branch_id / av_user_id / av_cost_centre_id:
+  //     the source DDL declares none.
+}

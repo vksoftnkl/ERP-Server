@@ -36,6 +36,7 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+import { deleteBillPosting, postBillToAccounts, syncBillPosting } from './bill-posting.helper';
 // accounts.acc_voucher_types row "Bil" / Sales Bill. Its numbering format
 // (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
 // bill numbers are drawn from.
@@ -53,6 +54,14 @@ const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
 const BILL_DOC_TYPES = ['TAX_INVOICE', 'BILL_OF_SUPPLY'] as const;
 const BILL_TYPES = ['CASH', 'CREDIT'] as const;
 const BILL_STATUSES = ['DRAFT', 'POSTED', 'CANCELLED'] as const;
+// The status that puts the bill into the books. A bill created with this status
+// also writes accounts.acc_voucher_header + accounts.acc_bills — see
+// postBillToAccounts.
+const BILL_STATUS_POSTED = 'POSTED';
+// The status a soft-deleted bill is left in, and the reason recorded with it
+// when the bill carries none of its own (sb_cancel_reason is VarChar(250)).
+const BILL_STATUS_CANCELLED = 'CANCELLED';
+const BILL_DELETE_CANCEL_REASON = 'Bill deleted';
 const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'] as const;
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'] as const;
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
@@ -427,11 +436,19 @@ export class BillService {
     const godownNameById = await this.resolveGodownNames(record.items);
     return this.toPayload({ ...record, charges, tenders }, godownNameById);
   }
-  async softDelete(sbId: string): Promise<{ sbId: string; deleted: true }> {
+  async softDelete(
+    sbId: string,
+    sbCompanyId: string,
+    sbBranchId: string,
+    sbAccYear: string,
+  ): Promise<{ sbId: string; deleted: true }> {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.saleBill.findFirst({
         where: {
           sbId,
+          sbCompanyId,
+          sbBranchId,
+          sbAccYear,
           sbIsDeleted: false,
         },
       });
@@ -444,16 +461,28 @@ export class BillService {
       }
       const modifiedOn = new Date();
       const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      // A deleted bill is a cancelled bill: the status moves with the flag so
+      // anything reading sbStatus rather than sbIsDeleted still sees a document
+      // that is out of play, and the cancellation columns say who did it and
+      // when.
+      const headerChanges = {
+        sbStatus: BILL_STATUS_CANCELLED,
+        sbCancelledOn: modifiedOn,
+        sbCancelledBy: actor,
+        sbCancelReason: existing.sbCancelReason ?? BILL_DELETE_CANCEL_REASON,
+        sbIsDeleted: true,
+        sbModifiedOn: modifiedOn,
+        sbModifiedBy: actor,
+      };
       const result = await tx.saleBill.updateMany({
         where: {
           sbId,
+          sbCompanyId,
+          sbBranchId,
+          sbAccYear,
           sbIsDeleted: false,
         },
-        data: {
-          sbIsDeleted: true,
-          sbModifiedOn: modifiedOn,
-          sbModifiedBy: actor,
-        },
+        data: headerChanges,
       });
       if (result.count === 0) {
         throwSalesNotFound<BillErrorDetail, BillErrorResponse>(
@@ -467,6 +496,9 @@ export class BillService {
       await tx.saleBillItem.updateMany({
         where: {
           sbiBillId: sbId,
+          // sale_bill_item is partitioned by sbi_acc_year like its header, so
+          // the year is passed down to keep the cascade on one partition.
+          sbiAccYear: sbAccYear,
           sbiIsDeleted: false,
         },
         data: {
@@ -494,13 +526,13 @@ export class BillService {
         actor,
         modifiedOn,
       );
+      // ... and out of the books, in the same transaction. Only a bill that was
+      // POSTED has anything in accounts; for anything else this is a no-op. A
+      // bill with money already settled against its receivable is refused here
+      // rather than deleted, so the transaction rolls back untouched.
+      await deleteBillPosting(tx, existing, actor, modifiedOn);
       const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({
-        ...existing,
-        sbIsDeleted: true,
-        sbModifiedOn: modifiedOn,
-        sbModifiedBy: actor,
-      });
+      const modifiedRecord = this.toPayload({ ...existing, ...headerChanges });
       await this.auditLogService.logEntityChange(
         {
           // A soft delete is logged as 'cancel', the way every other module logs
@@ -599,7 +631,28 @@ export class BillService {
           createdBy,
           BILL_TENDER_AUDIT,
         );
-        const payload = this.toPayload({ ...created, items, charges, tenders });
+        // A bill created straight into POSTED goes into the books in the same
+        // transaction: one accounts.acc_voucher_header and, when it carries a
+        // value, one accounts.acc_bills receivable. A bill created as DRAFT is
+        // not posted here — it has no accounting effect until it is posted.
+        let posted = created;
+        if (created.sbStatus === BILL_STATUS_POSTED) {
+          const postingResult = await postBillToAccounts(
+            tx,
+            created,
+            BILL_VCHR_TYPE_ID,
+            createdBy,
+            now,
+          );
+          posted = await tx.saleBill.update({
+            where: { sbId_sbAccYear: { sbId: created.sbId, sbAccYear: created.sbAccYear } },
+            data: {
+              sbPostedVoucherId: postingResult.voucherId,
+              sbPostedOn: postingResult.postedOn,
+            },
+          });
+        }
+        const payload = this.toPayload({ ...posted, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -687,7 +740,29 @@ export class BillService {
           modifiedBy,
           BILL_TENDER_AUDIT,
         );
-        const payload = this.toPayload({ ...updated, items, charges, tenders });
+        // Accounts follow the bill's status, in this same transaction: posting a
+        // DRAFT writes the voucher and receivable, saving an already-posted bill
+        // re-syncs them, and moving it out of POSTED cancels the voucher and
+        // retires the receivable.
+        const posting = await syncBillPosting(tx, updated, BILL_VCHR_TYPE_ID, modifiedBy, now);
+        // sbPostedVoucherId / sbPostedOn are in BILL_OPTIONAL_FIELDS, so the
+        // payload can carry them — but the posting result is what decides what
+        // they say. Written back only when they actually differ, so an ordinary
+        // DRAFT save does not pay for a second update.
+        let posted = updated;
+        if (
+          updated.sbPostedVoucherId !== posting.voucherId ||
+          updated.sbPostedOn?.getTime() !== posting.postedOn?.getTime()
+        ) {
+          posted = await tx.saleBill.update({
+            where: { sbId_sbAccYear: { sbId: updated.sbId, sbAccYear: updated.sbAccYear } },
+            data: {
+              sbPostedVoucherId: posting.voucherId,
+              sbPostedOn: posting.postedOn,
+            },
+          });
+        }
+        const payload = this.toPayload({ ...posted, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
             action: 'update',

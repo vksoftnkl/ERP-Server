@@ -27,13 +27,10 @@ import {
   throwFixedNotFound,
   toNullableNumber,
 } from 'src/common/utils/module-service.utils';
-
 const DROPDOWN_DETAIL_TABLE_NAME = 'dropdown details';
 const DROPDOWN_COLUMN_TABLE_NAME = 'dropdown column';
 const DROPDOWN_DETAIL_AUDIT_SCREEN_NAME = 'Dropdown Details';
-
 type DropdownDetailsWithColumns = DropdownDetails & { dropdownColumns: DropdownColumns[] };
-
 @Injectable()
 export class DropdownDetailsService {
   constructor(
@@ -42,13 +39,11 @@ export class DropdownDetailsService {
     private readonly requestContextService: RequestContextService,
     private readonly configuredGridSqlService: ConfiguredGridSqlService,
   ) {}
-
   async save(saveDropdownDetailDto: SaveDropdownDetailDto): Promise<DropdownDetailPayload> {
     return saveDropdownDetailDto.dropdown_id
       ? this.updateDropdownDetails(saveDropdownDetailDto)
       : this.createDropdownDetails(saveDropdownDetailDto);
   }
-
   async list(queryDto: ListDropdownDetailQueryDto): Promise<{ items: DropdownDetailListItem[] }> {
     const requestedDropdownId = queryDto.dropdownId ?? queryDto.dropdown_id;
     const parsedDropdownId = requestedDropdownId
@@ -77,14 +72,12 @@ export class DropdownDetailsService {
     })) as unknown as DropdownDetailsWithColumns[];
     return { items: records.map((record) => this.toPayload(record)) };
   }
-
   async run(queryDto: RunDropdownQueryDto): Promise<DropdownRunResult> {
     const dropdownId = this.parseIntId('dropdown_id', queryDto.dropdown_id);
     const page = queryDto.page ?? 1;
     const limit = queryDto.limit ?? 20;
     const skip = (page - 1) * limit;
     const dropdownPrm = this.parseDropdownParam(queryDto.dropdown_param);
-
     const dropdown = await this.prisma.dropdownDetails.findFirst({
       where: { dropdownId },
       select: { dropdownId: true, dropdownSql: true },
@@ -96,7 +89,6 @@ export class DropdownDetailsService {
         `No dropdown details found with id ${queryDto.dropdown_id}`,
       );
     }
-
     const baseSql = dropdown.dropdownSql?.trim();
     if (!baseSql) {
       throwFixedBadRequest<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
@@ -104,7 +96,6 @@ export class DropdownDetailsService {
         [{ field: 'dropdown_sql', message: `Dropdown ${queryDto.dropdown_id} has no configured SQL` }],
       );
     }
-
     const tableName = this.configuredGridSqlService.extractTopLevelFromTableName(baseSql) ?? '';
     const validation = this.configuredGridSqlService.validateBaseSql({ sql: baseSql, tableName });
     if (!validation.isValid) {
@@ -113,11 +104,9 @@ export class DropdownDetailsService {
         [{ field: 'dropdown_sql', message: validation.message }],
       );
     }
-
     const finalSql = dropdownPrm
       ? this.configuredGridSqlService.substituteGridPrm(validation.normalizedSql, dropdownPrm)
       : validation.normalizedSql;
-
     let searchableFieldNames: string[] | undefined;
     if (queryDto.search?.trim()) {
       const columns = await this.prisma.dropdownColumns.findMany({
@@ -140,7 +129,6 @@ export class DropdownDetailsService {
         finalSql,
       );
     }
-
     let result: { items: Record<string, unknown>[]; total: number };
     try {
       result = await this.configuredGridSqlService.runPagedQuery<Record<string, unknown>>({
@@ -167,13 +155,11 @@ export class DropdownDetailsService {
         ],
       );
     }
-
     return {
       items: result.items,
       meta: { page, limit, total: result.total },
     };
   }
-
   private extractErrorMessage(error: unknown): string | null {
     if (error instanceof Error) return error.message.replace(/\s+/g, ' ').trim();
     if (typeof error === 'object' && error !== null && 'message' in error) {
@@ -182,7 +168,6 @@ export class DropdownDetailsService {
     }
     return null;
   }
-
   async updateColumnWidths(dto: SaveColumnWidthDto): Promise<{ updated: number }> {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
@@ -233,7 +218,6 @@ export class DropdownDetailsService {
     });
     return { updated: count };
   }
-
   async updateVisibilitySettings(dto: SaveVisibilitySettingsDto): Promise<{ updated: number }> {
     let count = 0;
     await this.prisma.$transaction(async (tx) => {
@@ -259,7 +243,6 @@ export class DropdownDetailsService {
     });
     return { updated: count };
   }
-
   async getById(dropdownId: string): Promise<DropdownDetailPayload> {
     const parsedDropdownId = this.parseIntId('dropdown_id', dropdownId);
     const record = await this.prisma.dropdownDetails.findFirst({
@@ -279,10 +262,8 @@ export class DropdownDetailsService {
     }
     return this.toPayload(record as DropdownDetailsWithColumns);
   }
-
   async delete(dropdownId: string): Promise<{ dropdown_id: string; deleted: true }> {
     const parsedDropdownId = this.parseIntId('dropdown_id', dropdownId);
-
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.dropdownDetails.findFirst({
         where: { dropdownId: parsedDropdownId },
@@ -295,9 +276,7 @@ export class DropdownDetailsService {
           `No dropdown details found with id ${dropdownId}`,
         );
       }
-
       await tx.dropdownDetails.delete({ where: { dropdownId: parsedDropdownId } });
-
       const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       await this.auditLogService.logEntityChange(
         {
@@ -314,19 +293,15 @@ export class DropdownDetailsService {
         },
         tx,
       );
-
       return { dropdown_id: dropdownId, deleted: true };
     });
   }
-
   async deleteColumn(dropdown_columns_id: string): Promise<{ dropdown_columns_id: string; deleted: true }> {
     const parsedColumnId = this.parseUuidId('dropdown_columns_id', dropdown_columns_id);
-
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.dropdownColumns.findFirst({
         where: { dropdownColumnsId: parsedColumnId },
       });
-
       if (!existing) {
         throwFixedNotFound<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
           'Dropdown column not found',
@@ -334,9 +309,7 @@ export class DropdownDetailsService {
           `No dropdown column found with id ${dropdown_columns_id}`,
         );
       }
-
       await tx.dropdownColumns.delete({ where: { dropdownColumnsId: parsedColumnId } });
-
       const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       await this.auditLogService.logEntityChange(
         {
@@ -353,11 +326,9 @@ export class DropdownDetailsService {
         },
         tx,
       );
-
       return { dropdown_columns_id: dropdown_columns_id, deleted: true };
     });
   }
-
   private async createDropdownDetails(
     saveDropdownDetailDto: SaveDropdownDetailDto,
   ): Promise<DropdownDetailPayload> {
@@ -369,7 +340,6 @@ export class DropdownDetailsService {
       dropdownModifiedBy: null,
     };
     this.applyOptionalDropdownFields(data, saveDropdownDetailDto);
-
     return this.prisma.$transaction(async (tx) => {
       const created = await tx.dropdownDetails.create({ data });
       if (saveDropdownDetailDto.dropdown_columns?.length) {
@@ -407,19 +377,16 @@ export class DropdownDetailsService {
       return payload;
     });
   }
-
   private async updateDropdownDetails(
     saveDropdownDetailDto: SaveDropdownDetailDto,
   ): Promise<DropdownDetailPayload> {
     const dropdownId = saveDropdownDetailDto.dropdown_id!;
     const parsedDropdownId = this.parseIntId('dropdown_id', dropdownId);
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.dropdownDetails.findFirst({
         where: { dropdownId: parsedDropdownId },
       });
-
       if (!existing) {
         throwFixedNotFound<DropdownDetailErrorDetail, DropdownDetailErrorResponse>(
           'Dropdown details not found',
@@ -427,7 +394,6 @@ export class DropdownDetailsService {
           `No dropdown details found with id ${dropdownId}`,
         );
       }
-
       const data: Prisma.DropdownDetailsUncheckedUpdateInput = {
         dropdownName: saveDropdownDetailDto.dropdown_name.trim(),
         dropdownSql: saveDropdownDetailDto.dropdown_sql.trim(),
@@ -435,7 +401,6 @@ export class DropdownDetailsService {
       };
       this.applyOptionalDropdownFields(data, saveDropdownDetailDto);
       await tx.dropdownDetails.update({ where: { dropdownId: parsedDropdownId }, data });
-
       if (saveDropdownDetailDto.dropdown_columns !== undefined) {
         // Prune removed columns BEFORE upserting. New columns in the payload have
         // no dropdown_columns_id yet, so they are absent from keptIds; deleting
@@ -459,7 +424,6 @@ export class DropdownDetailsService {
           tx,
         );
       }
-
       const full = await tx.dropdownDetails.findFirstOrThrow({
         where: { dropdownId: parsedDropdownId },
         include: {
@@ -487,7 +451,6 @@ export class DropdownDetailsService {
       return payload;
     });
   }
-
   private async saveColumnsInTx(
     columns: SaveDropdownColumnDto[],
     dropdownId: number,
@@ -498,7 +461,6 @@ export class DropdownDetailsService {
       await this.upsertColumnInTx(colDto, dropdownId, actor, tx);
     }
   }
-
   private async upsertColumnInTx(
     colDto: SaveDropdownColumnDto,
     dropdownId: number,
@@ -524,7 +486,6 @@ export class DropdownDetailsService {
         [{ field: 'dropdown_columns_data_type', message: 'dropdown_columns_data_type must not be empty' }],
       );
     }
-
     if (colDto.dropdown_columns_id) {
       const parsedId = this.parseUuidId('dropdown_columns_id', colDto.dropdown_columns_id);
       const colData: Prisma.DropdownColumnsUncheckedUpdateInput = {
@@ -549,7 +510,6 @@ export class DropdownDetailsService {
       await tx.dropdownColumns.create({ data: colData });
     }
   }
-
   private applyOptionalColumnFields(
     data: Prisma.DropdownColumnsUncheckedCreateInput | Prisma.DropdownColumnsUncheckedUpdateInput,
     dto: SaveDropdownColumnDto,
@@ -567,7 +527,6 @@ export class DropdownDetailsService {
     if (hasOwnProperty(dto, 'dropdown_columns_sql_name'))
       data.dropdownColumnsSqlName = dto.dropdown_columns_sql_name;
   }
-
   private applyOptionalDropdownFields(
     data: Prisma.DropdownDetailsUncheckedCreateInput | Prisma.DropdownDetailsUncheckedUpdateInput,
     dto: SaveDropdownDetailDto,
@@ -590,7 +549,6 @@ export class DropdownDetailsService {
     if (hasOwnProperty(dto, 'dropdown_device_type'))
       data.dropdownDeviceType = dto.dropdown_device_type;
   }
-
   private toPayload(record: DropdownDetailsWithColumns): DropdownDetailPayload {
     return {
       dropdown_id: String(record.dropdownId),
@@ -613,7 +571,6 @@ export class DropdownDetailsService {
       columns: record.dropdownColumns.map((col) => this.toColumnPayload(col)),
     };
   }
-
   private toColumnPayload(record: DropdownColumns): DropdownColumnPayload {
     return {
       dropdown_columns_id: record.dropdownColumnsId,
@@ -634,7 +591,6 @@ export class DropdownDetailsService {
       dropdown_columns_sync_on: record.dropdownColumnsSyncOn?.toISOString() ?? null,
     };
   }
-
   private parseDropdownParam(raw: string | undefined): Record<string, unknown> | undefined {
     if (raw === undefined) {
       return undefined;
@@ -683,7 +639,6 @@ export class DropdownDetailsService {
     }
     return prm;
   }
-
   private parseUuidId(field: string, value: string): string {
     const normalized = value.trim();
     if (
@@ -696,7 +651,6 @@ export class DropdownDetailsService {
     }
     return normalized;
   }
-
   private parseIntId(field: string, value: string): number {
     const normalized = value.trim();
     if (!/^\d+$/.test(normalized)) {

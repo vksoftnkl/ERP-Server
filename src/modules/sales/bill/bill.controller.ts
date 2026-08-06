@@ -83,13 +83,19 @@ export class BillController {
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Soft delete bill by id' })
   @ApiQuery({ name: 'sbId', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'sbCompanyId', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'sbBranchId', schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'sbAccYear', schema: { type: 'string' } })
   @ApiOkResponse({ type: BillSuccessDeleteDto })
   @ApiBadRequestResponse({ type: BillErrorResponseDto })
   @ApiNotFoundResponse({ type: BillErrorResponseDto })
   async remove(
     @Query('sbId', new ParseUUIDPipe({ version: '7' })) sbId: string,
+    @Query('sbCompanyId', new ParseUUIDPipe({ version: '7' })) sbCompanyId: string,
+    @Query('sbBranchId', new ParseUUIDPipe({ version: '7' })) sbBranchId: string,
+    @Query('sbAccYear') sbAccYear: string,
   ): Promise<BillSuccessResponse<{ sbId: string; deleted: true }>> {
-    const data = await this.billService.softDelete(sbId);
+    const data = await this.billService.softDelete(sbId, sbCompanyId, sbBranchId, sbAccYear);
     return {
       success: true,
       message: 'Bill deleted successfully',

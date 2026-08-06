@@ -60,8 +60,9 @@ are written and read back by `ChargeDetailService` / `TenderDetailService`. See
 | `GET` | `/get` | Fetch one active bill by `sbId` (query param), including its active line items, applied charges and tender lines. |
 | `DELETE` | `/delete` | Soft-delete a bill by `sbId` (query param), cascading to its line items, applied charges and tender lines. |
 
-`GET /get` additionally requires `sbCompanyId`, `sbBranchId` and `sbAccYear` as query parameters
-(the row is looked up by all four together); `DELETE /delete` takes only `sbId`.
+`GET /get` and `DELETE /delete` both additionally require `sbCompanyId`, `sbBranchId` and
+`sbAccYear` as query parameters — the row is looked up by all four together, so a bill can only be
+read or deleted from within its own company/branch/year scope.
 
 ### Create / update semantics
 
@@ -264,6 +265,28 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
 - `DELETE /delete` sets `sbIsDeleted = true` (plus `sbModifiedOn` / `sbModifiedBy`) on the header,
   then cascades the same to all its active line items, **applied charges and tender lines** so
   nothing stays active under a logically deleted header. Rows are never hard-deleted.
+- **A deleted bill is also a cancelled one**: the same write sets `sbStatus = 'CANCELLED'`,
+  `sbCancelledOn`, `sbCancelledBy` and — when the bill carries none of its own — `sbCancelReason`
+  = `'Bill deleted'`, so anything reading the status rather than the flag still sees a document
+  that is out of play. A reason the bill was already cancelled with is kept.
+- **Accounts follow, in the same transaction** (`deleteBillPosting` in
+  [bill-posting.helper.ts](bill-posting.helper.ts)). Only a bill that was **POSTED** has anything
+  in accounts; for anything else this is a no-op. Located through the source document
+  (`ux_avh_src`: company + accYear + `SALES` / `BILL` / `sbId`) rather than
+  `sbPostedVoucherId`, which is client-writable — every non-deleted `acc_voucher_header` raised
+  from the bill gets `avhIsDeleted = true` / `avhIsActive = false` and is moved to `CANCELLED`
+  (with `avhCancelReason = 'Sale bill deleted'` and `avhStatusOn` / `avhStatusBy`, which
+  `ck_avh_cancel` / `ck_avh_status_on` demand), and its `acc_vouchers` ledger lines and `acc_bills`
+  receivables are flagged deleted with it.
+- This is deliberately **not** what unposting does. Moving a bill out of `POSTED` through
+  `POST /create` (`syncBillPosting`) only *cancels* the voucher and retires the receivable — the
+  header stays live, holding the number it consumed and blocking a re-post of the same bill.
+  Deleting the bill flags those rows deleted instead, because the document they were raised from is
+  gone.
+- **A settled bill cannot be deleted**: if any receivable carries a discount or write-off
+  (`ablDiscAmount` / `ablWriteoffAmount` > 0), the delete answers **400** and the whole transaction
+  rolls back — reverse the settlement first. `ablAllocAmount` on its own does not block it: a cash
+  bill seeds that column with its own tender at post time, so it is not a separate settlement.
 - `GET /get` and the update lookup only ever see rows with `sbIsDeleted = false` (and items with
   `sbiIsDeleted = false`, charges with `cdIsDeleted = false`, tenders with `tdIsDeleted = false`).
 
