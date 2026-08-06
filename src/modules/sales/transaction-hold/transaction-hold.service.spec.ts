@@ -123,9 +123,14 @@ type LockPrismaMock = {
 const createLockHarness = (overrides: Partial<TransactionHold> = {}) => {
   let row: TransactionHold = makeHold(overrides);
   const matches = (where: LockWhere): boolean =>
-    Object.entries(where).every(
-      ([field, value]) => (row as unknown as Record<string, unknown>)[field] === value,
-    );
+    Object.entries(where).every(([field, value]) => {
+      const stored = (row as unknown as Record<string, unknown>)[field];
+      // The only Prisma filter these paths use beyond plain equality.
+      if (value !== null && typeof value === 'object' && 'in' in value) {
+        return (value as { in: readonly unknown[] }).in.includes(stored);
+      }
+      return stored === value;
+    });
   const apply = (data: LockData): void => {
     const next = { ...row } as unknown as Record<string, unknown>;
     for (const [field, value] of Object.entries(data)) {
@@ -152,7 +157,9 @@ const createLockHarness = (overrides: Partial<TransactionHold> = {}) => {
     },
     $transaction: jest.fn((cb: (tx: LockPrismaMock) => Promise<unknown>) => cb(prisma)),
   };
-  const audit = { logEntityChange: jest.fn(() => Promise.resolve(undefined)) };
+  const audit = {
+    logEntityChange: jest.fn((_entry: { notes?: string | null }) => Promise.resolve(undefined)),
+  };
   const service = new TransactionHoldService(
     prisma as unknown as PrismaService,
     audit as unknown as AuditLogService,
@@ -306,6 +313,21 @@ describe('TransactionHoldService', () => {
       });
     });
 
+    // The quotation screen parks carts here too; it borrowed SALE_ORDER until
+    // the enum grew its own member.
+    it('accepts QUOTATION as a document type', async () => {
+      const payload = await service.save(
+        createDto({ thDocType: TransactionHoldDocType.QUOTATION, thHoldNo: 'QH-001' }),
+      );
+
+      expect(payload.thDocType).toBe(TransactionHoldDocType.QUOTATION);
+      // ux_th_hold_no keys on the type, so a quotation hold gets its own number
+      // space rather than sharing the sale-order one.
+      expect(prisma.transactionHold.findFirst.mock.calls[0][0]).toMatchObject({
+        where: { thDocType: TransactionHoldDocType.QUOTATION, thHoldNo: 'QH-001' },
+      });
+    });
+
     it('rejects an expiry that is not after the hold date', async () => {
       await expect(
         service.save(
@@ -342,7 +364,7 @@ describe('TransactionHoldService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
 
       await expect(
-        service.save(createDto({ thDocType: 'QUOTATION' as TransactionHoldDocType })),
+        service.save(createDto({ thDocType: 'JOB_CARD' as TransactionHoldDocType })),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       await expect(
@@ -732,6 +754,81 @@ describe('TransactionHoldService', () => {
       await expect(
         lock.service.convertHold(TH_ID, 'D'.repeat(65), SCOPE, CONVERSION),
       ).rejects.toBeInstanceOf(BadRequestException);
+      expect(lock.prisma.transactionHold.updateMany).not.toHaveBeenCalled();
+    });
+
+    // The escape hatch. There is no timeout, so without this a till that died
+    // holding a cart would strand it for good.
+    it('lets another device take the lock away, and says so in the audit', async () => {
+      const lock = createLockHarness();
+      await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+
+      const taken = await lock.service.forceReleaseHold(TH_ID, DEVICE_B, SCOPE);
+
+      expect(taken.thStatus).toBe(TransactionHoldStatus.HELD);
+      expect(taken.thLockedBy).toBeNull();
+      expect(taken.thLockedAt).toBeNull();
+      // Both sides on the record: who took it, and who lost it.
+      expect(lock.audit.logEntityChange.mock.calls[1][0]).toMatchObject({
+        notes: `Hold lock force released by device ${DEVICE_B}, taken from device ${DEVICE_A}`,
+      });
+
+      // …and the taking device can now resume it like any free hold.
+      const resumed = await lock.service.resumeHold(TH_ID, DEVICE_B, SCOPE);
+      expect(resumed.thLockedBy).toBe(DEVICE_B);
+    });
+
+    // Rows a client parked by writing th_status through the CRUD route: not
+    // HELD (so resume 409s) and carrying no th_locked_by (so release 403s).
+    it('frees a legacy RESUMED hold that nothing else can', async () => {
+      const legacy = createLockHarness({ thStatus: 'RESUMED', thResumedBy: 'user-7' });
+
+      await expect(legacy.service.resumeHold(TH_ID, DEVICE_B, SCOPE)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await expect(legacy.service.releaseHold(TH_ID, DEVICE_B, SCOPE)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+
+      const taken = await legacy.service.forceReleaseHold(TH_ID, DEVICE_B, SCOPE);
+      expect(taken.thStatus).toBe(TransactionHoldStatus.HELD);
+    });
+
+    it('will not force a closed hold back open', async () => {
+      const lock = createLockHarness();
+      await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+      await lock.service.convertHold(TH_ID, DEVICE_A, SCOPE, CONVERSION);
+
+      await expect(lock.service.forceReleaseHold(TH_ID, DEVICE_B, SCOPE)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(lock.row().thStatus).toBe(TransactionHoldStatus.CONVERTED);
+      expect(lock.row().thConvertedDocId).toBe(BILL_ID);
+    });
+
+    it('forces only inside the tenant scope, and no-ops on a free hold', async () => {
+      const lock = createLockHarness();
+      await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+
+      await expect(
+        lock.service.forceReleaseHold(TH_ID, DEVICE_B, { ...SCOPE, thCompanyId: OTHER_COMPANY_ID }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(lock.row().thLockedBy).toBe(DEVICE_A);
+
+      await lock.service.forceReleaseHold(TH_ID, DEVICE_B, SCOPE);
+      // Already free — asking again changes nothing rather than failing.
+      const again = await lock.service.forceReleaseHold(TH_ID, DEVICE_B, SCOPE);
+      expect(again.thStatus).toBe(TransactionHoldStatus.HELD);
+    });
+
+    it('still requires a device id to force', async () => {
+      const lock = createLockHarness();
+      await lock.service.resumeHold(TH_ID, DEVICE_A, SCOPE);
+      lock.prisma.transactionHold.updateMany.mockClear();
+
+      await expect(lock.service.forceReleaseHold(TH_ID, undefined, SCOPE)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(lock.prisma.transactionHold.updateMany).not.toHaveBeenCalled();
     });
 

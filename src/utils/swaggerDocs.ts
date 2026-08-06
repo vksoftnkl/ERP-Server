@@ -66,7 +66,7 @@ import { ItemsMasterModule } from 'src/modules/Inventory/items-master/items-mast
 import { ItemsEanCodeMasterModule } from 'src/modules/Inventory/items-ean-code-master/items-ean-code-master.module';
 import { ItemsGstUnitsMasterModule } from 'src/modules/Inventory/items-gst-units-master/items-gst-units-master.module';
 import { GodownsMasterModule } from 'src/modules/Inventory/godowns-master/godowns-master.module';
-import { OpeningStockModule } from 'src/modules/stocks/opening-stock/opening-stock.module';
+// import { OpeningStockModule } from 'src/modules/stocks/opening-stock/opening-stock.module';
 import { ItemStockBalanceModule } from 'src/modules/stocks/itemstockbalance/itemStockBalanceModule';
 import { ItemBatchStockModule } from 'src/modules/stocks/itembatchstock/itemBatchStockModule';
 export const swaggerModuleDocuments = [
@@ -321,7 +321,7 @@ export const swaggerModuleDocuments = [
     path: 'opening-stocks',
     title: 'Opening Stock API',
     description: 'Opening stock module endpoints',
-    include: [OpeningStockModule],
+    // include: [OpeningStockModule],
   },
   {
     path: 'item-stock-balance',

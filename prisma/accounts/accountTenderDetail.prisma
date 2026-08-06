@@ -79,14 +79,9 @@ model AccTenderDetail {
   ledger                AccLedgerMaster  @relation("TenderDetailLedger", fields: [tdTenderLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_ledger")
   settleLedger          AccLedgerMaster? @relation("TenderDetailSettleLedger", fields: [tdSettleLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_settle_ledger")
   partyLedger           AccLedgerMaster  @relation("TenderDetailPartyLedger", fields: [tdPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_party_ledger")
-  // fk_td_voucher — the spec's REFERENCES (avh_voucher_id, avh_acc_year) can't
-  // be created: acc_voucher_header has no unique constraint on that exact
-  // 2-column pair (only on avh_voucher_id alone, and on a 4-column tenant
-  // tuple). Every other FK to acc_voucher_header in this codebase references
-  // avh_voucher_id alone (see AccountVoucherHeader.prisma), so this does too.
-  voucher               AccVoucherHeader? @relation("TenderDetailVoucher", fields: [tdVoucherId], references: [avhVoucherId], onUpdate: Cascade, onDelete: SetNull, map: "fk_td_voucher")
-  settleVoucher         AccVoucherHeader? @relation("TenderDetailSettleVoucher", fields: [tdSettleVoucherId], references: [avhVoucherId], onUpdate: Cascade, onDelete: SetNull, map: "fk_td_settle_voucher")
   // No relation fields for:
+  //   tdVoucherId / tdSettleVoucherId
+  //                 — acc_voucher_header was dropped; both stay plain UUID columns.
   //   tdTenantId    — no Tenant model exists in this schema (same as sb_tenant_id / sq_tenant_id).
   //   tdSessionId   — user_login_sessions.uls_session_id is nullable and not unique,
   //                   so it is not a valid FK target (avh_session_id is likewise unmapped).

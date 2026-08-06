@@ -203,11 +203,7 @@ model AccLedgerMaster {
   tenderDetailLedgers      AccTenderDetail[]      @relation("TenderDetailLedger")
   tenderDetailSettleLedgers AccTenderDetail[]     @relation("TenderDetailSettleLedger")
   tenderDetailPartyLedgers AccTenderDetail[]      @relation("TenderDetailPartyLedger")
-  voucherBillParties       AccVoucherBill[]       @relation("VoucherBillParty")
   voucherDocRegisterParties AccVoucherDocRegister[]
-  voucherHeaderParties     AccVoucherHeader[]
-  accountingEntries        AccVoucher[]           @relation("AccVoucherLedger")
-  oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
   chargeMasters            ChargeMaster[]
   chargeDetails            SaleChargeDetail[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
@@ -307,14 +303,9 @@ model AccTenderDetail {
   ledger                AccLedgerMaster  @relation("TenderDetailLedger", fields: [tdTenderLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_ledger")
   settleLedger          AccLedgerMaster? @relation("TenderDetailSettleLedger", fields: [tdSettleLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_settle_ledger")
   partyLedger           AccLedgerMaster  @relation("TenderDetailPartyLedger", fields: [tdPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_party_ledger")
-  // fk_td_voucher — the spec's REFERENCES (avh_voucher_id, avh_acc_year) can't
-  // be created: acc_voucher_header has no unique constraint on that exact
-  // 2-column pair (only on avh_voucher_id alone, and on a 4-column tenant
-  // tuple). Every other FK to acc_voucher_header in this codebase references
-  // avh_voucher_id alone (see AccountVoucherHeader.prisma), so this does too.
-  voucher               AccVoucherHeader? @relation("TenderDetailVoucher", fields: [tdVoucherId], references: [avhVoucherId], onUpdate: Cascade, onDelete: SetNull, map: "fk_td_voucher")
-  settleVoucher         AccVoucherHeader? @relation("TenderDetailSettleVoucher", fields: [tdSettleVoucherId], references: [avhVoucherId], onUpdate: Cascade, onDelete: SetNull, map: "fk_td_settle_voucher")
   // No relation fields for:
+  //   tdVoucherId / tdSettleVoucherId
+  //                 — acc_voucher_header was dropped; both stay plain UUID columns.
   //   tdTenantId    — no Tenant model exists in this schema (same as sb_tenant_id / sq_tenant_id).
   //   tdSessionId   — user_login_sessions.uls_session_id is nullable and not unique,
   //                   so it is not a valid FK target (avh_session_id is likewise unmapped).
@@ -456,112 +447,6 @@ model AccTenderType {
   @@schema("accounts")
 }
 
-// ----- prisma/accounts/AccountVoucherBills.prisma -----
-enum VoucherBillRefType {
-  NEW_REF
-  AGAINST_REF
-  ON_ACCOUNT
-  ADVANCE
-  AGAINST_ADVANCE
-  @@schema("accounts")
-}
-
-enum VoucherBillDrCr {
-  DR
-  CR
-  @@schema("accounts")
-}
-
-enum VoucherBillTraType {
-  R
-  P
-  @@schema("accounts")
-}
-
-model AccVoucherBill {
-  // Primary
-  avbdId                    String               @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("avbd_id")
-
-  // Links
-  avbdVoucherId             String               @db.Uuid @map("avbd_voucher_id")
-  avbdVoucherLineId         String?              @db.Uuid @map("avbd_voucher_line_id")
-  avbdRowNo                 Int                  @map("avbd_row_no")
-
-  // Multi-branch snapshot
-  avbdAccYear               String               @db.VarChar(9) @map("avbd_acc_year")
-  avbdCompanyId             String               @db.Uuid @map("avbd_company_id")
-  avbdBranchId              String               @db.Uuid @map("avbd_branch_id")
-
-  // Voucher snapshot
-  avbdVoucherTypeId         Int                  @map("avbd_voucher_type_id")
-  avbdVoucherNo             BigInt               @map("avbd_voucher_no")
-  avbdVoucherDate           DateTime             @db.Timestamptz(6) @map("avbd_voucher_date")
-  avbdVoucherRefno          String?              @db.VarChar(50) @map("avbd_voucher_refno")
-
-  // Party / ownership snapshot
-  avbdPartyId               String               @db.Uuid @map("avbd_party_id")
-  avbdSalesmanId            String?              @db.Uuid @map("avbd_salesman_id")
-  avbdUserId                String?              @db.Uuid @map("avbd_user_id")
-  avbdSessionId             String?              @db.Uuid @map("avbd_session_id")
-
-  // Bill/reference classification
-  avbdRefType               VoucherBillRefType   @map("avbd_ref_type")
-  avbdDrCr                  VoucherBillDrCr      @map("avbd_dr_cr")
-  avbdTraType               VoucherBillTraType   @map("avbd_tra_type")
-
-  // Current bill/reference
-  avbdOriginVoucherId       String               @db.Uuid @map("avbd_origin_voucher_id")
-  avbdDocDate               DateTime             @db.Date @map("avbd_doc_date")
-  avbdDocRefno              String?              @db.VarChar(50) @map("avbd_doc_refno")
-  avbdBillDate              DateTime?            @db.Date @map("avbd_bill_date")
-  avbdBillRefno             String               @db.VarChar(100) @map("avbd_bill_refno")
-  avbdDueDate               DateTime?            @db.Date @map("avbd_due_date")
-  avbdBillNarration         String?              @map("avbd_bill_narration")
-
-  // Amounts
-  avbdBillAmount            Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_bill_amount")
-  avbdAllocAmount           Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_alloc_amount")
-  avbdDiscAmount            Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_disc_amount")
-  avbdBalanceAmount         Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_balance_amount")
-  avbdProfitAmount          Decimal              @default(0) @db.Decimal(18, 2) @map("avbd_profit_amount")
-
-  // Adjustment target
-  avbdAgainstBillRefno      String?              @db.VarChar(100) @map("avbd_against_bill_refno")
-  avbdAgainstBillDate       DateTime?            @db.Date @map("avbd_against_bill_date")
-  avbdAgainstVoucherId      String?              @db.Uuid @map("avbd_against_voucher_id")
-  avbdAgainstVoucherLineId  String?              @db.Uuid @map("avbd_against_voucher_line_id")
-
-  // Settlement / narration
-  avbdSettlementMode        String?              @db.VarChar(20) @map("avbd_settlement_mode")
-  avbdSettlementLedgerId    String?              @db.Uuid @map("avbd_settlement_ledger_id")
-  avbdIsPostDated           Boolean              @default(false) @map("avbd_is_post_dated")
-
-  // Status
-  avbdIsActive              Boolean              @default(true) @map("avbd_is_active")
-  avbdIsDeleted             Boolean              @default(false) @map("avbd_is_deleted")
-
-  // Audit
-  avbdSyncDate              DateTime?            @db.Timestamptz(6) @map("avbd_sync_date")
-  avbdCreatedOn             DateTime             @default(now()) @db.Timestamptz(6) @map("avbd_created_on")
-  avbdCreatedBy             String?              @db.Uuid @map("avbd_created_by")
-  avbdUpdatedOn             DateTime?            @db.Timestamptz(6) @map("avbd_updated_on")
-  avbdUpdatedBy             String?              @db.Uuid @map("avbd_updated_by")
-
-  // Relations
-  voucherHeader             AccVoucherHeader     @relation("VoucherBillHeader", fields: [avbdVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_bills_header")
-  voucherType               AccVoucherType       @relation(fields: [avbdVoucherTypeId], references: [vchrTypeId], map: "fk_acc_voucher_bills_voucher_type")
-  company                   Company              @relation(fields: [avbdCompanyId], references: [compId], map: "fk_acc_voucher_bills_company")
-  branch                    BranchMaster         @relation(fields: [avbdBranchId], references: [brId], map: "fk_acc_voucher_bills_branch")
-  party                     AccLedgerMaster      @relation("VoucherBillParty", fields: [avbdPartyId], references: [ledId], map: "fk_acc_voucher_bills_party")
-  againstVoucherHeader      AccVoucherHeader?    @relation("VoucherBillAgainstHeader", fields: [avbdAgainstVoucherId], references: [avhVoucherId], map: "fk_acc_voucher_bills_against_header")
-
-  @@map("acc_voucher_bills")
-  @@schema("accounts")
-  // Partial indexes idx_acc_voucher_bills_voucher, idx_acc_voucher_bills_party,
-  // idx_acc_voucher_bills_salesman, and idx_acc_voucher_bills_origin
-  // WHERE avbd_is_deleted = false are not expressible in Prisma schema.
-}
-
 // ----- prisma/accounts/AccountVoucherCheques.prisma -----
 enum ChequeTraType {
   R
@@ -664,7 +549,7 @@ model AccVoucherCheque {
   chqUpdatedBy         String?               @db.Uuid @map("chq_updated_by")
 
   // Relations
-  voucherHeader        AccVoucherHeader      @relation(fields: [chqVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_cheques_voucher_header")
+  // chqVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
@@ -829,7 +714,7 @@ model AccVoucherDocDetail {
   company             Company                        @relation(fields: [vtxCompanyId], references: [compId], map: "fk_acc_voucher_doc_detail_company")
   branch              BranchMaster                   @relation(fields: [vtxBranchId], references: [brId], map: "fk_acc_voucher_doc_detail_branch")
   docRegister         AccVoucherDocRegister          @relation(fields: [vtxGdrId], references: [gdrId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_gdr")
-  voucherHeader       AccVoucherHeader               @relation(fields: [vtxVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_header")
+  // vtxVoucherId stays a plain UUID column — acc_voucher_header was dropped.
 
   @@map("acc_voucher_doc_detail")
   @@schema("accounts")
@@ -1178,7 +1063,7 @@ model AccVoucherDocRegister {
   company                  Company           @relation(fields: [gdrCompanyId], references: [compId], map: "fk_gdr_voucher_company")
   branch                   BranchMaster      @relation(fields: [gdrBranchId], references: [brId], map: "fk_gdr_voucher_branch")
   party                    AccLedgerMaster   @relation(fields: [gdrPartyId], references: [ledId], map: "fk_gdr_voucher_party")
-  voucherHeader            AccVoucherHeader  @relation(fields: [gdrVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_gdr_voucher_header")
+  // gdrVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   voucherType              AccVoucherType    @relation(fields: [gdrVoucherTypeId], references: [vchrTypeId], map: "fk_gdr_voucher_type")
   apiLogs                  AccVoucherDocApiLog[]
   details                  AccVoucherDocDetail[]
@@ -1193,202 +1078,6 @@ model AccVoucherDocRegister {
   // Partial indexes idx_gdr_branch_voucher_date, idx_gdr_branch_doc_date,
   // idx_gdr_party, idx_gdr_doc_class, and idx_gdr_doc_status
   // are not expressible in Prisma schema.
-}
-
-// ----- prisma/accounts/AccountVoucherHeader.prisma -----
-enum VoucherStatus {
-  DRAFT
-  APPROVED
-  POSTED
-  CANCELLED
-  @@schema("accounts")
-}
-
-enum DeviceType {
-  PC
-  WEB
-  MOBILE
-  @@schema("accounts")
-}
-
-enum TallyExportStatus {
-  PENDING
-  EXPORTED
-  FAILED
-  @@schema("accounts")
-}
-
-enum MessageSendStatus {
-  NA
-  PENDING
-  SENT
-  FAILED
-  @@schema("accounts")
-}
-
-model AccVoucherHeader {
-  avhVoucherId           String            @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("avh_voucher_id")
-
-  // Multi-branch identity
-  avhAccYear             String            @db.VarChar(9) @map("avh_acc_year")
-  avhCompanyId           String            @db.Uuid @map("avh_company_id")
-  avhBranchId            String            @db.Uuid @map("avh_branch_id")
-
-  // Voucher identity
-  avhVoucherTypeId       Int               @map("avh_voucher_type_id")
-  avhVoucherNo           BigInt            @map("avh_voucher_no")
-  avhVoucherSlno         BigInt            @map("avh_voucher_slno")
-
-  // References
-  avhUserRefno           String?           @db.VarChar(50) @map("avh_user_refno")
-  avhVoucherDate         DateTime          @db.Timestamptz(6) @map("avh_voucher_date")
-  avhVoucherRefno        String            @db.VarChar(50) @map("avh_voucher_refno")
-  avhBillDate            DateTime?         @db.Timestamptz(6) @map("avh_bill_date")
-  avhBillRefno           String            @db.VarChar(100) @map("avh_bill_refno")
-
-  // Amounts
-  avhBillAmount          Decimal           @default(0) @db.Decimal(18, 2) @map("avh_bill_amount")
-  avhAdjustAmount        Decimal           @default(0) @db.Decimal(18, 2) @map("avh_adjust_amount")
-  avhTotalDebit          Decimal           @default(0) @db.Decimal(18, 2) @map("avh_total_debit")
-  avhTotalCredit         Decimal           @default(0) @db.Decimal(18, 2) @map("avh_total_credit")
-
-  // Ledger / party
-  avhPartyId             String            @db.Uuid @map("avh_party_id")
-  avhOppositeLedgerId    String?           @db.Uuid @map("avh_opposite_ledger_id")
-  avhEmployeeId          String[]          @db.Uuid @map("avh_employee_id")
-
-  // Notes
-  avhPayNotes            String?           @db.VarChar(100) @map("avh_pay_notes")
-  avhRemarks             String?           @map("avh_remarks")
-
-  // Workflow
-  avhVoucherStatus       VoucherStatus     @default(DRAFT) @map("avh_voucher_status")
-  avhStatusOn            DateTime?         @db.Timestamptz(6) @map("avh_status_on")
-  avhStatusBy            String?           @db.Uuid @map("avh_status_by")
-  avhCancelReason        String?           @db.VarChar(250) @map("avh_cancel_reason")
-
-  // Device / session
-  avhUserId              String            @db.Uuid @map("avh_user_id")
-  avhSessionId           String?           @db.Uuid @map("avh_session_id")
-  avhDeviceType          DeviceType        @map("avh_device_type")
-  avhDeviceId            String?           @db.Uuid @map("avh_device_id")
-  avhCounterId           String            @db.VarChar(20) @map("avh_counter_id")
-
-  // Print / notification
-  avhPrintCount          Int               @default(0) @map("avh_print_count")
-  avhWhatsappStatus      MessageSendStatus @default(NA) @map("avh_whatsapp_status")
-  avhSmsStatus           MessageSendStatus @default(NA) @map("avh_sms_status")
-
-  // Tally export
-  avhTallyExportStatus   TallyExportStatus @default(PENDING) @map("avh_tally_export_status")
-  avhTallyExportedOn     DateTime?         @db.Timestamptz(6) @map("avh_tally_exported_on")
-  avhTallyGuid           String?           @db.VarChar(100) @map("avh_tally_guid")
-  avhTallyErrorMsg       String?           @map("avh_tally_error_msg")
-
-  // Audit
-  avhIsActive            Boolean           @default(true) @map("avh_is_active")
-  avhIsDeleted           Boolean           @default(false) @map("avh_is_deleted")
-  avhSyncDate            DateTime?         @db.Timestamptz(6) @map("avh_sync_date")
-  avhCreatedOn           DateTime          @default(now()) @db.Timestamptz(6) @map("avh_created_on")
-  avhCreatedBy           String?           @db.Uuid @map("avh_created_by")
-  avhUpdatedOn           DateTime?         @db.Timestamptz(6) @map("avh_updated_on")
-  avhUpdatedBy           String?           @db.Uuid @map("avh_updated_by")
-
-  // Relations
-  voucherType            AccVoucherType    @relation(fields: [avhVoucherTypeId], references: [vchrTypeId], map: "fk_acc_voucher_header_voucher_type")
-  company                Company           @relation(fields: [avhCompanyId], references: [compId], map: "fk_acc_voucher_header_voucher_company")
-  branch                 BranchMaster      @relation(fields: [avhBranchId], references: [brId], map: "fk_acc_voucher_header_voucher_branch")
-  party                  AccLedgerMaster   @relation(fields: [avhPartyId], references: [ledId], map: "fk_acc_voucher_header_voucher_party")
-  user                   UserMaster        @relation(fields: [avhUserId], references: [usrId], map: "fk_acc_voucher_header_voucher_user")
-  voucherBills           AccVoucherBill[]  @relation("VoucherBillHeader")
-  againstVoucherBills    AccVoucherBill[]  @relation("VoucherBillAgainstHeader")
-  voucherCheques         AccVoucherCheque[]
-  voucherDocDetails      AccVoucherDocDetail[]
-  voucherDocRegisters    AccVoucherDocRegister[]
-  vouchers               AccVoucher[]
-  openingStockHeaders    OpeningStockHeader[] @relation("OpeningStockHeaderVoucher")
-  openingStockDetails    OpeningStockDetail[] @relation("OpeningStockDetailVoucher")
-  tenderDetails          AccTenderDetail[]    @relation("TenderDetailVoucher")
-  settleTenderDetails    AccTenderDetail[]    @relation("TenderDetailSettleVoucher")
-
-  @@unique([avhCompanyId, avhBranchId, avhAccYear, avhVoucherId], map: "uq_acc_voucher_header_voucher_id")
-  @@unique([avhCompanyId, avhBranchId, avhAccYear, avhVoucherTypeId, avhVoucherRefno], map: "uq_acc_voucher_header_voucher_refno")
-
-  @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherNo], map: "idx_acc_voucher_header_voucher_no")
-  @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherTypeId, avhVoucherSlno], map: "idx_acc_voucher_header_voucher_slno")
-  @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherDate], map: "idx_acc_voucher_header_branch_date")
-  @@index([avhCompanyId, avhBranchId, avhAccYear, avhVoucherStatus], map: "idx_acc_voucher_header_status")
-  @@map("acc_voucher_header")
-  @@schema("accounts")
-  // Partial index idx_acc_voucher_header_bill_refno WHERE avh_is_deleted = false
-  // is not expressible in Prisma schema.
-}
-
-// ----- prisma/accounts/AccountVouchers.prisma -----
-enum DrCrType {
-  DR
-  CR
-  @@schema("accounts")
-}
-
-model AccVoucher {
-  // Primary
-  avId               String           @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("av_id")
-
-  // Header link
-  avVoucherId        String           @db.Uuid @map("av_voucher_id")
-
-  // Multi-branch snapshot
-  avAccYear          String           @db.VarChar(20) @map("av_acc_year")
-  avCompanyId        String           @db.Uuid @map("av_company_id")
-  avBranchId         String           @db.Uuid @map("av_branch_id")
-
-  // Voucher snapshot
-  avVoucherTypeId    Int              @map("av_voucher_type_id")
-  avVoucherNo        BigInt           @map("av_voucher_no")
-  avRowNo            Int              @map("av_row_no")
-
-  // Business dates / refs
-  avVoucherDate      DateTime         @db.Timestamptz(6) @map("av_voucher_date")
-  avVoucherRefno     String?          @db.VarChar(50) @map("av_voucher_refno")
-  avBillDate         DateTime?        @db.Timestamptz(6) @map("av_bill_date")
-  avBillRefno        String?          @db.VarChar(100) @map("av_bill_refno")
-
-  // Accounting line
-  avDrCr             DrCrType         @map("av_dr_cr")
-  avLedgerId         String           @db.Uuid @map("av_ledger_id")
-  avOppLedgerId      String           @db.Uuid @map("av_opp_ledger_id")
-  avAmount           Decimal          @default(0) @db.Decimal(18, 2) @map("av_amount")
-
-  // Narration
-  avRemarks          String?          @map("av_remarks")
-
-  // User / session
-  avSessionId        String?          @db.Uuid @map("av_session_id")
-  avUserId           String           @db.Uuid @map("av_user_id")
-
-  // Status
-  avIsActive         Boolean          @default(true) @map("av_is_active")
-  avIsDeleted        Boolean          @default(false) @map("av_is_deleted")
-
-  // Audit
-  avSyncDate         DateTime?        @db.Timestamptz(6) @map("av_sync_date")
-  avCreatedOn        DateTime         @default(now()) @db.Timestamptz(6) @map("av_created_on")
-  avCreatedBy        String?          @db.Uuid @map("av_created_by")
-  avUpdatedOn        DateTime?        @db.Timestamptz(6) @map("av_updated_on")
-  avUpdatedBy        String?          @db.Uuid @map("av_updated_by")
-  // Relations
-  voucherHeader      AccVoucherHeader @relation(fields: [avVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_vouchers_header")
-  voucherType        AccVoucherType   @relation(fields: [avVoucherTypeId], references: [vchrTypeId], map: "fk_acc_vouchers_voucher_type")
-  company            Company          @relation(fields: [avCompanyId], references: [compId], map: "fk_acc_vouchers_voucher_company")
-  branch             BranchMaster     @relation(fields: [avBranchId], references: [brId], map: "fk_acc_vouchers_voucher_branch")
-  ledger             AccLedgerMaster  @relation("AccVoucherLedger", fields: [avLedgerId], references: [ledId], map: "fk_acc_vouchers_voucher_ledger")
-  oppositeLedger     AccLedgerMaster  @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], map: "fk_acc_vouchers_voucher_opp_ledger")
-  user               UserMaster       @relation(fields: [avUserId], references: [usrId], map: "fk_acc_vouchers_voucher_user")
-  @@map("acc_vouchers")
-  @@schema("accounts")
-  // Partial indexes idx_acc_vouchers_voucher_id and idx_acc_vouchers_ledger_id
-  // WHERE av_is_deleted = false are not expressible in Prisma schema.
 }
 
 // ----- prisma/accounts/AccountVoucherSequence.prisma -----
@@ -1506,12 +1195,9 @@ model AccVoucherType {
   vchrCreatedBy              String?              @db.VarChar(100) @map("vchr_created_by")
   vchrUpdatedOn              DateTime?            @db.Timestamptz(6) @map("vchr_updated_on")
   vchrUpdatedBy              String?              @db.VarChar(100) @map("vchr_updated_by")
-  voucherBills               AccVoucherBill[]
   voucherCheques             AccVoucherCheque[]
   voucherDocRegisters        AccVoucherDocRegister[]
-  voucherHeaders             AccVoucherHeader[]
   voucherSequences           AccVoucherSeq[]
-  vouchers                   AccVoucher[]
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")
@@ -3284,7 +2970,7 @@ model OpeningStockDetail {
   oslUpdatedOn        DateTime?                      @db.Timestamptz(6) @map("osl_updated_on")
   oslUpdatedBy        String?                        @db.Uuid @map("osl_updated_by")
   // Relations
-  voucherHeader       AccVoucherHeader               @relation("OpeningStockDetailVoucher", fields: [oslVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_osl_voucher_header")
+  // oslVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   company             Company                        @relation(fields: [oslCompanyId], references: [compId], map: "fk_osl_company")
   branch              BranchMaster                   @relation(fields: [oslBranchId], references: [brId], map: "fk_osl_branch")
   item                ItemMaster                     @relation("OpeningStockDetailItem", fields: [oslItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_osl_item")
@@ -3336,7 +3022,7 @@ model OpeningStockHeader {
   oshUpdatedOn     DateTime?              @db.Timestamptz(6) @map("osh_updated_on")
   oshUpdatedBy     String?                @db.Uuid @map("osh_updated_by")
   //relations
-  voucherHeader    AccVoucherHeader       @relation("OpeningStockHeaderVoucher", fields: [oshVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_osh_voucher_header")
+  // oshVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   company          Company                @relation(fields: [oshCompanyId], references: [compId], map: "fk_osh_company")
   branch           BranchMaster           @relation(fields: [oshBranchId], references: [brId], map: "fk_osh_branch")
   details          OpeningStockDetail[]
@@ -3440,13 +3126,10 @@ model BranchMaster {
   company               Company   @relation(fields: [brCompId], references: [compId])
   accountLedgerMaster   AccLedgerMaster[]
   shipAddrs             AccShipAddr[]
-  voucherBills          AccVoucherBill[]
   voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]
   voucherDocRegisters   AccVoucherDocRegister[]
-  voucherHeaders        AccVoucherHeader[]
   voucherSequences      AccVoucherSeq[]
-  vouchers              AccVoucher[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderBranch")
@@ -3614,13 +3297,10 @@ model Company {
   deviceMasters         DeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]
-  voucherBills          AccVoucherBill[]
   voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]
   voucherDocRegisters   AccVoucherDocRegister[]
-  voucherHeaders        AccVoucherHeader[]
   voucherSequences      AccVoucherSeq[]
-  vouchers              AccVoucher[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
@@ -3767,9 +3447,9 @@ model TransactionHold {
   // th_locked_by / th_resumed_by hold a DEVICE id, so they are VarChar(64) to
   // match th_device_id — widened from 50 in migration
   // 20260805110000_widen_transaction_hold_lock_columns.
-  thLockedBy         String?   @map("th_locked_by")  @db.VarChar(64)
+  thLockedBy         String?   @map("th_locked_by")  @db.Text
   thLockedAt         DateTime? @map("th_locked_at")  @db.Timestamptz(6)
-  thResumedBy        String?   @map("th_resumed_by") @db.VarChar(64)
+  thResumedBy        String?   @map("th_resumed_by") @db.Text
   thResumedAt        DateTime? @map("th_resumed_at") @db.Timestamptz(6)
   thResumeCount      Int       @default(0) @map("th_resume_count")
 
@@ -3778,7 +3458,7 @@ model TransactionHold {
   thConvertedDocId   String?   @map("th_converted_doc_id")   @db.Uuid
   thConvertedNo      String?   @map("th_converted_no")       @db.VarChar(30)
   thConvertedAt      DateTime? @map("th_converted_at")       @db.Timestamptz(6)
-  thConvertedBy      String?   @map("th_converted_by")       @db.VarChar(50)
+  thConvertedBy      String?   @map("th_converted_by")       @db.Text
 
   // ---- optional soft stock block -----------------------------------------
   thIsStockReserved  Boolean   @default(false) @map("th_is_stock_reserved")
@@ -3788,9 +3468,9 @@ model TransactionHold {
 
   // ---- audit -------------------------------------------------------------
   thIsDeleted        Boolean   @default(false) @map("th_is_deleted")
-  thCreatedBy        String?   @map("th_created_by")  @db.VarChar(50)
+  thCreatedBy        String?   @map("th_created_by")  @db.Text
   thCreatedAt        DateTime  @default(now()) @map("th_created_at") @db.Timestamptz(6)
-  thModifiedBy       String?   @map("th_modified_by") @db.VarChar(50)
+  thModifiedBy       String?   @map("th_modified_by") @db.Text
   thModifiedAt       DateTime? @map("th_modified_at") @db.Timestamptz(6)
 
   // ---- indexes -----------------------------------------------------------
@@ -3900,8 +3580,6 @@ model UserMaster {
   usrModifiedBy          String?   @db.Uuid @map("usr_modified_by")
 
   // ── Relations ──────────────────────────────────────────────────────────────
-  voucherHeaders         AccVoucherHeader[]
-  vouchers               AccVoucher[]
   userMenus              UserMenus[]
   deviceMasters          DeviceMaster[]
   tenderDetails          AccTenderDetail[]

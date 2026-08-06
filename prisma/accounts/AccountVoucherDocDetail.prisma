@@ -85,7 +85,7 @@ model AccVoucherDocDetail {
   company             Company                        @relation(fields: [vtxCompanyId], references: [compId], map: "fk_acc_voucher_doc_detail_company")
   branch              BranchMaster                   @relation(fields: [vtxBranchId], references: [brId], map: "fk_acc_voucher_doc_detail_branch")
   docRegister         AccVoucherDocRegister          @relation(fields: [vtxGdrId], references: [gdrId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_gdr")
-  voucherHeader       AccVoucherHeader               @relation(fields: [vtxVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_voucher_doc_detail_header")
+  // vtxVoucherId stays a plain UUID column — acc_voucher_header was dropped.
 
   @@map("acc_voucher_doc_detail")
   @@schema("accounts")

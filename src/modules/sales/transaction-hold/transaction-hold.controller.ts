@@ -190,6 +190,37 @@ export class TransactionHoldController {
     };
   }
 
+  @Post(':id/force-release')
+  @Version(API_VERSION)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Take the edit lock away from the device holding it',
+    description:
+      'LOCKED → HELD without the ownership check — the escape hatch for a device that died ' +
+      'holding a cart, since there is no timeout or auto-release. A separate route from ' +
+      '/release on purpose: it interrupts whoever is on the hold, and the audit entry names ' +
+      'both devices. It cannot reopen a closed hold (409), and an already-HELD one answers ' +
+      '200 unchanged. RESUMED is cleared too — that is what "in use" meant before this lock.',
+  })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' }, description: 'thId' })
+  @ApiHeader(DEVICE_ID_HEADER_DOC)
+  @ApiOkResponse({ type: TransactionHoldSuccessSingleDto })
+  @ApiBadRequestResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiNotFoundResponse({ type: TransactionHoldErrorResponseDto })
+  @ApiConflictResponse({ type: TransactionHoldErrorResponseDto })
+  async forceRelease(
+    @Param('id', new ParseUUIDPipe()) thId: string,
+    @Headers(DEVICE_ID_HEADER) deviceId: string | undefined,
+    @Body() lockDto: LockTransactionHoldDto,
+  ): Promise<TransactionHoldSuccessResponse<TransactionHoldPayload>> {
+    const data = await this.transactionHoldService.forceReleaseHold(thId, deviceId, lockDto);
+    return {
+      success: true,
+      message: 'Hold lock released successfully',
+      data,
+    };
+  }
+
   @Post(':id/convert')
   @Version(API_VERSION)
   @HttpCode(HttpStatus.OK)

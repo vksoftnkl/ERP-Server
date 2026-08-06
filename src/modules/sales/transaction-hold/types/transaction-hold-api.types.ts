@@ -39,6 +39,11 @@ export enum TransactionHoldDocType {
   POS_BILL = 'POS_BILL',
   DELIVERY_CHALLAN = 'DELIVERY_CHALLAN',
   SALE_ORDER = 'SALE_ORDER',
+  // The quotation screen parks carts here too. It borrowed SALE_ORDER until this
+  // member existed, which meant sharing the ux_th_hold_no number space (and the
+  // recall list) with any sale-order screen; rows written before this stay
+  // SALE_ORDER, so a picker that wants them has to look under both.
+  QUOTATION = 'QUOTATION',
   SALE_RETURN = 'SALE_RETURN',
   PURCHASE_INVOICE = 'PURCHASE_INVOICE',
   PURCHASE_ORDER = 'PURCHASE_ORDER',
@@ -94,6 +99,16 @@ export interface TransactionHoldConversion {
   thConvertedNo?: string | null;
   thConvertedBy?: string | null;
 }
+// "Somebody has this open" — what force-release is allowed to clear. LOCKED is
+// the lock this module takes; RESUMED is what in-use meant BEFORE it existed
+// (a client writing the status straight through the CRUD route), and rows in
+// that state would otherwise be stuck for good: un-resumable (409, not HELD)
+// and un-releasable (403, no th_locked_by to match). Terminal states are
+// deliberately absent — nothing reopens a converted hold.
+export const TRANSACTION_HOLD_IN_USE_STATUSES = [
+  TransactionHoldStatus.LOCKED,
+  TransactionHoldStatus.RESUMED,
+] as readonly string[];
 // One entry per single-column enum CHECK, in the order the columns are declared.
 // `nullable` mirrors the DDL: th_doc_type, th_status and th_device_type are NOT
 // NULL, th_converted_doc_type is nullable until the hold becomes a document.

@@ -21,6 +21,7 @@ into the UI state — it is stored and handed back verbatim.
 | GET    | `/transaction-holds/get`         | One hold by `thId`                         |
 | POST   | `/transaction-holds/:id/resume`  | Take the edit lock — `HELD` → `LOCKED`     |
 | POST   | `/transaction-holds/:id/release` | Give it back — `LOCKED` → `HELD`           |
+| POST   | `/transaction-holds/:id/force-release` | Take it off another device           |
 | POST   | `/transaction-holds/:id/convert` | Bill it — `LOCKED` → `CONVERTED`           |
 | DELETE | `/transaction-holds/delete`      | Soft delete by `thId`                      |
 
@@ -69,7 +70,7 @@ into the UI state — it is stored and handed back verbatim.
   | Rule | Enforced by |
   | --- | --- |
   | `ck_th_status` | `TransactionHoldStatus` — `HELD`, `LOCKED`, `RESUMED`, `CONVERTED`, `CANCELLED`, `EXPIRED` |
-  | `ck_th_doc_type` | `TransactionHoldDocType` — `SALE_INVOICE`, `POS_BILL`, `DELIVERY_CHALLAN`, `SALE_ORDER`, `SALE_RETURN`, `PURCHASE_INVOICE`, `PURCHASE_ORDER`, `GRN`, `PURCHASE_RETURN` (also the set for `thConvertedDocType`) |
+  | `ck_th_doc_type` | `TransactionHoldDocType` — `SALE_INVOICE`, `POS_BILL`, `DELIVERY_CHALLAN`, `SALE_ORDER`, `QUOTATION`, `SALE_RETURN`, `PURCHASE_INVOICE`, `PURCHASE_ORDER`, `GRN`, `PURCHASE_RETURN` (also the set for `thConvertedDocType`). `QUOTATION` was added after the quotation screen had already shipped parking carts under `SALE_ORDER`, so **rows written before it keep that type** — a picker that wants the old ones has to look under both. |
   | `ck_th_device_type` | `TransactionHoldDeviceType` — `DESKTOP`, `WEB`, `MOBILE` |
   | `ck_th_total_amount` | `thTotalAmount >= 0` — DTO decorator on the payload, `ensureValuesAreAllowed` on the merged row |
   | `ck_th_converted` | `thStatus = CONVERTED` requires **both** `thConvertedDocId` and `thConvertedAt` |
@@ -172,9 +173,19 @@ HELD ──(resume by device)──▶ LOCKED ──(convert)──▶ CONVERTED
 - **No timeouts, no auto-release, no crash recovery.** A `LOCKED` hold stays
   locked until the device that took it gives it back; `th_expires_at` is not
   read or written by any of these paths (the column and `ix_th_expiry` exist for
-  a future purge job). A till that dies holding a lock needs an operator to
-  release it — deliberately, so a half-finished bill is never pulled out from
-  under a working till.
+  a future purge job). Deliberately, so a half-finished bill is never pulled out
+  from under a working till.
+- **`force-release` is the escape hatch** for exactly that: a till that died
+  holding a cart. It is the same conditional update **minus the `th_locked_by`
+  predicate** — a separate route rather than a flag on `/release`, because it is
+  a decision to interrupt whoever holds the lock, not another way to give one
+  back; `/release` therefore stays unconditionally ownership-checked. It cannot
+  reopen a closed hold (409), an already-`HELD` one answers 200 unchanged, and
+  the audit entry names **both** devices (`force released by device A, taken
+  from device B`). It also clears `RESUMED`, which is what "in use" meant before
+  this lock existed — rows a client parked by writing `th_status` through the
+  CRUD route are otherwise stuck for good: un-resumable (409, not `HELD`) and
+  un-releasable (403, no `th_locked_by` to match).
 - **`POST /transaction-holds/create` can still write `th_status` / `th_locked_by`
   directly.** It is the CRUD path and validates the columns rather than the
   transition, so it bypasses the ownership check; the lock endpoints are the

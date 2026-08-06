@@ -118,7 +118,7 @@ describe('ConvertTransactionHoldDto', () => {
       erroredFields(
         plainToInstance(ConvertTransactionHoldDto, {
           ...validBody,
-          thConvertedDocType: 'QUOTATION',
+          thConvertedDocType: 'JOB_CARD',
         }),
       ),
     ).toEqual(['thConvertedDocType']);

@@ -208,7 +208,7 @@ model AccVoucherDocRegister {
   company                  Company           @relation(fields: [gdrCompanyId], references: [compId], map: "fk_gdr_voucher_company")
   branch                   BranchMaster      @relation(fields: [gdrBranchId], references: [brId], map: "fk_gdr_voucher_branch")
   party                    AccLedgerMaster   @relation(fields: [gdrPartyId], references: [ledId], map: "fk_gdr_voucher_party")
-  voucherHeader            AccVoucherHeader  @relation(fields: [gdrVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_gdr_voucher_header")
+  // gdrVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   voucherType              AccVoucherType    @relation(fields: [gdrVoucherTypeId], references: [vchrTypeId], map: "fk_gdr_voucher_type")
   apiLogs                  AccVoucherDocApiLog[]
   details                  AccVoucherDocDetail[]

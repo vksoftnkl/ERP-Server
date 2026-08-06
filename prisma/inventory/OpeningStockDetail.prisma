@@ -71,7 +71,7 @@ model OpeningStockDetail {
   oslUpdatedOn        DateTime?                      @db.Timestamptz(6) @map("osl_updated_on")
   oslUpdatedBy        String?                        @db.Uuid @map("osl_updated_by")
   // Relations
-  voucherHeader       AccVoucherHeader               @relation("OpeningStockDetailVoucher", fields: [oslVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_osl_voucher_header")
+  // oslVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   company             Company                        @relation(fields: [oslCompanyId], references: [compId], map: "fk_osl_company")
   branch              BranchMaster                   @relation(fields: [oslBranchId], references: [brId], map: "fk_osl_branch")
   item                ItemMaster                     @relation("OpeningStockDetailItem", fields: [oslItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_osl_item")

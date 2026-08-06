@@ -109,11 +109,7 @@ model AccLedgerMaster {
   tenderDetailLedgers      AccTenderDetail[]      @relation("TenderDetailLedger")
   tenderDetailSettleLedgers AccTenderDetail[]     @relation("TenderDetailSettleLedger")
   tenderDetailPartyLedgers AccTenderDetail[]      @relation("TenderDetailPartyLedger")
-  voucherBillParties       AccVoucherBill[]       @relation("VoucherBillParty")
   voucherDocRegisterParties AccVoucherDocRegister[]
-  voucherHeaderParties     AccVoucherHeader[]
-  accountingEntries        AccVoucher[]           @relation("AccVoucherLedger")
-  oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
   chargeMasters            ChargeMaster[]
   chargeDetails            SaleChargeDetail[]
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")

@@ -37,9 +37,9 @@ model TransactionHold {
   // th_locked_by / th_resumed_by hold a DEVICE id, so they are VarChar(64) to
   // match th_device_id — widened from 50 in migration
   // 20260805110000_widen_transaction_hold_lock_columns.
-  thLockedBy         String?   @map("th_locked_by")  @db.VarChar(64)
+  thLockedBy         String?   @map("th_locked_by")  @db.Text
   thLockedAt         DateTime? @map("th_locked_at")  @db.Timestamptz(6)
-  thResumedBy        String?   @map("th_resumed_by") @db.VarChar(64)
+  thResumedBy        String?   @map("th_resumed_by") @db.Text
   thResumedAt        DateTime? @map("th_resumed_at") @db.Timestamptz(6)
   thResumeCount      Int       @default(0) @map("th_resume_count")
 
@@ -48,7 +48,7 @@ model TransactionHold {
   thConvertedDocId   String?   @map("th_converted_doc_id")   @db.Uuid
   thConvertedNo      String?   @map("th_converted_no")       @db.VarChar(30)
   thConvertedAt      DateTime? @map("th_converted_at")       @db.Timestamptz(6)
-  thConvertedBy      String?   @map("th_converted_by")       @db.VarChar(50)
+  thConvertedBy      String?   @map("th_converted_by")       @db.Text
 
   // ---- optional soft stock block -----------------------------------------
   thIsStockReserved  Boolean   @default(false) @map("th_is_stock_reserved")
@@ -58,9 +58,9 @@ model TransactionHold {
 
   // ---- audit -------------------------------------------------------------
   thIsDeleted        Boolean   @default(false) @map("th_is_deleted")
-  thCreatedBy        String?   @map("th_created_by")  @db.VarChar(50)
+  thCreatedBy        String?   @map("th_created_by")  @db.Text
   thCreatedAt        DateTime  @default(now()) @map("th_created_at") @db.Timestamptz(6)
-  thModifiedBy       String?   @map("th_modified_by") @db.VarChar(50)
+  thModifiedBy       String?   @map("th_modified_by") @db.Text
   thModifiedAt       DateTime? @map("th_modified_at") @db.Timestamptz(6)
 
   // ---- indexes -----------------------------------------------------------

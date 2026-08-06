@@ -98,6 +98,7 @@ describe('TransactionHoldController', () => {
     softDelete: jest.fn(),
     resumeHold: jest.fn(),
     releaseHold: jest.fn(),
+    forceReleaseHold: jest.fn(),
     convertHold: jest.fn(),
   };
 
@@ -198,6 +199,20 @@ describe('TransactionHoldController', () => {
         message: 'Hold converted successfully',
         data: convertedPayload,
       });
+    });
+
+    // A separate route from /release, and it must stay separate: it takes the
+    // lock off another device rather than giving back one of its own.
+    it('force-releases through its own route and service method', async () => {
+      serviceMock.forceReleaseHold.mockResolvedValue(holdPayload);
+
+      await expect(controller.forceRelease(TH_ID, DEVICE_A, scope)).resolves.toEqual({
+        success: true,
+        message: 'Hold lock released successfully',
+        data: holdPayload,
+      });
+      expect(serviceMock.forceReleaseHold).toHaveBeenCalledWith(TH_ID, DEVICE_A, scope);
+      expect(serviceMock.releaseHold).not.toHaveBeenCalled();
     });
 
     // The conversion trace is a separate argument from the tenant scope, so the

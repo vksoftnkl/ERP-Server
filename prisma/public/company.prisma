@@ -97,13 +97,10 @@ model Company {
   deviceMasters         DeviceMaster[]
   UserLoginSession      UserLoginSession[]
   customers             Customer[]
-  voucherBills          AccVoucherBill[]
   voucherCheques        AccVoucherCheque[]
   voucherDocDetails     AccVoucherDocDetail[]
   voucherDocRegisters   AccVoucherDocRegister[]
-  voucherHeaders        AccVoucherHeader[]
   voucherSequences      AccVoucherSeq[]
-  vouchers              AccVoucher[]
   openingStockHeaders   OpeningStockHeader[]
   openingStockDetails   OpeningStockDetail[]
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")

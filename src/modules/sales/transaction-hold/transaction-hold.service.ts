@@ -12,6 +12,7 @@ import { SaveTransactionHoldDto } from './dto/save-transaction-hold.dto';
 import {
   TRANSACTION_HOLD_CLOSED_STATUSES,
   TRANSACTION_HOLD_DOC_TYPES,
+  TRANSACTION_HOLD_IN_USE_STATUSES,
   TRANSACTION_HOLD_VALUE_GUARDS,
   TransactionHoldConversion,
   TransactionHoldDeleteResult,
@@ -345,6 +346,67 @@ export class TransactionHoldService {
         modified: free,
         userId: actor,
         notes: `Hold released by device ${device}`,
+      });
+      return this.toPayload(free);
+    });
+  }
+
+  /**
+   * Take a lock away from the device holding it — `LOCKED` → `HELD` WITHOUT the
+   * ownership check.
+   *
+   * This is the escape hatch, and it is deliberately a separate method rather
+   * than a flag on `releaseHold`: there is no timeout and no auto-release, so a
+   * till that dies mid-edit would otherwise strand its cart forever. It is not
+   * an alternative way to release — it is a decision to interrupt whoever holds
+   * the lock, and the audit entry names both devices so it can be answered for
+   * afterwards.
+   *
+   * Everything else still holds: it is the same conditional update (a hold that
+   * is already CONVERTED cannot be forced back open), the same tenant scope, and
+   * an already-free hold is a no-op rather than an error.
+   */
+  async forceReleaseHold(
+    thId: string,
+    deviceId: string | undefined | null,
+    scope: TransactionHoldLockScope,
+  ): Promise<TransactionHoldPayload> {
+    const device = this.requireDeviceId(deviceId);
+    const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const before = await tx.transactionHold.findFirst({ where: this.lockWhere(thId, scope) });
+      const taken = await tx.transactionHold.updateMany({
+        where: {
+          ...this.lockWhere(thId, scope),
+          // No thLockedBy predicate — that is the whole point — but the status
+          // one stays, so this can only ever free a hold that is genuinely in
+          // use, never reopen a closed one. RESUMED is in the set because it is
+          // what "in use" meant before this lock existed: rows a client parked
+          // by writing the status through the CRUD route would otherwise be
+          // stuck for good, un-resumable (409) and un-releasable (403).
+          thStatus: { in: [...TRANSACTION_HOLD_IN_USE_STATUSES] },
+        },
+        data: {
+          thStatus: TransactionHoldStatus.HELD,
+          thLockedBy: null,
+          thLockedAt: null,
+          thModifiedAt: now,
+          thModifiedBy: actor,
+        },
+      });
+      if (taken.count === 0) {
+        return this.resolveReleaseFailure(tx, thId, scope);
+      }
+      const free = await this.readLocked(tx, thId, scope);
+      await this.auditLockTransition(tx, {
+        original: before,
+        modified: free,
+        userId: actor,
+        // Both sides on the record: who took it, and who lost it.
+        notes:
+          `Hold lock force released by device ${device}` +
+          (before?.thLockedBy ? `, taken from device ${before.thLockedBy}` : ''),
       });
       return this.toPayload(free);
     });

@@ -99,7 +99,7 @@ model AccVoucherCheque {
   chqUpdatedBy         String?               @db.Uuid @map("chq_updated_by")
 
   // Relations
-  voucherHeader        AccVoucherHeader      @relation(fields: [chqVoucherId], references: [avhVoucherId], onDelete: Cascade, map: "fk_acc_cheques_voucher_header")
+  // chqVoucherId stays a plain UUID column — acc_voucher_header was dropped.
   voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")

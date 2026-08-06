@@ -64,8 +64,6 @@ model UserMaster {
   usrModifiedBy          String?   @db.Uuid @map("usr_modified_by")
 
   // ── Relations ──────────────────────────────────────────────────────────────
-  voucherHeaders         AccVoucherHeader[]
-  vouchers               AccVoucher[]
   userMenus              UserMenus[]
   deviceMasters          DeviceMaster[]
   tenderDetails          AccTenderDetail[]
