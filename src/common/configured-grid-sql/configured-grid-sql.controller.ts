@@ -143,13 +143,23 @@ export class ConfiguredGridSqlController {
       // Stored grid SQL is only validated syntactically at save time (see
       // GridDetailsService.normalizeGridSql — no LIMIT 0 probe), so schema drift
       // (e.g. a column typed into the grid designer that doesn't exist) surfaces
-      // here. SQLSTATE class 42 = syntax/access-rule violations (undefined column,
-      // undefined table, …) — a grid/request configuration problem, not a server
-      // fault, so report it instead of an opaque 500.
+      // here. Two SQLSTATE classes mean "this grid/request is misconfigured",
+      // not "the server broke", so both are reported instead of an opaque 500:
+      //   42 — syntax/access-rule violation (undefined column, undefined table, …)
+      //   22 — data exception, which is what an unbound parameter token becomes:
+      //        a grid whose SQL says `sq_company_id = 'icompany_id'::uuid` and a
+      //        request that sent no `grid_param` for it leave the token in place
+      //        as a literal, and Postgres answers `invalid input syntax for type
+      //        uuid: "icompany_id"`.
       const code = (error as { code?: string } | null)?.code;
-      if (typeof code === 'string' && code.startsWith('42')) {
+      if (typeof code === 'string' && (code.startsWith('42') || code.startsWith('22'))) {
+        const unboundTokens = this.configuredGridSqlService.findUnboundParamTokens(baseSql);
+        const hint =
+          unboundTokens.length > 0
+            ? ` Pass a value for ${unboundTokens.join(', ')} in grid_param.`
+            : '';
         throw new BadRequestException(
-          `Grid ${query.grid_id} configured SQL failed: ${(error as Error).message}`,
+          `Grid ${query.grid_id} configured SQL failed: ${(error as Error).message}.${hint}`,
         );
       }
       throw error;

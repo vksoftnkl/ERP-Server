@@ -495,6 +495,30 @@ export class ConfiguredGridSqlService {
     }
     return { sql: boundSql, params };
   }
+  /**
+   * Name the legacy parameter tokens still sitting in the SQL as string literals — i.e. the ones
+   * bindGridParams found no grid_param key for. Used only to explain a failed run: an unbound token
+   * is not an error by itself (grid 82's `chg_module IN ('B', 'imodule_name')` simply matches
+   * nothing extra), but when it sits behind a cast — `'icompany_id'::uuid` — Postgres rejects the
+   * literal and the run fails with a message that names the token but not the reason.
+   *
+   * Convention (both legacy prefixes, as stored in fixed.grid_details.grid_sql): `i` for the VFP
+   * input params (`icompany_id`, `iacc_year`) and `p_` for the newer ones (`p_comp_id`). Matching is
+   * deliberately loose — a real literal that happens to look like a token (`'in_progress'`) only
+   * adds a wrong hint to an error that was already going to be reported, never blocks a working grid.
+   */
+  findUnboundParamTokens(sql: string): string[] {
+    const tokens: string[] = [];
+    const pattern = /'((?:p_|i)[a-z0-9]+(?:_[a-z0-9]+)+)'/g;
+    let match = pattern.exec(sql);
+    while (match !== null) {
+      if (!tokens.includes(match[1])) {
+        tokens.push(match[1]);
+      }
+      match = pattern.exec(sql);
+    }
+    return tokens;
+  }
   parseCountValue(value: bigint | number | string | undefined): number {
     if (typeof value === 'bigint') {
       return Number(value);

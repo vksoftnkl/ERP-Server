@@ -336,4 +336,8 @@ export class SaveQuotationItemDto {
   @ApiPropertyOptional()
   @OptionalBoolean()
   sqiHasFreight?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  @NullableStringStrict(50)
+  sqiItemSize?: string | null;
 }

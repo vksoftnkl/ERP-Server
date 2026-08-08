@@ -114,6 +114,7 @@ model SaleQuotationItem {
   sqiToBaseFactor    Decimal   @default(0) @db.Decimal(15, 6) @map("sqi_to_base_factor")
   sqiRateDiff        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_rate_diff")
   sqiHasFreight      Boolean   @default(false) @map("sqi_has_freight")
+  sqiItemSize        String?   @db.VarChar(50) @map("sqi_item_size")
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")

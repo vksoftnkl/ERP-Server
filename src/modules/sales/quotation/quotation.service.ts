@@ -34,7 +34,7 @@ import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.help
 // accounts.acc_voucher_types row "Quo" / Sales Quotation. Its numbering format
 // (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
 // quotation numbers are drawn from.
-const QUOTATION_VCHR_TYPE_ID = 21;
+const QUOTATION_VCHR_TYPE_ID = 2;
 const QUOTATION_TABLE_NAME = 'sale_quotation';
 const QUOTATION_ITEM_TABLE_NAME = 'sale_quotation_item';
 const QUOTATION_CHARGE_TABLE_NAME = 'sale_charge_detail';
@@ -215,6 +215,7 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiToBaseFactor',
   'sqiRateDiff',
   'sqiHasFreight',
+  'sqiItemSize',
 ];
 // Charge-line fields copied straight through when present on the payload. The
 // scope keys (docType/docId/comp/branch/accYear/slno) and the two required
@@ -620,6 +621,18 @@ export class QuotationService {
           sqModifiedBy: modifiedBy,
         };
         this.applyOptionalFields(data, saveQuotationDto);
+        // `sqCustName` is required on create, so it is not in the optional
+        // allowlist `applyOptionalFields` copies from — which left an update
+        // silently discarding a renamed customer while still answering 201.
+        // Applied here with the same normalization create uses, and only when
+        // the client actually sent the field, so an omitted one is left as-is
+        // like every other absent field.
+        if (saveQuotationDto.sqCustName !== undefined) {
+          data.sqCustName = normalizeRequiredText<QuotationErrorDetail, QuotationErrorResponse>(
+            saveQuotationDto.sqCustName,
+            'sqCustName',
+          );
+        }
         const updated = await tx.saleQuotation.update({
           where: { sqId },
           data,

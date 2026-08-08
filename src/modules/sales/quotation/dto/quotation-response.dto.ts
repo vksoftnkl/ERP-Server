@@ -363,6 +363,8 @@ export class QuotationItemPayloadDto {
   sqiRateDiff!: number;
   @ApiProperty()
   sqiHasFreight!: boolean;
+  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  sqiItemSize!: string | null;
   @ApiProperty()
   sqiIsDeleted!: boolean;
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })

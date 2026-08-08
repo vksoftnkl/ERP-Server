@@ -47,7 +47,9 @@ model AccBill {
   ablWriteoffAmount   Decimal   @default(0) @db.Decimal(18, 2) @map("abl_writeoff_amount")
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
   // create or update, the write will be rejected by Postgres.
-  ablPendingAmount    Decimal?  @db.Decimal(18, 2) @map("abl_pending_amount")
+  // @default(dbgenerated()) marks the value as DB-owned so migrate never emits
+  // an ALTER ... DROP DEFAULT against the generation expression.
+  ablPendingAmount    Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("abl_pending_amount")
 
   // Audit
   ablIsActive         Boolean   @default(true) @map("abl_is_active")

@@ -40,7 +40,7 @@ import { deleteBillPosting, postBillToAccounts, syncBillPosting } from './bill-p
 // accounts.acc_voucher_types row "Bil" / Sales Bill. Its numbering format
 // (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
 // bill numbers are drawn from.
-const BILL_VCHR_TYPE_ID = 22;
+const BILL_VCHR_TYPE_ID = 3;
 const BILL_TABLE_NAME = 'sale_bill';
 const BILL_ITEM_TABLE_NAME = 'sale_bill_item';
 const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';

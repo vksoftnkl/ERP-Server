@@ -161,7 +161,9 @@ model AccBill {
   ablWriteoffAmount   Decimal   @default(0) @db.Decimal(18, 2) @map("abl_writeoff_amount")
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
   // create or update, the write will be rejected by Postgres.
-  ablPendingAmount    Decimal?  @db.Decimal(18, 2) @map("abl_pending_amount")
+  // @default(dbgenerated()) marks the value as DB-owned so migrate never emits
+  // an ALTER ... DROP DEFAULT against the generation expression.
+  ablPendingAmount    Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("abl_pending_amount")
 
   // Audit
   ablIsActive         Boolean   @default(true) @map("abl_is_active")
@@ -1594,7 +1596,7 @@ model AccVoucher {
   avAmount           Decimal   @default(0) @db.Decimal(18, 2) @map("av_amount")
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
   // create or update, the write will be rejected by Postgres.
-  avSignedAmount     Decimal?  @db.Decimal(18, 2) @map("av_signed_amount")
+  avSignedAmount     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("av_signed_amount")
 
   avCostCentreId     String?   @db.Uuid @map("av_cost_centre_id")
   avRemarks          String?   @map("av_remarks")
@@ -1605,7 +1607,7 @@ model AccVoucher {
   avReconDate        DateTime? @db.Date @map("av_recon_date")
   avReconRefno       String?   @db.VarChar(50) @map("av_recon_refno")
   // GENERATED ALWAYS ... STORED in the DB. Read-only, as above.
-  avIsReconciled     Boolean?  @map("av_is_reconciled")
+  avIsReconciled     Boolean?  @default(dbgenerated()) @map("av_is_reconciled")
 
   // Audit
   avIsActive         Boolean   @default(true) @map("av_is_active")
@@ -5601,6 +5603,7 @@ model SaleQuotationItem {
   sqiToBaseFactor    Decimal   @default(0) @db.Decimal(15, 6) @map("sqi_to_base_factor")
   sqiRateDiff        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_rate_diff")
   sqiHasFreight      Boolean   @default(false) @map("sqi_has_freight")
+  sqiItemSize        String?   @db.VarChar(50) @map("sqi_item_size")
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")

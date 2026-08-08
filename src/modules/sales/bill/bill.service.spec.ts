@@ -40,7 +40,7 @@ const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fa16';
 const ACC_YEAR = '2026-2027';
 // The bill voucher type, and the counter it stands at before a save: the next
 // bill therefore takes number 101 → 'bil00101'.
-const BILL_VCHR_TYPE_ID = 22;
+const BILL_VCHR_TYPE_ID = 3;
 const SEQ_LAST_NO = 100n;
 const BILL_SLNO = SEQ_LAST_NO + 1n;
 const BILL_REFNO = 'bil00101';

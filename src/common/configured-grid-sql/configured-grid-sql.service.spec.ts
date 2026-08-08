@@ -558,6 +558,26 @@ ORDER BY unit_name`,
     );
   });
 
+  it('names the legacy parameter tokens left unbound in the sql', () => {
+    const sql =
+      "SELECT * FROM sales.sale_quotation q WHERE q.sq_company_id = 'icompany_id'::uuid " +
+      "AND q.sq_acc_year = 'iacc_year' AND q.sq_status = 'DRAFT' " +
+      "AND (NULLIF('ifrom_date', '') IS NULL OR q.sq_quote_date >= 'ifrom_date'::date)";
+
+    // 'DRAFT' is a real literal, not a token, and 'ifrom_date' is reported once despite appearing twice.
+    expect(service.findUnboundParamTokens(sql)).toEqual(['icompany_id', 'iacc_year', 'ifrom_date']);
+  });
+
+  it('reports no unbound tokens once grid_param has bound them', () => {
+    const bound = service.bindGridParams(
+      "SELECT * FROM sales.sale_quotation WHERE sq_company_id = 'icompany_id'::uuid",
+      { icompany_id: 'c1' },
+    );
+
+    expect(bound.sql).toContain('sq_company_id = $1::uuid');
+    expect(service.findUnboundParamTokens(bound.sql)).toEqual([]);
+  });
+
   it('leaves base sql unchanged and binds no params for an empty grid_param map', () => {
     expect(service.bindGridParams('SELECT * FROM units', {})).toEqual({
       sql: 'SELECT * FROM units',

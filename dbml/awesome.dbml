@@ -3647,6 +3647,7 @@ Table sale_quotation_item {
   sqiToBaseFactor Decimal [not null, default: 0]
   sqiRateDiff Decimal [not null, default: 0]
   sqiHasFreight Boolean [not null, default: false]
+  sqiItemSize String
   quote sale_quotation [not null]
   item item_master [not null]
   priceLevel item_price_levels [not null]

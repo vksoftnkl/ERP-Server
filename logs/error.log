@@ -5651,3 +5651,199 @@ Inconsistent column data: Error creating UUID, invalid length: expected length 3
     at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
     at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
     at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-08-08T08:08:30.632Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=18
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:08:30.976Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:08:31.334Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:08:32.733Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:08:33.080Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:00.901Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=18
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:01.251Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:01.598Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:02.566Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:02.910Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:03.172Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:03.367Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:03.548Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:03.893Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:04.242Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:04.604Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:04.941Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:05.292Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:05.644Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:05.995Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:06.325Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:06.675Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:07.037Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:07.375Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:07.724Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:08.075Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:08.430Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 1)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-08T08:10:08.781Z ERROR [AllExceptionsFilter] GET /api/v1/configured-grid-sql/run?grid_id=84&page=1&limit=15
+error: invalid input syntax for type uuid: "icompany_id"
+    at /home/vk/Dev/erp/ERP server/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Promise.all (index 0)
+    at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
+    at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
