@@ -22,6 +22,10 @@ export enum ChargeDocType {
   GRN = 'GRN',
   QUOTATION = 'QUOTATION',
   INVOICE = 'INVOICE',
+  // A sales order's applied charges (cd_doc_id = so_id). Added 2026-08-08 with
+  // the order module; by then sale_charge_detail carried no ck_cd_doc_type
+  // CHECK any more, so this enum alone defines the allowed set.
+  ORDER = 'ORDER',
 }
 
 // The well-known charges a module can carry. NONE is the escape hatch for a
