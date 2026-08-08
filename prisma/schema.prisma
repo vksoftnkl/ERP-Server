@@ -392,6 +392,8 @@ model AccLedgerMaster {
   pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
   chargeMasters            ChargeMaster[]
   chargeDetails            SaleChargeDetail[]
+  saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
+  saleOrderAdvanceAllocLedgers SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocLedger")
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -662,6 +664,8 @@ model AccTenderDetail {
   ledger                AccLedgerMaster  @relation("TenderDetailLedger", fields: [tdTenderLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_ledger")
   settleLedger          AccLedgerMaster? @relation("TenderDetailSettleLedger", fields: [tdSettleLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_settle_ledger")
   partyLedger           AccLedgerMaster  @relation("TenderDetailPartyLedger", fields: [tdPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_party_ledger")
+  // Applications of this tender when it was taken as an order advance.
+  saleOrderAdvanceAllocs SaleOrderAdvanceAlloc[]
   // No relation fields for:
   //   tdVoucherId / tdSettleVoucherId
   //                 — acc_voucher_header was dropped; both stay plain UUID columns.
@@ -2158,6 +2162,9 @@ model DeviceMaster {
   devModifiedOn   DateTime? @map("dev_modified_on")  @db.Timestamptz(6)
   devModifiedBy   String?   @map("dev_modified_by")  @db.Uuid
 
+  txnStatusLogs   TxnStatusLog[]
+  saleOrders      SaleOrder[]
+
   @@index([devDeviceUid], name: "idx_device_uid")
   @@map("device_master")
   @@schema("fixed")
@@ -2390,6 +2397,9 @@ model StateCode {
   // Relations
   saleQuotations SaleQuotation[]
   saleBills      SaleBill[]
+  // sale_order snapshots two states: place of supply and ship-to.
+  saleOrderPosStates  SaleOrder[] @relation("SaleOrderPosState")
+  saleOrderShipStates SaleOrder[] @relation("SaleOrderShipState")
 
   @@index([isActive],  name: "idx_state_codes_active")
   @@index([stateName], name: "idx_state_codes_name")
@@ -2889,6 +2899,7 @@ model ItemMaster {
   loyaltySchemeGifts   LoyaltySchemeGift[]
   saleQuotationItems   SaleQuotationItem[]
   saleBillItems        SaleBillItem[]
+  saleOrderItems       SaleOrderItem[]
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
@@ -2918,6 +2929,8 @@ model ItemPriceLevel {
   saleQuotationItems SaleQuotationItem[]
   saleBills          SaleBill[]     @relation("SaleBillPriceLevel")
   saleBillItems      SaleBillItem[] @relation("SaleBillItemPriceLevel")
+  saleOrders         SaleOrder[]     @relation("SaleOrderPriceLevel")
+  saleOrderItems     SaleOrderItem[] @relation("SaleOrderItemPriceLevel")
   @@map("item_price_levels")
   @@schema("inventory")
 }
@@ -3387,6 +3400,7 @@ model ItemUnitConversion {
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
   saleQuotationItem  SaleQuotationItem[] @relation("SaleQuotationItemUnitConversion")
   saleBillItems      SaleBillItem[]      @relation("SaleBillItemUnitConversion")
+  saleOrderItems     SaleOrderItem[]     @relation("SaleOrderItemUnitConversion")
   itemEanCodes       ItemEanCode[]       @relation("ItemEanCodeUnitConversion")
   itemReorders       ItemReorder[]       @relation("ItemReorderUnitConversion")
   itemPrices         ItemPriceMaster[]   @relation("ItemPriceMasterUnitConversion")
@@ -4081,6 +4095,108 @@ model TransactionHold {
   @@schema("public")
 }
 
+// ----- prisma/public/txnStatusLog.prisma -----
+// Append-only status trail for every transactional document (quotation,
+// order, challan, bill, return, voucher, ...). One row per status step; a
+// document's history is the ordered set of its rows. Rows are written once
+// and never edited — correcting history means appending, not rewriting, which
+// is why there is no modified_on/modified_by pair here.
+//
+// LIST-partitioned by tslAccYear (the SOURCE DOCUMENT's year), like
+// sales.sale_bill / sales.sale_bill_item / accounts.acc_tender_detail.
+// Partitions (e.g. txn_status_log_2026_2027) are created by
+// public.ensure_acc_year_partitions('YYYY-YYYY') — run it whenever a fiscal
+// year is opened, or every insert fails with "no partition of relation ...".
+model TxnStatusLog {
+  tslId              String    @default(dbgenerated("uuidv7()")) @db.Uuid   @map("tsl_id")
+  tslCompanyId       String    @db.Uuid                                     @map("tsl_company_id")
+  tslBranchId        String    @db.Uuid                                     @map("tsl_branch_id")
+  tslTenantId        String?   @db.Uuid                                     @map("tsl_tenant_id")
+  tslAccYear         String    @db.Char(9)                                  @map("tsl_acc_year")
+
+  // ── Which document ───────────────────────────────────────────────────
+  tslSrcModule       String    @db.VarChar(20)                              @map("tsl_src_module")
+  tslSrcDocType      String    @db.VarChar(30)                              @map("tsl_src_doc_type")
+  tslSrcDocId        String    @db.Uuid                                     @map("tsl_src_doc_id")
+  tslSrcDocRefno     String?   @db.VarChar(100)                             @map("tsl_src_doc_refno")
+  tslSeqNo           Int                                                    @map("tsl_seq_no")
+
+  // ── What happened ────────────────────────────────────────────────────
+  tslEvent           String    @db.VarChar(30)                              @map("tsl_event")
+  tslFromStatus      String?   @db.VarChar(20)                              @map("tsl_from_status")
+  tslToStatus        String    @db.VarChar(20)                              @map("tsl_to_status")
+  tslChangedOn       DateTime  @default(now()) @db.Timestamptz(6)           @map("tsl_changed_on")
+  tslChangedBy       String    @db.Uuid                                     @map("tsl_changed_by")
+  tslRemarks         String?   @db.VarChar(500)                             @map("tsl_remarks")
+
+  // Where it happened, for a device-level audit in an offline chain.
+  tslDeviceId        String?   @db.Uuid                                     @map("tsl_device_id")
+  tslSessionId       String?   @db.Uuid                                     @map("tsl_session_id")
+
+  // ── Party notification that accompanied the step ─────────────────────
+  tslNotifyChannel   String?   @db.VarChar(20)                              @map("tsl_notify_channel")
+  tslNotifiedOn      DateTime? @db.Timestamptz(6)                           @map("tsl_notified_on")
+  tslNotifyRef       String?   @db.VarChar(100)                             @map("tsl_notify_ref")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  tslIsDeleted       Boolean   @default(false)                              @map("tsl_is_deleted")
+  tslSyncDate        DateTime? @db.Timestamptz(6)                           @map("tsl_sync_date")
+  tslCreatedOn       DateTime  @default(now()) @db.Timestamptz(6)           @map("tsl_created_on")
+  tslCreatedBy       String    @db.VarChar(50)                              @map("tsl_created_by")
+
+  // Relations
+  device             DeviceMaster? @relation(fields: [tslDeviceId], references: [devId], onUpdate: Cascade, onDelete: SetNull, map: "fk_tsl_device")
+  // No relation fields for:
+  //   tslCompanyId / tslBranchId / tslChangedBy
+  //                  — the DDL declares no FKs for them; a log row must survive
+  //                    even if the actor row is later reorganised.
+  //   tslTenantId    — no Tenant model exists in this schema (same as sb_tenant_id).
+  //   tslSessionId   — user_login_sessions.uls_session_id is nullable and not
+  //                    unique, so it is not a valid FK target.
+  //   tslSrcDocId    — polymorphic; the target table varies by
+  //                    tslSrcModule/tslSrcDocType.
+
+  @@id([tslId, tslAccYear], map: "pk_txn_status_log")
+
+  // One document's trail in order — the History button's query, and the
+  // uniqueness of the sequence within a document. Intentionally NOT partial.
+  @@unique([tslSrcDocType, tslSrcDocId, tslAccYear, tslSeqNo], map: "ux_tsl_doc_seq")
+  // Same trail, newest first, when a screen shows only the last few steps.
+  @@index([tslSrcDocType, tslSrcDocId, tslChangedOn(sort: Desc)], map: "ix_tsl_doc_recent")
+
+  // Partial indexes are DB-only — Prisma ignores WHERE predicates, so
+  // declaring them here would produce phantom drift on every migrate dev:
+  //
+  //   CREATE INDEX ix_tsl_branch_period
+  //       ON public.txn_status_log
+  //          (tsl_company_id, tsl_branch_id, tsl_acc_year, tsl_changed_on DESC)
+  //       WHERE tsl_is_deleted = false;
+  //
+  //   CREATE INDEX ix_tsl_user_event
+  //       ON public.txn_status_log (tsl_changed_by, tsl_event, tsl_changed_on DESC)
+  //       WHERE tsl_is_deleted = false;
+  //
+  //   CREATE INDEX ix_tsl_module_event
+  //       ON public.txn_status_log
+  //          (tsl_src_module, tsl_event, tsl_acc_year, tsl_changed_on DESC)
+  //       WHERE tsl_is_deleted = false;
+  //
+  //   -- notification retry queue
+  //   CREATE INDEX ix_tsl_notify_pending
+  //       ON public.txn_status_log (tsl_changed_on)
+  //       WHERE tsl_notify_channel IS NOT NULL
+  //         AND tsl_notify_channel <> 'NONE'
+  //         AND tsl_notified_on IS NULL;
+  //
+  // CHECK constraints (DB-only): ck_tsl_src_module, ck_tsl_src_doc_type,
+  //   ck_tsl_seq_no, ck_tsl_event_shape, ck_tsl_to_status_shape,
+  //   ck_tsl_from_status_shape, ck_tsl_reason_required, ck_tsl_notify_channel,
+  //   ck_tsl_notified
+
+  @@map("txn_status_log")
+  @@schema("public")
+}
+
 // ----- prisma/public/userMaster.prisma -----
 model UserMaster {
   // ── Primary key ────────────────────────────────────────────────────────────
@@ -4456,6 +4572,7 @@ model Customer {
   priceLevel           ItemPriceLevel @relation("CustomerPriceLevel", fields: [cusPriceLevelId], references: [iplId])
   saleQuotations       SaleQuotation[]
   saleBills            SaleBill[]
+  saleOrders           SaleOrder[]
   itemQtyPrices        ItemQtyPrice[] @relation("CustomerItemQtyPrices")
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")
@@ -4628,6 +4745,7 @@ model EmployeeMaster {
   designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
   department           EmployeeDepartment? @relation(fields: [empDepartmentId], references: [edptId])
   saleQuotations       SaleQuotation[]
+  saleOrderAgents      SaleOrder[]          @relation("SaleOrderAgent")
   @@index([empCompanyId],    name: "idx_emp_company")
   @@index([empIsActive],     name: "idx_emp_active")
   @@index([empDepartmentId], name: "idx_emp_department")
@@ -5012,6 +5130,8 @@ model SaleBill {
   sbModifiedBy       String?   @db.VarChar @map("sb_modified_by")
   // Relations
   items      SaleBillItem[]
+  // Advances an order held that were adjusted into this invoice.
+  advanceAllocs SaleOrderAdvanceAlloc[]
   customer   Customer       @relation(fields: [sbCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_cust")
   posState   StateCode?     @relation(fields: [sbPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_pos_state")
   priceLevel ItemPriceLevel @relation("SaleBillPriceLevel", fields: [sbPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_price_level")
@@ -5340,6 +5460,476 @@ model SaleLoadingCharge {
   // nor the WHERE predicate, so it lives only in the migration -- do NOT try to
   // declare it here.
   @@map("sale_loading_charges")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleOrder.prisma -----
+// sales.sale_order is LIST-partitioned by so_acc_year, like sales.sale_bill /
+// sales.sale_bill_item and accounts.acc_tender_detail. Partitions (e.g.
+// sale_order_2026_2027) are created by
+// public.ensure_acc_year_partitions('YYYY-YYYY') — run it whenever a fiscal
+// year is opened, or every insert fails with "no partition of relation
+// "sale_order" found for row".
+model SaleOrder {
+  soId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("so_id")
+  soCompanyId          String    @db.Uuid @map("so_company_id")
+  soBranchId           String    @db.Uuid @map("so_branch_id") // branch that TOOK the order
+  soTenantId           String?   @db.Uuid @map("so_tenant_id")
+  soAccYear            String    @db.Char(9) @map("so_acc_year")
+  // Where it was raised. The DEVICE is the counter — there is no separate
+  // counter id: fixed.device_master is the register of billing points, and
+  // soDeviceId keys the per-device number series (ux_so_slno). NOT NULL,
+  // because in an offline chain the device owns the document and its series.
+  // Device name / type / platform / MAC are NOT snapshotted here; they are
+  // reachable through the FK and a device does not change identity.
+  soSessionId          String?   @db.Uuid @map("so_session_id")
+  soDeviceId           String    @db.Uuid @map("so_device_id")
+  // Document identity
+  soDocType            String    @default("SALES_ORDER") @db.VarChar(30) @map("so_doc_type")
+  soOrderType          String    @default("CASH") @db.VarChar(20) @map("so_order_type") // CASH | CREDIT
+  soPriceLevel         Int       @map("so_price_level")
+  soOrderSlno          BigInt    @map("so_order_slno") // per company/branch/year/DEVICE
+  soOrderRefno         String    @db.VarChar(100) @map("so_order_refno")
+  soUsrRefno           String?   @db.VarChar(100) @map("so_usr_refno")
+  soOrderDate          DateTime  @db.Date @map("so_order_date")
+  soOrderDatetime      DateTime  @default(now()) @db.Timestamptz(6) @map("so_order_datetime")
+  // Delivery window. The date agreed with the customer (legacy ord_del_date).
+  // Lines may carry their own when an order is delivered in parts — see
+  // soiDeliveryDate.
+  soDeliveryDate       DateTime? @db.Date @map("so_delivery_date")
+  soDeliverySlot       String?   @db.VarChar(30) @map("so_delivery_slot") // 'FN' | 'AN' | '10-12' ... free text by design
+  soPriority           String    @default("NORMAL") @db.VarChar(10) @map("so_priority")
+  soValidUntil         DateTime? @db.Date @map("so_valid_until") // unclaimed booking lapses
+  // Where it came from: quotation (usually), or an imported/marketplace order.
+  // Polymorphic, so no FK — but the source's OWN accounting year is kept,
+  // because a March quotation can become an April order.
+  soSrcDocType         String?   @db.VarChar(30) @map("so_src_doc_type")
+  soSrcDocId           String?   @db.Uuid @map("so_src_doc_id")
+  soSrcDocAccYear      String?   @db.Char(9) @map("so_src_doc_acc_year")
+  soSrcDocRefno        String?   @db.VarChar(100) @map("so_src_doc_refno")
+  soSrcDocDate         DateTime? @db.Date @map("so_src_doc_date")
+  // How the goods reach the customer. The branch that takes the order is the
+  // branch that supplies and bills it — inter-branch movement is an inventory
+  // transfer document with no link to this one.
+  soDeliveryMode       String    @default("STORE_PICKUP") @db.VarChar(20) @map("so_delivery_mode")
+  // Customer, snapshotted at order time
+  soCustId             String    @db.Uuid @map("so_cust_id")
+  soCustName           String    @db.VarChar(200) @map("so_cust_name")
+  soCustAddr           String?   @db.VarChar(500) @map("so_cust_addr")
+  soCustPlace          String?   @db.VarChar(100) @map("so_cust_place")
+  soCustPin            String?   @db.VarChar(10) @map("so_cust_pin")
+  soCustPhone          String?   @db.VarChar(20) @map("so_cust_phone")
+  soCustEmail          String?   @db.VarChar(150) @map("so_cust_email")
+  soCustGstin          String?   @db.VarChar(15) @map("so_cust_gstin")
+  soCustGstType        String?   @db.VarChar(20) @map("so_cust_gst_type")
+  soCustStcd           String?   @db.Char(2) @map("so_cust_stcd")
+  soPosStcd            String?   @db.Char(2) @map("so_pos_stcd") // place of supply: CGST+SGST vs IGST
+  soStateName          String?   @db.VarChar(100) @map("so_state_name")
+  soContactPerson      String?   @db.VarChar(150) @map("so_contact_person")
+  soContactPhone       String?   @db.VarChar(20) @map("so_contact_phone")
+  // Ship-to, snapshotted separately from the billing address
+  soShipName           String?   @db.VarChar(200) @map("so_ship_name")
+  soShipAddr           String?   @db.VarChar(500) @map("so_ship_addr")
+  soShipPlace          String?   @db.VarChar(100) @map("so_ship_place")
+  soShipPin            String?   @db.VarChar(10) @map("so_ship_pin")
+  soShipPhone          String?   @db.VarChar(20) @map("so_ship_phone")
+  soShipStcd           String?   @db.Char(2) @map("so_ship_stcd")
+  soShipLandmark       String?   @db.VarChar(250) @map("so_ship_landmark")
+  soShipLat            Decimal?  @db.Decimal(9, 6) @map("so_ship_lat")
+  soShipLng            Decimal?  @db.Decimal(9, 6) @map("so_ship_lng")
+  // Options carried on the document
+  soHasLoad            Boolean   @default(false) @map("so_has_load")
+  soHasUnload          Boolean   @default(false) @map("so_has_unload")
+  soHasFreight         Boolean   @default(false) @map("so_has_freight")
+  soHasPromo           Boolean   @default(false) @map("so_has_promo")
+  soHasComm            Boolean   @default(false) @map("so_has_comm")
+  soHasLoyalty         Boolean   @default(false) @map("so_has_loyalty")
+  // People. Delivery crew and vehicle are NOT here: an order is a commitment,
+  // not a despatch. Who loaded it and what it went on is the bill's / delivery
+  // challan's fact (sale_bill.sb_driver_id, sb_vehicle_id, sb_loadman_id).
+  soUserId             String    @db.Uuid @map("so_user_id")
+  soSalesmanId         String[]  @db.Uuid @map("so_salesman_id")
+  soAgentId            String?   @db.Uuid @map("so_agent_id")
+  soAgentCommPerc      Decimal?  @db.Decimal(15, 4) @map("so_agent_comm_perc")
+  soAgentCommAmt       Decimal?  @db.Decimal(15, 2) @map("so_agent_comm_amt")
+  soPackedId           String[]  @db.Uuid @map("so_packed_id")
+  // Quantities
+  soTotItems           Int       @default(0) @map("so_tot_items") // ordered LINES
+  soDeliveredItems     Int       @default(0) @map("so_delivered_items") // fully delivered LINES
+  soTotWeight          Decimal   @default(0) @db.Decimal(15, 3) @map("so_tot_weight")
+  soTotBags            Decimal   @default(0) @db.Decimal(15, 3) @map("so_tot_bags")
+  // Money (same shape and order as sale_bill)
+  soGrossAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("so_gross_amt")
+  soItemDisc           Decimal   @default(0) @db.Decimal(15, 2) @map("so_item_disc")
+  soSplDisc            Decimal   @default(0) @db.Decimal(15, 2) @map("so_spl_disc")
+  soSchDisc            Decimal   @default(0) @db.Decimal(15, 2) @map("so_sch_disc")
+  soBillSchDisc        Decimal   @default(0) @db.Decimal(15, 2) @map("so_bill_sch_disc")
+  soAddlDisc1          Decimal   @default(0) @db.Decimal(15, 2) @map("so_addl_disc1")
+  soAddlDisc2          Decimal   @default(0) @db.Decimal(15, 2) @map("so_addl_disc2")
+  soCashDiscPerc       Decimal   @default(0) @db.Decimal(15, 4) @map("so_cash_disc_perc")
+  soCashDisc           Decimal   @default(0) @db.Decimal(15, 2) @map("so_cash_disc")
+  soTaxableAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("so_taxable_amt") // POST-charge
+  soCgstAmt            Decimal   @default(0) @db.Decimal(15, 2) @map("so_cgst_amt")
+  soSgstAmt            Decimal   @default(0) @db.Decimal(15, 2) @map("so_sgst_amt")
+  soIgstAmt            Decimal   @default(0) @db.Decimal(15, 2) @map("so_igst_amt")
+  soCessAmt            Decimal   @default(0) @db.Decimal(15, 2) @map("so_cess_amt")
+  soTaxAmt             Decimal   @default(0) @db.Decimal(15, 2) @map("so_tax_amt")
+  // Roll-ups of sales.sale_doc_charge rows (reporting without a join).
+  soFreightAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("so_freight_amt")
+  soLoadAmt            Decimal   @default(0) @db.Decimal(15, 2) @map("so_load_amt")
+  soUnloadAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("so_unload_amt")
+  soOtherAmt1          Decimal   @default(0) @db.Decimal(15, 2) @map("so_other_amt1")
+  soOtherAmt2          Decimal   @default(0) @db.Decimal(15, 2) @map("so_other_amt2")
+  soRoundOff           Decimal   @default(0) @db.Decimal(15, 2) @map("so_round_off")
+  soOrderAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("so_order_amt") // the order value
+  // Costing (never printed; drives margin reports)
+  soTotalCost          Decimal?  @db.Decimal(15, 2) @map("so_total_cost")
+  soMarginAmt          Decimal?  @db.Decimal(15, 2) @map("so_margin_amt")
+  soMarginAmtWot       Decimal?  @db.Decimal(15, 2) @map("so_margin_amt_wot")
+  soMarginPerc         Decimal?  @db.Decimal(15, 4) @map("so_margin_perc")
+  soMarginPercWot      Decimal?  @db.Decimal(15, 4) @map("so_margin_perc_wot")
+  soMrpSavings         Decimal?  @default(0) @db.Decimal(15, 3) @map("so_mrp_savings")
+  soMrpSavingsPerc     Decimal?  @default(0) @db.Decimal(15, 4) @map("so_mrp_savings_perc")
+  // Advance payment. Policy is snapshotted per order because it is negotiated
+  // per order (a custom-cut order takes 50%, a stocked item takes a token).
+  soAdvancePolicy      String    @default("NONE") @db.VarChar(10) @map("so_advance_policy")
+  soAdvancePerc        Decimal   @default(0) @db.Decimal(15, 4) @map("so_advance_perc")
+  soAdvanceRequired    Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_required")
+  soAdvanceDueDate     DateTime? @db.Date @map("so_advance_due_date")
+  soIsAdvanceMandatory Boolean   @default(false) @map("so_is_advance_mandatory")
+  soAdvanceLedgerId    String?   @db.Uuid @map("so_advance_ledger_id") // customer-advance liability ledger
+  // Roll-ups. Received comes from accounts.acc_tender_detail; the other three
+  // from sales.sale_order_advance_alloc. Balance is what the company still
+  // HOLDS, and ck_so_advance_balance keeps it honest.
+  soAdvanceRecdAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_recd_amt")
+  soAdvanceAdjustedAmt Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_adjusted_amt")
+  soAdvanceRefundAmt   Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_refund_amt")
+  soAdvanceForfeitAmt  Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_forfeit_amt")
+  soAdvanceBalanceAmt  Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_balance_amt")
+  soAdvanceStatus      String    @default("NONE") @db.VarChar(20) @map("so_advance_status")
+  soAdvanceRecdOn      DateTime? @db.Timestamptz(6) @map("so_advance_recd_on") // first instalment
+  // Settlement roll-ups for the order itself (tender rows live in
+  // accounts.acc_tender_detail; these are caches so a counter can balance
+  // without a join).
+  soPayMode            String?   @db.VarChar(20) @map("so_pay_mode")
+  soSurchargeAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("so_surcharge_amt")
+  soTenderAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("so_tender_amt")
+  soRefundAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("so_refund_amt")
+  soPayStatus          String    @default("UNPAID") @db.VarChar(20) @map("so_pay_status")
+  // Fulfilment caches (sale_bill / sale_bill_item are the truth)
+  soBilledAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("so_billed_amt")
+  soCancelledAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("so_cancelled_amt")
+  soPendingAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("so_pending_amt")
+  soFulfilStatus       String    @default("PENDING") @db.VarChar(20) @map("so_fulfil_status")
+  soLastBilledOn       DateTime? @db.Timestamptz(6) @map("so_last_billed_on")
+  soCompletedOn        DateTime? @db.Timestamptz(6) @map("so_completed_on") // last line delivered
+  // Terms
+  soPaymentTerms       String?   @db.VarChar(250) @map("so_payment_terms")
+  soDeliveryTerms      String?   @db.VarChar(250) @map("so_delivery_terms")
+  soTermsConditions    String?   @map("so_terms_conditions")
+  soRemarks            String?   @db.VarChar(500) @map("so_remarks")
+  // Pricing policy, snapshotted as this order was priced
+  soFreightCalcType    String?   @db.VarChar(12) @map("so_freight_calc_type")
+  soLoadingCalcType    String?   @db.VarChar(12) @map("so_loading_calc_type")
+  soDiscAlterBase      Boolean?  @map("so_disc_alter_base")
+  soRoundOffStep       Decimal   @default(1) @db.Decimal(15, 2) @map("so_round_off_step")
+  // Lifecycle. soStatus is the CURRENT state and the ONLY lifecycle column
+  // here — a cache of the newest log row's tsl_to_status, which is what the
+  // list screen filters on.
+  //
+  // Everything else about how the order got here — who confirmed, who approved
+  // an override, who cancelled and why, when each step happened — is owned by
+  // public.txn_status_log, the trail every document in every module shares.
+  // The cancellation reason therefore lives in that row's tsl_remarks, and the
+  // "a cancelled order must say why" invariant is enforced there by
+  // ck_tsl_reason_required — not by a duplicate column on this table.
+  soStatus             String    @default("DRAFT") @db.VarChar(20) @map("so_status")
+  soVersionNo          Int       @default(1) @map("so_version_no")
+  soPrintCount         Int       @default(0) @map("so_print_count")
+  // Audit
+  soIsDeleted          Boolean   @default(false) @map("so_is_deleted")
+  soSyncDate           DateTime? @db.Timestamptz(6) @map("so_sync_date")
+  soCreatedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("so_created_on")
+  soCreatedBy          String    @db.VarChar(50) @map("so_created_by")
+  soModifiedOn         DateTime? @db.Timestamptz(6) @map("so_modified_on")
+  soModifiedBy         String?   @db.VarChar(50) @map("so_modified_by")
+  // Relations
+  items                 SaleOrderItem[]
+  advanceAllocs         SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocOrder")
+  transferredInAllocs   SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocTargetOrder")
+  customer      Customer         @relation(fields: [soCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_cust")
+  posState      StateCode?       @relation("SaleOrderPosState", fields: [soPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_pos_state")
+  shipState     StateCode?       @relation("SaleOrderShipState", fields: [soShipStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_ship_state")
+  priceLevel    ItemPriceLevel   @relation("SaleOrderPriceLevel", fields: [soPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_price_level")
+  agent         EmployeeMaster?  @relation("SaleOrderAgent", fields: [soAgentId], references: [empId], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_salesman_agent")
+  advanceLedger AccLedgerMaster? @relation("SaleOrderAdvanceLedger", fields: [soAdvanceLedgerId], references: [ledId], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_advance_ledger")
+  // RESTRICT, not SET NULL: the device owns this document's number series, so
+  // it can be blocked or deactivated but never unlinked.
+  device        DeviceMaster     @relation(fields: [soDeviceId], references: [devId], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_device")
+  // No relation fields for soCompanyId / soBranchId / soUserId / soSessionId /
+  // soSalesmanId[] / soPackedId[] / soTenantId — the DDL declares no FKs for
+  // them (arrays cannot carry one, and there is no Tenant model).
+  //
+  // DB-only partial indexes (migration 20260808132323): ix_so_list,
+  // ix_so_status, ix_so_pending, ix_so_advance_held, ix_so_src_doc and the
+  // unique ux_so_slno / ux_so_order_no. Prisma cannot express their WHERE
+  // predicates; declaring them here makes `migrate dev` regenerate them
+  // without the predicate and fail on the existing names. Do NOT add
+  // @@unique/@@index for them — ux_so_slno / ux_so_order_no uniqueness must be
+  // checked app-side (or rely on the DB error).
+  //
+  // Beware when reading that DB error: because sale_order is PARTITIONED, a
+  // duplicate is reported against the PARTITION-LOCAL index, not the parent —
+  // e.g. "sale_order_2026_2027_so_company_id_so_branch_id_so_acc_yea_idx4",
+  // never "ux_so_order_no". The name is positional and changes per year, so
+  // the trick quotation.service.ts uses (matching P2002 meta.target against
+  // the literal 'ux_sq_slno', on the UNpartitioned sale_quotation) does not
+  // port here. Match on the column list in meta.target, or pre-check.
+  //
+  // CHECK constraints (DB-only): ck_so_doc_type, ck_so_order_type,
+  // ck_so_priority, ck_so_delivery_mode, ck_so_status, ck_so_fulfil_status,
+  // ck_so_pay_status, ck_so_advance_policy, ck_so_advance_status,
+  // ck_so_advance_amounts, ck_so_advance_balance, ck_so_advance_policy_input.
+  @@id([soId, soAccYear], map: "pk_sale_order")
+  @@index([soCustId], map: "ix_so_cust")
+  @@map("sale_order")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleOrderAdvanceAlloc.prisma -----
+// Advance allocation — where the money taken up front actually went.
+//
+// One row per application of one advance tender. The tender row
+// (accounts.acc_tender_detail) is the money coming IN; this is the money being
+// USED. Both sides carry their own accounting year because an advance taken in
+// March is routinely adjusted into an April invoice.
+//
+// Sum(soaAmount) per order, grouped by soaAllocType, reproduces the four
+// SaleOrder advance roll-ups exactly — that is the point of the table.
+//
+// LIST-partitioned by soa_acc_year — see the note on SaleOrder.
+model SaleOrderAdvanceAlloc {
+  soaId             String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("soa_id")
+  soaCompanyId      String    @db.Uuid @map("soa_company_id")
+  soaBranchId       String    @db.Uuid @map("soa_branch_id") // branch that applied it
+  soaTenantId       String?   @db.Uuid @map("soa_tenant_id")
+  soaAccYear        String    @db.Char(9) @map("soa_acc_year") // year of the APPLICATION
+  // The order the advance was taken against.
+  soaOrderId        String    @db.Uuid @map("soa_order_id")
+  soaOrderAccYear   String    @db.Char(9) @map("soa_order_acc_year")
+  soaOrderRefno     String?   @db.VarChar(100) @map("soa_order_refno")
+  // The tender row that brought the money in. Nullable only for opening
+  // balances migrated from the legacy system, which have no tender history.
+  soaTenderId       String?   @db.Uuid @map("soa_tender_id")
+  soaTenderAccYear  String?   @db.Char(9) @map("soa_tender_acc_year")
+  soaAllocType      String    @db.VarChar(20) @map("soa_alloc_type") // ADJUSTED | REFUNDED | FORFEITED | TRANSFERRED (ck_soa_alloc_type in DB)
+  soaAllocDate      DateTime  @db.Date @map("soa_alloc_date")
+  soaAmount         Decimal   @default(0) @db.Decimal(15, 2) @map("soa_amount")
+  // ADJUSTED → the invoice it was set against (cross-year FK).
+  soaBillId         String?   @db.Uuid @map("soa_bill_id")
+  soaBillAccYear    String?   @db.Char(9) @map("soa_bill_acc_year")
+  soaBillRefno      String?   @db.VarChar(100) @map("soa_bill_refno")
+  // TRANSFERRED → the order it was moved to (chain stores move a booking from
+  // one order to another rather than refunding and re-taking cash).
+  soaTargetOrderId  String?   @db.Uuid @map("soa_target_order_id")
+  soaTargetAccYear  String?   @db.Char(9) @map("soa_target_acc_year")
+  // REFUNDED → how the money went back out. The refund is itself a tender row
+  // (CR); this is its reference.
+  soaRefundTenderId String?   @db.Uuid @map("soa_refund_tender_id")
+  soaRefundMode     String?   @db.VarChar(20) @map("soa_refund_mode") // CASH | BANK | UPI | CARD | CREDIT_NOTE | ADJUSTMENT (ck_soa_refund_mode in DB)
+  // Filled at posting, server-side, like every other accounts link here.
+  soaVoucherId      String?   @db.Uuid @map("soa_voucher_id")
+  soaLedgerId       String?   @db.Uuid @map("soa_ledger_id") // advance ledger relieved
+  soaRemarks        String?   @db.VarChar(250) @map("soa_remarks")
+  soaApprovedBy     String?   @db.Uuid @map("soa_approved_by") // refunds/forfeits need a sign-off
+  // Audit
+  soaIsDeleted      Boolean   @default(false) @map("soa_is_deleted")
+  soaSyncDate       DateTime? @db.Timestamptz(6) @map("soa_sync_date")
+  soaCreatedOn      DateTime  @default(now()) @db.Timestamptz(6) @map("soa_created_on")
+  soaCreatedBy      String    @db.VarChar(50) @map("soa_created_by")
+  soaModifiedOn     DateTime? @db.Timestamptz(6) @map("soa_modified_on")
+  soaModifiedBy     String?   @db.VarChar(50) @map("soa_modified_by")
+  // Relations
+  order       SaleOrder        @relation("SaleOrderAdvanceAllocOrder", fields: [soaOrderId, soaOrderAccYear], references: [soId, soAccYear], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_order")
+  targetOrder SaleOrder?       @relation("SaleOrderAdvanceAllocTargetOrder", fields: [soaTargetOrderId, soaTargetAccYear], references: [soId, soAccYear], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_target_order")
+  bill        SaleBill?        @relation(fields: [soaBillId, soaBillAccYear], references: [sbId, sbAccYear], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_bill")
+  tender      AccTenderDetail? @relation(fields: [soaTenderId, soaTenderAccYear], references: [tdId, tdAccYear], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_tender")
+  ledger      AccLedgerMaster? @relation("SaleOrderAdvanceAllocLedger", fields: [soaLedgerId], references: [ledId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_ledger")
+  // No relation fields for soaVoucherId / soaRefundTenderId / soaApprovedBy /
+  // soaCompanyId / soaBranchId / soaTenantId — the DDL declares no FKs for them.
+  //
+  // Every index on this table is partial (ix_soa_order, ix_soa_bill,
+  // ix_soa_tender, ix_soa_type_date, migration 20260808132323) and therefore
+  // DB-only: Prisma cannot express their WHERE predicates, and declaring them
+  // here makes `migrate dev` regenerate them without the predicate and fail on
+  // the existing names. Do NOT add @@index for them.
+  //
+  // CHECK constraints (DB-only): ck_soa_alloc_type, ck_soa_amount,
+  // ck_soa_refund_mode, ck_soa_target, ck_soa_no_self_transfer,
+  // ck_soa_tender_pair.
+  @@id([soaId, soaAccYear], map: "pk_sale_order_advance_alloc")
+  @@map("sale_order_advance_alloc")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/saleOrderItem.prisma -----
+// One row per ORDERED LINE (not per batch: an order allocates no stock).
+// Fulfilment is tracked as three caches that must add up to the ordered
+// quantity (ck_soi_qty_balance), so "what is still pending" never needs the
+// bill table.
+//
+// LIST-partitioned by soi_acc_year — see the note on SaleOrder.
+model SaleOrderItem {
+  soiId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("soi_id")
+  soiOrderId          String    @db.Uuid @map("soi_order_id")
+  soiCompanyId        String    @db.Uuid @map("soi_company_id")
+  soiBranchId         String    @db.Uuid @map("soi_branch_id")
+  soiTenantId         String?   @db.Uuid @map("soi_tenant_id")
+  soiAccYear          String    @db.Char(9) @map("soi_acc_year")
+  soiLineNo           Int       @map("soi_line_no")
+  // Which line of which source document this came from (quotation).
+  soiSrcDocType       String?   @db.VarChar(30) @map("soi_src_doc_type")
+  soiSrcDocId         String?   @db.Uuid @map("soi_src_doc_id")
+  soiSrcDocAccYear    String?   @db.Char(9) @map("soi_src_doc_acc_year")
+  soiSrcDocRefno      String?   @db.VarChar(100) @map("soi_src_doc_refno")
+  soiSrcLineNo        Int?      @map("soi_src_line_no")
+  // What is being ordered
+  soiItemId           String    @db.Uuid @map("soi_item_id")
+  soiItemUnitId       String    @db.Uuid @map("soi_item_unit_id")
+  soiToBaseFactor     Decimal   @default(0) @db.Decimal(15, 6) @map("soi_to_base_factor")
+  soiHsnCode          String?   @db.VarChar(8) @map("soi_hsn_code")
+  soiPriceLevel       Int       @map("soi_price_level")
+  soiEanCode          String?   @db.VarChar(100) @map("soi_ean_code")
+  // Free-text dimension the operator typed, e.g. a timber shop's "12*6*2*10"
+  // (length ft * width in * thickness in * pieces), which is what soiOrderQty
+  // was derived from. Stored verbatim so a reprint shows the size the customer
+  // agreed to, not just the cubic feet it became.
+  soiSize             String?   @db.VarChar(50) @map("soi_size")
+  soiSizeUom          String?   @db.VarChar(20) @map("soi_size_uom")
+  // Reservation (a soft hold; inventory owns the hard one)
+  soiGodownId         String?   @db.Uuid @map("soi_godown_id")
+  soiIsReserved       Boolean   @default(false) @map("soi_is_reserved")
+  soiReservedQty      Decimal   @default(0) @db.Decimal(15, 3) @map("soi_reserved_qty")
+  soiReserveExpiresOn DateTime? @db.Date @map("soi_reserve_expires_on")
+  // Flags
+  soiIsTaxIncl        Boolean   @default(false) @map("soi_is_tax_incl")
+  soiIsPromo          Boolean   @default(false) @map("soi_is_promo")
+  soiIsFree           Boolean   @default(false) @map("soi_is_free")
+  soiFreeType         String?   @db.VarChar(20) @map("soi_free_type") // NULL / SCHEME / SAMPLE / REPLACEMENT (ck_soi_free_type in DB)
+  soiIsService        Boolean   @default(false) @map("soi_is_service")
+  soiHasFreight       Boolean   @default(false) @map("soi_has_freight")
+  // Quantities
+  soiCaseQty          Decimal   @default(0) @db.Decimal(15, 3) @map("soi_case_qty")
+  soiOrderQty         Decimal   @default(0) @db.Decimal(15, 3) @map("soi_order_qty")
+  soiLengthQty        Decimal?  @default(0) @db.Decimal(15, 3) @map("soi_length_qty")
+  soiNetQty           Decimal   @default(0) @db.Decimal(15, 3) @map("soi_net_qty")
+  soiWeightQty        Decimal?  @default(0) @db.Decimal(15, 3) @map("soi_weight_qty")
+  soiAvailableStock   Decimal   @default(0) @db.Decimal(15, 3) @map("soi_available_stock") // at order time
+  // Fulfilment caches — sale_bill_item is the truth (sbi_src_doc_id).
+  soiDeliveredQty     Decimal   @default(0) @db.Decimal(15, 3) @map("soi_delivered_qty")
+  soiCancelledQty     Decimal   @default(0) @db.Decimal(15, 3) @map("soi_cancelled_qty")
+  soiPendingQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_pending_qty")
+  soiBilledAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("soi_billed_amt")
+  // Rates
+  soiRate             Decimal   @default(0) @db.Decimal(15, 4) @map("soi_rate")
+  soiRatePreTax       Decimal   @default(0) @db.Decimal(15, 4) @map("soi_rate_pre_tax")
+  soiRateDiff         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_rate_diff")
+  soiActPrice         Decimal?  @db.Decimal(15, 4) @map("soi_act_price")
+  soiMaxPrice         Decimal?  @db.Decimal(15, 4) @map("soi_max_price") // MRP
+  soiMinPrice         Decimal?  @db.Decimal(15, 4) @map("soi_min_price")
+  soiCostPrice        Decimal?  @db.Decimal(15, 4) @map("soi_cost_price")
+  soiCostPreTax       Decimal?  @db.Decimal(15, 2) @map("soi_cost_pre_tax")
+  // A confirmed order holds its price even if the price master moves; false
+  // lets the bill re-price at delivery (long-lead custom orders).
+  soiIsRateLocked     Boolean   @default(true) @map("soi_is_rate_locked")
+  // Discounts
+  soiItemDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("soi_item_disc_perc")
+  soiItemDiscQty      Decimal   @default(0) @db.Decimal(15, 3) @map("soi_item_disc_qty")
+  soiItemDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("soi_item_disc_amt")
+  soiSplDiscPerc      Decimal   @default(0) @db.Decimal(15, 4) @map("soi_spl_disc_perc")
+  soiSplDiscQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_spl_disc_qty")
+  soiSplDiscAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_spl_disc_amt")
+  soiSchDiscPerc      Decimal   @default(0) @db.Decimal(15, 4) @map("soi_sch_disc_perc")
+  soiSchDiscQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_sch_disc_qty")
+  soiSchDiscAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_sch_disc_amt")
+  soiBillSchPerc      Decimal   @default(0) @db.Decimal(15, 4) @map("soi_bill_sch_perc")
+  soiBillSchQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_bill_sch_qty")
+  soiBillSchAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_bill_sch_amt")
+  soiAddlDisc1Perc    Decimal   @default(0) @db.Decimal(15, 4) @map("soi_addl_disc1_perc")
+  soiAddlDisc1Amt     Decimal   @default(0) @db.Decimal(15, 2) @map("soi_addl_disc1_amt")
+  soiAddlDisc2Perc    Decimal   @default(0) @db.Decimal(15, 4) @map("soi_addl_disc2_perc")
+  soiAddlDisc2Amt     Decimal   @default(0) @db.Decimal(15, 2) @map("soi_addl_disc2_amt")
+  soiCashDiscPerc     Decimal   @default(0) @db.Decimal(15, 4) @map("soi_cash_disc_perc")
+  soiCashDiscAmt      Decimal   @default(0) @db.Decimal(15, 2) @map("soi_cash_disc_amt")
+  // The charge-distribution trio
+  soiGrossAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("soi_gross_amt")
+  soiNetGross         Decimal?  @db.Decimal(14, 4) @map("soi_net_gross")
+  soiChrgBeforeTax    Decimal?  @db.Decimal(14, 4) @map("soi_chrg_before_tax")
+  soiChrgAfterTax     Decimal?  @db.Decimal(14, 4) @map("soi_chrg_after_tax")
+  // Tax (on the POST-charge taxable)
+  soiTaxableAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_taxable_amt")
+  soiTaxPerc          Decimal   @default(0) @db.Decimal(15, 4) @map("soi_tax_perc")
+  soiTaxAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("soi_tax_amt")
+  soiCgstPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_cgst_perc")
+  soiCgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_cgst_amt")
+  soiSgstPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_sgst_perc")
+  soiSgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_sgst_amt")
+  soiIgstPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_igst_perc")
+  soiIgstAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_igst_amt")
+  soiCessPerc         Decimal   @default(0) @db.Decimal(15, 4) @map("soi_cess_perc")
+  soiCessPerUnit      Decimal   @default(0) @db.Decimal(15, 4) @map("soi_cess_per_unit")
+  soiCessAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_cess_amt")
+  soiAcessPerc        Decimal   @default(0) @db.Decimal(15, 4) @map("soi_acess_perc")
+  soiAcessPerUnit     Decimal   @default(0) @db.Decimal(15, 4) @map("soi_acess_per_unit")
+  soiAcessAmt         Decimal   @default(0) @db.Decimal(15, 2) @map("soi_acess_amt")
+  // Per-line charges
+  soiFreightQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_freight_qty")
+  soiFreightAmt       Decimal   @default(0) @db.Decimal(15, 2) @map("soi_freight_amt")
+  soiLoadQty          Decimal   @default(0) @db.Decimal(15, 3) @map("soi_load_qty")
+  soiLoadAmt          Decimal   @default(0) @db.Decimal(15, 2) @map("soi_load_amt")
+  soiUnloadQty        Decimal   @default(0) @db.Decimal(15, 3) @map("soi_unload_qty")
+  soiUnloadAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("soi_unload_amt")
+  soiRoundOff         Decimal   @default(0) @db.Decimal(15, 2) @map("soi_round_off")
+  soiNetAmt           Decimal   @default(0) @db.Decimal(15, 2) @map("soi_net_amt")
+  // Costing / margin, PER UNIT
+  soiSoldPrice        Decimal?  @db.Decimal(15, 4) @map("soi_sold_price")
+  soiSoldPreTax       Decimal?  @db.Decimal(15, 2) @map("soi_sold_pre_tax")
+  soiItemProfit       Decimal?  @db.Decimal(15, 2) @map("soi_item_profit")
+  soiProfitPreTax     Decimal?  @db.Decimal(15, 2) @map("soi_profit_pre_tax")
+  soiMrpSavings       Decimal?  @db.Decimal(15, 3) @map("soi_mrp_savings")
+  soiMrpSavingsPerc   Decimal?  @db.Decimal(15, 4) @map("soi_mrp_savings_perc")
+  // Line fulfilment / attribution
+  soiDeliveryDate     DateTime? @db.Date @map("soi_delivery_date") // a split delivery per line
+  soiLineStatus       String    @default("PENDING") @db.VarChar(20) @map("soi_line_status")
+  soiSalesmanId       String?   @db.Uuid @map("soi_salesman_id")
+  soiSchemeId         String?   @db.Uuid @map("soi_scheme_id")
+  soiSchemeName       String?   @db.VarChar(150) @map("soi_scheme_name")
+  soiRemarks          String?   @db.VarChar(250) @map("soi_remarks")
+  // Audit
+  soiIsDeleted        Boolean   @default(false) @map("soi_is_deleted")
+  soiSyncDate         DateTime? @db.Timestamptz(6) @map("soi_sync_date")
+  soiCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("soi_created_on")
+  soiCreatedBy        String    @db.VarChar(50) @map("soi_created_by")
+  soiModifiedOn       DateTime? @db.Timestamptz(6) @map("soi_modified_on")
+  soiModifiedBy       String?   @db.VarChar(50) @map("soi_modified_by")
+  // Relations
+  order              SaleOrder          @relation(fields: [soiOrderId, soiAccYear], references: [soId, soAccYear], onDelete: Cascade, onUpdate: Cascade, map: "fk_soi_order")
+  item               ItemMaster         @relation(fields: [soiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_item")
+  priceLevel         ItemPriceLevel     @relation("SaleOrderItemPriceLevel", fields: [soiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_price_level")
+  // soiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
+  itemUnitConversion ItemUnitConversion @relation("SaleOrderItemUnitConversion", fields: [soiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soi_item_unit")
+  // DB-only partial indexes (migration 20260808132323): the unique
+  // ux_soi_order_line, plus ix_soi_pending_item and ix_soi_reserved. Prisma
+  // cannot express their WHERE predicates; declaring them here makes
+  // `migrate dev` regenerate them without the predicate and fail on the
+  // existing names. Do NOT add @@unique/@@index for them.
+  //
+  // CHECK constraints (DB-only): ck_soi_free_type, ck_soi_line_no,
+  // ck_soi_line_status, ck_soi_qty_signs, ck_soi_qty_balance,
+  // ck_soi_reserved, ck_soi_size.
+  @@id([soiId, soiAccYear], map: "pk_sale_order_item")
+  @@index([soiOrderId], map: "ix_soi_order")
+  @@map("sale_order_item")
   @@schema("sales")
 }
 

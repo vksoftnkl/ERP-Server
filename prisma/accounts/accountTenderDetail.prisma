@@ -79,6 +79,8 @@ model AccTenderDetail {
   ledger                AccLedgerMaster  @relation("TenderDetailLedger", fields: [tdTenderLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_ledger")
   settleLedger          AccLedgerMaster? @relation("TenderDetailSettleLedger", fields: [tdSettleLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_settle_ledger")
   partyLedger           AccLedgerMaster  @relation("TenderDetailPartyLedger", fields: [tdPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_party_ledger")
+  // Applications of this tender when it was taken as an order advance.
+  saleOrderAdvanceAllocs SaleOrderAdvanceAlloc[]
   // No relation fields for:
   //   tdVoucherId / tdSettleVoucherId
   //                 — acc_voucher_header was dropped; both stay plain UUID columns.

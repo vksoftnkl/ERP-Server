@@ -122,6 +122,8 @@ model AccLedgerMaster {
   pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
   chargeMasters            ChargeMaster[]
   chargeDetails            SaleChargeDetail[]
+  saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
+  saleOrderAdvanceAllocLedgers SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocLedger")
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")

@@ -249,6 +249,8 @@ Table acc_ledger_master {
   pdcBankLedgers acc_pdc_register [not null]
   chargeMasters charge_master [not null]
   chargeDetails sale_charge_detail [not null]
+  saleOrderAdvanceLedgers sale_order [not null]
+  saleOrderAdvanceAllocLedgers sale_order_advance_alloc [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -415,6 +417,7 @@ Table acc_tender_detail {
   ledger acc_ledger_master [not null]
   settleLedger acc_ledger_master
   partyLedger acc_ledger_master [not null]
+  saleOrderAdvanceAllocs sale_order_advance_alloc [not null]
 
   indexes {
     (tdId, tdAccYear) [pk]
@@ -1190,6 +1193,8 @@ Table device_master {
   devCreatedBy String
   devModifiedOn DateTime
   devModifiedBy String
+  txnStatusLogs txn_status_log [not null]
+  saleOrders sale_order [not null]
 }
 
 Table form_section {
@@ -1366,6 +1371,8 @@ Table state_codes {
   modifiedBy String
   saleQuotations sale_quotation [not null]
   saleBills sale_bill [not null]
+  saleOrderPosStates sale_order [not null]
+  saleOrderShipStates sale_order [not null]
 }
 
 Table stock_adj_reasons {
@@ -1713,6 +1720,7 @@ Table item_master {
   loyaltySchemeGifts loyalty_sch_gift [not null]
   saleQuotationItems sale_quotation_item [not null]
   saleBillItems sale_bill_item [not null]
+  saleOrderItems sale_order_item [not null]
 }
 
 Table item_price_levels {
@@ -1733,6 +1741,8 @@ Table item_price_levels {
   saleQuotationItems sale_quotation_item [not null]
   saleBills sale_bill [not null]
   saleBillItems sale_bill_item [not null]
+  saleOrders sale_order [not null]
+  saleOrderItems sale_order_item [not null]
 }
 
 Table item_price_master {
@@ -2041,6 +2051,7 @@ Table item_unit_conversion {
   baseUnit item_unit_master [not null]
   saleQuotationItem sale_quotation_item [not null]
   saleBillItems sale_bill_item [not null]
+  saleOrderItems sale_order_item [not null]
   itemEanCodes item_ean_codes [not null]
   itemReorders item_reorders [not null]
   itemPrices item_price_master [not null]
@@ -2519,6 +2530,40 @@ Table transaction_hold {
   thModifiedAt DateTime
 }
 
+Table txn_status_log {
+  tslId String [not null]
+  tslCompanyId String [not null]
+  tslBranchId String [not null]
+  tslTenantId String
+  tslAccYear String [not null]
+  tslSrcModule String [not null]
+  tslSrcDocType String [not null]
+  tslSrcDocId String [not null]
+  tslSrcDocRefno String
+  tslSeqNo Int [not null]
+  tslEvent String [not null]
+  tslFromStatus String
+  tslToStatus String [not null]
+  tslChangedOn DateTime [default: `now()`, not null]
+  tslChangedBy String [not null]
+  tslRemarks String
+  tslDeviceId String
+  tslSessionId String
+  tslNotifyChannel String
+  tslNotifiedOn DateTime
+  tslNotifyRef String
+  tslIsDeleted Boolean [not null, default: false]
+  tslSyncDate DateTime
+  tslCreatedOn DateTime [default: `now()`, not null]
+  tslCreatedBy String [not null]
+  device device_master
+
+  indexes {
+    (tslId, tslAccYear) [pk]
+    (tslSrcDocType, tslSrcDocId, tslAccYear, tslSeqNo) [unique]
+  }
+}
+
 Table user_master {
   usrId String [pk]
   usrCompanyId String
@@ -2784,6 +2829,7 @@ Table customers {
   priceLevel item_price_levels [not null]
   saleQuotations sale_quotation [not null]
   saleBills sale_bill [not null]
+  saleOrders sale_order [not null]
   itemQtyPrices item_qty_price [not null]
 }
 
@@ -2902,6 +2948,7 @@ Table employee_master {
   designation employee_designations
   department employee_departments
   saleQuotations sale_quotation [not null]
+  saleOrderAgents sale_order [not null]
 }
 
 Table cust_item_rates {
@@ -3205,6 +3252,7 @@ Table sale_bill {
   sbModifiedOn DateTime
   sbModifiedBy String
   items sale_bill_item [not null]
+  advanceAllocs sale_order_advance_alloc [not null]
   customer customers [not null]
   posState state_codes
   priceLevel item_price_levels [not null]
@@ -3431,6 +3479,322 @@ Table sale_loading_charges {
   ilcModifiedBy String
   company companys
   branch branch_master
+}
+
+Table sale_order {
+  soId String [not null]
+  soCompanyId String [not null]
+  soBranchId String [not null]
+  soTenantId String
+  soAccYear String [not null]
+  soSessionId String
+  soDeviceId String [not null]
+  soDocType String [not null, default: 'SALES_ORDER']
+  soOrderType String [not null, default: 'CASH']
+  soPriceLevel Int [not null]
+  soOrderSlno BigInt [not null]
+  soOrderRefno String [not null]
+  soUsrRefno String
+  soOrderDate DateTime [not null]
+  soOrderDatetime DateTime [default: `now()`, not null]
+  soDeliveryDate DateTime
+  soDeliverySlot String
+  soPriority String [not null, default: 'NORMAL']
+  soValidUntil DateTime
+  soSrcDocType String
+  soSrcDocId String
+  soSrcDocAccYear String
+  soSrcDocRefno String
+  soSrcDocDate DateTime
+  soDeliveryMode String [not null, default: 'STORE_PICKUP']
+  soCustId String [not null]
+  soCustName String [not null]
+  soCustAddr String
+  soCustPlace String
+  soCustPin String
+  soCustPhone String
+  soCustEmail String
+  soCustGstin String
+  soCustGstType String
+  soCustStcd String
+  soPosStcd String
+  soStateName String
+  soContactPerson String
+  soContactPhone String
+  soShipName String
+  soShipAddr String
+  soShipPlace String
+  soShipPin String
+  soShipPhone String
+  soShipStcd String
+  soShipLandmark String
+  soShipLat Decimal
+  soShipLng Decimal
+  soHasLoad Boolean [not null, default: false]
+  soHasUnload Boolean [not null, default: false]
+  soHasFreight Boolean [not null, default: false]
+  soHasPromo Boolean [not null, default: false]
+  soHasComm Boolean [not null, default: false]
+  soHasLoyalty Boolean [not null, default: false]
+  soUserId String [not null]
+  soSalesmanId String[] [not null]
+  soAgentId String
+  soAgentCommPerc Decimal
+  soAgentCommAmt Decimal
+  soPackedId String[] [not null]
+  soTotItems Int [not null, default: 0]
+  soDeliveredItems Int [not null, default: 0]
+  soTotWeight Decimal [not null, default: 0]
+  soTotBags Decimal [not null, default: 0]
+  soGrossAmt Decimal [not null, default: 0]
+  soItemDisc Decimal [not null, default: 0]
+  soSplDisc Decimal [not null, default: 0]
+  soSchDisc Decimal [not null, default: 0]
+  soBillSchDisc Decimal [not null, default: 0]
+  soAddlDisc1 Decimal [not null, default: 0]
+  soAddlDisc2 Decimal [not null, default: 0]
+  soCashDiscPerc Decimal [not null, default: 0]
+  soCashDisc Decimal [not null, default: 0]
+  soTaxableAmt Decimal [not null, default: 0]
+  soCgstAmt Decimal [not null, default: 0]
+  soSgstAmt Decimal [not null, default: 0]
+  soIgstAmt Decimal [not null, default: 0]
+  soCessAmt Decimal [not null, default: 0]
+  soTaxAmt Decimal [not null, default: 0]
+  soFreightAmt Decimal [not null, default: 0]
+  soLoadAmt Decimal [not null, default: 0]
+  soUnloadAmt Decimal [not null, default: 0]
+  soOtherAmt1 Decimal [not null, default: 0]
+  soOtherAmt2 Decimal [not null, default: 0]
+  soRoundOff Decimal [not null, default: 0]
+  soOrderAmt Decimal [not null, default: 0]
+  soTotalCost Decimal
+  soMarginAmt Decimal
+  soMarginAmtWot Decimal
+  soMarginPerc Decimal
+  soMarginPercWot Decimal
+  soMrpSavings Decimal [default: 0]
+  soMrpSavingsPerc Decimal [default: 0]
+  soAdvancePolicy String [not null, default: 'NONE']
+  soAdvancePerc Decimal [not null, default: 0]
+  soAdvanceRequired Decimal [not null, default: 0]
+  soAdvanceDueDate DateTime
+  soIsAdvanceMandatory Boolean [not null, default: false]
+  soAdvanceLedgerId String
+  soAdvanceRecdAmt Decimal [not null, default: 0]
+  soAdvanceAdjustedAmt Decimal [not null, default: 0]
+  soAdvanceRefundAmt Decimal [not null, default: 0]
+  soAdvanceForfeitAmt Decimal [not null, default: 0]
+  soAdvanceBalanceAmt Decimal [not null, default: 0]
+  soAdvanceStatus String [not null, default: 'NONE']
+  soAdvanceRecdOn DateTime
+  soPayMode String
+  soSurchargeAmt Decimal [not null, default: 0]
+  soTenderAmt Decimal [not null, default: 0]
+  soRefundAmt Decimal [not null, default: 0]
+  soPayStatus String [not null, default: 'UNPAID']
+  soBilledAmt Decimal [not null, default: 0]
+  soCancelledAmt Decimal [not null, default: 0]
+  soPendingAmt Decimal [not null, default: 0]
+  soFulfilStatus String [not null, default: 'PENDING']
+  soLastBilledOn DateTime
+  soCompletedOn DateTime
+  soPaymentTerms String
+  soDeliveryTerms String
+  soTermsConditions String
+  soRemarks String
+  soFreightCalcType String
+  soLoadingCalcType String
+  soDiscAlterBase Boolean
+  soRoundOffStep Decimal [not null, default: 1]
+  soStatus String [not null, default: 'DRAFT']
+  soVersionNo Int [not null, default: 1]
+  soPrintCount Int [not null, default: 0]
+  soIsDeleted Boolean [not null, default: false]
+  soSyncDate DateTime
+  soCreatedOn DateTime [default: `now()`, not null]
+  soCreatedBy String [not null]
+  soModifiedOn DateTime
+  soModifiedBy String
+  items sale_order_item [not null]
+  advanceAllocs sale_order_advance_alloc [not null]
+  transferredInAllocs sale_order_advance_alloc [not null]
+  customer customers [not null]
+  posState state_codes
+  shipState state_codes
+  priceLevel item_price_levels [not null]
+  agent employee_master
+  advanceLedger acc_ledger_master
+  device device_master [not null]
+
+  indexes {
+    (soId, soAccYear) [pk]
+  }
+}
+
+Table sale_order_advance_alloc {
+  soaId String [not null]
+  soaCompanyId String [not null]
+  soaBranchId String [not null]
+  soaTenantId String
+  soaAccYear String [not null]
+  soaOrderId String [not null]
+  soaOrderAccYear String [not null]
+  soaOrderRefno String
+  soaTenderId String
+  soaTenderAccYear String
+  soaAllocType String [not null]
+  soaAllocDate DateTime [not null]
+  soaAmount Decimal [not null, default: 0]
+  soaBillId String
+  soaBillAccYear String
+  soaBillRefno String
+  soaTargetOrderId String
+  soaTargetAccYear String
+  soaRefundTenderId String
+  soaRefundMode String
+  soaVoucherId String
+  soaLedgerId String
+  soaRemarks String
+  soaApprovedBy String
+  soaIsDeleted Boolean [not null, default: false]
+  soaSyncDate DateTime
+  soaCreatedOn DateTime [default: `now()`, not null]
+  soaCreatedBy String [not null]
+  soaModifiedOn DateTime
+  soaModifiedBy String
+  order sale_order [not null]
+  targetOrder sale_order
+  bill sale_bill
+  tender acc_tender_detail
+  ledger acc_ledger_master
+
+  indexes {
+    (soaId, soaAccYear) [pk]
+  }
+}
+
+Table sale_order_item {
+  soiId String [not null]
+  soiOrderId String [not null]
+  soiCompanyId String [not null]
+  soiBranchId String [not null]
+  soiTenantId String
+  soiAccYear String [not null]
+  soiLineNo Int [not null]
+  soiSrcDocType String
+  soiSrcDocId String
+  soiSrcDocAccYear String
+  soiSrcDocRefno String
+  soiSrcLineNo Int
+  soiItemId String [not null]
+  soiItemUnitId String [not null]
+  soiToBaseFactor Decimal [not null, default: 0]
+  soiHsnCode String
+  soiPriceLevel Int [not null]
+  soiEanCode String
+  soiSize String
+  soiSizeUom String
+  soiGodownId String
+  soiIsReserved Boolean [not null, default: false]
+  soiReservedQty Decimal [not null, default: 0]
+  soiReserveExpiresOn DateTime
+  soiIsTaxIncl Boolean [not null, default: false]
+  soiIsPromo Boolean [not null, default: false]
+  soiIsFree Boolean [not null, default: false]
+  soiFreeType String
+  soiIsService Boolean [not null, default: false]
+  soiHasFreight Boolean [not null, default: false]
+  soiCaseQty Decimal [not null, default: 0]
+  soiOrderQty Decimal [not null, default: 0]
+  soiLengthQty Decimal [default: 0]
+  soiNetQty Decimal [not null, default: 0]
+  soiWeightQty Decimal [default: 0]
+  soiAvailableStock Decimal [not null, default: 0]
+  soiDeliveredQty Decimal [not null, default: 0]
+  soiCancelledQty Decimal [not null, default: 0]
+  soiPendingQty Decimal [not null, default: 0]
+  soiBilledAmt Decimal [not null, default: 0]
+  soiRate Decimal [not null, default: 0]
+  soiRatePreTax Decimal [not null, default: 0]
+  soiRateDiff Decimal [not null, default: 0]
+  soiActPrice Decimal
+  soiMaxPrice Decimal
+  soiMinPrice Decimal
+  soiCostPrice Decimal
+  soiCostPreTax Decimal
+  soiIsRateLocked Boolean [not null, default: true]
+  soiItemDiscPerc Decimal [not null, default: 0]
+  soiItemDiscQty Decimal [not null, default: 0]
+  soiItemDiscAmt Decimal [not null, default: 0]
+  soiSplDiscPerc Decimal [not null, default: 0]
+  soiSplDiscQty Decimal [not null, default: 0]
+  soiSplDiscAmt Decimal [not null, default: 0]
+  soiSchDiscPerc Decimal [not null, default: 0]
+  soiSchDiscQty Decimal [not null, default: 0]
+  soiSchDiscAmt Decimal [not null, default: 0]
+  soiBillSchPerc Decimal [not null, default: 0]
+  soiBillSchQty Decimal [not null, default: 0]
+  soiBillSchAmt Decimal [not null, default: 0]
+  soiAddlDisc1Perc Decimal [not null, default: 0]
+  soiAddlDisc1Amt Decimal [not null, default: 0]
+  soiAddlDisc2Perc Decimal [not null, default: 0]
+  soiAddlDisc2Amt Decimal [not null, default: 0]
+  soiCashDiscPerc Decimal [not null, default: 0]
+  soiCashDiscAmt Decimal [not null, default: 0]
+  soiGrossAmt Decimal [not null, default: 0]
+  soiNetGross Decimal
+  soiChrgBeforeTax Decimal
+  soiChrgAfterTax Decimal
+  soiTaxableAmt Decimal [not null, default: 0]
+  soiTaxPerc Decimal [not null, default: 0]
+  soiTaxAmt Decimal [not null, default: 0]
+  soiCgstPerc Decimal [not null, default: 0]
+  soiCgstAmt Decimal [not null, default: 0]
+  soiSgstPerc Decimal [not null, default: 0]
+  soiSgstAmt Decimal [not null, default: 0]
+  soiIgstPerc Decimal [not null, default: 0]
+  soiIgstAmt Decimal [not null, default: 0]
+  soiCessPerc Decimal [not null, default: 0]
+  soiCessPerUnit Decimal [not null, default: 0]
+  soiCessAmt Decimal [not null, default: 0]
+  soiAcessPerc Decimal [not null, default: 0]
+  soiAcessPerUnit Decimal [not null, default: 0]
+  soiAcessAmt Decimal [not null, default: 0]
+  soiFreightQty Decimal [not null, default: 0]
+  soiFreightAmt Decimal [not null, default: 0]
+  soiLoadQty Decimal [not null, default: 0]
+  soiLoadAmt Decimal [not null, default: 0]
+  soiUnloadQty Decimal [not null, default: 0]
+  soiUnloadAmt Decimal [not null, default: 0]
+  soiRoundOff Decimal [not null, default: 0]
+  soiNetAmt Decimal [not null, default: 0]
+  soiSoldPrice Decimal
+  soiSoldPreTax Decimal
+  soiItemProfit Decimal
+  soiProfitPreTax Decimal
+  soiMrpSavings Decimal
+  soiMrpSavingsPerc Decimal
+  soiDeliveryDate DateTime
+  soiLineStatus String [not null, default: 'PENDING']
+  soiSalesmanId String
+  soiSchemeId String
+  soiSchemeName String
+  soiRemarks String
+  soiIsDeleted Boolean [not null, default: false]
+  soiSyncDate DateTime
+  soiCreatedOn DateTime [default: `now()`, not null]
+  soiCreatedBy String [not null]
+  soiModifiedOn DateTime
+  soiModifiedBy String
+  order sale_order [not null]
+  item item_master [not null]
+  priceLevel item_price_levels [not null]
+  itemUnitConversion item_unit_conversion [not null]
+
+  indexes {
+    (soiId, soiAccYear) [pk]
+  }
 }
 
 Table sale_quotation {
@@ -4309,6 +4673,8 @@ Ref: companys.compStylesheetId > app_theme_master.thmId
 
 Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
 
+Ref: txn_status_log.tslDeviceId > device_master.devId [delete: Set Null]
+
 Ref: user_menus.umUserId > user_master.usrId
 
 Ref: user_menus.umMenuId > menu_master.menuId
@@ -4386,6 +4752,38 @@ Ref: sale_freight_charges.frBranchId > branch_master.brId [delete: Restrict]
 Ref: sale_loading_charges.ilcCompId > companys.compId [delete: Restrict]
 
 Ref: sale_loading_charges.ilcBranchId > branch_master.brId [delete: Restrict]
+
+Ref: sale_order.soCustId > customers.cusId [delete: Restrict]
+
+Ref: sale_order.soPosStcd > state_codes.stateCode [delete: Restrict]
+
+Ref: sale_order.soShipStcd > state_codes.stateCode [delete: Restrict]
+
+Ref: sale_order.soPriceLevel > item_price_levels.iplId [delete: Restrict]
+
+Ref: sale_order.soAgentId > employee_master.empId [delete: Restrict]
+
+Ref: sale_order.soAdvanceLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: sale_order.soDeviceId > device_master.devId [delete: Restrict]
+
+Ref: sale_order_advance_alloc.(soaOrderId, soaOrderAccYear) > sale_order.(soId, soAccYear) [delete: Restrict]
+
+Ref: sale_order_advance_alloc.(soaTargetOrderId, soaTargetAccYear) > sale_order.(soId, soAccYear) [delete: Restrict]
+
+Ref: sale_order_advance_alloc.(soaBillId, soaBillAccYear) > sale_bill.(sbId, sbAccYear) [delete: Restrict]
+
+Ref: sale_order_advance_alloc.(soaTenderId, soaTenderAccYear) > acc_tender_detail.(tdId, tdAccYear) [delete: Restrict]
+
+Ref: sale_order_advance_alloc.soaLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: sale_order_item.(soiOrderId, soiAccYear) > sale_order.(soId, soAccYear) [delete: Cascade]
+
+Ref: sale_order_item.soiItemId > item_master.itemId [delete: Restrict]
+
+Ref: sale_order_item.soiPriceLevel > item_price_levels.iplId [delete: Restrict]
+
+Ref: sale_order_item.soiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: sale_quotation.sqParentQuoteId - sale_quotation.sqId [delete: No Action]
 

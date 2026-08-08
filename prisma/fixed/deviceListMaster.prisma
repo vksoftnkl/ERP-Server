@@ -23,6 +23,9 @@ model DeviceMaster {
   devModifiedOn   DateTime? @map("dev_modified_on")  @db.Timestamptz(6)
   devModifiedBy   String?   @map("dev_modified_by")  @db.Uuid
 
+  txnStatusLogs   TxnStatusLog[]
+  saleOrders      SaleOrder[]
+
   @@index([devDeviceUid], name: "idx_device_uid")
   @@map("device_master")
   @@schema("fixed")

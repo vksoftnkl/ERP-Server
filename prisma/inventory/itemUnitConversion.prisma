@@ -23,6 +23,7 @@ model ItemUnitConversion {
   baseUnit           Unit       @relation("IucBaseUnit", fields: [iucBaseUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_iuc_base_unit_id")
   saleQuotationItem  SaleQuotationItem[] @relation("SaleQuotationItemUnitConversion")
   saleBillItems      SaleBillItem[]      @relation("SaleBillItemUnitConversion")
+  saleOrderItems     SaleOrderItem[]     @relation("SaleOrderItemUnitConversion")
   itemEanCodes       ItemEanCode[]       @relation("ItemEanCodeUnitConversion")
   itemReorders       ItemReorder[]       @relation("ItemReorderUnitConversion")
   itemPrices         ItemPriceMaster[]   @relation("ItemPriceMasterUnitConversion")

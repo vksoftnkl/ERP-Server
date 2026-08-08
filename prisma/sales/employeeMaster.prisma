@@ -72,6 +72,7 @@ model EmployeeMaster {
   designation          EmployeeDesignation? @relation(fields: [empDesignationId], references: [edId])
   department           EmployeeDepartment? @relation(fields: [empDepartmentId], references: [edptId])
   saleQuotations       SaleQuotation[]
+  saleOrderAgents      SaleOrder[]          @relation("SaleOrderAgent")
   @@index([empCompanyId],    name: "idx_emp_company")
   @@index([empIsActive],     name: "idx_emp_active")
   @@index([empDepartmentId], name: "idx_emp_department")

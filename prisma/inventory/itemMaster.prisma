@@ -87,6 +87,7 @@ model ItemMaster {
   loyaltySchemeGifts   LoyaltySchemeGift[]
   saleQuotationItems   SaleQuotationItem[]
   saleBillItems        SaleBillItem[]
+  saleOrderItems       SaleOrderItem[]
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
