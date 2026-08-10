@@ -13,6 +13,10 @@ import type {
   TenderDetailPayload,
   TenderDocumentAudit,
 } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
+import {
+  TxnStatusDocType,
+  TxnStatusSrcModule,
+} from '../../../../common/txn-status-log/txn-status-log.helper';
 // txn_charge_detail is polymorphic — a bill's applied charges are the rows
 // carrying this discriminator plus cdDocId = sbId (see ck_cd_doc_type). A bill
 // IS the tax invoice, so it reuses the INVOICE discriminator rather than a new
@@ -40,6 +44,13 @@ export const BILL_TENDER_AUDIT: TenderDocumentAudit = {
   screenName: 'Sale Bill',
   entityName: 'Bill tender',
 };
+// public.txn_status_log is polymorphic in the same way — a bill's status trail
+// is the rows carrying this (module, doc type) pair plus tslSrcDocId = sbId (see
+// ck_tsl_src_module / ck_tsl_src_doc_type). SALE_BILL here, not the tender
+// module's coincidentally identical value: the two constraints are separate
+// vocabularies that happen to agree.
+export const BILL_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
+export const BILL_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALE_BILL;
 // sbBillSlno is a nullable bigint column; it is emitted as a string because
 // JSON has no bigint. Leaving it a bigint makes res.json() throw AFTER the save
 // transaction has committed, so the caller sees a 500 for a bill that was in

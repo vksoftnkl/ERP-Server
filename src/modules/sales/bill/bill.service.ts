@@ -7,6 +7,8 @@ import { SaveBillItemDto } from './dto/save-bill-item.dto';
 import {
   BILL_CHARGE_AUDIT,
   BILL_CHARGE_DOC_TYPE,
+  BILL_STATUS_SRC_DOC_TYPE,
+  BILL_STATUS_SRC_MODULE,
   BILL_TENDER_AUDIT,
   BILL_TENDER_DR_CR,
   BILL_TENDER_SRC_DOC_TYPE,
@@ -37,6 +39,10 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
 import { deleteBillPosting, postBillToAccounts, syncBillPosting } from './bill-posting.helper';
+import {
+  TxnStatusEvent,
+  appendTxnStatusLog,
+} from 'src/common/txn-status-log/txn-status-log.helper';
 // accounts.acc_voucher_types row "Bil" / Sales Bill. Its numbering format
 // (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
 // bill numbers are drawn from.
@@ -531,8 +537,13 @@ export class BillService {
       // bill with money already settled against its receivable is refused here
       // rather than deleted, so the transaction rolls back untouched.
       await deleteBillPosting(tx, existing, actor, modifiedOn);
+      const cancelled = { ...existing, ...headerChanges };
+      // Closes the bill's status trail. A delete IS a cancellation here, so it
+      // is logged as one, with the reason the header was left carrying — which
+      // ck_tsl_reason_required demands of a CANCELLED step.
+      await this.logStatusChange(tx, cancelled, existing.sbStatus, actor, modifiedOn);
       const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload({ ...existing, ...headerChanges });
+      const modifiedRecord = this.toPayload(cancelled);
       await this.auditLogService.logEntityChange(
         {
           // A soft delete is logged as 'cancel', the way every other module logs
@@ -652,6 +663,9 @@ export class BillService {
             },
           });
         }
+        // Opens the bill's status trail: from nothing to whatever it was
+        // created as (DRAFT, or POSTED when it went straight into the books).
+        await this.logStatusChange(tx, posted, null, createdBy, now);
         const payload = this.toPayload({ ...posted, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
@@ -761,6 +775,11 @@ export class BillService {
               sbPostedOn: posting.postedOn,
             },
           });
+        }
+        // A status STEP, not the save itself: an edit that leaves sbStatus alone
+        // adds no row to the trail.
+        if (posted.sbStatus !== existing.sbStatus) {
+          await this.logStatusChange(tx, posted, existing.sbStatus, modifiedBy, now);
         }
         const payload = this.toPayload({ ...posted, items, charges, tenders });
         await this.auditLogService.logEntityChange(
@@ -1134,6 +1153,67 @@ export class BillService {
       tdDeviceId: scope.sbDeviceId,
       tdDrCr: BILL_TENDER_DR_CR,
     };
+  }
+  // One row on public.txn_status_log per status STEP — the bill's trail is the
+  // ordered set of them, and sb_status is only ever the CURRENT state. Written
+  // inside the caller's transaction, so the step commits with the write that
+  // caused it: a bill that says CANCELLED with nothing saying who cancelled it
+  // is what this prevents.
+  //
+  // Only a step is logged. An ordinary save that leaves sbStatus where it was
+  // adds nothing here — what changed field by field is audit.audit_log's job.
+  private async logStatusChange(
+    tx: Prisma.TransactionClient,
+    bill: SaleBill,
+    fromStatus: string | null,
+    actor: string,
+    changedOn: Date,
+    remarks?: string | null,
+  ): Promise<void> {
+    await appendTxnStatusLog(tx, {
+      companyId: bill.sbCompanyId,
+      branchId: bill.sbBranchId,
+      tenantId: bill.sbTenantId,
+      // The bill's own year, not today's: txn_status_log is partitioned by it.
+      accYear: bill.sbAccYear,
+      srcModule: BILL_STATUS_SRC_MODULE,
+      srcDocType: BILL_STATUS_SRC_DOC_TYPE,
+      srcDocId: bill.sbId,
+      srcDocRefno: bill.sbBillRefno,
+      event: this.toStatusEvent(fromStatus, bill.sbStatus),
+      fromStatus,
+      toStatus: bill.sbStatus,
+      changedOn,
+      changedBy: actor,
+      // ck_tsl_reason_required wants one on a cancellation; the bill's own
+      // reason is it, and the helper falls back rather than failing the save.
+      remarks: remarks ?? bill.sbCancelReason,
+      // Free text on the bill (a device CODE in practice), a device_master uuid
+      // on the log — the helper resolves it either way round.
+      deviceId: bill.sbDeviceId,
+      sessionId: bill.sbSessionId,
+    });
+  }
+  // Names the step for reporting ("what was posted / cancelled this month"),
+  // where tslToStatus alone would only say where each document ended up.
+  private toStatusEvent(fromStatus: string | null, toStatus: string): TxnStatusEvent {
+    if (fromStatus === null) {
+      // First row of the trail. Whether the bill was born DRAFT or straight into
+      // POSTED is what tslToStatus says.
+      return TxnStatusEvent.CREATED;
+    }
+    if (toStatus === BILL_STATUS_CANCELLED) {
+      return TxnStatusEvent.CANCELLED;
+    }
+    if (toStatus === BILL_STATUS_POSTED) {
+      return TxnStatusEvent.POSTED;
+    }
+    // Out of POSTED but still alive — the voucher is cancelled and the
+    // receivable retired, the bill itself is not (see syncBillPosting).
+    if (fromStatus === BILL_STATUS_POSTED) {
+      return TxnStatusEvent.UNPOSTED;
+    }
+    return TxnStatusEvent.STATUS_CHANGED;
   }
   private applyOptionalFields(
     data: Prisma.SaleBillUncheckedCreateInput | Prisma.SaleBillUncheckedUpdateInput,

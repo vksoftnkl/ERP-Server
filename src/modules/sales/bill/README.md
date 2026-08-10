@@ -26,6 +26,13 @@ ALLOCATION, with rates, discounts, tax breakup and the stock it was picked from)
   [../../accountsModule/tenderDetail](../../accountsModule/tenderDetail)** — the money the customer
   handed over, captured on the draft bill and carried through to posting.
 
+- **Status-trail table:** `txn_status_log` (`public` schema) — **partitioned by LIST
+  (`tsl_acc_year`)**, composite PK `(tslId, tslAccYear)`, addressed polymorphically by
+  `(tslSrcModule = 'SALES', tslSrcDocType = 'SALE_BILL', tslSrcDocId = sbId)`. Also has **no FK** to
+  `sale_bill`, and is **append-only**: one row per status STEP, written through the shared
+  [`appendTxnStatusLog`](../../../common/txn-status-log/txn-status-log.helper.ts) helper. See
+  [Status trail](#status-trail-publictxn_status_log).
+
 This module is the sibling of [../quotation](../quotation) — same reconciliation shape for line
 items and applied charges, same audit/soft-delete conventions — with two structural differences
 called out below: the partitioned/composite-key tables, and how the document is numbered. A bill
@@ -350,6 +357,51 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
   (matching the quotation module), but `sbiCreatedBy` / `sbiModifiedBy` on the **line item** are
   `uuid` columns in the DB — the item DTO validates them as UUIDs accordingly, unlike the header
   and unlike the quotation module's line items (which are also free text).
+
+### Status trail (`public.txn_status_log`)
+
+`sb_status` is only ever the bill's **current** state. How it got there is the append-only trail on
+`public.txn_status_log`, written by
+[../../../common/txn-status-log/txn-status-log.helper.ts](../../../common/txn-status-log/txn-status-log.helper.ts)
+inside the **same transaction** as the save that caused the step — a bill that says `CANCELLED`
+with nothing saying who cancelled it is what this prevents. Rows are written once and never edited;
+correcting history means appending another row.
+
+- **Addressed polymorphically**, like the charges and tenders: `tslSrcModule = 'SALES'`,
+  `tslSrcDocType = 'SALE_BILL'`, `tslSrcDocId = sbId`. There is **no FK** to `sale_bill` — the table
+  is shared by every module's documents. `tslSrcDocRefno` snapshots `sbBillRefno` so a trail reads
+  on its own.
+- **Partitioned by LIST (`tsl_acc_year`)** like `sale_bill` itself, and the year written is the
+  **bill's** (`sbAccYear`), not today's. A fiscal year that never had
+  `public.ensure_acc_year_partitions('YYYY-YYYY')` run against it fails every insert with
+  *no partition of relation "txn_status_log" found for row* — and takes the bill save down with it.
+- **Only a status STEP is logged.** An ordinary save that leaves `sbStatus` where it was adds no
+  row; what changed field by field is [audit logging](#audit-logging)'s job.
+
+| When | `tslEvent` | `tslFromStatus` → `tslToStatus` |
+| --- | --- | --- |
+| `POST /create` (new bill) | `CREATED` | `NULL` → `DRAFT`, or `NULL` → `POSTED` when it was created straight into the books |
+| `POST /create` moving into `POSTED` | `POSTED` | `DRAFT` → `POSTED` |
+| `POST /create` leaving `POSTED` | `UNPOSTED` | `POSTED` → `DRAFT` |
+| `POST /create` moving to `CANCELLED` | `CANCELLED` | *(current)* → `CANCELLED` |
+| any other status move | `STATUS_CHANGED` | *(as saved)* |
+| `DELETE /delete` | `CANCELLED` | *(current)* → `CANCELLED` |
+
+- `tslSeqNo` is `1..n` within the document (`ux_tsl_doc_seq`), read as `max + 1` inside the
+  transaction. Two concurrent status steps on **one** bill would pick the same number; the unique
+  index — not the read — is what stops the second committing.
+- **A cancellation must say why** (`ck_tsl_reason_required` covers `CANCELLED` / `CLOSED` /
+  `REJECTED`): `tslRemarks` takes the bill's own `sbCancelReason` (so a delete carries
+  `'Bill deleted'`, or the reason it was already cancelled with). If a caller somehow supplies none,
+  the helper writes `'No reason recorded'` rather than letting a 23514 roll the whole save back.
+- `tsl_changed_by` is a **uuid** while the header's `sbCreatedBy` / `sbModifiedBy` are free text, so
+  a non-uuid actor is recorded as `DEFAULT_ACTOR` there and kept verbatim in `tsl_created_by`.
+  Likewise `sbDeviceId` is free text (a device **code**) against a `tsl_device_id` that carries an
+  FK to `fixed.device_master`: the helper resolves it by `dev_device_uid` or `dev_id`, and writes
+  `NULL` for an unrecognised device rather than failing the save — the device is already recorded on
+  the bill.
+- Payment and return status (`sbPayStatus` / `sbReturnStatus`) are **not** trailed: the table has a
+  single `tsl_to_status`, which the document status owns.
 
 ### Response shape
 

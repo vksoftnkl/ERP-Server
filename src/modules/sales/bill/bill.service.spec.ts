@@ -37,6 +37,8 @@ const ITEM_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fa13';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fa14';
 const STOCK_ID = '019c6f6c-be87-7a11-8905-36092c46fa15';
 const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fa16';
+// fixed.device_master.dev_id behind the bill's free-text sbDeviceId ('till-1').
+const DEVICE_ID = '019c6f6c-be87-7a11-8905-36092c46fa17';
 const ACC_YEAR = '2026-2027';
 // The bill voucher type, and the counter it stands at before a save: the next
 // bill therefore takes number 101 → 'bil00101'.
@@ -276,6 +278,7 @@ type SequenceUpdateArgs = {
   where: { id: string };
   data: Prisma.AccVoucherSeqUncheckedUpdateInput;
 };
+type StatusLogCreateArgs = { data: Prisma.TxnStatusLogUncheckedCreateInput };
 
 // The columns findLiveVoucher / syncReceivable actually select.
 type AccVoucherHeaderStub = {
@@ -373,6 +376,17 @@ type PrismaMock = {
   // abl_alloc_amount stops being this module's to write.
   accBillAdjustment: {
     count: jest.Mock<Promise<number>, unknown[]>;
+  };
+  // The bill's status trail. findFirst is the next-sequence read (the newest row
+  // of this document's trail), create is the appended step.
+  txnStatusLog: {
+    findFirst: jest.Mock<Promise<{ tslSeqNo: number } | null>, unknown[]>;
+    create: jest.Mock<Promise<unknown>, [StatusLogCreateArgs]>;
+  };
+  // sb_device_id is free text, so the trail resolves it against device_master
+  // before writing tsl_device_id (a uuid with an FK).
+  deviceMaster: {
+    findFirst: jest.Mock<Promise<{ devId: string } | null>, unknown[]>;
   };
   $queryRaw: jest.Mock<Promise<unknown>, unknown[]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
@@ -512,6 +526,15 @@ const makePrismaMock = (): PrismaMock => {
     },
     accBillAdjustment: {
       count: jest.fn(() => Promise.resolve(0)),
+    },
+    txnStatusLog: {
+      // Default: the document has no trail yet, so the appended step is seq 1.
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      create: jest.fn(({ data }: StatusLogCreateArgs) => Promise.resolve(data)),
+    },
+    // Default: 'till-1' is a registered device, so the step carries its uuid.
+    deviceMaster: {
+      findFirst: jest.fn(() => Promise.resolve({ devId: DEVICE_ID })),
     },
     // Two raw statements run while posting: the advisory lock, then the
     // company-wide voucher serial.
@@ -1155,6 +1178,160 @@ describe('BillService', () => {
       expect(data).not.toHaveProperty('sbBillRefno');
       // An update must not consume a number from the sequence either.
       expect(prisma.accVoucherSeq.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('status trail (public.txn_status_log)', () => {
+    // The row appended by the save under test.
+    const loggedStep = () => prisma.txnStatusLog.create.mock.calls[0][0].data;
+    // Same shape as the posting tests: the row saleBill.update hands back.
+    const updatedBill = (overrides: Record<string, unknown> = {}) =>
+      makeBill(overrides as unknown as Partial<SaleBill>);
+
+    it('opens the trail when the bill is created', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.txnStatusLog.create).toHaveBeenCalledTimes(1);
+      expect(loggedStep()).toMatchObject({
+        tslCompanyId: COMPANY_ID,
+        tslBranchId: BRANCH_ID,
+        tslTenantId: TENANT_ID,
+        tslAccYear: ACC_YEAR,
+        tslSrcModule: 'SALES',
+        tslSrcDocType: 'SALE_BILL',
+        tslSrcDocId: BILL_ID,
+        tslSrcDocRefno: BILL_REFNO,
+        tslSeqNo: 1,
+        tslEvent: 'CREATED',
+        tslFromStatus: null,
+        tslToStatus: 'DRAFT',
+        tslChangedBy: USER_ID,
+      });
+    });
+
+    it('records what the bill was created as, when that is straight into the books', async () => {
+      // Two writes on this path: the insert, then the voucher stamped back onto
+      // it — the status is logged from the row that survives both.
+      const posted = makeBill({
+        sbStatus: 'POSTED',
+        sbBillAmt: new Prisma.Decimal(500),
+        sbPaidAmt: new Prisma.Decimal(200),
+      } as unknown as Partial<SaleBill>);
+      prisma.saleBill.create.mockResolvedValueOnce(posted);
+      prisma.saleBill.update.mockResolvedValue(posted);
+
+      await service.save(
+        baseDto({ sbStatus: 'POSTED', sbBillAmt: 500, sbPaidAmt: 200 } as Partial<SaveBillDto>),
+      );
+
+      expect(loggedStep()).toMatchObject({
+        tslEvent: 'CREATED',
+        tslFromStatus: null,
+        tslToStatus: 'POSTED',
+      });
+    });
+
+    it('continues the sequence from the newest row of this document', async () => {
+      prisma.txnStatusLog.findFirst.mockResolvedValue({ tslSeqNo: 4 });
+      prisma.saleBill.update.mockResolvedValue(updatedBill({ sbStatus: 'POSTED' }));
+
+      await service.save(baseDto({ sbId: BILL_ID, sbStatus: 'POSTED' } as Partial<SaveBillDto>));
+
+      expect(prisma.txnStatusLog.findFirst).toHaveBeenCalledWith(
+        containing({
+          where: {
+            tslSrcDocType: 'SALE_BILL',
+            tslSrcDocId: BILL_ID,
+            tslAccYear: ACC_YEAR,
+          },
+          orderBy: { tslSeqNo: 'desc' },
+        }),
+      );
+      expect(loggedStep()).toMatchObject({ tslSeqNo: 5 });
+    });
+
+    it('adds nothing when a save leaves the status where it was', async () => {
+      prisma.saleBill.update.mockResolvedValueOnce(updatedBill({ sbStatus: 'DRAFT' }));
+
+      await service.save(
+        baseDto({ sbId: BILL_ID, sbCustName: 'Acme Ltd' } as Partial<SaveBillDto>),
+      );
+
+      expect(prisma.txnStatusLog.create).not.toHaveBeenCalled();
+    });
+
+    it('logs a DRAFT bill moving into the books as POSTED', async () => {
+      prisma.saleBill.update.mockResolvedValue(updatedBill({ sbStatus: 'POSTED' }));
+
+      await service.save(baseDto({ sbId: BILL_ID, sbStatus: 'POSTED' } as Partial<SaveBillDto>));
+
+      expect(loggedStep()).toMatchObject({
+        tslEvent: 'POSTED',
+        tslFromStatus: 'DRAFT',
+        tslToStatus: 'POSTED',
+      });
+    });
+
+    it('logs a bill leaving POSTED as UNPOSTED — the document itself stays alive', async () => {
+      prisma.saleBill.findFirst.mockResolvedValue(makeBill({ sbStatus: 'POSTED' }));
+      prisma.saleBill.update.mockResolvedValue(updatedBill({ sbStatus: 'DRAFT' }));
+
+      await service.save(baseDto({ sbId: BILL_ID, sbStatus: 'DRAFT' } as Partial<SaveBillDto>));
+
+      expect(loggedStep()).toMatchObject({
+        tslEvent: 'UNPOSTED',
+        tslFromStatus: 'POSTED',
+        tslToStatus: 'DRAFT',
+      });
+    });
+
+    it('closes the trail on delete, with the reason ck_tsl_reason_required demands', async () => {
+      await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+      expect(loggedStep()).toMatchObject({
+        tslEvent: 'CANCELLED',
+        tslFromStatus: 'DRAFT',
+        tslToStatus: 'CANCELLED',
+        tslRemarks: 'Bill deleted',
+        tslChangedBy: USER_ID,
+      });
+    });
+
+    it('keeps the reason the bill was actually cancelled with', async () => {
+      prisma.saleBill.findFirst.mockResolvedValue(
+        makeBill({ sbCancelReason: 'Customer walked out' }),
+      );
+
+      await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+      expect(loggedStep()).toMatchObject({ tslRemarks: 'Customer walked out' });
+    });
+
+    it('resolves the free-text device code to its device_master uuid', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.deviceMaster.findFirst).toHaveBeenCalledWith(
+        containing({ where: { devDeviceUid: 'till-1' } }),
+      );
+      expect(loggedStep()).toMatchObject({ tslDeviceId: DEVICE_ID });
+    });
+
+    it('leaves the device NULL rather than failing the save on an unknown one', async () => {
+      prisma.deviceMaster.findFirst.mockResolvedValue(null);
+
+      await service.save(baseDto());
+
+      expect(loggedStep()).toMatchObject({ tslDeviceId: null });
+    });
+
+    it('falls back to DEFAULT_ACTOR for a non-uuid actor, which tsl_changed_by would reject', async () => {
+      await service.save(baseDto({ sbCreatedBy: 'admin' } as Partial<SaveBillDto>));
+
+      expect(loggedStep()).toMatchObject({
+        tslChangedBy: '00000000-0000-0000-0000-000000000000',
+        // The free-text column keeps what the payload actually said.
+        tslCreatedBy: 'admin',
+      });
     });
   });
 

@@ -33,12 +33,12 @@ const MAX_LATENCY_SAMPLES = 200000;
 const API_MIX_ROUTES = [
   { name: 'health', method: 'GET', path: '/api/v1/health', weight: 4 },
   { name: 'users.list', method: 'GET', path: '/api/v1/users', weight: 3 },
-  { name: 'itemGroups.list', method: 'GET', path: '/api/v1/item-groups/list', weight: 2 },
-  { name: 'itemBrands.list', method: 'GET', path: '/api/v1/item-brands/list', weight: 2 },
-  { name: 'itemSections.list', method: 'GET', path: '/api/v1/item-sections/list', weight: 2 },
-  { name: 'units.list', method: 'GET', path: '/api/v1/units/list', weight: 2 },
-  { name: 'gridDetails.list', method: 'GET', path: '/api/v1/grid-details/list', weight: 1 },
-  { name: 'gridColumns.list', method: 'GET', path: '/api/v1/grid-columns/list', weight: 1 },
+  { name: 'itemGroups.list', method: 'GET', path: '/api/v1/item-groups/get', weight: 2 },
+  { name: 'itemBrands.list', method: 'GET', path: '/api/v1/item-brands/get', weight: 2 },
+  { name: 'itemSections.list', method: 'GET', path: '/api/v1/item-sections/get', weight: 2 },
+  { name: 'units.list', method: 'GET', path: '/api/v1/units/get', weight: 2 },
+  { name: 'gridDetails.list', method: 'GET', path: '/api/v1/grid-details/get', weight: 1 },
+  { name: 'gridColumns.list', method: 'GET', path: '/api/v1/grid-columns/get', weight: 1 },
 ];
 
 const SCENARIOS = {
