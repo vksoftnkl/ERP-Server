@@ -28,7 +28,7 @@ import { CustomerModule } from '../modules/sales/customer/customer.module';
 import { QuotationModule } from '../modules/sales/quotation/quotation.module';
 import { BillModule } from '../modules/sales/bill/bill.module';
 import { SaleOrderModule } from '../modules/sales/sale-order/sale-order.module';
-import { TransactionHoldModule } from '../modules/sales/transaction-hold/transaction-hold.module';
+import { TxnHoldModule } from '../modules/sales/txn-hold/txn-hold.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
 import { HealthModule } from '../modules/health/health.module';
@@ -441,10 +441,10 @@ export const swaggerModuleDocuments = [
     include: [SaleOrderModule],
   },
   {
-    path: 'transaction-holds',
+    path: 'txn-holds',
     title: 'Transaction Hold API',
-    description: 'Parked (held) transaction endpoints for public.transaction_hold',
-    include: [TransactionHoldModule],
+    description: 'Parked (held) transaction endpoints for public.txn_hold',
+    include: [TxnHoldModule],
   },
   {
     path: 'bank-lists',

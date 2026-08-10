@@ -253,7 +253,9 @@ merged header values (payload falling back to the stored row):
   / COMPLETED / CANCELLED / CLOSED / EXPIRED), `soFulfilStatus` (PENDING / PARTIAL / COMPLETED /
   CANCELLED), `soPayStatus` (UNPAID / PARTIAL / PAID), `soAdvancePolicy` (NONE / FIXED / PERC /
   FULL), `soAdvanceStatus` (NONE / PENDING / PARTIAL / RECEIVED / ADJUSTED / REFUNDED /
-  FORFEITED).
+  FORFEITED, **nullable** — the column dropped NOT NULL in migration
+  `20260810150000`, and `ck_so_advance_status` is an `= ANY (...)` test that a NULL
+  satisfies, so an explicit `null` on the payload is accepted and stored).
 - `ensureOrderItemValuesAreAllowed` does the same per line: `soiFreeType` (SCHEME / SAMPLE /
   REPLACEMENT, nullable), `soiLineStatus` (PENDING / PARTIAL / DELIVERED / CANCELLED), the
   quantity sign rules, `soiReservedQty` ∈ [0, `soiOrderQty`] (`ck_soi_reserved`), and `soiSize`

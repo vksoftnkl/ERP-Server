@@ -1,0 +1,189 @@
+// public.txn_hold is the parking bay for half-finished transactional work:
+// a POS sale the operator pressed Hold on, a screen's own crash-recovery
+// snapshot, or a saved template that is copied on resume. One row is one
+// parked document; the document body itself lives verbatim in txhPayload and
+// is read back only by the module that wrote it.
+//
+// It replaces public.transaction_hold (dropped in migration
+// 20260810160000_add_txn_hold), which was sales/POS-only, unpartitioned, and
+// kept its screen state in an untyped th_ui_state.
+//
+// LIST-partitioned by txhAccYear (the parked WORK's year), like
+// public.txn_status_log / sales.sale_bill / sales.sale_order. Partitions (e.g.
+// txn_hold_2026_2027) are created by
+// public.ensure_acc_year_partitions('YYYY-YYYY') — run it whenever a fiscal
+// year is opened, or every insert fails with "no partition of relation
+// "txn_hold" found for row".
+model TxnHold {
+  txhId               String    @default(dbgenerated("uuidv7()")) @db.Uuid    @map("txh_id")
+  txhCompanyId        String    @db.Uuid                                      @map("txh_company_id")
+  txhBranchId         String    @db.Uuid                                      @map("txh_branch_id")
+  txhTenantId         String?   @db.Uuid                                      @map("txh_tenant_id")
+  txhAccYear          String    @db.Char(9)                                   @map("txh_acc_year")
+
+  // ── What kind of parked work ─────────────────────────────────────────
+  // HOLD | AUTOSAVE | TEMPLATE. At most one live AUTOSAVE per screen
+  // (ux_txh_autosave), overwritten in place — see txhRevision.
+  txhKind             String    @default("HOLD") @db.VarChar(15)              @map("txh_kind")
+
+  // Which document this will become. Same vocabulary as txn_status_log's
+  // tslSrcModule / tslSrcDocType, so one join reads a hold's trail.
+  txhSrcModule        String    @db.VarChar(20)                               @map("txh_src_module")
+  txhDocType          String    @db.VarChar(30)                               @map("txh_doc_type")
+
+  // ── Identity of the hold itself ──────────────────────────────────────
+  // txhHoldNo is what gets printed on the token slip; txhHoldSlno is the raw
+  // per-device counter behind it, so an offline till can number holds with no
+  // server round trip (same split as soOrderSlno / soOrderRefno).
+  txhHoldNo           String    @db.VarChar(30)                               @map("txh_hold_no")
+  txhHoldSlno         Int                                                     @map("txh_hold_slno")
+  txhHoldOn           DateTime  @default(now()) @db.Timestamptz(6)            @map("txh_hold_on")
+
+  // ── Where it was parked ──────────────────────────────────────────────
+  // The device owns the number series, so its FK is RESTRICT: a till can be
+  // blocked or retired, never unlinked from its holds. Device TYPE is
+  // deliberately absent — it is one join into fixed.device_master.
+  txhDeviceId         String    @db.Uuid                                      @map("txh_device_id")
+  txhCounterId        String?   @db.Uuid                                      @map("txh_counter_id")
+  txhSessionId        String?   @db.Uuid                                      @map("txh_session_id")
+  txhHeldBy           String    @db.Uuid                                      @map("txh_held_by")
+
+  // ── Party snapshot, for the pick list only ───────────────────────────
+  // PARTY, not customer: the same row parks a purchase entry (supplier), a
+  // stock transfer (branch), a receipt (ledger) or a job card (employee).
+  // txhPartyType says which master txhPartyId points into — polymorphic, so
+  // no FK and no relation field. Denormalised on purpose: the picker must
+  // render without opening the payload, and a walk-in has no party row at all.
+  txhPartyType        String?   @db.VarChar(15)                               @map("txh_party_type")
+  txhPartyId          String?   @db.Uuid                                      @map("txh_party_id")
+  txhPartyName        String?   @db.VarChar(150)                              @map("txh_party_name")
+  txhPartyMobile      String?   @db.VarChar(20)                               @map("txh_party_mobile")
+  // Salesman on a sales document, buyer on a purchase one, technician on a
+  // job card — always public.employee_master, so this one keeps its FK.
+  txhStaffId          String?   @db.Uuid                                      @map("txh_staff_id")
+  // Free label the floor recognises the hold by: table 7, bay 3, locker 12.
+  txhRefLabel         String?   @db.VarChar(50)                               @map("txh_ref_label")
+
+  // ── Roll-up caches (pick list + sweeper) ─────────────────────────────
+  // Three numbers, because three is what a pick list shows. Every other
+  // total — gross, discount, charge, tax, what was already tendered — is in
+  // the payload, where the module that computed it reads it back.
+  txhItemCount        Int       @default(0)                                   @map("txh_item_count")
+  txhTotalQty         Decimal   @default(0) @db.Decimal(18, 3)                @map("txh_total_qty")
+  txhNetAmount        Decimal   @default(0) @db.Decimal(18, 2)                @map("txh_net_amount")
+
+  // ── The document itself ──────────────────────────────────────────────
+  // The module's own save body, verbatim. This table never interprets it.
+  txhPayload          Json      @db.JsonB                                     @map("txh_payload")
+  // Version of the payload's own shape, so an old hold resumed after a client
+  // upgrade is readable.
+  txhPayloadVersion   Int       @default(1) @db.SmallInt                      @map("txh_payload_version")
+  // Bumped on every overwrite. An offline till that re-syncs an older
+  // snapshot loses to the higher revision.
+  txhRevision         Int       @default(1)                                   @map("txh_revision")
+
+  // ── State ────────────────────────────────────────────────────────────
+  // HELD | LOCKED | RESUMED | CONVERTED | EXPIRED | CANCELLED | ABANDONED
+  txhStatus           String    @default("HELD") @db.VarChar(15)              @map("txh_status")
+  txhHoldReason       String?   @db.VarChar(100)                              @map("txh_hold_reason")
+  txhRemarks          String?   @db.VarChar(500)                              @map("txh_remarks")
+  // When the sweeper may retire it. NULL = keeps until someone acts.
+  txhExpiresOn        DateTime? @db.Timestamptz(6)                            @map("txh_expires_on")
+
+  // ── Lease ────────────────────────────────────────────────────────────
+  // All-or-nothing (ck_txh_lock_block): a lease with no end is the bug this
+  // column set exists to prevent. txhLockToken proves the releaser.
+  txhLockedBy         String?   @db.Uuid                                      @map("txh_locked_by")
+  txhLockedDeviceId   String?   @db.Uuid                                      @map("txh_locked_device_id")
+  txhLockedOn         DateTime? @db.Timestamptz(6)                            @map("txh_locked_on")
+  txhLockExpiresOn    DateTime? @db.Timestamptz(6)                            @map("txh_lock_expires_on")
+  txhLockToken        String?   @db.Uuid                                      @map("txh_lock_token")
+
+  // ── Resume ───────────────────────────────────────────────────────────
+  txhResumedBy        String?   @db.Uuid                                      @map("txh_resumed_by")
+  txhResumedOn        DateTime? @db.Timestamptz(6)                            @map("txh_resumed_on")
+  txhResumeCount      Int       @default(0)                                   @map("txh_resume_count")
+
+  // ── Conversion — the hold's one and only exit into a real document ───
+  // No converted doc TYPE: a hold becomes the document it was parked as, so
+  // txhDocType already names the table these ids point into. The year is kept
+  // separately because a March hold can become an April document.
+  txhConvertedDocId   String?   @db.Uuid                                      @map("txh_converted_doc_id")
+  txhConvertedAccYear String?   @db.Char(9)                                   @map("txh_converted_acc_year")
+  txhConvertedRefno   String?   @db.VarChar(100)                              @map("txh_converted_refno")
+  txhConvertedOn      DateTime? @db.Timestamptz(6)                            @map("txh_converted_on")
+  txhConvertedBy      String?   @db.Uuid                                      @map("txh_converted_by")
+
+  // ── Stock held against the parked work ───────────────────────────────
+  // A flag only: does this hold owe stock back? Who reserved and when is a
+  // txn_status_log event; the reserved quantities are in the payload.
+  txhIsStockReserved  Boolean   @default(false)                               @map("txh_is_stock_reserved")
+
+  // ── Token slip ───────────────────────────────────────────────────────
+  txhPrintCount       Int       @default(0) @db.SmallInt                      @map("txh_print_count")
+  txhLastPrintedOn    DateTime? @db.Timestamptz(6)                            @map("txh_last_printed_on")
+
+  // ── Audit ────────────────────────────────────────────────────────────
+  // created_by / modified_by are VarChar(50) to match every other table in
+  // this schema set; the OPERATIONAL actors above (held / locked / resumed /
+  // converted _by) are uuid, like tslChangedBy, because screens filter on them.
+  txhIsDeleted        Boolean   @default(false)                               @map("txh_is_deleted")
+  txhSyncDate         DateTime? @db.Timestamptz(6)                            @map("txh_sync_date")
+  txhCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)            @map("txh_created_on")
+  txhCreatedBy        String    @db.VarChar(50)                               @map("txh_created_by")
+  txhModifiedOn       DateTime? @db.Timestamptz(6)                            @map("txh_modified_on")
+  txhModifiedBy       String?   @db.VarChar(50)                               @map("txh_modified_by")
+
+  // Relations
+  device              DeviceMaster    @relation("TxnHoldDevice", fields: [txhDeviceId], references: [devId], onUpdate: Cascade, onDelete: Restrict, map: "fk_txh_device")
+  lockDevice          DeviceMaster?   @relation("TxnHoldLockDevice", fields: [txhLockedDeviceId], references: [devId], onUpdate: Cascade, onDelete: SetNull, map: "fk_txh_lock_device")
+  staff               EmployeeMaster? @relation(fields: [txhStaffId], references: [empId], onUpdate: Cascade, onDelete: SetNull, map: "fk_txh_staff")
+  // No relation fields for:
+  //   txhCompanyId / txhBranchId / txhTenantId — the DDL declares no FKs, so a
+  //                    parked row never pins a master row.
+  //   txhHeldBy / txhLockedBy / txhResumedBy / txhConvertedBy — operators, no FK.
+  //   txhCounterId / txhSessionId — user_login_sessions.uls_session_id is
+  //                    nullable and not unique, so it is not a valid FK target.
+  //   txhPartyId     — polymorphic; the master varies by txhPartyType.
+  //   txhConvertedDocId — polymorphic; the table varies by txhDocType.
+
+  @@id([txhId, txhAccYear], map: "pk_txn_hold")
+
+  // EVERY index on this table is PARTIAL, and Prisma ignores WHERE predicates —
+  // a declared @@unique/@@index would drift into a non-partial CREATE INDEX on
+  // the same name on the next migrate dev. They live in migration
+  // 20260810160000_add_txn_hold as raw SQL:
+  //
+  //   ux_txh_hold_no       (company, branch, acc_year, doc_type, hold_no)  WHERE NOT deleted
+  //   ux_txh_device_slno   (company, branch, acc_year, device, doc_type, slno) WHERE NOT deleted
+  //   ux_txh_autosave      (acc_year, device, held_by, doc_type)
+  //                        WHERE kind = 'AUTOSAVE' AND status = 'HELD' AND NOT deleted
+  //   ix_txh_pick_list     (company, branch, doc_type, status, hold_on DESC)
+  //                        WHERE kind = 'HOLD' AND NOT deleted
+  //   ix_txh_device_open   (company, branch, device, status, hold_on DESC)  WHERE NOT deleted
+  //   ix_txh_counter_session (counter, session, status)                     WHERE NOT deleted
+  //   ix_txh_expiry        (expires_on)      WHERE expires_on IS NOT NULL
+  //                        AND status IN ('HELD','LOCKED') AND NOT deleted
+  //   ix_txh_lock_expiry   (lock_expires_on) WHERE status = 'LOCKED' AND lock_expires_on IS NOT NULL
+  //   ix_txh_converted_doc (converted_doc_id) WHERE converted_doc_id IS NOT NULL
+  //   ix_txh_party         (company, branch, party_type, party_id, hold_on DESC)
+  //                        WHERE party_id IS NOT NULL AND NOT deleted
+  //   ix_txh_party_mobile  (company, branch, party_mobile) WHERE party_mobile IS NOT NULL AND NOT deleted
+  //   ix_txh_stock_reserved (company, branch, hold_on DESC)
+  //                        WHERE is_stock_reserved AND NOT deleted
+  //   ix_txh_sync_pending  (device, modified_on) WHERE sync_date IS NULL
+  //
+  // No GIN index on txh_payload: nothing queries INTO a hold's document — the
+  // module opens the row it already picked.
+  //
+  // CHECK constraints (DB-only): ck_txh_kind, ck_txh_src_module,
+  //   ck_txh_doc_type, ck_txh_status, ck_txh_party_type, ck_txh_party_typed,
+  //   ck_txh_hold_no_shape, ck_txh_hold_slno, ck_txh_payload_object,
+  //   ck_txh_payload_version, ck_txh_revision, ck_txh_amounts,
+  //   ck_txh_print_count, ck_txh_expires_after_hold, ck_txh_lock_block,
+  //   ck_txh_locked_status, ck_txh_resume_count, ck_txh_resume_block,
+  //   ck_txh_converted_block, ck_txh_converted_status, ck_txh_printed
+
+  @@map("txn_hold")
+  @@schema("public")
+}

@@ -1195,6 +1195,8 @@ Table device_master {
   devModifiedBy String
   txnStatusLogs txn_status_log [not null]
   saleOrders sale_order [not null]
+  txnHolds txn_hold [not null]
+  txnHoldLocks txn_hold [not null]
 }
 
 Table form_section {
@@ -2565,44 +2567,67 @@ key is the pair (cdId, cdAccYear): a row is addressed by both, never by the
 id alone.'
 }
 
-Table transaction_hold {
-  thId String [pk]
-  thCompanyId String [not null]
-  thBranchId String [not null]
-  thAccYear Int [not null]
-  thHoldNo String [not null]
-  thHoldDate DateTime [default: `now()`, not null]
-  thDocType String [not null, default: 'SALE_INVOICE']
-  thCounterId String
-  thSessionId String
-  thUserId String
-  thDeviceId String [not null]
-  thDeviceType String [not null]
-  thCustomerName String
-  thItemCount Int [not null, default: 0]
-  thTotalQty Decimal [not null, default: 0]
-  thTotalAmount Decimal [not null, default: 0]
-  thStatus String [not null, default: 'HELD']
-  thHoldReason String
-  thRemarks String
-  thExpiresAt DateTime
-  thLockedBy String
-  thLockedAt DateTime
-  thResumedBy String
-  thResumedAt DateTime
-  thResumeCount Int [not null, default: 0]
-  thConvertedDocType String
-  thConvertedDocId String
-  thConvertedNo String
-  thConvertedAt DateTime
-  thConvertedBy String
-  thIsStockReserved Boolean [not null, default: false]
-  thUiState Json
-  thIsDeleted Boolean [not null, default: false]
-  thCreatedBy String
-  thCreatedAt DateTime [default: `now()`, not null]
-  thModifiedBy String
-  thModifiedAt DateTime
+Table txn_hold {
+  txhId String [not null]
+  txhCompanyId String [not null]
+  txhBranchId String [not null]
+  txhTenantId String
+  txhAccYear String [not null]
+  txhKind String [not null, default: 'HOLD']
+  txhSrcModule String [not null]
+  txhDocType String [not null]
+  txhHoldNo String [not null]
+  txhHoldSlno Int [not null]
+  txhHoldOn DateTime [default: `now()`, not null]
+  txhDeviceId String [not null]
+  txhCounterId String
+  txhSessionId String
+  txhHeldBy String [not null]
+  txhPartyType String
+  txhPartyId String
+  txhPartyName String
+  txhPartyMobile String
+  txhStaffId String
+  txhRefLabel String
+  txhItemCount Int [not null, default: 0]
+  txhTotalQty Decimal [not null, default: 0]
+  txhNetAmount Decimal [not null, default: 0]
+  txhPayload Json [not null]
+  txhPayloadVersion Int [not null, default: 1]
+  txhRevision Int [not null, default: 1]
+  txhStatus String [not null, default: 'HELD']
+  txhHoldReason String
+  txhRemarks String
+  txhExpiresOn DateTime
+  txhLockedBy String
+  txhLockedDeviceId String
+  txhLockedOn DateTime
+  txhLockExpiresOn DateTime
+  txhLockToken String
+  txhResumedBy String
+  txhResumedOn DateTime
+  txhResumeCount Int [not null, default: 0]
+  txhConvertedDocId String
+  txhConvertedAccYear String
+  txhConvertedRefno String
+  txhConvertedOn DateTime
+  txhConvertedBy String
+  txhIsStockReserved Boolean [not null, default: false]
+  txhPrintCount Int [not null, default: 0]
+  txhLastPrintedOn DateTime
+  txhIsDeleted Boolean [not null, default: false]
+  txhSyncDate DateTime
+  txhCreatedOn DateTime [default: `now()`, not null]
+  txhCreatedBy String [not null]
+  txhModifiedOn DateTime
+  txhModifiedBy String
+  device device_master [not null]
+  lockDevice device_master
+  staff employee_master
+
+  indexes {
+    (txhId, txhAccYear) [pk]
+  }
 }
 
 Table txn_status_log {
@@ -3024,6 +3049,7 @@ Table employee_master {
   department employee_departments
   saleQuotations sale_quotation [not null]
   saleOrderAgents sale_order [not null]
+  txnHolds txn_hold [not null]
 }
 
 Table cust_item_rates {
@@ -4703,6 +4729,12 @@ Ref: txn_charge_detail.cdLedgerCode > acc_ledger_master.ledId [delete: Restrict]
 Ref: txn_charge_detail.cdCompId > companys.compId [delete: Restrict]
 
 Ref: txn_charge_detail.cdBranchId > branch_master.brId [delete: Restrict]
+
+Ref: txn_hold.txhDeviceId > device_master.devId [delete: Restrict]
+
+Ref: txn_hold.txhLockedDeviceId > device_master.devId [delete: Restrict]
+
+Ref: txn_hold.txhStaffId > employee_master.empId [delete: Set Null]
 
 Ref: txn_status_log.tslDeviceId > device_master.devId [delete: Set Null]
 

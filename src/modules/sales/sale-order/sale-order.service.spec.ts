@@ -884,6 +884,16 @@ describe('SaleOrderService', () => {
         data: containing({ soStatus: 'CONFIRMED', soDocType: 'BOOKING' }),
       });
     });
+
+    // so_advance_status dropped NOT NULL in migration 20260810150000, and
+    // ck_so_advance_status is an `= ANY (...)` test that a NULL satisfies — so an
+    // explicit null is a legal "no advance state yet", not a missing field.
+    it('accepts a null soAdvanceStatus and stores it', async () => {
+      await service.save(baseDto({ soAdvanceStatus: null }));
+      expect(prisma.saleOrder.create).toHaveBeenCalledWith({
+        data: containing({ soAdvanceStatus: null }),
+      });
+    });
   });
 
   describe('update', () => {

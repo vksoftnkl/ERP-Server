@@ -6,7 +6,27 @@ const path = require('node:path');
 const { performance } = require('node:perf_hooks');
 const { setTimeout: sleep } = require('node:timers/promises');
 
-const DEFAULT_BASE_URL = process.env.PERF_BASE_URL || 'https://localhost:3010';
+// Default target follows the API's own .env (PORT / HTTPS_ENABLED) so the perf
+// presets hit the running server without needing --base-url on every run.
+function resolveDefaultBaseUrl() {
+  if (process.env.PERF_BASE_URL) {
+    return process.env.PERF_BASE_URL;
+  }
+  const env = { ...readEnvFile(path.resolve(__dirname, '..', '..', '.env')), ...process.env };
+  const port = env.PORT || '3000';
+  const protocol = String(env.HTTPS_ENABLED).toLowerCase() === 'true' ? 'https' : 'http';
+  return `${protocol}://localhost:${port}`;
+}
+
+function readEnvFile(filePath) {
+  try {
+    return require('dotenv').parse(fs.readFileSync(filePath));
+  } catch {
+    return {};
+  }
+}
+
+const DEFAULT_BASE_URL = resolveDefaultBaseUrl();
 const DEFAULT_MAX_FAILURE_RATE = 5;
 const MAX_LATENCY_SAMPLES = 200000;
 

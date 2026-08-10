@@ -6,59 +6,59 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { TransactionHoldExceptionFilter } from './transaction-hold-exception.filter';
+import { TxnHoldExceptionFilter } from './txn-hold-exception.filter';
 // The filter logs the failing route before answering 500, so the host has to
 // offer getRequest as well as getResponse.
 const createHost = (response: Response) =>
   ({
     switchToHttp: () => ({
       getResponse: () => response,
-      getRequest: () => ({ method: 'POST', url: '/v1/transaction-holds/x/resume' }) as Request,
+      getRequest: () => ({ method: 'POST', url: '/v1/txn-holds/x/resume' }) as Request,
     }),
   }) as never;
-describe('TransactionHoldExceptionFilter', () => {
-  let filter: TransactionHoldExceptionFilter;
+describe('TxnHoldExceptionFilter', () => {
+  let filter: TxnHoldExceptionFilter;
   let status: jest.Mock;
   let json: jest.Mock;
   let response: Response;
   beforeEach(() => {
-    filter = new TransactionHoldExceptionFilter();
+    filter = new TxnHoldExceptionFilter();
     json = jest.fn();
     status = jest.fn().mockReturnValue({ json });
     response = { status } as unknown as Response;
   });
-  // The lock refusals: each keeps its own status and its field-level detail, so
+  // The lease refusals: each keeps its own status and its field-level detail, so
   // the till can tell "someone else has it" from "it is finished with".
-  it('passes a lock conflict through as 409', () => {
+  it('passes a lease conflict through as 409', () => {
     filter.catch(
       new ConflictException({
         success: false,
-        message: 'Hold is LOCKED by device TILL-02',
-        errors: [{ field: 'thLockedBy', message: 'Release it on that device first' }],
+        message: 'Hold is LOCKED by device 019c6f6c-be87-7a11-8905-36092c46fe11',
+        errors: [{ field: 'txhLockedDeviceId', message: 'Release it on that device first' }],
       }),
       createHost(response),
     );
     expect(status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
     expect(json).toHaveBeenCalledWith({
       success: false,
-      message: 'Hold is LOCKED by device TILL-02',
-      errors: [{ field: 'thLockedBy', message: 'Release it on that device first' }],
+      message: 'Hold is LOCKED by device 019c6f6c-be87-7a11-8905-36092c46fe11',
+      errors: [{ field: 'txhLockedDeviceId', message: 'Release it on that device first' }],
     });
   });
   it('passes an ownership refusal through as 403', () => {
     filter.catch(
       new ForbiddenException({
         success: false,
-        message: 'Not locked by this device',
-        errors: [{ field: 'thLockedBy', message: 'The hold is locked by device TILL-02' }],
+        message: 'Not leased by this device',
+        errors: [{ field: 'txhLockedDeviceId', message: 'The hold is leased by another device' }],
       }),
       createHost(response),
     );
     expect(status).toHaveBeenCalledWith(HttpStatus.FORBIDDEN);
     expect(json).toHaveBeenCalledWith({
       success: false,
-      message: 'Not locked by this device',
-      errors: [{ field: 'thLockedBy', message: 'The hold is locked by device TILL-02' }],
+      message: 'Not leased by this device',
+      errors: [{ field: 'txhLockedDeviceId', message: 'The hold is leased by another device' }],
     });
   });
   it('passes a missing hold through as 404', () => {
@@ -66,7 +66,7 @@ describe('TransactionHoldExceptionFilter', () => {
       new NotFoundException({
         success: false,
         message: 'Hold not found',
-        errors: [{ field: 'thId', message: 'No active hold found with id x' }],
+        errors: [{ field: 'txhId', message: 'No active hold found with id x' }],
       }),
       createHost(response),
     );
@@ -74,21 +74,21 @@ describe('TransactionHoldExceptionFilter', () => {
     expect(json).toHaveBeenCalledWith({
       success: false,
       message: 'Hold not found',
-      errors: [{ field: 'thId', message: 'No active hold found with id x' }],
+      errors: [{ field: 'txhId', message: 'No active hold found with id x' }],
     });
   });
   // A raw pipe rejection carries no field, so the filter infers it from the
-  // th-prefixed name in the message.
-  it('maps a validation payload onto the th field it names', () => {
+  // txh-prefixed name in the message.
+  it('maps a validation payload onto the txh field it names', () => {
     filter.catch(
-      new BadRequestException({ message: ['thCompanyId must be a valid UUID'] }),
+      new BadRequestException({ message: ['txhCompanyId must be a valid UUID'] }),
       createHost(response),
     );
     expect(status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
     expect(json).toHaveBeenCalledWith({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'thCompanyId', message: 'thCompanyId must be a valid UUID' }],
+      errors: [{ field: 'txhCompanyId', message: 'txhCompanyId must be a valid UUID' }],
     });
   });
   it('falls back to `request` when the message names no field', () => {
