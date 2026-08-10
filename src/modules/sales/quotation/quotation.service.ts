@@ -7,6 +7,8 @@ import { SaveQuotationDto } from './dto/save-quotation.dto';
 import { SaveQuotationItemDto } from './dto/save-quotation-item.dto';
 import {
   QUOTATION_CHARGE_DOC_TYPE,
+  QUOTATION_STATUS_SRC_DOC_TYPE,
+  QUOTATION_STATUS_SRC_MODULE,
   QuotationChargePayload,
   QuotationErrorDetail,
   QuotationErrorResponse,
@@ -31,6 +33,10 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+import {
+  TxnStatusEvent,
+  appendTxnStatusLog,
+} from 'src/common/txn-status-log/txn-status-log.helper';
 // accounts.acc_voucher_types row "Quo" / Sales Quotation. Its numbering format
 // (prefix / suffix / width / reset frequency) seeds the acc_voucher_seq row the
 // quotation numbers are drawn from.
@@ -39,6 +45,27 @@ const QUOTATION_TABLE_NAME = 'sale_quotation';
 const QUOTATION_ITEM_TABLE_NAME = 'sale_quotation_item';
 const QUOTATION_CHARGE_TABLE_NAME = 'txn_charge_detail';
 const QUOTATION_AUDIT_SCREEN_NAME = 'Sale Quotation';
+// Names the status STEP recorded on public.txn_status_log for each member of
+// ck_sq_status. The constraint is still live on the column (unlike sale_bill's
+// ck_sb_*, dropped in 20260731070026), so this maps a status the DB already
+// validated onto the event vocabulary the trail reports on — it is not a guard.
+// DRAFT is REOPENED because the only way to reach it from another status is to
+// pull the quotation back for editing; a quotation CREATED as DRAFT never gets
+// here (see toStatusEvent).
+const QUOTATION_STATUS_EVENTS: Readonly<Record<string, TxnStatusEvent>> = {
+  DRAFT: TxnStatusEvent.REOPENED,
+  SENT: TxnStatusEvent.SENT,
+  ACCEPTED: TxnStatusEvent.ACCEPTED,
+  REJECTED: TxnStatusEvent.REJECTED,
+  EXPIRED: TxnStatusEvent.EXPIRED,
+  CONVERTED: TxnStatusEvent.CONVERTED,
+  CANCELLED: TxnStatusEvent.CANCELLED,
+};
+// tsl_to_status on the delete step. Unlike a bill, deleting a quotation does NOT
+// move sq_status — so the trail says the document left play without claiming the
+// column says something it does not.
+const QUOTATION_DELETED_STATUS = 'DELETED';
+const QUOTATION_DELETE_REASON = 'Quotation deleted';
 const QUOTATION_OPTIONAL_FIELDS = [
   'sqSessionId',
   'sqCategoryId',
@@ -484,6 +511,21 @@ export class QuotationService {
           cdModifiedBy: actor,
         },
       });
+      // Closes the quotation's status trail. Deleting one does NOT move
+      // sq_status the way deleting a bill does, so the step is logged as DELETED
+      // rather than claiming a CANCELLED the column never took.
+      await this.logStatusStep(
+        tx,
+        existing,
+        {
+          event: TxnStatusEvent.DELETED,
+          fromStatus: existing.sqStatus,
+          toStatus: QUOTATION_DELETED_STATUS,
+          remarks: existing.sqCancelReason ?? QUOTATION_DELETE_REASON,
+        },
+        actor,
+        modifiedOn,
+      );
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({
         ...existing,
@@ -571,6 +613,19 @@ export class QuotationService {
         };
         const items = await this.syncItems(tx, scope, saveQuotationDto.items, createdBy);
         const charges = await this.syncCharges(tx, scope, saveQuotationDto.charges, createdBy);
+        // Opens the quotation's status trail: from nothing to whatever it was
+        // created as (DRAFT unless the payload said otherwise).
+        await this.logStatusStep(
+          tx,
+          created,
+          {
+            event: this.toStatusEvent(null, created.sqStatus),
+            fromStatus: null,
+            toStatus: created.sqStatus,
+          },
+          createdBy,
+          now,
+        );
         const payload = this.toPayload({ ...created, items, charges });
         await this.auditLogService.logEntityChange(
           {
@@ -658,6 +713,21 @@ export class QuotationService {
         };
         const items = await this.syncItems(tx, scope, saveQuotationDto.items, modifiedBy);
         const charges = await this.syncCharges(tx, scope, saveQuotationDto.charges, modifiedBy);
+        // A status STEP, not the save itself: an edit that leaves sqStatus alone
+        // adds no row to the trail.
+        if (updated.sqStatus !== existing.sqStatus) {
+          await this.logStatusStep(
+            tx,
+            updated,
+            {
+              event: this.toStatusEvent(existing.sqStatus, updated.sqStatus),
+              fromStatus: existing.sqStatus,
+              toStatus: updated.sqStatus,
+            },
+            modifiedBy,
+            now,
+          );
+        }
         const payload = this.toPayload({ ...updated, items, charges });
         await this.auditLogService.logEntityChange(
           {
@@ -1220,6 +1290,64 @@ export class QuotationService {
         details,
       );
     }
+  }
+  // One row on public.txn_status_log per status STEP — the quotation's trail is
+  // the ordered set of them, and sq_status is only ever the CURRENT state.
+  // Written inside the caller's transaction, so the step commits with the write
+  // that caused it: a quotation that says REJECTED with nothing saying who
+  // rejected it is what this prevents.
+  //
+  // Only a step is logged. An ordinary save that leaves sqStatus where it was
+  // adds nothing here — what changed field by field is audit.audit_log's job.
+  private async logStatusStep(
+    tx: Prisma.TransactionClient,
+    quotation: SaleQuotation,
+    step: {
+      event: TxnStatusEvent;
+      fromStatus: string | null;
+      // Normally the quotation's own sqStatus; the delete path is the exception
+      // (see QUOTATION_DELETED_STATUS).
+      toStatus: string;
+      remarks?: string | null;
+    },
+    actor: string,
+    changedOn: Date,
+  ): Promise<void> {
+    await appendTxnStatusLog(tx, {
+      companyId: quotation.sqCompanyId,
+      branchId: quotation.sqBranchId,
+      tenantId: quotation.sqTenantId,
+      // The quotation's own year, not today's: txn_status_log is partitioned by
+      // it, exactly like sale_quotation.
+      accYear: quotation.sqAccYear,
+      srcModule: QUOTATION_STATUS_SRC_MODULE,
+      srcDocType: QUOTATION_STATUS_SRC_DOC_TYPE,
+      srcDocId: quotation.sqId,
+      srcDocRefno: quotation.sqQuoteRefno,
+      event: step.event,
+      fromStatus: step.fromStatus,
+      toStatus: step.toStatus,
+      changedOn,
+      changedBy: actor,
+      // ck_tsl_reason_required wants one on a CANCELLED / REJECTED step; the
+      // quotation's own reason is it, and the helper falls back rather than
+      // failing the save.
+      remarks: step.remarks ?? quotation.sqCancelReason,
+      // Free text on the quotation (a device CODE in practice), a device_master
+      // uuid on the log — the helper resolves it either way round.
+      deviceId: quotation.sqDeviceId,
+      sessionId: quotation.sqSessionId,
+    });
+  }
+  // Names the step for reporting ("what was sent / accepted / lost this month"),
+  // where tslToStatus alone would only say where each document ended up.
+  private toStatusEvent(fromStatus: string | null, toStatus: string): TxnStatusEvent {
+    if (fromStatus === null) {
+      // First row of the trail. Whether the quotation was born DRAFT or was
+      // saved straight into a later status is what tslToStatus says.
+      return TxnStatusEvent.CREATED;
+    }
+    return QUOTATION_STATUS_EVENTS[toStatus] ?? TxnStatusEvent.STATUS_CHANGED;
   }
   private applyOptionalFields(
     data: Prisma.SaleQuotationUncheckedCreateInput | Prisma.SaleQuotationUncheckedUpdateInput,

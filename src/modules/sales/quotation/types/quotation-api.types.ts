@@ -1,8 +1,18 @@
 import { TransactionChargeDetail, SaleQuotation, SaleQuotationItem } from '@prisma/client';
 import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
+import {
+  TxnStatusDocType,
+  TxnStatusSrcModule,
+} from '../../../../common/txn-status-log/txn-status-log.helper';
 // txn_charge_detail is polymorphic — a quotation's applied charges are the rows
 // carrying this discriminator plus cdDocId = sqId (see ck_cd_doc_type).
 export const QUOTATION_CHARGE_DOC_TYPE = ChargeDocType.QUOTATION;
+// public.txn_status_log is polymorphic the same way — a quotation's status trail
+// is the rows carrying this (module, doc type) pair plus tslSrcDocId = sqId (see
+// ck_tsl_src_module / ck_tsl_src_doc_type). A separate vocabulary from
+// ck_cd_doc_type's, which happens to spell QUOTATION the same way.
+export const QUOTATION_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
+export const QUOTATION_STATUS_SRC_DOC_TYPE = TxnStatusDocType.QUOTATION;
 // sqQuoteSlno is a bigint column; it is emitted as a string because JSON has no
 // bigint. Leaving it a bigint makes res.json() throw AFTER the save transaction
 // has committed, so the caller sees a 500 for a quotation that was in fact

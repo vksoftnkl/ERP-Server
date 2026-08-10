@@ -5847,3 +5847,4 @@ error: invalid input syntax for type uuid: "icompany_id"
     at async Promise.all (index 0)
     at async ConfiguredGridSqlService.runPagedQuery (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.service.ts:199:39)
     at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
+2026-08-10T13:23:41.006Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

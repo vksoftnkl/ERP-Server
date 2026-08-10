@@ -31,6 +31,8 @@ const AREA_ID = '019c6f6c-be87-7a11-8905-36092c46fe0b';
 const SALESMAN_ID = '019c6f6c-be87-7a11-8905-36092c46fe0c';
 const AGENT_ID = '019c6f6c-be87-7a11-8905-36092c46fe0d';
 const ACC_YEAR = '2026-2027';
+// fixed.device_master.dev_id behind a quotation's free-text sqDeviceId.
+const DEVICE_ID = '019c6f6c-be87-7a11-8905-36092c46fe14';
 // The quotation voucher type, and the counter it stands at before a save: the
 // next quotation therefore takes number 42 → 'quo00042'.
 const QUOTATION_VCHR_TYPE_ID = 21;
@@ -186,6 +188,7 @@ type SequenceUpdateArgs = {
   where: { id: string };
   data: Prisma.AccVoucherSeqUncheckedUpdateInput;
 };
+type StatusLogCreateArgs = { data: Prisma.TxnStatusLogUncheckedCreateInput };
 
 type PrismaMock = {
   saleQuotation: {
@@ -224,6 +227,17 @@ type PrismaMock = {
   // sq_agent_id has no FK, so getById resolves the agent name on its own.
   saleAgent: {
     findUnique: jest.Mock<Promise<{ saName: string } | null>, unknown[]>;
+  };
+  // The quotation's status trail. findFirst is the next-sequence read (the
+  // newest row of this document's trail), create is the appended step.
+  txnStatusLog: {
+    findFirst: jest.Mock<Promise<{ tslSeqNo: number } | null>, unknown[]>;
+    create: jest.Mock<Promise<unknown>, [StatusLogCreateArgs]>;
+  };
+  // sq_device_id is free text, so the trail resolves it against device_master
+  // before writing tsl_device_id (a uuid with an FK).
+  deviceMaster: {
+    findFirst: jest.Mock<Promise<{ devId: string } | null>, unknown[]>;
   };
   $queryRaw: jest.Mock<Promise<unknown>, unknown[]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
@@ -318,6 +332,15 @@ const makePrismaMock = (): PrismaMock => {
     },
     saleAgent: {
       findUnique: jest.fn(() => Promise.resolve({ saName: 'Agent One' })),
+    },
+    txnStatusLog: {
+      // Default: the document has no trail yet, so the appended step is seq 1.
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      create: jest.fn(({ data }: StatusLogCreateArgs) => Promise.resolve(data)),
+    },
+    // Default: 'till-1' is a registered device, so the step carries its uuid.
+    deviceMaster: {
+      findFirst: jest.fn(() => Promise.resolve({ devId: DEVICE_ID })),
     },
     $queryRaw: jest.fn(() => Promise.resolve([{ locked: 1 }])),
     $transaction: jest.fn((cb: (tx: PrismaMock) => Promise<unknown>) => cb(prisma)),
@@ -889,5 +912,157 @@ describe('QuotationService — quotation numbering', () => {
 
     expect(payload.sqQuoteSlno).toBe('42');
     expect(() => JSON.stringify(payload)).not.toThrow();
+  });
+});
+
+// sq_status is only ever the CURRENT state; how the quotation got there is the
+// append-only trail on public.txn_status_log, written in the same transaction as
+// the save that caused the step.
+describe('QuotationService — status trail', () => {
+  let service: QuotationService;
+  let prisma: PrismaMock;
+
+  // The row appended by the save under test.
+  const loggedStep = () => prisma.txnStatusLog.create.mock.calls[0][0].data;
+
+  beforeEach(() => {
+    prisma = makePrismaMock();
+    service = new QuotationService(
+      prisma as unknown as PrismaService,
+      { logEntityChange: jest.fn(() => Promise.resolve(undefined)) } as unknown as AuditLogService,
+      { getUserId: () => USER_ID } as unknown as RequestContextService,
+    );
+  });
+
+  it('opens the trail when the quotation is created', async () => {
+    await service.save(baseDto());
+
+    expect(prisma.txnStatusLog.create).toHaveBeenCalledTimes(1);
+    expect(loggedStep()).toMatchObject({
+      tslCompanyId: COMPANY_ID,
+      tslBranchId: BRANCH_ID,
+      tslTenantId: TENANT_ID,
+      tslAccYear: ACC_YEAR,
+      tslSrcModule: 'SALES',
+      tslSrcDocType: 'QUOTATION',
+      tslSrcDocId: QUOTE_ID,
+      // The server-assigned number, snapshotted so the trail reads on its own.
+      tslSrcDocRefno: 'quo00042',
+      tslSeqNo: 1,
+      tslEvent: 'CREATED',
+      tslFromStatus: null,
+      tslToStatus: 'DRAFT',
+      tslChangedBy: USER_ID,
+    });
+  });
+
+  it('continues the sequence from the newest row of this document', async () => {
+    prisma.txnStatusLog.findFirst.mockResolvedValue({ tslSeqNo: 3 });
+    prisma.saleQuotation.update.mockResolvedValue(makeQuotation({ sqStatus: 'SENT' }));
+
+    await service.save(baseDto({ sqId: QUOTE_ID, sqStatus: 'SENT' }));
+
+    expect(prisma.txnStatusLog.findFirst).toHaveBeenCalledWith(
+      containing({
+        where: { tslSrcDocType: 'QUOTATION', tslSrcDocId: QUOTE_ID, tslAccYear: ACC_YEAR },
+        orderBy: { tslSeqNo: 'desc' },
+      }),
+    );
+    expect(loggedStep()).toMatchObject({ tslSeqNo: 4 });
+  });
+
+  it('adds nothing when a save leaves the status where it was', async () => {
+    await service.save(baseDto({ sqId: QUOTE_ID, sqCustName: 'Acme Ltd' }));
+
+    expect(prisma.txnStatusLog.create).not.toHaveBeenCalled();
+  });
+
+  // ck_sq_status's members, each named as the step it is.
+  it.each([
+    ['SENT', 'SENT'],
+    ['ACCEPTED', 'ACCEPTED'],
+    ['REJECTED', 'REJECTED'],
+    ['EXPIRED', 'EXPIRED'],
+    ['CONVERTED', 'CONVERTED'],
+    ['CANCELLED', 'CANCELLED'],
+  ])('logs a move to %s as the matching event', async (status, event) => {
+    prisma.saleQuotation.update.mockResolvedValue(makeQuotation({ sqStatus: status }));
+
+    await service.save(baseDto({ sqId: QUOTE_ID, sqStatus: status }));
+
+    expect(loggedStep()).toMatchObject({
+      tslEvent: event,
+      tslFromStatus: 'DRAFT',
+      tslToStatus: status,
+    });
+  });
+
+  it('logs a quotation pulled back for editing as REOPENED', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(makeQuotation({ sqStatus: 'SENT' }));
+    prisma.saleQuotation.update.mockResolvedValue(makeQuotation({ sqStatus: 'DRAFT' }));
+
+    await service.save(baseDto({ sqId: QUOTE_ID, sqStatus: 'DRAFT' }));
+
+    expect(loggedStep()).toMatchObject({
+      tslEvent: 'REOPENED',
+      tslFromStatus: 'SENT',
+      tslToStatus: 'DRAFT',
+    });
+  });
+
+  it('carries the reason ck_tsl_reason_required demands on a rejection', async () => {
+    prisma.saleQuotation.update.mockResolvedValue(
+      makeQuotation({ sqStatus: 'REJECTED', sqCancelReason: 'Price too high' }),
+    );
+
+    await service.save(baseDto({ sqId: QUOTE_ID, sqStatus: 'REJECTED' }));
+
+    expect(loggedStep()).toMatchObject({ tslRemarks: 'Price too high' });
+  });
+
+  // Deleting a quotation does NOT move sq_status the way deleting a bill does,
+  // so the step says DELETED rather than claiming a CANCELLED it never took.
+  it('closes the trail on delete without claiming a status the column never took', async () => {
+    prisma.saleQuotation.findFirst.mockResolvedValue(makeQuotation({ sqStatus: 'SENT' }));
+
+    await service.softDelete(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+
+    expect(loggedStep()).toMatchObject({
+      tslEvent: 'DELETED',
+      tslFromStatus: 'SENT',
+      tslToStatus: 'DELETED',
+      tslRemarks: 'Quotation deleted',
+      tslChangedBy: USER_ID,
+    });
+  });
+
+  it('resolves the free-text device code to its device_master uuid', async () => {
+    prisma.saleQuotation.create.mockResolvedValue(makeQuotation({ sqDeviceId: 'till-1' }));
+
+    await service.save(baseDto());
+
+    expect(prisma.deviceMaster.findFirst).toHaveBeenCalledWith(
+      containing({ where: { devDeviceUid: 'till-1' } }),
+    );
+    expect(loggedStep()).toMatchObject({ tslDeviceId: DEVICE_ID });
+  });
+
+  it('leaves the device NULL rather than failing the save on an unknown one', async () => {
+    prisma.saleQuotation.create.mockResolvedValue(makeQuotation({ sqDeviceId: 'till-9' }));
+    prisma.deviceMaster.findFirst.mockResolvedValue(null);
+
+    await service.save(baseDto());
+
+    expect(loggedStep()).toMatchObject({ tslDeviceId: null });
+  });
+
+  it('falls back to DEFAULT_ACTOR for a non-uuid actor, which tsl_changed_by would reject', async () => {
+    await service.save(baseDto({ sqCreatedBy: 'admin' }));
+
+    expect(loggedStep()).toMatchObject({
+      tslChangedBy: '00000000-0000-0000-0000-000000000000',
+      // The free-text column keeps what the payload actually said.
+      tslCreatedBy: 'admin',
+    });
   });
 });

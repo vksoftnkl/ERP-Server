@@ -17,6 +17,12 @@ product/service, with its rates, discounts and tax breakup).
   composite PK `(cdId, cdAccYear)`, addressed
   polymorphically by `(cdDocType = 'QUOTATION', cdDocId = sqId)`; there is **no FK** to
   `sale_quotation` because the table is shared by every module (sales, purchase, GRN, invoice)
+- **Status-trail table:** `txn_status_log` (`public` schema) — LIST-partitioned by `tslAccYear`,
+  composite PK `(tslId, tslAccYear)`, addressed polymorphically by
+  `(tslSrcModule = 'SALES', tslSrcDocType = 'QUOTATION', tslSrcDocId = sqId)`. Also has **no FK**
+  to `sale_quotation`, and is **append-only**: one row per status STEP, written through the shared
+  [`appendTxnStatusLog`](../../../common/txn-status-log/txn-status-log.helper.ts) helper. See
+  [Status trail](#status-trail-publictxn_status_log).
 
 ## Files
 
@@ -209,6 +215,56 @@ same create/update payload (`syncCharges` reconciliation), with **exactly** the 
 - The acting user is resolved from the payload's `sqCreatedBy` / `sqModifiedBy`, then the request
   context user (`RequestContextService.getUserId()`), falling back to `DEFAULT_ACTOR`
   (`resolveActor`).
+
+### Status trail (`public.txn_status_log`)
+
+`sq_status` is only ever the quotation's **current** state. How it got there is the append-only
+trail on `public.txn_status_log`, written by
+[../../../common/txn-status-log/txn-status-log.helper.ts](../../../common/txn-status-log/txn-status-log.helper.ts)
+inside the **same transaction** as the save that caused the step. Rows are written once and never
+edited; correcting history means appending another row. Same arrangement as
+[../bill](../bill#status-trail-publictxn_status_log), with one deliberate difference on delete
+(below).
+
+- **Addressed polymorphically**, like the applied charges: `tslSrcModule = 'SALES'`,
+  `tslSrcDocType = 'QUOTATION'`, `tslSrcDocId = sqId`. `tslSrcDocRefno` snapshots the
+  server-assigned `sqQuoteRefno` so a trail reads on its own.
+- **Partitioned by LIST (`tsl_acc_year`)** like `sale_quotation` itself, and the year written is the
+  **quotation's** (`sqAccYear`), not today's. A fiscal year that never had
+  `public.ensure_acc_year_partitions('YYYY-YYYY')` run against it fails every insert with
+  *no partition of relation "txn_status_log" found for row* — and takes the quotation save with it.
+- **Only a status STEP is logged.** A save that leaves `sqStatus` where it was adds no row; what
+  changed field by field is [audit logging](#audit-logging)'s job.
+
+| When | `tslEvent` | `tslFromStatus` → `tslToStatus` |
+| --- | --- | --- |
+| `POST /create` (new quotation) | `CREATED` | `NULL` → `DRAFT` (or whatever the payload asked for) |
+| `POST /create` moving to `SENT` / `ACCEPTED` / `REJECTED` / `EXPIRED` / `CONVERTED` / `CANCELLED` | the matching event of the same name | *(current)* → *(new)* |
+| `POST /create` pulling one back to `DRAFT` | `REOPENED` | *(current)* → `DRAFT` |
+| `DELETE /delete` | `DELETED` | *(current)* → `DELETED` |
+
+- The status vocabulary is `ck_sq_status`'s (`DRAFT` / `SENT` / `ACCEPTED` / `REJECTED` / `EXPIRED`
+  / `CONVERTED` / `CANCELLED`), and that CHECK is **still live on the column** — unlike `sale_bill`,
+  whose `ck_sb_*` were dropped in favour of service-side guards. `QUOTATION_STATUS_EVENTS` only
+  *names* a status the DB already validated; it is not a guard.
+- **Delete is logged as `DELETED`, not `CANCELLED`.** Deleting a quotation does not move
+  `sq_status` the way deleting a bill does, so the trail says the document left play rather than
+  claiming a status the column never took. `tslRemarks` carries the quotation's own
+  `sqCancelReason`, falling back to `'Quotation deleted'`.
+- `tslSeqNo` is `1..n` within the document (`ux_tsl_doc_seq`), read as `max + 1` inside the
+  transaction. Two concurrent status steps on **one** quotation would pick the same number; the
+  unique index — not the read — is what stops the second committing.
+- `ck_tsl_reason_required` covers `CANCELLED` / `CLOSED` / `REJECTED`, so a rejection carries
+  `sqCancelReason`; if none was supplied the helper writes `'No reason recorded'` rather than
+  letting a 23514 roll the whole save back.
+- `tsl_changed_by` is a **uuid** while `sqCreatedBy` / `sqModifiedBy` are free text, so a non-uuid
+  actor is recorded as `DEFAULT_ACTOR` there and kept verbatim in `tsl_created_by`. Likewise
+  `sqDeviceId` is free text (a device **code**) against a `tsl_device_id` that carries an FK to
+  `fixed.device_master`: the helper resolves it by `dev_device_uid` or `dev_id`, and writes `NULL`
+  for an unrecognised device rather than failing the save.
+- A **revision** (`sqParentQuoteId` / `sqParentAccYear`) is a document of its own: it opens its own
+  trail with `CREATED`, and nothing is appended to the parent's — moving the parent to `CANCELLED`
+  or `CONVERTED` is a separate save, and logged as one.
 
 ### Response shape
 
