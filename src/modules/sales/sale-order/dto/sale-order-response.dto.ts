@@ -703,9 +703,10 @@ export class SaleOrderPayloadDto {
   soAdvanceBalanceAmt!: number;
   @ApiProperty({
     maxLength: 20,
+    nullable: true,
     description: 'NONE / PENDING / PARTIAL / RECEIVED / ADJUSTED / REFUNDED / FORFEITED',
   })
-  soAdvanceStatus!: string;
+  soAdvanceStatus!: string | null;
   @ApiPropertyOptional({
     nullable: true,
     format: 'date-time',
