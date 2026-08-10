@@ -5,7 +5,7 @@ import {
   Prisma,
   SaleBill,
   SaleBillItem,
-  SaleChargeDetail,
+  TransactionChargeDetail,
 } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
@@ -105,7 +105,7 @@ const makeBill = (overrides: Partial<SaleBill> = {}): SaleBill =>
     ...overrides,
   }) as unknown as SaleBill;
 
-const makeCharge = (overrides: Partial<SaleChargeDetail> = {}): SaleChargeDetail =>
+const makeCharge = (overrides: Partial<TransactionChargeDetail> = {}): TransactionChargeDetail =>
   ({
     cdId: CD_ID,
     cdDocType: 'INVOICE',
@@ -154,7 +154,7 @@ const makeCharge = (overrides: Partial<SaleChargeDetail> = {}): SaleChargeDetail
     cdModifiedOn: null,
     cdModifiedBy: null,
     ...overrides,
-  }) as SaleChargeDetail;
+  }) as TransactionChargeDetail;
 
 const makeTender = (overrides: Partial<AccTenderDetail> = {}): AccTenderDetail =>
   ({
@@ -260,10 +260,10 @@ type ItemUpdateArgs = {
   where: { sbiId_sbiAccYear: { sbiId: string; sbiAccYear: string } };
   data: Prisma.SaleBillItemUncheckedUpdateInput;
 };
-type ChargeCreateArgs = { data: Prisma.SaleChargeDetailUncheckedCreateInput };
+type ChargeCreateArgs = { data: Prisma.TransactionChargeDetailUncheckedCreateInput };
 type ChargeUpdateArgs = {
-  where: { cdId: string };
-  data: Prisma.SaleChargeDetailUncheckedUpdateInput;
+  where: { cdId_cdAccYear: { cdId: string; cdAccYear: string } };
+  data: Prisma.TransactionChargeDetailUncheckedUpdateInput;
 };
 type TenderCreateArgs = { data: Prisma.AccTenderDetailUncheckedCreateInput };
 // acc_tender_detail is partitioned by td_acc_year, so a single-row update
@@ -305,10 +305,10 @@ type PrismaMock = {
     update: jest.Mock<Promise<SaleBillItem>, [ItemUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
-  saleChargeDetail: {
-    findMany: jest.Mock<Promise<SaleChargeDetail[]>, unknown[]>;
-    create: jest.Mock<Promise<SaleChargeDetail>, [ChargeCreateArgs]>;
-    update: jest.Mock<Promise<SaleChargeDetail>, [ChargeUpdateArgs]>;
+  transactionChargeDetail: {
+    findMany: jest.Mock<Promise<TransactionChargeDetail[]>, unknown[]>;
+    create: jest.Mock<Promise<TransactionChargeDetail>, [ChargeCreateArgs]>;
+    update: jest.Mock<Promise<TransactionChargeDetail>, [ChargeUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
   accTenderDetail: {
@@ -416,16 +416,17 @@ const makePrismaMock = (): PrismaMock => {
       ),
       updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
-    saleChargeDetail: {
+    transactionChargeDetail: {
       findMany: jest.fn(() => Promise.resolve([])),
       create: jest.fn(({ data }: ChargeCreateArgs) =>
-        Promise.resolve(makeCharge(data as unknown as Partial<SaleChargeDetail>)),
+        Promise.resolve(makeCharge(data as unknown as Partial<TransactionChargeDetail>)),
       ),
       update: jest.fn(({ where, data }: ChargeUpdateArgs) =>
         Promise.resolve(
           makeCharge({
-            ...(data as unknown as Partial<SaleChargeDetail>),
-            cdId: where.cdId,
+            ...(data as unknown as Partial<TransactionChargeDetail>),
+            cdId: where.cdId_cdAccYear.cdId,
+            cdAccYear: where.cdId_cdAccYear.cdAccYear,
           }),
         ),
       ),
@@ -543,7 +544,7 @@ describe('BillService', () => {
       requestContextService,
       // The real collaborator, not a stub: the charge lines a bill saves go
       // through it, so these tests assert on what it writes to
-      // prisma.saleChargeDetail.
+      // prisma.transactionChargeDetail.
       new ChargeDetailService(
         prisma as unknown as PrismaService,
         auditLogService as unknown as AuditLogService,
@@ -1165,8 +1166,8 @@ describe('BillService', () => {
         }),
       );
 
-      expect(prisma.saleChargeDetail.create).toHaveBeenCalledTimes(1);
-      expect(prisma.saleChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+      expect(prisma.transactionChargeDetail.create).toHaveBeenCalledTimes(1);
+      expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
         cdDocType: 'INVOICE',
         cdDocId: BILL_ID,
         cdSlno: 1,
@@ -1181,7 +1182,7 @@ describe('BillService', () => {
     });
 
     it('updates a charge carrying cdId, creates one without, and soft deletes the omitted rest', async () => {
-      prisma.saleChargeDetail.findMany.mockResolvedValue([
+      prisma.transactionChargeDetail.findMany.mockResolvedValue([
         makeCharge(),
         makeCharge({ cdId: OTHER_CD_ID, cdSlno: 2, cdChgName: 'Loading' }),
       ]);
@@ -1196,20 +1197,20 @@ describe('BillService', () => {
         }),
       );
 
-      expect(prisma.saleChargeDetail.update).toHaveBeenCalledWith(
+      expect(prisma.transactionChargeDetail.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { cdId: CD_ID },
+          where: { cdId_cdAccYear: { cdId: CD_ID, cdAccYear: ACC_YEAR } },
           data: containing({ cdSlno: 1, cdAmount: 750 }),
         }),
       );
-      expect(prisma.saleChargeDetail.create).toHaveBeenCalledTimes(1);
-      expect(prisma.saleChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+      expect(prisma.transactionChargeDetail.create).toHaveBeenCalledTimes(1);
+      expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
         cdSlno: 2,
         cdChgName: 'Packing',
       });
-      expect(prisma.saleChargeDetail.update).toHaveBeenCalledWith(
+      expect(prisma.transactionChargeDetail.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { cdId: OTHER_CD_ID },
+          where: { cdId_cdAccYear: { cdId: OTHER_CD_ID, cdAccYear: ACC_YEAR } },
           data: containing({ cdIsDeleted: true }),
         }),
       );
@@ -1234,7 +1235,7 @@ describe('BillService', () => {
       await expect(
         service.save(baseDto({ charges: [{ cdChgId: CHARGE_ID, cdLedgerCode: LEDGER_ID }] })),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.create).not.toHaveBeenCalled();
     });
 
     it('rejects a charge line pointing at another document', async () => {
@@ -1577,7 +1578,7 @@ describe('BillService', () => {
           data: containing({ sbiIsDeleted: true }),
         }),
       );
-      expect(prisma.saleChargeDetail.updateMany).toHaveBeenCalledWith(
+      expect(prisma.transactionChargeDetail.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { cdDocType: 'INVOICE', cdDocId: BILL_ID, cdIsDeleted: false },
           data: containing({ cdIsDeleted: true }),

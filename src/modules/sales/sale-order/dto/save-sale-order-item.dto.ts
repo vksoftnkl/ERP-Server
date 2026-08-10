@@ -14,7 +14,7 @@ import {
 } from 'src/common/dto/dtoDecorators';
 // One ORDERED LINE on a sales order (not a batch allocation: an order allocates
 // no stock, so there is no split/stock row here — that is the bill's shape).
-export class SaveOrderItemDto {
+export class SaveSaleOrderItemDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, updates the existing line; otherwise a new line is created',

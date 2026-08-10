@@ -1,7 +1,11 @@
 // Batch/expiry/available_stock here are INFORMATIONAL (availability shown while
 // quoting). A quote allocates NO stock -- allocation happens at DC/invoice.
+//
+// LIST-partitioned by sqi_acc_year -- see the note on SaleQuotation. A line
+// always carries its header's year, which is what puts the two in the same
+// partition and lets fk_sqi_quote reference the header's composite key.
 model SaleQuotationItem {
-  sqiId              String    @id(map: "pk_sale_quotation_item") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sqi_id")
+  sqiId              String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sqi_id")
   sqiQuoteId         String    @db.Uuid @map("sqi_quote_id")
   sqiCompanyId       String    @db.Uuid @map("sqi_company_id")
   sqiBranchId        String    @db.Uuid @map("sqi_branch_id")
@@ -116,15 +120,19 @@ model SaleQuotationItem {
   sqiHasFreight      Boolean   @default(false) @map("sqi_has_freight")
   sqiItemSize        String?   @db.VarChar(50) @map("sqi_item_size")
   // Relations
-  quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
+  quote      SaleQuotation  @relation(fields: [sqiQuoteId, sqiAccYear], references: [sqId, sqAccYear], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
   // sqiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
   itemUnitConversion ItemUnitConversion @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
-  // ux_sqi_quote_line (unique line no per quote among non-deleted rows) is a
-  // DB-only partial index (migration 20260708120000). Prisma cannot express its
-  // WHERE predicate; declaring it here makes `migrate dev` regenerate it
-  // without the predicate and fail on the existing name. Do NOT add @@unique.
+  // ux_sqi_quote_line (unique line no per quote among non-deleted rows, keyed
+  // on sqi_quote_id + sqi_acc_year + sqi_line_no since 20260810130000) is a
+  // DB-only partial index. Prisma cannot express its WHERE predicate;
+  // declaring it here makes `migrate dev` regenerate it without the predicate
+  // and fail on the existing name. Do NOT add @@unique.
+  //
+  // CHECK constraint (DB-only): ck_sqi_free_type.
+  @@id([sqiId, sqiAccYear], map: "pk_sale_quotation_item")
   @@index([sqiQuoteId], map: "ix_sqi_quote")
   @@index([sqiItemId], map: "ix_sqi_item")
   @@index([sqiHsnCode], map: "ix_sqi_hsn")

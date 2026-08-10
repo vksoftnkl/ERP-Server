@@ -498,7 +498,7 @@ export class SaveBillDto {
     type: SaveChargeDetailDto,
     isArray: true,
     description:
-      "Applied charge lines, the charge-detail module's own entry (sale_charge_detail). Reconciled " +
+      "Applied charge lines, the charge-detail module's own entry (txn_charge_detail). Reconciled " +
       'exactly like items: lines with cdId are updated, lines without are created, and existing lines ' +
       'omitted from the array are soft deleted. Omit the property entirely to leave charges untouched. ' +
       'cdChgId and cdLedgerCode are required on a new line; cdDocType / cdDocId are the parent bill and ' +

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, SaleChargeDetail } from '@prisma/client';
+import { Prisma, TransactionChargeDetail } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -82,9 +82,9 @@ const CHARGE_DETAIL_OPTIONAL_FIELDS = [
   'cdIsActive',
 ];
 type ChargeDetailWriteClient = MasterWriteClient;
-type ChargeDetailRecord = SaleChargeDetail & { ledger?: { ledName: string } | null };
+type ChargeDetailRecord = TransactionChargeDetail & { ledger?: { ledName: string } | null };
 /**
- * Standalone CRUD over `public.sale_charge_detail` — the per-document applied
+ * Standalone CRUD over `public.txn_charge_detail` — the per-document applied
  * charges (freight, loading, packing, cash discount, …).
  *
  * The table is polymorphic: a row belongs to whichever document the
@@ -136,7 +136,7 @@ export class ChargeDetailService {
     ]);
   }
   async getById(cdId: string): Promise<ChargeDetailPayload> {
-    const record = await this.prisma.saleChargeDetail.findFirst({
+    const record = await this.prisma.transactionChargeDetail.findFirst({
       where: { cdId, cdIsDeleted: false },
       include: { ledger: { select: { ledName: true } } },
     });
@@ -153,7 +153,7 @@ export class ChargeDetailService {
     cdDocId: string,
     isActive?: boolean,
   ): Promise<ChargeDetailPayload[]> {
-    const records = await this.prisma.saleChargeDetail.findMany({
+    const records = await this.prisma.transactionChargeDetail.findMany({
       where: {
         cdDocType,
         cdDocId,
@@ -167,7 +167,7 @@ export class ChargeDetailService {
   }
   async softDelete(cdId: string): Promise<ChargeDetailDeleteResult> {
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.saleChargeDetail.findFirst({
+      const existing = await tx.transactionChargeDetail.findFirst({
         where: { cdId, cdIsDeleted: false },
       });
       if (!existing) {
@@ -175,7 +175,7 @@ export class ChargeDetailService {
       }
       const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
       const modifiedOn = new Date();
-      const result = await tx.saleChargeDetail.updateMany({
+      const result = await tx.transactionChargeDetail.updateMany({
         where: { cdId, cdIsDeleted: false },
         data: {
           cdIsDeleted: true,
@@ -216,7 +216,7 @@ export class ChargeDetailService {
   // Document-owned charge lines
   //
   // The three methods below are what an owning module (a bill, a quotation)
-  // calls instead of reimplementing sale_charge_detail. They take the caller's
+  // calls instead of reimplementing txn_charge_detail. They take the caller's
   // transaction, so the parent header, its lines and its charges commit or roll
   // back together, and they go through the same writers and guards as this
   // module's own endpoints.
@@ -294,7 +294,7 @@ export class ChargeDetailService {
     cdDocType: ChargeDocType,
     cdDocId: string,
   ): Promise<ChargeDetailRecord[]> {
-    return client.saleChargeDetail.findMany({
+    return client.transactionChargeDetail.findMany({
       where: { cdDocType, cdDocId, cdIsDeleted: false },
       include: { ledger: { select: { ledName: true } } },
       orderBy: { cdSlno: 'asc' },
@@ -310,7 +310,7 @@ export class ChargeDetailService {
     actorId: string,
     modifiedOn: Date = new Date(),
   ): Promise<void> {
-    await tx.saleChargeDetail.updateMany({
+    await tx.transactionChargeDetail.updateMany({
       where: { cdDocType, cdDocId, cdIsDeleted: false },
       data: {
         cdIsDeleted: true,
@@ -369,7 +369,7 @@ export class ChargeDetailService {
     const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.saleChargeDetail.findFirst({
+        const existing = await tx.transactionChargeDetail.findFirst({
           where: { cdId, cdIsDeleted: false },
         });
         if (!existing) {
@@ -422,7 +422,7 @@ export class ChargeDetailService {
     const ledgerCode = this.requireField(saveChargeDetailDto.cdLedgerCode, 'cdLedgerCode');
     const ledgerName = await this.ensureLedgerExists(tx, ledgerCode);
     await this.ensureChargeExists(tx, chgId);
-    const data: Prisma.SaleChargeDetailUncheckedCreateInput = {
+    const data: Prisma.TransactionChargeDetailUncheckedCreateInput = {
       cdDocType: scope.cdDocType,
       cdDocId: scope.cdDocId,
       cdSlno: slno,
@@ -445,7 +445,7 @@ export class ChargeDetailService {
       cdCreatedBy: resolveActor(saveChargeDetailDto.cdCreatedBy, actorId),
     };
     applyPresentFields(data, saveChargeDetailDto, CHARGE_DETAIL_OPTIONAL_FIELDS);
-    const created = await tx.saleChargeDetail.create({ data });
+    const created = await tx.transactionChargeDetail.create({ data });
     await this.auditLogService.logEntityChange(
       {
         action: 'New',
@@ -470,7 +470,7 @@ export class ChargeDetailService {
   // request actually carries are written, the rest of the row stands.
   private async updateChargeLine(
     tx: ChargeDetailWriteClient,
-    existing: SaleChargeDetail,
+    existing: TransactionChargeDetail,
     saveChargeDetailDto: SaveChargeDetailDto,
     slno: number | null,
     actorId: string,
@@ -483,7 +483,7 @@ export class ChargeDetailService {
     if (nextChgId !== existing.cdChgId) {
       await this.ensureChargeExists(tx, nextChgId);
     }
-    const data: Prisma.SaleChargeDetailUncheckedUpdateInput = {
+    const data: Prisma.TransactionChargeDetailUncheckedUpdateInput = {
       cdSlno: slno,
       cdChgId: nextChgId,
       cdLedgerCode: nextLedgerCode,
@@ -506,7 +506,13 @@ export class ChargeDetailService {
     if (saveChargeDetailDto.cdVoucherNo !== undefined) {
       data.cdVoucherNo = this.toVoucherNo(saveChargeDetailDto.cdVoucherNo);
     }
-    const updated = await tx.saleChargeDetail.update({ where: { cdId: existing.cdId }, data });
+    // txn_charge_detail is partitioned by cd_acc_year, so a row is addressed by
+    // (cdId, cdAccYear) — the year the row currently sits in, not the one the
+    // payload may be moving it to.
+    const updated = await tx.transactionChargeDetail.update({
+      where: { cdId_cdAccYear: { cdId: existing.cdId, cdAccYear: existing.cdAccYear } },
+      data,
+    });
     await this.auditLogService.logEntityChange(
       {
         action: 'update',
@@ -528,13 +534,13 @@ export class ChargeDetailService {
   // as deleted, the way this module's own softDelete does.
   private async softDeleteChargeLine(
     tx: ChargeDetailWriteClient,
-    existing: SaleChargeDetail,
+    existing: TransactionChargeDetail,
     actorId: string,
     now: Date,
     audit: ChargeDocumentAudit,
   ): Promise<void> {
-    const deleted = await tx.saleChargeDetail.update({
-      where: { cdId: existing.cdId },
+    const deleted = await tx.transactionChargeDetail.update({
+      where: { cdId_cdAccYear: { cdId: existing.cdId, cdAccYear: existing.cdAccYear } },
       data: {
         cdIsDeleted: true,
         cdIsActive: false,
@@ -563,7 +569,7 @@ export class ChargeDetailService {
   // update may resend the pair but never change it.
   private ensureDocumentIsUnchanged(
     saveChargeDetailDto: SaveChargeDetailDto,
-    existing: SaleChargeDetail,
+    existing: TransactionChargeDetail,
   ): void {
     const details: ChargeDetailErrorDetail[] = [];
     // cd_doc_type is varchar in Postgres, so the stored value arrives as a plain
@@ -650,13 +656,13 @@ export class ChargeDetailService {
     excludeId?: string,
   ): Promise<number> {
     if (requested === null) {
-      const highest = await tx.saleChargeDetail.aggregate({
+      const highest = await tx.transactionChargeDetail.aggregate({
         where: { cdDocType: docType, cdDocId: docId, cdIsDeleted: false },
         _max: { cdSlno: true },
       });
       return (highest._max.cdSlno ?? 0) + 1;
     }
-    const clash = await tx.saleChargeDetail.findFirst({
+    const clash = await tx.transactionChargeDetail.findFirst({
       where: {
         cdDocType: docType,
         cdDocId: docId,
@@ -676,7 +682,7 @@ export class ChargeDetailService {
     }
     return requested;
   }
-  // Mirrors the DB CHECK constraints on sale_charge_detail (ck_cd_doc_type /
+  // Mirrors the DB CHECK constraints on txn_charge_detail (ck_cd_doc_type /
   // ck_cd_type / ck_cd_method / ck_cd_apply_on / ck_cd_cost_alloc, migration
   // 20260728140000, plus ck_cd_tax_apl from 20260728130000) so a bad value comes
   // back as a 400 naming the field instead of a raw Postgres 23514. On update the
@@ -684,7 +690,7 @@ export class ChargeDetailService {
   // judges the merged row.
   private ensureValuesAreAllowed(
     saveChargeDetailDto: SaveChargeDetailDto,
-    existing: SaleChargeDetail | undefined,
+    existing: TransactionChargeDetail | undefined,
     docType: ChargeDocType,
   ): void {
     const values: ChargeDetailGuardedValues = {
@@ -762,7 +768,7 @@ export class ChargeDetailService {
       `No active charge line found with id ${cdId}`,
     );
   }
-  private displayName(record: SaleChargeDetail): string {
+  private displayName(record: TransactionChargeDetail): string {
     return record.cdChgName || `Charge ${record.cdSlno ?? ''}`.trim();
   }
   // The cd_* enum columns are varchar in Postgres, so Prisma reads them back as

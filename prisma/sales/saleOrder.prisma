@@ -140,7 +140,7 @@ model SaleOrder {
   soAdvanceRefundAmt   Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_refund_amt")
   soAdvanceForfeitAmt  Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_forfeit_amt")
   soAdvanceBalanceAmt  Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_balance_amt")
-  soAdvanceStatus      String    @default("NONE") @db.VarChar(20) @map("so_advance_status")
+  soAdvanceStatus      String?    @default("NONE") @db.VarChar(20) @map("so_advance_status")
   soAdvanceRecdOn      DateTime? @db.Timestamptz(6) @map("so_advance_recd_on") // first instalment
   // Settlement roll-ups for the order itself (tender rows live in
   // accounts.acc_tender_detail; these are caches so a counter can balance

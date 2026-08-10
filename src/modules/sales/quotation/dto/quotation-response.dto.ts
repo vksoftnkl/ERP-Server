@@ -21,7 +21,7 @@ export class QuotationErrorResponseDto {
   @ApiProperty({ type: QuotationErrorFieldDto, isArray: true })
   errors!: QuotationErrorFieldDto[];
 }
-// One applied charge line (sale_charge_detail row with cdDocType = 'QUOTATION').
+// One applied charge line (txn_charge_detail row with cdDocType = 'QUOTATION').
 export class QuotationChargePayloadDto {
   @ApiProperty({ format: 'uuid' })
   cdId!: string;
@@ -415,6 +415,8 @@ export class QuotationPayloadDto {
   sqRevisionNo!: number;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sqParentQuoteId!: string | null;
+  @ApiPropertyOptional({ minLength: 9, maxLength: 9, nullable: true })
+  sqParentAccYear!: string | null;
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   sqSrcDocType!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })

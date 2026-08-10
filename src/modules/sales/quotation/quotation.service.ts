@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, SaleChargeDetail, SaleQuotation, SaleQuotationItem } from '@prisma/client';
+import { Prisma, TransactionChargeDetail, SaleQuotation, SaleQuotationItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveQuotationChargeDto } from './dto/save-quotation-charge.dto';
@@ -37,7 +37,7 @@ import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.help
 const QUOTATION_VCHR_TYPE_ID = 2;
 const QUOTATION_TABLE_NAME = 'sale_quotation';
 const QUOTATION_ITEM_TABLE_NAME = 'sale_quotation_item';
-const QUOTATION_CHARGE_TABLE_NAME = 'sale_charge_detail';
+const QUOTATION_CHARGE_TABLE_NAME = 'txn_charge_detail';
 const QUOTATION_AUDIT_SCREEN_NAME = 'Sale Quotation';
 const QUOTATION_OPTIONAL_FIELDS = [
   'sqSessionId',
@@ -49,7 +49,8 @@ const QUOTATION_OPTIONAL_FIELDS = [
   'sqValidUntil',
   'sqValidityDays',
   'sqRevisionNo',
-  'sqParentQuoteId',
+  // sqParentQuoteId / sqParentAccYear are deliberately absent: they are a pair
+  // (ck_sq_parent_pair) and applyParentRevision owns both.
   'sqSrcDocType',
   'sqSrcDocId',
   'sqSrcDocRefno',
@@ -401,7 +402,7 @@ export class QuotationService {
         `No active quotation found with id ${sqId}`,
       );
     }
-    // sale_charge_detail is polymorphic (no FK to sale_quotation), so the
+    // txn_charge_detail is polymorphic (no FK to sale_quotation), so the
     // applied charges are fetched by discriminator rather than by `include`.
     const charges = await this.findCharges(this.prisma, sqId);
     const agent = await this.findAgent(record.sqAgentId);
@@ -458,6 +459,9 @@ export class QuotationService {
       await tx.saleQuotationItem.updateMany({
         where: {
           sqiQuoteId: sqId,
+          // A line always carries its header's year, so naming it here keeps
+          // the write inside the one partition instead of scanning them all.
+          sqiAccYear: sqAccYear,
           sqiIsDeleted: false,
         },
         data: {
@@ -468,7 +472,7 @@ export class QuotationService {
       });
       // Same cascade for the applied charges — an active charge line must never
       // outlive the document it was charged on.
-      await tx.saleChargeDetail.updateMany({
+      await tx.transactionChargeDetail.updateMany({
         where: {
           cdDocType: QUOTATION_CHARGE_DOC_TYPE,
           cdDocId: sqId,
@@ -552,6 +556,7 @@ export class QuotationService {
           sqStatus: saveQuotationDto.sqStatus || 'DRAFT',
         };
         this.applyOptionalFields(data, saveQuotationDto);
+        this.applyParentRevision(data, saveQuotationDto, saveQuotationDto.sqAccYear);
         data.sqCustName = normalizedCustName;
         data.sqQuoteDate = quoteDate;
         const created = await tx.saleQuotation.create({ data });
@@ -585,7 +590,7 @@ export class QuotationService {
         return payload;
       });
     } catch (error: unknown) {
-      const duplicate = this.describeDuplicate(error);
+      const duplicate = await this.describeDuplicate(error);
       throwOnUniqueConstraintError<QuotationErrorDetail, QuotationErrorResponse>(
         error,
         duplicate.message,
@@ -621,6 +626,7 @@ export class QuotationService {
           sqModifiedBy: modifiedBy,
         };
         this.applyOptionalFields(data, saveQuotationDto);
+        this.applyParentRevision(data, saveQuotationDto, existing.sqAccYear);
         // `sqCustName` is required on create, so it is not in the optional
         // allowlist `applyOptionalFields` copies from — which left an update
         // silently discarding a renamed customer while still answering 201.
@@ -633,8 +639,12 @@ export class QuotationService {
             'sqCustName',
           );
         }
+        // sale_quotation is partitioned by sq_acc_year, so its primary key —
+        // and every unique lookup — is the (id, year) pair. The year comes
+        // from the stored row, never from the payload: a save must not be able
+        // to aim an update at a different partition than the one it read.
         const updated = await tx.saleQuotation.update({
-          where: { sqId },
+          where: { sqId_sqAccYear: { sqId, sqAccYear: existing.sqAccYear } },
           data,
         });
         const scope: QuotationScope = {
@@ -667,7 +677,7 @@ export class QuotationService {
         return payload;
       });
     } catch (error: unknown) {
-      const duplicate = this.describeDuplicate(error);
+      const duplicate = await this.describeDuplicate(error);
       throwOnUniqueConstraintError<QuotationErrorDetail, QuotationErrorResponse>(
         error,
         duplicate.message,
@@ -696,7 +706,7 @@ export class QuotationService {
     actorId: string,
   ): Promise<SaleQuotationItem[]> {
     const existing = await tx.saleQuotationItem.findMany({
-      where: { sqiQuoteId: scope.sqId, sqiIsDeleted: false },
+      where: { sqiQuoteId: scope.sqId, sqiAccYear: scope.sqAccYear, sqiIsDeleted: false },
       orderBy: { sqiLineNo: 'asc' },
     });
     if (inputItems === undefined) {
@@ -755,7 +765,7 @@ export class QuotationService {
     );
     if (reordersItems && keptIds.size > 0) {
       await tx.saleQuotationItem.updateMany({
-        where: { sqiId: { in: [...keptIds] } },
+        where: { sqiId: { in: [...keptIds] }, sqiAccYear: scope.sqAccYear },
         data: { sqiLineNo: { increment: Math.max(...seenLineNos) + 1 } },
       });
     }
@@ -780,7 +790,9 @@ export class QuotationService {
           QUOTATION_ITEM_DATE_TRANSFORMS,
         );
         const updated = await tx.saleQuotationItem.update({
-          where: { sqiId: inputItem.sqiId },
+          where: {
+            sqiId_sqiAccYear: { sqiId: inputItem.sqiId, sqiAccYear: existingItem.sqiAccYear },
+          },
           data: updateData,
         });
         await this.auditLogService.logEntityChange(
@@ -806,7 +818,10 @@ export class QuotationService {
         sqiCompanyId: inputItem.sqiCompanyId ?? scope.sqCompanyId,
         sqiBranchId: inputItem.sqiBranchId ?? scope.sqBranchId,
         sqiTenantId: inputItem.sqiTenantId ?? scope.sqTenantId,
-        sqiAccYear: inputItem.sqiAccYear ?? scope.sqAccYear,
+        // Taken from the header, not the payload: sqi_acc_year is the line's
+        // partition key and the second half of fk_sqi_quote, so a line that
+        // disagrees with its header cannot be stored at all.
+        sqiAccYear: scope.sqAccYear,
         sqiLineNo: lineNo,
         sqiItemId: this.requireItemField(inputItem.sqiItemId, 'sqiItemId'),
         sqiItemUnitId: this.requireItemField(inputItem.sqiItemUnitId, 'sqiItemUnitId'),
@@ -850,7 +865,9 @@ export class QuotationService {
   ): Promise<void> {
     for (const removedItem of removed) {
       const deleted = await tx.saleQuotationItem.update({
-        where: { sqiId: removedItem.sqiId },
+        where: {
+          sqiId_sqiAccYear: { sqiId: removedItem.sqiId, sqiAccYear: removedItem.sqiAccYear },
+        },
         data: {
           sqiIsDeleted: true,
           sqiModifiedOn: now,
@@ -874,12 +891,42 @@ export class QuotationService {
       );
     }
   }
+  // Resolves the index Postgres blamed to the name this module knows it by.
+  // Both quotation tables are partitioned, so a violation is reported against
+  // the PARTITION's index, whose name is auto-generated, truncated to 63 chars
+  // and positional — ux_sq_quote_no and ux_sq_slno come back as
+  // `sale_quotation_2026_2027_sq_company_id_sq_branch_id_sq_acc__idx` and
+  // `..._sq_acc_idx1`, telling apart only by a trailing digit that depends on
+  // the order the indexes happened to be created in. pg_inherits maps the
+  // child index back to its parent, which is stable. Falls back to the
+  // reported name (an unpartitioned table, or a connector that reports column
+  // names instead) and to the refno branch below if the lookup fails.
+  private async resolveDuplicateIndex(error: unknown): Promise<string> {
+    const reported = uniqueConstraintTarget(error);
+    if (!reported) {
+      return '';
+    }
+    try {
+      const rows = await this.prisma.$queryRaw<{ parentIndex: string }[]>`
+        SELECT parent.relname AS "parentIndex"
+        FROM pg_class child
+        JOIN pg_inherits inh ON inh.inhrelid = child.oid
+        JOIN pg_class parent ON parent.oid = inh.inhparent
+        WHERE child.relname = ${reported}
+      `;
+      return rows[0]?.parentIndex ?? reported;
+    } catch {
+      return reported;
+    }
+  }
   // Names the duplicate a P2002 actually is. Every unique violation used to be
   // reported as a duplicate reference number, which pointed callers at the
   // voucher number — a field neither save path lets the client set and the
   // update path never rewrites — when the real clash was a line number.
-  private describeDuplicate(error: unknown): { message: string; errors: QuotationErrorDetail[] } {
-    const target = uniqueConstraintTarget(error);
+  private async describeDuplicate(
+    error: unknown,
+  ): Promise<{ message: string; errors: QuotationErrorDetail[] }> {
+    const target = await this.resolveDuplicateIndex(error);
     if (target.includes(QUOTATION_ITEM_LINE_INDEX)) {
       return {
         message: 'Duplicate quotation line number is not allowed',
@@ -924,10 +971,13 @@ export class QuotationService {
     return value;
   }
   // The quotation's applied charges, newest reconciliation order (cdSlno). No
-  // relation exists to follow: sale_charge_detail is keyed by the
+  // relation exists to follow: txn_charge_detail is keyed by the
   // (cdDocType, cdDocId) discriminator pair, which is also its only index.
-  private findCharges(client: QuotationWriteClient, sqId: string): Promise<SaleChargeDetail[]> {
-    return client.saleChargeDetail.findMany({
+  private findCharges(
+    client: QuotationWriteClient,
+    sqId: string,
+  ): Promise<TransactionChargeDetail[]> {
+    return client.transactionChargeDetail.findMany({
       where: {
         cdDocType: QUOTATION_CHARGE_DOC_TYPE,
         cdDocId: sqId,
@@ -961,7 +1011,7 @@ export class QuotationService {
     scope: QuotationScope,
     inputCharges: SaveQuotationChargeDto[] | undefined,
     actorId: string,
-  ): Promise<SaleChargeDetail[]> {
+  ): Promise<TransactionChargeDetail[]> {
     const existing = await this.findCharges(tx, scope.sqId);
     if (inputCharges === undefined) {
       return existing;
@@ -970,7 +1020,7 @@ export class QuotationService {
     const keptIds = new Set<string>();
     const seenSlnos = new Set<number>();
     const now = new Date();
-    const persisted: SaleChargeDetail[] = [];
+    const persisted: TransactionChargeDetail[] = [];
     for (const [index, inputCharge] of inputCharges.entries()) {
       const slno = inputCharge.cdSlno ?? index + 1;
       if (seenSlnos.has(slno)) {
@@ -995,7 +1045,7 @@ export class QuotationService {
       }
       this.ensureChargeValuesAreAllowed(inputCharge, existingCharge);
       if (existingCharge) {
-        const updateData: Prisma.SaleChargeDetailUncheckedUpdateInput = {
+        const updateData: Prisma.TransactionChargeDetailUncheckedUpdateInput = {
           cdSlno: slno,
           cdChgId: inputCharge.cdChgId ?? existingCharge.cdChgId,
           cdLedgerCode: inputCharge.cdLedgerCode ?? existingCharge.cdLedgerCode,
@@ -1006,8 +1056,12 @@ export class QuotationService {
         if (inputCharge.cdVoucherNo !== undefined) {
           updateData.cdVoucherNo = this.toVoucherNo(inputCharge.cdVoucherNo);
         }
-        const updated = await tx.saleChargeDetail.update({
-          where: { cdId: existingCharge.cdId },
+        // txn_charge_detail is partitioned by cd_acc_year, so a charge line is
+        // addressed by (cdId, cdAccYear), never by the id alone.
+        const updated = await tx.transactionChargeDetail.update({
+          where: {
+            cdId_cdAccYear: { cdId: existingCharge.cdId, cdAccYear: existingCharge.cdAccYear },
+          },
           data: updateData,
         });
         await this.auditLogService.logEntityChange(
@@ -1029,7 +1083,7 @@ export class QuotationService {
         persisted.push(updated);
         continue;
       }
-      const createData: Prisma.SaleChargeDetailUncheckedCreateInput = {
+      const createData: Prisma.TransactionChargeDetailUncheckedCreateInput = {
         cdDocType: QUOTATION_CHARGE_DOC_TYPE,
         cdDocId: scope.sqId,
         cdSlno: slno,
@@ -1046,7 +1100,7 @@ export class QuotationService {
         cdCreatedBy: resolveActor(inputCharge.cdCreatedBy, actorId),
       };
       applyPresentFields(createData, inputCharge, QUOTATION_CHARGE_OPTIONAL_FIELDS);
-      const created = await tx.saleChargeDetail.create({ data: createData });
+      const created = await tx.transactionChargeDetail.create({ data: createData });
       await this.auditLogService.logEntityChange(
         {
           action: 'New',
@@ -1068,8 +1122,10 @@ export class QuotationService {
     // Any previously active charge not present in the payload is soft deleted.
     const removed = existing.filter((charge) => !keptIds.has(charge.cdId));
     for (const removedCharge of removed) {
-      const deleted = await tx.saleChargeDetail.update({
-        where: { cdId: removedCharge.cdId },
+      const deleted = await tx.transactionChargeDetail.update({
+        where: {
+          cdId_cdAccYear: { cdId: removedCharge.cdId, cdAccYear: removedCharge.cdAccYear },
+        },
         data: {
           cdIsDeleted: true,
           cdModifiedOn: now,
@@ -1111,7 +1167,7 @@ export class QuotationService {
     }
     return BigInt(value);
   }
-  // Mirrors the DB CHECK constraints on sale_charge_detail (ck_cd_doc_type /
+  // Mirrors the DB CHECK constraints on txn_charge_detail (ck_cd_doc_type /
   // ck_cd_type / ck_cd_method / ck_cd_apply_on / ck_cd_cost_alloc, migration
   // 20260728140000, plus ck_cd_tax_apl from 20260728130000) so a bad value comes
   // back as a 400 with the offending field instead of a raw Postgres 23514.
@@ -1120,7 +1176,7 @@ export class QuotationService {
   // values the payload did not send, since the constraint judges the merged row.
   private ensureChargeValuesAreAllowed(
     inputCharge: SaveQuotationChargeDto,
-    existingCharge: SaleChargeDetail | undefined,
+    existingCharge: TransactionChargeDetail | undefined,
   ): void {
     const values: ChargeDetailGuardedValues = {
       cdDocType: QUOTATION_CHARGE_DOC_TYPE,
@@ -1171,10 +1227,32 @@ export class QuotationService {
   ): void {
     applyPresentFields(data, dto, QUOTATION_OPTIONAL_FIELDS, QUOTATION_DATE_TRANSFORMS);
   }
+  // sale_quotation is partitioned by sq_acc_year, so the revision self-link
+  // (fk_sq_parent) addresses the parent's COMPOSITE key and the parent's year
+  // has to travel with its id — ck_sq_parent_pair rejects one without the
+  // other. A revision normally sits in the same year as the quote it revises,
+  // which is what the client gets when it sends only sqParentQuoteId; a
+  // cross-year parent has to name its year explicitly.
+  private applyParentRevision(
+    data: Prisma.SaleQuotationUncheckedCreateInput | Prisma.SaleQuotationUncheckedUpdateInput,
+    dto: SaveQuotationDto,
+    accYear: string,
+  ): void {
+    if (dto.sqParentQuoteId === undefined) {
+      return;
+    }
+    if (dto.sqParentQuoteId === null) {
+      data.sqParentQuoteId = null;
+      data.sqParentAccYear = null;
+      return;
+    }
+    data.sqParentQuoteId = dto.sqParentQuoteId;
+    data.sqParentAccYear = dto.sqParentAccYear ?? accYear;
+  }
   private toPayload(
     record: SaleQuotationWithNames & {
       items?: SaleQuotationItemWithNames[];
-      charges?: SaleChargeDetail[];
+      charges?: TransactionChargeDetail[];
     },
   ): QuotationPayload {
     const {
@@ -1207,7 +1285,7 @@ export class QuotationService {
       charges: charges ? charges.map((charge) => this.toChargePayload(charge)) : [],
     };
   }
-  private toChargePayload(record: SaleChargeDetail): QuotationChargePayload {
+  private toChargePayload(record: TransactionChargeDetail): QuotationChargePayload {
     const { cdCreatedOn, cdModifiedOn, cdSyncDate, cdVoucherNo, ...rest } = record;
     return {
       ...rest,

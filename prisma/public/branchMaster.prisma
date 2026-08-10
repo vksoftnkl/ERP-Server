@@ -83,7 +83,7 @@ model BranchMaster {
   loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
   saleAgents            SaleAgent[]       @relation("BranchSaleAgents")
-  chargeDetails         SaleChargeDetail[] @relation("BranchChargeDetails")
+  chargeDetails         TransactionChargeDetail[] @relation("BranchChargeDetails")
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
   @@index([brCompId],    name: "idx_branch_comp_id")

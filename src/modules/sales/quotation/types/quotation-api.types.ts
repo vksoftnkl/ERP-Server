@@ -1,6 +1,6 @@
-import { SaleChargeDetail, SaleQuotation, SaleQuotationItem } from '@prisma/client';
+import { TransactionChargeDetail, SaleQuotation, SaleQuotationItem } from '@prisma/client';
 import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
-// sale_charge_detail is polymorphic — a quotation's applied charges are the rows
+// txn_charge_detail is polymorphic — a quotation's applied charges are the rows
 // carrying this discriminator plus cdDocId = sqId (see ck_cd_doc_type).
 export const QUOTATION_CHARGE_DOC_TYPE = ChargeDocType.QUOTATION;
 // sqQuoteSlno is a bigint column; it is emitted as a string because JSON has no
@@ -48,7 +48,7 @@ export type QuotationItemPayload = Omit<
 // cdVoucherNo is a bigint column; it is emitted as a string because JSON has no
 // bigint (same convention as the header's sqQuoteSlno).
 export type QuotationChargePayload = Omit<
-  SaleChargeDetail,
+  TransactionChargeDetail,
   'cdCreatedOn' | 'cdModifiedOn' | 'cdSyncDate' | 'cdVoucherNo'
 > & {
   cdCreatedOn?: string;

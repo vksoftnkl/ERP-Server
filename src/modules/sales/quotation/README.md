@@ -7,9 +7,14 @@ product/service, with its rates, discounts and tax breakup).
 - **Base route:** `quotations` (API-versioned via `@Version(API_VERSION)`)
 - **Swagger tag:** `Quotations`
 - **Auth:** Bearer `access-token` (required)
-- **Primary table:** `sale_quotation` (`sales` schema) — PK `sqId` (uuidv7)
-- **Line-item table:** `sale_quotation_item` (`sales` schema) — PK `sqiId` (uuidv7), FK `sqiQuoteId → sqId`
-- **Applied-charge table:** `sale_charge_detail` (`public` schema) — PK `cdId`, addressed
+- **Primary table:** `sale_quotation` (`sales` schema) — LIST-partitioned by `sqAccYear`, PK
+  `(sqId, sqAccYear)` (`sqId` is uuidv7)
+- **Line-item table:** `sale_quotation_item` (`sales` schema) — LIST-partitioned by `sqiAccYear`,
+  PK `(sqiId, sqiAccYear)`, FK `(sqiQuoteId, sqiAccYear) → (sqId, sqAccYear)`. A line always
+  carries its header's accounting year, so header and lines share a partition; the year on an
+  incoming line is taken from the header and any value the client sends for it is ignored.
+- **Applied-charge table:** `txn_charge_detail` (`public` schema) — partitioned by `cdAccYear`,
+  composite PK `(cdId, cdAccYear)`, addressed
   polymorphically by `(cdDocType = 'QUOTATION', cdDocId = sqId)`; there is **no FK** to
   `sale_quotation` because the table is shared by every module (sales, purchase, GRN, invoice)
 
@@ -23,7 +28,7 @@ product/service, with its rates, discounts and tax breakup).
 | [quotation-exception.filter.ts](quotation-exception.filter.ts) | Registered via `@UseFilters`; a pass-through that re-throws the `HttpException` (error shaping is done in the service) |
 | [dto/save-quotation.dto.ts](dto/save-quotation.dto.ts) | Create/update payload for the header + nested `items[]` |
 | [dto/save-quotation-item.dto.ts](dto/save-quotation-item.dto.ts) | A single quotation line-item entry |
-| [dto/save-quotation-charge.dto.ts](dto/save-quotation-charge.dto.ts) | A single applied-charge entry (`sale_charge_detail` snapshot) |
+| [dto/save-quotation-charge.dto.ts](dto/save-quotation-charge.dto.ts) | A single applied-charge entry (`txn_charge_detail` snapshot) |
 | [dto/quotation-response.dto.ts](dto/quotation-response.dto.ts) | Swagger success/error response models |
 | [types/quotation-api.types.ts](types/quotation-api.types.ts) | Payload / response / error TypeScript contracts |
 
@@ -139,8 +144,9 @@ same create/update payload (`syncCharges` reconciliation), with **exactly** the 
 - `sqiLineNo` defaults to the **1-based position** of the item within the `items[]` array when
   omitted.
 - A **duplicate line number within one payload** raises a conflict (`throwSalesConflict` on
-  `sqiLineNo`). At the DB level, `ux_sqi_quote_line` enforces unique `(sqiQuoteId, sqiLineNo)` among
-  non-deleted lines.
+  `sqiLineNo`). At the DB level, `ux_sqi_quote_line` enforces unique `(sqiQuoteId, sqiAccYear,
+  sqiLineNo)` among non-deleted lines — the partition key is in the index because Postgres requires
+  it, not because the rule changed: a line's year is always its header's.
 - Header reference number `sqQuoteRefno` is unique per `(sqCompanyId, sqBranchId, sqAccYear,
   sqQuoteRefno, sqRevisionNo)` among non-deleted rows (`ux_sq_quote_no`); `sqQuoteSlno` is unique
   per `(sqCompanyId, sqBranchId, sqAccYear, sqQuoteSlno)` (`ux_sq_slno`).
@@ -149,6 +155,10 @@ same create/update payload (`syncCharges` reconciliation), with **exactly** the 
   `sqiLineNo`, `ux_sq_slno` → conflict on `sqQuoteSlno`, otherwise → "Duplicate quotation reference
   number is not allowed" on `sqQuoteRefno`. Mapping every violation to the refno is what once made a
   line-number clash on update look like the server renumbering the quotation.
+  Because both tables are partitioned, the name in `meta.target` is the **partition's** index
+  (`sale_quotation_2026_2027_sq_company_id_sq_branch_id_sq_acc_idx1`) — auto-generated, truncated to
+  63 chars and positional, so `ux_sq_quote_no` and `ux_sq_slno` differ only by a trailing digit.
+  `resolveDuplicateIndex` walks `pg_inherits` to get the parent index name back before matching.
 
 ### Soft delete
 
@@ -195,7 +205,7 @@ same create/update payload (`syncCharges` reconciliation), with **exactly** the 
   - Each line-item insert/update/soft-delete is logged separately against
     `sale_quotation_item`.
   - Each applied-charge insert/update/soft-delete is logged separately against
-    `sale_charge_detail`, displayed as `cdChgName` (falling back to `Charge <cdSlno>`).
+    `txn_charge_detail`, displayed as `cdChgName` (falling back to `Charge <cdSlno>`).
 - The acting user is resolved from the payload's `sqCreatedBy` / `sqModifiedBy`, then the request
   context user (`RequestContextService.getUserId()`), falling back to `DEFAULT_ACTOR`
   (`resolveActor`).

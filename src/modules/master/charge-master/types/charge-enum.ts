@@ -1,10 +1,10 @@
 // Allowed-value validation for the enum-style charge columns, shared by the
 // charge master and the per-document charge lines: every cd_* value on
-// sale_charge_detail is a SNAPSHOT of the matching chg_* one on charge_master,
+// txn_charge_detail is a SNAPSHOT of the matching chg_* one on charge_master,
 // so there is one set of members, defined here once.
 //
 // Where the database stands on each set:
-//   - sale_charge_detail still CHECKs them — ck_cd_doc_type / ck_cd_type /
+//   - txn_charge_detail still CHECKs them — ck_cd_doc_type / ck_cd_type /
 //     ck_cd_method / ck_cd_apply_on / ck_cd_cost_alloc (migration
 //     20260728140000_sale_charge_detail_check_constraints). These enums mirror
 //     those constraints member for member; keep the two in step.
@@ -23,7 +23,7 @@ export enum ChargeDocType {
   QUOTATION = 'QUOTATION',
   INVOICE = 'INVOICE',
   // A sales order's applied charges (cd_doc_id = so_id). Added 2026-08-08 with
-  // the order module; by then sale_charge_detail carried no ck_cd_doc_type
+  // the order module; by then txn_charge_detail carried no ck_cd_doc_type
   // CHECK any more, so this enum alone defines the allowed set.
   ORDER = 'ORDER',
 }

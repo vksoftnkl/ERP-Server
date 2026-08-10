@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-// A bill's applied charges are plain sale_charge_detail rows (cdDocType =
+// A bill's applied charges are plain txn_charge_detail rows (cdDocType =
 // 'INVOICE' — a bill IS the tax invoice), so the response model is the
 // charge-detail module's, not a bill-specific copy of it.
 import { ChargeDetailPayloadDto } from '../../../master/charge-detail/dto/charge-detail-response.dto';

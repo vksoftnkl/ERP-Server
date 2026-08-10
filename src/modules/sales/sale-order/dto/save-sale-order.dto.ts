@@ -18,8 +18,8 @@ import {
 } from 'src/common/dto/dtoDecorators';
 import { SaveChargeDetailDto } from '../../../master/charge-detail/dto/save-charge-detail.dto';
 import { SaveTenderDetailDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
-import { SaveOrderAdvanceDto } from './save-order-advance.dto';
-import { SaveOrderItemDto } from './save-order-item.dto';
+import { SaveSaleOrderAdvanceDto } from './save-sale-order-advance.dto';
+import { SaveSaleOrderItemDto } from './save-sale-order-item.dto';
 // An array of uuids: undefined leaves the column untouched, null/'' clears it
 // to an empty array, and a non-array/non-string input is left for IsUUID to
 // reject.
@@ -55,7 +55,7 @@ const NullableUuidArray = () =>
     IsArray(),
     IsUUID('all', { each: true }),
   );
-export class SaveOrderDto {
+export class SaveSaleOrderDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, request updates the existing order',
@@ -588,7 +588,7 @@ export class SaveOrderDto {
   @NullableStringStrict(50)
   soModifiedBy?: string | null;
   @ApiPropertyOptional({
-    type: SaveOrderItemDto,
+    type: SaveSaleOrderItemDto,
     isArray: true,
     description:
       'Order line items. On update, lines with soiId are updated, lines without are created, ' +
@@ -598,13 +598,13 @@ export class SaveOrderDto {
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => SaveOrderItemDto)
-  items?: SaveOrderItemDto[];
+  @Type(() => SaveSaleOrderItemDto)
+  items?: SaveSaleOrderItemDto[];
   @ApiPropertyOptional({
     type: SaveChargeDetailDto,
     isArray: true,
     description:
-      "Applied charge lines, the charge-detail module's own entry (sale_charge_detail). Reconciled " +
+      "Applied charge lines, the charge-detail module's own entry (txn_charge_detail). Reconciled " +
       'exactly like items: lines with cdId are updated, lines without are created, and existing lines ' +
       'omitted from the array are soft deleted. Omit the property entirely to leave charges untouched. ' +
       'cdChgId and cdLedgerCode are required on a new line; cdDocType / cdDocId are the parent order ' +
@@ -635,7 +635,7 @@ export class SaveOrderDto {
   @Type(() => SaveTenderDetailDto)
   tenders?: SaveTenderDetailDto[];
   @ApiPropertyOptional({
-    type: SaveOrderAdvanceDto,
+    type: SaveSaleOrderAdvanceDto,
     isArray: true,
     description:
       'Advance allocations (sale_order_advance_alloc): where money taken up front actually went — ' +
@@ -649,6 +649,6 @@ export class SaveOrderDto {
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => SaveOrderAdvanceDto)
-  advances?: SaveOrderAdvanceDto[];
+  @Type(() => SaveSaleOrderAdvanceDto)
+  advances?: SaveSaleOrderAdvanceDto[];
 }

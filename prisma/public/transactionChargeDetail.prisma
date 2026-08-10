@@ -5,8 +5,18 @@
 /// Every cd* column except the amounts is a SNAPSHOT taken from ChargeMaster
 /// (and its ledger) at save time, so editing a charge master later never
 /// rewrites what was already invoiced.
-model SaleChargeDetail {
-  cdId            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
+///
+/// public.txn_charge_detail is LIST-partitioned by cd_acc_year, like
+/// sales.sale_bill, sales.sale_order and sales.sale_quotation. Partitions (e.g.
+/// txn_charge_detail_2026_2027) are created by
+/// public.ensure_acc_year_partitions('YYYY-YYYY') — run it whenever a fiscal
+/// year is opened, or every insert fails with "no partition of relation
+/// "txn_charge_detail" found for row". Because Postgres requires every unique
+/// constraint on a partitioned table to contain the partition key, the primary
+/// key is the pair (cdId, cdAccYear): a row is addressed by both, never by the
+/// id alone.
+model TransactionChargeDetail {
+  cdId            String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
   // -- Parent document (polymorphic — no single FK possible) ----------------
   cdDocType       String    @db.VarChar(12)                                @map("cd_doc_type")   // which module's document
   cdDocId         String    @db.Uuid                                       @map("cd_doc_id")     // parent document id
@@ -76,29 +86,37 @@ model SaleChargeDetail {
   ledger          AccLedgerMaster @relation(fields: [cdLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_ledger")
   company         Company         @relation("CompanyChargeDetails", fields: [cdCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_company")
   branch          BranchMaster    @relation("BranchChargeDetails", fields: [cdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_branch")
+  // The partition key completes the primary key — see the note above the model.
+  @@id([cdId, cdAccYear], map: "pk_txn_charge_detail")
   // Fetch all charge lines for one document (the hot path on entry load).
-  @@index([cdDocType, cdDocId], map: "ix_sale_charge_detail_doc")
-  @@index([cdChgId], map: "ix_sale_charge_detail_chg")
-  @@index([cdLedgerCode], map: "ix_sale_charge_detail_ledger")
-  @@index([cdCompId], map: "ix_sale_charge_detail_comp")
-  @@index([cdBranchId], map: "ix_sale_charge_detail_branch")
-  @@map("sale_charge_detail")
-  @@schema("sales")
-  // DB-only constraints not expressible in the Prisma schema (migrations
-  // 20260728130000_create_sale_charge_detail and
-  // 20260728140000_sale_charge_detail_check_constraints); Prisma ignores CHECK
-  // constraints, so they stay DB-side. The value sets are mirrored app-side as
-  // the TypeScript enums in
+  @@index([cdDocType, cdDocId], map: "ix_txn_charge_detail_doc")
+  @@index([cdChgId], map: "ix_txn_charge_detail_chg")
+  @@index([cdLedgerCode], map: "ix_txn_charge_detail_ledger")
+  @@index([cdCompId], map: "ix_txn_charge_detail_comp")
+  @@index([cdBranchId], map: "ix_txn_charge_detail_branch")
+  @@map("txn_charge_detail")
+  @@schema("public")
+  // The table began life as sales.sale_charge_detail (created in
+  // 20260728130000_create_sale_charge_detail, rebuilt by
+  // 20260729071620_sale_charge_details_table_schema_changed) and was moved,
+  // renamed and partitioned by
+  // 20260810140000_partition_txn_charge_detail_by_acc_year.
+  //
+  // The CHECK constraints 20260728140000_sale_charge_detail_check_constraints
+  // added (ck_cd_tax_apl / ck_cd_doc_type / ck_cd_type / ck_cd_method /
+  // ck_cd_apply_on / ck_cd_cost_alloc) did NOT survive that 20260729071620
+  // rebuild and are no longer in the database. The value sets they guarded live
+  // on app-side only, as the TypeScript enums in
   // src/modules/master/charge-master/types/charge-enum.ts (ChargeDocType /
   // ChargeType / ChargeMethod / ChargeApplyOn / ChargeCostAlloc), which the DTOs
-  // and CHARGE_DETAIL_VALUE_GUARDS both read — keep the two in step:
-  //   - ck_cd_tax_apl    NOT (cd_tax_apl AND cd_before_tax)
+  // and CHARGE_DETAIL_VALUE_GUARDS both read:
+  //   - cd_tax_apl and cd_before_tax are mutually exclusive.
   //     Taxed at the item rate, or carrying its own GST — never both.
-  //   - ck_cd_doc_type   PURCHASE | SALES | GRN | QUOTATION | INVOICE
-  //   - ck_cd_type       ADD | DEDUCT
-  //   - ck_cd_method     FIXED | QTY | NET_QTY | KG | QTL | TON | PERCENT (nullable)
-  //   - ck_cd_apply_on   FLAT | QTY | VALUE | WEIGHT (nullable)
-  //   - ck_cd_cost_alloc VALUE | QTY | WEIGHT (nullable)
+  //   - cd_doc_type   PURCHASE | SALES | GRN | QUOTATION | INVOICE
+  //   - cd_type       ADD | DEDUCT
+  //   - cd_method     FIXED | QTY | NET_QTY | KG | QTL | TON | PERCENT (nullable)
+  //   - cd_apply_on   FLAT | QTY | VALUE | WEIGHT (nullable)
+  //   - cd_cost_alloc VALUE | QTY | WEIGHT (nullable)
   // cd_ledger_code / cd_comp_id / cd_branch_id gained their FKs in migration
   // 20260728150000_sale_charge_detail_relations. cd_tax_code still carries NO
   // FK: the value is a snapshot and no module writes it from a tax master yet.

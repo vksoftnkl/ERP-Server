@@ -248,7 +248,7 @@ Table acc_ledger_master {
   pdcParties acc_pdc_register [not null]
   pdcBankLedgers acc_pdc_register [not null]
   chargeMasters charge_master [not null]
-  chargeDetails sale_charge_detail [not null]
+  chargeDetails txn_charge_detail [not null]
   saleOrderAdvanceLedgers sale_order [not null]
   saleOrderAdvanceAllocLedgers sale_order_advance_alloc [not null]
 
@@ -2293,7 +2293,7 @@ Table branch_master {
   loyaltySchemes loyalty_sch_list [not null]
   deviceMasters device_master [not null]
   saleAgents sale_agents [not null]
-  chargeDetails sale_charge_detail [not null]
+  chargeDetails txn_charge_detail [not null]
   tenderMasters acc_tender_master [not null]
   tenderDetails acc_tender_detail [not null]
 }
@@ -2325,7 +2325,7 @@ Table charge_master {
   chgModifiedOn DateTime
   chgModifiedBy String
   ledger acc_ledger_master [not null]
-  chargeDetails sale_charge_detail [not null]
+  chargeDetails txn_charge_detail [not null]
 
   Note: 'Shared "additional charges" master for both Sales and Purchase.'
 }
@@ -2430,7 +2430,7 @@ Table companys {
   physicalStockBatchDetails physical_stock_batch_detail [not null]
   loyaltySchemes loyalty_sch_list [not null]
   saleAgents sale_agents [not null]
-  chargeDetails sale_charge_detail [not null]
+  chargeDetails txn_charge_detail [not null]
   tenderMasters acc_tender_master [not null]
   tenderDetails acc_tender_detail [not null]
 }
@@ -2488,6 +2488,81 @@ Table fiscal_years {
   deletedBy String
   prevFiscalYear fiscal_years
   nextFiscalYears fiscal_years [not null]
+}
+
+Table txn_charge_detail {
+  cdId String [not null]
+  cdDocType String [not null]
+  cdDocId String [not null]
+  cdSlno Int
+  cdCompId String [not null]
+  cdBranchId String [not null]
+  cdAccYear String [not null]
+  cdVoucherNo BigInt
+  cdChgId String [not null]
+  cdChgName String
+  cdRole String
+  cdMethod String
+  cdType String [not null, default: 'ADD']
+  cdApplyOn String
+  cdLedgerCode String [not null]
+  cdLandingCost Boolean [not null, default: false]
+  cdCostAlloc String
+  cdBeforeTax Boolean [not null, default: false]
+  cdTaxApl Boolean [not null, default: false]
+  cdSepPost Boolean [not null, default: false]
+  cdUnit String
+  cdQtyVal Decimal
+  cdWeight Decimal
+  cdRate Decimal
+  cdAmount Decimal
+  cdTaxCode String
+  cdHsn String
+  cdTaxPerc Decimal
+  cdTaxAmt Decimal
+  cdSgstPerc Decimal
+  cdSgstAmt Decimal
+  cdCgstPerc Decimal
+  cdCgstAmt Decimal
+  cdIgstPerc Decimal
+  cdIgstAmt Decimal
+  cdCessPerc Decimal
+  cdCessAmt Decimal
+  cdNetAmt Decimal
+  cdRemarks String
+  cdIsActive Boolean [not null, default: true]
+  cdIsDeleted Boolean [not null, default: false]
+  cdSyncDate DateTime
+  cdCreatedOn DateTime [default: `now()`, not null]
+  cdCreatedBy String
+  cdModifiedOn DateTime
+  cdModifiedBy String
+  charge charge_master [not null]
+  ledger acc_ledger_master [not null]
+  company companys [not null]
+  branch branch_master [not null]
+
+  indexes {
+    (cdId, cdAccYear) [pk]
+  }
+
+  Note: 'Per-document applied charges — freight, loading, packing, cash discount, etc.
+One row per charge line on a document, shared by every module (sales,
+purchase, quotation, GRN, invoice) via the cdDocType discriminator.
+
+Every cd* column except the amounts is a SNAPSHOT taken from ChargeMaster
+(and its ledger) at save time, so editing a charge master later never
+rewrites what was already invoiced.
+
+public.txn_charge_detail is LIST-partitioned by cd_acc_year, like
+sales.sale_bill, sales.sale_order and sales.sale_quotation. Partitions (e.g.
+txn_charge_detail_2026_2027) are created by
+public.ensure_acc_year_partitions(\'YYYY-YYYY\') — run it whenever a fiscal
+year is opened, or every insert fails with "no partition of relation
+"txn_charge_detail" found for row". Because Postgres requires every unique
+constraint on a partitioned table to contain the partition key, the primary
+key is the pair (cdId, cdAccYear): a row is addressed by both, never by the
+id alone.'
 }
 
 Table transaction_hold {
@@ -3381,67 +3456,6 @@ Table sale_bill_item {
   }
 }
 
-Table sale_charge_detail {
-  cdId String [pk]
-  cdDocType String [not null]
-  cdDocId String [not null]
-  cdSlno Int
-  cdCompId String [not null]
-  cdBranchId String [not null]
-  cdAccYear String [not null]
-  cdVoucherNo BigInt
-  cdChgId String [not null]
-  cdChgName String
-  cdRole String
-  cdMethod String
-  cdType String [not null, default: 'ADD']
-  cdApplyOn String
-  cdLedgerCode String [not null]
-  cdLandingCost Boolean [not null, default: false]
-  cdCostAlloc String
-  cdBeforeTax Boolean [not null, default: false]
-  cdTaxApl Boolean [not null, default: false]
-  cdSepPost Boolean [not null, default: false]
-  cdUnit String
-  cdQtyVal Decimal
-  cdWeight Decimal
-  cdRate Decimal
-  cdAmount Decimal
-  cdTaxCode String
-  cdHsn String
-  cdTaxPerc Decimal
-  cdTaxAmt Decimal
-  cdSgstPerc Decimal
-  cdSgstAmt Decimal
-  cdCgstPerc Decimal
-  cdCgstAmt Decimal
-  cdIgstPerc Decimal
-  cdIgstAmt Decimal
-  cdCessPerc Decimal
-  cdCessAmt Decimal
-  cdNetAmt Decimal
-  cdRemarks String
-  cdIsActive Boolean [not null, default: true]
-  cdIsDeleted Boolean [not null, default: false]
-  cdSyncDate DateTime
-  cdCreatedOn DateTime [default: `now()`, not null]
-  cdCreatedBy String
-  cdModifiedOn DateTime
-  cdModifiedBy String
-  charge charge_master [not null]
-  ledger acc_ledger_master [not null]
-  company companys [not null]
-  branch branch_master [not null]
-
-  Note: 'Per-document applied charges — freight, loading, packing, cash discount, etc.
-One row per charge line on a document, shared by every module (sales,
-purchase, quotation, GRN, invoice) via the cdDocType discriminator.
-
-Every cd* column except the amounts is a SNAPSHOT taken from ChargeMaster
-(and its ledger) at save time, so editing a charge master later never
-rewrites what was already invoiced.'
-}
-
 Table sale_freight_charges {
   frId String [pk]
   frBranchId String
@@ -3586,7 +3600,7 @@ Table sale_order {
   soAdvanceRefundAmt Decimal [not null, default: 0]
   soAdvanceForfeitAmt Decimal [not null, default: 0]
   soAdvanceBalanceAmt Decimal [not null, default: 0]
-  soAdvanceStatus String [not null, default: 'NONE']
+  soAdvanceStatus String [default: 'NONE']
   soAdvanceRecdOn DateTime
   soPayMode String
   soSurchargeAmt Decimal [not null, default: 0]
@@ -3798,7 +3812,7 @@ Table sale_order_item {
 }
 
 Table sale_quotation {
-  sqId String [pk]
+  sqId String [not null]
   sqCompanyId String [not null]
   sqBranchId String [not null]
   sqTenantId String
@@ -3816,6 +3830,7 @@ Table sale_quotation {
   sqValidityDays Int
   sqRevisionNo Int [not null, default: 0]
   sqParentQuoteId String
+  sqParentAccYear String
   sqSrcDocType String
   sqSrcDocId String
   sqSrcDocRefno String
@@ -3907,10 +3922,14 @@ Table sale_quotation {
   priceLevel item_price_levels [not null]
   posState state_codes
   salesman employee_master
+
+  indexes {
+    (sqId, sqAccYear) [pk]
+  }
 }
 
 Table sale_quotation_item {
-  sqiId String [pk]
+  sqiId String [not null]
   sqiQuoteId String [not null]
   sqiCompanyId String [not null]
   sqiBranchId String [not null]
@@ -4016,6 +4035,10 @@ Table sale_quotation_item {
   item item_master [not null]
   priceLevel item_price_levels [not null]
   itemUnitConversion item_unit_conversion [not null]
+
+  indexes {
+    (sqiId, sqiAccYear) [pk]
+  }
 }
 
 Table state_master {
@@ -4673,6 +4696,14 @@ Ref: companys.compStylesheetId > app_theme_master.thmId
 
 Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
 
+Ref: txn_charge_detail.cdChgId > charge_master.chgId [delete: No Action]
+
+Ref: txn_charge_detail.cdLedgerCode > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: txn_charge_detail.cdCompId > companys.compId [delete: Restrict]
+
+Ref: txn_charge_detail.cdBranchId > branch_master.brId [delete: Restrict]
+
 Ref: txn_status_log.tslDeviceId > device_master.devId [delete: Set Null]
 
 Ref: user_menus.umUserId > user_master.usrId
@@ -4737,14 +4768,6 @@ Ref: sale_bill_item.sbiPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_bill_item.sbiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
 
-Ref: sale_charge_detail.cdChgId > charge_master.chgId [delete: No Action]
-
-Ref: sale_charge_detail.cdLedgerCode > acc_ledger_master.ledId [delete: Restrict]
-
-Ref: sale_charge_detail.cdCompId > companys.compId [delete: Restrict]
-
-Ref: sale_charge_detail.cdBranchId > branch_master.brId [delete: Restrict]
-
 Ref: sale_freight_charges.frCompanyId > companys.compId [delete: Restrict]
 
 Ref: sale_freight_charges.frBranchId > branch_master.brId [delete: Restrict]
@@ -4785,7 +4808,7 @@ Ref: sale_order_item.soiPriceLevel > item_price_levels.iplId [delete: Restrict]
 
 Ref: sale_order_item.soiItemUnitId > item_unit_conversion.iucId [delete: Restrict]
 
-Ref: sale_quotation.sqParentQuoteId - sale_quotation.sqId [delete: No Action]
+Ref: sale_quotation.(sqParentQuoteId, sqParentAccYear) - sale_quotation.(sqId, sqAccYear) [delete: No Action]
 
 Ref: sale_quotation.sqCustId > customers.cusId [delete: Restrict]
 
@@ -4797,7 +4820,7 @@ Ref: sale_quotation.sqPosStcd > state_codes.stateCode [delete: Restrict]
 
 Ref: sale_quotation.sqSalesmanId > employee_master.empId [delete: Restrict]
 
-Ref: sale_quotation_item.sqiQuoteId > sale_quotation.sqId [delete: No Action]
+Ref: sale_quotation_item.(sqiQuoteId, sqiAccYear) > sale_quotation.(sqId, sqAccYear) [delete: No Action]
 
 Ref: sale_quotation_item.sqiItemId > item_master.itemId [delete: Restrict]
 

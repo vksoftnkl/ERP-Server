@@ -97,6 +97,15 @@ export class SaveQuotationDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sqParentQuoteId?: string | null;
+  @ApiPropertyOptional({
+    minLength: 9,
+    maxLength: 9,
+    nullable: true,
+    description:
+      'Accounting year of sqParentQuoteId. sale_quotation is partitioned by accounting year, so the parent revision is addressed by (id, year). Only needed when the parent lives in a different year; it otherwise defaults to the sqAccYear of this quotation. Ignored unless sqParentQuoteId is sent.',
+  })
+  @NullableStringStrict(9)
+  sqParentAccYear?: string | null;
   @ApiPropertyOptional({ maxLength: 30, nullable: true })
   @NullableStringStrict(30)
   sqSrcDocType?: string | null;
@@ -386,7 +395,7 @@ export class SaveQuotationDto {
     type: SaveQuotationChargeDto,
     isArray: true,
     description:
-      'Applied charge lines (sale_charge_detail). Reconciled exactly like items: lines with cdId are ' +
+      'Applied charge lines (txn_charge_detail). Reconciled exactly like items: lines with cdId are ' +
       'updated, lines without are created, and existing lines omitted from the array are soft deleted. ' +
       'Omit the property entirely to leave charges untouched.',
   })

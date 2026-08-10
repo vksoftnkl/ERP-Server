@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import {
   AccVoucherSeq,
   Prisma,
-  SaleChargeDetail,
+  TransactionChargeDetail,
   SaleQuotation,
   SaleQuotationItem,
 } from '@prisma/client';
@@ -85,7 +85,7 @@ const makeQuotation = (overrides: Partial<SaleQuotation> = {}): SaleQuotation =>
     ...overrides,
   }) as unknown as SaleQuotation;
 
-const makeCharge = (overrides: Partial<SaleChargeDetail> = {}): SaleChargeDetail =>
+const makeCharge = (overrides: Partial<TransactionChargeDetail> = {}): TransactionChargeDetail =>
   ({
     cdId: CD_ID,
     cdDocType: 'QUOTATION',
@@ -134,7 +134,7 @@ const makeCharge = (overrides: Partial<SaleChargeDetail> = {}): SaleChargeDetail
     cdModifiedOn: null,
     cdModifiedBy: null,
     ...overrides,
-  }) as SaleChargeDetail;
+  }) as TransactionChargeDetail;
 
 const makeItem = (overrides: Partial<SaleQuotationItem> = {}): SaleQuotationItem =>
   ({
@@ -177,10 +177,10 @@ type ItemUpdateArgs = {
   where: { sqiId: string };
   data: Prisma.SaleQuotationItemUncheckedUpdateInput;
 };
-type ChargeCreateArgs = { data: Prisma.SaleChargeDetailUncheckedCreateInput };
+type ChargeCreateArgs = { data: Prisma.TransactionChargeDetailUncheckedCreateInput };
 type ChargeUpdateArgs = {
-  where: { cdId: string };
-  data: Prisma.SaleChargeDetailUncheckedUpdateInput;
+  where: { cdId_cdAccYear: { cdId: string; cdAccYear: string } };
+  data: Prisma.TransactionChargeDetailUncheckedUpdateInput;
 };
 type SequenceUpdateArgs = {
   where: { id: string };
@@ -200,10 +200,10 @@ type PrismaMock = {
     update: jest.Mock<Promise<SaleQuotationItem>, [ItemUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
-  saleChargeDetail: {
-    findMany: jest.Mock<Promise<SaleChargeDetail[]>, unknown[]>;
-    create: jest.Mock<Promise<SaleChargeDetail>, [ChargeCreateArgs]>;
-    update: jest.Mock<Promise<SaleChargeDetail>, [ChargeUpdateArgs]>;
+  transactionChargeDetail: {
+    findMany: jest.Mock<Promise<TransactionChargeDetail[]>, unknown[]>;
+    create: jest.Mock<Promise<TransactionChargeDetail>, [ChargeCreateArgs]>;
+    update: jest.Mock<Promise<TransactionChargeDetail>, [ChargeUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
   // Reached through allocateVoucherNumber on the create path.
@@ -265,16 +265,17 @@ const makePrismaMock = (): PrismaMock => {
       ),
       updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
-    saleChargeDetail: {
+    transactionChargeDetail: {
       findMany: jest.fn(() => Promise.resolve([])),
       create: jest.fn(({ data }: ChargeCreateArgs) =>
-        Promise.resolve(makeCharge(data as unknown as Partial<SaleChargeDetail>)),
+        Promise.resolve(makeCharge(data as unknown as Partial<TransactionChargeDetail>)),
       ),
       update: jest.fn(({ where, data }: ChargeUpdateArgs) =>
         Promise.resolve(
           makeCharge({
-            ...(data as unknown as Partial<SaleChargeDetail>),
-            cdId: where.cdId,
+            ...(data as unknown as Partial<TransactionChargeDetail>),
+            cdId: where.cdId_cdAccYear.cdId,
+            cdAccYear: where.cdId_cdAccYear.cdAccYear,
           }),
         ),
       ),
@@ -346,8 +347,8 @@ describe('QuotationService — applied charges', () => {
       }),
     );
 
-    expect(prisma.saleChargeDetail.create).toHaveBeenCalledTimes(1);
-    expect(prisma.saleChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+    expect(prisma.transactionChargeDetail.create).toHaveBeenCalledTimes(1);
+    expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
       cdDocType: 'QUOTATION',
       cdDocId: QUOTE_ID,
       cdSlno: 1,
@@ -360,23 +361,23 @@ describe('QuotationService — applied charges', () => {
       cdChgName: 'Freight',
     });
     expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
-      expect.objectContaining({ tableName: 'sale_charge_detail', action: 'New' }),
+      expect.objectContaining({ tableName: 'txn_charge_detail', action: 'New' }),
       expect.anything(),
     );
   });
 
   it('leaves existing charges untouched when the charges property is omitted', async () => {
-    prisma.saleChargeDetail.findMany.mockResolvedValue([makeCharge()]);
+    prisma.transactionChargeDetail.findMany.mockResolvedValue([makeCharge()]);
 
     const payload = await service.save(baseDto({ sqId: QUOTE_ID }));
 
-    expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
-    expect(prisma.saleChargeDetail.update).not.toHaveBeenCalled();
+    expect(prisma.transactionChargeDetail.create).not.toHaveBeenCalled();
+    expect(prisma.transactionChargeDetail.update).not.toHaveBeenCalled();
     expect(payload.charges).toHaveLength(1);
   });
 
   it('updates a charge carrying cdId, creates one without, and soft deletes the omitted rest', async () => {
-    prisma.saleChargeDetail.findMany.mockResolvedValue([
+    prisma.transactionChargeDetail.findMany.mockResolvedValue([
       makeCharge(),
       makeCharge({ cdId: OTHER_CD_ID, cdSlno: 2, cdChgName: 'Loading' }),
     ]);
@@ -391,28 +392,28 @@ describe('QuotationService — applied charges', () => {
       }),
     );
 
-    expect(prisma.saleChargeDetail.update).toHaveBeenCalledWith(
+    expect(prisma.transactionChargeDetail.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { cdId: CD_ID },
+        where: { cdId_cdAccYear: { cdId: CD_ID, cdAccYear: ACC_YEAR } },
         data: containing({ cdSlno: 1, cdAmount: 750 }),
       }),
     );
-    expect(prisma.saleChargeDetail.create).toHaveBeenCalledTimes(1);
-    expect(prisma.saleChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+    expect(prisma.transactionChargeDetail.create).toHaveBeenCalledTimes(1);
+    expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
       cdSlno: 2,
       cdChgName: 'Packing',
     });
     // OTHER_CD_ID was absent from the payload → soft deleted.
-    expect(prisma.saleChargeDetail.update).toHaveBeenCalledWith(
+    expect(prisma.transactionChargeDetail.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { cdId: OTHER_CD_ID },
+        where: { cdId_cdAccYear: { cdId: OTHER_CD_ID, cdAccYear: ACC_YEAR } },
         data: containing({ cdIsDeleted: true }),
       }),
     );
   });
 
   it('rejects a cdId that does not belong to this quotation', async () => {
-    prisma.saleChargeDetail.findMany.mockResolvedValue([]);
+    prisma.transactionChargeDetail.findMany.mockResolvedValue([]);
 
     await expect(
       service.save(
@@ -448,7 +449,7 @@ describe('QuotationService — applied charges', () => {
         }),
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
+    expect(prisma.transactionChargeDetail.create).not.toHaveBeenCalled();
   });
 
   it('rejects cdTaxApl together with cdBeforeTax (ck_cd_tax_apl)', async () => {
@@ -464,7 +465,7 @@ describe('QuotationService — applied charges', () => {
   });
 
   it('judges the merged row on update, so a stored flag still trips ck_cd_tax_apl', async () => {
-    prisma.saleChargeDetail.findMany.mockResolvedValue([makeCharge({ cdBeforeTax: true })]);
+    prisma.transactionChargeDetail.findMany.mockResolvedValue([makeCharge({ cdBeforeTax: true })]);
 
     await expect(
       service.save(
@@ -477,11 +478,11 @@ describe('QuotationService — applied charges', () => {
   });
 
   it('returns the active charges on getById with cdVoucherNo serialized as a string', async () => {
-    prisma.saleChargeDetail.findMany.mockResolvedValue([makeCharge()]);
+    prisma.transactionChargeDetail.findMany.mockResolvedValue([makeCharge()]);
 
     const payload = await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
-    expect(prisma.saleChargeDetail.findMany).toHaveBeenCalledWith(
+    expect(prisma.transactionChargeDetail.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { cdDocType: 'QUOTATION', cdDocId: QUOTE_ID, cdIsDeleted: false },
         orderBy: { cdSlno: 'asc' },
@@ -596,7 +597,7 @@ describe('QuotationService — applied charges', () => {
     prisma.saleQuotationItem.findMany.mockResolvedValue([
       makeItem({ sqiId: LINE_A_ID, sqiLineNo: 1 }),
     ]);
-    prisma.saleChargeDetail.findMany.mockResolvedValue([makeCharge()]);
+    prisma.transactionChargeDetail.findMany.mockResolvedValue([makeCharge()]);
 
     // Drops the line and the charge, then retires the header.
     await service.save(baseDto({ sqId: QUOTE_ID, items: [], charges: [] }));
@@ -615,7 +616,7 @@ describe('QuotationService — applied charges', () => {
   it('cascades the header soft delete to the applied charges', async () => {
     await service.softDelete(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
-    expect(prisma.saleChargeDetail.updateMany).toHaveBeenCalledWith(
+    expect(prisma.transactionChargeDetail.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { cdDocType: 'QUOTATION', cdDocId: QUOTE_ID, cdIsDeleted: false },
         data: containing({ cdIsDeleted: true }),
@@ -654,11 +655,19 @@ describe('QuotationService — line item reconciliation on update', () => {
 
     await service.save(baseDto({ sqId: QUOTE_ID, items: [newLine(), newLine()] }));
 
+    // sale_quotation_item is partitioned by sqi_acc_year, so a line is
+    // addressed by the (id, year) pair its primary key now is.
     expect(prisma.saleQuotationItem.update).toHaveBeenCalledWith(
-      containing({ where: { sqiId: LINE_A_ID }, data: containing({ sqiIsDeleted: true }) }),
+      containing({
+        where: { sqiId_sqiAccYear: { sqiId: LINE_A_ID, sqiAccYear: ACC_YEAR } },
+        data: containing({ sqiIsDeleted: true }),
+      }),
     );
     expect(prisma.saleQuotationItem.update).toHaveBeenCalledWith(
-      containing({ where: { sqiId: LINE_B_ID }, data: containing({ sqiIsDeleted: true }) }),
+      containing({
+        where: { sqiId_sqiAccYear: { sqiId: LINE_B_ID, sqiAccYear: ACC_YEAR } },
+        data: containing({ sqiIsDeleted: true }),
+      }),
     );
     // Both soft deletes land before the first insert reuses line number 1.
     expect(lastCallOrder(prisma.saleQuotationItem.update)).toBeLessThan(
@@ -685,7 +694,7 @@ describe('QuotationService — line item reconciliation on update', () => {
     // Swapping 1 and 2 renumbers through a state where both rows want the same
     // number unless they are moved out of the index's way first.
     expect(prisma.saleQuotationItem.updateMany).toHaveBeenCalledWith({
-      where: { sqiId: { in: [LINE_B_ID, LINE_A_ID] } },
+      where: { sqiId: { in: [LINE_B_ID, LINE_A_ID] }, sqiAccYear: ACC_YEAR },
       data: { sqiLineNo: { increment: 3 } },
     });
     expect(firstCallOrder(prisma.saleQuotationItem.updateMany)).toBeLessThan(
@@ -714,6 +723,33 @@ describe('QuotationService — line item reconciliation on update', () => {
       Object.assign(new Error('Unique constraint failed'), {
         code: 'P2002',
         meta: { target: 'ux_sqi_quote_line' },
+      }),
+    );
+
+    const error = (await service
+      .save(baseDto({ sqId: QUOTE_ID, items: [newLine()] }))
+      .catch((caught: unknown) => caught)) as ConflictException;
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect(error.getResponse()).toEqual(
+      containing({
+        message: 'Duplicate quotation line number is not allowed',
+        errors: [containing({ field: 'sqiLineNo' })],
+      }),
+    );
+  });
+
+  // sale_quotation_item is partitioned, so Postgres blames the PARTITION's
+  // index — an auto-generated, truncated name that contains neither
+  // "ux_sqi_quote_line" nor anything else worth matching on. The service asks
+  // pg_inherits which parent index it belongs to before deciding.
+  it('resolves a partition-local index name back to the parent index it belongs to', async () => {
+    const partitionIndex = 'sale_quotation_item_2026_2027_sqi_quote_id_sqi_acc_year_sqi_idx';
+    prisma.$queryRaw.mockResolvedValue([{ parentIndex: 'ux_sqi_quote_line' }]);
+    prisma.saleQuotationItem.create.mockRejectedValue(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target: partitionIndex },
       }),
     );
 

@@ -1,5 +1,11 @@
+// LIST-partitioned by sq_acc_year (migration 20260810130000), like sale_bill
+// and sale_order. Postgres requires the partition key in every unique
+// constraint, so the primary key is (sq_id, sq_acc_year) and a row is addressed
+// by that pair -- `where: { sqId_sqAccYear: { sqId, sqAccYear } }` -- never by
+// sqId alone. A new accounting year needs its partitions created before the
+// first save: SELECT public.ensure_acc_year_partitions('YYYY-YYYY').
 model SaleQuotation {
-  sqId               String    @id(map: "pk_sale_quotation") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sq_id")
+  sqId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sq_id")
   // scope
   sqCompanyId        String    @db.Uuid @map("sq_company_id")
   sqBranchId         String    @db.Uuid @map("sq_branch_id")
@@ -20,6 +26,9 @@ model SaleQuotation {
   // revision / versioning
   sqRevisionNo       Int       @default(0) @map("sq_revision_no")
   sqParentQuoteId    String?   @db.Uuid @map("sq_parent_quote_id")
+  // The parent revision's accounting year — the second half of its composite
+  // primary key. Set exactly when sqParentQuoteId is (ck_sq_parent_pair).
+  sqParentAccYear    String?   @db.Char(9) @map("sq_parent_acc_year")
   // source (enquiry / lead) -- polymorphic, no FK
   sqSrcDocType       String?   @db.VarChar(30) @map("sq_src_doc_type")
   sqSrcDocId         String?   @db.Uuid @map("sq_src_doc_id")
@@ -121,7 +130,7 @@ model SaleQuotation {
   // true = discounts change the basis the charges are computed on
   sqDiscAlterBase    Boolean?  @map("sq_disc_alter_base")
   // Relations
-  parentQuote SaleQuotation?      @relation("SaleQuotationRevisions", fields: [sqParentQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sq_parent")
+  parentQuote SaleQuotation?      @relation("SaleQuotationRevisions", fields: [sqParentQuoteId, sqParentAccYear], references: [sqId, sqAccYear], onDelete: NoAction, onUpdate: NoAction, map: "fk_sq_parent")
   revisions   SaleQuotation[]     @relation("SaleQuotationRevisions")
   items       SaleQuotationItem[]
   customer    Customer?           @relation(fields: [sqCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust")
@@ -135,6 +144,9 @@ model SaleQuotation {
   // Prisma cannot express their WHERE predicates; declaring them here makes
   // `migrate dev` regenerate them without the predicate and fail on the
   // existing names. Do NOT add @@unique/@@index for them.
+  //
+  // CHECK constraints (DB-only): ck_sq_status, ck_sq_parent_pair.
+  @@id([sqId, sqAccYear], map: "pk_sale_quotation")
   @@index([sqCompanyId, sqBranchId, sqQuoteDate], map: "ix_sq_date")
   @@map("sale_quotation")
   @@schema("sales")

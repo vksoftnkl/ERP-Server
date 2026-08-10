@@ -27,6 +27,7 @@ import { CustomerGroupModule } from '../modules/sales/customer-group/customer-gr
 import { CustomerModule } from '../modules/sales/customer/customer.module';
 import { QuotationModule } from '../modules/sales/quotation/quotation.module';
 import { BillModule } from '../modules/sales/bill/bill.module';
+import { SaleOrderModule } from '../modules/sales/sale-order/sale-order.module';
 import { TransactionHoldModule } from '../modules/sales/transaction-hold/transaction-hold.module';
 import { GridDetailsModule } from '../modules/grid-details/grid-details.module';
 import { DropdownDetailsModule } from '../modules/dropdown-details/dropdown-details.module';
@@ -103,7 +104,7 @@ export const swaggerModuleDocuments = [
   {
     path: 'charge-details',
     title: 'Charge Detail API',
-    description: 'Per-document applied charge lines (sale_charge_detail) endpoints',
+    description: 'Per-document applied charge lines (txn_charge_detail) endpoints',
     include: [ChargeDetailModule],
   },
   {
@@ -430,6 +431,14 @@ export const swaggerModuleDocuments = [
     title: 'Bills API',
     description: 'Single-call sale bill (tax invoice) endpoints with nested line items',
     include: [BillModule],
+  },
+  {
+    path: 'sale-orders',
+    title: 'Sale Orders API',
+    description:
+      'Single-call sale order endpoints with nested line items, applied charges, tendered ' +
+      'advances and advance allocations',
+    include: [SaleOrderModule],
   },
   {
     path: 'transaction-holds',

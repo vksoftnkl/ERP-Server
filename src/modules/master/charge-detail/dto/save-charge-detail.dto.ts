@@ -18,7 +18,7 @@ import {
   ChargeType,
 } from '../types/charge-detail-api.types';
 
-// One sale_charge_detail row. Nothing is required by the decorators: a create
+// One txn_charge_detail row. Nothing is required by the decorators: a create
 // needs the document scope plus the two references, an update needs only cdId
 // and the fields that change, so "required on create" is enforced in the service
 // (ChargeDetailService.requireField) where the stored row is available to fill

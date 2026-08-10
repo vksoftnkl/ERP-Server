@@ -11,7 +11,8 @@ ALLOCATION, with rates, discounts, tax breakup and the stock it was picked from)
   composite PK `(sbId, sbAccYear)`
 - **Line-item table:** `sale_bill_item` (`sales` schema) — also partitioned by `sbiAccYear`,
   composite PK `(sbiId, sbiAccYear)`, composite FK `(sbiBillId, sbiAccYear) → (sbId, sbAccYear)`
-- **Applied-charge table:** `sale_charge_detail` (`public` schema) — PK `cdId`, addressed
+- **Applied-charge table:** `txn_charge_detail` (`public` schema) — partitioned by `cdAccYear`,
+  composite PK `(cdId, cdAccYear)`, addressed
   polymorphically by `(cdDocType = 'INVOICE', cdDocId = sbId)`; a bill IS the tax invoice, so it
   reuses the `INVOICE` discriminator rather than a `BILL` value `ck_cd_doc_type` does not allow.
   There is **no FK** to `sale_bill` because the table is shared by every module (sales, purchase,
@@ -177,7 +178,7 @@ extra fields required for a new line:
 ### Nested applied charges
 
 Freight / loading / packing / cash-discount lines are still sent as the `charges[]` array on the
-same create/update payload, but **this module does not implement them** — `sale_charge_detail` is
+same create/update payload, but **this module does not implement them** — `txn_charge_detail` is
 owned by [../../master/charge-detail](../../master/charge-detail), and `BillService` delegates the
 whole array to `ChargeDetailService.syncDocumentCharges(tx, scope, charges, actor, audit)`:
 
@@ -204,7 +205,7 @@ whole array to `ChargeDetailService.syncDocumentCharges(tx, scope, charges, acto
   a 400 naming the field rather than an FK error). Errors surface through the same
   `{ success, message, errors[] }` shape, and `BillExceptionFilter` already recognises `cd*` fields.
 - Charge rows written during a bill save are audited against the bill (`tableName =
-  'sale_charge_detail'`, `screenName = 'Sale Bill'`, notes `Bill charge created/updated/soft
+  'txn_charge_detail'`, `screenName = 'Sale Bill'`, notes `Bill charge created/updated/soft
   deleted`) — that labelling is the `BILL_CHARGE_AUDIT` argument, not a fork of the writer.
 
 The quotation module still has its own `syncCharges`; see
@@ -342,7 +343,7 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
   actions `New` / `update` / `cancel` against `tableName = 'sale_bill'`,
   `screenName = 'Sale Bill'`, `screenType = 'transaction'`; a soft delete is logged as `cancel` at
   every level (header, line, charge); each line-item and applied-charge insert/update/soft-delete
-  is logged separately against `sale_bill_item` / `sale_charge_detail`.
+  is logged separately against `sale_bill_item` / `txn_charge_detail`.
 - The acting user is resolved from the payload's `sbCreatedBy` / `sbModifiedBy`, then the request
   context user (`RequestContextService.getUserId()`), falling back to `DEFAULT_ACTOR`
   (`resolveActor`). Note `sbCreatedBy` / `sbModifiedBy` on the **header** are free-text columns

@@ -84,7 +84,7 @@ export type ChargeGuardedField = (typeof CHARGE_VALUE_GUARDS)[number]['field'];
 // default stands and there is nothing to check.
 export type ChargeGuardedValues = Partial<Record<ChargeGuardedField, string | null | undefined>>;
 // ---------------------------------------------------------------------------
-// sale_charge_detail (the per-document applied charge). Its cd_* enum columns
+// txn_charge_detail (the per-document applied charge). Its cd_* enum columns
 // are SNAPSHOTS of the charge master, so they reuse the same enums — but unlike
 // charge_master these ARE still CHECK constraints in the database
 // (ck_cd_doc_type / ck_cd_type / ck_cd_method / ck_cd_apply_on /

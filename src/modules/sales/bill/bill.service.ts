@@ -360,7 +360,7 @@ export class BillService {
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
-    // sale_charge_detail is owned by the charge-detail module: the bill hands it
+    // txn_charge_detail is owned by the charge-detail module: the bill hands it
     // the charges[] array and its own scope rather than writing that table
     // itself, so both entry points share one set of guards and one audit trail.
     private readonly chargeDetailService: ChargeDetailService,
@@ -418,7 +418,7 @@ export class BillService {
         `No active bill found with id ${sbId}`,
       );
     }
-    // sale_charge_detail is polymorphic (no FK to sale_bill), so the applied
+    // txn_charge_detail is polymorphic (no FK to sale_bill), so the applied
     // charges are fetched by discriminator rather than by `include` — through
     // the charge-detail module, which also resolves each line's ledger name.
     const charges = await this.chargeDetailService.getByDocument(BILL_CHARGE_DOC_TYPE, sbId);

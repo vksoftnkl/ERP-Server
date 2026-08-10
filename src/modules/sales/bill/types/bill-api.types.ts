@@ -13,7 +13,7 @@ import type {
   TenderDetailPayload,
   TenderDocumentAudit,
 } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
-// sale_charge_detail is polymorphic — a bill's applied charges are the rows
+// txn_charge_detail is polymorphic — a bill's applied charges are the rows
 // carrying this discriminator plus cdDocId = sbId (see ck_cd_doc_type). A bill
 // IS the tax invoice, so it reuses the INVOICE discriminator rather than a new
 // BILL value that ck_cd_doc_type does not allow.
@@ -21,7 +21,7 @@ export const BILL_CHARGE_DOC_TYPE = ChargeDocType.INVOICE;
 // The charge lines are written by the charge-detail module, but they are part of
 // a bill save, so they are audited against the bill's own screen and table.
 export const BILL_CHARGE_AUDIT: ChargeDocumentAudit = {
-  tableName: 'sale_charge_detail',
+  tableName: 'txn_charge_detail',
   screenName: 'Sale Bill',
   entityName: 'Bill charge',
 };

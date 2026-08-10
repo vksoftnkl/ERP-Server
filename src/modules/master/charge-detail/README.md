@@ -1,11 +1,19 @@
 # Charge Detail
 
 Standalone CRUD over the per-document applied charges — freight, loading,
-packing, cash discount, … Table: `public.sale_charge_detail` (Prisma model
-`SaleChargeDetail`, fragment `prisma/public/saleChargeDetail.prisma`, migrations
+packing, cash discount, … Table: `public.txn_charge_detail` (Prisma model
+`TransactionChargeDetail`, fragment `prisma/public/transactionChargeDetail.prisma`, migrations
 `20260728130000_create_sale_charge_detail`,
 `20260728140000_sale_charge_detail_check_constraints`,
-`20260728150000_sale_charge_detail_relations`).
+`20260728150000_sale_charge_detail_relations`,
+`20260810140000_partition_txn_charge_detail_by_acc_year`).
+
+The table is LIST-**partitioned** by `cd_acc_year` (it was `sales.sale_charge_detail`
+until `20260810140000` moved, renamed and partitioned it), so its primary key is the
+pair **`(cdId, cdAccYear)`** and every single-row `update` addresses
+`cdId_cdAccYear`, never the id alone. A new fiscal year needs
+`SELECT public.ensure_acc_year_partitions('YYYY-YYYY')` or every insert fails with
+*no partition of relation "txn_charge_detail" found for row*.
 
 The table is **polymorphic**: a row belongs to whichever document the
 `(cdDocType, cdDocId)` pair names, which is why the parent has no foreign key.
@@ -26,7 +34,7 @@ what was already invoiced.
 
 - **Relationship to the owning modules** — a document that saves its charge
   lines as part of its own transaction calls this service rather than writing
-  `sale_charge_detail` itself. Three methods exist for that, all taking the
+  `txn_charge_detail` itself. Three methods exist for that, all taking the
   caller's transaction client so the parent header, its lines and its charges
   commit or roll back together:
   - `syncDocumentCharges(tx, scope, charges, actorId, audit?)` — reconciles a
@@ -105,7 +113,7 @@ what was already invoiced.
   400 rather than a 500. `cdTaxCode` has no FK — it is a snapshot value.
 - **`cdLedgerName`** is echoed on every payload from the mapped
   `acc_ledger_master` row. It is a read-only display value, not stored on
-  `sale_charge_detail`, and is deliberately excluded from the audit snapshots so
+  `txn_charge_detail`, and is deliberately excluded from the audit snapshots so
   it never shows up as a change.
 - **`cdVoucherNo`** is a `bigint` column, carried in and out as a string/number
   so large voucher numbers survive JSON.

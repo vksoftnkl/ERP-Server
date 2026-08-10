@@ -14,7 +14,7 @@ import { IsNotEmpty } from 'class-validator';
 // USED: adjusted into an invoice, refunded, forfeited on cancellation, or
 // transferred to another order. Owned by the order module itself — unlike the
 // charges[] / tenders[] arrays there is no separate owner module.
-export class SaveOrderAdvanceDto {
+export class SaveSaleOrderAdvanceDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description: 'When provided, updates the existing allocation; otherwise a new row is created',

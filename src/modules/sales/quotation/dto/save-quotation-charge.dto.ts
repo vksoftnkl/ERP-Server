@@ -17,7 +17,7 @@ import {
   ChargeRole,
   ChargeType,
 } from '../../../master/charge-master/types/charge-enum';
-// One applied charge line on a quotation (sale_charge_detail row with
+// One applied charge line on a quotation (txn_charge_detail row with
 // cdDocType = 'QUOTATION'). Every cd* value except the amounts is a SNAPSHOT of
 // the charge master taken at save time, so the client sends them explicitly
 // rather than the server re-reading the master on each save.

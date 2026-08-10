@@ -38,7 +38,7 @@ migration `20260724120000_create_charge_master`).
   - Every set except `chgModule` is defined by an enum in
     [`types/charge-enum.ts`](types/charge-enum.ts) — `ChargeRole`, `ChargeMethod`,
     `ChargeType`, `ChargeApplyOn`, `ChargeCostAlloc`, plus `ChargeDocType` for the
-    `sale_charge_detail` discriminator. The `CHARGE_*` arrays this module's `@IsIn`
+    `txn_charge_detail` discriminator. The `CHARGE_*` arrays this module's `@IsIn`
     lists and guards consume are derived from those enums, so the two cannot
     drift; the charge-detail DTOs type their `cd_*` fields with the enums directly
     (`@IsEnum`).

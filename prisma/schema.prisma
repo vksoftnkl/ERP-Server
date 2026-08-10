@@ -391,7 +391,7 @@ model AccLedgerMaster {
   pdcParties               AccPdcRegister[]       @relation("PdcParty")
   pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
   chargeMasters            ChargeMaster[]
-  chargeDetails            SaleChargeDetail[]
+  chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
   saleOrderAdvanceAllocLedgers SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocLedger")
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
@@ -3723,7 +3723,7 @@ model BranchMaster {
   loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
   saleAgents            SaleAgent[]       @relation("BranchSaleAgents")
-  chargeDetails         SaleChargeDetail[] @relation("BranchChargeDetails")
+  chargeDetails         TransactionChargeDetail[] @relation("BranchChargeDetails")
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
   @@index([brCompId],    name: "idx_branch_comp_id")
@@ -3762,7 +3762,7 @@ model ChargeMaster {
   chgModifiedBy   String?   @db.Uuid                                                @map("chg_modified_by")
   // Relations
   ledger          AccLedgerMaster @relation(fields: [chgLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict)
-  chargeDetails   SaleChargeDetail[]
+  chargeDetails   TransactionChargeDetail[]
   @@index([chgLedgerCode], name: "idx_chg_ledger_code")
   @@map("charge_master")
   @@schema("public")
@@ -3890,7 +3890,7 @@ model Company {
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
   loyaltySchemes        LoyaltyScheme[]
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
-  chargeDetails         SaleChargeDetail[] @relation("CompanyChargeDetails")
+  chargeDetails         TransactionChargeDetail[] @relation("CompanyChargeDetails")
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
   @@map("companys")
@@ -3987,6 +3987,131 @@ model FiscalYear {
   @@index([compId, isDeleted], map: "idx_fiscal_years_comp")
   @@map("fiscal_years")
   @@schema("public")
+}
+
+// ----- prisma/public/transactionChargeDetail.prisma -----
+/// Per-document applied charges — freight, loading, packing, cash discount, etc.
+/// One row per charge line on a document, shared by every module (sales,
+/// purchase, quotation, GRN, invoice) via the cdDocType discriminator.
+///
+/// Every cd* column except the amounts is a SNAPSHOT taken from ChargeMaster
+/// (and its ledger) at save time, so editing a charge master later never
+/// rewrites what was already invoiced.
+///
+/// public.txn_charge_detail is LIST-partitioned by cd_acc_year, like
+/// sales.sale_bill, sales.sale_order and sales.sale_quotation. Partitions (e.g.
+/// txn_charge_detail_2026_2027) are created by
+/// public.ensure_acc_year_partitions('YYYY-YYYY') — run it whenever a fiscal
+/// year is opened, or every insert fails with "no partition of relation
+/// "txn_charge_detail" found for row". Because Postgres requires every unique
+/// constraint on a partitioned table to contain the partition key, the primary
+/// key is the pair (cdId, cdAccYear): a row is addressed by both, never by the
+/// id alone.
+model TransactionChargeDetail {
+  cdId            String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
+  // -- Parent document (polymorphic — no single FK possible) ----------------
+  cdDocType       String    @db.VarChar(12)                                @map("cd_doc_type")   // which module's document
+  cdDocId         String    @db.Uuid                                       @map("cd_doc_id")     // parent document id
+  cdSlno          Int?                                                     @map("cd_slno")       // line order within the document
+  // -- Denormalised context (lets the table be queried/reported without
+  //    joining the parent document) -----------------------------------------
+  cdCompId        String    @db.Uuid                                       @map("cd_comp_id")
+  cdBranchId      String    @db.Uuid                                       @map("cd_branch_id")
+  cdAccYear       String    @db.Char(9)                                    @map("cd_acc_year")
+  cdVoucherNo     BigInt?                                                  @map("cd_voucher_no")
+  // -- Charge reference + snapshots -----------------------------------------
+  cdChgId         String    @db.Uuid                                       @map("cd_chg_id")     // FK charge_master.chg_id
+  cdChgName       String?   @db.VarChar(100)                               @map("cd_chg_name")   // snapshot, for print/history
+  cdRole          String?   @db.VarChar(15)                                @map("cd_role")       // FREIGHT | LOADING | UNLOADING | CASH_DISC | OTHERS | NONE
+  cdMethod        String?   @db.VarChar(10)                                @map("cd_method")     // how the amount is computed
+  cdType          String    @default("ADD") @db.VarChar(10)                @map("cd_type")       // ADD | DEDUCT (the sign)
+  cdApplyOn       String?   @db.VarChar(10)                                @map("cd_apply_on")   // distribution basis for a FIXED lump sum
+  cdLedgerCode    String    @db.Uuid                                       @map("cd_ledger_code") // GL ledger this charge posts to
+  // -- Landing cost + posting flags -----------------------------------------
+  cdLandingCost   Boolean   @default(false)                                @map("cd_landing_cost") // purchase: adds to item landing cost
+  cdCostAlloc     String?   @db.VarChar(10)                                @map("cd_cost_alloc")   // how that landing cost is allocated
+  // The two tax flags are mutually exclusive (ck_cd_tax_apl in the DB).
+  // cdBeforeTax folds the charge into the goods' taxable value, so it is taxed
+  // at each ITEM's own GST rate; cdTaxApl means the charge carries its OWN GST,
+  // after tax. Both at once would tax it twice. Neither = flat, untaxed
+  // adjustment.
+  cdBeforeTax     Boolean   @default(false)                                @map("cd_before_tax")
+  cdTaxApl        Boolean   @default(false)                                @map("cd_tax_apl")
+  cdSepPost       Boolean   @default(false)                                @map("cd_sep_post")     // post to its own ledger vs absorb
+  // -- Basis + amounts ------------------------------------------------------
+  cdUnit          String?   @db.VarChar(15)                                @map("cd_unit")
+  cdQtyVal        Decimal?  @db.Decimal(18, 4)                             @map("cd_qty_val")      // qty or value basis keyed on the line
+  cdWeight        Decimal?  @db.Decimal(18, 4)                             @map("cd_weight")       // weight / tonnage basis
+  // rate 0 with a non-zero amount is meaningful, NOT missing data: the operator
+  // priced the charge by typing its total, and the client spreads that total in
+  // the method's own shape rather than deriving a rate. Never add a
+  // rate-is-required constraint.
+  cdRate          Decimal?  @db.Decimal(14, 4)                             @map("cd_rate")         // rate or %, per cdMethod
+  cdAmount        Decimal?  @db.Decimal(14, 4)                             @map("cd_amount")       // charge amount BEFORE tax
+  // -- Tax (non-zero only when cdTaxApl AND NOT cdBeforeTax) ----------------
+  cdTaxCode       String?   @db.Uuid                                       @map("cd_tax_code")
+  cdHsn           String?   @db.VarChar(15)                                @map("cd_hsn")          // HSN/SAC, snapshot from the ledger
+  cdTaxPerc       Decimal?  @db.Decimal(9, 4)                              @map("cd_tax_perc")
+  cdTaxAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_tax_amt")
+  cdSgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_sgst_perc")
+  cdSgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_sgst_amt")
+  cdCgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cgst_perc")
+  cdCgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cgst_amt")
+  cdIgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_igst_perc")
+  cdIgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_igst_amt")
+  cdCessPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cess_perc")
+  cdCessAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cess_amt")
+  cdNetAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
+  // -- Status + audit -------------------------------------------------------
+  cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
+  cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")
+  cdIsDeleted     Boolean   @default(false)                                @map("cd_is_deleted")
+  cdSyncDate      DateTime? @db.Timestamptz                                @map("cd_sync_date")
+  cdCreatedOn     DateTime  @default(now()) @db.Timestamptz                @map("cd_created_on")
+  cdCreatedBy     String?   @db.Text                                   @map("cd_created_by")
+  cdModifiedOn    DateTime? @db.Timestamptz                                @map("cd_modified_on")
+  cdModifiedBy    String?   @db.Text                                      @map("cd_modified_by")
+  // Relations
+  charge          ChargeMaster    @relation(fields: [cdChgId], references: [chgId], onUpdate: NoAction, onDelete: NoAction, map: "fk_cd_charge")
+  // The GL ledger the charge posts to. Restrict on delete: a ledger that has
+  // been posted to on any document must not disappear from under it.
+  ledger          AccLedgerMaster @relation(fields: [cdLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_ledger")
+  company         Company         @relation("CompanyChargeDetails", fields: [cdCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_company")
+  branch          BranchMaster    @relation("BranchChargeDetails", fields: [cdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_branch")
+  // The partition key completes the primary key — see the note above the model.
+  @@id([cdId, cdAccYear], map: "pk_txn_charge_detail")
+  // Fetch all charge lines for one document (the hot path on entry load).
+  @@index([cdDocType, cdDocId], map: "ix_txn_charge_detail_doc")
+  @@index([cdChgId], map: "ix_txn_charge_detail_chg")
+  @@index([cdLedgerCode], map: "ix_txn_charge_detail_ledger")
+  @@index([cdCompId], map: "ix_txn_charge_detail_comp")
+  @@index([cdBranchId], map: "ix_txn_charge_detail_branch")
+  @@map("txn_charge_detail")
+  @@schema("public")
+  // The table began life as sales.sale_charge_detail (created in
+  // 20260728130000_create_sale_charge_detail, rebuilt by
+  // 20260729071620_sale_charge_details_table_schema_changed) and was moved,
+  // renamed and partitioned by
+  // 20260810140000_partition_txn_charge_detail_by_acc_year.
+  //
+  // The CHECK constraints 20260728140000_sale_charge_detail_check_constraints
+  // added (ck_cd_tax_apl / ck_cd_doc_type / ck_cd_type / ck_cd_method /
+  // ck_cd_apply_on / ck_cd_cost_alloc) did NOT survive that 20260729071620
+  // rebuild and are no longer in the database. The value sets they guarded live
+  // on app-side only, as the TypeScript enums in
+  // src/modules/master/charge-master/types/charge-enum.ts (ChargeDocType /
+  // ChargeType / ChargeMethod / ChargeApplyOn / ChargeCostAlloc), which the DTOs
+  // and CHARGE_DETAIL_VALUE_GUARDS both read:
+  //   - cd_tax_apl and cd_before_tax are mutually exclusive.
+  //     Taxed at the item rate, or carrying its own GST — never both.
+  //   - cd_doc_type   PURCHASE | SALES | GRN | QUOTATION | INVOICE
+  //   - cd_type       ADD | DEDUCT
+  //   - cd_method     FIXED | QTY | NET_QTY | KG | QTL | TON | PERCENT (nullable)
+  //   - cd_apply_on   FLAT | QTY | VALUE | WEIGHT (nullable)
+  //   - cd_cost_alloc VALUE | QTY | WEIGHT (nullable)
+  // cd_ledger_code / cd_comp_id / cd_branch_id gained their FKs in migration
+  // 20260728150000_sale_charge_detail_relations. cd_tax_code still carries NO
+  // FK: the value is a snapshot and no module writes it from a tax master yet.
 }
 
 // ----- prisma/public/transactionHold.prisma -----
@@ -5289,113 +5414,6 @@ model SaleBillItem {
   @@schema("sales")
 }
 
-// ----- prisma/sales/saleChargeDetail.prisma -----
-/// Per-document applied charges — freight, loading, packing, cash discount, etc.
-/// One row per charge line on a document, shared by every module (sales,
-/// purchase, quotation, GRN, invoice) via the cdDocType discriminator.
-///
-/// Every cd* column except the amounts is a SNAPSHOT taken from ChargeMaster
-/// (and its ledger) at save time, so editing a charge master later never
-/// rewrites what was already invoiced.
-model SaleChargeDetail {
-  cdId            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid @map("cd_id")
-  // -- Parent document (polymorphic — no single FK possible) ----------------
-  cdDocType       String    @db.VarChar(12)                                @map("cd_doc_type")   // which module's document
-  cdDocId         String    @db.Uuid                                       @map("cd_doc_id")     // parent document id
-  cdSlno          Int?                                                     @map("cd_slno")       // line order within the document
-  // -- Denormalised context (lets the table be queried/reported without
-  //    joining the parent document) -----------------------------------------
-  cdCompId        String    @db.Uuid                                       @map("cd_comp_id")
-  cdBranchId      String    @db.Uuid                                       @map("cd_branch_id")
-  cdAccYear       String    @db.Char(9)                                    @map("cd_acc_year")
-  cdVoucherNo     BigInt?                                                  @map("cd_voucher_no")
-  // -- Charge reference + snapshots -----------------------------------------
-  cdChgId         String    @db.Uuid                                       @map("cd_chg_id")     // FK charge_master.chg_id
-  cdChgName       String?   @db.VarChar(100)                               @map("cd_chg_name")   // snapshot, for print/history
-  cdRole          String?   @db.VarChar(15)                                @map("cd_role")       // FREIGHT | LOADING | UNLOADING | CASH_DISC | OTHERS | NONE
-  cdMethod        String?   @db.VarChar(10)                                @map("cd_method")     // how the amount is computed
-  cdType          String    @default("ADD") @db.VarChar(10)                @map("cd_type")       // ADD | DEDUCT (the sign)
-  cdApplyOn       String?   @db.VarChar(10)                                @map("cd_apply_on")   // distribution basis for a FIXED lump sum
-  cdLedgerCode    String    @db.Uuid                                       @map("cd_ledger_code") // GL ledger this charge posts to
-  // -- Landing cost + posting flags -----------------------------------------
-  cdLandingCost   Boolean   @default(false)                                @map("cd_landing_cost") // purchase: adds to item landing cost
-  cdCostAlloc     String?   @db.VarChar(10)                                @map("cd_cost_alloc")   // how that landing cost is allocated
-  // The two tax flags are mutually exclusive (ck_cd_tax_apl in the DB).
-  // cdBeforeTax folds the charge into the goods' taxable value, so it is taxed
-  // at each ITEM's own GST rate; cdTaxApl means the charge carries its OWN GST,
-  // after tax. Both at once would tax it twice. Neither = flat, untaxed
-  // adjustment.
-  cdBeforeTax     Boolean   @default(false)                                @map("cd_before_tax")
-  cdTaxApl        Boolean   @default(false)                                @map("cd_tax_apl")
-  cdSepPost       Boolean   @default(false)                                @map("cd_sep_post")     // post to its own ledger vs absorb
-  // -- Basis + amounts ------------------------------------------------------
-  cdUnit          String?   @db.VarChar(15)                                @map("cd_unit")
-  cdQtyVal        Decimal?  @db.Decimal(18, 4)                             @map("cd_qty_val")      // qty or value basis keyed on the line
-  cdWeight        Decimal?  @db.Decimal(18, 4)                             @map("cd_weight")       // weight / tonnage basis
-  // rate 0 with a non-zero amount is meaningful, NOT missing data: the operator
-  // priced the charge by typing its total, and the client spreads that total in
-  // the method's own shape rather than deriving a rate. Never add a
-  // rate-is-required constraint.
-  cdRate          Decimal?  @db.Decimal(14, 4)                             @map("cd_rate")         // rate or %, per cdMethod
-  cdAmount        Decimal?  @db.Decimal(14, 4)                             @map("cd_amount")       // charge amount BEFORE tax
-  // -- Tax (non-zero only when cdTaxApl AND NOT cdBeforeTax) ----------------
-  cdTaxCode       String?   @db.Uuid                                       @map("cd_tax_code")
-  cdHsn           String?   @db.VarChar(15)                                @map("cd_hsn")          // HSN/SAC, snapshot from the ledger
-  cdTaxPerc       Decimal?  @db.Decimal(9, 4)                              @map("cd_tax_perc")
-  cdTaxAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_tax_amt")
-  cdSgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_sgst_perc")
-  cdSgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_sgst_amt")
-  cdCgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cgst_perc")
-  cdCgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cgst_amt")
-  cdIgstPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_igst_perc")
-  cdIgstAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_igst_amt")
-  cdCessPerc      Decimal?  @db.Decimal(9, 4)                              @map("cd_cess_perc")
-  cdCessAmt       Decimal?  @db.Decimal(14, 4)                             @map("cd_cess_amt")
-  cdNetAmt        Decimal?  @db.Decimal(14, 4)                             @map("cd_net_amt")      // cdAmount + its own tax
-  // -- Status + audit -------------------------------------------------------
-  cdRemarks       String?   @db.VarChar(255)                               @map("cd_remarks")
-  cdIsActive      Boolean   @default(true)                                 @map("cd_is_active")
-  cdIsDeleted     Boolean   @default(false)                                @map("cd_is_deleted")
-  cdSyncDate      DateTime? @db.Timestamptz                                @map("cd_sync_date")
-  cdCreatedOn     DateTime  @default(now()) @db.Timestamptz                @map("cd_created_on")
-  cdCreatedBy     String?   @db.Text                                   @map("cd_created_by")
-  cdModifiedOn    DateTime? @db.Timestamptz                                @map("cd_modified_on")
-  cdModifiedBy    String?   @db.Text                                      @map("cd_modified_by")
-  // Relations
-  charge          ChargeMaster    @relation(fields: [cdChgId], references: [chgId], onUpdate: NoAction, onDelete: NoAction, map: "fk_cd_charge")
-  // The GL ledger the charge posts to. Restrict on delete: a ledger that has
-  // been posted to on any document must not disappear from under it.
-  ledger          AccLedgerMaster @relation(fields: [cdLedgerCode], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_ledger")
-  company         Company         @relation("CompanyChargeDetails", fields: [cdCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_company")
-  branch          BranchMaster    @relation("BranchChargeDetails", fields: [cdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_cd_branch")
-  // Fetch all charge lines for one document (the hot path on entry load).
-  @@index([cdDocType, cdDocId], map: "ix_sale_charge_detail_doc")
-  @@index([cdChgId], map: "ix_sale_charge_detail_chg")
-  @@index([cdLedgerCode], map: "ix_sale_charge_detail_ledger")
-  @@index([cdCompId], map: "ix_sale_charge_detail_comp")
-  @@index([cdBranchId], map: "ix_sale_charge_detail_branch")
-  @@map("sale_charge_detail")
-  @@schema("sales")
-  // DB-only constraints not expressible in the Prisma schema (migrations
-  // 20260728130000_create_sale_charge_detail and
-  // 20260728140000_sale_charge_detail_check_constraints); Prisma ignores CHECK
-  // constraints, so they stay DB-side. The value sets are mirrored app-side as
-  // the TypeScript enums in
-  // src/modules/master/charge-master/types/charge-enum.ts (ChargeDocType /
-  // ChargeType / ChargeMethod / ChargeApplyOn / ChargeCostAlloc), which the DTOs
-  // and CHARGE_DETAIL_VALUE_GUARDS both read — keep the two in step:
-  //   - ck_cd_tax_apl    NOT (cd_tax_apl AND cd_before_tax)
-  //     Taxed at the item rate, or carrying its own GST — never both.
-  //   - ck_cd_doc_type   PURCHASE | SALES | GRN | QUOTATION | INVOICE
-  //   - ck_cd_type       ADD | DEDUCT
-  //   - ck_cd_method     FIXED | QTY | NET_QTY | KG | QTL | TON | PERCENT (nullable)
-  //   - ck_cd_apply_on   FLAT | QTY | VALUE | WEIGHT (nullable)
-  //   - ck_cd_cost_alloc VALUE | QTY | WEIGHT (nullable)
-  // cd_ledger_code / cd_comp_id / cd_branch_id gained their FKs in migration
-  // 20260728150000_sale_charge_detail_relations. cd_tax_code still carries NO
-  // FK: the value is a snapshot and no module writes it from a tax master yet.
-}
-
 // ----- prisma/sales/saleFreightCharges.prisma -----
 model SaleFreightCharge {
   frId          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("fr_id")
@@ -5606,7 +5624,7 @@ model SaleOrder {
   soAdvanceRefundAmt   Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_refund_amt")
   soAdvanceForfeitAmt  Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_forfeit_amt")
   soAdvanceBalanceAmt  Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_balance_amt")
-  soAdvanceStatus      String    @default("NONE") @db.VarChar(20) @map("so_advance_status")
+  soAdvanceStatus      String?    @default("NONE") @db.VarChar(20) @map("so_advance_status")
   soAdvanceRecdOn      DateTime? @db.Timestamptz(6) @map("so_advance_recd_on") // first instalment
   // Settlement roll-ups for the order itself (tender rows live in
   // accounts.acc_tender_detail; these are caches so a counter can balance
@@ -5934,8 +5952,14 @@ model SaleOrderItem {
 }
 
 // ----- prisma/sales/saleQuotation.prisma -----
+// LIST-partitioned by sq_acc_year (migration 20260810130000), like sale_bill
+// and sale_order. Postgres requires the partition key in every unique
+// constraint, so the primary key is (sq_id, sq_acc_year) and a row is addressed
+// by that pair -- `where: { sqId_sqAccYear: { sqId, sqAccYear } }` -- never by
+// sqId alone. A new accounting year needs its partitions created before the
+// first save: SELECT public.ensure_acc_year_partitions('YYYY-YYYY').
 model SaleQuotation {
-  sqId               String    @id(map: "pk_sale_quotation") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sq_id")
+  sqId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sq_id")
   // scope
   sqCompanyId        String    @db.Uuid @map("sq_company_id")
   sqBranchId         String    @db.Uuid @map("sq_branch_id")
@@ -5956,6 +5980,9 @@ model SaleQuotation {
   // revision / versioning
   sqRevisionNo       Int       @default(0) @map("sq_revision_no")
   sqParentQuoteId    String?   @db.Uuid @map("sq_parent_quote_id")
+  // The parent revision's accounting year — the second half of its composite
+  // primary key. Set exactly when sqParentQuoteId is (ck_sq_parent_pair).
+  sqParentAccYear    String?   @db.Char(9) @map("sq_parent_acc_year")
   // source (enquiry / lead) -- polymorphic, no FK
   sqSrcDocType       String?   @db.VarChar(30) @map("sq_src_doc_type")
   sqSrcDocId         String?   @db.Uuid @map("sq_src_doc_id")
@@ -6057,7 +6084,7 @@ model SaleQuotation {
   // true = discounts change the basis the charges are computed on
   sqDiscAlterBase    Boolean?  @map("sq_disc_alter_base")
   // Relations
-  parentQuote SaleQuotation?      @relation("SaleQuotationRevisions", fields: [sqParentQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sq_parent")
+  parentQuote SaleQuotation?      @relation("SaleQuotationRevisions", fields: [sqParentQuoteId, sqParentAccYear], references: [sqId, sqAccYear], onDelete: NoAction, onUpdate: NoAction, map: "fk_sq_parent")
   revisions   SaleQuotation[]     @relation("SaleQuotationRevisions")
   items       SaleQuotationItem[]
   customer    Customer?           @relation(fields: [sqCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sq_cust")
@@ -6071,6 +6098,9 @@ model SaleQuotation {
   // Prisma cannot express their WHERE predicates; declaring them here makes
   // `migrate dev` regenerate them without the predicate and fail on the
   // existing names. Do NOT add @@unique/@@index for them.
+  //
+  // CHECK constraints (DB-only): ck_sq_status, ck_sq_parent_pair.
+  @@id([sqId, sqAccYear], map: "pk_sale_quotation")
   @@index([sqCompanyId, sqBranchId, sqQuoteDate], map: "ix_sq_date")
   @@map("sale_quotation")
   @@schema("sales")
@@ -6079,8 +6109,12 @@ model SaleQuotation {
 // ----- prisma/sales/saleQuotationItem.prisma -----
 // Batch/expiry/available_stock here are INFORMATIONAL (availability shown while
 // quoting). A quote allocates NO stock -- allocation happens at DC/invoice.
+//
+// LIST-partitioned by sqi_acc_year -- see the note on SaleQuotation. A line
+// always carries its header's year, which is what puts the two in the same
+// partition and lets fk_sqi_quote reference the header's composite key.
 model SaleQuotationItem {
-  sqiId              String    @id(map: "pk_sale_quotation_item") @default(dbgenerated("uuidv7()")) @db.Uuid @map("sqi_id")
+  sqiId              String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("sqi_id")
   sqiQuoteId         String    @db.Uuid @map("sqi_quote_id")
   sqiCompanyId       String    @db.Uuid @map("sqi_company_id")
   sqiBranchId        String    @db.Uuid @map("sqi_branch_id")
@@ -6195,15 +6229,19 @@ model SaleQuotationItem {
   sqiHasFreight      Boolean   @default(false) @map("sqi_has_freight")
   sqiItemSize        String?   @db.VarChar(50) @map("sqi_item_size")
   // Relations
-  quote      SaleQuotation  @relation(fields: [sqiQuoteId], references: [sqId], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
+  quote      SaleQuotation  @relation(fields: [sqiQuoteId, sqiAccYear], references: [sqId, sqAccYear], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")
   priceLevel ItemPriceLevel @relation(fields: [sqiPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_price_level")
   // sqiItemUnitId references item_unit_conversion(iuc_id), NOT item_unit_master(unit_id)
   itemUnitConversion ItemUnitConversion @relation("SaleQuotationItemUnitConversion", fields: [sqiItemUnitId], references: [iucId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item_unit")
-  // ux_sqi_quote_line (unique line no per quote among non-deleted rows) is a
-  // DB-only partial index (migration 20260708120000). Prisma cannot express its
-  // WHERE predicate; declaring it here makes `migrate dev` regenerate it
-  // without the predicate and fail on the existing name. Do NOT add @@unique.
+  // ux_sqi_quote_line (unique line no per quote among non-deleted rows, keyed
+  // on sqi_quote_id + sqi_acc_year + sqi_line_no since 20260810130000) is a
+  // DB-only partial index. Prisma cannot express its WHERE predicate;
+  // declaring it here makes `migrate dev` regenerate it without the predicate
+  // and fail on the existing name. Do NOT add @@unique.
+  //
+  // CHECK constraint (DB-only): ck_sqi_free_type.
+  @@id([sqiId, sqiAccYear], map: "pk_sale_quotation_item")
   @@index([sqiQuoteId], map: "ix_sqi_quote")
   @@index([sqiItemId], map: "ix_sqi_item")
   @@index([sqiHsnCode], map: "ix_sqi_hsn")

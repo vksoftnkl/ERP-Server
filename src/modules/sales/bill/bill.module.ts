@@ -7,7 +7,7 @@ import { BillExceptionFilter } from './bill-exception.filter';
 import { BillService } from './bill.service';
 @Module({
   // ChargeDetailModule / TenderDetailModule export the services that own the
-  // bill's applied charge lines (sale_charge_detail) and its tendered amounts
+  // bill's applied charge lines (txn_charge_detail) and its tendered amounts
   // (acc_tender_detail).
   imports: [AuditLogModule, ChargeDetailModule, TenderDetailModule],
   controllers: [BillController],

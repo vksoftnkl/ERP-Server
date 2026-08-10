@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { Prisma, SaleChargeDetail } from '@prisma/client';
+import { Prisma, TransactionChargeDetail } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
@@ -17,7 +17,7 @@ const LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46ff07';
 const USER_ID = '019c6f6c-be87-7a11-8905-36092c46ff08';
 const ACC_YEAR = '2026-2027';
 
-const makeCharge = (overrides: Partial<SaleChargeDetail> = {}): SaleChargeDetail =>
+const makeCharge = (overrides: Partial<TransactionChargeDetail> = {}): TransactionChargeDetail =>
   ({
     cdId: CD_ID,
     cdDocType: 'QUOTATION',
@@ -66,7 +66,7 @@ const makeCharge = (overrides: Partial<SaleChargeDetail> = {}): SaleChargeDetail
     cdModifiedOn: null,
     cdModifiedBy: null,
     ...overrides,
-  }) as SaleChargeDetail;
+  }) as TransactionChargeDetail;
 
 const createDto = (overrides: Partial<SaveChargeDetailDto> = {}): SaveChargeDetailDto =>
   ({
@@ -80,19 +80,19 @@ const createDto = (overrides: Partial<SaveChargeDetailDto> = {}): SaveChargeDeta
     ...overrides,
   }) as SaveChargeDetailDto;
 
-type ChargeCreateArgs = { data: Prisma.SaleChargeDetailUncheckedCreateInput };
+type ChargeCreateArgs = { data: Prisma.TransactionChargeDetailUncheckedCreateInput };
 type ChargeUpdateArgs = {
-  where: { cdId: string };
-  data: Prisma.SaleChargeDetailUncheckedUpdateInput;
+  where: { cdId_cdAccYear: { cdId: string; cdAccYear: string } };
+  data: Prisma.TransactionChargeDetailUncheckedUpdateInput;
 };
 
 type PrismaMock = {
-  saleChargeDetail: {
-    findFirst: jest.Mock<Promise<SaleChargeDetail | null>, unknown[]>;
-    findMany: jest.Mock<Promise<SaleChargeDetail[]>, unknown[]>;
+  transactionChargeDetail: {
+    findFirst: jest.Mock<Promise<TransactionChargeDetail | null>, unknown[]>;
+    findMany: jest.Mock<Promise<TransactionChargeDetail[]>, unknown[]>;
     aggregate: jest.Mock<Promise<{ _max: { cdSlno: number | null } }>, unknown[]>;
-    create: jest.Mock<Promise<SaleChargeDetail>, [ChargeCreateArgs]>;
-    update: jest.Mock<Promise<SaleChargeDetail>, [ChargeUpdateArgs]>;
+    create: jest.Mock<Promise<TransactionChargeDetail>, [ChargeCreateArgs]>;
+    update: jest.Mock<Promise<TransactionChargeDetail>, [ChargeUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
   chargeMaster: { findFirst: jest.Mock<Promise<{ chgId: string } | null>, unknown[]> };
@@ -107,17 +107,21 @@ describe('ChargeDetailService', () => {
 
   beforeEach(() => {
     prisma = {
-      saleChargeDetail: {
+      transactionChargeDetail: {
         // Default: the line looked up by id / the slno clash probe finds nothing.
         findFirst: jest.fn(() => Promise.resolve(null)),
         findMany: jest.fn(() => Promise.resolve([makeCharge()])),
         aggregate: jest.fn(() => Promise.resolve({ _max: { cdSlno: null } })),
         create: jest.fn(({ data }: ChargeCreateArgs) =>
-          Promise.resolve(makeCharge(data as unknown as Partial<SaleChargeDetail>)),
+          Promise.resolve(makeCharge(data as unknown as Partial<TransactionChargeDetail>)),
         ),
         update: jest.fn(({ where, data }: ChargeUpdateArgs) =>
           Promise.resolve(
-            makeCharge({ ...(data as unknown as Partial<SaleChargeDetail>), cdId: where.cdId }),
+            makeCharge({
+              ...(data as unknown as Partial<TransactionChargeDetail>),
+              cdId: where.cdId_cdAccYear.cdId,
+              cdAccYear: where.cdId_cdAccYear.cdAccYear,
+            }),
           ),
         ),
         updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
@@ -136,13 +140,13 @@ describe('ChargeDetailService', () => {
 
   describe('create', () => {
     it('stores the document scope, assigns the next line number and echoes the ledger name', async () => {
-      prisma.saleChargeDetail.aggregate.mockResolvedValueOnce({ _max: { cdSlno: 3 } });
+      prisma.transactionChargeDetail.aggregate.mockResolvedValueOnce({ _max: { cdSlno: 3 } });
 
       const payload = await service.save(
         createDto({ cdChgName: 'Freight', cdVoucherNo: '42', cdAmount: 500 }),
       );
 
-      expect(prisma.saleChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+      expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
         cdDocType: 'QUOTATION',
         cdDocId: DOC_ID,
         cdSlno: 4,
@@ -170,7 +174,7 @@ describe('ChargeDetailService', () => {
       await expect(service.save(createDto({ cdAccYear: undefined }))).rejects.toBeInstanceOf(
         BadRequestException,
       );
-      expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.create).not.toHaveBeenCalled();
     });
 
     it('rejects a soft-deleted ledger or charge master', async () => {
@@ -179,11 +183,11 @@ describe('ChargeDetailService', () => {
 
       prisma.chargeMaster.findFirst.mockResolvedValueOnce(null);
       await expect(service.save(createDto())).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.create).not.toHaveBeenCalled();
     });
 
     it('rejects a line number already used on the same document', async () => {
-      prisma.saleChargeDetail.findFirst.mockResolvedValueOnce(makeCharge({ cdId: CD_ID }));
+      prisma.transactionChargeDetail.findFirst.mockResolvedValueOnce(makeCharge({ cdId: CD_ID }));
       await expect(service.save(createDto({ cdSlno: 1 }))).rejects.toBeInstanceOf(
         ConflictException,
       );
@@ -207,14 +211,16 @@ describe('ChargeDetailService', () => {
 
   describe('update', () => {
     beforeEach(() => {
-      prisma.saleChargeDetail.findFirst.mockImplementation(() => Promise.resolve(makeCharge()));
+      prisma.transactionChargeDetail.findFirst.mockImplementation(() =>
+        Promise.resolve(makeCharge()),
+      );
     });
 
     it('keeps the stored scope and only writes what was sent', async () => {
       await service.save({ cdId: CD_ID, cdAmount: 750 } as SaveChargeDetailDto);
 
-      const { where, data } = prisma.saleChargeDetail.update.mock.calls[0][0];
-      expect(where).toEqual({ cdId: CD_ID });
+      const { where, data } = prisma.transactionChargeDetail.update.mock.calls[0][0];
+      expect(where).toEqual({ cdId_cdAccYear: { cdId: CD_ID, cdAccYear: ACC_YEAR } });
       expect(data).toMatchObject({
         cdChgId: CHARGE_ID,
         cdLedgerCode: LEDGER_ID,
@@ -232,11 +238,11 @@ describe('ChargeDetailService', () => {
       await expect(
         service.save({ cdId: CD_ID, cdDocType: 'INVOICE' } as SaveChargeDetailDto),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.saleChargeDetail.update).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.update).not.toHaveBeenCalled();
     });
 
     it('judges the tax flags on the merged row, not the payload alone', async () => {
-      prisma.saleChargeDetail.findFirst.mockImplementation(() =>
+      prisma.transactionChargeDetail.findFirst.mockImplementation(() =>
         Promise.resolve(makeCharge({ cdBeforeTax: true })),
       );
       await expect(
@@ -245,7 +251,7 @@ describe('ChargeDetailService', () => {
     });
 
     it('404s when the line does not exist or is already deleted', async () => {
-      prisma.saleChargeDetail.findFirst.mockImplementation(() => Promise.resolve(null));
+      prisma.transactionChargeDetail.findFirst.mockImplementation(() => Promise.resolve(null));
       await expect(service.save({ cdId: CD_ID } as SaveChargeDetailDto)).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -254,10 +260,10 @@ describe('ChargeDetailService', () => {
 
   describe('get', () => {
     it('reads one line by id', async () => {
-      prisma.saleChargeDetail.findFirst.mockResolvedValueOnce(makeCharge());
+      prisma.transactionChargeDetail.findFirst.mockResolvedValueOnce(makeCharge());
       const payload = await service.get({ cdId: CD_ID });
       expect(Array.isArray(payload)).toBe(false);
-      expect(prisma.saleChargeDetail.findFirst.mock.calls[0][0]).toMatchObject({
+      expect(prisma.transactionChargeDetail.findFirst.mock.calls[0][0]).toMatchObject({
         where: { cdId: CD_ID, cdIsDeleted: false },
       });
     });
@@ -265,14 +271,14 @@ describe('ChargeDetailService', () => {
     it("reads a document's lines by the discriminator pair, excluding deleted rows", async () => {
       const payload = await service.get({ cdDocType: ChargeDocType.QUOTATION, cdDocId: DOC_ID });
       expect(Array.isArray(payload)).toBe(true);
-      expect(prisma.saleChargeDetail.findMany.mock.calls[0][0]).toMatchObject({
+      expect(prisma.transactionChargeDetail.findMany.mock.calls[0][0]).toMatchObject({
         where: { cdDocType: 'QUOTATION', cdDocId: DOC_ID, cdIsDeleted: false },
       });
     });
 
     it('filters on cd_is_active only when asked', async () => {
       await service.get({ cdDocType: ChargeDocType.QUOTATION, cdDocId: DOC_ID, isActive: true });
-      expect(prisma.saleChargeDetail.findMany.mock.calls[0][0]).toMatchObject({
+      expect(prisma.transactionChargeDetail.findMany.mock.calls[0][0]).toMatchObject({
         where: { cdIsActive: true },
       });
     });
@@ -289,7 +295,7 @@ describe('ChargeDetailService', () => {
   });
 
   // What an owning document (a bill, a quotation) calls inside its own
-  // transaction instead of writing sale_charge_detail itself.
+  // transaction instead of writing txn_charge_detail itself.
   describe('syncDocumentCharges', () => {
     const scope: ChargeDocumentScope = {
       cdDocType: ChargeDocType.QUOTATION,
@@ -302,7 +308,7 @@ describe('ChargeDetailService', () => {
     const tx = (): never => prisma as never;
 
     it('creates a line under the parent scope, numbering it by position', async () => {
-      prisma.saleChargeDetail.findMany.mockResolvedValueOnce([]);
+      prisma.transactionChargeDetail.findMany.mockResolvedValueOnce([]);
 
       const payloads = await service.syncDocumentCharges(
         tx(),
@@ -311,7 +317,7 @@ describe('ChargeDetailService', () => {
         USER_ID,
       );
 
-      expect(prisma.saleChargeDetail.create.mock.calls[0][0].data).toMatchObject({
+      expect(prisma.transactionChargeDetail.create.mock.calls[0][0].data).toMatchObject({
         cdDocType: 'QUOTATION',
         cdDocId: DOC_ID,
         cdSlno: 1,
@@ -327,22 +333,22 @@ describe('ChargeDetailService', () => {
     });
 
     it('updates a line carrying cdId and soft deletes the ones the payload dropped', async () => {
-      prisma.saleChargeDetail.findMany.mockResolvedValueOnce([
+      prisma.transactionChargeDetail.findMany.mockResolvedValueOnce([
         makeCharge(),
         makeCharge({ cdId: OTHER_DOC_ID, cdSlno: 2, cdChgName: 'Loading' }),
       ]);
 
       await service.syncDocumentCharges(tx(), scope, [{ cdId: CD_ID, cdAmount: 750 }], USER_ID);
 
-      expect(prisma.saleChargeDetail.update).toHaveBeenCalledWith(
+      expect(prisma.transactionChargeDetail.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { cdId: CD_ID },
+          where: { cdId_cdAccYear: { cdId: CD_ID, cdAccYear: ACC_YEAR } },
           data: expect.objectContaining({ cdSlno: 1, cdAmount: 750 }) as unknown,
         }),
       );
-      expect(prisma.saleChargeDetail.update).toHaveBeenCalledWith(
+      expect(prisma.transactionChargeDetail.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { cdId: OTHER_DOC_ID },
+          where: { cdId_cdAccYear: { cdId: OTHER_DOC_ID, cdAccYear: ACC_YEAR } },
           data: expect.objectContaining({ cdIsDeleted: true, cdIsActive: false }) as unknown,
         }),
       );
@@ -352,8 +358,8 @@ describe('ChargeDetailService', () => {
       const payloads = await service.syncDocumentCharges(tx(), scope, undefined, USER_ID);
 
       expect(payloads).toHaveLength(1);
-      expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
-      expect(prisma.saleChargeDetail.update).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.create).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.update).not.toHaveBeenCalled();
     });
 
     it('refuses a line pointing at another document', async () => {
@@ -365,7 +371,7 @@ describe('ChargeDetailService', () => {
           USER_ID,
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.saleChargeDetail.create).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.create).not.toHaveBeenCalled();
     });
 
     it('rejects a duplicate cdSlno within one payload', async () => {
@@ -383,7 +389,7 @@ describe('ChargeDetailService', () => {
     });
 
     it('404s on a cdId that is not a line of this document', async () => {
-      prisma.saleChargeDetail.findMany.mockResolvedValueOnce([]);
+      prisma.transactionChargeDetail.findMany.mockResolvedValueOnce([]);
 
       await expect(
         service.syncDocumentCharges(tx(), scope, [{ cdId: CD_ID }], USER_ID),
@@ -393,12 +399,12 @@ describe('ChargeDetailService', () => {
 
   describe('softDelete', () => {
     it('flags the row deleted and inactive, and audits the change', async () => {
-      prisma.saleChargeDetail.findFirst.mockResolvedValueOnce(makeCharge());
+      prisma.transactionChargeDetail.findFirst.mockResolvedValueOnce(makeCharge());
 
       const result = await service.softDelete(CD_ID);
 
       expect(result).toEqual({ cdId: CD_ID, deleted: true });
-      expect(prisma.saleChargeDetail.updateMany.mock.calls[0][0]).toMatchObject({
+      expect(prisma.transactionChargeDetail.updateMany.mock.calls[0][0]).toMatchObject({
         where: { cdId: CD_ID, cdIsDeleted: false },
         data: { cdIsDeleted: true, cdIsActive: false, cdModifiedBy: USER_ID },
       });
