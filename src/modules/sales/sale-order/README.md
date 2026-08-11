@@ -2,8 +2,7 @@
 
 CRUD API for **sales orders** — the commitment a company takes from a customer ahead of billing,
 composed of an order **header**, its nested **line items** (one row per ORDERED LINE — not per
-batch: an order allocates no stock), and its **advance allocations** (where money taken up front
-actually went).
+batch: an order allocates no stock).
 
 - **Base route:** `sale-orders` (API-versioned via `@Version(API_VERSION)`)
 - **Swagger tag:** `Sale Orders`
@@ -12,10 +11,6 @@ actually went).
   composite PK `(soId, soAccYear)`
 - **Line-item table:** `sale_order_item` (`sales` schema) — also partitioned by `soiAccYear`,
   composite PK `(soiId, soiAccYear)`, composite FK `(soiOrderId, soiAccYear) → (soId, soAccYear)`
-- **Advance-allocation table:** `sale_order_advance_alloc` (`sales` schema) — also partitioned by
-  `soaAccYear` (the year of the APPLICATION, which may differ from the order's), composite PK
-  `(soaId, soaAccYear)`, composite FK `(soaOrderId, soaOrderAccYear) → (soId, soAccYear)`.
-  **Owned by this module** — unlike the charge/tender lines there is no separate owner service.
 - **Applied-charge table:** `txn_charge_detail` (`public` schema) — partitioned by `cdAccYear`,
   composite PK `(cdId, cdAccYear)`, addressed polymorphically by
   `(cdDocType = 'ORDER', cdDocId = soId)`. `ORDER` was added to `ChargeDocType` alongside this
@@ -27,12 +22,29 @@ actually went).
   [../../accountsModule/tenderDetail](../../accountsModule/tenderDetail). For an order this is the
   **advance money** the customer handed over — `SALES_ORDER` has been a `TenderSrcDocType` member
   since the tender module shipped, waiting for this module.
+- **Accounting tables:** `acc_voucher_header` + `acc_vouchers` + `acc_bill_balance` (`accounts`
+  schema) — all partitioned by acc-year with composite PKs. The bill's key is
+  `(abl_id, abl_acc_year)` on the year it was **raised** in; the row never moves partition, so a
+  bill simply stays open across financial years where it started. The order itself
+  posts nothing, but the money tendered against it does: every save raises / re-syncs / cancels an
+  **advance receipt** and the **ADVANCE outstanding** behind it through
+  [order-advance-posting.helper.ts](order-advance-posting.helper.ts). See
+  [Advance receipt posting](#advance-receipt-posting-accounts) and
+  [Advance outstanding](#advance-outstanding-acc_bill_balance).
+- **Cheque register:** `acc_pdc_register` (`accounts` schema) — partitioned by `apd_acc_year` (the
+  year the instrument was *received* in), composite PK `(apdId, apdAccYear)`. A tender line of
+  **type 5 (`CHEQUE`)** is not only money but an instrument the company holds until the bank says
+  otherwise, so every such line also opens a register row through
+  [order-pdc-posting.helper.ts](order-pdc-posting.helper.ts). See
+  [Cheque register](#cheque-register-acc_pdc_register).
 
 This module is the sibling of [../bill](../bill) — same create/get/delete surface, same nested
 reconciliation shape for line items / charges / tenders, same audit and soft-delete conventions —
 with the structural differences called out below: a fourth nested array (`advances[]`), a device
-FK instead of a free-text device pair, DB CHECK constraints that actually exist, and no accounts
-posting (an order is a commitment, not an accounting document).
+FK instead of a free-text device pair, DB CHECK constraints that actually exist, and an accounts
+posting that covers the **tendered money only** (the order itself is a commitment, not an
+accounting document — and unlike the bill, this module writes the `acc_vouchers` ledger lines, not
+just the header).
 
 ## Files
 
@@ -41,10 +53,11 @@ posting (an order is a commitment, not an accounting document).
 | [sale-order.module.ts](sale-order.module.ts) | Module wiring — imports `AuditLogModule` + `ChargeDetailModule` + `TenderDetailModule`, **exports `SaleOrderService`** |
 | [sale-order.controller.ts](sale-order.controller.ts) | HTTP routes + Swagger docs |
 | [sale-order.service.ts](sale-order.service.ts) | Business logic, persistence, nested reconciliation, CHECK mirrors, audit logging |
-| [sale-order-exception.filter.ts](sale-order-exception.filter.ts) | Registered via `@UseFilters`; recognises `so*` (covers `soi*`/`soa*`), `cd*` and `td*` field names |
-| [dto/save-sale-order.dto.ts](dto/save-sale-order.dto.ts) | Create/update payload for the header + nested `items[]` / `charges[]` / `tenders[]` / `advances[]` |
+| [order-advance-posting.helper.ts](order-advance-posting.helper.ts) | Posts the order's tender lines to accounts — `acc_voucher_header` + `acc_vouchers` + the `acc_bill_balance` ADVANCE row — and keeps all three in step on update / delete |
+| [order-pdc-posting.helper.ts](order-pdc-posting.helper.ts) | Registers every cheque tender (type 5) in `acc_pdc_register`, and keeps it in step on update / delete |
+| [sale-order-exception.filter.ts](sale-order-exception.filter.ts) | Registered via `@UseFilters`; recognises `so*` (covers `soi*`), `cd*` and `td*` field names |
+| [dto/save-sale-order.dto.ts](dto/save-sale-order.dto.ts) | Create/update payload for the header + nested `items[]` / `charges[]` / `tenders[]` |
 | [dto/save-sale-order-item.dto.ts](dto/save-sale-order-item.dto.ts) | A single order line-item entry |
-| [dto/save-sale-order-advance.dto.ts](dto/save-sale-order-advance.dto.ts) | A single advance-allocation entry |
 | [dto/sale-order-response.dto.ts](dto/sale-order-response.dto.ts) | Swagger success/error response models |
 | [types/sale-order-api.types.ts](types/sale-order-api.types.ts) | Payload / response / error TypeScript contracts |
 
@@ -59,8 +72,8 @@ and `tenders[]` the tender-detail module's
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a sale order, chosen by `soId` presence in the body. |
-| `GET` | `/get` | Fetch one active order by `soId` (query param), including its active line items, applied charges, tender lines and advance allocations. |
-| `DELETE` | `/delete` | Soft-delete an order by `soId` (query param), cascading to its line items, applied charges, tender lines and advance allocations. |
+| `GET` | `/get` | Fetch one active order by `soId` (query param), including its active line items, applied charges and tender lines. |
+| `DELETE` | `/delete` | Soft-delete an order by `soId` (query param), cascading to its line items, applied charges and tender lines. |
 
 `GET /get` and `DELETE /delete` both additionally require `soCompanyId`, `soBranchId` and
 `soAccYear` as query parameters — the row is looked up by all four together, so an order can only
@@ -70,7 +83,7 @@ be read or deleted from within its own company/branch/year scope.
 
 - **Omit `soId` → create; include `soId` → update** the existing order.
 - Each operation runs inside a single `$transaction` (header, all line items, applied charges,
-  tender lines, advance allocations, and audit entries are all-or-nothing).
+  tender lines, and audit entries are all-or-nothing).
 - On **update**, the header must still be active (`soIsDeleted = false`) or a not-found error is
   raised. Because `sale_order`'s primary key is the composite `(soId, soAccYear)`, the update
   targets that compound key (`soId_soAccYear`), resolved from the row `findFirst` already loaded.
@@ -110,16 +123,16 @@ field is ignored.
 
 ### Partitioning
 
-`sale_order`, `sale_order_item` and `sale_order_advance_alloc` are declaratively partitioned by
+`sale_order` and `sale_order_item` are declaratively partitioned by
 `LIST (accYear)`, following `sale_bill` / `sale_bill_item` / `acc_tender_detail` /
 `txn_status_log`. Consequences that shape this module:
 
-- Every primary key is composite (`soId, soAccYear` / `soiId, soiAccYear` / `soaId, soaAccYear`)
+- Every primary key is composite (`soId, soAccYear` / `soiId, soiAccYear`)
   because Postgres requires the partition key in every unique index including the PK. Prisma's
-  generated compound unique input names (`soId_soAccYear`, `soiId_soiAccYear`, `soaId_soaAccYear`)
+  generated compound unique input names (`soId_soAccYear`, `soiId_soiAccYear`)
   are used wherever the service calls `.update()` on a single row.
 - Partitions are created by `public.ensure_acc_year_partitions('YYYY-YYYY')` (extended by
-  migration `20260808132323` to cover the three order tables). **Opening a new fiscal year means
+  migration `20260808132323` to cover the order tables). **Opening a new fiscal year means
   calling that function again** — until then every save in the new year fails with
   `no partition of relation "sale_order" found for row`.
 - The DB **keeps** its CHECK constraints (`ck_so_*`, `ck_soi_*`, `ck_soa_*` — unlike `sale_bill`,
@@ -184,34 +197,166 @@ the money the customer handed over when booking.
 - The header's advance roll-up (`soAdvanceRecdAmt`) and settlement caches (`soTenderAmt`,
   `soPayStatus`, …) are **not** recomputed from `tenders[]` — like every other amount on this
   module they are whatever the client sends. The tender lines are the detail behind them.
+- Storing a tender is not the same as **posting** it: what puts the money in the ledgers is the
+  advance receipt below, raised from these rows in the same transaction.
+- A line with `tdTenderTypeId = 5` (`CHEQUE`) is money *and* an instrument, so it also opens a
+  [cheque register](#cheque-register-acc_pdc_register) row — and it must then carry `tdRefNo` (the
+  cheque number) and `tdInstrumentDate` (the post-date on it).
 
-### Nested advance allocations
+### Advance receipt posting (accounts)
 
-Where the money went afterwards is the `advances[]` array — **this module's own**
-(`syncAdvances`), since `sale_order_advance_alloc` has no owner module:
+Every create and update ends with [`syncOrderAdvancePosting`](order-advance-posting.helper.ts),
+called from `SaleOrderService.syncAdvanceVoucher` **inside the save transaction** — so an order
+holding money and the voucher behind that money commit or roll back together.
 
-- Row **with** `soaId` → update; **without** → create (`soaAllocType`, `soaAllocDate`, `soaAmount`
-  required); **absent** from the array → soft deleted; property omitted → untouched.
-- `soaOrderId` / `soaOrderAccYear` always name the parent order — a payload naming a different
-  order or year is a 400, the mirror of the charge module's document-immutability rule.
-- `soaAccYear` (the application year) defaults to the order's but may be overridden **on create
-  only** — it is a partition key, immutable afterwards like every other scope key.
-- The `ck_soa_*` constraints are mirrored app-side on the merged row: `soaAllocType` ∈ ADJUSTED /
-  REFUNDED / FORFEITED / TRANSFERRED; `soaAmount > 0`; `soaRefundMode` ∈ CASH / BANK / UPI / CARD
-  / CREDIT_NOTE / ADJUSTMENT (nullable); **each type names its target and only its own target**
-  (ADJUSTED → `soaBillId`+`soaBillAccYear`, TRANSFERRED → `soaTargetOrderId`+`soaTargetAccYear`,
-  REFUNDED/FORFEITED → neither); no self-transfer; `soaTenderId`/`soaTenderAccYear` travel as a
-  pair.
-- Sum(`soaAmount`) per order, grouped by `soaAllocType`, reproduces the header's four advance
-  roll-ups — the service does **not** enforce that reconciliation (the roll-ups are client-sent
-  caches, consistent with the rest of the module), it only enforces each row's own shape.
+**Why a receipt and not the order voucher.** Voucher type 4 (`SOr`) is `vchr_category = INVENTORY`
+with `vchr_affects_accounts = false`: an order is a commitment, and the commitment itself belongs
+in no ledger. The money handed over against it is a different fact, and its nature is `RECEIPT`.
+So it gets **voucher type 5** (`ARc` / Order Advance Receipt, seeded by
+`prisma/seed/Acc_Voucher_Types_Order_Advance_Receipt.sql`), its own `acc_voucher_seq` counter — the
+order reads `sor00101` while its receipt reads `arc00007` — and its own row in the day book.
+
+**What is written, and from where.** The two tables are filled from two different sources:
+
+| Table | Filled from | Carries |
+| --- | --- | --- |
+| `acc_voucher_header` | the **sale order** | scope (`so_company_id` / `so_branch_id` / `so_tenant_id` / `so_acc_year`), party (`so_cust_id`), employees (`so_salesman_id[]`), `so_user_id` / `so_session_id` / `so_device_id`, remarks, and the `doc_*` face — `avh_doc_refno = so_order_refno`, `avh_doc_date = so_order_date`, `avh_doc_amount = so_order_amt`, `avh_round_off = so_round_off`, `avh_usr_refno = so_usr_refno` |
+| `acc_vouchers` | the **tender detail** rows | one entry per `acc_tender_detail` row: the ledger the money landed in, the side, and the amount — linked back by the header's returned `avh_voucher_id` (`av_voucher_id` + `av_acc_year` → the header's composite PK) |
+
+The header is what the voucher is *about*; the lines are what it *does*. So `avh_doc_amount` is the
+**order's** value and `avh_total_debit` / `avh_total_credit` are the **tendered** amount — a
+₹10,000 order with a ₹2,000 advance posts `doc_amount = 10000`, `total_debit = total_credit = 2000`.
+`ck_avh_balanced` only judges the totals, which balance by construction.
+
+Per tender row, in `tdRowNo` order, the lines are:
+
+| Row | Side | Ledger | Opposite | Amount |
+| --- | --- | --- | --- | --- |
+| 1 | `DR` | `td_tender_ledger_id` (cash / bank / card clearing) | credit ledger | `td_total_amt` |
+| 2 | `CR` | credit ledger | tender ledger | `td_amount` |
+| 3 | `CR` | `acc_tender_master.tnd_surcharge_ledger_id` | tender ledger | `td_surcharge_amt` (only when > 0) |
+
+The **credit ledger** is `so_advance_ledger_id` — the customer-advance *liability* ledger — falling
+back to `so_cust_id` (a customer and its account ledger share one primary key). Money taken before
+delivery is a liability, not a reduction of a receivable: nothing is owed yet. `ck_td_total_amt`
+keeps `total = amount + surcharge`, so the voucher balances **row by row**, which is what
+`ck_avh_balanced` checks in aggregate.
+
+Other details worth knowing:
+
+- The header's source document is the **order** (`avh_src_module = 'SALES'`,
+  `avh_src_doc_type = 'SALES_ORDER'`, `avh_src_doc_id = soId`). `ux_avh_src` makes that unique, so
+  one order can never raise two live receipts — and every path here finds its voucher through those
+  columns rather than any client-writable field.
+- `avh_voucher_no` comes from the `ARc` sequence; `avh_voucher_slno` is the **company-wide** serial
+  across every voucher type, taken under an advisory lock by `allocateVoucherSlno`
+  (`src/common/Sequence/voucher-sequence.helper.ts`, shared with the bill's posting helper).
+- Each posted tender row gets `acc_tender_detail.td_voucher_id` stamped with the new voucher id, so
+  the money can be traced from either end.
+- Tenders with `td_total_amt = 0` are skipped — `ck_av_amount` insists every ledger line is
+  positive.
+
+**Transitions.** The order's own `soStatus` and its live tender rows are the whole input:
+
+| Before | After the save | What happens |
+| --- | --- | --- |
+| no receipt | live order with tendered money | **created** — header + lines written |
+| live receipt | tenders edited | **updated** — header amounts re-synced, lines soft-deleted and rebuilt from the current tenders (`ux_av_voucher_row` ignores deleted rows, so numbering restarts at 1). The voucher's identity — number, refno, date, posted-on — is fixed at first post |
+| live receipt | last tender gone, **or** `soStatus = 'CANCELLED'` | **cancelled** — lines retired, header `CANCELLED` with a reason (`ck_avh_cancel`), `td_voucher_id` cleared |
+| no receipt | no money | **unchanged** |
+
+Two cases answer **400** rather than a raw Postgres error: a tender that charges a surcharge whose
+tender master names no surcharge ledger, and a tender paid into the very ledger it would be
+credited to (`ck_av_self` — the line would debit and credit the same ledger). A re-post after a
+cancellation is also refused: the cancelled header still owns that voucher number.
+
+### Advance outstanding (`acc_bill_balance`)
+
+The receipt says the money **moved**; it does not say the customer now has a **credit** with us. That
+is a bill fact, and every "what does this party have with us" question — the ageing report, the
+adjustment screen, the order's own advance panel (`ix_abl_src_doc`) — is asked of
+`acc_bill_balance`, not of the ledgers. So the same save that raises the receipt opens one
+`ADVANCE` row alongside it:
+
+| Column | Value |
+| --- | --- |
+| `abl_bill_type` / `abl_dr_cr` | `ADVANCE` / **`CR`** — the customer's money, held. The opposite of a sale bill's `SALES` / `DR` receivable: nothing is owed *by* the customer here |
+| `abl_bill_amount` | `so_advance_recd_amt` when the payload states it, otherwise the tenders' `td_amount` total — **without** the surcharge, which is the company's income and never the customer's credit |
+| `abl_alloc_amount` | seeded from `so_advance_adjusted_amt + so_advance_refund_amt + so_advance_forfeit_amt`, so the generated `abl_pending_amount` reads as what is still **held** — the order's own `so_advance_balance_amt`. Left alone once a real `acc_bill_adjustment` exists, which owns the column from then on |
+| `abl_src_*` | the order (`SALES` / `SALES_ORDER` / `soId` / `so_acc_year`) — `ck_abl_src_doc` wants all three, and this is how an ADVANCE says *which* order it was taken against without a hop through the voucher |
+| `abl_voucher_*` | the advance receipt and its type 5 (`ck_abl_voucher`: only an `OPENING` may have neither) |
+| `abl_doc_refno` / `abl_doc_date` | `so_order_refno` / `so_order_date` — there is no bill number to quote, which is the point of an ADVANCE. `ux_abl_doc_refno` makes it unique per company, party, type and year |
+| `abl_due_date` / `abl_credit_days` | left empty — nothing is due *from* the customer |
+
+The row moves with the money, keyed off the source document like everything else here:
+
+| Situation | What happens |
+| --- | --- |
+| order holds an advance, no row yet | **created** alongside the receipt |
+| advance edited | **updated** — amount, party, salesman, agent, narration and the seeded allocation re-synced |
+| advance edited to **0**, last tender gone, order `CANCELLED`, or order deleted | **retired** (`abl_is_deleted` / `abl_is_active`) — `ck_abl_amount` refuses a zero-value bill, and `ux_abl_doc_refno` skips deleted rows so the refno is freed |
+
+An advance with a **real** settlement against it (an `acc_bill_adjustment` row, or a discount /
+write-off) cannot be taken back out or edited below what is settled — that answers **400** rather
+than the raw `ck_abl_settled` 23514. The seeded allocation is deliberately not counted as one: a
+fully refunded advance is "allocated" to its own value with no adjustment existing, and must still
+be deletable.
+
+### Cheque register (`acc_pdc_register`)
+
+A cheque is the one tender that does not end when the sale does. The receipt says the money came
+in; the **instrument** still has to be deposited, and it will either clear or bounce — weeks later,
+routinely in the next financial year. `acc_tender_detail` records only what was tendered, so a
+tender line whose **`td_tender_type_id = 5`** (`CHEQUE`, from `accounts.acc_tender_types`) also
+opens a row in `accounts.acc_pdc_register` through
+[order-pdc-posting.helper.ts](order-pdc-posting.helper.ts), in the same transaction and off the
+same tender rows as the receipt.
+
+| Column | Value |
+| --- | --- |
+| `apd_acc_year` | the **order's** year — the FY the instrument was *received* in, and the partition key. It may mature in a later one; that is the register's business, not the order's |
+| `apd_tra_type` | `R` — a customer's cheque we hold. An order only takes money in |
+| `apd_party_id` | `so_cust_id` (customer and account ledger share one primary key) |
+| `apd_instrument_type` / `apd_instrument_no` | `CHEQUE` / `td_ref_no` — `acc_tender_types.ttm_ref_label` for type 5 is *Cheque No*, so that is where the number lives |
+| `apd_instrument_date` | `td_instrument_date` — the **post-date** on the cheque, which is what the due list works from |
+| `apd_amount` | `td_total_amt` — a cheque is written for the whole sum it settles, surcharge included |
+| `apd_received_on` | `so_order_date` — the day it arrived, and the floor `ck_apd_dates` puts under the instrument date |
+| `apd_bank_name` / `apd_bank_ledger_id` | `td_bank_name` / `td_settle_ledger_id` — the drawee bank, and our own ledger it will be deposited into |
+| `apd_drawer_name` | `so_cust_name` — nothing on the tender line says who signed it |
+| `apd_posting_mode` | `ON_RECEIPT`, with `apd_voucher_id` / `apd_voucher_acc_year` naming the advance receipt. The order credits the party the day the cheque arrives rather than waiting for it to clear, which is exactly what that mode means (`ck_apd_posting` then insists the voucher is named) |
+| `apd_tender_id` | the `acc_tender_detail` row it came in on — the **only** link back, since the register carries no source-document columns. An order's instruments are therefore found by way of its tender rows |
+| `apd_status` | `HELD`. Everything past it — `DEPOSITED`, `CLEARED`, `BOUNCED` — belongs to the PDC screen |
+
+The row moves with the tender line, exactly as the receipt does:
+
+| Situation | What happens |
+| --- | --- |
+| cheque tender with no register row | **registered** `HELD` alongside the receipt |
+| cheque tender edited (amount, number, date, bank) | **re-synced** — a tender is editable until the bank has the cheque |
+| cheque line removed, paid by something else instead, or edited to 0; last tender gone; order `CANCELLED` | **cancelled** with a reason (`ck_apd_cancelled`). The row stays for audit, and `ux_apd_instrument` skips `CANCELLED` rows so the same cheque number is free again |
+| order soft deleted | **cancelled and retired** (`apd_is_deleted`) — nothing may keep pointing at a document that is gone |
+
+Five cases answer **400** rather than a raw Postgres error:
+
+- a cheque tender with no `tdRefNo` (`apd_instrument_no` is NOT NULL) or no `tdInstrumentDate`;
+- a cheque dated **before** the order (`ck_apd_dates` — an instrument cannot mature before the day
+  it arrived);
+- the same cheque number tendered twice on one order, or already registered for that customer in
+  that year on another document (`ux_apd_instrument`);
+- any change to — or removal of — an instrument that is no longer `HELD`. Once the bank has it, the
+  deposit slip, the clearing voucher and the bounce charges all hang off the register row, and the
+  order is no longer what tells its story. Settle it on the PDC screen first.
+
+Nothing here is registered for the other tender types: card, UPI, wallet and bank transfer settle
+through `td_settle_*` on the tender line itself, and cash settles on the spot.
 
 ### Advance roll-ups on the header
 
 `ck_so_advance_amounts` / `ck_so_advance_balance` / `ck_so_advance_policy_input` are judged on the
 merged header values (payload falling back to the stored row):
 
-- All six advance amounts must be non-negative.
+- All six advance amounts must be non-negative. Adjusted / refunded / forfeited are stated by the
+  caller — this module keeps no per-application detail table behind them.
 - `soAdvanceBalanceAmt` must equal received − adjusted − refunded − forfeited. **When the payload
   omits the balance but moves any of the four components, the balance is derived** rather than
   rejected — an ordinary save never trips the equation by omission. A payload that states a
@@ -221,8 +366,8 @@ merged header values (payload falling back to the stored row):
 ### Soft delete
 
 - `DELETE /delete` sets `soIsDeleted = true` (plus `soModifiedOn` / `soModifiedBy`) on the header,
-  then cascades the same to all its active line items, applied charges, tender lines **and advance
-  allocations**. Rows are never hard-deleted.
+  then cascades the same to all its active line items, applied charges and tender lines. Rows are
+  never hard-deleted.
 - **A deleted order is also a cancelled one**: the same write sets `soStatus = 'CANCELLED'`.
   Unlike the bill there are **no cancellation columns** (`sale_order` carries no
   `so_cancelled_on/by/reason`) — who cancelled and why is `public.txn_status_log`'s fact by
@@ -231,8 +376,15 @@ merged header values (payload falling back to the stored row):
   delete answers **400** — refund, forfeit or transfer the money first (which also moves the
   roll-ups). The mirror of the bill's "a settled bill cannot be deleted" rule, pointed the other
   way: there the block protects the books, here it protects the customer's money.
-- There is **no accounts cascade** — an order never posted anything, so there is nothing to
-  cancel in `acc_voucher_header` (no equivalent of the bill's `deleteBillPosting`).
+- The cascade reaches **accounts** too: `deleteOrderAdvancePosting` retires the advance receipt
+  raised for the order's tendered money — its `acc_vouchers` lines and its `acc_voucher_header` are
+  both flagged deleted (and the header left `CANCELLED`, reason *"Sale order deleted"*), the
+  `acc_bill_balance` ADVANCE row goes with them, every `acc_pdc_register` cheque the order took in
+  is `CANCELLED` and retired, and `td_voucher_id` is cleared. This is the counterpart of the bill's
+  `deleteBillPosting`, and it differs from the update path's *cancel* on purpose: cancelling leaves
+  the row behind to keep the number consumed, deleting retires what pointed at a document that is
+  gone. A cheque already `DEPOSITED` or `CLEARED` blocks the delete with a **400**, the same way an
+  unsettled advance does.
 - `GET /get` and the update lookup only ever see rows with the deleted flags false at every level.
 
 ### Validation
@@ -261,15 +413,13 @@ merged header values (payload falling back to the stored row):
   quantity sign rules, `soiReservedQty` ∈ [0, `soiOrderQty`] (`ck_soi_reserved`), and `soiSize`
   non-blank (`ck_soi_size`). Cross-field rules are judged on the **merged** row (payload falling
   back to the stored line), the same way the bill judges `ck_sbi_batch_split`.
-- `ensureAdvanceValuesAreAllowed` mirrors the `ck_soa_*` set — see
-  [Nested advance allocations](#nested-advance-allocations).
 
 ### Audit logging
 
 Every mutation is audited via `AuditLogService.logEntityChange` inside the same transaction —
 header actions `New` / `update` / `cancel` against `tableName = 'sale_order'`,
-`screenName = 'Sale Order'`, `screenType = 'transaction'`; each line-item, charge, tender and
-advance-allocation write is logged separately against its own table name. The acting user is
+`screenName = 'Sale Order'`, `screenType = 'transaction'`; each line-item, charge and tender
+write is logged separately against its own table name. The acting user is
 resolved from the payload's `soCreatedBy` / `soModifiedBy`, then the request context user, falling
 back to `DEFAULT_ACTOR`. All `*CreatedBy` / `*ModifiedBy` columns on the three order tables are
 `VarChar(50)` free text (not uuid).
@@ -302,7 +452,6 @@ the distinct ids the whole document uses — a column that is null everywhere co
 | `soCompanyName` / `soBranchName` | `soCompanyId` / `soBranchId` | `company.comp_name` / `branch_master.br_name` |
 | `soSalesmanName` | `soSalesmanId` (uuid[]) | `employee_master.emp_name`, one entry per id, same order |
 | `soiCompanyName` / `soiBranchName` / `soiSalesmanName` | the line's own scope + salesman | same three masters |
-| `soaCompanyName` / `soaBranchName` | `soaCompanyId` / `soaBranchId` | company / branch |
 | `cdCompName` / `cdBranchName` | `cdCompId` / `cdBranchId` | company / branch |
 | `tdCompanyName` | `tdCompanyId` | company |
 | `tdPartyLedgerName` | `tdPartyLedgerId` | `acc_ledger_master.led_name` |

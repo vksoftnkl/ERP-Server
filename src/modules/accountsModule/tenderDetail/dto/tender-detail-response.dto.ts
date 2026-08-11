@@ -70,6 +70,12 @@ export class TenderDetailPayloadDto {
   tdSurchargePerc!: number;
   @ApiProperty()
   tdSurchargeAmt!: number;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Surcharge income ledger snapshot',
+  })
+  tdSurchargeLedgerId!: string | null;
   @ApiProperty({ description: 'tdAmount + tdSurchargeAmt, rounded to 2 decimals' })
   tdTotalAmt!: number;
   @ApiProperty()

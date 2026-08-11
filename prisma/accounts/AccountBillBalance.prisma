@@ -1,0 +1,140 @@
+/// One row per bill. Partitioned by ablAccYear — the FY the bill was RAISED in
+/// — so the primary key is the composite (ablId, ablAccYear) and a bill is
+/// addressed by the PAIR, never by the id alone.
+///
+/// The bill is never carried forward at year end: the same row stays open
+/// across financial years, in the partition of the year it started in. So the
+/// partition says "where it started", not "where the money is" — outstanding
+/// and ageing reads carry no year filter and scan every partition, and
+/// detaching a closed year takes its still-open bills with it. Every reference
+/// into the bill carries the bill's own year alongside the id
+/// (AccBillAdjustment.abjBillAccYear, AccVoucher.avDocAccYear, ablParentAccYear
+/// below), which is what makes a settlement in a later year expressible.
+///
+/// ablAllocAmount / ablDiscAmount / ablWriteoffAmount are declared
+/// trigger-maintained from AccBillAdjustment and must never be written from
+/// application code.
+model AccBillBalance {
+  ablId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("abl_id")
+  ablCompanyId        String    @db.Uuid @map("abl_company_id")
+  // Branch that RAISED the bill. Settlement may happen at a different branch;
+  // that is recorded on AccBillAdjustment.
+  ablBranchId         String    @db.Uuid @map("abl_branch_id")
+  ablTenantId         String?   @db.Uuid @map("abl_tenant_id")
+  // FY of origin, and the partition key. A bill outstanding past year end keeps
+  // this year and never moves partition.
+  ablAccYear          String    @db.Char(9) @map("abl_acc_year")
+  // Party
+  ablPartyId          String    @db.Uuid @map("abl_party_id")
+  ablSalesmanId       String?   @db.Uuid @map("abl_salesman_id")
+  ablAgentId          String?   @db.Uuid @map("abl_agent_id")
+  // What kind of bill — ck_abl_bill_type:
+  //   SALES | PURCHASE               a real invoice
+  //   SALES_RETURN | PURCHASE_RETURN a credit / debit note, a bill in its own
+  //                                  right so the RRN tender can adjust an
+  //                                  invoice against it
+  //   OPENING                        lump-sum legacy outstanding brought in at
+  //                                  migration; the only type with no voucher
+  //   ADVANCE                        money received or paid with no bill yet
+  //   INTEREST                       overdue interest on a parent bill
+  //   JOURNAL                        a party bill reference opened by a JV
+  ablBillType         String    @db.VarChar(20) @map("abl_bill_type")
+  // Source document — the business document behind the bill, named directly
+  // rather than through the voucher, so an ADVANCE can say WHICH sale order it
+  // was taken against. Identified the same way AccTenderDetail and
+  // TxnStatusLog identify theirs. ck_abl_src_doc: module/type/id together or
+  // none. Polymorphic, so no relation field.
+  ablSrcModule        String?   @db.VarChar(20) @map("abl_src_module")
+  ablSrcDocType       String?   @db.VarChar(30) @map("abl_src_doc_type")
+  ablSrcDocId         String?   @db.Uuid @map("abl_src_doc_id")
+  ablSrcAccYear       String?   @db.Char(9) @map("abl_src_acc_year")
+  // INTEREST — and a debit note raised against another bill — points at its
+  // parent here (ck_abl_parent). The bill is keyed on (id, year), so the
+  // PARENT's year comes with it, which is not ablAccYear whenever interest is
+  // raised in a later FY than the bill it is charged on (ck_abl_parent_pair
+  // keeps the two null-or-set together).
+  ablParentBillId     String?   @db.Uuid @map("abl_parent_bill_id")
+  ablParentAccYear    String?   @db.Char(9) @map("abl_parent_acc_year")
+  // Posting. The voucher that opened this bill, posted server-side after sync.
+  // Null only for OPENING, which has no voucher — and ck_abl_voucher takes the
+  // voucher type null with it rather than forcing a dummy type row.
+  ablVoucherId        String?   @db.Uuid @map("abl_voucher_id")
+  ablVoucherLineId    String?   @db.Uuid @map("abl_voucher_line_id")
+  ablVoucherTypeId    Int?      @map("abl_voucher_type_id")
+  ablVoucherNo        BigInt?   @map("abl_voucher_no")
+  ablVoucherDate      DateTime? @db.Date @map("abl_voucher_date")
+  ablVoucherRefno     String?   @db.VarChar(50) @map("abl_voucher_refno")
+  // Bill identity — the bill's own number and date. ck_abl_dr_cr: DR =
+  // receivable, CR = payable.
+  ablDocRefno         String    @db.VarChar(100) @map("abl_doc_refno")
+  ablDocDate          DateTime  @db.Date @map("abl_doc_date")
+  ablDueDate          DateTime? @db.Date @map("abl_due_date")
+  ablCreditDays       Int       @default(0) @db.SmallInt @map("abl_credit_days")
+  ablGraceDays        Int       @default(0) @db.SmallInt @map("abl_grace_days")
+  ablDrCr             String    @db.Char(2) @map("abl_dr_cr")
+  ablNarration        String?   @map("abl_narration")
+  // Amounts
+  ablBillAmount       Decimal   @db.Decimal(18, 2) @map("abl_bill_amount")
+  ablAllocAmount      Decimal   @default(0) @db.Decimal(18, 2) @map("abl_alloc_amount")
+  ablDiscAmount       Decimal   @default(0) @db.Decimal(18, 2) @map("abl_disc_amount")
+  ablWriteoffAmount   Decimal   @default(0) @db.Decimal(18, 2) @map("abl_writeoff_amount")
+  // GENERATED ALWAYS ... STORED in the DB. Read-only: never send either on a
+  // create or update, the write will be rejected by Postgres.
+  // @default(dbgenerated()) marks the value as DB-owned so migrate never emits
+  // an ALTER ... DROP DEFAULT against the generation expression.
+  ablPendingAmount    Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("abl_pending_amount")
+  // OPEN | PARTIAL | CLOSED, derived from the four amount columns.
+  ablStatus           String?   @default(dbgenerated()) @db.VarChar(10) @map("abl_status")
+  // Date the bill last reached zero, cleared again if a reversal reopens it.
+  // Days-to-collect / DSO has no other source, since the partial indexes
+  // deliberately exclude closed bills.
+  ablSettledOn        DateTime? @db.Date @map("abl_settled_on")
+  // Audit
+  ablIsActive         Boolean   @default(true) @map("abl_is_active")
+  ablIsDeleted        Boolean   @default(false) @map("abl_is_deleted")
+  ablSyncDate         DateTime? @db.Timestamptz(6) @map("abl_sync_date")
+  ablCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("abl_created_on")
+  ablCreatedBy        String?   @db.VarChar(50) @map("abl_created_by")
+  ablModifiedOn       DateTime? @db.Timestamptz(6) @map("abl_modified_on")
+  ablModifiedBy       String?   @db.VarChar(50) @map("abl_modified_by")
+  // Relations
+  voucherHeader       AccVoucherHeader? @relation(fields: [ablVoucherId, ablAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_voucher")
+  voucherType         AccVoucherType?   @relation(fields: [ablVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_voucher_type")
+  party               AccLedgerMaster   @relation("BillParty", fields: [ablPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_party")
+  parentBill          AccBillBalance?   @relation("BillParent", fields: [ablParentBillId, ablParentAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_parent")
+  childBills          AccBillBalance[]  @relation("BillParent")
+  adjustments         AccBillAdjustment[] @relation("BillAdjustmentBill")
+  againstAdjustments  AccBillAdjustment[] @relation("BillAdjustmentAgainstBill")
+  voucherLines        AccVoucher[]
+  @@id([ablId, ablAccYear], map: "pk_acc_bill_balance")
+  @@map("acc_bill_balance")
+  @@schema("accounts")
+  // DB-only objects not expressible in the Prisma schema (see migrations
+  // 20260811080000_replace_acc_bill_balance_and_adjustment and
+  // 20260811090000_partition_acc_bill_balance_by_acc_year):
+  //   - PARTITION BY LIST (abl_acc_year); one partition per accounting year,
+  //     created by public.ensure_acc_year_partitions('YYYY-YYYY'). A fiscal year
+  //     with no partition makes every save on it fail.
+  //   - Generated columns abl_pending_amount (bill - alloc - disc - writeoff)
+  //     and abl_status (OPEN / PARTIAL / CLOSED).
+  //   - Partial UNIQUE index ux_abl_doc_refno — one refno per company, party,
+  //     bill type and year. It already carried abl_acc_year, which is what lets
+  //     it stay unique on a partitioned table. No branch column: outstanding is
+  //     company-wide.
+  //   - Partial/covering indexes ix_abl_open, ix_abl_overdue, ix_abl_voucher,
+  //     ix_abl_salesman, ix_abl_src_doc, ix_abl_parent, and ix_abl_party_credit
+  //     (20260811100000) — one party's open bills across every year, covering
+  //     the sale-bill credit check.
+  //   - CHECK constraints ck_abl_bill_type, ck_abl_dr_cr, ck_abl_acc_year,
+  //     ck_abl_src_acc_year, ck_abl_voucher (OPENING has no voucher and no
+  //     voucher type; every other type must have both), ck_abl_src_doc,
+  //     ck_abl_parent, ck_abl_parent_pair, ck_abl_no_self_parent,
+  //     ck_abl_amount, ck_abl_due_date, ck_abl_days, and ck_abl_settled — the
+  //     over-settlement guard: a bill can never be edited down below what has
+  //     already been settled, discounted or written off against it.
+  //   - The roll-up trigger that maintains abl_alloc_amount / abl_disc_amount /
+  //     abl_writeoff_amount / abl_settled_on from acc_bill_adjustment is NOT
+  //     yet written; until it is, the posting code owns those columns.
+  //   - No FK on abl_company_id / abl_branch_id / abl_salesman_id /
+  //     abl_agent_id: the source DDL declares none.
+}

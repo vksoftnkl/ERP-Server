@@ -68,8 +68,7 @@ model AccVoucherType {
   voucherSequences           AccVoucherSeq[]
   voucherHeaders             AccVoucherHeader[]
   vouchers                   AccVoucher[]
-  bills                      AccBill[]
-  billAdjustments            AccBillAdjustment[]
+  bills                      AccBillBalance[]
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")

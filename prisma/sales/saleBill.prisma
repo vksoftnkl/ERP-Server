@@ -138,8 +138,6 @@ model SaleBill {
   sbModifiedBy       String?   @db.VarChar @map("sb_modified_by")
   // Relations
   items      SaleBillItem[]
-  // Advances an order held that were adjusted into this invoice.
-  advanceAllocs SaleOrderAdvanceAlloc[]
   customer   Customer       @relation(fields: [sbCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_cust")
   posState   StateCode?     @relation(fields: [sbPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_pos_state")
   priceLevel ItemPriceLevel @relation("SaleBillPriceLevel", fields: [sbPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_price_level")

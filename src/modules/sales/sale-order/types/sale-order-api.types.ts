@@ -1,4 +1,4 @@
-import { SaleOrder, SaleOrderAdvanceAlloc, SaleOrderItem } from '@prisma/client';
+import { SaleOrder, SaleOrderItem } from '@prisma/client';
 import { ChargeDocType } from '../../../master/charge-master/types/charge-enum';
 import type {
   ChargeDetailPayload,
@@ -69,7 +69,6 @@ export type SaleOrderPayload = Omit<
   items?: SaleOrderItemPayload[];
   charges?: SaleOrderChargePayload[];
   tenders?: SaleOrderTenderPayload[];
-  advances?: SaleOrderAdvancePayload[];
 };
 export type SaleOrderItemPayload = Omit<
   SaleOrderItem,
@@ -95,21 +94,6 @@ export type SaleOrderItemPayload = Omit<
   soiCompanyName?: string | null;
   soiBranchName?: string | null;
   soiSalesmanName?: string | null;
-};
-// An advance allocation row is owned by THIS module (sales.sale_order_advance_alloc
-// has no owner module of its own, unlike the charge / tender lines), so its
-// payload is shaped here: audit timestamps as ISO strings, everything else as
-// Prisma returns it.
-export type SaleOrderAdvancePayload = Omit<
-  SaleOrderAdvanceAlloc,
-  'soaCreatedOn' | 'soaModifiedOn' | 'soaSyncDate'
-> & {
-  soaCreatedOn?: string;
-  soaModifiedOn?: string | null;
-  soaSyncDate?: string | null;
-  // Resolved the same way as the header's, and equally read-only.
-  soaCompanyName?: string | null;
-  soaBranchName?: string | null;
 };
 // An applied charge line is exactly what the charge-detail module answers with,
 // whether it was read through this module or its own: decimals as numbers,

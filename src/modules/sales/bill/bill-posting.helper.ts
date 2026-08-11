@@ -1,17 +1,14 @@
 import { Prisma } from '@prisma/client';
 import { throwSalesBadRequest } from 'src/common/utils/module-service.utils';
+import { allocateVoucherSlno } from 'src/common/Sequence/voucher-sequence.helper';
 import { BillErrorDetail, BillErrorResponse } from './types/bill-api.types';
-// Guards the company-wide voucher serial. avh_voucher_slno is unique per
-// (company, acc_year) across EVERY voucher type (ux_avh_voucher_slno), so two
-// concurrent posts of different document types would otherwise pick the same
-// number and one of them would 500 on the unique index.
-const VOUCHER_SLNO_LOCK_NAMESPACE = 'accounts.acc_voucher_header.voucher_slno';
 // ck_avh_src on acc_voucher_header wants all three src_* columns or none, and
 // ux_avh_src makes (company, module, doc_type, doc_id, acc_year) unique — which
 // is what stops the same bill being posted to accounts twice.
 const BILL_SRC_MODULE = 'SALES';
 const BILL_SRC_DOC_TYPE = 'BILL';
-// acc_bills.abl_bill_type — a sale bill always raises a SALES bill reference.
+// acc_bill_balance.abl_bill_type — a sale bill always raises a SALES bill
+// reference.
 const BILL_REF_TYPE = 'SALES';
 // DR = receivable. A sale puts the customer into debit.
 const BILL_DR_CR = 'DR';
@@ -26,8 +23,6 @@ const DEVICE_TYPE_MAP: Record<string, string> = {
   WEB: 'WEB',
   MOBILE: 'MOBILE',
 };
-// abl_doc_refno is VarChar(50) but sb_usr_refno is VarChar(100).
-const BILL_DOC_REFNO_MAX_LENGTH = 50;
 // sale_bill.sb_status value that means "accounts must carry a live voucher".
 const BILL_STATUS_POSTED = 'POSTED';
 // ck_avh_status values this helper writes.
@@ -83,12 +78,13 @@ export interface BillPostingResult {
   // accounts.acc_voucher_header.avh_voucher_id — written back to
   // sale_bill.sb_posted_voucher_id.
   voucherId: string;
-  // accounts.acc_bills.abl_id, or null when the bill carries no receivable.
+  // accounts.acc_bill_balance.abl_id, or null when the bill carries no
+  // receivable.
   billId: string | null;
   postedOn: Date;
 }
 /// Posts a POSTED sale bill into accounts: one acc_voucher_header row and (when
-/// the bill has a value) one acc_bills row.
+/// the bill has a value) one acc_bill_balance row.
 ///
 /// Must run inside the caller's transaction so the accounting rows commit with
 /// the bill itself — a bill that says POSTED but has no voucher behind it is
@@ -175,7 +171,7 @@ export async function postBillToAccounts(
     // overpayment is recorded on the tender, not as over-allocation here.
     const paid = bill.sbPaidAmt ?? new Prisma.Decimal(0);
     const allocated = paid.greaterThan(billAmount) ? billAmount : paid;
-    const created = await tx.accBill.create({
+    const created = await tx.accBillBalance.create({
       data: {
         ablCompanyId: bill.sbCompanyId,
         ablBranchId: bill.sbBranchId,
@@ -186,13 +182,22 @@ export async function postBillToAccounts(
         ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
         ablAgentId: bill.sbAgentId,
         ablBillType: BILL_REF_TYPE,
+        // ck_abl_src_doc wants module, type and id together. This is what lets
+        // the outstanding row point back at the invoice without going through
+        // the voucher.
+        ablSrcModule: BILL_SRC_MODULE,
+        ablSrcDocType: BILL_SRC_DOC_TYPE,
+        ablSrcDocId: bill.sbId,
+        ablSrcAccYear: bill.sbAccYear,
         ablVoucherId: header.avhVoucherId,
         ablVoucherTypeId: vchrTypeId,
         ablVoucherNo: billSlno,
+        ablVoucherDate: bill.sbBillDate,
+        ablVoucherRefno: billRefno,
+        // The bill's own number and date. sb_usr_refno is not carried here —
+        // the voucher holds it in avh_usr_refno.
+        ablDocRefno: billRefno,
         ablDocDate: bill.sbBillDate,
-        ablDocRefno: bill.sbUsrRefno?.slice(0, BILL_DOC_REFNO_MAX_LENGTH) ?? null,
-        ablBillRefno: billRefno,
-        ablBillDate: bill.sbBillDate,
         ablDueDate: bill.sbDueDate,
         ablCreditDays: bill.sbDueDays ?? 0,
         ablDrCr: BILL_DR_CR,
@@ -284,7 +289,7 @@ export interface BillPostingDeleteResult {
 }
 /// Takes a soft-deleted bill's accounting rows out of the books: the
 /// acc_voucher_header raised for it, its acc_vouchers ledger lines and any
-/// acc_bills receivable are all flagged deleted.
+/// acc_bill_balance receivable are all flagged deleted.
 ///
 /// This is the delete counterpart of syncBillPosting's cancel branch, and
 /// differs from it deliberately: unposting a bill that still exists only
@@ -372,7 +377,7 @@ async function deleteReceivables(
   actor: string,
   now: Date,
 ): Promise<string[]> {
-  const receivables = await tx.accBill.findMany({
+  const receivables = await tx.accBillBalance.findMany({
     where: {
       ablVoucherId: header.avhVoucherId,
       ablAccYear: header.avhAccYear,
@@ -380,7 +385,8 @@ async function deleteReceivables(
     },
     select: {
       ablId: true,
-      ablBillRefno: true,
+      ablAccYear: true,
+      ablDocRefno: true,
       ablAllocAmount: true,
       ablDiscAmount: true,
       ablWriteoffAmount: true,
@@ -389,7 +395,7 @@ async function deleteReceivables(
   const deleted: string[] = [];
   for (const receivable of receivables) {
     ensureNothingSettledForDelete(receivable);
-    await retireReceivable(tx, receivable.ablId, actor, now);
+    await retireReceivable(tx, receivable, actor, now);
     deleted.push(receivable.ablId);
   }
   return deleted;
@@ -398,7 +404,7 @@ async function deleteReceivables(
 // a cash bill is "settled" against itself without any adjustment existing. Only
 // a real adjustment — a receipt allocated against the bill — blocks the delete.
 function ensureNothingSettledForDelete(receivable: {
-  ablBillRefno: string | null;
+  ablDocRefno: string | null;
   ablDiscAmount: Prisma.Decimal;
   ablWriteoffAmount: Prisma.Decimal;
 }): void {
@@ -408,7 +414,7 @@ function ensureNothingSettledForDelete(receivable: {
       {
         field: 'sbId',
         message:
-          `Bill ${receivable.ablBillRefno ?? ''} has ${settled.toString()} discounted or written ` +
+          `Bill ${receivable.ablDocRefno ?? ''} has ${settled.toString()} discounted or written ` +
           `off against it in accounts, so it cannot be deleted. Reverse the settlement first.`.trim(),
       },
     ]);
@@ -501,8 +507,8 @@ async function syncPostedVoucher(
   });
   return syncReceivable(tx, bill, live, vchrTypeId, actor, now, billAmount);
 }
-// Brings the acc_bills receivable in line with the edited bill, creating it if
-// the bill only just acquired a value and retiring it if it lost one.
+// Brings the acc_bill_balance receivable in line with the edited bill, creating
+// it if the bill only just acquired a value and retiring it if it lost one.
 async function syncReceivable(
   tx: Prisma.TransactionClient,
   bill: BillPostingSource,
@@ -512,7 +518,7 @@ async function syncReceivable(
   now: Date,
   billAmount: Prisma.Decimal,
 ): Promise<string | null> {
-  const existing = await tx.accBill.findFirst({
+  const existing = await tx.accBillBalance.findFirst({
     where: {
       ablVoucherId: live.avhVoucherId,
       ablAccYear: live.avhAccYear,
@@ -520,6 +526,9 @@ async function syncReceivable(
     },
     select: {
       ablId: true,
+      // pk_acc_bill_balance is (abl_id, abl_acc_year) — the table is
+      // partitioned on the year, so every write below is keyed on the pair.
+      ablAccYear: true,
       ablAllocAmount: true,
       ablDiscAmount: true,
       ablWriteoffAmount: true,
@@ -530,7 +539,7 @@ async function syncReceivable(
   if (billAmount.lessThanOrEqualTo(0)) {
     if (existing) {
       ensureNothingSettled(existing, billAmount);
-      await retireReceivable(tx, existing.ablId, actor, now);
+      await retireReceivable(tx, existing, actor, now);
     }
     return null;
   }
@@ -538,22 +547,23 @@ async function syncReceivable(
     return createReceivable(tx, bill, live, vchrTypeId, actor, now, billAmount);
   }
   ensureNothingSettled(existing, billAmount);
-  await tx.accBill.update({
-    where: { ablId: existing.ablId },
+  await tx.accBillBalance.update({
+    // acc_bill_balance is partitioned by abl_acc_year, so pk_acc_bill_balance
+    // is the pair — the bill's own year, which is the one it was raised in.
+    where: { ablId_ablAccYear: { ablId: existing.ablId, ablAccYear: existing.ablAccYear } },
     data: {
       ablPartyId: bill.sbCustId,
       ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
       ablAgentId: bill.sbAgentId,
       ablDocDate: bill.sbBillDate,
-      ablDocRefno: bill.sbUsrRefno?.slice(0, BILL_DOC_REFNO_MAX_LENGTH) ?? null,
-      ablBillDate: bill.sbBillDate,
+      ablVoucherDate: bill.sbBillDate,
       ablDueDate: bill.sbDueDate,
       ablCreditDays: bill.sbDueDays ?? 0,
       ablBillAmount: billAmount,
       ablNarration: bill.sbRemarks,
       ablModifiedOn: now,
       ablModifiedBy: actor,
-      ...(await resolveAllocation(tx, bill, existing.ablId, billAmount)),
+      ...(await resolveAllocation(tx, bill, existing, billAmount)),
     },
   });
   return existing.ablId;
@@ -570,11 +580,17 @@ async function syncReceivable(
 async function resolveAllocation(
   tx: Prisma.TransactionClient,
   bill: BillPostingSource,
-  ablId: string,
+  receivable: { ablId: string },
   billAmount: Prisma.Decimal,
 ): Promise<{ ablAllocAmount?: Prisma.Decimal }> {
   const adjustments = await tx.accBillAdjustment.count({
-    where: { abaBillId: ablId, abaIsDeleted: false },
+    // Counted by bill id alone, without abj_bill_acc_year: the id is unique
+    // across every partition, and a settlement sitting in a later year's
+    // partition than the bill is exactly what has to be found here.
+    where: {
+      abjBillId: receivable.ablId,
+      abjIsDeleted: false,
+    },
   });
   if (adjustments > 0) {
     return {};
@@ -585,7 +601,7 @@ async function resolveAllocation(
   return { ablAllocAmount: paid.greaterThan(billAmount) ? billAmount : paid };
 }
 // Creates the receivable for a bill that had none — a posted bill edited up
-// from zero, whose original post skipped acc_bills.
+// from zero, whose original post skipped acc_bill_balance.
 async function createReceivable(
   tx: Prisma.TransactionClient,
   bill: BillPostingSource,
@@ -604,7 +620,7 @@ async function createReceivable(
     ]);
   }
   const paid = bill.sbPaidAmt ?? new Prisma.Decimal(0);
-  const created = await tx.accBill.create({
+  const created = await tx.accBillBalance.create({
     data: {
       ablCompanyId: bill.sbCompanyId,
       ablBranchId: bill.sbBranchId,
@@ -614,13 +630,17 @@ async function createReceivable(
       ablSalesmanId: bill.sbSalesmanId?.[0] ?? null,
       ablAgentId: bill.sbAgentId,
       ablBillType: BILL_REF_TYPE,
+      ablSrcModule: BILL_SRC_MODULE,
+      ablSrcDocType: BILL_SRC_DOC_TYPE,
+      ablSrcDocId: bill.sbId,
+      ablSrcAccYear: bill.sbAccYear,
       ablVoucherId: live.avhVoucherId,
       ablVoucherTypeId: vchrTypeId,
       ablVoucherNo: bill.sbBillSlno,
+      ablVoucherDate: bill.sbBillDate,
+      ablVoucherRefno: bill.sbBillRefno,
+      ablDocRefno: bill.sbBillRefno,
       ablDocDate: bill.sbBillDate,
-      ablDocRefno: bill.sbUsrRefno?.slice(0, BILL_DOC_REFNO_MAX_LENGTH) ?? null,
-      ablBillRefno: bill.sbBillRefno,
-      ablBillDate: bill.sbBillDate,
       ablDueDate: bill.sbDueDate,
       ablCreditDays: bill.sbDueDays ?? 0,
       ablDrCr: BILL_DR_CR,
@@ -660,14 +680,16 @@ function ensureNothingSettled(
 }
 async function retireReceivable(
   tx: Prisma.TransactionClient,
-  ablId: string,
+  receivable: { ablId: string; ablAccYear: string },
   actor: string,
   now: Date,
 ): Promise<void> {
-  // Soft delete rather than a hard one: ux_abl_bill_refno skips deleted rows,
+  // Soft delete rather than a hard one: ux_abl_doc_refno skips deleted rows,
   // so the bill's refno is freed while the row stays for audit.
-  await tx.accBill.update({
-    where: { ablId },
+  await tx.accBillBalance.update({
+    where: {
+      ablId_ablAccYear: { ablId: receivable.ablId, ablAccYear: receivable.ablAccYear },
+    },
     data: {
       ablIsActive: false,
       ablIsDeleted: true,
@@ -685,7 +707,7 @@ async function cancelPostedVoucher(
   actor: string,
   now: Date,
 ): Promise<void> {
-  const receivable = await tx.accBill.findFirst({
+  const receivable = await tx.accBillBalance.findFirst({
     where: {
       ablVoucherId: live.avhVoucherId,
       ablAccYear: live.avhAccYear,
@@ -693,6 +715,7 @@ async function cancelPostedVoucher(
     },
     select: {
       ablId: true,
+      ablAccYear: true,
       ablAllocAmount: true,
       ablDiscAmount: true,
       ablWriteoffAmount: true,
@@ -702,7 +725,7 @@ async function cancelPostedVoucher(
     // Nothing may have been settled against a bill that is being unposted —
     // that money would otherwise point at a voucher that no longer exists.
     ensureNothingSettled(receivable, new Prisma.Decimal(0));
-    await retireReceivable(tx, receivable.ablId, actor, now);
+    await retireReceivable(tx, receivable, actor, now);
   }
   await tx.accVoucherHeader.update({
     where: {
@@ -725,32 +748,6 @@ async function cancelPostedVoucher(
       avhModifiedBy: actor,
     },
   });
-}
-// Next company-wide voucher serial for the financial year. Taken under an
-// advisory lock held for the rest of the transaction, mirroring
-// allocateVoucherNumber's approach to acc_voucher_seq.
-async function allocateVoucherSlno(
-  tx: Prisma.TransactionClient,
-  companyId: string,
-  accYear: string,
-): Promise<bigint> {
-  const lockKey = [companyId, accYear].join('|');
-  await tx.$queryRaw`
-    WITH advisory_lock AS (
-      SELECT pg_advisory_xact_lock(
-        hashtext(${VOUCHER_SLNO_LOCK_NAMESPACE}),
-        hashtext(${lockKey})
-      )
-    )
-    SELECT 1::int AS locked
-  `;
-  const rows = await tx.$queryRaw<Array<{ next_slno: bigint }>>`
-    SELECT COALESCE(MAX(avh_voucher_slno), 0) + 1 AS next_slno
-    FROM accounts.acc_voucher_header
-    WHERE avh_company_id = ${companyId}::uuid
-      AND avh_acc_year = ${accYear}
-  `;
-  return rows[0]?.next_slno ?? BigInt(1);
 }
 function mapDeviceType(deviceType: string | null | undefined): string | null {
   const key = deviceType?.trim().toUpperCase();

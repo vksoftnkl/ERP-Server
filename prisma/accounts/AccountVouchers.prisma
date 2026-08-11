@@ -13,11 +13,14 @@ model AccVoucher {
   avRowNo            Int       @map("av_row_no")
   avVoucherDate      DateTime  @db.Timestamptz(6) @map("av_voucher_date")
   avVoucherRefno     String?   @db.VarChar(50) @map("av_voucher_refno")
-  avDocDate          DateTime? @db.Date @map("av_doc_date")
-  avBillDate         DateTime? @db.Timestamptz(6) @map("av_bill_date")
-  avBillRefno        String?   @db.VarChar(100) @map("av_bill_refno")
-  avBillId           String?   @db.Uuid @map("av_bill_id")
-
+  avDocDate         DateTime? @db.Timestamptz(6) @map("av_doc_date")
+  avDocRefno        String?   @db.VarChar(100) @map("av_doc_refno")
+  // avDocAccYear is the FY of the BILL in avDocId — the bill's own year, not
+  // avAccYear. Set exactly when avDocId is (ck_av_doc_pair), and the second
+  // half of fk_av_doc: acc_bill_balance is partitioned on abl_acc_year, so the
+  // bill is addressed by the pair (20260811090000).
+  avDocId           String?   @db.Uuid @map("av_doc_id")
+  avDocAccYear      String?   @db.Char(9) @map("av_doc_acc_year")
   // Accounting line — ck_av_dr_cr: DR | CR
   avDrCr             String    @db.Char(2) @map("av_dr_cr")
   avLedgerId         String    @db.Uuid @map("av_ledger_id")
@@ -26,34 +29,29 @@ model AccVoucher {
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
   // create or update, the write will be rejected by Postgres.
   avSignedAmount     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("av_signed_amount")
-
   avCostCentreId     String?   @db.Uuid @map("av_cost_centre_id")
   avRemarks          String?   @map("av_remarks")
   avSessionId        String?   @db.Uuid @map("av_session_id")
   avUserId           String    @db.Uuid @map("av_user_id")
-
   // Bank / cash reconciliation
   avReconDate        DateTime? @db.Date @map("av_recon_date")
   avReconRefno       String?   @db.VarChar(50) @map("av_recon_refno")
   // GENERATED ALWAYS ... STORED in the DB. Read-only, as above.
   avIsReconciled     Boolean?  @default(dbgenerated()) @map("av_is_reconciled")
-
   // Audit
   avIsActive         Boolean   @default(true) @map("av_is_active")
   avIsDeleted        Boolean   @default(false) @map("av_is_deleted")
   avSyncDate         DateTime? @db.Timestamptz(6) @map("av_sync_date")
   avCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("av_created_on")
-  avCreatedBy        String?   @db.Uuid @map("av_created_by")
+  avCreatedBy        String?   @db.Text @map("av_created_by")
   avModifiedOn       DateTime? @db.Timestamptz(6) @map("av_modified_on")
-  avModifiedBy       String?   @db.Uuid @map("av_modified_by")
-
+  avModifiedBy       String?   @db.Text @map("av_modified_by")
   // Relations
   voucherHeader      AccVoucherHeader @relation(fields: [avVoucherId, avAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_av_header")
   ledger             AccLedgerMaster  @relation("AccVoucherLedger", fields: [avLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_ledger")
   oppositeLedger     AccLedgerMaster  @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
   voucherType        AccVoucherType   @relation(fields: [avVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_voucher_type")
-  bill               AccBill?         @relation(fields: [avBillId], references: [ablId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_bill")
-
+  bill               AccBillBalance?  @relation(fields: [avDocId, avDocAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_doc")
   @@id([avId, avAccYear], map: "pk_acc_vouchers")
   @@index([avVoucherId, avAccYear], map: "ix_av_voucher")
   @@map("acc_vouchers")
@@ -67,7 +65,9 @@ model AccVoucher {
   //   - Partial/covering indexes ix_av_ledger, ix_av_daybook, ix_av_opp_ledger,
   //     ix_av_bill, ix_av_unrecon.
   //   - CHECK constraints ck_av_dr_cr, ck_av_amount, ck_av_row_no,
-  //     ck_av_acc_year, ck_av_self, ck_av_recon.
+  //     ck_av_acc_year, ck_av_self, ck_av_recon, and ck_av_doc_pair (av_doc_id
+  //     and av_doc_acc_year move together — see
+  //     20260811060000_partition_account_bill_tables_by_acc_year).
   //   - No FK on av_company_id / av_branch_id / av_user_id / av_cost_centre_id:
   //     the source DDL declares none.
 }

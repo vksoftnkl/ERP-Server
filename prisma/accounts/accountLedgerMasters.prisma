@@ -109,21 +109,20 @@ model AccLedgerMaster {
   tenderDetailLedgers      AccTenderDetail[]      @relation("TenderDetailLedger")
   tenderDetailSettleLedgers AccTenderDetail[]     @relation("TenderDetailSettleLedger")
   tenderDetailPartyLedgers AccTenderDetail[]      @relation("TenderDetailPartyLedger")
+  tenderDetailSurchargeLedgers AccTenderDetail[]  @relation("TenderDetailSurchargeLedger")
   voucherDocRegisterParties AccVoucherDocRegister[]
   voucherHeaderParties     AccVoucherHeader[]     @relation("VoucherHeaderParty")
   voucherHeaderOppLedgers  AccVoucherHeader[]     @relation("VoucherHeaderOppLedger")
   accountingEntries        AccVoucher[]           @relation("AccVoucherLedger")
   oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
-  billParties              AccBill[]              @relation("BillParty")
+  billParties              AccBillBalance[]       @relation("BillParty")
   billAdjustmentParties    AccBillAdjustment[]    @relation("BillAdjustmentParty")
-  billAdjustmentEffectLedgers AccBillAdjustment[] @relation("BillAdjustmentEffectLedger")
   billAdjustmentSettleLedgers AccBillAdjustment[] @relation("BillAdjustmentSettleLedger")
   pdcParties               AccPdcRegister[]       @relation("PdcParty")
   pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
   chargeMasters            ChargeMaster[]
   chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
-  saleOrderAdvanceAllocLedgers SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocLedger")
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")

@@ -287,14 +287,17 @@ type AccVoucherHeaderStub = {
   avhPostedOn: Date | null;
 };
 type AccBillStub = {
+  // acc_bill_balance is partitioned by abl_acc_year, so a bill is addressed by
+  // the pair — the year it was raised in, which it keeps for life.
   ablId: string;
+  ablAccYear: string;
   ablAllocAmount: Prisma.Decimal;
   ablDiscAmount: Prisma.Decimal;
   ablWriteoffAmount: Prisma.Decimal;
 };
 // What the delete path selects on top of AccBillStub — the refno names the bill
 // in the "already settled" error.
-type AccBillDeleteStub = AccBillStub & { ablBillRefno: string | null };
+type AccBillDeleteStub = AccBillStub & { ablDocRefno: string | null };
 type PrismaMock = {
   saleBill: {
     create: jest.Mock<Promise<SaleBill>, [BillCreateArgs]>;
@@ -366,7 +369,7 @@ type PrismaMock = {
   accVoucher: {
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
-  accBill: {
+  accBillBalance: {
     create: jest.Mock<Promise<{ ablId: string }>, unknown[]>;
     findFirst: jest.Mock<Promise<AccBillStub | null>, unknown[]>;
     findMany: jest.Mock<Promise<AccBillDeleteStub[]>, unknown[]>;
@@ -518,7 +521,7 @@ const makePrismaMock = (): PrismaMock => {
     accVoucher: {
       updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
-    accBill: {
+    accBillBalance: {
       create: jest.fn(() => Promise.resolve({ ablId: ACC_BILL_ID })),
       findFirst: jest.fn(() => Promise.resolve(null)),
       findMany: jest.fn(() => Promise.resolve([])),
@@ -759,7 +762,7 @@ describe('BillService', () => {
       await service.save(baseDto());
 
       expect(prisma.accVoucherHeader.create).not.toHaveBeenCalled();
-      expect(prisma.accBill.create).not.toHaveBeenCalled();
+      expect(prisma.accBillBalance.create).not.toHaveBeenCalled();
     });
 
     it('writes a POSTED voucher header carrying the bill number and a fresh company serial', async () => {
@@ -807,17 +810,17 @@ describe('BillService', () => {
 
       await service.save(postedDto());
 
-      expect(prisma.accBill.create).toHaveBeenCalledTimes(1);
-      expect(prisma.accBill.create.mock.calls[0][0]).toMatchObject({
+      expect(prisma.accBillBalance.create).toHaveBeenCalledTimes(1);
+      expect(prisma.accBillBalance.create.mock.calls[0][0]).toMatchObject({
         data: {
           ablBillType: 'SALES',
           ablDrCr: 'DR',
-          ablBillRefno: BILL_REFNO,
+          ablDocRefno: BILL_REFNO,
           ablPartyId: CUST_ID,
           ablVoucherId: VOUCHER_HEADER_ID,
         },
       });
-      const { data } = prisma.accBill.create.mock.calls[0][0] as {
+      const { data } = prisma.accBillBalance.create.mock.calls[0][0] as {
         data: Record<string, unknown>;
       };
       // abl_pending_amount is generated as bill - alloc, so 500 - 200 = 300.
@@ -832,7 +835,7 @@ describe('BillService', () => {
 
       await service.save(postedDto({ sbPaidAmt: 900 } as Partial<SaveBillDto>));
 
-      const { data } = prisma.accBill.create.mock.calls[0][0] as {
+      const { data } = prisma.accBillBalance.create.mock.calls[0][0] as {
         data: Record<string, unknown>;
       };
       expect(String(data.ablAllocAmount)).toBe('500');
@@ -846,7 +849,7 @@ describe('BillService', () => {
       await service.save(postedDto({ sbBillAmt: 0, sbPaidAmt: 0 } as Partial<SaveBillDto>));
 
       expect(prisma.accVoucherHeader.create).toHaveBeenCalledTimes(1);
-      expect(prisma.accBill.create).not.toHaveBeenCalled();
+      expect(prisma.accBillBalance.create).not.toHaveBeenCalled();
     });
 
     it('normalises a free-text device onto the ck_avh_device_type value set', async () => {
@@ -901,9 +904,11 @@ describe('BillService', () => {
       avhAccYear: ACC_YEAR,
       avhPostedOn: new Date('2026-08-06T00:00:00.000Z'),
     };
-    // What syncReceivable selects: an untouched receivable.
+    // What syncReceivable selects: an untouched receivable. acc_bill_balance is
+    // partitioned by abl_acc_year, so the year travels with the id.
     const openReceivable = {
       ablId: ACC_BILL_ID,
+      ablAccYear: ACC_YEAR,
       ablAllocAmount: new Prisma.Decimal(0),
       ablDiscAmount: new Prisma.Decimal(0),
       ablWriteoffAmount: new Prisma.Decimal(0),
@@ -923,7 +928,7 @@ describe('BillService', () => {
       await service.save(updateDto());
 
       expect(prisma.accVoucherHeader.create).toHaveBeenCalledTimes(1);
-      expect(prisma.accBill.create).toHaveBeenCalledTimes(1);
+      expect(prisma.accBillBalance.create).toHaveBeenCalledTimes(1);
       expect(prisma.saleBill.update).toHaveBeenCalledWith(
         containing({ data: containing({ sbPostedVoucherId: VOUCHER_HEADER_ID }) }),
       );
@@ -943,7 +948,7 @@ describe('BillService', () => {
         updatedBill({ sbBillAmt: new Prisma.Decimal(750) }),
       );
       prisma.accVoucherHeader.findFirst.mockResolvedValueOnce(liveVoucher);
-      prisma.accBill.findFirst.mockResolvedValueOnce(openReceivable);
+      prisma.accBillBalance.findFirst.mockResolvedValueOnce(openReceivable);
 
       await service.save(updateDto({ sbBillAmt: 750 } as Partial<SaveBillDto>));
 
@@ -963,13 +968,13 @@ describe('BillService', () => {
         updatedBill({ sbBillAmt: new Prisma.Decimal(750) }),
       );
       prisma.accVoucherHeader.findFirst.mockResolvedValueOnce(liveVoucher);
-      prisma.accBill.findFirst.mockResolvedValueOnce(openReceivable);
+      prisma.accBillBalance.findFirst.mockResolvedValueOnce(openReceivable);
 
       await service.save(updateDto({ sbBillAmt: 750 } as Partial<SaveBillDto>));
 
-      expect(prisma.accBill.create).not.toHaveBeenCalled();
-      expect(prisma.accBill.update).toHaveBeenCalledTimes(1);
-      const { data } = prisma.accBill.update.mock.calls[0][0] as {
+      expect(prisma.accBillBalance.create).not.toHaveBeenCalled();
+      expect(prisma.accBillBalance.update).toHaveBeenCalledTimes(1);
+      const { data } = prisma.accBillBalance.update.mock.calls[0][0] as {
         data: Record<string, unknown>;
       };
       expect(String(data.ablBillAmount)).toBe('750');
@@ -980,12 +985,12 @@ describe('BillService', () => {
     it('leaves allocation to the adjustment ledger once the bill has been adjusted', async () => {
       prisma.saleBill.update.mockResolvedValueOnce(updatedBill());
       prisma.accVoucherHeader.findFirst.mockResolvedValueOnce(liveVoucher);
-      prisma.accBill.findFirst.mockResolvedValueOnce(openReceivable);
+      prisma.accBillBalance.findFirst.mockResolvedValueOnce(openReceivable);
       prisma.accBillAdjustment.count.mockResolvedValueOnce(1);
 
       await service.save(updateDto());
 
-      const { data } = prisma.accBill.update.mock.calls[0][0] as {
+      const { data } = prisma.accBillBalance.update.mock.calls[0][0] as {
         data: Record<string, unknown>;
       };
       expect(data).not.toHaveProperty('ablAllocAmount');
@@ -996,7 +1001,7 @@ describe('BillService', () => {
         updatedBill({ sbStatus: 'CANCELLED', sbCancelReason: 'Customer walked out' }),
       );
       prisma.accVoucherHeader.findFirst.mockResolvedValueOnce(liveVoucher);
-      prisma.accBill.findFirst.mockResolvedValueOnce(openReceivable);
+      prisma.accBillBalance.findFirst.mockResolvedValueOnce(openReceivable);
 
       await service.save(
         updateDto({
@@ -1013,7 +1018,7 @@ describe('BillService', () => {
         },
       });
       // ux_abl_bill_refno skips deleted rows, so the refno is freed.
-      expect(prisma.accBill.update.mock.calls[0][0]).toMatchObject({
+      expect(prisma.accBillBalance.update.mock.calls[0][0]).toMatchObject({
         data: { ablIsDeleted: true, ablIsActive: false },
       });
       // The bill no longer points at a voucher.
@@ -1027,7 +1032,7 @@ describe('BillService', () => {
         updatedBill({ sbStatus: 'DRAFT', sbCancelReason: null }),
       );
       prisma.accVoucherHeader.findFirst.mockResolvedValueOnce(liveVoucher);
-      prisma.accBill.findFirst.mockResolvedValueOnce(openReceivable);
+      prisma.accBillBalance.findFirst.mockResolvedValueOnce(openReceivable);
 
       await service.save(updateDto({ sbStatus: 'DRAFT' } as Partial<SaveBillDto>));
 
@@ -1043,7 +1048,7 @@ describe('BillService', () => {
         updatedBill({ sbBillAmt: new Prisma.Decimal(100) }),
       );
       prisma.accVoucherHeader.findFirst.mockResolvedValueOnce(liveVoucher);
-      prisma.accBill.findFirst.mockResolvedValueOnce({
+      prisma.accBillBalance.findFirst.mockResolvedValueOnce({
         ...openReceivable,
         ablAllocAmount: new Prisma.Decimal(400),
       });
@@ -1051,7 +1056,7 @@ describe('BillService', () => {
       await expect(
         service.save(updateDto({ sbBillAmt: 100 } as Partial<SaveBillDto>)),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.accBill.update).not.toHaveBeenCalled();
+      expect(prisma.accBillBalance.update).not.toHaveBeenCalled();
     });
 
     it('refuses to re-post a bill whose voucher was cancelled, which ux_avh_voucher_no forbids', async () => {
@@ -1070,13 +1075,13 @@ describe('BillService', () => {
         updatedBill({ sbBillAmt: new Prisma.Decimal(0), sbPaidAmt: new Prisma.Decimal(0) }),
       );
       prisma.accVoucherHeader.findFirst.mockResolvedValueOnce(liveVoucher);
-      prisma.accBill.findFirst.mockResolvedValueOnce(openReceivable);
+      prisma.accBillBalance.findFirst.mockResolvedValueOnce(openReceivable);
 
       await service.save(updateDto({ sbBillAmt: 0, sbPaidAmt: 0 } as Partial<SaveBillDto>));
 
       // ck_abl_amount forbids a zero-value receivable, so it goes rather than
       // sitting at zero.
-      expect(prisma.accBill.update.mock.calls[0][0]).toMatchObject({
+      expect(prisma.accBillBalance.update.mock.calls[0][0]).toMatchObject({
         data: { ablIsDeleted: true },
       });
     });
@@ -1812,7 +1817,7 @@ describe('BillService', () => {
 
       expect(prisma.accVoucherHeader.update).not.toHaveBeenCalled();
       expect(prisma.accVoucher.updateMany).not.toHaveBeenCalled();
-      expect(prisma.accBill.update).not.toHaveBeenCalled();
+      expect(prisma.accBillBalance.update).not.toHaveBeenCalled();
     });
 
     describe('a posted bill', () => {
@@ -1825,7 +1830,8 @@ describe('BillService', () => {
       };
       const openReceivable = {
         ablId: ACC_BILL_ID,
-        ablBillRefno: BILL_REFNO,
+        ablAccYear: ACC_YEAR,
+        ablDocRefno: BILL_REFNO,
         ablAllocAmount: new Prisma.Decimal(0),
         ablDiscAmount: new Prisma.Decimal(0),
         ablWriteoffAmount: new Prisma.Decimal(0),
@@ -1834,7 +1840,7 @@ describe('BillService', () => {
       beforeEach(() => {
         prisma.saleBill.findFirst.mockResolvedValue(makeBill({ sbStatus: 'POSTED' }));
         prisma.accVoucherHeader.findMany.mockResolvedValue([postedVoucher]);
-        prisma.accBill.findMany.mockResolvedValue([openReceivable]);
+        prisma.accBillBalance.findMany.mockResolvedValue([openReceivable]);
       });
 
       it('deletes the voucher header it was posted through', async () => {
@@ -1887,16 +1893,16 @@ describe('BillService', () => {
       it('deletes the receivable raised against it', async () => {
         await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
-        expect(prisma.accBill.update).toHaveBeenCalledWith(
+        expect(prisma.accBillBalance.update).toHaveBeenCalledWith(
           expect.objectContaining({
-            where: { ablId: ACC_BILL_ID },
+            where: { ablId_ablAccYear: { ablId: ACC_BILL_ID, ablAccYear: ACC_YEAR } },
             data: containing({ ablIsActive: false, ablIsDeleted: true }),
           }),
         );
       });
 
       it('refuses the delete when the receivable has been discounted or written off', async () => {
-        prisma.accBill.findMany.mockResolvedValue([
+        prisma.accBillBalance.findMany.mockResolvedValue([
           { ...openReceivable, ablWriteoffAmount: new Prisma.Decimal(50) },
         ]);
 
@@ -1909,7 +1915,7 @@ describe('BillService', () => {
       // A cash bill seeds abl_alloc_amount with what was tendered at post time,
       // so allocation on its own is not a settlement standing in the way.
       it('allows the delete when the only allocation is the tender the bill was paid with', async () => {
-        prisma.accBill.findMany.mockResolvedValue([
+        prisma.accBillBalance.findMany.mockResolvedValue([
           { ...openReceivable, ablAllocAmount: new Prisma.Decimal(500) },
         ]);
 

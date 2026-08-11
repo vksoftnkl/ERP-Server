@@ -13,7 +13,6 @@ model AccVoucherHeader {
   avhBranchId            String    @db.Uuid @map("avh_branch_id")
   avhTenantId            String?   @db.Uuid @map("avh_tenant_id")
   avhAccYear             String    @db.Char(9) @map("avh_acc_year")
-
   avhVoucherTypeId       Int       @map("avh_voucher_type_id")
   // Nullable on purpose: a draft must not consume a number, or an abandoned
   // entry leaves a permanent gap in the series.
@@ -21,7 +20,6 @@ model AccVoucherHeader {
   avhVoucherSlno         BigInt?   @map("avh_voucher_slno")
   avhVoucherRefno        String?   @db.VarChar(50) @map("avh_voucher_refno")
   avhVoucherDate         DateTime  @db.Timestamptz(6) @map("avh_voucher_date")
-
   // Source document. src_* is the machine link (posting idempotency,
   // ux_avh_src); doc_* is the human-readable face of the same document.
   avhSrcModule           String?   @db.VarChar(20) @map("avh_src_module")
@@ -31,32 +29,27 @@ model AccVoucherHeader {
   avhDocRefno            String?   @db.VarChar(100) @map("avh_doc_refno")
   avhDocDate             DateTime? @db.Date @map("avh_doc_date")
   avhDocAmount           Decimal   @default(0) @db.Decimal(18, 2) @map("avh_doc_amount")
-
   avhAdjustAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("avh_adjust_amount")
   avhRoundOff            Decimal   @default(0) @db.Decimal(18, 2) @map("avh_round_off")
   avhTotalDebit          Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_debit")
   avhTotalCredit         Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_credit")
-
   avhPartyId             String    @db.Uuid @map("avh_party_id")
   avhOppositeLedgerId    String?   @db.Uuid @map("avh_opposite_ledger_id")
   // Scalar list: Prisma rejects null here, so normalise to [] in the DTO.
   avhEmployeeId          String[]  @db.Uuid @map("avh_employee_id")
   avhRemarks             String?   @map("avh_remarks")
-
   // Document lineage: credit note -> original invoice, debit note ->
   // original bill; reversal is the contra voucher raised on cancellation.
   avhAgainstVoucherId    String?   @db.Uuid @map("avh_against_voucher_id")
   avhAgainstAccYear      String?   @db.Char(9) @map("avh_against_acc_year")
   avhReversalVoucherId   String?   @db.Uuid @map("avh_reversal_voucher_id")
   avhReversalAccYear     String?   @db.Char(9) @map("avh_reversal_acc_year")
-
   // Lifecycle — ck_avh_status: DRAFT | APPROVED | POSTED | CANCELLED
   avhVoucherStatus       String    @default("DRAFT") @db.VarChar(20) @map("avh_voucher_status")
   avhStatusOn            DateTime? @db.Timestamptz(6) @map("avh_status_on")
   avhStatusBy            String?   @db.Uuid @map("avh_status_by")
   avhPostedOn            DateTime? @db.Timestamptz(6) @map("avh_posted_on")
   avhCancelReason        String?   @db.VarChar(250) @map("avh_cancel_reason")
-
   // Where / who — ck_avh_device_type: PC | WEB | MOBILE | POS | DESKTOP
   // (DESKTOP added by 20260806120000_widen_avh_device_type)
   avhUserId              String    @db.Uuid @map("avh_user_id")
@@ -64,7 +57,6 @@ model AccVoucherHeader {
   avhDeviceType          String?   @db.VarChar(20) @map("avh_device_type")
   avhDeviceId            String?   @map("avh_device_id")
   avhPrintCount          Int       @default(0) @map("avh_print_count")
-
   // Outbound / export — ck_avh_msg_status: NA | PENDING | SENT | FAILED
   //                     ck_avh_tally_status: NA | PENDING | EXPORTED | FAILED
   avhWhatsappStatus      String    @default("NA") @db.VarChar(10) @map("avh_whatsapp_status")
@@ -73,7 +65,6 @@ model AccVoucherHeader {
   avhTallyExportedOn     DateTime? @db.Timestamptz(6) @map("avh_tally_exported_on")
   avhTallyGuid           String?   @db.VarChar(100) @map("avh_tally_guid")
   avhTallyErrorMsg       String?   @map("avh_tally_error_msg")
-
   // Audit
   avhIsActive            Boolean   @default(true) @map("avh_is_active")
   avhIsDeleted           Boolean   @default(false) @map("avh_is_deleted")
@@ -82,7 +73,6 @@ model AccVoucherHeader {
   avhCreatedBy           String?   @db.VarChar(50) @map("avh_created_by")
   avhModifiedOn          DateTime? @db.Timestamptz(6) @map("avh_modified_on")
   avhModifiedBy          String?   @db.VarChar(50) @map("avh_modified_by")
-
   // Relations
   company                Company         @relation(fields: [avhCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_company")
   branch                 BranchMaster    @relation(fields: [avhBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_branch")
@@ -90,20 +80,17 @@ model AccVoucherHeader {
   party                  AccLedgerMaster @relation("VoucherHeaderParty", fields: [avhPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_party")
   oppositeLedger         AccLedgerMaster? @relation("VoucherHeaderOppLedger", fields: [avhOppositeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_opp_ledger")
   user                   UserMaster      @relation(fields: [avhUserId], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_user")
-
   againstVoucher         AccVoucherHeader?  @relation("VoucherHeaderAgainst", fields: [avhAgainstVoucherId, avhAgainstAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_against")
   againstVouchers        AccVoucherHeader[] @relation("VoucherHeaderAgainst")
   reversalVoucher        AccVoucherHeader?  @relation("VoucherHeaderReversal", fields: [avhReversalVoucherId, avhReversalAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_reversal")
   reversalVouchers       AccVoucherHeader[] @relation("VoucherHeaderReversal")
-
   vouchers               AccVoucher[]
-  bills                  AccBill[]
+  bills                  AccBillBalance[]
   billAdjustments        AccBillAdjustment[]
   pdcReceipts            AccPdcRegister[]   @relation("PdcReceiptVoucher")
   pdcClearings           AccPdcRegister[]   @relation("PdcClearVoucher")
   pdcBounces             AccPdcRegister[]   @relation("PdcBounceVoucher")
   pdcCharges             AccPdcRegister[]   @relation("PdcChargeVoucher")
-
   @@id([avhVoucherId, avhAccYear], map: "pk_acc_voucher_header")
   @@map("acc_voucher_header")
   @@schema("accounts")

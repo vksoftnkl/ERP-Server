@@ -5,7 +5,6 @@ import {
   Prisma,
   TransactionChargeDetail,
   SaleOrder,
-  SaleOrderAdvanceAlloc,
   SaleOrderItem,
 } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
@@ -16,6 +15,7 @@ import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-de
 import { SaleOrderService } from './sale-order.service';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { SaveSaleOrderItemDto } from './dto/save-sale-order-item.dto';
+import { CHEQUE_TENDER_TYPE_ID } from './order-pdc-posting.helper';
 
 const SALE_ORDER_ID = '019c6f6c-be87-7a11-8905-36092c46fb01';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46fb02';
@@ -34,7 +34,6 @@ const ITEM_MASTER_ID = '019c6f6c-be87-7a11-8905-36092c46fb12';
 const ITEM_UNIT_ID = '019c6f6c-be87-7a11-8905-36092c46fb13';
 const GODOWN_ID = '019c6f6c-be87-7a11-8905-36092c46fb14';
 const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fb16';
-const ADVANCE_ID = '019c6f6c-be87-7a11-8905-36092c46fb17';
 const BILL_ID = '019c6f6c-be87-7a11-8905-36092c46fb18';
 const OTHER_ORDER_ID = '019c6f6c-be87-7a11-8905-36092c46fb19';
 // so_salesman_id is a uuid[]: an order can be credited to more than one person.
@@ -47,6 +46,33 @@ const SALE_ORDER_VCHR_TYPE_ID = 4;
 const SEQ_LAST_NO = 100n;
 const SALE_ORDER_SLNO = SEQ_LAST_NO + 1n;
 const SALE_ORDER_REFNO = 'sor00101';
+// The receipt raised for an order's tendered money runs on its own voucher type
+// and its own counter, so it reads 'arc00101' where the order reads 'sor00101'.
+const ORDER_ADVANCE_VCHR_TYPE_ID = 5;
+const ADVANCE_REFNO = 'arc00101';
+const ADVANCE_SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fb1c';
+const ADVANCE_SEQUENCE = {
+  id: ADVANCE_SEQ_ID,
+  vchrTypeId: ORDER_ADVANCE_VCHR_TYPE_ID,
+  voucherPrefix: 'arc',
+};
+// The customer-advance liability ledger an order credits, the surcharge ledger a
+// card tender credits, and the accounting rows the receipt writes.
+const ADVANCE_LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fb1d';
+const SURCHARGE_LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fb1e';
+// What a tender LINE snapshotted for itself (td_surcharge_ledger_id), which is
+// deliberately not the one its tender master names today.
+const LINE_SURCHARGE_LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fb25';
+const VOUCHER_ID = '019c6f6c-be87-7a11-8905-36092c46fb1f';
+const VOUCHER_LINE_ID = '019c6f6c-be87-7a11-8905-36092c46fb20';
+// The acc_bill_balance ADVANCE row the receipt leaves outstanding.
+const ADVANCE_BILL_ID = '019c6f6c-be87-7a11-8905-36092c46fb21';
+// A cheque tender (accounts.acc_tender_types.ttm_type_id = 5) and what it opens
+// in accounts.acc_pdc_register.
+const CHEQUE_TENDER_ROW_ID = '019c6f6c-be87-7a11-8905-36092c46fb22';
+const BANK_LEDGER_ID = '019c6f6c-be87-7a11-8905-36092c46fb23';
+const PDC_ID = '019c6f6c-be87-7a11-8905-36092c46fb24';
+const CHEQUE_NO = '458812';
 
 const makeSequence = (overrides: Partial<AccVoucherSeq> = {}): AccVoucherSeq =>
   ({
@@ -93,6 +119,8 @@ const makeOrder = (overrides: Partial<SaleOrder> = {}): SaleOrder =>
     soCustName: 'Acme',
     soUserId: USER_ID,
     soStatus: 'DRAFT',
+    soOrderAmt: new Prisma.Decimal('10000.00'),
+    soRoundOff: new Prisma.Decimal('0.00'),
     soAdvancePolicy: 'NONE',
     soAdvancePerc: new Prisma.Decimal('0.0000'),
     soAdvanceRequired: new Prisma.Decimal('0.00'),
@@ -137,41 +165,6 @@ const makeItem = (overrides: Partial<SaleOrderItem> = {}): SaleOrderItem =>
     soiModifiedBy: null,
     ...overrides,
   }) as unknown as SaleOrderItem;
-
-const makeAdvance = (overrides: Partial<SaleOrderAdvanceAlloc> = {}): SaleOrderAdvanceAlloc =>
-  ({
-    soaId: ADVANCE_ID,
-    soaCompanyId: COMPANY_ID,
-    soaBranchId: BRANCH_ID,
-    soaTenantId: TENANT_ID,
-    soaAccYear: ACC_YEAR,
-    soaOrderId: SALE_ORDER_ID,
-    soaOrderAccYear: ACC_YEAR,
-    soaOrderRefno: SALE_ORDER_REFNO,
-    soaTenderId: null,
-    soaTenderAccYear: null,
-    soaAllocType: 'REFUNDED',
-    soaAllocDate: new Date('2026-08-08T00:00:00.000Z'),
-    soaAmount: new Prisma.Decimal('500.00'),
-    soaBillId: null,
-    soaBillAccYear: null,
-    soaBillRefno: null,
-    soaTargetOrderId: null,
-    soaTargetAccYear: null,
-    soaRefundTenderId: null,
-    soaRefundMode: 'CASH',
-    soaVoucherId: null,
-    soaLedgerId: null,
-    soaRemarks: null,
-    soaApprovedBy: null,
-    soaIsDeleted: false,
-    soaSyncDate: null,
-    soaCreatedOn: new Date('2026-08-08T10:00:00.000Z'),
-    soaCreatedBy: USER_ID,
-    soaModifiedOn: null,
-    soaModifiedBy: null,
-    ...overrides,
-  }) as SaleOrderAdvanceAlloc;
 
 const makeCharge = (overrides: Partial<TransactionChargeDetail> = {}): TransactionChargeDetail =>
   ({
@@ -302,15 +295,69 @@ type ItemUpdateArgs = {
   where: { soiId_soiAccYear: { soiId: string; soiAccYear: string } };
   data: Prisma.SaleOrderItemUncheckedUpdateInput;
 };
-type AdvanceCreateArgs = { data: Prisma.SaleOrderAdvanceAllocUncheckedCreateInput };
-type AdvanceUpdateArgs = {
-  where: { soaId_soaAccYear: { soaId: string; soaAccYear: string } };
-  data: Prisma.SaleOrderAdvanceAllocUncheckedUpdateInput;
-};
 type SequenceUpdateArgs = {
   where: { id: string };
   data: Prisma.AccVoucherSeqUncheckedUpdateInput;
 };
+type VoucherTypeFindArgs = { where: { vchrTypeId: number } };
+// What order-advance-posting.helper.ts selects when it looks for the receipt an
+// order is already posted through (ux_avh_src).
+type LiveVoucher = {
+  avhVoucherId: string;
+  avhAccYear: string;
+  avhVoucherNo: bigint | null;
+  avhVoucherRefno: string | null;
+  avhVoucherDate: Date;
+  avhPostedOn: Date | null;
+};
+// ... and what it selects from the ADVANCE row that outstanding money leaves in
+// accounts.acc_bill_balance.
+type AdvanceBill = {
+  ablId: string;
+  ablAccYear: string;
+  ablDocRefno: string;
+  ablAllocAmount: Prisma.Decimal;
+  ablDiscAmount: Prisma.Decimal;
+  ablWriteoffAmount: Prisma.Decimal;
+};
+const makeAdvanceBill = (overrides: Partial<AdvanceBill> = {}): AdvanceBill => ({
+  ablId: ADVANCE_BILL_ID,
+  ablAccYear: ACC_YEAR,
+  ablDocRefno: SALE_ORDER_REFNO,
+  ablAllocAmount: new Prisma.Decimal('0.00'),
+  ablDiscAmount: new Prisma.Decimal('0.00'),
+  ablWriteoffAmount: new Prisma.Decimal('0.00'),
+  ...overrides,
+});
+// ... and what order-pdc-posting.helper.ts selects from the cheque register
+// rows an order's tender lines already opened.
+type StoredPdcRow = {
+  apdId: string;
+  apdAccYear: string;
+  apdTenderId: string;
+  apdInstrumentNo: string;
+  apdStatus: string;
+};
+const makePdcRow = (overrides: Partial<StoredPdcRow> = {}): StoredPdcRow => ({
+  apdId: PDC_ID,
+  apdAccYear: ACC_YEAR,
+  apdTenderId: CHEQUE_TENDER_ROW_ID,
+  apdInstrumentNo: CHEQUE_NO,
+  apdStatus: 'HELD',
+  ...overrides,
+});
+// A cheque tender line: type 5, with the instrument columns the register needs.
+const makeChequeTender = (overrides: Partial<AccTenderDetail> = {}): AccTenderDetail =>
+  makeTender({
+    tdId: CHEQUE_TENDER_ROW_ID,
+    tdTenderTypeId: CHEQUE_TENDER_TYPE_ID,
+    tdRefNo: CHEQUE_NO,
+    tdInstrumentDate: new Date('2026-09-08T00:00:00.000Z'),
+    tdBankName: 'HDFC Bank',
+    tdSettleLedgerId: BANK_LEDGER_ID,
+    tdIsPdc: true,
+    ...overrides,
+  });
 
 type PrismaMock = {
   saleOrder: {
@@ -323,12 +370,6 @@ type PrismaMock = {
     findMany: jest.Mock<Promise<SaleOrderItem[]>, unknown[]>;
     create: jest.Mock<Promise<SaleOrderItem>, [ItemCreateArgs]>;
     update: jest.Mock<Promise<SaleOrderItem>, [ItemUpdateArgs]>;
-    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
-  };
-  saleOrderAdvanceAlloc: {
-    findMany: jest.Mock<Promise<SaleOrderAdvanceAlloc[]>, unknown[]>;
-    create: jest.Mock<Promise<SaleOrderAdvanceAlloc>, [AdvanceCreateArgs]>;
-    update: jest.Mock<Promise<SaleOrderAdvanceAlloc>, [AdvanceUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
   transactionChargeDetail: {
@@ -353,11 +394,45 @@ type PrismaMock = {
       Promise<{ tndName: string; tndTypeId: number; tndLedgerId: string } | null>,
       unknown[]
     >;
+    // Only read when a tender charges a surcharge: the receipt credits it to the
+    // tender's own surcharge ledger.
+    findMany: jest.Mock<
+      Promise<{ tndId: string; tndName: string; tndSurchargeLedgerId: string | null }[]>,
+      unknown[]
+    >;
   };
   accTenderType: { findFirst: jest.Mock<Promise<{ ttmTypeId: number } | null>, unknown[]> };
-  accVoucherType: { findFirst: jest.Mock<Promise<unknown>, unknown[]> };
+  accVoucherType: { findFirst: jest.Mock<Promise<unknown>, [VoucherTypeFindArgs]> };
+  // The advance receipt raised for the order's tendered money.
+  accVoucherHeader: {
+    findFirst: jest.Mock<Promise<LiveVoucher | null>, unknown[]>;
+    findMany: jest.Mock<Promise<{ avhVoucherId: string; avhAccYear: string }[]>, unknown[]>;
+    create: jest.Mock<Promise<{ avhVoucherId: string }>, unknown[]>;
+    update: jest.Mock<Promise<unknown>, unknown[]>;
+  };
+  accVoucher: {
+    create: jest.Mock<Promise<{ avId: string }>, unknown[]>;
+    updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
+  };
+  // The ADVANCE outstanding the receipt leaves behind: the customer's credit
+  // with us until an invoice eats it.
+  accBillBalance: {
+    findFirst: jest.Mock<Promise<AdvanceBill | null>, unknown[]>;
+    findMany: jest.Mock<Promise<AdvanceBill[]>, unknown[]>;
+    create: jest.Mock<Promise<{ ablId: string }>, unknown[]>;
+    update: jest.Mock<Promise<unknown>, unknown[]>;
+  };
+  // Only counted: a real settlement against the advance is what stops it being
+  // edited down or taken back out.
+  accBillAdjustment: { count: jest.Mock<Promise<number>, unknown[]> };
+  // The cheque register: one row per tender line of type 5.
+  accPdcRegister: {
+    findMany: jest.Mock<Promise<StoredPdcRow[]>, unknown[]>;
+    create: jest.Mock<Promise<{ apdId: string }>, unknown[]>;
+    update: jest.Mock<Promise<unknown>, unknown[]>;
+  };
   accVoucherSeq: {
-    findFirst: jest.Mock<Promise<AccVoucherSeq | null>, unknown[]>;
+    findFirst: jest.Mock<Promise<AccVoucherSeq | null>, [VoucherTypeFindArgs]>;
     create: jest.Mock<Promise<AccVoucherSeq>, [{ data: Prisma.AccVoucherSeqUncheckedCreateInput }]>;
     update: jest.Mock<Promise<AccVoucherSeq>, [SequenceUpdateArgs]>;
   };
@@ -420,21 +495,6 @@ const makePrismaMock = (): PrismaMock => {
       ),
       updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
     },
-    saleOrderAdvanceAlloc: {
-      findMany: jest.fn(() => Promise.resolve([] as SaleOrderAdvanceAlloc[])),
-      create: jest.fn(({ data }: AdvanceCreateArgs) =>
-        Promise.resolve(makeAdvance(data as unknown as Partial<SaleOrderAdvanceAlloc>)),
-      ),
-      update: jest.fn(({ where, data }: AdvanceUpdateArgs) =>
-        Promise.resolve(
-          makeAdvance({
-            ...(data as unknown as Partial<SaleOrderAdvanceAlloc>),
-            soaId: where.soaId_soaAccYear.soaId,
-          }),
-        ),
-      ),
-      updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
-    },
     transactionChargeDetail: {
       findMany: jest.fn(() => Promise.resolve([])),
       create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
@@ -462,34 +522,85 @@ const makePrismaMock = (): PrismaMock => {
       findFirst: jest.fn(() =>
         Promise.resolve({ tndName: 'Cash', tndTypeId: 1, tndLedgerId: TENDER_LEDGER_ID }),
       ),
-    },
-    accTenderType: { findFirst: jest.fn(() => Promise.resolve({ ttmTypeId: 1 })) },
-    accVoucherType: {
-      findFirst: jest.fn(() =>
-        Promise.resolve({
-          vchrTypeId: SALE_ORDER_VCHR_TYPE_ID,
-          vchrNoPrefix: 'sor',
-          vchrNoSuffix: null,
-          vchrNoWidth: 5,
-          vchrResetFreq: 'YEARLY',
-        }),
+      findMany: jest.fn(() =>
+        Promise.resolve([
+          { tndId: TENDER_ID, tndName: 'Cash', tndSurchargeLedgerId: SURCHARGE_LEDGER_ID },
+        ]),
       ),
     },
+    accTenderType: { findFirst: jest.fn(() => Promise.resolve({ ttmTypeId: 1 })) },
+    // Two document types draw numbers in one order save: the order itself (SOr)
+    // and, when money was tendered, the advance receipt (ARc).
+    accVoucherType: {
+      findFirst: jest.fn(({ where }: VoucherTypeFindArgs) =>
+        Promise.resolve(
+          where.vchrTypeId === ORDER_ADVANCE_VCHR_TYPE_ID
+            ? {
+                vchrTypeId: ORDER_ADVANCE_VCHR_TYPE_ID,
+                vchrNoPrefix: 'arc',
+                vchrNoSuffix: null,
+                vchrNoWidth: 5,
+                vchrResetFreq: 'YEARLY',
+              }
+            : {
+                vchrTypeId: SALE_ORDER_VCHR_TYPE_ID,
+                vchrNoPrefix: 'sor',
+                vchrNoSuffix: null,
+                vchrNoWidth: 5,
+                vchrResetFreq: 'YEARLY',
+              },
+        ),
+      ),
+    },
+    accVoucherHeader: {
+      // No live receipt by default — the order has not been posted before.
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      findMany: jest.fn(() => Promise.resolve([])),
+      create: jest.fn(() => Promise.resolve({ avhVoucherId: VOUCHER_ID })),
+      update: jest.fn(() => Promise.resolve({})),
+    },
+    accVoucher: {
+      create: jest.fn(() => Promise.resolve({ avId: VOUCHER_LINE_ID })),
+      updateMany: jest.fn(() => Promise.resolve({ count: 0 })),
+    },
+    accBillBalance: {
+      // No outstanding advance by default — the order has not taken money before.
+      findFirst: jest.fn(() => Promise.resolve(null)),
+      findMany: jest.fn(() => Promise.resolve([] as AdvanceBill[])),
+      create: jest.fn(() => Promise.resolve({ ablId: ADVANCE_BILL_ID })),
+      update: jest.fn(() => Promise.resolve({})),
+    },
+    accBillAdjustment: { count: jest.fn(() => Promise.resolve(0)) },
+    accPdcRegister: {
+      // No instrument registered by default — the order has taken no cheque
+      // before.
+      findMany: jest.fn(() => Promise.resolve([] as StoredPdcRow[])),
+      create: jest.fn(() => Promise.resolve({ apdId: PDC_ID })),
+      update: jest.fn(() => Promise.resolve({})),
+    },
     accVoucherSeq: {
-      findFirst: jest.fn(() => Promise.resolve(makeSequence())),
+      findFirst: jest.fn(({ where }: VoucherTypeFindArgs) =>
+        Promise.resolve(
+          makeSequence(where.vchrTypeId === ORDER_ADVANCE_VCHR_TYPE_ID ? ADVANCE_SEQUENCE : {}),
+        ),
+      ),
       create: jest.fn(({ data }: { data: Prisma.AccVoucherSeqUncheckedCreateInput }) =>
         Promise.resolve(makeSequence(data as unknown as Partial<AccVoucherSeq>)),
       ),
       // Mirrors Postgres: the first call increments the counter and returns the
       // consumed number, the second only stamps the printable refno onto it.
-      update: jest.fn(({ data }: SequenceUpdateArgs) => {
+      // The row is identified by id, which is how the receipt's counter stays
+      // distinct from the order's.
+      update: jest.fn(({ where, data }: SequenceUpdateArgs) => {
+        const row = where.id === ADVANCE_SEQ_ID ? ADVANCE_SEQUENCE : {};
         const increment = (data.lastNo as { increment?: number } | undefined)?.increment;
         return Promise.resolve(
-          makeSequence(
-            increment === undefined
+          makeSequence({
+            ...row,
+            ...(increment === undefined
               ? { lastRefno: data.lastRefno as string }
-              : { lastNo: SEQ_LAST_NO + BigInt(increment) },
-          ),
+              : { lastNo: SEQ_LAST_NO + BigInt(increment) }),
+          }),
         );
       }),
     },
@@ -710,131 +821,595 @@ describe('SaleOrderService', () => {
     });
   });
 
-  describe('advance allocations', () => {
-    it('creates a REFUNDED allocation scoped to the parent order', async () => {
-      await service.save(
-        baseDto({
-          advances: [
-            {
-              soaAllocType: 'REFUNDED',
-              soaAllocDate: '2026-08-08',
-              soaAmount: 500,
-              soaRefundMode: 'CASH',
-            },
-          ],
-        }),
-      );
-      expect(prisma.saleOrderAdvanceAlloc.create).toHaveBeenCalledWith({
+  // accounts.acc_voucher_header + accounts.acc_vouchers, raised from the order's
+  // acc_tender_detail rows. The tender rows are read back out of the database by
+  // the posting step, so these drive prisma.accTenderDetail.findMany rather than
+  // the payload's tenders[] array.
+  describe('advance receipt posting', () => {
+    const liveVoucher = {
+      avhVoucherId: VOUCHER_ID,
+      avhAccYear: ACC_YEAR,
+      avhVoucherNo: 101n,
+      avhVoucherRefno: ADVANCE_REFNO,
+      avhVoucherDate: new Date('2026-08-08T10:00:00.000Z'),
+      avhPostedOn: new Date('2026-08-08T10:00:00.000Z'),
+    };
+
+    it('posts nothing when the order took no money', async () => {
+      await service.save(baseDto());
+      expect(prisma.accVoucherHeader.create).not.toHaveBeenCalled();
+      expect(prisma.accVoucher.create).not.toHaveBeenCalled();
+    });
+
+    it('raises a POSTED receipt on its own voucher type for the tendered money', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      await service.save(baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
+      expect(prisma.accVoucherHeader.create).toHaveBeenCalledTimes(1);
+      expect(prisma.accVoucherHeader.create.mock.calls[0][0]).toMatchObject({
         data: containing({
-          soaOrderId: SALE_ORDER_ID,
-          soaOrderAccYear: ACC_YEAR,
-          soaAccYear: ACC_YEAR,
-          soaAllocType: 'REFUNDED',
-          soaAmount: 500,
+          avhVoucherTypeId: ORDER_ADVANCE_VCHR_TYPE_ID,
+          avhVoucherRefno: ADVANCE_REFNO,
+          // ux_avh_src: the order is the source document, which is what stops it
+          // being posted twice.
+          avhSrcModule: 'SALES',
+          avhSrcDocType: 'SALES_ORDER',
+          avhSrcDocId: SALE_ORDER_ID,
+          avhDocRefno: SALE_ORDER_REFNO,
+          avhPartyId: CUST_ID,
+          avhOppositeLedgerId: ADVANCE_LEDGER_ID,
+          avhVoucherStatus: 'POSTED',
+          // The doc_* block is the ORDER's value ...
+          avhDocAmount: new Prisma.Decimal('10000.00'),
+          avhRoundOff: new Prisma.Decimal('0.00'),
+          // ... while the totals are what the receipt actually moves
+          // (ck_avh_balanced).
+          avhTotalDebit: new Prisma.Decimal('500.00'),
+          avhTotalCredit: new Prisma.Decimal('500.00'),
         }),
       });
     });
 
-    it('rejects an ADJUSTED allocation that names no bill', async () => {
-      await expect(
-        service.save(
-          baseDto({
-            advances: [{ soaAllocType: 'ADJUSTED', soaAllocDate: '2026-08-08', soaAmount: 500 }],
-          }),
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('rejects a REFUNDED allocation that names a bill', async () => {
-      await expect(
-        service.save(
-          baseDto({
-            advances: [
-              {
-                soaAllocType: 'REFUNDED',
-                soaAllocDate: '2026-08-08',
-                soaAmount: 500,
-                soaBillId: BILL_ID,
-                soaBillAccYear: ACC_YEAR,
-              },
-            ],
-          }),
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('rejects a TRANSFERRED allocation targeting the order itself', async () => {
-      await expect(
-        service.save(
-          baseDto({
-            soId: SALE_ORDER_ID,
-            advances: [
-              {
-                soaAllocType: 'TRANSFERRED',
-                soaAllocDate: '2026-08-08',
-                soaAmount: 500,
-                soaTargetOrderId: SALE_ORDER_ID,
-                soaTargetAccYear: ACC_YEAR,
-              },
-            ],
-          }),
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('rejects a tender reference without its accounting year', async () => {
-      await expect(
-        service.save(
-          baseDto({
-            advances: [
-              {
-                soaAllocType: 'REFUNDED',
-                soaAllocDate: '2026-08-08',
-                soaAmount: 500,
-                soaTenderId: TENDER_ID,
-              },
-            ],
-          }),
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('rejects an allocation naming another order', async () => {
-      await expect(
-        service.save(
-          baseDto({
-            advances: [
-              {
-                soaAllocType: 'REFUNDED',
-                soaAllocDate: '2026-08-08',
-                soaAmount: 500,
-                soaOrderId: OTHER_ORDER_ID,
-              },
-            ],
-          }),
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('rejects a non-positive amount', async () => {
-      await expect(
-        service.save(
-          baseDto({
-            advances: [{ soaAllocType: 'REFUNDED', soaAllocDate: '2026-08-08', soaAmount: 0 }],
-          }),
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('soft deletes an existing allocation the payload no longer carries', async () => {
-      prisma.saleOrder.findFirst.mockResolvedValue(makeOrder());
-      prisma.saleOrderAdvanceAlloc.findMany.mockResolvedValue([makeAdvance()]);
-      await service.save(baseDto({ soId: SALE_ORDER_ID, advances: [] }));
-      expect(prisma.saleOrderAdvanceAlloc.update).toHaveBeenCalledWith(
-        containing({
-          where: { soaId_soaAccYear: { soaId: ADVANCE_ID, soaAccYear: ACC_YEAR } },
-          data: containing({ soaIsDeleted: true }),
+    it('writes the double entry and stamps the voucher onto the tender rows', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      await service.save(baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
+      expect(prisma.accVoucher.create).toHaveBeenCalledTimes(2);
+      expect(prisma.accVoucher.create.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          avVoucherId: VOUCHER_ID,
+          avRowNo: 1,
+          avDrCr: 'DR',
+          avLedgerId: TENDER_LEDGER_ID,
+          avOppLedgerId: ADVANCE_LEDGER_ID,
+          avAmount: new Prisma.Decimal('500.00'),
         }),
+      });
+      expect(prisma.accVoucher.create.mock.calls[1][0]).toMatchObject({
+        data: containing({
+          avRowNo: 2,
+          avDrCr: 'CR',
+          avLedgerId: ADVANCE_LEDGER_ID,
+          avOppLedgerId: TENDER_LEDGER_ID,
+          avAmount: new Prisma.Decimal('500.00'),
+        }),
+      });
+      expect(prisma.accTenderDetail.updateMany).toHaveBeenCalledWith(
+        containing({ data: { tdVoucherId: VOUCHER_ID } }),
+      );
+    });
+
+    it('credits a surcharge to the tender master its own surcharge ledger', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender({
+          tdAmount: new Prisma.Decimal('500.00'),
+          tdSurchargeAmt: new Prisma.Decimal('10.00'),
+          tdTotalAmt: new Prisma.Decimal('510.00'),
+        }),
+      ]);
+      await service.save(baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
+      expect(prisma.accVoucher.create).toHaveBeenCalledTimes(3);
+      expect(prisma.accVoucher.create.mock.calls[2][0]).toMatchObject({
+        data: containing({
+          avRowNo: 3,
+          avDrCr: 'CR',
+          avLedgerId: SURCHARGE_LEDGER_ID,
+          avAmount: new Prisma.Decimal('10.00'),
+        }),
+      });
+      // The tender ledger takes the whole of it.
+      expect(prisma.accVoucher.create.mock.calls[0][0]).toMatchObject({
+        data: containing({ avDrCr: 'DR', avAmount: new Prisma.Decimal('510.00') }),
+      });
+    });
+
+    // The line's own snapshot is what the operator actually tendered against, so
+    // it answers ahead of the master — a master repointed since the order was
+    // taken must not move money the customer paid last month.
+    it("credits the surcharge to the line's own ledger snapshot over the master's", async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender({
+          tdAmount: new Prisma.Decimal('500.00'),
+          tdSurchargeAmt: new Prisma.Decimal('10.00'),
+          tdSurchargeLedgerId: LINE_SURCHARGE_LEDGER_ID,
+          tdTotalAmt: new Prisma.Decimal('510.00'),
+        }),
+      ]);
+      await service.save(baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
+      expect(prisma.accVoucher.create).toHaveBeenCalledTimes(3);
+      expect(prisma.accVoucher.create.mock.calls[2][0]).toMatchObject({
+        data: containing({
+          avRowNo: 3,
+          avDrCr: 'CR',
+          avLedgerId: LINE_SURCHARGE_LEDGER_ID,
+          avOppLedgerId: TENDER_LEDGER_ID,
+          avAmount: new Prisma.Decimal('10.00'),
+        }),
+      });
+    });
+
+    it('refuses a surcharge whose tender master names no surcharge ledger', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender({
+          tdSurchargeAmt: new Prisma.Decimal('10.00'),
+          tdTotalAmt: new Prisma.Decimal('510.00'),
+        }),
+      ]);
+      prisma.accTenderMaster.findMany.mockResolvedValue([
+        { tndId: TENDER_ID, tndName: 'Cash', tndSurchargeLedgerId: null },
+      ]);
+      await expect(service.save(baseDto())).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // ck_av_self: a line cannot debit and credit the same ledger.
+    it('refuses a tender paid into the very ledger it would be credited to', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender({ tdTenderLedgerId: ADVANCE_LEDGER_ID }),
+      ]);
+      await expect(
+        service.save(baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID })),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('re-syncs the existing receipt on update instead of raising a second one', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender({
+          tdAmount: new Prisma.Decimal('750.00'),
+          tdTotalAmt: new Prisma.Decimal('750.00'),
+        }),
+      ]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID }));
+      expect(prisma.accVoucherHeader.create).not.toHaveBeenCalled();
+      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          // The order is unchanged, so its face is; the tendered money moved.
+          avhDocAmount: new Prisma.Decimal('10000.00'),
+          avhTotalDebit: new Prisma.Decimal('750.00'),
+          avhTotalCredit: new Prisma.Decimal('750.00'),
+        }),
+      });
+      // The old lines are retired, by voucher, before the rebuilt ones are
+      // inserted — ux_av_voucher_row ignores deleted rows, so row 1 is free
+      // again. invocationCallOrder proves the soft delete really does come
+      // first; a rebuild that inserted first would collide on the index.
+      expect(prisma.accVoucher.updateMany).toHaveBeenCalledWith(
+        containing({
+          where: containing({ avVoucherId: VOUCHER_ID, avIsDeleted: false }),
+          data: containing({ avIsDeleted: true, avIsActive: false }),
+        }),
+      );
+      expect(prisma.accVoucher.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.accVoucher.create.mock.invocationCallOrder[0],
+      );
+      // The rebuilt lines hang off the SAME header id, renumbered from 1.
+      expect(prisma.accVoucher.create).toHaveBeenCalledTimes(2);
+      expect(prisma.accVoucher.create.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          avVoucherId: VOUCHER_ID,
+          avRowNo: 1,
+          avDrCr: 'DR',
+          avAmount: new Prisma.Decimal('750.00'),
+        }),
+      });
+      expect(prisma.accVoucher.create.mock.calls[1][0]).toMatchObject({
+        data: containing({ avVoucherId: VOUCHER_ID, avRowNo: 2, avDrCr: 'CR' }),
+      });
+      // ... and the header keeps its identity: no new number is drawn for it.
+      expect(prisma.accVoucher.create.mock.calls[0][0]).toMatchObject({
+        data: containing({ avVoucherNo: 101n, avVoucherRefno: ADVANCE_REFNO }),
+      });
+    });
+
+    // A surcharge added by the edit is nothing special: the lines are rebuilt
+    // from the current tenders, so the third line appears on the re-sync exactly
+    // as it would have on a first post.
+    it('writes the surcharge line when an update adds one to a posted receipt', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender({
+          tdAmount: new Prisma.Decimal('500.00'),
+          tdSurchargeAmt: new Prisma.Decimal('10.00'),
+          tdSurchargeLedgerId: LINE_SURCHARGE_LEDGER_ID,
+          tdTotalAmt: new Prisma.Decimal('510.00'),
+        }),
+      ]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID, soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
+      expect(prisma.accVoucherHeader.create).not.toHaveBeenCalled();
+      // ck_avh_balanced: the surcharge rides in the totals on both sides.
+      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          avhTotalDebit: new Prisma.Decimal('510.00'),
+          avhTotalCredit: new Prisma.Decimal('510.00'),
+        }),
+      });
+      expect(prisma.accVoucher.create).toHaveBeenCalledTimes(3);
+      expect(prisma.accVoucher.create.mock.calls[1][0]).toMatchObject({
+        data: containing({
+          avRowNo: 2,
+          avDrCr: 'CR',
+          avLedgerId: ADVANCE_LEDGER_ID,
+          avAmount: new Prisma.Decimal('500.00'),
+        }),
+      });
+      expect(prisma.accVoucher.create.mock.calls[2][0]).toMatchObject({
+        data: containing({
+          // Same header, renumbered from 1 — not a second receipt.
+          avVoucherId: VOUCHER_ID,
+          avRowNo: 3,
+          avDrCr: 'CR',
+          avLedgerId: LINE_SURCHARGE_LEDGER_ID,
+          avAmount: new Prisma.Decimal('10.00'),
+        }),
+      });
+    });
+
+    it('cancels the receipt when the last tender is gone', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accTenderDetail.findMany.mockResolvedValue([]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID }));
+      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          avhVoucherStatus: 'CANCELLED',
+          // ck_avh_cancel: a cancellation must say why.
+          avhCancelReason: 'Sale order no longer holds tendered money',
+        }),
+      });
+      expect(prisma.accTenderDetail.updateMany).toHaveBeenCalledWith(
+        containing({ data: { tdVoucherId: null } }),
+      );
+    });
+
+    it('cancels the receipt when the order itself is cancelled', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID, soStatus: 'CANCELLED' }));
+      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
+        data: containing({ avhVoucherStatus: 'CANCELLED' }),
+      });
+      expect(prisma.accVoucher.create).not.toHaveBeenCalled();
+    });
+
+    it('retires the receipt and its lines when the order is soft deleted', async () => {
+      prisma.accVoucherHeader.findMany.mockResolvedValue([
+        { avhVoucherId: VOUCHER_ID, avhAccYear: ACC_YEAR },
+      ]);
+      await service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      expect(prisma.accVoucher.updateMany).toHaveBeenCalledWith(
+        containing({ data: containing({ avIsDeleted: true }) }),
+      );
+      expect(prisma.accVoucherHeader.update.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          avhVoucherStatus: 'CANCELLED',
+          avhCancelReason: 'Sale order deleted',
+          avhIsDeleted: true,
+        }),
+      });
+    });
+  });
+
+  // accounts.acc_bill_balance — the bill side of the same money. The voucher
+  // says it moved; this row says the customer holds a credit with us that no
+  // invoice has eaten yet, which is what the ageing report and the adjustment
+  // screen actually read.
+  describe('advance outstanding (acc_bill_balance)', () => {
+    const liveVoucher = {
+      avhVoucherId: VOUCHER_ID,
+      avhAccYear: ACC_YEAR,
+      avhVoucherNo: 101n,
+      avhVoucherRefno: ADVANCE_REFNO,
+      avhVoucherDate: new Date('2026-08-08T10:00:00.000Z'),
+      avhPostedOn: new Date('2026-08-08T10:00:00.000Z'),
+    };
+
+    it('opens an ADVANCE outstanding row for the money the order holds', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      await service.save(baseDto({ soAdvanceRecdAmt: 500 }));
+      expect(prisma.accBillBalance.create).toHaveBeenCalledTimes(1);
+      expect(prisma.accBillBalance.create.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          ablBillType: 'ADVANCE',
+          // The customer's money, held: the party is in credit, the opposite of
+          // an invoice's receivable.
+          ablDrCr: 'CR',
+          ablPartyId: CUST_ID,
+          // ck_abl_src_doc — the row names the order it was taken against.
+          ablSrcModule: 'SALES',
+          ablSrcDocType: 'SALES_ORDER',
+          ablSrcDocId: SALE_ORDER_ID,
+          ablSrcAccYear: ACC_YEAR,
+          // ck_abl_voucher: the receipt that opened it, and its type.
+          ablVoucherId: VOUCHER_ID,
+          ablVoucherTypeId: ORDER_ADVANCE_VCHR_TYPE_ID,
+          ablVoucherRefno: ADVANCE_REFNO,
+          // No bill number to quote — the order is what it is known by.
+          ablDocRefno: SALE_ORDER_REFNO,
+          ablBillAmount: new Prisma.Decimal('500.00'),
+          ablAllocAmount: new Prisma.Decimal('0.00'),
+        }),
+      });
+    });
+
+    it('opens nothing when the order took no money', async () => {
+      await service.save(baseDto({ soAdvanceRecdAmt: 0 }));
+      expect(prisma.accBillBalance.create).not.toHaveBeenCalled();
+    });
+
+    // so_advance_recd_amt is fed from the tenders, so an omitted roll-up is not
+    // a claim that nothing was taken.
+    it('falls back to the tenders — without the surcharge — when the payload states no received amount', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender({
+          tdAmount: new Prisma.Decimal('500.00'),
+          tdSurchargeAmt: new Prisma.Decimal('10.00'),
+          tdTotalAmt: new Prisma.Decimal('510.00'),
+        }),
+      ]);
+      await service.save(baseDto());
+      // 510 hit the tender ledger, but the surcharge is the company's income —
+      // only 500 is the customer's credit.
+      expect(prisma.accBillBalance.create.mock.calls[0][0]).toMatchObject({
+        data: containing({ ablBillAmount: new Prisma.Decimal('500.00') }),
+      });
+    });
+
+    // abl_pending_amount is bill − alloc − disc − writeoff, so seeding the
+    // allocation with what has already been used leaves the outstanding equal to
+    // the order's own so_advance_balance_amt.
+    it('seeds the allocation with the advance already refunded', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      await service.save(baseDto({ soAdvanceRecdAmt: 500, soAdvanceRefundAmt: 100 }));
+      expect(prisma.accBillBalance.create.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          ablBillAmount: new Prisma.Decimal('500.00'),
+          ablAllocAmount: new Prisma.Decimal('100.00'),
+        }),
+      });
+    });
+
+    it('moves the existing outstanding on update instead of opening a second one', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accBillBalance.findFirst.mockResolvedValue(makeAdvanceBill());
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeTender({
+          tdAmount: new Prisma.Decimal('750.00'),
+          tdTotalAmt: new Prisma.Decimal('750.00'),
+        }),
+      ]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID, soAdvanceRecdAmt: 750 }));
+      expect(prisma.accBillBalance.create).not.toHaveBeenCalled();
+      expect(prisma.accBillBalance.update.mock.calls[0][0]).toMatchObject({
+        // Partitioned by abl_acc_year: pk_acc_bill_balance is the pair.
+        where: { ablId_ablAccYear: { ablId: ADVANCE_BILL_ID, ablAccYear: ACC_YEAR } },
+        data: containing({ ablBillAmount: new Prisma.Decimal('750.00') }),
+      });
+    });
+
+    it('retires the outstanding when the last tender is gone', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accBillBalance.findMany.mockResolvedValue([makeAdvanceBill()]);
+      prisma.accTenderDetail.findMany.mockResolvedValue([]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID }));
+      expect(prisma.accBillBalance.update.mock.calls[0][0]).toMatchObject({
+        where: { ablId_ablAccYear: { ablId: ADVANCE_BILL_ID, ablAccYear: ACC_YEAR } },
+        data: containing({ ablIsDeleted: true, ablIsActive: false }),
+      });
+    });
+
+    // A receipt allocated against the advance would be left pointing at a row
+    // that no longer exists.
+    it('refuses to take back an advance already settled in accounts', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accBillBalance.findMany.mockResolvedValue([makeAdvanceBill()]);
+      prisma.accBillAdjustment.count.mockResolvedValue(1);
+      prisma.accTenderDetail.findMany.mockResolvedValue([]);
+      await expect(service.save(baseDto({ soId: SALE_ORDER_ID }))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    // ... but a refunded advance carries a seeded allocation and no adjustment,
+    // and must still be able to go.
+    it('retires an advance whose allocation is only the refund it was seeded with', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accBillBalance.findMany.mockResolvedValue([
+        makeAdvanceBill({ ablAllocAmount: new Prisma.Decimal('500.00') }),
+      ]);
+      prisma.accTenderDetail.findMany.mockResolvedValue([]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID }));
+      expect(prisma.accBillBalance.update.mock.calls[0][0]).toMatchObject({
+        data: containing({ ablIsDeleted: true }),
+      });
+    });
+
+    it('retires the outstanding when the order is soft deleted', async () => {
+      prisma.accVoucherHeader.findMany.mockResolvedValue([
+        { avhVoucherId: VOUCHER_ID, avhAccYear: ACC_YEAR },
+      ]);
+      prisma.accBillBalance.findMany.mockResolvedValue([makeAdvanceBill()]);
+      await service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      expect(prisma.accBillBalance.update.mock.calls[0][0]).toMatchObject({
+        where: { ablId_ablAccYear: { ablId: ADVANCE_BILL_ID, ablAccYear: ACC_YEAR } },
+        data: containing({ ablIsDeleted: true, ablIsActive: false }),
+      });
+    });
+  });
+
+  // Tender type 5 is CHEQUE, and a cheque is an instrument the company holds
+  // until the bank says otherwise — so it also opens a row in
+  // accounts.acc_pdc_register (order-pdc-posting.helper.ts).
+  describe('cheque register (acc_pdc_register)', () => {
+    const liveVoucher = {
+      avhVoucherId: VOUCHER_ID,
+      avhAccYear: ACC_YEAR,
+      avhVoucherNo: 101n,
+      avhVoucherRefno: ADVANCE_REFNO,
+      avhVoucherDate: new Date('2026-08-08T10:00:00.000Z'),
+      avhPostedOn: new Date('2026-08-08T10:00:00.000Z'),
+    };
+
+    it('registers nothing when the money came in some other way', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      await service.save(baseDto());
+      expect(prisma.accPdcRegister.create).not.toHaveBeenCalled();
+    });
+
+    it('registers a cheque tender against the receipt that took it', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeChequeTender()]);
+      await service.save(baseDto({ soAdvanceLedgerId: ADVANCE_LEDGER_ID }));
+      expect(prisma.accPdcRegister.create).toHaveBeenCalledTimes(1);
+      expect(prisma.accPdcRegister.create.mock.calls[0][0]).toMatchObject({
+        data: containing({
+          apdCompanyId: COMPANY_ID,
+          apdBranchId: BRANCH_ID,
+          // Received in the order's year, which is the register's partition key.
+          apdAccYear: ACC_YEAR,
+          apdTraType: 'R',
+          apdPartyId: CUST_ID,
+          apdInstrumentType: 'CHEQUE',
+          apdInstrumentNo: CHEQUE_NO,
+          apdInstrumentDate: new Date('2026-09-08T00:00:00.000Z'),
+          apdAmount: new Prisma.Decimal('500.00'),
+          apdBankName: 'HDFC Bank',
+          apdBankLedgerId: BANK_LEDGER_ID,
+          apdStatus: 'HELD',
+          // ck_apd_posting: the advance receipt is raised the day the cheque
+          // arrives, so the row is ON_RECEIPT and names its voucher.
+          apdPostingMode: 'ON_RECEIPT',
+          apdVoucherId: VOUCHER_ID,
+          apdVoucherAccYear: ACC_YEAR,
+          apdTenderId: CHEQUE_TENDER_ROW_ID,
+        }),
+      });
+    });
+
+    it('re-syncs the registered cheque on update instead of registering a second one', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accPdcRegister.findMany.mockResolvedValue([makePdcRow()]);
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeChequeTender({
+          tdAmount: new Prisma.Decimal('750.00'),
+          tdTotalAmt: new Prisma.Decimal('750.00'),
+        }),
+      ]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID }));
+      expect(prisma.accPdcRegister.create).not.toHaveBeenCalled();
+      expect(prisma.accPdcRegister.update.mock.calls[0][0]).toMatchObject({
+        where: { apdId_apdAccYear: { apdId: PDC_ID, apdAccYear: ACC_YEAR } },
+        data: containing({ apdAmount: new Prisma.Decimal('750.00'), apdInstrumentNo: CHEQUE_NO }),
+      });
+    });
+
+    it('cancels the register row when the cheque is no longer tendered', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accPdcRegister.findMany.mockResolvedValue([makePdcRow()]);
+      // The order now settles in cash: the tender row is a different line, so
+      // the cheque's register row has nothing behind it any more.
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      await service.save(baseDto({ soId: SALE_ORDER_ID }));
+      expect(prisma.accPdcRegister.update.mock.calls[0][0]).toMatchObject({
+        where: { apdId_apdAccYear: { apdId: PDC_ID, apdAccYear: ACC_YEAR } },
+        // ck_apd_cancelled wants a reason; the row stays for audit and
+        // ux_apd_instrument frees the cheque number again.
+        data: containing({ apdStatus: 'CANCELLED', apdIsActive: false }),
+      });
+      expect(prisma.accPdcRegister.update.mock.calls[0][0]).not.toMatchObject({
+        data: containing({ apdIsDeleted: true }),
+      });
+    });
+
+    it('cancels and retires the register row when the order is soft deleted', async () => {
+      prisma.accVoucherHeader.findMany.mockResolvedValue([
+        { avhVoucherId: VOUCHER_ID, avhAccYear: ACC_YEAR },
+      ]);
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeChequeTender()]);
+      prisma.accPdcRegister.findMany.mockResolvedValue([makePdcRow()]);
+      await service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      expect(prisma.accPdcRegister.update.mock.calls[0][0]).toMatchObject({
+        data: containing({ apdStatus: 'CANCELLED', apdIsDeleted: true, apdIsActive: false }),
+      });
+    });
+
+    it('refuses a cheque tender with no cheque number', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeChequeTender({ tdRefNo: null })]);
+      await expect(service.save(baseDto())).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.accPdcRegister.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a cheque tender with no cheque date', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeChequeTender({ tdInstrumentDate: null }),
+      ]);
+      await expect(service.save(baseDto())).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // ck_apd_dates: an instrument cannot mature before the day it arrived.
+    it('refuses a cheque dated before the order', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeChequeTender({ tdInstrumentDate: new Date('2026-08-07T00:00:00.000Z') }),
+      ]);
+      await expect(service.save(baseDto())).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // ux_apd_instrument: one cheque number per customer per year.
+    it('refuses the same cheque tendered twice on one order', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeChequeTender(),
+        makeChequeTender({ tdId: LINE_B_ID, tdRowNo: 2 }),
+      ]);
+      await expect(service.save(baseDto())).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.accPdcRegister.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a cheque already registered for the customer elsewhere', async () => {
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeChequeTender()]);
+      // Nothing hanging off this order's own tenders, but the number is taken
+      // by an instrument that came in on another document.
+      prisma.accPdcRegister.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([makePdcRow({ apdTenderId: LINE_A_ID })]);
+      await expect(service.save(baseDto())).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.accPdcRegister.create).not.toHaveBeenCalled();
+    });
+
+    // Everything past HELD belongs to the PDC screen: the deposit slip, the
+    // clearing voucher and the bounce charges all hang off these columns.
+    it('refuses to change a cheque the bank has already seen', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accPdcRegister.findMany.mockResolvedValue([makePdcRow({ apdStatus: 'DEPOSITED' })]);
+      prisma.accTenderDetail.findMany.mockResolvedValue([
+        makeChequeTender({ tdTotalAmt: new Prisma.Decimal('750.00') }),
+      ]);
+      await expect(service.save(baseDto({ soId: SALE_ORDER_ID }))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.accPdcRegister.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to drop a cheque the bank has already cleared', async () => {
+      prisma.accVoucherHeader.findFirst.mockResolvedValue(liveVoucher);
+      prisma.accPdcRegister.findMany.mockResolvedValue([makePdcRow({ apdStatus: 'CLEARED' })]);
+      prisma.accTenderDetail.findMany.mockResolvedValue([makeTender()]);
+      await expect(service.save(baseDto({ soId: SALE_ORDER_ID }))).rejects.toBeInstanceOf(
+        BadRequestException,
       );
     });
   });
@@ -994,7 +1569,7 @@ describe('SaleOrderService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('returns the order with items, advances and resolved names', async () => {
+    it('returns the order with items and resolved names', async () => {
       prisma.saleOrder.findFirst.mockResolvedValue({
         ...makeOrder({ soSalesmanId: [SALESMAN_A_ID, SALESMAN_B_ID] }),
         items: [
@@ -1011,7 +1586,6 @@ describe('SaleOrderService', () => {
           },
         ],
       } as unknown as SaleOrder);
-      prisma.saleOrderAdvanceAlloc.findMany.mockResolvedValue([makeAdvance()]);
       const result = await service.getById(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
       expect(result.items).toHaveLength(1);
       expect(result.items![0]).toEqual(
@@ -1022,14 +1596,6 @@ describe('SaleOrderService', () => {
           soiCompanyName: 'Acme Traders',
           soiBranchName: 'Main Branch',
           soiSalesmanName: 'Priya S',
-        }),
-      );
-      expect(result.advances).toHaveLength(1);
-      expect(result.advances![0]).toEqual(
-        containing({
-          soaAllocType: 'REFUNDED',
-          soaCompanyName: 'Acme Traders',
-          soaBranchName: 'Main Branch',
         }),
       );
       expect(result.soOrderSlno).toBe(SALE_ORDER_SLNO.toString());
@@ -1068,7 +1634,7 @@ describe('SaleOrderService', () => {
   });
 
   describe('softDelete', () => {
-    it('cascades the soft delete to items, charges, tenders and advances', async () => {
+    it('cascades the soft delete to items, charges and tenders', async () => {
       const result = await service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
       expect(result).toEqual({ soId: SALE_ORDER_ID, deleted: true });
       expect(prisma.saleOrder.updateMany).toHaveBeenCalledWith(
@@ -1096,12 +1662,6 @@ describe('SaleOrderService', () => {
             tdSrcDocId: SALE_ORDER_ID,
           }),
           data: containing({ tdIsDeleted: true }),
-        }),
-      );
-      expect(prisma.saleOrderAdvanceAlloc.updateMany).toHaveBeenCalledWith(
-        containing({
-          where: containing({ soaOrderId: SALE_ORDER_ID, soaOrderAccYear: ACC_YEAR }),
-          data: containing({ soaIsDeleted: true }),
         }),
       );
     });

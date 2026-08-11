@@ -8,56 +8,76 @@ Project "Project Name" {
 }
 
 Table acc_bill_adjustment {
-  abaId String [pk]
-  abaCompanyId String [not null]
-  abaBranchId String [not null]
-  abaTenantId String
-  abaAccYear String [not null]
-  abaBillId String [not null]
-  abaPartyId String [not null]
-  abaSalesmanId String
-  abaVoucherId String [not null]
-  abaVoucherAccYear String [not null]
-  abaVoucherLineId String
-  abaVoucherTypeId Int [not null]
-  abaVoucherNo BigInt
-  abaVoucherRefno String
-  abaRowNo Int [not null]
-  abaAdjDate DateTime [not null]
-  abaAdjType String [not null, default: 'AGAINST_REF']
-  abaDrCr String [not null]
-  abaAllocAmount Decimal [not null, default: 0]
-  abaDiscAmount Decimal [not null, default: 0]
-  abaWriteoffAmount Decimal [not null, default: 0]
-  abaProfitAmount Decimal [not null, default: 0]
-  abaEffectLedgerId String
-  abaSettlementMode String
-  abaSettlementLedgerId String [not null]
-  abaIsPostDated Boolean [not null, default: false]
-  abaPdcDueDate DateTime
-  abaNarration String
-  abaIsActive Boolean [not null, default: true]
-  abaIsDeleted Boolean [not null, default: false]
-  abaSyncDate DateTime
-  abaCreatedOn DateTime [default: `now()`, not null]
-  abaCreatedBy String
-  abaModifiedOn DateTime
-  abaModifiedBy String
-  bill acc_bills [not null]
-  voucherHeader acc_voucher_header [not null]
-  voucherType acc_voucher_types [not null]
+  abjId String [not null]
+  abjCompanyId String [not null]
+  abjBranchId String [not null]
+  abjTenantId String
+  abjAccYear String [not null]
+  abjBillId String [not null]
+  abjBillAccYear String [not null]
+  abjPartyId String [not null]
+  abjRowNo Int [not null, default: 1]
+  abjAgainstBillId String
+  abjAgainstBillAccYear String
+  abjVoucherId String
+  abjVoucherAccYear String
+  abjVoucherLineId String
+  abjAdjType String [not null]
+  abjAdjDate DateTime [not null]
+  abjDrCr String [not null]
+  abjAmount Decimal [not null]
+  abjSettlementMode String
+  abjSettlementLedgerId String
+  abjTenderId String
+  abjTenderAccYear String
+  abjChequeId String
+  abjChequeAccYear String
+  abjIsPostDated Boolean [not null, default: false]
+  abjReversalOfId String
+  abjReversalReason String
+  abjRemarks String
+  abjApprovedBy String
+  abjUserId String [not null]
+  abjSessionId String
+  abjIsDeleted Boolean [not null, default: false]
+  abjSyncDate DateTime
+  abjCreatedOn DateTime [default: `now()`, not null]
+  abjCreatedBy String
+  abjModifiedOn DateTime
+  abjModifiedBy String
+  bill acc_bill_balance [not null]
+  againstBill acc_bill_balance
   party acc_ledger_master [not null]
-  effectLedger acc_ledger_master
-  settlementLedger acc_ledger_master [not null]
+  settlementLedger acc_ledger_master
+  voucherHeader acc_voucher_header
+  tender acc_tender_detail
+  cheque acc_voucher_cheques
 
-  Note: 'Settlement rows: what a receipt, payment, credit note or journal did to a
-bill. Not partitioned — a settlement routinely lands in a different FY
-from the bill it clears, which is why abaAccYear (FY of the settlement)
-and abaVoucherAccYear (FY of the voucher) are separate columns.'
+  indexes {
+    (abjId, abjAccYear) [pk]
+  }
+
+  Note: 'One row per settlement EVENT against one bill: a receipt allocated, an
+advance applied, a credit note set off, a discount allowed, an amount
+written off — or the reversal of any of those.
+
+Partitioned by abjAccYear, the year the ADJUSTMENT happened rather than the
+year the bill was raised, so the primary key is the composite (abjId,
+abjAccYear). That is the whole trick: April\'s receipts land in April\'s
+partition and the March bill they settle never moves. The bill is
+partitioned on its OWN year, so the reference to it is the pair
+(abjBillId, abjBillAccYear) — and abjBillAccYear is precisely the column
+that differs from abjAccYear on a cross-year settlement.
+
+Two-sided settlements (an advance into an invoice, a credit note against an
+invoice) are TWO rows — one against each bill — pointing at each other
+through abjAgainstBillId. Both are written in one transaction; neither is
+meaningful alone. Nothing here is ever edited or deleted: a correction is a
+reversal row.'
 }
 
-Table acc_bills {
-  ablId String [pk]
+Table acc_bill_balance {
+  ablId String [not null]
   ablCompanyId String [not null]
   ablBranchId String [not null]
   ablTenantId String
@@ -66,14 +86,20 @@ Table acc_bills {
   ablSalesmanId String
   ablAgentId String
   ablBillType String [not null]
+  ablSrcModule String
+  ablSrcDocType String
+  ablSrcDocId String
+  ablSrcAccYear String
+  ablParentBillId String
+  ablParentAccYear String
   ablVoucherId String
   ablVoucherLineId String
-  ablVoucherTypeId Int [not null]
+  ablVoucherTypeId Int
   ablVoucherNo BigInt
-  ablDocDate DateTime
-  ablDocRefno String
-  ablBillRefno String [not null]
-  ablBillDate DateTime [not null]
+  ablVoucherDate DateTime
+  ablVoucherRefno String
+  ablDocRefno String [not null]
+  ablDocDate DateTime [not null]
   ablDueDate DateTime
   ablCreditDays Int [not null, default: 0]
   ablGraceDays Int [not null, default: 0]
@@ -84,6 +110,8 @@ Table acc_bills {
   ablDiscAmount Decimal [not null, default: 0]
   ablWriteoffAmount Decimal [not null, default: 0]
   ablPendingAmount Decimal
+  ablStatus String
+  ablSettledOn DateTime
   ablIsActive Boolean [not null, default: true]
   ablIsDeleted Boolean [not null, default: false]
   ablSyncDate DateTime
@@ -92,16 +120,34 @@ Table acc_bills {
   ablModifiedOn DateTime
   ablModifiedBy String
   voucherHeader acc_voucher_header
-  voucherType acc_voucher_types [not null]
+  voucherType acc_voucher_types
   party acc_ledger_master [not null]
+  parentBill acc_bill_balance
+  childBills acc_bill_balance [not null]
   adjustments acc_bill_adjustment [not null]
+  againstAdjustments acc_bill_adjustment [not null]
   voucherLines acc_vouchers [not null]
 
-  Note: 'One row per bill. Never partitioned and never carried forward at year
-end — the same row simply stays open across financial years.
+  indexes {
+    (ablId, ablAccYear) [pk]
+  }
 
-ablAllocAmount / ablDiscAmount / ablWriteoffAmount are maintained from
-AccBillAdjustment and must never be written from application code.'
+  Note: 'One row per bill. Partitioned by ablAccYear — the FY the bill was RAISED in
+— so the primary key is the composite (ablId, ablAccYear) and a bill is
+addressed by the PAIR, never by the id alone.
+
+The bill is never carried forward at year end: the same row stays open
+across financial years, in the partition of the year it started in. So the
+partition says "where it started", not "where the money is" — outstanding
+and ageing reads carry no year filter and scan every partition, and
+detaching a closed year takes its still-open bills with it. Every reference
+into the bill carries the bill\'s own year alongside the id
+(AccBillAdjustment.abjBillAccYear, AccVoucher.avDocAccYear, ablParentAccYear
+below), which is what makes a settlement in a later year expressible.
+
+ablAllocAmount / ablDiscAmount / ablWriteoffAmount are declared
+trigger-maintained from AccBillAdjustment and must never be written from
+application code.'
 }
 
 Table account_groups {
@@ -236,21 +282,20 @@ Table acc_ledger_master {
   tenderDetailLedgers acc_tender_detail [not null]
   tenderDetailSettleLedgers acc_tender_detail [not null]
   tenderDetailPartyLedgers acc_tender_detail [not null]
+  tenderDetailSurchargeLedgers acc_tender_detail [not null]
   voucherDocRegisterParties acc_voucher_doc_register [not null]
   voucherHeaderParties acc_voucher_header [not null]
   voucherHeaderOppLedgers acc_voucher_header [not null]
   accountingEntries acc_vouchers [not null]
   oppositeAccountingEntries acc_vouchers [not null]
-  billParties acc_bills [not null]
+  billParties acc_bill_balance [not null]
   billAdjustmentParties acc_bill_adjustment [not null]
-  billAdjustmentEffectLedgers acc_bill_adjustment [not null]
   billAdjustmentSettleLedgers acc_bill_adjustment [not null]
   pdcParties acc_pdc_register [not null]
   pdcBankLedgers acc_pdc_register [not null]
   chargeMasters charge_master [not null]
   chargeDetails txn_charge_detail [not null]
   saleOrderAdvanceLedgers sale_order [not null]
-  saleOrderAdvanceAllocLedgers sale_order_advance_alloc [not null]
 
   indexes {
     (ledCompanyId, ledName) [unique]
@@ -259,7 +304,7 @@ Table acc_ledger_master {
 }
 
 Table acc_opening_balance {
-  opId String [pk]
+  opId String [not null]
   opCompanyId String [not null]
   opBranchId String
   opAccYear String [not null]
@@ -278,12 +323,17 @@ Table acc_opening_balance {
   opModifiedAt DateTime
   opModifiedBy String
 
+  indexes {
+    (opId, opAccYear) [pk]
+  }
+
   Note: 'Opening balance per ledger per financial year. Balance-sheet ledgers
-only; P&L ledgers always start at zero.'
+only; P&L ledgers always start at zero. Partitioned by opAccYear, so the
+primary key is the composite (opId, opAccYear).'
 }
 
 Table acc_pdc_register {
-  apdId String [pk]
+  apdId String [not null]
   apdCompanyId String [not null]
   apdBranchId String [not null]
   apdTenantId String
@@ -323,6 +373,7 @@ Table acc_pdc_register {
   apdChargeVoucherId String
   apdChargeAccYear String
   apdReplacedById String
+  apdReplacedByAccYear String
   apdCancelDate DateTime
   apdCancelReason String
   apdRemarks String
@@ -342,9 +393,16 @@ Table acc_pdc_register {
   replacedBy acc_pdc_register
   replaces acc_pdc_register [not null]
 
-  Note: 'Post-dated cheques and mandates, in both directions. Not partitioned: an
-instrument routinely matures, clears or bounces in a later financial year
-than the one it was received in.
+  indexes {
+    (apdId, apdAccYear) [pk]
+  }
+
+  Note: 'Post-dated cheques and mandates, in both directions. Partitioned by
+apdAccYear, the FY the instrument was received in, so the primary key is
+the composite (apdId, apdAccYear). An instrument routinely matures, clears
+or bounces in a later financial year than the one it was received in; it
+stays in the partition of the year it arrived in, and the later events
+carry their own voucher-year columns.
 
 Two posting modes, per apdPostingMode:
 ON_RECEIPT  — a receipt voucher is raised the day the cheque arrives,
@@ -379,6 +437,7 @@ Table acc_tender_detail {
   tdAmount Decimal [not null, default: 0]
   tdSurchargePerc Decimal [not null, default: 0]
   tdSurchargeAmt Decimal [not null, default: 0]
+  tdSurchargeLedgerId String
   tdTotalAmt Decimal [not null, default: 0]
   tdReceivedAmt Decimal [not null, default: 0]
   tdChangeAmt Decimal [not null, default: 0]
@@ -417,7 +476,8 @@ Table acc_tender_detail {
   ledger acc_ledger_master [not null]
   settleLedger acc_ledger_master
   partyLedger acc_ledger_master [not null]
-  saleOrderAdvanceAllocs sale_order_advance_alloc [not null]
+  surchargeLedger acc_ledger_master
+  billAdjustments acc_bill_adjustment [not null]
 
   indexes {
     (tdId, tdAccYear) [pk]
@@ -549,6 +609,11 @@ Table acc_voucher_cheques {
   voucherType acc_voucher_types [not null]
   company companys [not null]
   branch branch_master [not null]
+  billAdjustments acc_bill_adjustment [not null]
+
+  indexes {
+    (chqId, chqAccYear) [unique]
+  }
 }
 
 Table acc_voucher_doc_api_log {
@@ -847,7 +912,7 @@ Table acc_voucher_header {
   reversalVoucher acc_voucher_header
   reversalVouchers acc_voucher_header [not null]
   vouchers acc_vouchers [not null]
-  bills acc_bills [not null]
+  bills acc_bill_balance [not null]
   billAdjustments acc_bill_adjustment [not null]
   pdcReceipts acc_pdc_register [not null]
   pdcClearings acc_pdc_register [not null]
@@ -882,9 +947,9 @@ Table acc_vouchers {
   avVoucherDate DateTime [not null]
   avVoucherRefno String
   avDocDate DateTime
-  avBillDate DateTime
-  avBillRefno String
-  avBillId String
+  avDocRefno String
+  avDocId String
+  avDocAccYear String
   avDrCr String [not null]
   avLedgerId String [not null]
   avOppLedgerId String [not null]
@@ -908,7 +973,7 @@ Table acc_vouchers {
   ledger acc_ledger_master [not null]
   oppositeLedger acc_ledger_master [not null]
   voucherType acc_voucher_types [not null]
-  bill acc_bills
+  bill acc_bill_balance
 
   indexes {
     (avId, avAccYear) [pk]
@@ -983,8 +1048,7 @@ Table acc_voucher_types {
   voucherSequences acc_voucher_seq [not null]
   voucherHeaders acc_voucher_header [not null]
   vouchers acc_vouchers [not null]
-  bills acc_bills [not null]
-  billAdjustments acc_bill_adjustment [not null]
+  bills acc_bill_balance [not null]
 }
 
 Table acc_ship_addrs {
@@ -3353,7 +3417,6 @@ Table sale_bill {
   sbModifiedOn DateTime
   sbModifiedBy String
   items sale_bill_item [not null]
-  advanceAllocs sale_order_advance_alloc [not null]
   customer customers [not null]
   posState state_codes
   priceLevel item_price_levels [not null]
@@ -3657,8 +3720,6 @@ Table sale_order {
   soModifiedOn DateTime
   soModifiedBy String
   items sale_order_item [not null]
-  advanceAllocs sale_order_advance_alloc [not null]
-  transferredInAllocs sale_order_advance_alloc [not null]
   customer customers [not null]
   posState state_codes
   shipState state_codes
@@ -3669,48 +3730,6 @@ Table sale_order {
 
   indexes {
     (soId, soAccYear) [pk]
-  }
-}
-
-Table sale_order_advance_alloc {
-  soaId String [not null]
-  soaCompanyId String [not null]
-  soaBranchId String [not null]
-  soaTenantId String
-  soaAccYear String [not null]
-  soaOrderId String [not null]
-  soaOrderAccYear String [not null]
-  soaOrderRefno String
-  soaTenderId String
-  soaTenderAccYear String
-  soaAllocType String [not null]
-  soaAllocDate DateTime [not null]
-  soaAmount Decimal [not null, default: 0]
-  soaBillId String
-  soaBillAccYear String
-  soaBillRefno String
-  soaTargetOrderId String
-  soaTargetAccYear String
-  soaRefundTenderId String
-  soaRefundMode String
-  soaVoucherId String
-  soaLedgerId String
-  soaRemarks String
-  soaApprovedBy String
-  soaIsDeleted Boolean [not null, default: false]
-  soaSyncDate DateTime
-  soaCreatedOn DateTime [default: `now()`, not null]
-  soaCreatedBy String [not null]
-  soaModifiedOn DateTime
-  soaModifiedBy String
-  order sale_order [not null]
-  targetOrder sale_order
-  bill sale_bill
-  tender acc_tender_detail
-  ledger acc_ledger_master
-
-  indexes {
-    (soaId, soaAccYear) [pk]
   }
 }
 
@@ -4468,23 +4487,27 @@ Enum AuditScreenType {
   other
 }
 
-Ref: acc_bill_adjustment.abaBillId > acc_bills.ablId [delete: Restrict]
+Ref: acc_bill_adjustment.(abjBillId, abjBillAccYear) > acc_bill_balance.(ablId, ablAccYear) [delete: Restrict]
 
-Ref: acc_bill_adjustment.(abaVoucherId, abaVoucherAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Cascade]
+Ref: acc_bill_adjustment.(abjAgainstBillId, abjAgainstBillAccYear) > acc_bill_balance.(ablId, ablAccYear) [delete: Restrict]
 
-Ref: acc_bill_adjustment.abaVoucherTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
+Ref: acc_bill_adjustment.abjPartyId > acc_ledger_master.ledId [delete: Restrict]
 
-Ref: acc_bill_adjustment.abaPartyId > acc_ledger_master.ledId [delete: Restrict]
+Ref: acc_bill_adjustment.abjSettlementLedgerId > acc_ledger_master.ledId [delete: Restrict]
 
-Ref: acc_bill_adjustment.abaEffectLedgerId > acc_ledger_master.ledId [delete: Restrict]
+Ref: acc_bill_adjustment.(abjVoucherId, abjVoucherAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
 
-Ref: acc_bill_adjustment.abaSettlementLedgerId > acc_ledger_master.ledId [delete: Restrict]
+Ref: acc_bill_adjustment.(abjTenderId, abjTenderAccYear) > acc_tender_detail.(tdId, tdAccYear) [delete: Restrict]
 
-Ref: acc_bills.(ablVoucherId, ablAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
+Ref: acc_bill_adjustment.(abjChequeId, abjChequeAccYear) > acc_voucher_cheques.(chqId, chqAccYear) [delete: Restrict]
 
-Ref: acc_bills.ablVoucherTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
+Ref: acc_bill_balance.(ablVoucherId, ablAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
 
-Ref: acc_bills.ablPartyId > acc_ledger_master.ledId [delete: Restrict]
+Ref: acc_bill_balance.ablVoucherTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
+
+Ref: acc_bill_balance.ablPartyId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_bill_balance.(ablParentBillId, ablParentAccYear) - acc_bill_balance.(ablId, ablAccYear) [delete: Restrict]
 
 Ref: account_groups.accGroupParentId - account_groups.accGroupId
 
@@ -4508,7 +4531,7 @@ Ref: acc_pdc_register.(apdBounceVoucherId, apdBounceAccYear) > acc_voucher_heade
 
 Ref: acc_pdc_register.(apdChargeVoucherId, apdChargeAccYear) > acc_voucher_header.(avhVoucherId, avhAccYear) [delete: Restrict]
 
-Ref: acc_pdc_register.apdReplacedById - acc_pdc_register.apdId [delete: Restrict]
+Ref: acc_pdc_register.(apdReplacedById, apdReplacedByAccYear) - acc_pdc_register.(apdId, apdAccYear) [delete: Restrict]
 
 Ref: acc_tender_detail.tdCompanyId > companys.compId [delete: Restrict]
 
@@ -4525,6 +4548,8 @@ Ref: acc_tender_detail.tdTenderLedgerId > acc_ledger_master.ledId [delete: Restr
 Ref: acc_tender_detail.tdSettleLedgerId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_tender_detail.tdPartyLedgerId > acc_ledger_master.ledId [delete: Restrict]
+
+Ref: acc_tender_detail.tdSurchargeLedgerId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_tender_master.tndCompanyId > companys.compId [delete: Restrict]
 
@@ -4590,7 +4615,7 @@ Ref: acc_vouchers.avOppLedgerId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_vouchers.avVoucherTypeId > acc_voucher_types.vchrTypeId [delete: Restrict]
 
-Ref: acc_vouchers.avBillId > acc_bills.ablId [delete: Restrict]
+Ref: acc_vouchers.(avDocId, avDocAccYear) > acc_bill_balance.(ablId, ablAccYear) [delete: Restrict]
 
 Ref: acc_voucher_seq.vchrTypeId > acc_voucher_types.vchrTypeId
 
@@ -4821,16 +4846,6 @@ Ref: sale_order.soAgentId > employee_master.empId [delete: Restrict]
 Ref: sale_order.soAdvanceLedgerId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: sale_order.soDeviceId > device_master.devId [delete: Restrict]
-
-Ref: sale_order_advance_alloc.(soaOrderId, soaOrderAccYear) > sale_order.(soId, soAccYear) [delete: Restrict]
-
-Ref: sale_order_advance_alloc.(soaTargetOrderId, soaTargetAccYear) > sale_order.(soId, soAccYear) [delete: Restrict]
-
-Ref: sale_order_advance_alloc.(soaBillId, soaBillAccYear) > sale_bill.(sbId, sbAccYear) [delete: Restrict]
-
-Ref: sale_order_advance_alloc.(soaTenderId, soaTenderAccYear) > acc_tender_detail.(tdId, tdAccYear) [delete: Restrict]
-
-Ref: sale_order_advance_alloc.soaLedgerId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: sale_order_item.(soiOrderId, soiAccYear) > sale_order.(soId, soAccYear) [delete: Cascade]
 

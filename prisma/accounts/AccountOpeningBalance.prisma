@@ -1,11 +1,13 @@
 /// Opening balance per ledger per financial year. Balance-sheet ledgers
-/// only; P&L ledgers always start at zero.
+/// only; P&L ledgers always start at zero. Partitioned by opAccYear, so the
+/// primary key is the composite (opId, opAccYear).
 model AccOpeningBalance {
-  opId            String    @id(map: "pk_acc_opening") @default(dbgenerated("uuidv7()")) @db.Uuid @map("op_id")
+  opId            String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("op_id")
   opCompanyId     String    @db.Uuid @map("op_company_id")
   // NULL = company level
   opBranchId      String?   @db.Uuid @map("op_branch_id")
-  // FY label in YYYY-YYYY form, matching fiscal_years.fy_code
+  // FY label in YYYY-YYYY form, matching fiscal_years.fy_code. The partition
+  // key.
   opAccYear       String    @db.Char(9) @map("op_acc_year")
   opLedgerId      String    @db.Uuid @map("op_ledger_id")
 
@@ -30,10 +32,14 @@ model AccOpeningBalance {
   opModifiedAt    DateTime? @db.Timestamptz(6) @map("op_modified_at")
   opModifiedBy    String?   @db.VarChar(50) @map("op_modified_by")
 
+  @@id([opId, opAccYear], map: "pk_acc_opening")
   @@map("acc_opening_balance")
   @@schema("accounts")
-  // DB-only objects not expressible in the Prisma schema (see migration
-  // 20260806090000_add_voucher_header_bills_pdc):
+  // DB-only objects not expressible in the Prisma schema (see migrations
+  // 20260806090000_add_voucher_header_bills_pdc and
+  // 20260811060000_partition_account_bill_tables_by_acc_year):
+  //   - PARTITION BY LIST (op_acc_year); one partition per accounting year,
+  //     created by public.ensure_acc_year_partitions('YYYY-YYYY').
   //   - Partial UNIQUE index ux_op_scope on
   //     (op_company_id, COALESCE(op_branch_id, all-zero uuid), op_acc_year,
   //     op_ledger_id) WHERE op_is_deleted = false. Branch NULL must still

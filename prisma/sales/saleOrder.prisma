@@ -133,8 +133,8 @@ model SaleOrder {
   soIsAdvanceMandatory Boolean   @default(false) @map("so_is_advance_mandatory")
   soAdvanceLedgerId    String?   @db.Uuid @map("so_advance_ledger_id") // customer-advance liability ledger
   // Roll-ups. Received comes from accounts.acc_tender_detail; the other three
-  // from sales.sale_order_advance_alloc. Balance is what the company still
-  // HOLDS, and ck_so_advance_balance keeps it honest.
+  // are stated by the caller. Balance is what the company still HOLDS, and
+  // ck_so_advance_balance keeps it honest.
   soAdvanceRecdAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_recd_amt")
   soAdvanceAdjustedAmt Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_adjusted_amt")
   soAdvanceRefundAmt   Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_refund_amt")
@@ -189,8 +189,6 @@ model SaleOrder {
   soModifiedBy         String?   @db.VarChar(50) @map("so_modified_by")
   // Relations
   items                 SaleOrderItem[]
-  advanceAllocs         SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocOrder")
-  transferredInAllocs   SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocTargetOrder")
   customer      Customer         @relation(fields: [soCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_cust")
   posState      StateCode?       @relation("SaleOrderPosState", fields: [soPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_pos_state")
   shipState     StateCode?       @relation("SaleOrderShipState", fields: [soShipStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_ship_state")

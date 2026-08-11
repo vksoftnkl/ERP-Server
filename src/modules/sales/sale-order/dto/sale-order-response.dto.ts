@@ -322,90 +322,6 @@ export class SaleOrderItemPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   soiModifiedBy!: string | null;
 }
-export class SaleOrderAdvancePayloadDto {
-  @ApiProperty({ format: 'uuid' })
-  soaId!: string;
-  @ApiProperty({ format: 'uuid' })
-  soaCompanyId!: string;
-  @ApiPropertyOptional({
-    nullable: true,
-    description: 'company.comp_name for soaCompanyId — only populated on GET',
-  })
-  soaCompanyName?: string | null;
-  @ApiProperty({ format: 'uuid', description: 'Branch that applied the allocation' })
-  soaBranchId!: string;
-  @ApiPropertyOptional({
-    nullable: true,
-    description: 'branch_master.br_name for soaBranchId — only populated on GET',
-  })
-  soaBranchName?: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  soaTenantId!: string | null;
-  @ApiProperty({ minLength: 9, maxLength: 9, description: 'Year of the APPLICATION' })
-  soaAccYear!: string;
-  @ApiProperty({ format: 'uuid' })
-  soaOrderId!: string;
-  @ApiProperty({ minLength: 9, maxLength: 9 })
-  soaOrderAccYear!: string;
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  soaOrderRefno!: string | null;
-  @ApiPropertyOptional({
-    format: 'uuid',
-    nullable: true,
-    description: 'The acc_tender_detail row that brought the money in',
-  })
-  soaTenderId!: string | null;
-  @ApiPropertyOptional({ minLength: 9, maxLength: 9, nullable: true })
-  soaTenderAccYear!: string | null;
-  @ApiProperty({ maxLength: 20, description: 'ADJUSTED / REFUNDED / FORFEITED / TRANSFERRED' })
-  soaAllocType!: string;
-  @ApiProperty({ format: 'date' })
-  soaAllocDate!: string;
-  @ApiProperty()
-  soaAmount!: number;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  soaBillId!: string | null;
-  @ApiPropertyOptional({ minLength: 9, maxLength: 9, nullable: true })
-  soaBillAccYear!: string | null;
-  @ApiPropertyOptional({ maxLength: 100, nullable: true })
-  soaBillRefno!: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  soaTargetOrderId!: string | null;
-  @ApiPropertyOptional({ minLength: 9, maxLength: 9, nullable: true })
-  soaTargetAccYear!: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  soaRefundTenderId!: string | null;
-  @ApiPropertyOptional({
-    maxLength: 20,
-    nullable: true,
-    description: 'CASH / BANK / UPI / CARD / CREDIT_NOTE / ADJUSTMENT',
-  })
-  soaRefundMode!: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'Filled at posting' })
-  soaVoucherId!: string | null;
-  @ApiPropertyOptional({
-    format: 'uuid',
-    nullable: true,
-    description: 'The advance liability ledger relieved',
-  })
-  soaLedgerId!: string | null;
-  @ApiPropertyOptional({ maxLength: 250, nullable: true })
-  soaRemarks!: string | null;
-  @ApiPropertyOptional({ format: 'uuid', nullable: true })
-  soaApprovedBy!: string | null;
-  @ApiProperty()
-  soaIsDeleted!: boolean;
-  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
-  soaSyncDate!: string | null;
-  @ApiProperty()
-  soaCreatedOn!: string;
-  @ApiProperty()
-  soaCreatedBy!: string;
-  @ApiPropertyOptional({ nullable: true, format: 'date-time' })
-  soaModifiedOn!: string | null;
-  @ApiPropertyOptional({ nullable: true })
-  soaModifiedBy!: string | null;
-}
 // The charge-detail / tender-detail models plus the scope names this module
 // resolves on GET — the rows themselves are unchanged, so the owning modules'
 // DTOs are extended rather than copied.
@@ -691,11 +607,11 @@ export class SaleOrderPayloadDto {
   soAdvanceLedgerId!: string | null;
   @ApiProperty({ description: 'Roll-up cache from accounts.acc_tender_detail' })
   soAdvanceRecdAmt!: number;
-  @ApiProperty({ description: 'Roll-up cache from sale_order_advance_alloc' })
+  @ApiProperty({ description: 'Advance set against invoices — stated by the caller' })
   soAdvanceAdjustedAmt!: number;
-  @ApiProperty({ description: 'Roll-up cache from sale_order_advance_alloc' })
+  @ApiProperty({ description: 'Advance paid back — stated by the caller' })
   soAdvanceRefundAmt!: number;
-  @ApiProperty({ description: 'Roll-up cache from sale_order_advance_alloc' })
+  @ApiProperty({ description: 'Advance kept on cancellation — stated by the caller' })
   soAdvanceForfeitAmt!: number;
   @ApiProperty({
     description: 'What the company still HOLDS = received − adjusted − refunded − forfeited',
@@ -783,8 +699,6 @@ export class SaleOrderPayloadDto {
   charges!: SaleOrderChargePayloadDto[];
   @ApiProperty({ type: SaleOrderTenderPayloadDto, isArray: true })
   tenders!: SaleOrderTenderPayloadDto[];
-  @ApiProperty({ type: SaleOrderAdvancePayloadDto, isArray: true })
-  advances!: SaleOrderAdvancePayloadDto[];
 }
 export class SaleOrderDeleteResultDto {
   @ApiProperty({ format: 'uuid' })
@@ -800,7 +714,7 @@ export class SaleOrderSuccessSingleDto {
   @ApiProperty({
     type: SaleOrderPayloadDto,
     description:
-      'Order record including its line items, applied charges, tendered amounts and advance allocations',
+      'Order record including its line items, applied charges and tendered amounts',
   })
   data!: SaleOrderPayloadDto;
 }

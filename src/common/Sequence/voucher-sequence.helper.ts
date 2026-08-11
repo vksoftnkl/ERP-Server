@@ -4,6 +4,11 @@ import { AccVoucherSeq, AccVoucherType, Prisma, VoucherResetFreq } from '@prisma
 // concurrent first allocation on the same scope (the unique constraint would
 // otherwise turn a simultaneous first save into a 500).
 const VOUCHER_SEQ_LOCK_NAMESPACE = 'accounts.acc_voucher_seq.allocate';
+// Guards the company-wide voucher serial. avh_voucher_slno is unique per
+// (company, acc_year) across EVERY voucher type (ux_avh_voucher_slno), so two
+// concurrent posts of different document types would otherwise pick the same
+// number and one of them would 500 on the unique index.
+const VOUCHER_SLNO_LOCK_NAMESPACE = 'accounts.acc_voucher_header.voucher_slno';
 const DEFAULT_DEVICE_CODE = 'MAIN';
 // Period key used by voucher types that never reset their counter.
 const NO_RESET_PERIOD_KEY = 'ALL';
@@ -108,6 +113,36 @@ export async function allocateVoucherNumber(
     refno,
     periodKey,
   };
+}
+// Next company-wide voucher serial (acc_voucher_header.avh_voucher_slno) for the
+// financial year. Taken under an advisory lock held for the rest of the
+// transaction, mirroring allocateVoucherNumber's approach to acc_voucher_seq.
+//
+// Separate from allocateVoucherNumber because the two count different things:
+// avh_voucher_no runs per voucher TYPE (and is the number printed on the
+// document), while this one runs across every type in the company / year.
+export async function allocateVoucherSlno(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  accYear: string,
+): Promise<bigint> {
+  const lockKey = [companyId, accYear].join('|');
+  await tx.$queryRaw`
+    WITH advisory_lock AS (
+      SELECT pg_advisory_xact_lock(
+        hashtext(${VOUCHER_SLNO_LOCK_NAMESPACE}),
+        hashtext(${lockKey})
+      )
+    )
+    SELECT 1::int AS locked
+  `;
+  const rows = await tx.$queryRaw<Array<{ next_slno: bigint }>>`
+    SELECT COALESCE(MAX(avh_voucher_slno), 0) + 1 AS next_slno
+    FROM accounts.acc_voucher_header
+    WHERE avh_company_id = ${companyId}::uuid
+      AND avh_acc_year = ${accYear}
+  `;
+  return rows[0]?.next_slno ?? BigInt(1);
 }
 // prefix + zero-padded number + suffix. The company / branch codes on the row are
 // a format snapshot only; the company and branch are already part of the scope

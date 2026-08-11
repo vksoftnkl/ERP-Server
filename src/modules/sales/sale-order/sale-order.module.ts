@@ -8,8 +8,7 @@ import { SaleOrderService } from './sale-order.service';
 @Module({
   // ChargeDetailModule / TenderDetailModule export the services that own the
   // order's applied charge lines (txn_charge_detail) and its tendered amounts
-  // (acc_tender_detail). The advance allocations (sale_order_advance_alloc)
-  // are owned by SaleOrderService itself.
+  // (acc_tender_detail).
   imports: [AuditLogModule, ChargeDetailModule, TenderDetailModule],
   controllers: [SaleOrderController],
   providers: [SaleOrderService, SaleOrderExceptionFilter],

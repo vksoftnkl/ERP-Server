@@ -97,12 +97,13 @@ never rewrites what was already tendered.
 - **Soft delete** — sets `td_is_deleted = true`; there is no `is_active` column
   on this table, and rows are never physically removed.
 - **References** — `tdTenderId`, `tdTenderTypeId`, `tdTenderLedgerId`,
-  `tdSettleLedgerId`, `tdPartyLedgerId`, `tdCompanyId`, `tdBranchId`, `tdUserId`
-  and the two voucher ids all carry DB foreign keys. A foreign key only proves
-  the row exists, so the service additionally rejects an inactive or
-  soft-deleted `acc_tender_master`, a soft-deleted `acc_ledger_master`
-  (posting / party / settlement) and a soft-deleted `acc_tender_types` row with
-  a 400; any other FK violation surfaces as a 400 rather than a 500.
+  `tdSettleLedgerId`, `tdSurchargeLedgerId`, `tdPartyLedgerId`, `tdCompanyId`,
+  `tdBranchId`, `tdUserId` and the two voucher ids all carry DB foreign keys. A
+  foreign key only proves the row exists, so the service additionally rejects an
+  inactive or soft-deleted `acc_tender_master`, a soft-deleted
+  `acc_ledger_master` (posting / party / settlement / surcharge) and a
+  soft-deleted `acc_tender_types` row with a 400; any other FK violation
+  surfaces as a 400 rather than a 500.
 - **`tdTenderName` / `tdTenderLedgerName`** are echoed on every payload from the
   mapped master rows. They are read-only display values, not stored on
   `acc_tender_detail`, and are deliberately excluded from the audit snapshots so

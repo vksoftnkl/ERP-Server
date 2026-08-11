@@ -53,6 +53,7 @@ const TENDER_DETAIL_OPTIONAL_FIELDS = [
   'tdAmount',
   'tdSurchargePerc',
   'tdSurchargeAmt',
+  'tdSurchargeLedgerId',
   'tdReceivedAmt',
   'tdChangeAmt',
   'tdUnitsUsed',
@@ -462,6 +463,13 @@ export class TenderDetailService {
     if (saveTenderDetailDto.tdSettleLedgerId) {
       await this.ensureLedgerExists(tx, saveTenderDetailDto.tdSettleLedgerId, 'tdSettleLedgerId');
     }
+    if (saveTenderDetailDto.tdSurchargeLedgerId) {
+      await this.ensureLedgerExists(
+        tx,
+        saveTenderDetailDto.tdSurchargeLedgerId,
+        'tdSurchargeLedgerId',
+      );
+    }
     const data: Prisma.AccTenderDetailUncheckedCreateInput = {
       tdSrcModule: scope.tdSrcModule,
       tdSrcDocType: scope.tdSrcDocType,
@@ -570,6 +578,16 @@ export class TenderDetailService {
       saveTenderDetailDto.tdSettleLedgerId !== existing.tdSettleLedgerId
     ) {
       await this.ensureLedgerExists(tx, saveTenderDetailDto.tdSettleLedgerId, 'tdSettleLedgerId');
+    }
+    if (
+      saveTenderDetailDto.tdSurchargeLedgerId &&
+      saveTenderDetailDto.tdSurchargeLedgerId !== existing.tdSurchargeLedgerId
+    ) {
+      await this.ensureLedgerExists(
+        tx,
+        saveTenderDetailDto.tdSurchargeLedgerId,
+        'tdSurchargeLedgerId',
+      );
     }
     const data: Prisma.AccTenderDetailUncheckedUpdateInput = {
       tdRowNo: rowNo,
@@ -1069,6 +1087,7 @@ export class TenderDetailService {
       tdAmount: toNumber(record.tdAmount),
       tdSurchargePerc: toNumber(record.tdSurchargePerc),
       tdSurchargeAmt: toNumber(record.tdSurchargeAmt),
+      tdSurchargeLedgerId: record.tdSurchargeLedgerId,
       tdTotalAmt: toNumber(record.tdTotalAmt),
       tdReceivedAmt: toNumber(record.tdReceivedAmt),
       tdChangeAmt: toNumber(record.tdChangeAmt),

@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, SaleOrder, SaleOrderAdvanceAlloc, SaleOrderItem } from '@prisma/client';
+import { Prisma, SaleOrder, SaleOrderItem } from '@prisma/client';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { SaveSaleOrderItemDto } from './dto/save-sale-order-item.dto';
-import { SaveSaleOrderAdvanceDto } from './dto/save-sale-order-advance.dto';
 import {
   SALE_ORDER_CHARGE_AUDIT,
   SALE_ORDER_CHARGE_DOC_TYPE,
@@ -12,7 +11,6 @@ import {
   SALE_ORDER_TENDER_DR_CR,
   SALE_ORDER_TENDER_SRC_DOC_TYPE,
   SALE_ORDER_TENDER_SRC_MODULE,
-  SaleOrderAdvancePayload,
   SaleOrderChargePayload,
   SaleOrderErrorDetail,
   SaleOrderErrorResponse,
@@ -38,6 +36,11 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
+import {
+  OrderAdvancePostingSyncResult,
+  deleteOrderAdvancePosting,
+  syncOrderAdvancePosting,
+} from './order-advance-posting.helper';
 // accounts.acc_voucher_types row "SOr" / Sales Order (seeded by
 // prisma/seed/Acc_Voucher_Types_Sale_Order.sql). Its numbering format
 // (prefix / width / reset frequency) seeds the acc_voucher_seq row the order
@@ -45,10 +48,9 @@ import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.help
 const SALE_ORDER_VCHR_TYPE_ID = 4;
 const SALE_ORDER_TABLE_NAME = 'sale_order';
 const SALE_ORDER_ITEM_TABLE_NAME = 'sale_order_item';
-const SALE_ORDER_ADVANCE_TABLE_NAME = 'sale_order_advance_alloc';
 const SALE_ORDER_AUDIT_SCREEN_NAME = 'Sale Order';
 // Allowed-value sets mirroring the DB CHECK constraints on sale_order /
-// sale_order_item / sale_order_advance_alloc (migration 20260808132323). Unlike
+// sale_order_item (migration 20260808132323). Unlike
 // sale_bill — whose ck_sb_* constraints were dropped before ever being applied —
 // these constraints EXIST in the database; the mirrors below are so a bad value
 // comes back as a 400 naming the field instead of a raw Postgres 23514, with
@@ -90,15 +92,6 @@ const SALE_ORDER_ADVANCE_STATUSES = [
 ] as const;
 const SALE_ORDER_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
 const SALE_ORDER_ITEM_LINE_STATUSES = ['PENDING', 'PARTIAL', 'DELIVERED', 'CANCELLED'] as const;
-const SALE_ORDER_ADVANCE_ALLOC_TYPES = ['ADJUSTED', 'REFUNDED', 'FORFEITED', 'TRANSFERRED'] as const;
-const SALE_ORDER_ADVANCE_REFUND_MODES = [
-  'CASH',
-  'BANK',
-  'UPI',
-  'CARD',
-  'CREDIT_NOTE',
-  'ADJUSTMENT',
-] as const;
 const SALE_ORDER_VALUE_GUARDS = [
   { field: 'soDocType', allowed: SALE_ORDER_DOC_TYPES, nullable: false },
   { field: 'soOrderType', allowed: SALE_ORDER_TYPES, nullable: false },
@@ -352,26 +345,6 @@ const SALE_ORDER_ITEM_OPTIONAL_FIELDS = [
   'soiSchemeName',
   'soiRemarks',
 ];
-// Advance-allocation fields copied straight through when present on the
-// payload. The scope keys (company/branch/tenant/accYear and the order pair)
-// and the three fields required for a new row (soaAllocType, soaAllocDate,
-// soaAmount) are set explicitly, so they are excluded here.
-const SALE_ORDER_ADVANCE_OPTIONAL_FIELDS = [
-  'soaOrderRefno',
-  'soaTenderId',
-  'soaTenderAccYear',
-  'soaBillId',
-  'soaBillAccYear',
-  'soaBillRefno',
-  'soaTargetOrderId',
-  'soaTargetAccYear',
-  'soaRefundTenderId',
-  'soaRefundMode',
-  'soaVoucherId',
-  'soaLedgerId',
-  'soaRemarks',
-  'soaApprovedBy',
-];
 // Every date / timestamptz column reachable from the payload. JSON carries them
 // as ISO strings, Prisma wants Date objects, so each one is converted on the way
 // in (and a malformed value comes back as a 400 naming the field).
@@ -437,7 +410,7 @@ function merged<T, U>(
   }
   return existingValue === undefined ? null : existingValue;
 }
-// The immutable scope inherited by every line / charge / tender / advance row
+// The immutable scope inherited by every line / charge / tender row
 // from its parent order. The last five are only read by the tender lines, which
 // snapshot the document's date, party and capture context (acc_tender_detail
 // has no FK back to sale_order to join them from).
@@ -491,7 +464,7 @@ const EMPTY_NAME_MAPS: SaleOrderNameMaps = {
   godownNameById: new Map(),
 };
 // The distinct, present ids out of a column gathered across header, lines,
-// charges, tenders and advances — nulls dropped, so an all-null column costs no
+// charges and tenders — nulls dropped, so an all-null column costs no
 // query at all.
 function distinctIds(values: readonly (string | null | undefined)[]): string[] {
   return [...new Set(values.filter((value): value is string => !!value))];
@@ -571,28 +544,16 @@ export class SaleOrderService {
       SALE_ORDER_TENDER_SRC_DOC_TYPE,
       soId,
     );
-    // The advance allocations ARE this module's rows, read directly. The FK
-    // pair keys them to the order's own year, so both columns are matched.
-    const advances = await this.prisma.saleOrderAdvanceAlloc.findMany({
-      where: {
-        soaOrderId: soId,
-        soaOrderAccYear: soAccYear,
-        soaIsDeleted: false,
-      },
-      orderBy: [{ soaAllocDate: 'asc' }, { soaCreatedOn: 'asc' }],
-    });
-    const advancePayloads = advances.map((advance) => this.toAdvancePayload(advance));
     // The remaining ids — the godown, the company / branch / salesman columns on
     // the header and its lines, and the company / party ledger / user the charge
     // and tender rows carry — have no FK to ride an `include` on, so they are
     // resolved in one batched lookup per master over the ids this order uses.
-    const names = await this.resolveDisplayNames(record, charges, tenders, advancePayloads);
+    const names = await this.resolveDisplayNames(record, charges, tenders);
     return this.toPayload(
       {
         ...record,
         charges,
         tenders,
-        advances: advancePayloads,
       },
       names,
     );
@@ -701,19 +662,15 @@ export class SaleOrderService {
         actor,
         modifiedOn,
       );
-      // ... and for the advance allocations this module owns itself.
-      await tx.saleOrderAdvanceAlloc.updateMany({
-        where: {
-          soaOrderId: soId,
-          soaOrderAccYear: soAccYear,
-          soaIsDeleted: false,
-        },
-        data: {
-          soaIsDeleted: true,
-          soaModifiedOn: modifiedOn,
-          soaModifiedBy: actor,
-        },
-      });
+      // ... and for the accounting rows the tendered money raised: the advance
+      // receipt in accounts.acc_voucher_header and its acc_vouchers ledger
+      // lines. Nothing may keep pointing at a document that is gone.
+      await deleteOrderAdvancePosting(
+        tx,
+        { soId, soCompanyId, soAccYear },
+        actor,
+        modifiedOn,
+      );
       const originalRecord = this.toPayload(existing);
       const modifiedRecord = this.toPayload({ ...existing, ...headerChanges });
       await this.auditLogService.logEntityChange(
@@ -821,8 +778,11 @@ export class SaleOrderService {
           createdBy,
           SALE_ORDER_TENDER_AUDIT,
         );
-        const advances = await this.syncAdvances(tx, scope, saveOrderDto.advances, createdBy);
-        const payload = this.toPayload({ ...created, items, charges, tenders, advances });
+        // The tendered money is now stored; posting it is what puts it in the
+        // ledgers. On create there is never a live receipt, so this always
+        // either creates one or does nothing.
+        await this.syncAdvanceVoucher(tx, created, createdBy, now);
+        const payload = this.toPayload({ ...created, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
             action: 'New',
@@ -922,8 +882,11 @@ export class SaleOrderService {
           modifiedBy,
           SALE_ORDER_TENDER_AUDIT,
         );
-        const advances = await this.syncAdvances(tx, scope, saveOrderDto.advances, modifiedBy);
-        const payload = this.toPayload({ ...updated, items, charges, tenders, advances });
+        // Brings the receipt in line with whatever the edit did to the tenders:
+        // creates one for money just taken, re-syncs an existing one, or cancels
+        // it when the last tender is gone or the order was cancelled.
+        await this.syncAdvanceVoucher(tx, updated, modifiedBy, now);
+        const payload = this.toPayload({ ...updated, items, charges, tenders });
         await this.auditLogService.logEntityChange(
           {
             action: 'update',
@@ -1157,157 +1120,30 @@ export class SaleOrderService {
       );
     }
   }
-  // Reconciles the order's advance allocations with the payload array, the same
-  // shape as every other nested sync: soaId → update, no soaId → create, an
-  // existing row absent from the array → soft deleted, property omitted →
-  // untouched. These rows are owned by this module (no separate owner service),
-  // so the reconciliation and the ck_soa_* mirrors live here.
-  private async syncAdvances(
+  // Posts the order's tendered money to accounts, or brings an already-posted
+  // receipt back in line with it.
+  //
+  // The tender rows are re-read here rather than taken from what
+  // syncDocumentTenders answered: that method returns display payloads (decimals
+  // as numbers) and returns the STORED lines untouched when the save omitted the
+  // tenders array, whereas the books need the current rows as Prisma decimals
+  // either way.
+  //
+  // Runs inside the save's own transaction, so an order and the receipt behind
+  // its advance commit or roll back together.
+  private async syncAdvanceVoucher(
     tx: SaleOrderWriteClient,
-    scope: SaleOrderScope,
-    inputAdvances: SaveSaleOrderAdvanceDto[] | undefined,
-    actorId: string,
-  ): Promise<SaleOrderAdvancePayload[]> {
-    const existing = await tx.saleOrderAdvanceAlloc.findMany({
-      where: { soaOrderId: scope.soId, soaOrderAccYear: scope.soAccYear, soaIsDeleted: false },
-      orderBy: [{ soaAllocDate: 'asc' }, { soaCreatedOn: 'asc' }],
-    });
-    if (inputAdvances === undefined) {
-      return existing.map((advance) => this.toAdvancePayload(advance));
-    }
-    const existingMap = new Map(existing.map((advance) => [advance.soaId, advance]));
-    const keptIds = new Set<string>();
-    const now = new Date();
-    for (const inputAdvance of inputAdvances) {
-      if (inputAdvance.soaId) {
-        if (!existingMap.has(inputAdvance.soaId)) {
-          throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
-            'Order advance allocation not found',
-            'soaId',
-            `No active advance allocation found with id ${inputAdvance.soaId} on this order`,
-          );
-        }
-        keptIds.add(inputAdvance.soaId);
-      }
-    }
-    // Retire the rows the payload dropped before writing the replacements.
-    for (const removed of existing.filter((advance) => !keptIds.has(advance.soaId))) {
-      const deleted = await tx.saleOrderAdvanceAlloc.update({
-        where: {
-          soaId_soaAccYear: { soaId: removed.soaId, soaAccYear: removed.soaAccYear },
-        },
-        data: {
-          soaIsDeleted: true,
-          soaModifiedOn: now,
-          soaModifiedBy: actorId,
-        },
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: SALE_ORDER_ADVANCE_TABLE_NAME,
-          screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-          screenType: 'transaction',
-          pk: deleted.soaId,
-          displayName: `${removed.soaAllocType} ${removed.soaAmount}`,
-          originalRecord: this.toAdvancePayload(removed),
-          modifiedRecord: this.toAdvancePayload(deleted),
-          userId: actorId,
-          notes: 'Order advance allocation soft deleted',
-        },
-        tx,
-      );
-    }
-    const persisted: SaleOrderAdvancePayload[] = [];
-    for (const inputAdvance of inputAdvances) {
-      // The allocation always belongs to the parent order: a payload naming a
-      // different order (or year) is refused, the mirror of the charge module's
-      // document-immutability rule.
-      this.ensureAdvanceTargetsThisOrder(inputAdvance, scope);
-      if (inputAdvance.soaId) {
-        const existingAdvance = existingMap.get(inputAdvance.soaId)!;
-        this.ensureAdvanceValuesAreAllowed(inputAdvance, existingAdvance, scope);
-        const updateData: Prisma.SaleOrderAdvanceAllocUncheckedUpdateInput = {
-          soaModifiedOn: now,
-          soaModifiedBy: resolveActor(inputAdvance.soaModifiedBy, actorId),
-        };
-        if (inputAdvance.soaAllocType !== undefined) {
-          updateData.soaAllocType = inputAdvance.soaAllocType;
-        }
-        if (inputAdvance.soaAllocDate !== undefined) {
-          updateData.soaAllocDate = toDateOrNull(inputAdvance.soaAllocDate, 'soaAllocDate')!;
-        }
-        if (inputAdvance.soaAmount !== undefined) {
-          updateData.soaAmount = inputAdvance.soaAmount;
-        }
-        applyPresentFields(updateData, inputAdvance, SALE_ORDER_ADVANCE_OPTIONAL_FIELDS);
-        const updated = await tx.saleOrderAdvanceAlloc.update({
-          where: {
-            soaId_soaAccYear: {
-              soaId: inputAdvance.soaId,
-              soaAccYear: existingAdvance.soaAccYear,
-            },
-          },
-          data: updateData,
-        });
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: SALE_ORDER_ADVANCE_TABLE_NAME,
-            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-            screenType: 'transaction',
-            pk: updated.soaId,
-            displayName: `${updated.soaAllocType} ${updated.soaAmount}`,
-            originalRecord: this.toAdvancePayload(existingAdvance),
-            modifiedRecord: this.toAdvancePayload(updated),
-            userId: resolveActor(inputAdvance.soaModifiedBy, actorId),
-            notes: 'Order advance allocation updated',
-          },
-          tx,
-        );
-        persisted.push(this.toAdvancePayload(updated));
-        continue;
-      }
-      this.ensureAdvanceValuesAreAllowed(inputAdvance, undefined, scope);
-      const createData: Prisma.SaleOrderAdvanceAllocUncheckedCreateInput = {
-        soaCompanyId: inputAdvance.soaCompanyId ?? scope.soCompanyId,
-        soaBranchId: inputAdvance.soaBranchId ?? scope.soBranchId,
-        soaTenantId: inputAdvance.soaTenantId ?? scope.soTenantId,
-        // The year of the APPLICATION — usually the order's own, but an advance
-        // taken in March is routinely adjusted in April, so the payload may say
-        // otherwise. Immutable after create, like every other partition key.
-        soaAccYear: inputAdvance.soaAccYear ?? scope.soAccYear,
-        soaOrderId: scope.soId,
-        soaOrderAccYear: scope.soAccYear,
-        soaAllocType: this.requireItemField(inputAdvance.soaAllocType, 'soaAllocType'),
-        soaAllocDate: toDateOrNull(
-          this.requireItemField(inputAdvance.soaAllocDate, 'soaAllocDate'),
-          'soaAllocDate',
-        )!,
-        soaAmount: inputAdvance.soaAmount ?? 0,
-        soaCreatedOn: now,
-        soaCreatedBy: resolveActor(inputAdvance.soaCreatedBy, actorId),
-      };
-      applyPresentFields(createData, inputAdvance, SALE_ORDER_ADVANCE_OPTIONAL_FIELDS);
-      const created = await tx.saleOrderAdvanceAlloc.create({ data: createData });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'New',
-          tableName: SALE_ORDER_ADVANCE_TABLE_NAME,
-          screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
-          screenType: 'transaction',
-          pk: created.soaId,
-          displayName: `${created.soaAllocType} ${created.soaAmount}`,
-          originalRecord: null,
-          modifiedRecord: this.toAdvancePayload(created),
-          userId: created.soaCreatedBy,
-          notes: 'Order advance allocation created',
-        },
-        tx,
-      );
-      persisted.push(this.toAdvancePayload(created));
-    }
-    return persisted;
+    order: SaleOrder,
+    actor: string,
+    now: Date,
+  ): Promise<OrderAdvancePostingSyncResult> {
+    const tenders = await this.tenderDetailService.findDocumentTenders(
+      tx,
+      SALE_ORDER_TENDER_SRC_MODULE,
+      SALE_ORDER_TENDER_SRC_DOC_TYPE,
+      order.soId,
+    );
+    return syncOrderAdvancePosting(tx, order, tenders, actor, now);
   }
   // Names the duplicate a P2002 actually is. sale_order DOES define unique
   // indexes (ux_so_slno per device, ux_so_order_no per branch/year — both
@@ -1582,139 +1418,6 @@ export class SaleOrderService {
       data.soiPendingQty = derived;
     }
   }
-  // The allocation always belongs to the parent order — a payload naming a
-  // different order or year is refused rather than silently rewritten, the
-  // mirror of the charge module's document-immutability rule.
-  private ensureAdvanceTargetsThisOrder(inputAdvance: SaveSaleOrderAdvanceDto, scope: SaleOrderScope): void {
-    const details: SaleOrderErrorDetail[] = [];
-    if (inputAdvance.soaOrderId !== undefined && inputAdvance.soaOrderId !== scope.soId) {
-      details.push({
-        field: 'soaOrderId',
-        message: 'soaOrderId must be omitted or match the order being saved',
-      });
-    }
-    if (
-      inputAdvance.soaOrderAccYear !== undefined &&
-      inputAdvance.soaOrderAccYear !== scope.soAccYear
-    ) {
-      details.push({
-        field: 'soaOrderAccYear',
-        message: 'soaOrderAccYear must be omitted or match the order being saved',
-      });
-    }
-    if (details.length > 0) {
-      throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>('Invalid order advance value', details);
-    }
-  }
-  // Mirrors the DB CHECK constraints on sale_order_advance_alloc
-  // (ck_soa_alloc_type / ck_soa_refund_mode / ck_soa_amount / ck_soa_target /
-  // ck_soa_no_self_transfer / ck_soa_tender_pair), judged on the FINAL resolved
-  // values — a row cannot be replayed into the ledger unambiguously unless each
-  // allocation type names its target, and only its own target.
-  private ensureAdvanceValuesAreAllowed(
-    inputAdvance: SaveSaleOrderAdvanceDto,
-    existingAdvance: SaleOrderAdvanceAlloc | undefined,
-    scope: SaleOrderScope,
-  ): void {
-    const details: SaleOrderErrorDetail[] = [];
-    const allocType = merged(inputAdvance.soaAllocType, existingAdvance?.soaAllocType);
-    if (
-      !allocType ||
-      !(SALE_ORDER_ADVANCE_ALLOC_TYPES as readonly string[]).includes(allocType)
-    ) {
-      details.push({
-        field: 'soaAllocType',
-        message: `soaAllocType must be one of: ${SALE_ORDER_ADVANCE_ALLOC_TYPES.join(', ')}`,
-      });
-    }
-    const refundMode = merged(inputAdvance.soaRefundMode, existingAdvance?.soaRefundMode);
-    if (
-      refundMode !== null &&
-      refundMode !== undefined &&
-      !(SALE_ORDER_ADVANCE_REFUND_MODES as readonly string[]).includes(refundMode)
-    ) {
-      details.push({
-        field: 'soaRefundMode',
-        message: `soaRefundMode must be one of: ${SALE_ORDER_ADVANCE_REFUND_MODES.join(', ')}`,
-      });
-    }
-    const amount = asNumber(merged(inputAdvance.soaAmount, existingAdvance?.soaAmount));
-    if (amount <= 0) {
-      details.push({
-        field: 'soaAmount',
-        message: 'soaAmount must be greater than 0 (ck_soa_amount)',
-      });
-    }
-    const billId = merged(inputAdvance.soaBillId, existingAdvance?.soaBillId);
-    const billAccYear = merged(inputAdvance.soaBillAccYear, existingAdvance?.soaBillAccYear);
-    const targetOrderId = merged(
-      inputAdvance.soaTargetOrderId,
-      existingAdvance?.soaTargetOrderId,
-    );
-    const targetAccYear = merged(
-      inputAdvance.soaTargetAccYear,
-      existingAdvance?.soaTargetAccYear,
-    );
-    // Each allocation type must name its target, and only its own target
-    // (ck_soa_target).
-    if (allocType === 'ADJUSTED') {
-      if (!billId || !billAccYear) {
-        details.push({
-          field: 'soaBillId',
-          message: 'An ADJUSTED allocation must name soaBillId and soaBillAccYear',
-        });
-      }
-      if (targetOrderId) {
-        details.push({
-          field: 'soaTargetOrderId',
-          message: 'An ADJUSTED allocation must not name a target order',
-        });
-      }
-    } else if (allocType === 'TRANSFERRED') {
-      if (!targetOrderId || !targetAccYear) {
-        details.push({
-          field: 'soaTargetOrderId',
-          message: 'A TRANSFERRED allocation must name soaTargetOrderId and soaTargetAccYear',
-        });
-      }
-      if (billId) {
-        details.push({
-          field: 'soaBillId',
-          message: 'A TRANSFERRED allocation must not name a bill',
-        });
-      }
-    } else if (allocType === 'REFUNDED' || allocType === 'FORFEITED') {
-      if (billId || targetOrderId) {
-        details.push({
-          field: allocType === 'REFUNDED' ? 'soaRefundTenderId' : 'soaAllocType',
-          message: `A ${allocType} allocation must not name a bill or a target order`,
-        });
-      }
-    }
-    // ck_soa_no_self_transfer: money cannot be moved onto the order it came
-    // from.
-    if (targetOrderId && targetOrderId === scope.soId) {
-      details.push({
-        field: 'soaTargetOrderId',
-        message: 'soaTargetOrderId must not be the order the advance was taken against',
-      });
-    }
-    // ck_soa_tender_pair: the tender reference travels as a pair or not at all.
-    const tenderId = merged(inputAdvance.soaTenderId, existingAdvance?.soaTenderId);
-    const tenderAccYear = merged(
-      inputAdvance.soaTenderAccYear,
-      existingAdvance?.soaTenderAccYear,
-    );
-    if ((tenderId === null) !== (tenderAccYear === null)) {
-      details.push({
-        field: 'soaTenderId',
-        message: 'soaTenderId and soaTenderAccYear must be sent together (ck_soa_tender_pair)',
-      });
-    }
-    if (details.length > 0) {
-      throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>('Invalid order advance value', details);
-    }
-  }
   private requireItemField(value: string | undefined, field: string): string {
     if (!value) {
       throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
@@ -1807,7 +1510,6 @@ export class SaleOrderService {
     record: SaleOrder & { items?: SaleOrderItemWithNames[] },
     charges: readonly SaleOrderChargePayload[],
     tenders: readonly SaleOrderTenderPayload[],
-    advances: readonly SaleOrderAdvancePayload[],
   ): Promise<SaleOrderNameMaps> {
     const items = record.items ?? [];
     const companyIds = distinctIds([
@@ -1815,13 +1517,11 @@ export class SaleOrderService {
       ...items.map((item) => item.soiCompanyId),
       ...charges.map((charge) => charge.cdCompId),
       ...tenders.map((tender) => tender.tdCompanyId),
-      ...advances.map((advance) => advance.soaCompanyId),
     ]);
     const branchIds = distinctIds([
       record.soBranchId,
       ...items.map((item) => item.soiBranchId),
       ...charges.map((charge) => charge.cdBranchId),
-      ...advances.map((advance) => advance.soaBranchId),
     ]);
     // so_salesman_id is a uuid[] (an order can be credited to several people),
     // soi_salesman_id a single uuid; both point at settings.employee_master.
@@ -1877,10 +1577,9 @@ export class SaleOrderService {
     record: SaleOrder & {
       items?: SaleOrderItemWithNames[];
       // Already shaped by ChargeDetailService / TenderDetailService — the order
-      // passes them through. The advances are this module's own payload.
+      // passes them through.
       charges?: SaleOrderChargePayload[];
       tenders?: SaleOrderTenderPayload[];
-      advances?: SaleOrderAdvancePayload[];
     },
     names: SaleOrderNameMaps = EMPTY_NAME_MAPS,
   ): SaleOrderPayload {
@@ -1893,7 +1592,6 @@ export class SaleOrderService {
       items,
       charges,
       tenders,
-      advances,
       ...rest
     } = record;
     return {
@@ -1916,7 +1614,6 @@ export class SaleOrderService {
       items: items ? items.map((item) => this.toItemPayload(item, names)) : [],
       charges: (charges ?? []).map((charge) => this.withChargeNames(charge, names)),
       tenders: (tenders ?? []).map((tender) => this.withTenderNames(tender, names)),
-      advances: (advances ?? []).map((advance) => this.withAdvanceNames(advance, names)),
     };
   }
   private toItemPayload(
@@ -1946,28 +1643,8 @@ export class SaleOrderService {
         : null,
     };
   }
-  private toAdvancePayload(record: SaleOrderAdvanceAlloc): SaleOrderAdvancePayload {
-    const { soaCreatedOn, soaModifiedOn, soaSyncDate, ...rest } = record;
-    return {
-      ...rest,
-      soaCreatedOn: soaCreatedOn?.toISOString(),
-      soaModifiedOn: soaModifiedOn?.toISOString() ?? null,
-      soaSyncDate: soaSyncDate?.toISOString() ?? null,
-    };
-  }
-  // The charge / tender / advance rows are already shaped by the time they get
-  // here — by their owning module for the first two, by toAdvancePayload for the
-  // third — so the names are layered on rather than built in.
-  private withAdvanceNames(
-    payload: SaleOrderAdvancePayload,
-    names: SaleOrderNameMaps,
-  ): SaleOrderAdvancePayload {
-    return {
-      ...payload,
-      soaCompanyName: names.companyNameById.get(payload.soaCompanyId) ?? null,
-      soaBranchName: names.branchNameById.get(payload.soaBranchId) ?? null,
-    };
-  }
+  // The charge / tender rows are already shaped by their owning module by the
+  // time they get here, so the names are layered on rather than built in.
   private withChargeNames(
     payload: SaleOrderChargePayload,
     names: SaleOrderNameMaps,

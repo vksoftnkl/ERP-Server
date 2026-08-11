@@ -1,5 +1,5 @@
 import { CacheTTL } from '@nestjs/cache-manager';
-import { Controller, Get, Param, ParseIntPipe, Query, Version } from '@nestjs/common';
+import { Controller, Get, Header, Param, ParseIntPipe, Query, Version } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBadRequestResponse,
@@ -38,6 +38,10 @@ import {
   MasterLookupSuccessDto,
   NameIdOptionListSuccessDto,
 } from './dto/master-lookup-response.dto';
+import { BillBalanceService } from '../accountsModule/billBalance/bill-balance.service';
+import { GetPartyCreditSummaryDto } from '../accountsModule/billBalance/dto/get-party-credit-summary.dto';
+import { PartyCreditSummarySuccessDto } from '../accountsModule/billBalance/dto/party-credit-summary-response.dto';
+import { PartyCreditSummary } from '../accountsModule/billBalance/types/bill-balance-api.types';
 import { MasterLookupService } from './master-lookup.service';
 import { MasterLookupQueryDto } from './dto/master-lookup-query.dto';
 import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
@@ -53,7 +57,10 @@ import { API_VERSION } from '../../common/constants/api-version';
 @CacheTTL(1)
 @Controller('master-lookups')
 export class MasterLookupController {
-  constructor(private readonly masterLookupService: MasterLookupService) {}
+  constructor(
+    private readonly masterLookupService: MasterLookupService,
+    private readonly billBalanceService: BillBalanceService,
+  ) {}
   @Get('name-id/all-accounts-and-masters')
   @Version(API_VERSION)
   @ApiOperation({
@@ -240,7 +247,8 @@ export class MasterLookupController {
   @ApiQuery({
     name: 'godown_id',
     required: false,
-    description: "Sale godown override. Resolves the godown row and scopes stock to this godown instead of the rate's own godown.",
+    description:
+      "Sale godown override. Resolves the godown row and scopes stock to this godown instead of the rate's own godown.",
     schema: { type: 'string', format: 'uuid' },
   })
   @ApiQuery({ name: 'acccyear', required: false, schema: { type: 'string', maxLength: 9 } })
@@ -312,6 +320,62 @@ export class MasterLookupController {
       message: 'Next item unit fetched successfully',
       data,
     };
+  }
+  @Get('party-credit')
+  @Version(API_VERSION)
+  // NOT CACHED, AND MUST NOT BE. Every other route on this controller reads
+  // master data that only changes on a master edit, so the class-level
+  // @CacheTTL(1) is right for them. This one reads accounts.acc_bill_balance,
+  // which moves on every sale bill, receipt, credit note and bill adjustment.
+  // A cached credit summary means a salesman bills a customer, collects the
+  // payment, and the next bill still evaluates the PRE-payment outstanding —
+  // wrongly blocking a party who has just paid up, or wrongly clearing one who
+  // is over the limit. TTL 0 makes HttpCacheInterceptor pass straight through
+  // without reading or writing a cache key. If the call volume hurts, debounce
+  // on the client (fire on party-select and on save, not per keystroke) —
+  // do not "fix the inconsistency" by putting a TTL back here.
+  @CacheTTL(0)
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary:
+      'A party\'s outstanding position joined to their credit ceilings, for the credit check on sale bill / sales order entry. partyId is the only required parameter; companyId and branchId narrow the read and accYear narrows nothing. Overdue is always measured against the database server date, which comes back as asOnDate. pendingAmount is NET: open receivables (DR) less advances and credit notes (CR), so a customer who has paid ahead is not billed as if they owed it. Counts cover receivables only. Outstanding spans ALL accounting years — a bill stays open in the partition of the year it was raised in and is never carried forward, so accYear is echoed back but does not scope the figures. The available* fields are not clamped at zero; the negative is what the screen renders as "exceeded by". Never cached.',
+  })
+  @ApiQuery({
+    name: 'partyId',
+    required: true,
+    description:
+      "customers.cus_id, and the only required parameter. Unknown, soft-deleted or (when companyId is given) another company's customer → 404, never a zeroed 200.",
+    schema: { type: 'string', format: 'uuid' },
+  })
+  @ApiQuery({
+    name: 'companyId',
+    required: false,
+    description:
+      "Tenant scope for both the bills and the customer. Omitted → the party is resolved and aggregated across EVERY company, which is not any one tenant's position; entry screens know their company and should always send it.",
+    schema: { type: 'string', format: 'uuid' },
+  })
+  @ApiQuery({
+    name: 'branchId',
+    required: false,
+    description:
+      'Omit for the company-wide credit position, which is the usual credit check. Supplied → only bills RAISED at that branch are counted.',
+    schema: { type: 'string', format: 'uuid' },
+  })
+  @ApiQuery({
+    name: 'accYear',
+    required: false,
+    description:
+      "The screen's accounting year, echoed on the response (null when omitted). Does not scope the outstanding figures.",
+    schema: { type: 'string', pattern: '^\\d{4}-\\d{4}$', example: '2025-2026' },
+  })
+  @ApiOkResponse({ type: PartyCreditSummarySuccessDto })
+  @ApiBadRequestResponse({ type: HttpErrorResponseDto })
+  @ApiNotFoundResponse({ type: HttpErrorResponseDto })
+  async getPartyCredit(
+    @Query() query: GetPartyCreditSummaryDto,
+  ): Promise<MasterLookupSuccessResponse<PartyCreditSummary>> {
+    const data = await this.billBalanceService.getCreditSummary(query);
+    return { success: true, message: 'Party credit summary fetched successfully', data };
   }
   @Get('dropdown/:dropdownId')
   @Version(API_VERSION)

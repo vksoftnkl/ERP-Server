@@ -154,6 +154,15 @@ export class SaveTenderDetailDto {
   tdSurchargeAmt?: string | number;
 
   @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "Surcharge income ledger snapshot — the tender master's tndSurchargeLedgerId at tender time",
+  })
+  @NullableUuid()
+  tdSurchargeLedgerId?: string | null;
+
+  @ApiPropertyOptional({
     minimum: 0,
     description: 'tdAmount + tdSurchargeAmt, rounded to 2 decimals. Computed when omitted',
   })

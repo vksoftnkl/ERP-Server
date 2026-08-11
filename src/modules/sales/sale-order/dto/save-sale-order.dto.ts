@@ -18,7 +18,6 @@ import {
 } from 'src/common/dto/dtoDecorators';
 import { SaveChargeDetailDto } from '../../../master/charge-detail/dto/save-charge-detail.dto';
 import { SaveTenderDetailDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
-import { SaveSaleOrderAdvanceDto } from './save-sale-order-advance.dto';
 import { SaveSaleOrderItemDto } from './save-sale-order-item.dto';
 // An array of uuids: undefined leaves the column untouched, null/'' clears it
 // to an empty array, and a non-array/non-string input is left for IsUUID to
@@ -442,13 +441,13 @@ export class SaveSaleOrderDto {
   @ApiPropertyOptional({ description: 'Roll-up cache from accounts.acc_tender_detail' })
   @OptionalNumber()
   soAdvanceRecdAmt?: string | number;
-  @ApiPropertyOptional({ description: 'Roll-up cache from sale_order_advance_alloc' })
+  @ApiPropertyOptional({ description: 'Advance set against invoices — stated by the caller' })
   @OptionalNumber()
   soAdvanceAdjustedAmt?: string | number;
-  @ApiPropertyOptional({ description: 'Roll-up cache from sale_order_advance_alloc' })
+  @ApiPropertyOptional({ description: 'Advance paid back — stated by the caller' })
   @OptionalNumber()
   soAdvanceRefundAmt?: string | number;
-  @ApiPropertyOptional({ description: 'Roll-up cache from sale_order_advance_alloc' })
+  @ApiPropertyOptional({ description: 'Advance kept on cancellation — stated by the caller' })
   @OptionalNumber()
   soAdvanceForfeitAmt?: string | number;
   @ApiPropertyOptional({
@@ -634,21 +633,4 @@ export class SaveSaleOrderDto {
   @ValidateNested({ each: true })
   @Type(() => SaveTenderDetailDto)
   tenders?: SaveTenderDetailDto[];
-  @ApiPropertyOptional({
-    type: SaveSaleOrderAdvanceDto,
-    isArray: true,
-    description:
-      'Advance allocations (sale_order_advance_alloc): where money taken up front actually went — ' +
-      'adjusted into an invoice, refunded, forfeited, or transferred to another order. Owned by ' +
-      'this module. Reconciled exactly like items: rows with soaId are updated, rows without are ' +
-      'created, and existing rows omitted from the array are soft deleted. Omit the property ' +
-      'entirely to leave allocations untouched. soaAllocType / soaAllocDate / soaAmount are ' +
-      'required on a new row; soaOrderId / soaOrderAccYear are the parent order and must be ' +
-      'omitted or match it.',
-  })
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => SaveSaleOrderAdvanceDto)
-  advances?: SaveSaleOrderAdvanceDto[];
 }

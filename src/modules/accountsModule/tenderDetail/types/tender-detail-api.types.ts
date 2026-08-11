@@ -98,6 +98,9 @@ export interface TenderDetailPayload {
   tdAmount: number;
   tdSurchargePerc: number;
   tdSurchargeAmt: number;
+  // Income ledger the surcharge is credited to — snapshot of the tender
+  // master's tndSurchargeLedgerId, null when the line charges none.
+  tdSurchargeLedgerId: string | null;
   tdTotalAmt: number;
   tdReceivedAmt: number;
   tdChangeAmt: number;

@@ -24,147 +24,225 @@ generator docs {
 }
 
 // ----- prisma/accounts/AccountBillAdjustment.prisma -----
-/// Settlement rows: what a receipt, payment, credit note or journal did to a
-/// bill. Not partitioned — a settlement routinely lands in a different FY
-/// from the bill it clears, which is why abaAccYear (FY of the settlement)
-/// and abaVoucherAccYear (FY of the voucher) are separate columns.
+/// One row per settlement EVENT against one bill: a receipt allocated, an
+/// advance applied, a credit note set off, a discount allowed, an amount
+/// written off — or the reversal of any of those.
+///
+/// Partitioned by abjAccYear, the year the ADJUSTMENT happened rather than the
+/// year the bill was raised, so the primary key is the composite (abjId,
+/// abjAccYear). That is the whole trick: April's receipts land in April's
+/// partition and the March bill they settle never moves. The bill is
+/// partitioned on its OWN year, so the reference to it is the pair
+/// (abjBillId, abjBillAccYear) — and abjBillAccYear is precisely the column
+/// that differs from abjAccYear on a cross-year settlement.
+///
+/// Two-sided settlements (an advance into an invoice, a credit note against an
+/// invoice) are TWO rows — one against each bill — pointing at each other
+/// through abjAgainstBillId. Both are written in one transaction; neither is
+/// meaningful alone. Nothing here is ever edited or deleted: a correction is a
+/// reversal row.
 model AccBillAdjustment {
-  abaId                 String    @id(map: "pk_acc_bill_adjustment") @default(dbgenerated("uuidv7()")) @db.Uuid @map("aba_id")
-  abaCompanyId          String    @db.Uuid @map("aba_company_id")
-  // Branch where the money was COLLECTED. May differ from the bill branch —
+  abjId                 String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("abj_id")
+  abjCompanyId          String    @db.Uuid @map("abj_company_id")
+  // Branch that SETTLED it. May differ from the branch that raised the bill —
   // that is the whole point of the chain-store split.
-  abaBranchId           String    @db.Uuid @map("aba_branch_id")
-  abaTenantId           String?   @db.Uuid @map("aba_tenant_id")
-  abaAccYear            String    @db.Char(9) @map("aba_acc_year")
-
-  // What is being settled
-  abaBillId             String    @db.Uuid @map("aba_bill_id")
-  abaPartyId            String    @db.Uuid @map("aba_party_id")
-  abaSalesmanId         String?   @db.Uuid @map("aba_salesman_id")
-
-  // The voucher doing the settling (header is partitioned, so acc_year too)
-  abaVoucherId          String    @db.Uuid @map("aba_voucher_id")
-  abaVoucherAccYear     String    @db.Char(9) @map("aba_voucher_acc_year")
-  abaVoucherLineId      String?   @db.Uuid @map("aba_voucher_line_id")
-  abaVoucherTypeId      Int       @map("aba_voucher_type_id")
-  abaVoucherNo          BigInt?   @map("aba_voucher_no")
-  abaVoucherRefno       String?   @db.VarChar(50) @map("aba_voucher_refno")
-  abaRowNo              Int       @map("aba_row_no")
-  abaAdjDate            DateTime  @db.Date @map("aba_adj_date")
-
-  // ck_aba_adj_type:
-  //   AGAINST_REF     receipt or payment applied to a bill
-  //   ADVANCE_ADJ     an existing ADVANCE bill applied to a real bill
-  //   DISCOUNT        cash / early-payment discount
-  //   WRITE_OFF       bad debt or rounding write-off
-  //   CREDIT_NOTE     sales return or rate difference
-  //   INTEREST_WAIVER charged interest given up on negotiation
-  abaAdjType            String    @default("AGAINST_REF") @db.VarChar(20) @map("aba_adj_type")
-  abaDrCr               String    @db.Char(2) @map("aba_dr_cr")
-
-  // These three roll up onto AccBill
-  abaAllocAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("aba_alloc_amount")
-  abaDiscAmount         Decimal   @default(0) @db.Decimal(18, 2) @map("aba_disc_amount")
-  abaWriteoffAmount     Decimal   @default(0) @db.Decimal(18, 2) @map("aba_writeoff_amount")
-  abaProfitAmount       Decimal   @default(0) @db.Decimal(18, 2) @map("aba_profit_amount")
-
-  // P&L ledger for the non-cash part: Discount Allowed, Bad Debts Written
-  // Off, Interest Waived.
-  abaEffectLedgerId     String?   @db.Uuid @map("aba_effect_ledger_id")
-
-  // How the money arrived
-  abaSettlementMode     String?   @db.VarChar(20) @map("aba_settlement_mode")
-  abaSettlementLedgerId String    @db.Uuid @map("aba_settlement_ledger_id")
-  abaIsPostDated        Boolean   @default(false) @map("aba_is_post_dated")
-  abaPdcDueDate         DateTime? @db.Date @map("aba_pdc_due_date")
-  abaNarration          String?   @map("aba_narration")
-
+  abjBranchId           String    @db.Uuid @map("abj_branch_id")
+  abjTenantId           String?   @db.Uuid @map("abj_tenant_id")
+  // FY of the adjustment, and the partition key.
+  abjAccYear            String    @db.Char(9) @map("abj_acc_year")
+  // What is being settled. abjBillAccYear is the FY the BILL was RAISED in —
+  // its own year, not abjAccYear — and completes the reference to the bill's
+  // composite key (ck_abj_bill_acc_year).
+  abjBillId             String    @db.Uuid @map("abj_bill_id")
+  abjBillAccYear        String    @db.Char(9) @map("abj_bill_acc_year")
+  // Snapshot of the party; ageing groups by it.
+  abjPartyId            String    @db.Uuid @map("abj_party_id")
+  abjRowNo              Int       @default(1) @map("abj_row_no")
+  // The other side of a two-sided settlement (advance <-> invoice, credit note
+  // <-> invoice). Null for money that came from outside — ck_abj_against. Its
+  // year travels with it (ck_abj_against_bill_pair), same as the bill above.
+  abjAgainstBillId      String?   @db.Uuid @map("abj_against_bill_id")
+  abjAgainstBillAccYear String?   @db.Char(9) @map("abj_against_bill_acc_year")
+  // The voucher that performed the settlement, with its OWN year
+  // (ck_abj_voucher_pair: both columns move together).
+  abjVoucherId          String?   @db.Uuid @map("abj_voucher_id")
+  abjVoucherAccYear     String?   @db.Char(9) @map("abj_voucher_acc_year")
+  abjVoucherLineId      String?   @db.Uuid @map("abj_voucher_line_id")
+  // The event — ck_abj_adj_type:
+  //   ALLOCATION     money received / paid against the bill
+  //   ADVANCE_ADJUST an advance already held being applied to the bill
+  //   NOTE_ADJUST    a credit / debit note set off against the bill
+  //   DISCOUNT       settlement discount allowed at collection time
+  //   WRITEOFF       bad debt or rounding, written off
+  //   TRANSFER       balance moved to another bill / party
+  abjAdjType            String    @db.VarChar(20) @map("abj_adj_type")
+  abjAdjDate            DateTime  @db.Date @map("abj_adj_date")
+  abjDrCr               String    @db.Char(2) @map("abj_dr_cr")
+  // SIGNED. A reversal (bounce, cancelled receipt, mis-keyed allocation)
+  // carries the SAME abjAdjType as the row it undoes and a NEGATIVE amount, so
+  // the roll-ups on AccBillBalance self-correct and the trail still shows what
+  // happened — ck_abj_amount, ck_abj_reversal_sign.
+  abjAmount             Decimal   @db.Decimal(18, 2) @map("abj_amount")
+  // How the money moved — ck_abj_settlement_mode: CASH | CARD | UPI | WALLET |
+  // CHEQUE | BANK | CREDIT_NOTE | ADVANCE | LOYALTY | VOUCHER | JOURNAL |
+  // DISCOUNT | WRITEOFF | MIXED.
+  abjSettlementMode     String?   @db.VarChar(20) @map("abj_settlement_mode")
+  abjSettlementLedgerId String?   @db.Uuid @map("abj_settlement_ledger_id")
+  // The tender row this settlement came from — one tender, one row, which is
+  // what lets "the cheque part bounced, the cash part stands" be a fact rather
+  // than an arithmetic guess (ck_abj_tender_pair).
+  abjTenderId           String?   @db.Uuid @map("abj_tender_id")
+  abjTenderAccYear      String?   @db.Char(9) @map("abj_tender_acc_year")
+  // The cheque behind it, when the instrument is one. AccVoucherCheque owns
+  // its lifecycle; a bounce there writes the reversal row here
+  // (ck_abj_cheque_pair, ck_abj_cheque_mode, ck_abj_pdc).
+  abjChequeId           String?   @db.Uuid @map("abj_cheque_id")
+  abjChequeAccYear      String?   @db.Char(9) @map("abj_cheque_acc_year")
+  abjIsPostDated        Boolean   @default(false) @map("abj_is_post_dated")
+  // Reversal. abjReversalOfId names the row being undone; it carries no FK
+  // because the target is in some other year's partition, and ux_abj_reversal
+  // is only unique per year (see the note below).
+  abjReversalOfId       String?   @db.Uuid @map("abj_reversal_of_id")
+  abjReversalReason     String?   @db.VarChar(250) @map("abj_reversal_reason")
+  abjRemarks            String?   @db.VarChar(250) @map("abj_remarks")
+  // Write-offs and refunds need a sign-off — ck_abj_writeoff_approval.
+  abjApprovedBy         String?   @db.Uuid @map("abj_approved_by")
+  abjUserId             String    @db.Uuid @map("abj_user_id")
+  abjSessionId          String?   @db.Uuid @map("abj_session_id")
   // Audit
-  abaIsActive           Boolean   @default(true) @map("aba_is_active")
-  abaIsDeleted          Boolean   @default(false) @map("aba_is_deleted")
-  abaSyncDate           DateTime? @db.Timestamptz(6) @map("aba_sync_date")
-  abaCreatedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("aba_created_on")
-  abaCreatedBy          String?   @db.VarChar(50) @map("aba_created_by")
-  abaModifiedOn         DateTime? @db.Timestamptz(6) @map("aba_modified_on")
-  abaModifiedBy         String?   @db.VarChar(50) @map("aba_modified_by")
-
+  abjIsDeleted          Boolean   @default(false) @map("abj_is_deleted")
+  abjSyncDate           DateTime? @db.Timestamptz(6) @map("abj_sync_date")
+  abjCreatedOn          DateTime  @default(now()) @db.Timestamptz(6) @map("abj_created_on")
+  abjCreatedBy          String?   @db.VarChar(50) @map("abj_created_by")
+  abjModifiedOn         DateTime? @db.Timestamptz(6) @map("abj_modified_on")
+  abjModifiedBy         String?   @db.VarChar(50) @map("abj_modified_by")
   // Relations
-  bill                  AccBill          @relation(fields: [abaBillId], references: [ablId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_bill")
-  voucherHeader         AccVoucherHeader @relation(fields: [abaVoucherId, abaVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_aba_voucher")
-  voucherType           AccVoucherType   @relation(fields: [abaVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_voucher_type")
-  party                 AccLedgerMaster  @relation("BillAdjustmentParty", fields: [abaPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_party")
-  effectLedger          AccLedgerMaster? @relation("BillAdjustmentEffectLedger", fields: [abaEffectLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_effect_ledger")
-  settlementLedger      AccLedgerMaster  @relation("BillAdjustmentSettleLedger", fields: [abaSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_aba_settle_ledger")
-
+  bill                  AccBillBalance    @relation("BillAdjustmentBill", fields: [abjBillId, abjBillAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_bill")
+  againstBill           AccBillBalance?   @relation("BillAdjustmentAgainstBill", fields: [abjAgainstBillId, abjAgainstBillAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_against_bill")
+  party                 AccLedgerMaster   @relation("BillAdjustmentParty", fields: [abjPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_party")
+  settlementLedger      AccLedgerMaster?  @relation("BillAdjustmentSettleLedger", fields: [abjSettlementLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_settlement_ledger")
+  voucherHeader         AccVoucherHeader? @relation(fields: [abjVoucherId, abjVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_voucher")
+  tender                AccTenderDetail?  @relation(fields: [abjTenderId, abjTenderAccYear], references: [tdId, tdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_tender")
+  cheque                AccVoucherCheque? @relation(fields: [abjChequeId, abjChequeAccYear], references: [chqId, chqAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abj_cheque")
+  @@id([abjId, abjAccYear], map: "pk_acc_bill_adjustment")
   @@map("acc_bill_adjustment")
   @@schema("accounts")
   // DB-only objects not expressible in the Prisma schema (see migration
-  // 20260806090000_add_voucher_header_bills_pdc):
-  //   - Partial UNIQUE index ux_aba_voucher_row.
-  //   - Partial/covering indexes ix_aba_bill, ix_aba_voucher, ix_aba_party,
-  //     ix_aba_salesman, ix_aba_pdc.
-  //   - CHECK constraints ck_aba_adj_type, ck_aba_dr_cr, ck_aba_row_no,
-  //     ck_aba_acc_year, ck_aba_voucher_acc_year, ck_aba_amounts (the row must
-  //     actually do something), ck_aba_type_amount (the amount column must
-  //     match what the row claims to be), ck_aba_effect_ledger,
-  //     ck_aba_settle_ledger, ck_aba_pdc.
-  //   - No FK on aba_company_id / aba_branch_id / aba_salesman_id.
+  // 20260811080000_replace_acc_bill_balance_and_adjustment):
+  //   - PARTITION BY LIST (abj_acc_year); one partition per accounting year,
+  //     created by public.ensure_acc_year_partitions('YYYY-YYYY').
+  //   - Partial UNIQUE index ux_abj_reversal — a row may be reversed once.
+  //     CAVEAT: a unique index on a partitioned table must carry the partition
+  //     key, so it is unique per YEAR; a reversal in March and another in April
+  //     of the same row would both be accepted, and the posting code has to
+  //     check before it writes.
+  //   - Partial indexes ix_abj_bill, ix_abj_voucher, ix_abj_tender,
+  //     ix_abj_cheque, ix_abj_party_period.
+  //   - CHECK constraints ck_abj_adj_type, ck_abj_dr_cr,
+  //     ck_abj_settlement_mode, ck_abj_acc_year, ck_abj_bill_acc_year,
+  //     ck_abj_against_bill_pair, ck_abj_amount (a settlement of
+  //     zero is not an event), ck_abj_reversal_sign (only a reversal may be
+  //     negative, and a reversal must always be), ck_abj_no_self_reversal,
+  //     ck_abj_tender_pair, ck_abj_cheque_pair, ck_abj_voucher_pair,
+  //     ck_abj_cheque_mode, ck_abj_pdc, ck_abj_against, ck_abj_no_self_against,
+  //     ck_abj_writeoff_approval, ck_abj_row_no.
+  //   - No FK on abj_company_id / abj_branch_id / abj_user_id /
+  //     abj_approved_by / abj_session_id / abj_reversal_of_id: the source DDL
+  //     declares none.
 }
 
-// ----- prisma/accounts/AccountBills.prisma -----
-/// One row per bill. Never partitioned and never carried forward at year
-/// end — the same row simply stays open across financial years.
+// ----- prisma/accounts/AccountBillBalance.prisma -----
+/// One row per bill. Partitioned by ablAccYear — the FY the bill was RAISED in
+/// — so the primary key is the composite (ablId, ablAccYear) and a bill is
+/// addressed by the PAIR, never by the id alone.
 ///
-/// ablAllocAmount / ablDiscAmount / ablWriteoffAmount are maintained from
-/// AccBillAdjustment and must never be written from application code.
-model AccBill {
-  ablId               String    @id(map: "pk_acc_bills") @default(dbgenerated("uuidv7()")) @db.Uuid @map("abl_id")
+/// The bill is never carried forward at year end: the same row stays open
+/// across financial years, in the partition of the year it started in. So the
+/// partition says "where it started", not "where the money is" — outstanding
+/// and ageing reads carry no year filter and scan every partition, and
+/// detaching a closed year takes its still-open bills with it. Every reference
+/// into the bill carries the bill's own year alongside the id
+/// (AccBillAdjustment.abjBillAccYear, AccVoucher.avDocAccYear, ablParentAccYear
+/// below), which is what makes a settlement in a later year expressible.
+///
+/// ablAllocAmount / ablDiscAmount / ablWriteoffAmount are declared
+/// trigger-maintained from AccBillAdjustment and must never be written from
+/// application code.
+model AccBillBalance {
+  ablId               String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("abl_id")
   ablCompanyId        String    @db.Uuid @map("abl_company_id")
   // Branch that RAISED the bill. Settlement may happen at a different branch;
   // that is recorded on AccBillAdjustment.
   ablBranchId         String    @db.Uuid @map("abl_branch_id")
   ablTenantId         String?   @db.Uuid @map("abl_tenant_id")
-  // FY of origin. Reporting filter only, never a partition key.
+  // FY of origin, and the partition key. A bill outstanding past year end keeps
+  // this year and never moves partition.
   ablAccYear          String    @db.Char(9) @map("abl_acc_year")
-
   // Party
   ablPartyId          String    @db.Uuid @map("abl_party_id")
   ablSalesmanId       String?   @db.Uuid @map("abl_salesman_id")
   ablAgentId          String?   @db.Uuid @map("abl_agent_id")
-
-  // Source document — ck_abl_bill_type:
-  //   SALES | PURCHASE : a real document
-  //   OPENING          : lump-sum legacy outstanding brought in at migration
-  //   ADVANCE          : money received or paid with no bill yet
-  //   INTEREST         : overdue interest raised against a parent bill
+  // What kind of bill — ck_abl_bill_type:
+  //   SALES | PURCHASE               a real invoice
+  //   SALES_RETURN | PURCHASE_RETURN a credit / debit note, a bill in its own
+  //                                  right so the RRN tender can adjust an
+  //                                  invoice against it
+  //   OPENING                        lump-sum legacy outstanding brought in at
+  //                                  migration; the only type with no voucher
+  //   ADVANCE                        money received or paid with no bill yet
+  //   INTEREST                       overdue interest on a parent bill
+  //   JOURNAL                        a party bill reference opened by a JV
   ablBillType         String    @db.VarChar(20) @map("abl_bill_type")
+  // Source document — the business document behind the bill, named directly
+  // rather than through the voucher, so an ADVANCE can say WHICH sale order it
+  // was taken against. Identified the same way AccTenderDetail and
+  // TxnStatusLog identify theirs. ck_abl_src_doc: module/type/id together or
+  // none. Polymorphic, so no relation field.
+  ablSrcModule        String?   @db.VarChar(20) @map("abl_src_module")
+  ablSrcDocType       String?   @db.VarChar(30) @map("abl_src_doc_type")
+  ablSrcDocId         String?   @db.Uuid @map("abl_src_doc_id")
+  ablSrcAccYear       String?   @db.Char(9) @map("abl_src_acc_year")
+  // INTEREST — and a debit note raised against another bill — points at its
+  // parent here (ck_abl_parent). The bill is keyed on (id, year), so the
+  // PARENT's year comes with it, which is not ablAccYear whenever interest is
+  // raised in a later FY than the bill it is charged on (ck_abl_parent_pair
+  // keeps the two null-or-set together).
+  ablParentBillId     String?   @db.Uuid @map("abl_parent_bill_id")
+  ablParentAccYear    String?   @db.Char(9) @map("abl_parent_acc_year")
+  // Posting. The voucher that opened this bill, posted server-side after sync.
+  // Null only for OPENING, which has no voucher — and ck_abl_voucher takes the
+  // voucher type null with it rather than forcing a dummy type row.
   ablVoucherId        String?   @db.Uuid @map("abl_voucher_id")
   ablVoucherLineId    String?   @db.Uuid @map("abl_voucher_line_id")
-  ablVoucherTypeId    Int       @map("abl_voucher_type_id")
+  ablVoucherTypeId    Int?      @map("abl_voucher_type_id")
   ablVoucherNo        BigInt?   @map("abl_voucher_no")
-  ablDocDate          DateTime? @db.Date @map("abl_doc_date")
-  ablDocRefno         String?   @db.VarChar(50) @map("abl_doc_refno")
-
-  // Bill identity — ck_abl_dr_cr: DR = receivable, CR = payable
-  ablBillRefno        String    @db.VarChar(100) @map("abl_bill_refno")
-  ablBillDate         DateTime  @db.Date @map("abl_bill_date")
+  ablVoucherDate      DateTime? @db.Date @map("abl_voucher_date")
+  ablVoucherRefno     String?   @db.VarChar(50) @map("abl_voucher_refno")
+  // Bill identity — the bill's own number and date. ck_abl_dr_cr: DR =
+  // receivable, CR = payable.
+  ablDocRefno         String    @db.VarChar(100) @map("abl_doc_refno")
+  ablDocDate          DateTime  @db.Date @map("abl_doc_date")
   ablDueDate          DateTime? @db.Date @map("abl_due_date")
   ablCreditDays       Int       @default(0) @db.SmallInt @map("abl_credit_days")
   ablGraceDays        Int       @default(0) @db.SmallInt @map("abl_grace_days")
   ablDrCr             String    @db.Char(2) @map("abl_dr_cr")
   ablNarration        String?   @map("abl_narration")
-
   // Amounts
   ablBillAmount       Decimal   @db.Decimal(18, 2) @map("abl_bill_amount")
   ablAllocAmount      Decimal   @default(0) @db.Decimal(18, 2) @map("abl_alloc_amount")
   ablDiscAmount       Decimal   @default(0) @db.Decimal(18, 2) @map("abl_disc_amount")
   ablWriteoffAmount   Decimal   @default(0) @db.Decimal(18, 2) @map("abl_writeoff_amount")
-  // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
+  // GENERATED ALWAYS ... STORED in the DB. Read-only: never send either on a
   // create or update, the write will be rejected by Postgres.
   // @default(dbgenerated()) marks the value as DB-owned so migrate never emits
   // an ALTER ... DROP DEFAULT against the generation expression.
   ablPendingAmount    Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("abl_pending_amount")
-
+  // OPEN | PARTIAL | CLOSED, derived from the four amount columns.
+  ablStatus           String?   @default(dbgenerated()) @db.VarChar(10) @map("abl_status")
+  // Date the bill last reached zero, cleared again if a reversal reopens it.
+  // Days-to-collect / DSO has no other source, since the partial indexes
+  // deliberately exclude closed bills.
+  ablSettledOn        DateTime? @db.Date @map("abl_settled_on")
   // Audit
   ablIsActive         Boolean   @default(true) @map("abl_is_active")
   ablIsDeleted        Boolean   @default(false) @map("abl_is_deleted")
@@ -173,28 +251,44 @@ model AccBill {
   ablCreatedBy        String?   @db.VarChar(50) @map("abl_created_by")
   ablModifiedOn       DateTime? @db.Timestamptz(6) @map("abl_modified_on")
   ablModifiedBy       String?   @db.VarChar(50) @map("abl_modified_by")
-
   // Relations
   voucherHeader       AccVoucherHeader? @relation(fields: [ablVoucherId, ablAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_voucher")
-  voucherType         AccVoucherType    @relation(fields: [ablVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_voucher_type")
+  voucherType         AccVoucherType?   @relation(fields: [ablVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_voucher_type")
   party               AccLedgerMaster   @relation("BillParty", fields: [ablPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_party")
-  adjustments         AccBillAdjustment[]
+  parentBill          AccBillBalance?   @relation("BillParent", fields: [ablParentBillId, ablParentAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_abl_parent")
+  childBills          AccBillBalance[]  @relation("BillParent")
+  adjustments         AccBillAdjustment[] @relation("BillAdjustmentBill")
+  againstAdjustments  AccBillAdjustment[] @relation("BillAdjustmentAgainstBill")
   voucherLines        AccVoucher[]
-
-  @@map("acc_bills")
+  @@id([ablId, ablAccYear], map: "pk_acc_bill_balance")
+  @@map("acc_bill_balance")
   @@schema("accounts")
-  // DB-only objects not expressible in the Prisma schema (see migration
-  // 20260806090000_add_voucher_header_bills_pdc):
-  //   - Generated column abl_pending_amount
-  //     (bill - alloc - disc - writeoff).
-  //   - Partial UNIQUE index ux_abl_bill_refno.
-  //   - Partial/covering indexes ix_abl_open, ix_abl_overdue, ix_abl_salesman,
-  //     ix_abl_voucher.
+  // DB-only objects not expressible in the Prisma schema (see migrations
+  // 20260811080000_replace_acc_bill_balance_and_adjustment and
+  // 20260811090000_partition_acc_bill_balance_by_acc_year):
+  //   - PARTITION BY LIST (abl_acc_year); one partition per accounting year,
+  //     created by public.ensure_acc_year_partitions('YYYY-YYYY'). A fiscal year
+  //     with no partition makes every save on it fail.
+  //   - Generated columns abl_pending_amount (bill - alloc - disc - writeoff)
+  //     and abl_status (OPEN / PARTIAL / CLOSED).
+  //   - Partial UNIQUE index ux_abl_doc_refno — one refno per company, party,
+  //     bill type and year. It already carried abl_acc_year, which is what lets
+  //     it stay unique on a partitioned table. No branch column: outstanding is
+  //     company-wide.
+  //   - Partial/covering indexes ix_abl_open, ix_abl_overdue, ix_abl_voucher,
+  //     ix_abl_salesman, ix_abl_src_doc, ix_abl_parent, and ix_abl_party_credit
+  //     (20260811100000) — one party's open bills across every year, covering
+  //     the sale-bill credit check.
   //   - CHECK constraints ck_abl_bill_type, ck_abl_dr_cr, ck_abl_acc_year,
-  //     ck_abl_voucher (OPENING has no source voucher, every other type must
-  //     have one), ck_abl_amount, ck_abl_due_date, and ck_abl_settled — the
+  //     ck_abl_src_acc_year, ck_abl_voucher (OPENING has no voucher and no
+  //     voucher type; every other type must have both), ck_abl_src_doc,
+  //     ck_abl_parent, ck_abl_parent_pair, ck_abl_no_self_parent,
+  //     ck_abl_amount, ck_abl_due_date, ck_abl_days, and ck_abl_settled — the
   //     over-settlement guard: a bill can never be edited down below what has
   //     already been settled, discounted or written off against it.
+  //   - The roll-up trigger that maintains abl_alloc_amount / abl_disc_amount /
+  //     abl_writeoff_amount / abl_settled_on from acc_bill_adjustment is NOT
+  //     yet written; until it is, the posting code owns those columns.
   //   - No FK on abl_company_id / abl_branch_id / abl_salesman_id /
   //     abl_agent_id: the source DDL declares none.
 }
@@ -379,21 +473,20 @@ model AccLedgerMaster {
   tenderDetailLedgers      AccTenderDetail[]      @relation("TenderDetailLedger")
   tenderDetailSettleLedgers AccTenderDetail[]     @relation("TenderDetailSettleLedger")
   tenderDetailPartyLedgers AccTenderDetail[]      @relation("TenderDetailPartyLedger")
+  tenderDetailSurchargeLedgers AccTenderDetail[]  @relation("TenderDetailSurchargeLedger")
   voucherDocRegisterParties AccVoucherDocRegister[]
   voucherHeaderParties     AccVoucherHeader[]     @relation("VoucherHeaderParty")
   voucherHeaderOppLedgers  AccVoucherHeader[]     @relation("VoucherHeaderOppLedger")
   accountingEntries        AccVoucher[]           @relation("AccVoucherLedger")
   oppositeAccountingEntries AccVoucher[]          @relation("AccVoucherOppLedger")
-  billParties              AccBill[]              @relation("BillParty")
+  billParties              AccBillBalance[]       @relation("BillParty")
   billAdjustmentParties    AccBillAdjustment[]    @relation("BillAdjustmentParty")
-  billAdjustmentEffectLedgers AccBillAdjustment[] @relation("BillAdjustmentEffectLedger")
   billAdjustmentSettleLedgers AccBillAdjustment[] @relation("BillAdjustmentSettleLedger")
   pdcParties               AccPdcRegister[]       @relation("PdcParty")
   pdcBankLedgers           AccPdcRegister[]       @relation("PdcBankLedger")
   chargeMasters            ChargeMaster[]
   chargeDetails            TransactionChargeDetail[]
   saleOrderAdvanceLedgers  SaleOrder[]              @relation("SaleOrderAdvanceLedger")
-  saleOrderAdvanceAllocLedgers SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocLedger")
   @@unique([ledCompanyId, ledName], name: "uq_led_name_per_company")
   @@unique([ledCompanyId, ledTallyName], name: "uq_led_tally_name_per_company")
   @@index([ledCompanyId], name: "idx_led_company_id")
@@ -411,13 +504,15 @@ model AccLedgerMaster {
 
 // ----- prisma/accounts/AccountOpeningBalance.prisma -----
 /// Opening balance per ledger per financial year. Balance-sheet ledgers
-/// only; P&L ledgers always start at zero.
+/// only; P&L ledgers always start at zero. Partitioned by opAccYear, so the
+/// primary key is the composite (opId, opAccYear).
 model AccOpeningBalance {
-  opId            String    @id(map: "pk_acc_opening") @default(dbgenerated("uuidv7()")) @db.Uuid @map("op_id")
+  opId            String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("op_id")
   opCompanyId     String    @db.Uuid @map("op_company_id")
   // NULL = company level
   opBranchId      String?   @db.Uuid @map("op_branch_id")
-  // FY label in YYYY-YYYY form, matching fiscal_years.fy_code
+  // FY label in YYYY-YYYY form, matching fiscal_years.fy_code. The partition
+  // key.
   opAccYear       String    @db.Char(9) @map("op_acc_year")
   opLedgerId      String    @db.Uuid @map("op_ledger_id")
 
@@ -442,10 +537,14 @@ model AccOpeningBalance {
   opModifiedAt    DateTime? @db.Timestamptz(6) @map("op_modified_at")
   opModifiedBy    String?   @db.VarChar(50) @map("op_modified_by")
 
+  @@id([opId, opAccYear], map: "pk_acc_opening")
   @@map("acc_opening_balance")
   @@schema("accounts")
-  // DB-only objects not expressible in the Prisma schema (see migration
-  // 20260806090000_add_voucher_header_bills_pdc):
+  // DB-only objects not expressible in the Prisma schema (see migrations
+  // 20260806090000_add_voucher_header_bills_pdc and
+  // 20260811060000_partition_account_bill_tables_by_acc_year):
+  //   - PARTITION BY LIST (op_acc_year); one partition per accounting year,
+  //     created by public.ensure_acc_year_partitions('YYYY-YYYY').
   //   - Partial UNIQUE index ux_op_scope on
   //     (op_company_id, COALESCE(op_branch_id, all-zero uuid), op_acc_year,
   //     op_ledger_id) WHERE op_is_deleted = false. Branch NULL must still
@@ -459,9 +558,12 @@ model AccOpeningBalance {
 }
 
 // ----- prisma/accounts/AccountPdcRegister.prisma -----
-/// Post-dated cheques and mandates, in both directions. Not partitioned: an
-/// instrument routinely matures, clears or bounces in a later financial year
-/// than the one it was received in.
+/// Post-dated cheques and mandates, in both directions. Partitioned by
+/// apdAccYear, the FY the instrument was received in, so the primary key is
+/// the composite (apdId, apdAccYear). An instrument routinely matures, clears
+/// or bounces in a later financial year than the one it was received in; it
+/// stays in the partition of the year it arrived in, and the later events
+/// carry their own voucher-year columns.
 ///
 /// Two posting modes, per apdPostingMode:
 ///   ON_RECEIPT  — a receipt voucher is raised the day the cheque arrives,
@@ -475,20 +577,18 @@ model AccOpeningBalance {
 ///                              -> BOUNCED -> (re-present or REPLACED)
 ///            HELD -> RETURNED / CANCELLED / REPLACED
 model AccPdcRegister {
-  apdId                String    @id(map: "pk_acc_pdc_register") @default(dbgenerated("uuidv7()")) @db.Uuid @map("apd_id")
+  apdId                String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("apd_id")
   apdCompanyId         String    @db.Uuid @map("apd_company_id")
   // Branch that took the instrument in
   apdBranchId          String    @db.Uuid @map("apd_branch_id")
   apdTenantId          String?   @db.Uuid @map("apd_tenant_id")
-  // FY it was received in
+  // FY it was received in, and the partition key
   apdAccYear           String    @db.Char(9) @map("apd_acc_year")
-
   // ck_apd_tra_type: R = receivable (a customer's cheque we hold),
   //                  P = payable (our cheque handed to a supplier)
   apdTraType           String    @db.Char(1) @map("apd_tra_type")
   apdPartyId           String    @db.Uuid @map("apd_party_id")
   apdSalesmanId        String?   @db.Uuid @map("apd_salesman_id")
-
   // The instrument — ck_apd_instrument:
   //   CHEQUE | DD | PAY_ORDER | ECS | NACH | UPI_MANDATE
   apdInstrumentType    String    @default("CHEQUE") @db.VarChar(20) @map("apd_instrument_type")
@@ -503,10 +603,8 @@ model AccPdcRegister {
   apdMicr              String?   @db.VarChar(9) @map("apd_micr")
   apdDrawerName        String?   @db.VarChar(150) @map("apd_drawer_name")
   apdReceivedOn        DateTime  @db.Date @map("apd_received_on")
-
   // Our own bank ledger: where it will be deposited (R) or drawn on (P)
   apdBankLedgerId      String?   @db.Uuid @map("apd_bank_ledger_id")
-
   // Accounting linkage — ck_apd_posting_mode: ON_RECEIPT | ON_CLEARING
   apdPostingMode       String    @default("ON_CLEARING") @db.VarChar(15) @map("apd_posting_mode")
   apdVoucherId         String?   @db.Uuid @map("apd_voucher_id")
@@ -514,7 +612,6 @@ model AccPdcRegister {
   // acc_tender_detail row. No FK: that table is partitioned on a composite
   // key this column cannot address on its own.
   apdTenderId          String?   @db.Uuid @map("apd_tender_id")
-
   // Lifecycle — ck_apd_status:
   //   HELD | DEPOSITED | CLEARED | BOUNCED | RETURNED | CANCELLED | REPLACED
   apdStatus            String    @default("HELD") @db.VarChar(15) @map("apd_status")
@@ -523,14 +620,11 @@ model AccPdcRegister {
   // How many times it has been sent to the bank — what distinguishes a first
   // bounce from a repeat.
   apdPresentCount      Int       @default(0) @map("apd_present_count")
-
   apdDepositDate       DateTime? @db.Date @map("apd_deposit_date")
   apdDepositSlipNo     String?   @db.VarChar(50) @map("apd_deposit_slip_no")
-
   apdClearDate         DateTime? @db.Date @map("apd_clear_date")
   apdClearVoucherId    String?   @db.Uuid @map("apd_clear_voucher_id")
   apdClearAccYear      String?   @db.Char(9) @map("apd_clear_acc_year")
-
   apdBounceDate        DateTime? @db.Date @map("apd_bounce_date")
   apdBounceReason      String?   @db.VarChar(150) @map("apd_bounce_reason")
   apdBounceCharges     Decimal   @default(0) @db.Decimal(18, 2) @map("apd_bounce_charges")
@@ -538,12 +632,13 @@ model AccPdcRegister {
   apdBounceAccYear     String?   @db.Char(9) @map("apd_bounce_acc_year")
   apdChargeVoucherId   String?   @db.Uuid @map("apd_charge_voucher_id")
   apdChargeAccYear     String?   @db.Char(9) @map("apd_charge_acc_year")
-
+  // apdReplacedByAccYear completes the reference to the replacement's
+  // composite key; it is set exactly when apdReplacedById is.
   apdReplacedById      String?   @db.Uuid @map("apd_replaced_by_id")
+  apdReplacedByAccYear String?   @db.Char(9) @map("apd_replaced_by_acc_year")
   apdCancelDate        DateTime? @db.Date @map("apd_cancel_date")
   apdCancelReason      String?   @db.VarChar(250) @map("apd_cancel_reason")
   apdRemarks           String?   @map("apd_remarks")
-
   // Audit
   apdIsActive          Boolean   @default(true) @map("apd_is_active")
   apdIsDeleted         Boolean   @default(false) @map("apd_is_deleted")
@@ -552,23 +647,23 @@ model AccPdcRegister {
   apdCreatedBy         String?   @db.VarChar(50) @map("apd_created_by")
   apdModifiedOn        DateTime? @db.Timestamptz(6) @map("apd_modified_on")
   apdModifiedBy        String?   @db.VarChar(50) @map("apd_modified_by")
-
   // Relations
   party                AccLedgerMaster   @relation("PdcParty", fields: [apdPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_party")
   bankLedger           AccLedgerMaster?  @relation("PdcBankLedger", fields: [apdBankLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_bank_ledger")
-
   receiptVoucher       AccVoucherHeader? @relation("PdcReceiptVoucher", fields: [apdVoucherId, apdVoucherAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_voucher")
   clearVoucher         AccVoucherHeader? @relation("PdcClearVoucher", fields: [apdClearVoucherId, apdClearAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_clear_voucher")
   bounceVoucher        AccVoucherHeader? @relation("PdcBounceVoucher", fields: [apdBounceVoucherId, apdBounceAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_bounce_voucher")
   chargeVoucher        AccVoucherHeader? @relation("PdcChargeVoucher", fields: [apdChargeVoucherId, apdChargeAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_charge_voucher")
-
-  replacedBy           AccPdcRegister?   @relation("PdcReplacement", fields: [apdReplacedById], references: [apdId], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_replaced_by")
+  replacedBy           AccPdcRegister?   @relation("PdcReplacement", fields: [apdReplacedById, apdReplacedByAccYear], references: [apdId, apdAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_apd_replaced_by")
   replaces             AccPdcRegister[]  @relation("PdcReplacement")
-
+  @@id([apdId, apdAccYear], map: "pk_acc_pdc_register")
   @@map("acc_pdc_register")
   @@schema("accounts")
-  // DB-only objects not expressible in the Prisma schema (see migration
-  // 20260806090000_add_voucher_header_bills_pdc):
+  // DB-only objects not expressible in the Prisma schema (see migrations
+  // 20260806090000_add_voucher_header_bills_pdc and
+  // 20260811060000_partition_account_bill_tables_by_acc_year):
+  //   - PARTITION BY LIST (apd_acc_year); one partition per accounting year,
+  //     created by public.ensure_acc_year_partitions('YYYY-YYYY').
   //   - Partial UNIQUE index ux_apd_instrument — the same cheque number
   //     cannot be registered twice for one party in one FY.
   //   - Partial/covering indexes ix_apd_due, ix_apd_party, ix_apd_bank,
@@ -576,8 +671,9 @@ model AccPdcRegister {
   //   - CHECK constraints ck_apd_tra_type, ck_apd_instrument, ck_apd_status,
   //     ck_apd_posting_mode, ck_apd_amount, ck_apd_charges, ck_apd_present,
   //     ck_apd_acc_year, ck_apd_dates, ck_apd_deposited, ck_apd_cleared,
-  //     ck_apd_bounced, ck_apd_replaced, ck_apd_cancelled, ck_apd_self,
-  //     ck_apd_posting, ck_apd_seq.
+  //     ck_apd_bounced, ck_apd_replaced, ck_apd_replaced_pair (the
+  //     replacement id and its year move together), ck_apd_cancelled,
+  //     ck_apd_self, ck_apd_posting, ck_apd_seq.
   //   - No FK on apd_company_id / apd_branch_id / apd_salesman_id /
   //     apd_tender_id.
 }
@@ -592,7 +688,6 @@ model AccTenderDetail {
   tdBranchId            String    @db.Uuid                                   @map("td_branch_id")
   tdTenantId            String?   @db.Uuid                                   @map("td_tenant_id")
   tdAccYear             String    @db.Char(9)                                @map("td_acc_year")
-
   // The document this money belongs to (works for DRAFT docs too).
   tdSrcModule           String    @db.VarChar(20)                            @map("td_src_module")
   tdSrcDocType          String    @db.VarChar(30)                            @map("td_src_doc_type")
@@ -600,10 +695,8 @@ model AccTenderDetail {
   tdRowNo               Int                                                  @map("td_row_no")
   tdDocDate             DateTime  @db.Date                                   @map("td_doc_date")
   tdPartyLedgerId       String    @db.Uuid                                   @map("td_party_ledger_id")
-
   // Filled at posting; same accounting year as the tender's document.
   tdVoucherId           String?   @db.Uuid                                   @map("td_voucher_id")
-
   // ── What was tendered ────────────────────────────────────────────────
   tdTenderId            String    @db.Uuid                                   @map("td_tender_id")
   tdTenderTypeId        Int                                                  @map("td_tender_type_id")
@@ -612,16 +705,14 @@ model AccTenderDetail {
   tdAmount              Decimal   @default(0) @db.Decimal(18, 2)             @map("td_amount")
   tdSurchargePerc       Decimal   @default(0) @db.Decimal(6, 3)              @map("td_surcharge_perc")
   tdSurchargeAmt        Decimal   @default(0) @db.Decimal(18, 2)             @map("td_surcharge_amt")
+  tdSurchargeLedgerId   String?   @db.Uuid                                   @map("td_surcharge_ledger_id")
   tdTotalAmt            Decimal   @default(0) @db.Decimal(18, 2)             @map("td_total_amt")
-
   // ── Cash over-tender / change ────────────────────────────────────────
   tdReceivedAmt         Decimal   @default(0) @db.Decimal(18, 2)             @map("td_received_amt")
   tdChangeAmt           Decimal   @default(0) @db.Decimal(18, 2)             @map("td_change_amt")
-
   // ── Non-cash equivalents (loyalty / voucher) ─────────────────────────
   tdUnitsUsed           Decimal   @default(0) @db.Decimal(18, 4)             @map("td_units_used")
   tdConversionRate      Decimal   @default(1) @db.Decimal(10, 4)             @map("td_conversion_rate")
-
   // ── Instrument / gateway reference (day reconciliation) ──────────────
   tdRefNo               String?   @db.VarChar(100)                          @map("td_ref_no")
   tdAuthCode            String?   @db.VarChar(50)                           @map("td_auth_code")
@@ -630,7 +721,6 @@ model AccTenderDetail {
   tdPayerVpa            String?   @db.VarChar(100)                          @map("td_payer_vpa")
   tdInstrumentDate      DateTime? @db.Date                                   @map("td_instrument_date")
   tdIsPdc               Boolean   @default(false)                            @map("td_is_pdc")
-
   // ── Settlement ───────────────────────────────────────────────────────
   tdSettleStatus        String    @default("NA") @db.VarChar(20)             @map("td_settle_status")
   tdSettleLedgerId      String?   @db.Uuid                                   @map("td_settle_ledger_id")
@@ -640,13 +730,11 @@ model AccTenderDetail {
   tdMdrAmt              Decimal   @default(0) @db.Decimal(18, 2)             @map("td_mdr_amt")
   tdSettleRefNo         String?   @db.VarChar(100)                          @map("td_settle_ref_no")
   tdSettleVoucherId     String?   @db.Uuid                                   @map("td_settle_voucher_id")
-
   // ── Where / who ──────────────────────────────────────────────────────
   tdSessionId           String?   @db.Uuid                                   @map("td_session_id")
   tdDeviceId            String?   @db.VarChar(250)                          @map("td_device_id")
   tdUserId              String    @db.Uuid                                   @map("td_user_id")
   tdNotes               String?   @db.VarChar(250)                          @map("td_notes")
-
   // ── Audit ────────────────────────────────────────────────────────────
   tdIsDeleted           Boolean   @default(false)                            @map("td_is_deleted")
   tdSyncDate            DateTime? @db.Timestamptz                            @map("td_sync_date")
@@ -654,7 +742,6 @@ model AccTenderDetail {
   tdCreatedBy           String    @db.VarChar(50)                           @map("td_created_by")
   tdModifiedOn          DateTime? @db.Timestamptz                            @map("td_modified_on")
   tdModifiedBy          String?   @db.VarChar(50)                           @map("td_modified_by")
-
   // Relations
   company               Company          @relation(fields: [tdCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_company")
   branch                BranchMaster     @relation(fields: [tdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_branch")
@@ -664,8 +751,11 @@ model AccTenderDetail {
   ledger                AccLedgerMaster  @relation("TenderDetailLedger", fields: [tdTenderLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_ledger")
   settleLedger          AccLedgerMaster? @relation("TenderDetailSettleLedger", fields: [tdSettleLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_settle_ledger")
   partyLedger           AccLedgerMaster  @relation("TenderDetailPartyLedger", fields: [tdPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_party_ledger")
+  surchargeLedger       AccLedgerMaster? @relation("TenderDetailSurchargeLedger", fields: [tdSurchargeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_surcharge_ledger")
   // Applications of this tender when it was taken as an order advance.
-  saleOrderAdvanceAllocs SaleOrderAdvanceAlloc[]
+  // What this tender settled — one bill adjustment per tender row, which is
+  // what lets a bounced cheque reopen only its own share.
+  billAdjustments        AccBillAdjustment[]
   // No relation fields for:
   //   tdVoucherId / tdSettleVoucherId
   //                 — acc_voucher_header was dropped; both stay plain UUID columns.
@@ -674,7 +764,6 @@ model AccTenderDetail {
   //                   so it is not a valid FK target (avh_session_id is likewise unmapped).
   //   tdDeviceId    — VarChar(250) free text, not a device_master id.
   //   tdSrcDocId    — polymorphic; the target table varies by tdSrcModule/tdSrcDocType.
-
   @@id([tdId, tdAccYear], map: "pk_acc_tender_detail")
   // No CREATE INDEX statements were specified for this table beyond the PK —
   // matching the given DDL exactly (unlike acc_tender_master, which listed
@@ -916,7 +1005,14 @@ model AccVoucherCheque {
   voucherType          AccVoucherType        @relation(fields: [chqVoucherTypeId], references: [vchrTypeId], map: "fk_acc_cheques_voucher_type")
   company              Company               @relation(fields: [chqCompanyId], references: [compId], map: "fk_acc_cheques_voucher_company")
   branch               BranchMaster          @relation(fields: [chqBranchId], references: [brId], map: "fk_acc_cheques_voucher_branch")
+  // The settlement rows this instrument carried. A bounce here writes the
+  // reversal row there.
+  billAdjustments      AccBillAdjustment[]
 
+  // Target for fk_abj_cheque, which names the cheque by (id, year) the same
+  // way a settlement names its tender. Redundant with the primary key on
+  // chqId — it exists only so the pair can be referenced.
+  @@unique([chqId, chqAccYear], map: "ux_chq_id_acc_year")
   @@index([chqCompanyId, chqBranchId, chqPartyId], map: "idx_acc_cheques_party")
   @@index([chqCompanyId, chqBranchId, chqStatus], map: "idx_acc_cheques_status")
   @@index([chqCompanyId, chqBranchId, chqChequeDate, chqDepositDate, chqClearDate], map: "idx_acc_cheques_dates")
@@ -1459,7 +1555,6 @@ model AccVoucherHeader {
   avhBranchId            String    @db.Uuid @map("avh_branch_id")
   avhTenantId            String?   @db.Uuid @map("avh_tenant_id")
   avhAccYear             String    @db.Char(9) @map("avh_acc_year")
-
   avhVoucherTypeId       Int       @map("avh_voucher_type_id")
   // Nullable on purpose: a draft must not consume a number, or an abandoned
   // entry leaves a permanent gap in the series.
@@ -1467,7 +1562,6 @@ model AccVoucherHeader {
   avhVoucherSlno         BigInt?   @map("avh_voucher_slno")
   avhVoucherRefno        String?   @db.VarChar(50) @map("avh_voucher_refno")
   avhVoucherDate         DateTime  @db.Timestamptz(6) @map("avh_voucher_date")
-
   // Source document. src_* is the machine link (posting idempotency,
   // ux_avh_src); doc_* is the human-readable face of the same document.
   avhSrcModule           String?   @db.VarChar(20) @map("avh_src_module")
@@ -1477,32 +1571,27 @@ model AccVoucherHeader {
   avhDocRefno            String?   @db.VarChar(100) @map("avh_doc_refno")
   avhDocDate             DateTime? @db.Date @map("avh_doc_date")
   avhDocAmount           Decimal   @default(0) @db.Decimal(18, 2) @map("avh_doc_amount")
-
   avhAdjustAmount        Decimal   @default(0) @db.Decimal(18, 2) @map("avh_adjust_amount")
   avhRoundOff            Decimal   @default(0) @db.Decimal(18, 2) @map("avh_round_off")
   avhTotalDebit          Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_debit")
   avhTotalCredit         Decimal   @default(0) @db.Decimal(18, 2) @map("avh_total_credit")
-
   avhPartyId             String    @db.Uuid @map("avh_party_id")
   avhOppositeLedgerId    String?   @db.Uuid @map("avh_opposite_ledger_id")
   // Scalar list: Prisma rejects null here, so normalise to [] in the DTO.
   avhEmployeeId          String[]  @db.Uuid @map("avh_employee_id")
   avhRemarks             String?   @map("avh_remarks")
-
   // Document lineage: credit note -> original invoice, debit note ->
   // original bill; reversal is the contra voucher raised on cancellation.
   avhAgainstVoucherId    String?   @db.Uuid @map("avh_against_voucher_id")
   avhAgainstAccYear      String?   @db.Char(9) @map("avh_against_acc_year")
   avhReversalVoucherId   String?   @db.Uuid @map("avh_reversal_voucher_id")
   avhReversalAccYear     String?   @db.Char(9) @map("avh_reversal_acc_year")
-
   // Lifecycle — ck_avh_status: DRAFT | APPROVED | POSTED | CANCELLED
   avhVoucherStatus       String    @default("DRAFT") @db.VarChar(20) @map("avh_voucher_status")
   avhStatusOn            DateTime? @db.Timestamptz(6) @map("avh_status_on")
   avhStatusBy            String?   @db.Uuid @map("avh_status_by")
   avhPostedOn            DateTime? @db.Timestamptz(6) @map("avh_posted_on")
   avhCancelReason        String?   @db.VarChar(250) @map("avh_cancel_reason")
-
   // Where / who — ck_avh_device_type: PC | WEB | MOBILE | POS | DESKTOP
   // (DESKTOP added by 20260806120000_widen_avh_device_type)
   avhUserId              String    @db.Uuid @map("avh_user_id")
@@ -1510,7 +1599,6 @@ model AccVoucherHeader {
   avhDeviceType          String?   @db.VarChar(20) @map("avh_device_type")
   avhDeviceId            String?   @map("avh_device_id")
   avhPrintCount          Int       @default(0) @map("avh_print_count")
-
   // Outbound / export — ck_avh_msg_status: NA | PENDING | SENT | FAILED
   //                     ck_avh_tally_status: NA | PENDING | EXPORTED | FAILED
   avhWhatsappStatus      String    @default("NA") @db.VarChar(10) @map("avh_whatsapp_status")
@@ -1519,7 +1607,6 @@ model AccVoucherHeader {
   avhTallyExportedOn     DateTime? @db.Timestamptz(6) @map("avh_tally_exported_on")
   avhTallyGuid           String?   @db.VarChar(100) @map("avh_tally_guid")
   avhTallyErrorMsg       String?   @map("avh_tally_error_msg")
-
   // Audit
   avhIsActive            Boolean   @default(true) @map("avh_is_active")
   avhIsDeleted           Boolean   @default(false) @map("avh_is_deleted")
@@ -1528,7 +1615,6 @@ model AccVoucherHeader {
   avhCreatedBy           String?   @db.VarChar(50) @map("avh_created_by")
   avhModifiedOn          DateTime? @db.Timestamptz(6) @map("avh_modified_on")
   avhModifiedBy          String?   @db.VarChar(50) @map("avh_modified_by")
-
   // Relations
   company                Company         @relation(fields: [avhCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_company")
   branch                 BranchMaster    @relation(fields: [avhBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_branch")
@@ -1536,20 +1622,17 @@ model AccVoucherHeader {
   party                  AccLedgerMaster @relation("VoucherHeaderParty", fields: [avhPartyId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_party")
   oppositeLedger         AccLedgerMaster? @relation("VoucherHeaderOppLedger", fields: [avhOppositeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_opp_ledger")
   user                   UserMaster      @relation(fields: [avhUserId], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_user")
-
   againstVoucher         AccVoucherHeader?  @relation("VoucherHeaderAgainst", fields: [avhAgainstVoucherId, avhAgainstAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_against")
   againstVouchers        AccVoucherHeader[] @relation("VoucherHeaderAgainst")
   reversalVoucher        AccVoucherHeader?  @relation("VoucherHeaderReversal", fields: [avhReversalVoucherId, avhReversalAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_avh_reversal")
   reversalVouchers       AccVoucherHeader[] @relation("VoucherHeaderReversal")
-
   vouchers               AccVoucher[]
-  bills                  AccBill[]
+  bills                  AccBillBalance[]
   billAdjustments        AccBillAdjustment[]
   pdcReceipts            AccPdcRegister[]   @relation("PdcReceiptVoucher")
   pdcClearings           AccPdcRegister[]   @relation("PdcClearVoucher")
   pdcBounces             AccPdcRegister[]   @relation("PdcBounceVoucher")
   pdcCharges             AccPdcRegister[]   @relation("PdcChargeVoucher")
-
   @@id([avhVoucherId, avhAccYear], map: "pk_acc_voucher_header")
   @@map("acc_voucher_header")
   @@schema("accounts")
@@ -1588,11 +1671,14 @@ model AccVoucher {
   avRowNo            Int       @map("av_row_no")
   avVoucherDate      DateTime  @db.Timestamptz(6) @map("av_voucher_date")
   avVoucherRefno     String?   @db.VarChar(50) @map("av_voucher_refno")
-  avDocDate          DateTime? @db.Date @map("av_doc_date")
-  avBillDate         DateTime? @db.Timestamptz(6) @map("av_bill_date")
-  avBillRefno        String?   @db.VarChar(100) @map("av_bill_refno")
-  avBillId           String?   @db.Uuid @map("av_bill_id")
-
+  avDocDate         DateTime? @db.Timestamptz(6) @map("av_doc_date")
+  avDocRefno        String?   @db.VarChar(100) @map("av_doc_refno")
+  // avDocAccYear is the FY of the BILL in avDocId — the bill's own year, not
+  // avAccYear. Set exactly when avDocId is (ck_av_doc_pair), and the second
+  // half of fk_av_doc: acc_bill_balance is partitioned on abl_acc_year, so the
+  // bill is addressed by the pair (20260811090000).
+  avDocId           String?   @db.Uuid @map("av_doc_id")
+  avDocAccYear      String?   @db.Char(9) @map("av_doc_acc_year")
   // Accounting line — ck_av_dr_cr: DR | CR
   avDrCr             String    @db.Char(2) @map("av_dr_cr")
   avLedgerId         String    @db.Uuid @map("av_ledger_id")
@@ -1601,34 +1687,29 @@ model AccVoucher {
   // GENERATED ALWAYS ... STORED in the DB. Read-only: never send it on a
   // create or update, the write will be rejected by Postgres.
   avSignedAmount     Decimal?  @default(dbgenerated()) @db.Decimal(18, 2) @map("av_signed_amount")
-
   avCostCentreId     String?   @db.Uuid @map("av_cost_centre_id")
   avRemarks          String?   @map("av_remarks")
   avSessionId        String?   @db.Uuid @map("av_session_id")
   avUserId           String    @db.Uuid @map("av_user_id")
-
   // Bank / cash reconciliation
   avReconDate        DateTime? @db.Date @map("av_recon_date")
   avReconRefno       String?   @db.VarChar(50) @map("av_recon_refno")
   // GENERATED ALWAYS ... STORED in the DB. Read-only, as above.
   avIsReconciled     Boolean?  @default(dbgenerated()) @map("av_is_reconciled")
-
   // Audit
   avIsActive         Boolean   @default(true) @map("av_is_active")
   avIsDeleted        Boolean   @default(false) @map("av_is_deleted")
   avSyncDate         DateTime? @db.Timestamptz(6) @map("av_sync_date")
   avCreatedOn        DateTime  @default(now()) @db.Timestamptz(6) @map("av_created_on")
-  avCreatedBy        String?   @db.Uuid @map("av_created_by")
+  avCreatedBy        String?   @db.Text @map("av_created_by")
   avModifiedOn       DateTime? @db.Timestamptz(6) @map("av_modified_on")
-  avModifiedBy       String?   @db.Uuid @map("av_modified_by")
-
+  avModifiedBy       String?   @db.Text @map("av_modified_by")
   // Relations
   voucherHeader      AccVoucherHeader @relation(fields: [avVoucherId, avAccYear], references: [avhVoucherId, avhAccYear], onUpdate: Cascade, onDelete: Cascade, map: "fk_av_header")
   ledger             AccLedgerMaster  @relation("AccVoucherLedger", fields: [avLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_ledger")
   oppositeLedger     AccLedgerMaster  @relation("AccVoucherOppLedger", fields: [avOppLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_opp_ledger")
   voucherType        AccVoucherType   @relation(fields: [avVoucherTypeId], references: [vchrTypeId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_voucher_type")
-  bill               AccBill?         @relation(fields: [avBillId], references: [ablId], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_bill")
-
+  bill               AccBillBalance?  @relation(fields: [avDocId, avDocAccYear], references: [ablId, ablAccYear], onUpdate: Cascade, onDelete: Restrict, map: "fk_av_doc")
   @@id([avId, avAccYear], map: "pk_acc_vouchers")
   @@index([avVoucherId, avAccYear], map: "ix_av_voucher")
   @@map("acc_vouchers")
@@ -1642,7 +1723,9 @@ model AccVoucher {
   //   - Partial/covering indexes ix_av_ledger, ix_av_daybook, ix_av_opp_ledger,
   //     ix_av_bill, ix_av_unrecon.
   //   - CHECK constraints ck_av_dr_cr, ck_av_amount, ck_av_row_no,
-  //     ck_av_acc_year, ck_av_self, ck_av_recon.
+  //     ck_av_acc_year, ck_av_self, ck_av_recon, and ck_av_doc_pair (av_doc_id
+  //     and av_doc_acc_year move together — see
+  //     20260811060000_partition_account_bill_tables_by_acc_year).
   //   - No FK on av_company_id / av_branch_id / av_user_id / av_cost_centre_id:
   //     the source DDL declares none.
 }
@@ -1767,8 +1850,7 @@ model AccVoucherType {
   voucherSequences           AccVoucherSeq[]
   voucherHeaders             AccVoucherHeader[]
   vouchers                   AccVoucher[]
-  bills                      AccBill[]
-  billAdjustments            AccBillAdjustment[]
+  bills                      AccBillBalance[]
   @@unique([vchrTypeCode], map: "uq_acc_voucher_types_code")
   @@unique([vchrTypeName], map: "uq_acc_voucher_types_name")
   @@index([vchrIsActive, vchrSortOrder, vchrTypeName], map: "idx_acc_voucher_types_active_sort")
@@ -5343,8 +5425,6 @@ model SaleBill {
   sbModifiedBy       String?   @db.VarChar @map("sb_modified_by")
   // Relations
   items      SaleBillItem[]
-  // Advances an order held that were adjusted into this invoice.
-  advanceAllocs SaleOrderAdvanceAlloc[]
   customer   Customer       @relation(fields: [sbCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_cust")
   posState   StateCode?     @relation(fields: [sbPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_pos_state")
   priceLevel ItemPriceLevel @relation("SaleBillPriceLevel", fields: [sbPriceLevel], references: [iplId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sb_price_level")
@@ -5705,8 +5785,8 @@ model SaleOrder {
   soIsAdvanceMandatory Boolean   @default(false) @map("so_is_advance_mandatory")
   soAdvanceLedgerId    String?   @db.Uuid @map("so_advance_ledger_id") // customer-advance liability ledger
   // Roll-ups. Received comes from accounts.acc_tender_detail; the other three
-  // from sales.sale_order_advance_alloc. Balance is what the company still
-  // HOLDS, and ck_so_advance_balance keeps it honest.
+  // are stated by the caller. Balance is what the company still HOLDS, and
+  // ck_so_advance_balance keeps it honest.
   soAdvanceRecdAmt     Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_recd_amt")
   soAdvanceAdjustedAmt Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_adjusted_amt")
   soAdvanceRefundAmt   Decimal   @default(0) @db.Decimal(15, 2) @map("so_advance_refund_amt")
@@ -5761,8 +5841,6 @@ model SaleOrder {
   soModifiedBy         String?   @db.VarChar(50) @map("so_modified_by")
   // Relations
   items                 SaleOrderItem[]
-  advanceAllocs         SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocOrder")
-  transferredInAllocs   SaleOrderAdvanceAlloc[] @relation("SaleOrderAdvanceAllocTargetOrder")
   customer      Customer         @relation(fields: [soCustId], references: [cusId], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_cust")
   posState      StateCode?       @relation("SaleOrderPosState", fields: [soPosStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_pos_state")
   shipState     StateCode?       @relation("SaleOrderShipState", fields: [soShipStcd], references: [stateCode], onDelete: Restrict, onUpdate: Cascade, map: "fk_so_ship_state")
@@ -5799,82 +5877,6 @@ model SaleOrder {
   @@id([soId, soAccYear], map: "pk_sale_order")
   @@index([soCustId], map: "ix_so_cust")
   @@map("sale_order")
-  @@schema("sales")
-}
-
-// ----- prisma/sales/saleOrderAdvanceAlloc.prisma -----
-// Advance allocation — where the money taken up front actually went.
-//
-// One row per application of one advance tender. The tender row
-// (accounts.acc_tender_detail) is the money coming IN; this is the money being
-// USED. Both sides carry their own accounting year because an advance taken in
-// March is routinely adjusted into an April invoice.
-//
-// Sum(soaAmount) per order, grouped by soaAllocType, reproduces the four
-// SaleOrder advance roll-ups exactly — that is the point of the table.
-//
-// LIST-partitioned by soa_acc_year — see the note on SaleOrder.
-model SaleOrderAdvanceAlloc {
-  soaId             String    @default(dbgenerated("uuidv7()")) @db.Uuid @map("soa_id")
-  soaCompanyId      String    @db.Uuid @map("soa_company_id")
-  soaBranchId       String    @db.Uuid @map("soa_branch_id") // branch that applied it
-  soaTenantId       String?   @db.Uuid @map("soa_tenant_id")
-  soaAccYear        String    @db.Char(9) @map("soa_acc_year") // year of the APPLICATION
-  // The order the advance was taken against.
-  soaOrderId        String    @db.Uuid @map("soa_order_id")
-  soaOrderAccYear   String    @db.Char(9) @map("soa_order_acc_year")
-  soaOrderRefno     String?   @db.VarChar(100) @map("soa_order_refno")
-  // The tender row that brought the money in. Nullable only for opening
-  // balances migrated from the legacy system, which have no tender history.
-  soaTenderId       String?   @db.Uuid @map("soa_tender_id")
-  soaTenderAccYear  String?   @db.Char(9) @map("soa_tender_acc_year")
-  soaAllocType      String    @db.VarChar(20) @map("soa_alloc_type") // ADJUSTED | REFUNDED | FORFEITED | TRANSFERRED (ck_soa_alloc_type in DB)
-  soaAllocDate      DateTime  @db.Date @map("soa_alloc_date")
-  soaAmount         Decimal   @default(0) @db.Decimal(15, 2) @map("soa_amount")
-  // ADJUSTED → the invoice it was set against (cross-year FK).
-  soaBillId         String?   @db.Uuid @map("soa_bill_id")
-  soaBillAccYear    String?   @db.Char(9) @map("soa_bill_acc_year")
-  soaBillRefno      String?   @db.VarChar(100) @map("soa_bill_refno")
-  // TRANSFERRED → the order it was moved to (chain stores move a booking from
-  // one order to another rather than refunding and re-taking cash).
-  soaTargetOrderId  String?   @db.Uuid @map("soa_target_order_id")
-  soaTargetAccYear  String?   @db.Char(9) @map("soa_target_acc_year")
-  // REFUNDED → how the money went back out. The refund is itself a tender row
-  // (CR); this is its reference.
-  soaRefundTenderId String?   @db.Uuid @map("soa_refund_tender_id")
-  soaRefundMode     String?   @db.VarChar(20) @map("soa_refund_mode") // CASH | BANK | UPI | CARD | CREDIT_NOTE | ADJUSTMENT (ck_soa_refund_mode in DB)
-  // Filled at posting, server-side, like every other accounts link here.
-  soaVoucherId      String?   @db.Uuid @map("soa_voucher_id")
-  soaLedgerId       String?   @db.Uuid @map("soa_ledger_id") // advance ledger relieved
-  soaRemarks        String?   @db.VarChar(250) @map("soa_remarks")
-  soaApprovedBy     String?   @db.Uuid @map("soa_approved_by") // refunds/forfeits need a sign-off
-  // Audit
-  soaIsDeleted      Boolean   @default(false) @map("soa_is_deleted")
-  soaSyncDate       DateTime? @db.Timestamptz(6) @map("soa_sync_date")
-  soaCreatedOn      DateTime  @default(now()) @db.Timestamptz(6) @map("soa_created_on")
-  soaCreatedBy      String    @db.VarChar(50) @map("soa_created_by")
-  soaModifiedOn     DateTime? @db.Timestamptz(6) @map("soa_modified_on")
-  soaModifiedBy     String?   @db.VarChar(50) @map("soa_modified_by")
-  // Relations
-  order       SaleOrder        @relation("SaleOrderAdvanceAllocOrder", fields: [soaOrderId, soaOrderAccYear], references: [soId, soAccYear], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_order")
-  targetOrder SaleOrder?       @relation("SaleOrderAdvanceAllocTargetOrder", fields: [soaTargetOrderId, soaTargetAccYear], references: [soId, soAccYear], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_target_order")
-  bill        SaleBill?        @relation(fields: [soaBillId, soaBillAccYear], references: [sbId, sbAccYear], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_bill")
-  tender      AccTenderDetail? @relation(fields: [soaTenderId, soaTenderAccYear], references: [tdId, tdAccYear], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_tender")
-  ledger      AccLedgerMaster? @relation("SaleOrderAdvanceAllocLedger", fields: [soaLedgerId], references: [ledId], onDelete: Restrict, onUpdate: Cascade, map: "fk_soa_ledger")
-  // No relation fields for soaVoucherId / soaRefundTenderId / soaApprovedBy /
-  // soaCompanyId / soaBranchId / soaTenantId — the DDL declares no FKs for them.
-  //
-  // Every index on this table is partial (ix_soa_order, ix_soa_bill,
-  // ix_soa_tender, ix_soa_type_date, migration 20260808132323) and therefore
-  // DB-only: Prisma cannot express their WHERE predicates, and declaring them
-  // here makes `migrate dev` regenerate them without the predicate and fail on
-  // the existing names. Do NOT add @@index for them.
-  //
-  // CHECK constraints (DB-only): ck_soa_alloc_type, ck_soa_amount,
-  // ck_soa_refund_mode, ck_soa_target, ck_soa_no_self_transfer,
-  // ck_soa_tender_pair.
-  @@id([soaId, soaAccYear], map: "pk_sale_order_advance_alloc")
-  @@map("sale_order_advance_alloc")
   @@schema("sales")
 }
 

@@ -7,7 +7,6 @@ model AccTenderDetail {
   tdBranchId            String    @db.Uuid                                   @map("td_branch_id")
   tdTenantId            String?   @db.Uuid                                   @map("td_tenant_id")
   tdAccYear             String    @db.Char(9)                                @map("td_acc_year")
-
   // The document this money belongs to (works for DRAFT docs too).
   tdSrcModule           String    @db.VarChar(20)                            @map("td_src_module")
   tdSrcDocType          String    @db.VarChar(30)                            @map("td_src_doc_type")
@@ -15,10 +14,8 @@ model AccTenderDetail {
   tdRowNo               Int                                                  @map("td_row_no")
   tdDocDate             DateTime  @db.Date                                   @map("td_doc_date")
   tdPartyLedgerId       String    @db.Uuid                                   @map("td_party_ledger_id")
-
   // Filled at posting; same accounting year as the tender's document.
   tdVoucherId           String?   @db.Uuid                                   @map("td_voucher_id")
-
   // ── What was tendered ────────────────────────────────────────────────
   tdTenderId            String    @db.Uuid                                   @map("td_tender_id")
   tdTenderTypeId        Int                                                  @map("td_tender_type_id")
@@ -27,16 +24,14 @@ model AccTenderDetail {
   tdAmount              Decimal   @default(0) @db.Decimal(18, 2)             @map("td_amount")
   tdSurchargePerc       Decimal   @default(0) @db.Decimal(6, 3)              @map("td_surcharge_perc")
   tdSurchargeAmt        Decimal   @default(0) @db.Decimal(18, 2)             @map("td_surcharge_amt")
+  tdSurchargeLedgerId   String?   @db.Uuid                                   @map("td_surcharge_ledger_id")
   tdTotalAmt            Decimal   @default(0) @db.Decimal(18, 2)             @map("td_total_amt")
-
   // ── Cash over-tender / change ────────────────────────────────────────
   tdReceivedAmt         Decimal   @default(0) @db.Decimal(18, 2)             @map("td_received_amt")
   tdChangeAmt           Decimal   @default(0) @db.Decimal(18, 2)             @map("td_change_amt")
-
   // ── Non-cash equivalents (loyalty / voucher) ─────────────────────────
   tdUnitsUsed           Decimal   @default(0) @db.Decimal(18, 4)             @map("td_units_used")
   tdConversionRate      Decimal   @default(1) @db.Decimal(10, 4)             @map("td_conversion_rate")
-
   // ── Instrument / gateway reference (day reconciliation) ──────────────
   tdRefNo               String?   @db.VarChar(100)                          @map("td_ref_no")
   tdAuthCode            String?   @db.VarChar(50)                           @map("td_auth_code")
@@ -45,7 +40,6 @@ model AccTenderDetail {
   tdPayerVpa            String?   @db.VarChar(100)                          @map("td_payer_vpa")
   tdInstrumentDate      DateTime? @db.Date                                   @map("td_instrument_date")
   tdIsPdc               Boolean   @default(false)                            @map("td_is_pdc")
-
   // ── Settlement ───────────────────────────────────────────────────────
   tdSettleStatus        String    @default("NA") @db.VarChar(20)             @map("td_settle_status")
   tdSettleLedgerId      String?   @db.Uuid                                   @map("td_settle_ledger_id")
@@ -55,13 +49,11 @@ model AccTenderDetail {
   tdMdrAmt              Decimal   @default(0) @db.Decimal(18, 2)             @map("td_mdr_amt")
   tdSettleRefNo         String?   @db.VarChar(100)                          @map("td_settle_ref_no")
   tdSettleVoucherId     String?   @db.Uuid                                   @map("td_settle_voucher_id")
-
   // ── Where / who ──────────────────────────────────────────────────────
   tdSessionId           String?   @db.Uuid                                   @map("td_session_id")
   tdDeviceId            String?   @db.VarChar(250)                          @map("td_device_id")
   tdUserId              String    @db.Uuid                                   @map("td_user_id")
   tdNotes               String?   @db.VarChar(250)                          @map("td_notes")
-
   // ── Audit ────────────────────────────────────────────────────────────
   tdIsDeleted           Boolean   @default(false)                            @map("td_is_deleted")
   tdSyncDate            DateTime? @db.Timestamptz                            @map("td_sync_date")
@@ -69,7 +61,6 @@ model AccTenderDetail {
   tdCreatedBy           String    @db.VarChar(50)                           @map("td_created_by")
   tdModifiedOn          DateTime? @db.Timestamptz                            @map("td_modified_on")
   tdModifiedBy          String?   @db.VarChar(50)                           @map("td_modified_by")
-
   // Relations
   company               Company          @relation(fields: [tdCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_company")
   branch                BranchMaster     @relation(fields: [tdBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_branch")
@@ -79,8 +70,11 @@ model AccTenderDetail {
   ledger                AccLedgerMaster  @relation("TenderDetailLedger", fields: [tdTenderLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_ledger")
   settleLedger          AccLedgerMaster? @relation("TenderDetailSettleLedger", fields: [tdSettleLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_settle_ledger")
   partyLedger           AccLedgerMaster  @relation("TenderDetailPartyLedger", fields: [tdPartyLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_party_ledger")
+  surchargeLedger       AccLedgerMaster? @relation("TenderDetailSurchargeLedger", fields: [tdSurchargeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_td_surcharge_ledger")
   // Applications of this tender when it was taken as an order advance.
-  saleOrderAdvanceAllocs SaleOrderAdvanceAlloc[]
+  // What this tender settled — one bill adjustment per tender row, which is
+  // what lets a bounced cheque reopen only its own share.
+  billAdjustments        AccBillAdjustment[]
   // No relation fields for:
   //   tdVoucherId / tdSettleVoucherId
   //                 — acc_voucher_header was dropped; both stay plain UUID columns.
@@ -89,7 +83,6 @@ model AccTenderDetail {
   //                   so it is not a valid FK target (avh_session_id is likewise unmapped).
   //   tdDeviceId    — VarChar(250) free text, not a device_master id.
   //   tdSrcDocId    — polymorphic; the target table varies by tdSrcModule/tdSrcDocType.
-
   @@id([tdId, tdAccYear], map: "pk_acc_tender_detail")
   // No CREATE INDEX statements were specified for this table beyond the PK —
   // matching the given DDL exactly (unlike acc_tender_master, which listed
