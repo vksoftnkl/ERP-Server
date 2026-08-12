@@ -37,6 +37,7 @@ import { EmployeeDesignationMasterModule } from './modules/settings/employeeDesi
 import { EmployeeMasterModule } from './modules/settings/employeeMaster/employee-master.module';
 import { UserAdministrationModule } from './modules/settings/userAdministration/user-administration.module';
 import { ConfigsModule } from './modules/settings/configs/configs.module';
+import { AppSettingsModule } from './modules/settings/appSettings/app-settings.module';
 import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { TenderDetailModule } from './modules/accountsModule/tenderDetail/tender-detail.module';
@@ -158,6 +159,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     EmployeeMasterModule,
     UserAdministrationModule,
     ConfigsModule,
+    AppSettingsModule,
     TenderMasterModule,
     TenderTypeMasterModule,
     TenderDetailModule,
@@ -236,6 +238,8 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestContextMiddleware, RequestLoggerMiddleware).forRoutes('*');
+    // Express 5 (Nest 11) parses routes with path-to-regexp v8, which dropped the
+    // bare '*' wildcard. '{*path}' is its replacement for "every path, including /".
+    consumer.apply(RequestContextMiddleware, RequestLoggerMiddleware).forRoutes('{*path}');
   }
 }

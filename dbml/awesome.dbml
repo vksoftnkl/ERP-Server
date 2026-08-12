@@ -1261,6 +1261,7 @@ Table device_master {
   saleOrders sale_order [not null]
   txnHolds txn_hold [not null]
   txnHoldLocks txn_hold [not null]
+  appSettingValues app_setting_value [not null]
 }
 
 Table form_section {
@@ -2265,6 +2266,64 @@ Table opening_stock_header {
   }
 }
 
+Table app_setting_def {
+  asdId String [pk]
+  asdKey String [unique, not null, note: 'Dotted, lowercase, module-prefixed: \'sales.allow_bill_over_order_qty\'.
+Never renamed — retire the row (asdIsActive = false) and add a new key.']
+  asdModule String [not null]
+  asdGroup String [not null, default: 'General']
+  asdDataType String [not null, note: 'BOOL | INT | DECIMAL | TEXT | UUID | DATE | JSON  (ck_asd_data_type)']
+  asdDefaultValue String [note: 'NULL = no value; fn_app_settings omits the key entirely.']
+  asdAllowedValues Json [note: 'JSON array of legal values for an enum-ish TEXT setting. NULL = free text.']
+  asdMinValue Decimal
+  asdMaxValue Decimal
+  asdMaxScope String [not null, default: 'COMPANY', note: 'GLOBAL | COMPANY | BRANCH | DEVICE | USER  (ck_asd_max_scope)']
+  asdLabel String [not null]
+  asdDescription String
+  asdSortOrder Int [not null, default: 0]
+  asdIsActive Boolean [not null, default: true]
+  asdNeedsRelogin Boolean [not null, default: false]
+  asdIsDeleted Boolean [not null, default: false]
+  asdSyncDate DateTime
+  asdCreatedOn DateTime [default: `now()`, not null]
+  asdCreatedBy String [not null]
+  asdModifiedOn DateTime
+  asdModifiedBy String
+  values app_setting_value [not null]
+
+  Note: 'Catalog — one row per configurable setting, forever.
+A new setting is an INSERT here; no DDL, no client release.'
+}
+
+Table app_setting_value {
+  asvId String [pk]
+  asvSettingKey String [not null]
+  asvScope String [not null, note: 'GLOBAL | COMPANY | BRANCH | DEVICE | USER  (ck_asv_scope);
+the id columns below must agree with it (ck_asv_scope_ids).']
+  asvCompanyId String
+  asvBranchId String
+  asvDeviceId String
+  asvUserId String
+  asvValue String [note: 'Stored as text for every type; fn_app_settings casts on the way out.
+NULL = "explicitly nothing", distinct from no row at all ("inherit").']
+  asvRemarks String
+  asvIsDeleted Boolean [not null, default: false]
+  asvSyncDate DateTime
+  asvCreatedOn DateTime [default: `now()`, not null]
+  asvCreatedBy String [not null]
+  asvModifiedOn DateTime
+  asvModifiedBy String
+  setting app_setting_def [not null]
+  company companys
+  branch branch_master
+  device device_master
+  user user_master
+
+  Note: 'Overrides — one row per (setting, scope target).
+A row exists only where somebody changed something. "Reset to default" is a
+DELETE, never a write of the default value.'
+}
+
 Table app_theme_master {
   thmId Int [pk]
   thmName String [not null]
@@ -2362,6 +2421,7 @@ Table branch_master {
   chargeDetails txn_charge_detail [not null]
   tenderMasters acc_tender_master [not null]
   tenderDetails acc_tender_detail [not null]
+  appSettingValues app_setting_value [not null]
 }
 
 Table charge_master {
@@ -2499,6 +2559,7 @@ Table companys {
   chargeDetails txn_charge_detail [not null]
   tenderMasters acc_tender_master [not null]
   tenderDetails acc_tender_detail [not null]
+  appSettingValues app_setting_value [not null]
 }
 
 Table company_group_master {
@@ -2771,6 +2832,7 @@ Table user_master {
   deviceMasters device_master [not null]
   voucherHeaders acc_voucher_header [not null]
   tenderDetails acc_tender_detail [not null]
+  appSettingValues app_setting_value [not null]
 }
 
 Table user_menus {
@@ -4738,6 +4800,16 @@ Ref: opening_stock_detail.oslOpeningId > opening_stock_header.oshId
 Ref: opening_stock_header.oshCompanyId > companys.compId
 
 Ref: opening_stock_header.oshBranchId > branch_master.brId
+
+Ref: app_setting_value.asvSettingKey > app_setting_def.asdKey [delete: Restrict]
+
+Ref: app_setting_value.asvCompanyId > companys.compId [delete: Cascade]
+
+Ref: app_setting_value.asvBranchId > branch_master.brId [delete: Cascade]
+
+Ref: app_setting_value.asvDeviceId > device_master.devId [delete: Cascade]
+
+Ref: app_setting_value.asvUserId > user_master.usrId [delete: Cascade]
 
 Ref: branch_master.brCompId > companys.compId
 

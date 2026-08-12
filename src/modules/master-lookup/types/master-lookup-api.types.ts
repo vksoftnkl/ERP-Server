@@ -299,6 +299,39 @@ export const LOOKUP_MODULE_KEYS = [
 export type AccountsLookupModuleKey = (typeof ACCOUNT_LOOKUP_MODULE_KEYS)[number];
 export type MastersLookupModuleKey = (typeof MASTER_LOOKUP_MODULE_KEYS)[number];
 export type LookupModuleKey = (typeof LOOKUP_MODULE_KEYS)[number];
+/**
+ * Sales documents a number can be resolved against. These are transaction
+ * modules, not master modules — they are deliberately NOT part of
+ * `LOOKUP_MODULE_KEYS`, which is the id-name option lists.
+ */
+export const DOCUMENT_LOOKUP_MODULE_KEYS = ['saleBill', 'saleOrder', 'saleQuotation'] as const;
+export type DocumentLookupModuleKey = (typeof DOCUMENT_LOOKUP_MODULE_KEYS)[number];
+/** Route/display spellings a screen may send for a document module. */
+export const DOCUMENT_LOOKUP_MODULE_ALIASES: Record<DocumentLookupModuleKey, readonly string[]> = {
+  saleBill: ['sale bill', 'sales bill', 'bill', 'bills', 'invoice', 'sale-bill', 'sale_bill'],
+  saleOrder: ['sale order', 'sales order', 'order', 'orders', 'sale-order', 'sale_order'],
+  saleQuotation: [
+    'sale quotation',
+    'sales quotation',
+    'quotation',
+    'quotations',
+    'quote',
+    'sale-quotation',
+    'sale_quotation',
+  ],
+};
+/**
+ * A sales document resolved from its printed number. The accounting year is the
+ * point of the lookup: sale_bill / sale_order / sale_quotation are partitioned
+ * by it and keyed on (id, acc_year), so a caller holding only the id cannot read
+ * the row back.
+ */
+export interface DocumentNumberPayload {
+  orderId: string;
+  companyId: string;
+  branchId: string;
+  accYear: string;
+}
 export const LOOKUP_MODULE_ALIASES: Record<LookupModuleKey, readonly string[]> = {
   companies: [
     'companies',

@@ -414,9 +414,7 @@ describe('GetPartyCreditSummaryDto', () => {
   });
 
   it('accepts every parameter together', async () => {
-    await expect(
-      validateQuery({ ...VALID, branchId: BRANCH_ID }),
-    ).resolves.toHaveLength(0);
+    await expect(validateQuery({ ...VALID, branchId: BRANCH_ID })).resolves.toHaveLength(0);
   });
 
   it('rejects a missing partyId', async () => {

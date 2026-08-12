@@ -19,7 +19,7 @@ export class PartyCreditSummaryDto {
     format: 'date',
     example: '2026-08-11',
     description:
-      "The database server's date, which the overdue split was measured against. Read-only — there is no as-on-date parameter; it is reported so the client knows which \"today\" produced these numbers.",
+      'The database server\'s date, which the overdue split was measured against. Read-only — there is no as-on-date parameter; it is reported so the client knows which "today" produced these numbers.',
   })
   asOnDate!: string;
 

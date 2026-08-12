@@ -24,6 +24,7 @@ import {
   toNullableIdString,
   toNullableInteger,
   toNullableIntegerStrict,
+  toLowerTrimmed,
   toNullableLowerString,
   toNullableNumberStrict,
   toNullableString,
@@ -267,6 +268,16 @@ export const OptionalUpperMaxString = (maxLength?: number) =>
   applyDecorators(
     IsOptional(),
     Transform(({ value }) => toUpperTrimmed(value)),
+    IsString(),
+    ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
+  );
+// Lower-case counterpart of OptionalUpperMaxString, for columns whose stored
+// form is lower case — e.g. app_setting_def.asd_key, which ck_asd_key requires
+// to be dotted lowercase.
+export const OptionalLowerMaxString = (maxLength?: number) =>
+  applyDecorators(
+    IsOptional(),
+    Transform(({ value }) => toLowerTrimmed(value)),
     IsString(),
     ...(maxLength !== undefined ? [MaxLength(maxLength)] : []),
   );

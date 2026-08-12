@@ -5,8 +5,10 @@ import { PrismaService } from '../../database/prisma/prisma.service';
 import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
 import { ItemPriceLookupQueryDto } from './dto/item-price-lookup-query.dto';
 import { ItemPriceRefreshQueryDto } from './dto/item-price-refresh-query.dto';
+import { DocumentNumberQueryDto } from './dto/document-number-query.dto';
 import { ConfiguredDropdownLookup } from './lookups/configured-dropdown.lookup';
 import { CustomerDetailLookup } from './lookups/customer-detail.lookup';
+import { DocumentNumberLookup } from './lookups/document-number.lookup';
 import { ItemPriceLookup } from './lookups/item-price.lookup';
 import { buildModuleFetchers } from './lookups/module-fetchers';
 import { ID_ORDERED_LOOKUP_MODULES } from './master-lookup.constants';
@@ -15,6 +17,7 @@ import {
   AccountsLookupModuleKey,
   BarcodeItemLookup,
   CustomerDetail,
+  DocumentNumberPayload,
   FiscalYearOption,
   FreightChargeOption,
   ItemPriceLookupPayload,
@@ -46,6 +49,7 @@ export class MasterLookupService {
   private readonly configuredDropdowns: ConfiguredDropdownLookup;
   private readonly customerDetail: CustomerDetailLookup;
   private readonly itemPrice: ItemPriceLookup;
+  private readonly documentNumber: DocumentNumberLookup;
   constructor(
     private readonly prisma: PrismaService,
     pg: PgService,
@@ -54,6 +58,7 @@ export class MasterLookupService {
     this.configuredDropdowns = new ConfiguredDropdownLookup(prisma, pg);
     this.customerDetail = new CustomerDetailLookup(prisma);
     this.itemPrice = new ItemPriceLookup(prisma);
+    this.documentNumber = new DocumentNumberLookup(prisma);
   }
   // ─── Module option lookups ──────────────────────────────────────────────────
   /**
@@ -236,6 +241,13 @@ export class MasterLookupService {
    */
   async refreshItemPriceLookup(query: ItemPriceRefreshQueryDto): Promise<ItemUnitCyclePayload> {
     return this.itemPrice.refreshItemPriceLookup(query);
+  }
+  /**
+   * A sale bill / sale order / sale quotation resolved from its printed number
+   * into the (id, acc_year) key its partitioned row is addressed by.
+   */
+  async getDocumentByNumber(query: DocumentNumberQueryDto): Promise<DocumentNumberPayload> {
+    return this.documentNumber.getDocumentByNumber(query);
   }
   // ─── Internals ──────────────────────────────────────────────────────────────
   private async fetchModules<TKey extends LookupModuleKey>(

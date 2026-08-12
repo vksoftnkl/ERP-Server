@@ -28,6 +28,8 @@ dropdown SQL query.
 | [dto/freight-charge-query.dto.ts](dto/freight-charge-query.dto.ts) | Query DTO for the freight-charge lookup |
 | [dto/barcode-lookup-query.dto.ts](dto/barcode-lookup-query.dto.ts) | Query DTO for the barcode lookup |
 | [dto/item-price-lookup-query.dto.ts](dto/item-price-lookup-query.dto.ts) | Query DTO for the item-price sale lookup |
+| [dto/document-number-query.dto.ts](dto/document-number-query.dto.ts) | Query DTO for the document-number lookup + document module aliases |
+| [lookups/document-number.lookup.ts](lookups/document-number.lookup.ts) | Resolves a sale bill / order / quotation number into its `(id, acc_year)` key |
 | [dto/master-lookup-response.dto.ts](dto/master-lookup-response.dto.ts) | Swagger response models |
 | [types/master-lookup-api.types.ts](types/master-lookup-api.types.ts) | TS contracts, module-key constants, and dropdown-name aliases |
 
@@ -45,7 +47,26 @@ All routes are `GET` and wrap their result in `{ success: true, message, data }`
 | `GET` | `/freight-charges/charge` | `?distance=` | Freight-charge slabs whose km range covers the distance (legacy `iflag=9`). |
 | `GET` | `/item-by-barcode` | `?barcode=` | Resolve a scanned EAN code to its item + selling unit (legacy `iflag=10`). |
 | `GET` | `/item-price` | `?item_id=&price_level=` (+ optional `company_id`, `branch_id`, `unit_id`, `customer_id`, `godown_id`, `acccyear`, `regional`, `loading_type`, `freight_type`) | Resolve one item into a single sale-lookup row — effective price, tax block, stock, reorder, resolved loading and freight charges (legacy `getItemForSale`). `@CacheTTL(60)`. |
+| `GET` | `/document-by-number` | `?module=&orderNo=&companyId=&branchId=` | Resolve a printed sales-document number into `{ orderId, companyId, branchId, accYear }`. `@CacheTTL(0)`. |
 | `GET` | `/dropdown/:dropdownId` | Numeric configured-dropdown id | Runs one configured dropdown's stored SQL directly and returns its rows as options. |
+
+### Document-number lookup (`GET /document-by-number`)
+
+`module` picks the table — `saleBill` → `sales.sale_bill`, `saleOrder` → `sales.sale_order`,
+`saleQuotation` → `sales.sale_quotation` (display aliases such as `sale-bill`, `invoice`,
+`order`, `quotation` resolve to those keys). All four parameters are required.
+
+The point of the lookup is `accYear`. All three tables are LIST-partitioned by their accounting
+year and keyed on `(id, acc_year)`, so a screen holding only the number the user typed cannot
+read the document back until it knows the year.
+
+| Rule | Behaviour |
+| --- | --- |
+| Match | `orderNo` exactly against the refno column (`sb_bill_refno` / `so_order_refno` / `sq_quote_refno`); an all-digits value also matches the serial (`sb_bill_slno` / `so_order_slno` / `sq_quote_slno`). |
+| Case | Case-**sensitive** — the unique indexes `ux_so_order_no` / `ux_sq_quote_no` are built on the raw column, and a case-insensitive match would drop them and scan every partition. |
+| Scope | `companyId` + `branchId`, deleted rows excluded. The accounting year is not a parameter. |
+| Duplicates | Newest accounting year wins; for quotations, then the newest `sq_revision_no` (a quotation number repeats across revisions). |
+| Miss | `404`, never a blank `200`. |
 
 ### Item-price sale lookup (`GET /item-price`)
 

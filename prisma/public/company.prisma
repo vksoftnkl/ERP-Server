@@ -112,6 +112,7 @@ model Company {
   chargeDetails         TransactionChargeDetail[] @relation("CompanyChargeDetails")
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
+  appSettingValues      AppSettingValue[]
   @@map("companys")
   @@schema("public")
 }

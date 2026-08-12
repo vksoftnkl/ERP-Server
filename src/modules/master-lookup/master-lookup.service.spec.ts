@@ -1,7 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PgService } from '../../database/pg/pg.service';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { MasterLookupService } from './master-lookup.service';
+import { DocumentLookupModuleKey } from './types/master-lookup-api.types';
 type PrismaMock = {
   dropdownDetails: {
     findMany: jest.Mock;
@@ -1080,6 +1081,96 @@ describe('MasterLookupService', () => {
         expect(priceTables.itemPriceMaster.findMany).not.toHaveBeenCalled();
         expect(priceTables.itemMaster.findFirst).not.toHaveBeenCalled();
       });
+    });
+  });
+  describe('getDocumentByNumber', () => {
+    const COMPANY_ID = '11111111-1111-1111-1111-111111111111';
+    const BRANCH_ID = '22222222-2222-2222-2222-222222222222';
+    /** The shape the assertions read back off the stubbed delegate. */
+    type FindFirstArgs = {
+      where: Record<string, unknown> & { OR: unknown[] };
+      orderBy: Record<string, string>[];
+    };
+    /** Stubs one document delegate and hands back its findFirst mock. */
+    const mockDocument = (delegate: string, row: unknown) => {
+      const findFirst = jest.fn<Promise<unknown>, [FindFirstArgs]>().mockResolvedValue(row);
+      Object.assign(prisma as unknown as Record<string, unknown>, { [delegate]: { findFirst } });
+      return findFirst;
+    };
+    const billRow = {
+      sbId: 'SB-1',
+      sbCompanyId: COMPANY_ID,
+      sbBranchId: BRANCH_ID,
+      sbAccYear: '2025-2026',
+    };
+    const lookup = (module: DocumentLookupModuleKey, orderNo: string) =>
+      service.getDocumentByNumber({ module, orderNo, companyId: COMPANY_ID, branchId: BRANCH_ID });
+    it('resolves a sale bill number into its id and accounting year', async () => {
+      const findFirst = mockDocument('saleBill', billRow);
+      const result = await lookup('saleBill', 'INV-0007');
+      expect(result).toEqual({
+        orderId: 'SB-1',
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        accYear: '2025-2026',
+      });
+      const { where } = findFirst.mock.calls[0][0];
+      expect(where).toMatchObject({
+        sbCompanyId: COMPANY_ID,
+        sbBranchId: BRANCH_ID,
+        sbIsDeleted: false,
+      });
+    });
+    it('trims the padding a CHAR(9) accounting year comes back with', async () => {
+      mockDocument('saleBill', { ...billRow, sbAccYear: '2025-2026 ' });
+      await expect(lookup('saleBill', 'INV-0007')).resolves.toMatchObject({
+        accYear: '2025-2026',
+      });
+    });
+    it('matches the serial as well when the number is all digits', async () => {
+      const findFirst = mockDocument('saleOrder', {
+        soId: 'SO-1',
+        soCompanyId: COMPANY_ID,
+        soBranchId: BRANCH_ID,
+        soAccYear: '2025-2026',
+      });
+      await lookup('saleOrder', '42');
+      const { where } = findFirst.mock.calls[0][0];
+      expect(where.OR).toEqual([{ soOrderRefno: '42' }, { soOrderSlno: 42n }]);
+    });
+    it('matches the refno only when the number is not a serial', async () => {
+      const findFirst = mockDocument('saleQuotation', {
+        sqId: 'SQ-1',
+        sqCompanyId: COMPANY_ID,
+        sqBranchId: BRANCH_ID,
+        sqAccYear: '2025-2026',
+      });
+      await lookup('saleQuotation', 'quo00042');
+      const { where } = findFirst.mock.calls[0][0];
+      expect(where.OR).toEqual([{ sqQuoteRefno: 'quo00042' }]);
+    });
+    it('does not push a number wider than BIGINT at the serial column', async () => {
+      // Prisma throws on an out-of-range BigInt; the caller gets a clean 404
+      // instead of a 500 for a number no row could be carrying.
+      const findFirst = mockDocument('saleBill', null);
+      await expect(lookup('saleBill', '9'.repeat(25))).rejects.toBeInstanceOf(NotFoundException);
+      const { where } = findFirst.mock.calls[0][0];
+      expect(where.OR).toEqual([{ sbBillRefno: '9'.repeat(25) }]);
+    });
+    it('takes the newest year, then the newest revision, for a repeated quotation number', async () => {
+      const findFirst = mockDocument('saleQuotation', {
+        sqId: 'SQ-2',
+        sqCompanyId: COMPANY_ID,
+        sqBranchId: BRANCH_ID,
+        sqAccYear: '2026-2027',
+      });
+      await lookup('saleQuotation', 'quo00042');
+      const { orderBy } = findFirst.mock.calls[0][0];
+      expect(orderBy.slice(0, 2)).toEqual([{ sqAccYear: 'desc' }, { sqRevisionNo: 'desc' }]);
+    });
+    it('404s when no document carries the number', async () => {
+      mockDocument('saleOrder', null);
+      await expect(lookup('saleOrder', 'NOPE')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

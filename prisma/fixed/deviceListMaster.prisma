@@ -27,6 +27,7 @@ model DeviceMaster {
   saleOrders      SaleOrder[]
   txnHolds        TxnHold[]     @relation("TxnHoldDevice")      // the till that parked the work
   txnHoldLocks    TxnHold[]     @relation("TxnHoldLockDevice")  // the till currently holding the lease
+  appSettingValues AppSettingValue[]
 
   @@index([devDeviceUid], name: "idx_device_uid")
   @@map("device_master")

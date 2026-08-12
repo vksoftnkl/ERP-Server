@@ -5849,3 +5849,30 @@ error: invalid input syntax for type uuid: "icompany_id"
     at async ConfiguredGridSqlController.run (/home/vk/Dev/erp/ERP server/src/common/configured-grid-sql/configured-grid-sql.controller.ts:131:16)
 2026-08-10T13:23:41.006Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-11T06:26:12.671Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T05:03:02.041Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-orders/create
+PrismaClientKnownRequestError: 
+Invalid `tx.saleOrder.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:852:44
+
+  849 ) {
+  850   data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, existing);
+  851 }
+→ 852 const updated = await tx.saleOrder.update(
+Foreign key constraint violated on the constraint: `fk_so_device`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:852:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleOrderService.updateOrder (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:816:14)
+    at async SaleOrderController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.controller.ts:52:18)
+2026-08-12T05:57:35.162Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:34:40.214Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:40:48.799Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:41:05.955Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:41:12.525Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:41:17.974Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:41:29.035Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:41:39.650Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:41:44.810Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

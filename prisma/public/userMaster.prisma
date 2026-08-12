@@ -68,6 +68,7 @@ model UserMaster {
   deviceMasters          DeviceMaster[]
   voucherHeaders         AccVoucherHeader[]
   tenderDetails          AccTenderDetail[]
+  appSettingValues       AppSettingValue[]
 
   // ── Indexes ────────────────────────────────────────────────────────────────
   //   CREATE UNIQUE INDEX uix_user_login_name

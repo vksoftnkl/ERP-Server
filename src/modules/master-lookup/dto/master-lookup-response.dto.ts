@@ -430,3 +430,28 @@ export class ItemUnitCycleSuccessDto {
   @ApiProperty({ type: ItemUnitCycleDto })
   data!: ItemUnitCycleDto;
 }
+export class DocumentNumberDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The document row id — sb_id / so_id / sq_id',
+  })
+  orderId!: string;
+  @ApiProperty({ format: 'uuid' })
+  companyId!: string;
+  @ApiProperty({ format: 'uuid' })
+  branchId!: string;
+  @ApiProperty({
+    example: '2025-2026',
+    description:
+      'The accounting year the document lives in. Together with orderId it is the primary key of the partitioned table.',
+  })
+  accYear!: string;
+}
+export class DocumentNumberSuccessDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Document fetched successfully' })
+  message!: string;
+  @ApiProperty({ type: DocumentNumberDto })
+  data!: DocumentNumberDto;
+}

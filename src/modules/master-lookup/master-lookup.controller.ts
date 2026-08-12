@@ -16,6 +16,8 @@ import { HttpErrorResponseDto } from '../../common/dto/http-error-response.dto';
 import {
   BarcodeItemLookup,
   CustomerDetail,
+  DOCUMENT_LOOKUP_MODULE_KEYS,
+  DocumentNumberPayload,
   FiscalYearOption,
   FreightChargeOption,
   ItemPriceLookupPayload,
@@ -29,6 +31,7 @@ import {
 import {
   BarcodeItemLookupSuccessDto,
   CustomerDetailSuccessDto,
+  DocumentNumberSuccessDto,
   FiscalYearOptionListSuccessDto,
   FreightChargeListSuccessDto,
   ItemPriceLookupPayloadDto,
@@ -45,6 +48,7 @@ import { PartyCreditSummary } from '../accountsModule/billBalance/types/bill-bal
 import { MasterLookupService } from './master-lookup.service';
 import { MasterLookupQueryDto } from './dto/master-lookup-query.dto';
 import { CustomerDetailQueryDto } from './dto/customer-detail-query.dto';
+import { DocumentNumberQueryDto } from './dto/document-number-query.dto';
 import { FreightChargeQueryDto } from './dto/freight-charge-query.dto';
 import { BarcodeLookupQueryDto } from './dto/barcode-lookup-query.dto';
 import { ItemPriceLookupQueryDto } from './dto/item-price-lookup-query.dto';
@@ -320,6 +324,39 @@ export class MasterLookupController {
       message: 'Next item unit fetched successfully',
       data,
     };
+  }
+  @Get('document-by-number')
+  @Version(API_VERSION)
+  // A number typed on an entry screen must resolve against what is in the
+  // tables right now — a document saved a moment ago has to be findable.
+  @CacheTTL(0)
+  @ApiOperation({
+    summary:
+      'Resolve a printed sales-document number into the key its row is addressed by. sale_bill, sale_order and sale_quotation are LIST-partitioned by accounting year and keyed on (id, acc_year), so a screen holding only the number the user typed cannot open the document without first learning the year — that is what this returns. orderNo is matched exactly against the refno column (sb_bill_refno / so_order_refno / sq_quote_refno), and an all-digits value is matched against the serial (sb_bill_slno / so_order_slno / sq_quote_slno) as well. Deleted documents are skipped; where a number repeats — the same serial in a new year, the same quotation number across revisions — the newest accounting year, and then the newest revision, wins. Nothing matching is a 404, never a blank 200. Never cached.',
+  })
+  @ApiQuery({
+    name: 'module',
+    required: true,
+    enum: DOCUMENT_LOOKUP_MODULE_KEYS,
+    description:
+      'Which document table to read: saleBill → sales.sale_bill, saleOrder → sales.sale_order, saleQuotation → sales.sale_quotation. Display aliases such as sale-bill, invoice, order and quotation are accepted.',
+  })
+  @ApiQuery({
+    name: 'orderNo',
+    required: true,
+    description: 'The document number as printed on it, or its bare running serial.',
+    schema: { type: 'string', maxLength: 100, example: 'quo00042' },
+  })
+  @ApiQuery({ name: 'companyId', required: true, schema: { type: 'string', format: 'uuid' } })
+  @ApiQuery({ name: 'branchId', required: true, schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: DocumentNumberSuccessDto })
+  @ApiBadRequestResponse({ type: HttpErrorResponseDto })
+  @ApiNotFoundResponse({ type: HttpErrorResponseDto })
+  async getDocumentByNumber(
+    @Query() query: DocumentNumberQueryDto,
+  ): Promise<MasterLookupSuccessResponse<DocumentNumberPayload>> {
+    const data = await this.masterLookupService.getDocumentByNumber(query);
+    return { success: true, message: 'Document fetched successfully', data };
   }
   @Get('party-credit')
   @Version(API_VERSION)

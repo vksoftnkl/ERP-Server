@@ -86,6 +86,7 @@ model BranchMaster {
   chargeDetails         TransactionChargeDetail[] @relation("BranchChargeDetails")
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
+  appSettingValues      AppSettingValue[]
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
