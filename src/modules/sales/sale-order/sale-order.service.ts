@@ -5,12 +5,17 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { SaveSaleOrderItemDto } from './dto/save-sale-order-item.dto';
 import {
+  SALE_ORDER_CANCEL_SRC_MODULE,
   SALE_ORDER_CHARGE_AUDIT,
   SALE_ORDER_CHARGE_DOC_TYPE,
+  SALE_ORDER_STATUS_SRC_DOC_TYPE,
+  SALE_ORDER_STATUS_SRC_MODULE,
   SALE_ORDER_TENDER_AUDIT,
   SALE_ORDER_TENDER_DR_CR,
   SALE_ORDER_TENDER_SRC_DOC_TYPE,
   SALE_ORDER_TENDER_SRC_MODULE,
+  SaleOrderCancelLinesResult,
+  SaleOrderCancelledLine,
   SaleOrderChargePayload,
   SaleOrderErrorDetail,
   SaleOrderErrorResponse,
@@ -18,6 +23,11 @@ import {
   SaleOrderPayload,
   SaleOrderTenderPayload,
 } from './types/sale-order-api.types';
+import { CancelSaleOrderLinesDto } from './dto/cancel-sale-order-lines.dto';
+import {
+  TxnStatusEvent,
+  appendTxnStatusLog,
+} from '../../../common/txn-status-log/txn-status-log.helper';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { ChargeDocumentScope } from '../../master/charge-detail/types/charge-detail-api.types';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
@@ -92,6 +102,17 @@ const SALE_ORDER_ADVANCE_STATUSES = [
 ] as const;
 const SALE_ORDER_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
 const SALE_ORDER_ITEM_LINE_STATUSES = ['PENDING', 'PARTIAL', 'DELIVERED', 'CANCELLED'] as const;
+// The two states a cancel can leave a line in. A line that had already
+// delivered something is PARTIAL — part of it went out and the rest is written
+// off, which is not the same fact as a line nothing ever left the godown for.
+const SALE_ORDER_ITEM_STATUS_CANCELLED = 'CANCELLED';
+const SALE_ORDER_ITEM_STATUS_PARTIAL = 'PARTIAL';
+// Header fulfilment states the recompute can land on. COMPLETED / PARTIAL are
+// shared with ck_so_status, which is why the same tokens serve both columns.
+const SALE_ORDER_FULFIL_PENDING = 'PENDING';
+const SALE_ORDER_FULFIL_PARTIAL = 'PARTIAL';
+const SALE_ORDER_FULFIL_COMPLETED = 'COMPLETED';
+const SALE_ORDER_FULFIL_CANCELLED = 'CANCELLED';
 const SALE_ORDER_VALUE_GUARDS = [
   { field: 'soDocType', allowed: SALE_ORDER_DOC_TYPES, nullable: false },
   { field: 'soOrderType', allowed: SALE_ORDER_TYPES, nullable: false },
@@ -397,6 +418,15 @@ function asNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 }
+// Rounded to the last digit the column actually stores, so a computed value
+// never carries float noise into a numeric(15,3) / numeric(15,2) column and the
+// DB's own round(x, n) comparisons agree with ours.
+function roundQty(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+function roundAmount(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 // payload-first, falling back to the existing row: the merged value the DB
 // would actually end up with, which is what the mirrored CHECKs must judge.
 // Two type parameters because the two sides differ — the payload carries
@@ -602,8 +632,9 @@ export class SaleOrderService {
       // A deleted order is a cancelled order: the status moves with the flag so
       // anything reading soStatus rather than soIsDeleted still sees a document
       // that is out of play. Who cancelled it and why is public.txn_status_log's
-      // fact (sale_order carries no cancellation columns of its own); until a
-      // status-trail writer exists, the audit log entry below is the record.
+      // fact (sale_order carries no cancellation columns of its own). This path
+      // does not append a trail step yet — cancelOpenLines is the only writer so
+      // far — so the audit log entry below is this operation's record.
       const headerChanges = {
         soStatus: SALE_ORDER_STATUS_CANCELLED,
         soIsDeleted: true,
@@ -695,6 +726,404 @@ export class SaleOrderService {
         soId,
         deleted: true,
       };
+    });
+  }
+  // Closes out an order's remaining quantity: every still-open line has its
+  // pending quantity moved into cancelled, and the header roll-ups are
+  // recomputed from what the lines then say.
+  //
+  // The order is addressed the way a DOWNSTREAM document holds it — the
+  // (srcModule, srcDocId, srcAccYear) tuple a sale bill carries in
+  // sb_src_doc_type / sb_src_doc_id — because the screen that calls this is the
+  // sales line, which knows the order only as its source. srcDocId is so_id and
+  // srcAccYear is so_acc_year, which together are the partitioned table's
+  // primary key, so no company / branch is needed to address one row
+  // unambiguously; both are read off the record instead.
+  //
+  // Idempotent by construction: a second call finds nothing open, writes
+  // nothing and answers 0. That is what makes PUT the honest verb here.
+  //
+  // This is the first server-side writer of the soi_delivered_qty /
+  // soi_cancelled_qty / soi_pending_qty caches — until now they were whatever
+  // the client last posted.
+  async cancelOpenLines(
+    srcModule: string,
+    srcDocId: string,
+    srcAccYear: string,
+    cancelDto: CancelSaleOrderLinesDto,
+  ): Promise<SaleOrderCancelLinesResult> {
+    // A sale order is only ever reachable from SALES. Checking rather than
+    // ignoring the parameter means a screen that passes its own module blindly
+    // gets a 400 naming the field instead of cancelling an order it did not
+    // mean to address.
+    if ((srcModule ?? '').trim().toUpperCase() !== SALE_ORDER_CANCEL_SRC_MODULE) {
+      throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>('Invalid source module', [
+        {
+          field: 'srcModule',
+          message: `srcModule must be ${SALE_ORDER_CANCEL_SRC_MODULE} for a sales order`,
+        },
+      ]);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.saleOrder.findFirst({
+        where: {
+          soId: srcDocId,
+          soAccYear: srcAccYear,
+          soIsDeleted: false,
+        },
+      });
+      if (!existing) {
+        throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+          'Order not found',
+          'srcDocId',
+          `No active order found with id ${srcDocId} in accounting year ${srcAccYear}`,
+        );
+      }
+      // Read once: the same rows drive both the per-line writes and the header
+      // recompute, and the recompute needs the lines this call does NOT touch
+      // just as much as the ones it does.
+      const lines = await tx.saleOrderItem.findMany({
+        where: {
+          soiOrderId: srcDocId,
+          // sale_order_item is partitioned by soi_acc_year like its header, so
+          // the year keeps the read on one partition.
+          soiAccYear: srcAccYear,
+          soiIsDeleted: false,
+        },
+        orderBy: { soiLineNo: 'asc' },
+      });
+      const now = new Date();
+      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
+      // What each line will hold once this call is done: the open ones with
+      // their pending quantity moved across, the rest exactly as they are.
+      const settledLines = lines.map((line) => {
+        const pending = asNumber(line.soiPendingQty);
+        if (pending <= QTY_EPSILON) {
+          return { line, cancelled: asNumber(line.soiCancelledQty), pending, moved: 0 };
+        }
+        return {
+          line,
+          cancelled: roundQty(asNumber(line.soiCancelledQty) + pending),
+          pending: 0,
+          moved: roundQty(pending),
+        };
+      });
+      const rollup = this.summariseOrderLines(settledLines);
+      // softDelete refuses outright on an unsettled advance. Here that would be
+      // too blunt — money held against an order that DID deliver is legitimate,
+      // and this call is not retiring the document. What must not happen is the
+      // order going fully CANCELLED while the customer's money is still in the
+      // till: refund, forfeit or transfer it first, which also moves the
+      // roll-up. It is also what keeps the advance posting honest, see below.
+      if (
+        rollup.fulfilStatus === SALE_ORDER_FULFIL_CANCELLED &&
+        asNumber(existing.soAdvanceBalanceAmt) > 0
+      ) {
+        throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+          'Order holds an unsettled advance',
+          [
+            {
+              field: 'soAdvanceBalanceAmt',
+              message:
+                'The order still holds an advance balance; refund, forfeit or transfer it before ' +
+                'cancelling the remaining quantity',
+            },
+          ],
+        );
+      }
+      // ck_soi_qty_balance compares round(order_qty, 3) against the sum of the
+      // other three, so both quantities move in the SAME statement — there is
+      // no valid intermediate state where only one of them has been written.
+      //
+      // A loop rather than updateMany: soi_cancelled_qty += soi_pending_qty is a
+      // column-to-column increment (Prisma's { increment } takes a literal) and
+      // the line status is decided per row. The rows are already in memory and
+      // an order's line count is UI-bounded, so the round trips are cheap; if
+      // that ever stops being true the escape hatch is one raw UPDATE per
+      // target status.
+      //
+      // soi_reserved_qty is deliberately left alone: ck_soi_reserved only caps
+      // it at soi_order_qty, which does not move here, and releasing a
+      // reservation is inventory's decision rather than this endpoint's.
+      const cancelledLines: SaleOrderCancelledLine[] = [];
+      for (const settled of settledLines) {
+        if (settled.moved <= 0) {
+          continue;
+        }
+        const { line } = settled;
+        const soiLineStatus =
+          asNumber(line.soiDeliveredQty) > QTY_EPSILON
+            ? SALE_ORDER_ITEM_STATUS_PARTIAL
+            : SALE_ORDER_ITEM_STATUS_CANCELLED;
+        const lineChanges = {
+          soiCancelledQty: settled.cancelled,
+          soiPendingQty: 0,
+          soiLineStatus,
+          soiModifiedOn: now,
+          soiModifiedBy: actor,
+        };
+        const updated = await tx.saleOrderItem.update({
+          where: { soiId_soiAccYear: { soiId: line.soiId, soiAccYear: line.soiAccYear } },
+          data: lineChanges,
+        });
+        await this.auditLogService.logEntityChange(
+          {
+            action: 'update',
+            tableName: SALE_ORDER_ITEM_TABLE_NAME,
+            screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+            screenType: 'transaction',
+            pk: line.soiId,
+            displayName: `${existing.soOrderRefno || existing.soId} #${line.soiLineNo}`,
+            originalRecord: this.toItemPayload(line),
+            modifiedRecord: this.toItemPayload(updated),
+            userId: actor,
+            notes: 'Order line cancelled',
+          },
+          tx,
+        );
+        cancelledLines.push({
+          soiId: line.soiId,
+          soiLineNo: line.soiLineNo,
+          soiCancelledQty: settled.moved,
+          soiLineStatus,
+        });
+      }
+      // The header caches are recomputed even when nothing was cancelled: they
+      // were caller-stated until this endpoint existed, so a repeat call is
+      // also the cheapest way to get them back in step with the lines.
+      const headerChanges: Prisma.SaleOrderUncheckedUpdateInput = {
+        soBilledAmt: rollup.billedAmt,
+        soCancelledAmt: rollup.cancelledAmt,
+        soPendingAmt: rollup.pendingAmt,
+        soTotItems: rollup.totItems,
+        soDeliveredItems: rollup.deliveredItems,
+        soFulfilStatus: rollup.fulfilStatus,
+        soModifiedOn: now,
+        soModifiedBy: actor,
+      };
+      // A still-open order keeps whatever it was (DRAFT / CONFIRMED): only a
+      // settled one has a header status the lines can dictate. Note the
+      // vocabularies differ — ck_so_status has no DELIVERED and
+      // ck_soi_line_status has no COMPLETED.
+      const soStatus = rollup.headerStatus ?? existing.soStatus;
+      if (rollup.headerStatus) {
+        headerChanges.soStatus = rollup.headerStatus;
+      }
+      // so_completed_on means completed, not closed: a cancelled order's
+      // timestamp is the status trail's row, not this column. Only set once.
+      if (rollup.fulfilStatus === SALE_ORDER_FULFIL_COMPLETED && !existing.soCompletedOn) {
+        headerChanges.soCompletedOn = now;
+      }
+      const result = await tx.saleOrder.updateMany({
+        where: {
+          soId: srcDocId,
+          soAccYear: srcAccYear,
+          // Re-asserted rather than trusted from the read above: a concurrent
+          // delete between the two is what this catches.
+          soIsDeleted: false,
+        },
+        data: headerChanges,
+      });
+      if (result.count === 0) {
+        throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+          'Order not found',
+          'srcDocId',
+          `No active order found with id ${srcDocId} in accounting year ${srcAccYear}`,
+        );
+      }
+      // Only a real status MOVE is a step in the trail, the same rule the
+      // quotation module follows: a call that cancels nothing, or one that
+      // leaves an already-partial order partial, has nothing to say here. What
+      // changed field by field is audit.audit_log's job.
+      if (soStatus !== existing.soStatus) {
+        await this.logStatusStep(
+          tx,
+          existing,
+          {
+            event: TxnStatusEvent.CANCELLED,
+            fromStatus: existing.soStatus,
+            toStatus: soStatus,
+            remarks: cancelDto?.soCancelRemarks,
+          },
+          actor,
+          now,
+        );
+      }
+      const originalRecord = this.toPayload(existing);
+      const modifiedRecord = this.toPayload({ ...existing, ...headerChanges } as SaleOrder);
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'cancel',
+          tableName: SALE_ORDER_TABLE_NAME,
+          screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+          screenType: 'transaction',
+          pk: existing.soId,
+          displayName: existing.soOrderRefno || existing.soId,
+          originalRecord,
+          modifiedRecord,
+          userId: actor,
+          notes: `Order open lines cancelled (${cancelledLines.length})`,
+        },
+        tx,
+      );
+      // The advance posting is deliberately NOT touched. The order is not being
+      // deleted and its receipt in accounts.acc_voucher_header is a real one, so
+      // deleteOrderAdvancePosting would be wrong here. Be aware of the knock-on:
+      // once so_status is CANCELLED, the next save runs syncOrderAdvancePosting,
+      // which cancels the advance receipt, and ensureNotPreviouslyCancelled then
+      // blocks re-posting it for good. The advance guard above is what keeps
+      // that safe — the header can only reach CANCELLED here when the balance is
+      // already zero.
+      return {
+        soId: existing.soId,
+        soAccYear: existing.soAccYear,
+        soStatus,
+        soFulfilStatus: rollup.fulfilStatus,
+        cancelledLines: cancelledLines.length,
+        cancelledQty: roundQty(
+          cancelledLines.reduce((total, line) => total + line.soiCancelledQty, 0),
+        ),
+        soCancelledAmt: rollup.cancelledAmt,
+        soPendingAmt: rollup.pendingAmt,
+        lines: cancelledLines,
+      };
+    });
+  }
+  // The header roll-ups, derived from what the lines will hold once the cancel
+  // has been applied. sale_order carries no quantity columns of its own — only
+  // line COUNTS and amounts — so the quantities are only ever summed here to
+  // decide the two status columns.
+  //
+  // Nothing in the DB enforces these: sale_order's CHECK set covers the status
+  // vocabularies and the advance equations, and stops there. The invariant is
+  // this method's, which is why it is stated in one place.
+  private summariseOrderLines(
+    settledLines: { line: SaleOrderItem; cancelled: number; pending: number }[],
+  ): {
+    billedAmt: number;
+    cancelledAmt: number;
+    pendingAmt: number;
+    totItems: number;
+    deliveredItems: number;
+    fulfilStatus: string;
+    headerStatus: string | null;
+  } {
+    let billedAmt = 0;
+    let cancelledAmt = 0;
+    let pendingAmt = 0;
+    let deliveredItems = 0;
+    let deliveredQty = 0;
+    let cancelledQty = 0;
+    let pendingQty = 0;
+    for (const { line, cancelled, pending } of settledLines) {
+      const orderQty = asNumber(line.soiOrderQty);
+      const delivered = asNumber(line.soiDeliveredQty);
+      // soi_net_amt is the only line-level money covering the whole line (after
+      // discount, tax and the per-line charges), so the cancelled / pending
+      // split is taken pro-rata from it. A zero-quantity line contributes
+      // nothing rather than dividing by zero.
+      const unitShare = orderQty > 0 ? asNumber(line.soiNetAmt) / orderQty : 0;
+      cancelledAmt += cancelled * unitShare;
+      pendingAmt += pending * unitShare;
+      // soi_billed_amt is a maintained cache, so it is summed as-is rather than
+      // re-derived from soi_delivered_qty: a bill that priced differently from
+      // the order must not be silently overwritten with the order's own rate.
+      billedAmt += asNumber(line.soiBilledAmt);
+      deliveredQty += delivered;
+      cancelledQty += cancelled;
+      pendingQty += pending;
+      // so_delivered_items counts FULLY delivered lines, the column's literal
+      // meaning — a line that delivered 2 of 10 and cancelled the rest is
+      // closed, but it is not one of these.
+      if (orderQty > 0 && Math.abs(delivered - orderQty) <= QTY_EPSILON) {
+        deliveredItems += 1;
+      }
+    }
+    return {
+      billedAmt: roundAmount(billedAmt),
+      cancelledAmt: roundAmount(cancelledAmt),
+      pendingAmt: roundAmount(pendingAmt),
+      totItems: settledLines.length,
+      deliveredItems,
+      ...this.deriveOrderStatus(deliveredQty, cancelledQty, pendingQty),
+    };
+  }
+  // ck_so_fulfil_status: PENDING / PARTIAL / COMPLETED / CANCELLED.
+  // headerStatus is null when the order is still open, meaning "leave so_status
+  // alone" — a DRAFT that still has pending quantity is not something a cancel
+  // of some other line should promote.
+  private deriveOrderStatus(
+    deliveredQty: number,
+    cancelledQty: number,
+    pendingQty: number,
+  ): { fulfilStatus: string; headerStatus: string | null } {
+    const delivered = deliveredQty > QTY_EPSILON;
+    if (pendingQty > QTY_EPSILON) {
+      return {
+        fulfilStatus: delivered ? SALE_ORDER_FULFIL_PARTIAL : SALE_ORDER_FULFIL_PENDING,
+        headerStatus: null,
+      };
+    }
+    // Nothing left pending: the order is settled one way or another.
+    if (!delivered) {
+      // Every ordered unit was written off — including the degenerate empty
+      // order, which has nothing left to deliver either.
+      return {
+        fulfilStatus: SALE_ORDER_FULFIL_CANCELLED,
+        headerStatus: SALE_ORDER_STATUS_CANCELLED,
+      };
+    }
+    if (cancelledQty <= QTY_EPSILON) {
+      return {
+        fulfilStatus: SALE_ORDER_FULFIL_COMPLETED,
+        headerStatus: SALE_ORDER_FULFIL_COMPLETED,
+      };
+    }
+    // Part delivered, the rest written off.
+    return {
+      fulfilStatus: SALE_ORDER_FULFIL_PARTIAL,
+      headerStatus: SALE_ORDER_FULFIL_PARTIAL,
+    };
+  }
+  // One step of the order's history in public.txn_status_log. so_status is only
+  // ever the CURRENT state; the trail is the ordered set of moves that got it
+  // there. Written inside the caller's transaction, so the step commits with the
+  // write that caused it — an order that says CANCELLED with nothing saying who
+  // cancelled it is what this prevents.
+  private async logStatusStep(
+    tx: Prisma.TransactionClient,
+    order: SaleOrder,
+    step: {
+      event: TxnStatusEvent;
+      fromStatus: string | null;
+      toStatus: string;
+      remarks?: string | null;
+    },
+    actor: string,
+    changedOn: Date,
+  ): Promise<void> {
+    await appendTxnStatusLog(tx, {
+      companyId: order.soCompanyId,
+      branchId: order.soBranchId,
+      tenantId: order.soTenantId,
+      // The order's own year, not today's: txn_status_log is partitioned by it,
+      // exactly like sale_order.
+      accYear: order.soAccYear,
+      srcModule: SALE_ORDER_STATUS_SRC_MODULE,
+      srcDocType: SALE_ORDER_STATUS_SRC_DOC_TYPE,
+      srcDocId: order.soId,
+      srcDocRefno: order.soOrderRefno,
+      event: step.event,
+      fromStatus: step.fromStatus,
+      toStatus: step.toStatus,
+      changedOn,
+      changedBy: actor,
+      // ck_tsl_reason_required wants one on a CANCELLED step. sale_order has no
+      // cancellation columns to fall back on — the caller's reason is all there
+      // is — and the helper substitutes rather than failing the write.
+      remarks: step.remarks,
+      deviceId: order.soDeviceId,
+      sessionId: order.soSessionId,
     });
   }
   private async createOrder(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload> {

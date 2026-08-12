@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OptionalLowerMaxString, OptionalUuid } from 'src/common/dto/dtoDecorators';
+import { OptionalUuid } from 'src/common/dto/dtoDecorators';
 
 /**
  * Who is asking. Every id is optional and additive: a layer whose id is absent
@@ -29,10 +29,4 @@ export class ResolveAppSettingsQueryDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @OptionalUuid()
   userId?: string;
-}
-
-export class ResolveOneAppSettingQueryDto extends ResolveAppSettingsQueryDto {
-  @ApiPropertyOptional({ maxLength: 80, example: 'sales.max_discount_percent' })
-  @OptionalLowerMaxString(80)
-  key?: string;
 }

@@ -17,6 +17,19 @@ import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { SaveSaleOrderItemDto } from './dto/save-sale-order-item.dto';
 import { CHEQUE_TENDER_TYPE_ID } from './order-pdc-posting.helper';
 
+// The status trail writes to public.txn_status_log and resolves the device
+// against fixed.device_master — two models this suite's hand-rolled prisma mock
+// deliberately does not carry. The helper has its own tests; what matters here
+// is which step cancelOpenLines asks for, so only that one export is replaced.
+jest.mock('../../../common/txn-status-log/txn-status-log.helper', () => ({
+  ...jest.requireActual<object>('../../../common/txn-status-log/txn-status-log.helper'),
+  appendTxnStatusLog: jest.fn(() => Promise.resolve({})),
+}));
+// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+const { appendTxnStatusLog } = jest.requireMock<{ appendTxnStatusLog: jest.Mock }>(
+  '../../../common/txn-status-log/txn-status-log.helper',
+);
+
 const SALE_ORDER_ID = '019c6f6c-be87-7a11-8905-36092c46fb01';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46fb02';
 const BRANCH_ID = '019c6f6c-be87-7a11-8905-36092c46fb03';
@@ -639,6 +652,7 @@ describe('SaleOrderService', () => {
 
   beforeEach(() => {
     prisma = makePrismaMock();
+    appendTxnStatusLog.mockClear();
     auditLogService = { logEntityChange: jest.fn(() => Promise.resolve(undefined)) };
     const requestContextService = {
       getUserId: () => USER_ID,
@@ -1681,6 +1695,261 @@ describe('SaleOrderService', () => {
       await expect(
         service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('cancelOpenLines', () => {
+    // The last saleOrderItem.update issued for a given line, which is what the
+    // row ends up holding.
+    const lineUpdate = (soiId: string): Prisma.SaleOrderItemUncheckedUpdateInput | undefined => {
+      const call = prisma.saleOrderItem.update.mock.calls
+        .filter(([args]) => args.where.soiId_soiAccYear.soiId === soiId)
+        .pop();
+      return call?.[0].data;
+    };
+    const headerUpdate = (): Record<string, unknown> =>
+      (prisma.saleOrder.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    it('moves a fully open line into cancelled and settles the order', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('0.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('10.000'),
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {
+        soCancelRemarks: 'Customer withdrew the balance',
+      });
+      expect(lineUpdate(LINE_A_ID)).toEqual(
+        containing({ soiCancelledQty: 10, soiPendingQty: 0, soiLineStatus: 'CANCELLED' }),
+      );
+      expect(headerUpdate()).toEqual(
+        containing({
+          soStatus: 'CANCELLED',
+          soFulfilStatus: 'CANCELLED',
+          soCancelledAmt: 1000,
+          soPendingAmt: 0,
+        }),
+      );
+      expect(result).toEqual(
+        containing({ cancelledLines: 1, cancelledQty: 10, soFulfilStatus: 'CANCELLED' }),
+      );
+      // The status move is a step in the trail, carrying the caller's reason —
+      // sale_order has no cancellation column to hold it.
+      expect(appendTxnStatusLog).toHaveBeenCalledWith(
+        expect.anything(),
+        containing({
+          srcModule: 'SALES',
+          srcDocType: 'SALES_ORDER',
+          srcDocId: SALE_ORDER_ID,
+          accYear: ACC_YEAR,
+          event: 'CANCELLED',
+          fromStatus: 'DRAFT',
+          toStatus: 'CANCELLED',
+          remarks: 'Customer withdrew the balance',
+        }),
+      );
+    });
+
+    // The headline case from the requirement: ordered 10, delivered 2, so the
+    // remaining 8 is written off and the line reads PARTIAL rather than
+    // CANCELLED — part of it did leave the godown.
+    it('leaves a part-delivered line PARTIAL and the order PARTIAL', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('2.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('8.000'),
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+          soiBilledAmt: new Prisma.Decimal('200.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(lineUpdate(LINE_A_ID)).toEqual(
+        containing({ soiCancelledQty: 8, soiPendingQty: 0, soiLineStatus: 'PARTIAL' }),
+      );
+      expect(headerUpdate()).toEqual(
+        containing({
+          soStatus: 'PARTIAL',
+          soFulfilStatus: 'PARTIAL',
+          // 8 of 10 units of a 1000.00 line.
+          soCancelledAmt: 800,
+          soPendingAmt: 0,
+          soBilledAmt: 200,
+          // Delivered 2 of 10 is NOT a fully delivered line.
+          soDeliveredItems: 0,
+        }),
+      );
+      expect(result).toEqual(containing({ cancelledLines: 1, cancelledQty: 8 }));
+    });
+
+    it('counts only fully delivered lines in soDeliveredItems and leaves them untouched', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiId: LINE_A_ID,
+          soiLineNo: 1,
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('10.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('0.000'),
+          soiLineStatus: 'DELIVERED',
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+        } as Partial<SaleOrderItem>),
+        makeItem({
+          soiId: LINE_B_ID,
+          soiLineNo: 2,
+          soiOrderQty: new Prisma.Decimal('5.000'),
+          soiDeliveredQty: new Prisma.Decimal('0.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('5.000'),
+          soiNetAmt: new Prisma.Decimal('500.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(lineUpdate(LINE_A_ID)).toBeUndefined();
+      expect(lineUpdate(LINE_B_ID)).toEqual(
+        containing({ soiCancelledQty: 5, soiPendingQty: 0, soiLineStatus: 'CANCELLED' }),
+      );
+      expect(headerUpdate()).toEqual(
+        containing({
+          soStatus: 'PARTIAL',
+          soFulfilStatus: 'PARTIAL',
+          soTotItems: 2,
+          soDeliveredItems: 1,
+          soCancelledAmt: 500,
+        }),
+      );
+      expect(result.cancelledLines).toBe(1);
+    });
+
+    // PUT, so a repeat must be a no-op rather than a second cancellation.
+    it('is idempotent: a second call finds nothing open and writes no line', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('0.000'),
+          soiCancelledQty: new Prisma.Decimal('10.000'),
+          soiPendingQty: new Prisma.Decimal('0.000'),
+          soiLineStatus: 'CANCELLED',
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      prisma.saleOrder.findFirst.mockResolvedValue(makeOrder({ soStatus: 'CANCELLED' }));
+      const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(result).toEqual(containing({ cancelledLines: 0, cancelledQty: 0, lines: [] }));
+      expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+      // The header caches are still reconciled — they were caller-stated until
+      // this endpoint existed — but nothing moved, so soStatus is unchanged and
+      // the trail gains no second row.
+      expect(headerUpdate()).toEqual(containing({ soStatus: 'CANCELLED', soCancelledAmt: 1000 }));
+      expect(appendTxnStatusLog).not.toHaveBeenCalled();
+    });
+
+    // The whole point of moving both columns in one statement.
+    it('never writes a cancelled quantity without the matching pending quantity', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({ soiPendingQty: new Prisma.Decimal('4.000') } as Partial<SaleOrderItem>),
+      ]);
+      await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      for (const [args] of prisma.saleOrderItem.update.mock.calls) {
+        expect(args.data).toHaveProperty('soiCancelledQty');
+        expect(args.data).toHaveProperty('soiPendingQty');
+      }
+    });
+
+    // Nothing open and nothing ever cancelled: the order is COMPLETED, and that
+    // is the one outcome that stamps so_completed_on.
+    it('settles a fully delivered order as COMPLETED and stamps soCompletedOn', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('10.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('0.000'),
+          soiLineStatus: 'DELIVERED',
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+          soiBilledAmt: new Prisma.Decimal('1000.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(headerUpdate()).toEqual(
+        containing({
+          soStatus: 'COMPLETED',
+          soFulfilStatus: 'COMPLETED',
+          soDeliveredItems: 1,
+          soCancelledAmt: 0,
+          soBilledAmt: 1000,
+          soCompletedOn: expect.any(Date),
+        }),
+      );
+    });
+
+    it('rejects a source module other than SALES before touching the database', async () => {
+      await expect(
+        service.cancelOpenLines('PURCHASE', SALE_ORDER_ID, ACC_YEAR, {}),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.saleOrder.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when nothing active matches the source tuple', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(null);
+      await expect(
+        service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {}),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('refuses to cancel an order outright while it still holds an advance', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({ soAdvanceBalanceAmt: new Prisma.Decimal('250.00') }),
+      );
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiDeliveredQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('10.000'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      await expect(
+        service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {}),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+      expect(prisma.saleOrder.updateMany).not.toHaveBeenCalled();
+    });
+
+    // The guard is narrowed, not a blanket copy of softDelete's: money held
+    // against an order that DID deliver is legitimate.
+    it('allows a part-delivered cancel even while an advance balance is held', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({ soAdvanceBalanceAmt: new Prisma.Decimal('250.00') }),
+      );
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('2.000'),
+          soiPendingQty: new Prisma.Decimal('8.000'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(result.soFulfilStatus).toBe('PARTIAL');
+      expect(prisma.saleOrderItem.update).toHaveBeenCalled();
+    });
+
+    it('logs the header cancel and each line it closed', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({ soiPendingQty: new Prisma.Decimal('10.000') } as Partial<SaleOrderItem>),
+      ]);
+      await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+        containing({ action: 'update', tableName: 'sale_order_item', pk: LINE_A_ID }),
+        expect.anything(),
+      );
+      expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
+        containing({ action: 'cancel', tableName: 'sale_order', pk: SALE_ORDER_ID }),
+        expect.anything(),
+      );
     });
   });
 });

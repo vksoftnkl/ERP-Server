@@ -726,3 +726,47 @@ export class SaleOrderSuccessDeleteDto {
   @ApiProperty({ type: SaleOrderDeleteResultDto })
   data!: SaleOrderDeleteResultDto;
 }
+export class SaleOrderCancelledLineDto {
+  @ApiProperty({ format: 'uuid' })
+  soiId!: string;
+  @ApiProperty({ example: 1 })
+  soiLineNo!: number;
+  @ApiProperty({
+    example: 8,
+    description: 'Quantity this call moved out of pending, not the line running total',
+  })
+  soiCancelledQty!: number;
+  @ApiProperty({
+    example: 'PARTIAL',
+    description: 'PARTIAL when the line had already delivered something, CANCELLED when it had not',
+  })
+  soiLineStatus!: string;
+}
+export class SaleOrderCancelLinesResultDto {
+  @ApiProperty({ format: 'uuid' })
+  soId!: string;
+  @ApiProperty({ example: '2026-2027' })
+  soAccYear!: string;
+  @ApiProperty({ example: 'PARTIAL' })
+  soStatus!: string;
+  @ApiProperty({ example: 'PARTIAL' })
+  soFulfilStatus!: string;
+  @ApiProperty({ example: 2, description: 'Lines closed by this call; 0 on a repeat call' })
+  cancelledLines!: number;
+  @ApiProperty({ example: 18, description: 'Total quantity cancelled by this call' })
+  cancelledQty!: number;
+  @ApiProperty({ example: 1440.5, description: 'Header roll-up recomputed from the lines' })
+  soCancelledAmt!: number;
+  @ApiProperty({ example: 0, description: 'Header roll-up recomputed from the lines' })
+  soPendingAmt!: number;
+  @ApiProperty({ type: SaleOrderCancelledLineDto, isArray: true })
+  lines!: SaleOrderCancelledLineDto[];
+}
+export class SaleOrderSuccessCancelLinesDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Order lines cancelled successfully' })
+  message!: string;
+  @ApiProperty({ type: SaleOrderCancelLinesResultDto })
+  data!: SaleOrderCancelLinesResultDto;
+}

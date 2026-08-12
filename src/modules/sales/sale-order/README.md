@@ -73,11 +73,13 @@ and `tenders[]` the tender-detail module's
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a sale order, chosen by `soId` presence in the body. |
 | `GET` | `/get` | Fetch one active order by `soId` (query param), including its active line items, applied charges and tender lines. |
+| `PUT` | `/cancel-lines` | Cancel the order's remaining open quantity, addressed by the `(srcModule, srcDocId, srcAccYear)` tuple a downstream document holds it as. |
 | `DELETE` | `/delete` | Soft-delete an order by `soId` (query param), cascading to its line items, applied charges and tender lines. |
 
 `GET /get` and `DELETE /delete` both additionally require `soCompanyId`, `soBranchId` and
 `soAccYear` as query parameters — the row is looked up by all four together, so an order can only
-be read or deleted from within its own company/branch/year scope.
+be read or deleted from within its own company/branch/year scope. `PUT /cancel-lines` is the
+exception: it is addressed by the primary key alone (see below).
 
 ### Create / update semantics
 
@@ -363,6 +365,82 @@ merged header values (payload falling back to the stored row):
   mismatched balance is a 400.
 - A `PERC` policy needs `soAdvancePerc > 0`; a `FIXED` one needs `soAdvanceRequired > 0`.
 
+### Cancelling the open quantity (`PUT /cancel-lines`)
+
+Closes an order out without deleting it: the remaining quantity is written off, and whatever was
+already delivered stays on the record. This is what the **sales line** screen calls when the
+operator decides the balance of an order will never be delivered — soft-deleting the document
+would be wrong for an order that genuinely part-delivered.
+
+**Addressing.** The three query params are `srcModule` (must be `SALES`), `srcDocId` (`so_id`) and
+`srcAccYear` (`so_acc_year`) — the same source-document tuple a sale bill carries in
+`sb_src_doc_type` / `sb_src_doc_id`, because the calling screen knows the order only as its source.
+No `soCompanyId` / `soBranchId` is required: `(so_id, so_acc_year)` **is** the partitioned table's
+primary key, so it already addresses exactly one row, and the company/branch are read off it.
+`srcModule` is validated rather than ignored, so a screen that passes its own module blindly gets a
+400 naming the field.
+
+**Body.** Optional `soCancelRemarks` (≤ 500 chars) — why the balance is being written off.
+`sale_order` has no cancellation column to hold it, so it goes to the status trail.
+
+**Step 1 — the lines.** Every active line with `soi_pending_qty > 0` gets
+`soi_cancelled_qty += soi_pending_qty`, `soi_pending_qty = 0`, and a line status of:
+
+| Line had delivered | New `soi_line_status` |
+| --- | --- |
+| `soi_delivered_qty > 0` | `PARTIAL` — part of it went out, the rest is written off |
+| nothing | `CANCELLED` — nothing ever left the godown |
+
+Both quantity columns move in the **same** statement, because `ck_soi_qty_balance` compares
+`round(order_qty, 3)` against `delivered + cancelled + pending` and there is no valid intermediate
+state. That is also why this is a per-line `update` loop rather than an `updateMany`: the increment
+is column-to-column (Prisma's `{ increment }` takes a literal) and the status is decided per row.
+`soi_reserved_qty` is deliberately untouched — releasing a reservation is inventory's call.
+
+**Step 2 — the header**, fully recomputed from what the lines then say
+(`summariseOrderLines` / `deriveOrderStatus`):
+
+| Column | Derivation |
+| --- | --- |
+| `so_cancelled_amt` | Σ `cancelled_qty × (soi_net_amt / soi_order_qty)` — pro-rata from the line total |
+| `so_pending_amt` | Σ `pending_qty × (soi_net_amt / soi_order_qty)` |
+| `so_billed_amt` | Σ `soi_billed_amt` — a maintained cache, summed as-is so a bill that priced differently is not overwritten |
+| `so_tot_items` | count of active lines |
+| `so_delivered_items` | count of **fully** delivered lines (`delivered ≈ ordered`); a 2-of-10 line does not count |
+| `so_fulfil_status` | `CANCELLED` nothing delivered · `COMPLETED` nothing cancelled · `PARTIAL` some of each |
+| `so_status` | mirrors the fulfilment outcome; a still-open order keeps its `DRAFT` / `CONFIRMED` |
+| `so_completed_on` | stamped only on `COMPLETED`, and only if still null |
+
+Nothing in the DB enforces these — `sale_order`'s CHECK set covers the status vocabularies and the
+advance equations and stops there — so the invariant is stated in one place in the service. Note
+the vocabularies differ: `ck_so_status` has no `DELIVERED`, `ck_soi_line_status` has no `COMPLETED`.
+
+**This is the first server-side writer of the fulfilment caches.** Until it existed,
+`soi_delivered_qty` / `soi_cancelled_qty` / `soi_pending_qty` were whatever the client last posted.
+
+**Advance guard, narrowed.** Unlike `DELETE /delete`, an unsettled advance is not a blanket block —
+money held against an order that did deliver is legitimate. The call is refused with a **400** only
+when it would take the header all the way to `CANCELLED` while `soAdvanceBalanceAmt > 0`. That
+guard is also what keeps the accounting safe: this endpoint does **not** touch the advance posting
+(the order is not deleted and its receipt is a real one), but once `so_status` is `CANCELLED` the
+next save runs `syncOrderAdvancePosting`, which cancels the receipt, after which
+`ensureNotPreviouslyCancelled` blocks re-posting for good.
+
+**Idempotent.** A second call finds nothing open, writes no line, appends no trail step and answers
+`cancelledLines: 0`. It still reconciles the header caches — cheap, and they were caller-stated
+until this endpoint existed. This is what makes `PUT` the honest verb; it is also the first
+`@Put` in `src/modules/sales`.
+
+**Status trail.** A real status *move* appends one `CANCELLED` step to `public.txn_status_log` via
+the shared `appendTxnStatusLog` helper (`SALES` / `SALES_ORDER`, partitioned by the order's own
+`so_acc_year`), carrying `soCancelRemarks`; `ck_tsl_reason_required` means an omitted reason is
+recorded as *"No reason recorded"* rather than failing the call. A call that changes no status adds
+nothing — that is `audit.audit_log`'s job. **This is the module's only status-trail writer so far**;
+create / update / delete do not append steps yet.
+
+**Audit.** One `'update'` entry per closed line against `sale_order_item`, plus one `'cancel'`
+entry for the header against `sale_order`.
+
 ### Soft delete
 
 - `DELETE /delete` sets `soIsDeleted = true` (plus `soModifiedOn` / `soModifiedBy`) on the header,
@@ -371,7 +449,8 @@ merged header values (payload falling back to the stored row):
 - **A deleted order is also a cancelled one**: the same write sets `soStatus = 'CANCELLED'`.
   Unlike the bill there are **no cancellation columns** (`sale_order` carries no
   `so_cancelled_on/by/reason`) — who cancelled and why is `public.txn_status_log`'s fact by
-  design. No status-trail writer exists yet, so today the audit log entry is the record.
+  design. This path does not append a trail step yet (`PUT /cancel-lines` is the only writer so
+  far), so today the audit log entry is this operation's record.
 - **An order holding an unsettled advance cannot be deleted**: if `soAdvanceBalanceAmt > 0` the
   delete answers **400** — refund, forfeit or transfer the money first (which also moves the
   roll-ups). The mirror of the bill's "a settled bill cannot be deleted" rule, pointed the other

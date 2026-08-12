@@ -33,3 +33,4 @@
 2026-08-12T08:37:26.529Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-12T08:39:00.915Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-12T08:40:48.728Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T10:30:31.621Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

@@ -11,6 +11,7 @@ import { EmployeeDesignationMasterModule } from '../modules/settings/employeeDes
 import { EmployeeMasterModule } from '../modules/settings/employeeMaster/employee-master.module';
 import { UserAdministrationModule } from '../modules/settings/userAdministration/user-administration.module';
 import { ConfigsModule } from '../modules/settings/configs/configs.module';
+import { AppSettingsModule } from '../modules/settings/appSettings/app-settings.module';
 import { GspCompanyServiceModule } from '../modules/settings/gspCompanyService/gsp-company-service.module';
 import { GspProviderMasterModule } from '../modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { LedgerShippingAddressModule } from '../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -263,6 +264,14 @@ export const swaggerModuleDocuments = [
     title: 'Configs API',
     description: 'Configs module endpoints',
     include: [ConfigsModule],
+  },
+  {
+    path: 'app-settings',
+    title: 'App Settings API',
+    description:
+      'Setting overrides (app_setting_value) and the GLOBAL < COMPANY < BRANCH < DEVICE < USER ' +
+      'resolver. The catalog (app_setting_def) is maintained in SQL and has no endpoints',
+    include: [AppSettingsModule],
   },
   {
     path: 'tender-master',

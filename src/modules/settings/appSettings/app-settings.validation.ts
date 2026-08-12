@@ -2,8 +2,6 @@ import { UUID_PATTERN } from 'src/common/dto/DtoTransforms';
 import {
   AppSettingDataType,
   AppSettingScope,
-  APP_SETTING_DATA_TYPES,
-  APP_SETTING_SCOPES,
   APP_SETTING_SCOPE_RANK,
   AppSettingsErrorDetail,
 } from './types/app-settings-api.types';
@@ -150,14 +148,6 @@ export function toAllowedValues(raw: unknown): string[] | null {
   }
   const values = raw.filter((value): value is string => typeof value === 'string');
   return values.length > 0 ? values : null;
-}
-
-export function isAppSettingDataType(value: unknown): value is AppSettingDataType {
-  return typeof value === 'string' && (APP_SETTING_DATA_TYPES as string[]).includes(value);
-}
-
-export function isAppSettingScope(value: unknown): value is AppSettingScope {
-  return typeof value === 'string' && (APP_SETTING_SCOPES as string[]).includes(value);
 }
 
 // GLOBAL(1) … USER(5). An override may sit at the catalog's asd_max_scope or

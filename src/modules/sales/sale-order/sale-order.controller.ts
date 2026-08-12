@@ -6,6 +6,7 @@ import {
   Get,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UseFilters,
   Version,
@@ -26,12 +27,18 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import { SaleOrderExceptionFilter } from './sale-order-exception.filter';
 import { SaleOrderService } from './sale-order.service';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
+import { CancelSaleOrderLinesDto } from './dto/cancel-sale-order-lines.dto';
 import {
   SaleOrderErrorResponseDto,
+  SaleOrderSuccessCancelLinesDto,
   SaleOrderSuccessDeleteDto,
   SaleOrderSuccessSingleDto,
 } from './dto/sale-order-response.dto';
-import { SaleOrderPayload, SaleOrderSuccessResponse } from './types/sale-order-api.types';
+import {
+  SaleOrderCancelLinesResult,
+  SaleOrderPayload,
+  SaleOrderSuccessResponse,
+} from './types/sale-order-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Sale Orders')
 @ApiBearerAuth('access-token')
@@ -76,6 +83,53 @@ export class SaleOrderController {
     return {
       success: true,
       message: 'Order fetched successfully',
+      data,
+    };
+  }
+  @Put('cancel-lines')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Cancel the open lines of a sales order addressed by its source-document tuple',
+    description:
+      'Called from the sales line, which holds the order only as its source document. Moves every ' +
+      "still-open line's pending quantity into cancelled — line status PARTIAL where something had " +
+      'already been delivered, CANCELLED where nothing had — then recomputes the header amounts, ' +
+      'line counts and both status columns from what the lines then say. Idempotent: a second call ' +
+      'finds nothing open, writes no status-trail step and answers cancelledLines 0.',
+  })
+  @ApiQuery({
+    name: 'srcModule',
+    schema: { type: 'string', example: 'SALES' },
+    description: 'Must be SALES — a sales order is not reachable from any other module',
+  })
+  @ApiQuery({
+    name: 'srcDocId',
+    schema: { type: 'string', format: 'uuid' },
+    description: 'The order id (so_id)',
+  })
+  @ApiQuery({
+    name: 'srcAccYear',
+    schema: { type: 'string', example: '2026-2027' },
+    description: "The order's own accounting year (so_acc_year) — the partition key",
+  })
+  @ApiOkResponse({ type: SaleOrderSuccessCancelLinesDto })
+  @ApiBadRequestResponse({ type: SaleOrderErrorResponseDto })
+  @ApiNotFoundResponse({ type: SaleOrderErrorResponseDto })
+  async cancelLines(
+    @Query('srcModule') srcModule: string,
+    @Query('srcDocId', new ParseUUIDPipe({ version: '7' })) srcDocId: string,
+    @Query('srcAccYear') srcAccYear: string,
+    @Body() cancelDto: CancelSaleOrderLinesDto,
+  ): Promise<SaleOrderSuccessResponse<SaleOrderCancelLinesResult>> {
+    const data = await this.orderService.cancelOpenLines(
+      srcModule,
+      srcDocId,
+      srcAccYear,
+      cancelDto,
+    );
+    return {
+      success: true,
+      message: 'Order lines cancelled successfully',
       data,
     };
   }

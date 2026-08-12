@@ -9,6 +9,10 @@ import {
   TenderSrcDocType,
   TenderSrcModule,
 } from '../../../accountsModule/tenderDetail/types/tender-detail-api.types';
+import {
+  TxnStatusDocType,
+  TxnStatusSrcModule,
+} from '../../../../common/txn-status-log/txn-status-log.helper';
 import type {
   TenderDetailPayload,
   TenderDocumentAudit,
@@ -42,6 +46,17 @@ export const SALE_ORDER_TENDER_AUDIT: TenderDocumentAudit = {
   screenName: 'Sale Order',
   entityName: 'Order tender',
 };
+// public.txn_status_log is polymorphic the same way the charge and tender
+// tables are: an order's status trail is the rows carrying this (module, doc
+// type) pair plus tslSrcDocId = soId. SALES_ORDER has been a TxnStatusDocType
+// member since the helper shipped; this module is the first to write one.
+export const SALE_ORDER_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
+export const SALE_ORDER_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALES_ORDER;
+// The value the cancel endpoint's srcModule query param must carry. It is the
+// same token as the status trail's module — a sale order is only ever reachable
+// from SALES — and it exists so a screen that passes its own module blindly
+// gets a 400 naming the field rather than silently cancelling someone's order.
+export const SALE_ORDER_CANCEL_SRC_MODULE: string = SALE_ORDER_STATUS_SRC_MODULE;
 // soOrderSlno is a bigint column; it is emitted as a string because JSON has no
 // bigint. Leaving it a bigint makes res.json() throw AFTER the save transaction
 // has committed, so the caller sees a 500 for an order that was in fact written
@@ -127,4 +142,28 @@ export type SaleOrderSuccessResponse<T> = {
   success: true;
   message: string;
   data: T;
+};
+// One line the cancel endpoint closed out. soiCancelledQty is the quantity THIS
+// call moved out of pending, not the line's running total — the caller needs to
+// know what it just did, and the running total is a GET away.
+export type SaleOrderCancelledLine = {
+  soiId: string;
+  soiLineNo: number;
+  soiCancelledQty: number;
+  soiLineStatus: string;
+};
+// What PUT /sale-orders/cancel-lines answers with: the header's settled state
+// plus a line-by-line account of what was cancelled, so the calling screen can
+// refresh without a second round trip. cancelledLines is 0 on a repeat call —
+// the route is idempotent, not an error.
+export type SaleOrderCancelLinesResult = {
+  soId: string;
+  soAccYear: string;
+  soStatus: string;
+  soFulfilStatus: string;
+  cancelledLines: number;
+  cancelledQty: number;
+  soCancelledAmt: number;
+  soPendingAmt: number;
+  lines: SaleOrderCancelledLine[];
 };

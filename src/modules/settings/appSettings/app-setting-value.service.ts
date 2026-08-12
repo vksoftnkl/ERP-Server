@@ -1,17 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { AppSettingDef, AppSettingValue, Prisma } from '@prisma/client';
-import {
-  ConfiguredGridListResult,
-  ConfiguredGridSqlService,
-} from '../../../common/configured-grid-sql/configured-grid-sql.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import {
-  resolvePagination,
-  runConfiguredGridQuery,
-  runSettingsListQuery,
-} from 'src/common/utils/module-list.utils';
 import {
   DEFAULT_ACTOR,
   SettingsWriteClient,
@@ -23,29 +14,71 @@ import {
   throwSettingsNotFound,
   toNullableNumber,
 } from 'src/common/utils/module-service.utils';
-import { ListAppSettingValueQueryDto } from './dto/list-app-setting-value-query.dto';
 import { SaveAppSettingValueDto } from './dto/save-app-setting-value.dto';
 import { isScopeWithinMax, toAllowedValues, validateSettingValue } from './app-settings.validation';
 import {
   APP_SETTING_SCOPE_ID_FIELD,
   APP_SETTING_SCOPE_ID_FIELDS,
   AppSettingDataType,
+  AppSettingEffectiveItem,
   AppSettingResolveScope,
-  AppSettingResolvedValue,
   AppSettingScope,
+  AppSettingSource,
   AppSettingScopeIdField,
   AppSettingScopeTarget,
   AppSettingValueDeleteResult,
-  AppSettingValueListItem,
   AppSettingValuePayload,
   AppSettingsErrorDetail,
-  AppSettingsListMeta,
-  AppSettingsResolved,
 } from './types/app-settings-api.types';
+
+/**
+ * One row of `public.fn_app_settings_effective`, verbatim.
+ *
+ * The `out_` prefixes are the function's own output parameter names — a SQL
+ * function whose OUT columns are called `asd_key` cannot also read `asd_key`
+ * from its tables without ambiguity, so they are prefixed at the source and
+ * unprefixed here in `toEffectiveItem`.
+ */
+interface AppSettingEffectiveRow {
+  out_asd_id: string;
+  out_asd_key: string;
+  out_asd_module: string;
+  out_asd_group: string;
+  out_asd_data_type: string;
+  out_asd_default_value: string | null;
+  out_asd_allowed_values: unknown;
+  out_asd_min_value: Prisma.Decimal | null;
+  out_asd_max_value: Prisma.Decimal | null;
+  out_asd_max_scope: string;
+  out_asd_label: string;
+  out_asd_description: string | null;
+  out_asd_sort_order: number;
+  out_asd_needs_relogin: boolean;
+  // Null throughout when the catalog default stands.
+  out_asv_id: string | null;
+  out_asv_scope: string | null;
+  out_asv_company_id: string | null;
+  out_asv_branch_id: string | null;
+  out_asv_device_id: string | null;
+  out_asv_user_id: string | null;
+  out_asv_value: string | null;
+  out_asv_remarks: string | null;
+  out_asv_sync_date: Date | null;
+  out_asv_created_on: Date | null;
+  out_asv_created_by: string | null;
+  out_asv_modified_on: Date | null;
+  out_asv_modified_by: string | null;
+  out_effective_value: string | null;
+  out_source: string;
+}
 
 const APP_SETTING_VALUE_TABLE_NAME = 'app setting value';
 const APP_SETTING_VALUE_AUDIT_SCREEN_NAME = 'App Settings';
-const APP_SETTING_VALUE_GRID_ALIAS = 'app_setting_value_grid';
+
+// One save is one transaction over the whole array, and each entry reads the
+// catalog and its scope target before it writes — room for a page of settings
+// without the 5s default cutting a legitimate batch short.
+const APP_SETTING_VALUE_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
 
 // Which master each scope's id points into, for the existence check the FK
 // makes too — the FK answers 23503 naming a constraint, this answers 400 naming
@@ -58,12 +91,15 @@ const SCOPE_ID_LABEL: Record<AppSettingScopeIdField, string> = {
 };
 
 /**
- * CRUD over `public.app_setting_value` — the OVERRIDES — plus the two read
- * endpoints that answer what a setting actually resolves to.
+ * Writes over `public.app_setting_value` — the OVERRIDES — plus the read that
+ * answers what a setting actually comes to for one caller.
  *
- * A row exists here only where somebody changed something. Three things follow
+ * A row exists here only where somebody changed something. Four things follow
  * from that, and they are the whole shape of this service:
  *
+ *  - **Saving takes an ARRAY**, in one transaction. A settings screen saves a
+ *    page of boxes, and all-or-nothing is the only answer a screen can act on:
+ *    a half-applied page would leave the client unable to say which half took.
  *  - **Saving is an upsert**, keyed on (setting, scope target) rather than on
  *    an id. That is what ux_asv_scope_target means by "one row per target", and
  *    it is what a settings screen means by Save: the second save of the same
@@ -71,65 +107,63 @@ const SCOPE_ID_LABEL: Record<AppSettingScopeIdField, string> = {
  *  - **Resetting is a DELETE**, never a write of the default. The row goes and
  *    the layer above takes over again; writing the default value instead would
  *    freeze today's default into a permanent override that stops tracking it.
- *  - **Reading resolved values goes to `fn_app_settings`**, not to a merge
- *    written here. The precedence lives in one place so the client and the
- *    server-side rules cannot drift apart.
+ *  - **Reading goes to `fn_app_settings_effective`**, not to a merge written
+ *    here. The precedence lives in one place so the client and the server-side
+ *    rules cannot drift apart.
  */
 @Injectable()
 export class AppSettingValueService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogService: AuditLogService,
-    private readonly configuredGridSqlService: ConfiguredGridSqlService,
     private readonly requestContextService: RequestContextService,
   ) {}
 
-  async save(saveDto: SaveAppSettingValueDto): Promise<AppSettingValuePayload> {
-    if (saveDto.asvId) {
-      return this.updateValue(saveDto);
-    }
-    return this.upsertValue(saveDto);
+  /**
+   * Save a batch of overrides — the write path, and the only one.
+   *
+   * The payload is an ARRAY because a settings screen saves a page of boxes
+   * rather than one box, and the whole array is ONE transaction: one bad entry
+   * saves none of them, so a page can never be left half-applied with the
+   * client unable to say which half took.
+   *
+   * Entries are independent otherwise — each creates (no `asvId`, upsert on its
+   * scope target) or edits in place (`asvId`) by its own rules — and two
+   * entries naming the same target are the second one winning, the same answer
+   * as saving twice. Errors name the entry they came from (`data[2].asvValue`).
+   */
+  async save(saveDtos: SaveAppSettingValueDto[]): Promise<AppSettingValuePayload[]> {
+    return this.prisma.$transaction(async (tx) => {
+      const payloads: AppSettingValuePayload[] = [];
+      for (const [index, saveDto] of saveDtos.entries()) {
+        payloads.push(await this.saveOne(tx, saveDto, index));
+      }
+      return payloads;
+    }, APP_SETTING_VALUE_TRANSACTION_OPTIONS);
   }
 
-  async list(
-    queryDto: ListAppSettingValueQueryDto,
-  ): Promise<ConfiguredGridListResult<AppSettingValueListItem, AppSettingsListMeta>> {
-    const { page, limit, skip } = resolvePagination(queryDto);
-    const where = this.buildListWhere(queryDto);
-    return runSettingsListQuery(
-      { page, limit },
-      {
-        hasStructuredFilters: this.hasStructuredFilters(queryDto),
-        configuredGridFn: () =>
-          runConfiguredGridQuery<AppSettingValueListItem>(this.configuredGridSqlService, {
-            tableName: APP_SETTING_VALUE_TABLE_NAME,
-            alias: APP_SETTING_VALUE_GRID_ALIAS,
-            search: queryDto.search,
-            page,
-            limit,
-            skip,
-          }),
-        countFn: () => this.prisma.appSettingValue.count({ where }),
-        findManyFn: () =>
-          this.prisma.appSettingValue.findMany({
-            where,
-            orderBy: [{ asvSettingKey: 'asc' }, { asvScope: 'asc' }, { asvId: 'asc' }],
-            skip,
-            take: limit,
-          }),
-        toItemFn: (record) => this.toPayload(record),
-      },
-    );
-  }
-
-  async getById(asvId: string): Promise<AppSettingValuePayload> {
-    const record = await this.prisma.appSettingValue.findFirst({
-      where: { asvId, asvIsDeleted: false },
-    });
-    if (!record) {
-      this.throwNotFound(asvId);
+  private async saveOne(
+    tx: SettingsWriteClient,
+    saveDto: SaveAppSettingValueDto,
+    index: number,
+  ): Promise<AppSettingValuePayload> {
+    try {
+      return saveDto.asvId
+        ? await this.updateValue(tx, saveDto, index)
+        : await this.upsertValue(tx, saveDto, index);
+    } catch (error: unknown) {
+      // The read-then-write inside upsertValue is not atomic on its own; two
+      // screens saving the same box at once end here, on ux_asv_scope_target.
+      throwOnUniqueConstraintError<AppSettingsErrorDetail>(error, 'Override already exists', [
+        {
+          field: this.fieldPath(index, 'asvScope'),
+          message:
+            `An override for "${saveDto.asvSettingKey}" already exists on this ` +
+            `${saveDto.asvScope} target`,
+        },
+      ]);
+      throw error;
     }
-    return this.toPayload(record);
   }
 
   /**
@@ -156,7 +190,9 @@ export class AppSettingValueService {
       });
       await this.auditLogService.logEntityChange(
         {
-          action: 'delete',
+          // The audit vocabulary is insert / update / approve / cancel — a soft
+          // delete is a 'cancel', the same word every other module uses for it.
+          action: 'cancel',
           tableName: APP_SETTING_VALUE_TABLE_NAME,
           screenName: APP_SETTING_VALUE_AUDIT_SCREEN_NAME,
           screenType: 'settings',
@@ -175,135 +211,161 @@ export class AppSettingValueService {
   }
 
   /**
-   * The whole resolved settings object for one caller — GLOBAL < COMPANY <
-   * BRANCH < DEVICE < USER, values cast per `asd_data_type`, keys that resolve
-   * to nothing omitted.
+   * Every live setting as it stands for one caller: the override row where one
+   * matched, the catalog row where none did, and the value the two come to.
    *
-   * Straight through to `public.fn_app_settings`: the five-layer merge is the
-   * database's, so a rule evaluated in SQL and the same rule evaluated in the
-   * client cannot disagree. Never reimplement it here.
+   * This is the read path — what to DRAW and what to APPLY in one answer: the
+   * label, type and bounds to render a control, `override.asvId` to edit or
+   * reset it, and the scope it was set at, so a screen can say "40%, set on
+   * this branch" and offer Reset.
+   *
+   * A setting resolving to nothing is still returned, with `value: null`: an
+   * empty box has to be drawn before it can be filled.
+   *
+   * The precedence is `public.fn_app_settings_effective` — GLOBAL < COMPANY <
+   * BRANCH < DEVICE < USER — which `fn_app_settings` is itself built on, so a
+   * rule evaluated in SQL and the same rule evaluated in the client cannot
+   * drift apart. Never reimplement the merge here.
    */
-  async resolve(scope: AppSettingResolveScope): Promise<AppSettingsResolved> {
-    const rows = await this.prisma.$queryRaw<Array<{ data: AppSettingsResolved | null }>>`
-      SELECT public.fn_app_settings(
+  async resolveEffective(scope: AppSettingResolveScope): Promise<AppSettingEffectiveItem[]> {
+    const rows = await this.prisma.$queryRaw<AppSettingEffectiveRow[]>`
+      SELECT *
+      FROM public.fn_app_settings_effective(
         ${scope.companyId ?? null}::uuid,
         ${scope.branchId ?? null}::uuid,
         ${scope.deviceId ?? null}::uuid,
-        ${scope.userId ?? null}::uuid) AS data`;
-    return rows[0]?.data ?? {};
+        ${scope.userId ?? null}::uuid)`;
+    return rows.map((row) => this.toEffectiveItem(row));
   }
 
-  /**
-   * One setting for one caller, as raw text — the server-side form, for a rule
-   * that needs a single answer and will cast it itself.
-   *
-   * `null` means the setting resolves to nothing, or that there is no such key:
-   * to a caller asking "may I do this?", those are the same answer, and
-   * distinguishing them is what the catalog endpoints are for.
-   */
-  async resolveOne(key: string, scope: AppSettingResolveScope): Promise<AppSettingResolvedValue> {
-    const rows = await this.prisma.$queryRaw<Array<{ value: string | null }>>`
-      SELECT public.fn_app_setting(
-        ${key}::varchar,
-        ${scope.companyId ?? null}::uuid,
-        ${scope.branchId ?? null}::uuid,
-        ${scope.deviceId ?? null}::uuid,
-        ${scope.userId ?? null}::uuid) AS value`;
-    return { key, value: rows[0]?.value ?? null };
+  private toEffectiveItem(row: AppSettingEffectiveRow): AppSettingEffectiveItem {
+    return {
+      asdId: row.out_asd_id,
+      asdKey: row.out_asd_key,
+      asdModule: row.out_asd_module,
+      asdGroup: row.out_asd_group,
+      asdLabel: row.out_asd_label,
+      asdDescription: row.out_asd_description,
+      asdDataType: row.out_asd_data_type as AppSettingDataType,
+      asdDefaultValue: row.out_asd_default_value,
+      asdAllowedValues: toAllowedValues(row.out_asd_allowed_values),
+      asdMinValue: toNullableNumber(row.out_asd_min_value),
+      asdMaxValue: toNullableNumber(row.out_asd_max_value),
+      asdMaxScope: row.out_asd_max_scope as AppSettingScope,
+      asdSortOrder: row.out_asd_sort_order,
+      asdNeedsRelogin: row.out_asd_needs_relogin,
+      source: row.out_source as AppSettingSource,
+      value: row.out_effective_value,
+      // Keyed on the id, not on the value: an override that blanks a setting
+      // has a null value and must still come back as an override, or the screen
+      // would offer no way to undo it.
+      override:
+        row.out_asv_id === null
+          ? null
+          : {
+              asvId: row.out_asv_id,
+              asvScope: row.out_asv_scope as AppSettingScope,
+              asvCompanyId: row.out_asv_company_id,
+              asvBranchId: row.out_asv_branch_id,
+              asvDeviceId: row.out_asv_device_id,
+              asvUserId: row.out_asv_user_id,
+              asvValue: row.out_asv_value,
+              asvRemarks: row.out_asv_remarks,
+              asvSyncDate: row.out_asv_sync_date ? row.out_asv_sync_date.toISOString() : null,
+              asvCreatedOn: row.out_asv_created_on!.toISOString(),
+              asvCreatedBy: row.out_asv_created_by!,
+              asvModifiedOn: row.out_asv_modified_on ? row.out_asv_modified_on.toISOString() : null,
+              asvModifiedBy: row.out_asv_modified_by,
+            },
+    };
   }
 
-  // Create the override, or move the one already sitting on this target. Both
-  // halves run inside one transaction with the uniqueness read, so two screens
-  // saving the same box at once end on the unique index rather than on two rows.
-  private async upsertValue(saveDto: SaveAppSettingValueDto): Promise<AppSettingValuePayload> {
-    const asvSettingKey = this.requireField(saveDto.asvSettingKey, 'asvSettingKey');
-    const asvScope = this.requireScope(saveDto.asvScope);
-    const target = this.resolveTarget(asvScope, saveDto);
+  // Create the override, or move the one already sitting on this target. The
+  // uniqueness read shares the batch's transaction, so an entry that finds no
+  // row and the row it then writes cannot be separated by another save.
+  private async upsertValue(
+    tx: SettingsWriteClient,
+    saveDto: SaveAppSettingValueDto,
+    index: number,
+  ): Promise<AppSettingValuePayload> {
+    const asvSettingKey = this.requireField(saveDto.asvSettingKey, 'asvSettingKey', index);
+    const asvScope = this.requireScope(saveDto.asvScope, index);
+    const target = this.resolveTarget(asvScope, saveDto, index);
     const now = new Date();
     const actor = resolveActor(saveDto.asvCreatedBy, this.requestContextService.getUserId());
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const def = await this.loadWritableDef(tx, asvSettingKey);
-        this.ensureScopeIsPermitted(asvScope, def);
-        await this.ensureTargetExists(tx, target);
-        const value = normalizeNullableString(saveDto.asvValue) ?? null;
-        this.ensureValueIsAllowed(value, def);
+    const def = await this.loadWritableDef(tx, asvSettingKey, index);
+    this.ensureScopeIsPermitted(asvScope, def, index);
+    await this.ensureTargetExists(tx, target, index);
+    const value = normalizeNullableString(saveDto.asvValue) ?? null;
+    this.ensureValueIsAllowed(value, def, index);
 
-        const existing = await tx.appSettingValue.findFirst({
-          where: { asvSettingKey, asvIsDeleted: false, ...target },
-        });
-        if (existing) {
-          return this.applyUpdate(tx, existing, saveDto, value, actor, 'Override updated');
-        }
-        const created = await tx.appSettingValue.create({
-          data: {
-            asvSettingKey,
-            asvScope,
-            ...target,
-            asvValue: value,
-            asvRemarks: normalizeNullableString(saveDto.asvRemarks) ?? null,
-            asvCreatedOn: now,
-            asvCreatedBy: actor,
-            ...(saveDto.asvSyncDate !== undefined && { asvSyncDate: saveDto.asvSyncDate }),
-          },
-        });
-        const payload = this.toPayload(created);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'New',
-            tableName: APP_SETTING_VALUE_TABLE_NAME,
-            screenName: APP_SETTING_VALUE_AUDIT_SCREEN_NAME,
-            screenType: 'settings',
-            pk: payload.asvId,
-            displayName: this.displayName(created),
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: actor,
-            ...(created.asvBranchId ? { branchId: created.asvBranchId } : {}),
-            notes: `${asvScope} override set`,
-          },
-          tx,
-        );
-        return payload;
-      });
-    } catch (error: unknown) {
-      throwOnUniqueConstraintError<AppSettingsErrorDetail>(error, 'Override already exists', [
-        {
-          field: 'asvScope',
-          message: `An override for "${asvSettingKey}" already exists on this ${asvScope} target`,
-        },
-      ]);
-      throw error;
+    const existing = await tx.appSettingValue.findFirst({
+      where: { asvSettingKey, asvIsDeleted: false, ...target },
+    });
+    if (existing) {
+      return this.applyUpdate(tx, existing, saveDto, value, actor, 'Override updated');
     }
+    const created = await tx.appSettingValue.create({
+      data: {
+        asvSettingKey,
+        asvScope,
+        ...target,
+        asvValue: value,
+        asvRemarks: normalizeNullableString(saveDto.asvRemarks) ?? null,
+        asvCreatedOn: now,
+        asvCreatedBy: actor,
+        ...(saveDto.asvSyncDate !== undefined && { asvSyncDate: saveDto.asvSyncDate }),
+      },
+    });
+    const payload = this.toPayload(created);
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'New',
+        tableName: APP_SETTING_VALUE_TABLE_NAME,
+        screenName: APP_SETTING_VALUE_AUDIT_SCREEN_NAME,
+        screenType: 'settings',
+        pk: payload.asvId,
+        displayName: this.displayName(created),
+        originalRecord: null,
+        modifiedRecord: payload,
+        userId: actor,
+        ...(created.asvBranchId ? { branchId: created.asvBranchId } : {}),
+        notes: `${asvScope} override set`,
+      },
+      tx as Prisma.TransactionClient,
+    );
+    return payload;
   }
 
   // Edit one override by id. What it points AT is fixed: pointing an override at
   // a different setting or a different branch is a reset plus a new override,
   // not an edit, and treating it as an edit would move somebody's audit trail
   // onto a target they never set.
-  private async updateValue(saveDto: SaveAppSettingValueDto): Promise<AppSettingValuePayload> {
+  private async updateValue(
+    tx: SettingsWriteClient,
+    saveDto: SaveAppSettingValueDto,
+    index: number,
+  ): Promise<AppSettingValuePayload> {
     const asvId = saveDto.asvId!;
     const actor = resolveActor(saveDto.asvModifiedBy, this.requestContextService.getUserId());
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.appSettingValue.findFirst({
-        where: { asvId, asvIsDeleted: false },
-      });
-      if (!existing) {
-        this.throwNotFound(asvId);
-      }
-      this.ensureTargetIsUnchanged(saveDto, existing);
-      const def = await this.loadWritableDef(tx, existing.asvSettingKey);
-      // Re-checked on every edit, not only when the scope is sent: asdMaxScope
-      // may have been narrowed since this row was written, and a row that can no
-      // longer be written is one the caller has to reset rather than edit.
-      this.ensureScopeIsPermitted(existing.asvScope as AppSettingScope, def);
-      const value =
-        saveDto.asvValue !== undefined
-          ? (normalizeNullableString(saveDto.asvValue) ?? null)
-          : existing.asvValue;
-      this.ensureValueIsAllowed(value, def);
-      return this.applyUpdate(tx, existing, saveDto, value, actor, 'Override updated');
+    const existing = await tx.appSettingValue.findFirst({
+      where: { asvId, asvIsDeleted: false },
     });
+    if (!existing) {
+      this.throwNotFound(asvId, index);
+    }
+    this.ensureTargetIsUnchanged(saveDto, existing, index);
+    const def = await this.loadWritableDef(tx, existing.asvSettingKey, index);
+    // Re-checked on every edit, not only when the scope is sent: asdMaxScope
+    // may have been narrowed since this row was written, and a row that can no
+    // longer be written is one the caller has to reset rather than edit.
+    this.ensureScopeIsPermitted(existing.asvScope as AppSettingScope, def, index);
+    const value =
+      saveDto.asvValue !== undefined
+        ? (normalizeNullableString(saveDto.asvValue) ?? null)
+        : existing.asvValue;
+    this.ensureValueIsAllowed(value, def, index);
+    return this.applyUpdate(tx, existing, saveDto, value, actor, 'Override updated');
   }
 
   private async applyUpdate(
@@ -350,6 +412,7 @@ export class AppSettingValueService {
   private async loadWritableDef(
     tx: SettingsWriteClient,
     asvSettingKey: string,
+    index: number,
   ): Promise<AppSettingDef> {
     const def = await tx.appSettingDef.findFirst({
       where: { asdKey: asvSettingKey, asdIsDeleted: false },
@@ -357,7 +420,7 @@ export class AppSettingValueService {
     if (!def) {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Unknown setting', [
         {
-          field: 'asvSettingKey',
+          field: this.fieldPath(index, 'asvSettingKey'),
           message: `No setting exists with key "${asvSettingKey}"`,
         },
       ]);
@@ -365,7 +428,7 @@ export class AppSettingValueService {
     if (!def.asdIsActive) {
       throwSettingsConflict<AppSettingsErrorDetail>('Setting is retired', [
         {
-          field: 'asvSettingKey',
+          field: this.fieldPath(index, 'asvSettingKey'),
           message: `"${asvSettingKey}" has been retired and can no longer be overridden`,
         },
       ]);
@@ -373,11 +436,15 @@ export class AppSettingValueService {
     return def;
   }
 
-  private ensureScopeIsPermitted(asvScope: AppSettingScope, def: AppSettingDef): void {
+  private ensureScopeIsPermitted(
+    asvScope: AppSettingScope,
+    def: AppSettingDef,
+    index: number,
+  ): void {
     if (!isScopeWithinMax(asvScope, def.asdMaxScope as AppSettingScope)) {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Scope is too deep', [
         {
-          field: 'asvScope',
+          field: this.fieldPath(index, 'asvScope'),
           message:
             `"${def.asdKey}" may not be overridden below ${def.asdMaxScope} scope ` +
             `(asked for ${asvScope})`,
@@ -386,7 +453,7 @@ export class AppSettingValueService {
     }
   }
 
-  private ensureValueIsAllowed(value: string | null, def: AppSettingDef): void {
+  private ensureValueIsAllowed(value: string | null, def: AppSettingDef, index: number): void {
     const details = validateSettingValue(
       value,
       {
@@ -396,7 +463,7 @@ export class AppSettingValueService {
         asdMinValue: toNullableNumber(def.asdMinValue),
         asdMaxValue: toNullableNumber(def.asdMaxValue),
       },
-      'asvValue',
+      this.fieldPath(index, 'asvValue'),
     );
     if (details.length > 0) {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Invalid setting value', details);
@@ -415,6 +482,7 @@ export class AppSettingValueService {
   private resolveTarget(
     asvScope: AppSettingScope,
     saveDto: SaveAppSettingValueDto,
+    index: number,
   ): AppSettingScopeTarget {
     const required = APP_SETTING_SCOPE_ID_FIELD[asvScope];
     const target: AppSettingScopeTarget = {
@@ -428,7 +496,10 @@ export class AppSettingValueService {
       const supplied = saveDto[field] ?? null;
       if (field === required) {
         if (!supplied) {
-          details.push({ field, message: `${field} is required when asvScope is ${asvScope}` });
+          details.push({
+            field: this.fieldPath(index, field),
+            message: `${field} is required when asvScope is ${asvScope}`,
+          });
           continue;
         }
         target[field] = supplied;
@@ -436,7 +507,7 @@ export class AppSettingValueService {
       }
       if (supplied) {
         details.push({
-          field,
+          field: this.fieldPath(index, field),
           message:
             `${field} must be omitted when asvScope is ${asvScope} — an override carries the id ` +
             'its scope names and nothing else',
@@ -452,17 +523,18 @@ export class AppSettingValueService {
   private ensureTargetIsUnchanged(
     saveDto: SaveAppSettingValueDto,
     existing: AppSettingValue,
+    index: number,
   ): void {
     const details: AppSettingsErrorDetail[] = [];
     if (saveDto.asvSettingKey && saveDto.asvSettingKey !== existing.asvSettingKey) {
       details.push({
-        field: 'asvSettingKey',
+        field: this.fieldPath(index, 'asvSettingKey'),
         message: `asvSettingKey cannot be changed (stored value is "${existing.asvSettingKey}")`,
       });
     }
     if (saveDto.asvScope && saveDto.asvScope !== (existing.asvScope as AppSettingScope)) {
       details.push({
-        field: 'asvScope',
+        field: this.fieldPath(index, 'asvScope'),
         message: `asvScope cannot be changed (stored value is ${existing.asvScope})`,
       });
     }
@@ -470,7 +542,7 @@ export class AppSettingValueService {
       const supplied = saveDto[field];
       if (supplied !== undefined && (supplied ?? null) !== existing[field]) {
         details.push({
-          field,
+          field: this.fieldPath(index, field),
           message:
             `${field} cannot be changed. Point an override somewhere else by resetting this one ` +
             'and setting the new target',
@@ -488,95 +560,77 @@ export class AppSettingValueService {
   private async ensureTargetExists(
     tx: SettingsWriteClient,
     target: AppSettingScopeTarget,
+    index: number,
   ): Promise<void> {
     if (target.asvCompanyId) {
       const company = await tx.company.findFirst({
         where: { compId: target.asvCompanyId, compIsDeleted: false },
         select: { compId: true },
       });
-      if (!company) this.throwMissingTarget('asvCompanyId', target.asvCompanyId);
+      if (!company) this.throwMissingTarget('asvCompanyId', target.asvCompanyId, index);
     }
     if (target.asvBranchId) {
       const branch = await tx.branchMaster.findFirst({
         where: { brId: target.asvBranchId, brIsDeleted: false },
         select: { brId: true },
       });
-      if (!branch) this.throwMissingTarget('asvBranchId', target.asvBranchId);
+      if (!branch) this.throwMissingTarget('asvBranchId', target.asvBranchId, index);
     }
     if (target.asvDeviceId) {
       const device = await tx.deviceMaster.findFirst({
         where: { devId: target.asvDeviceId, devIsDeleted: false },
         select: { devId: true },
       });
-      if (!device) this.throwMissingTarget('asvDeviceId', target.asvDeviceId);
+      if (!device) this.throwMissingTarget('asvDeviceId', target.asvDeviceId, index);
     }
     if (target.asvUserId) {
       const user = await tx.userMaster.findFirst({
         where: { usrId: target.asvUserId, usrIsDeleted: false },
         select: { usrId: true },
       });
-      if (!user) this.throwMissingTarget('asvUserId', target.asvUserId);
+      if (!user) this.throwMissingTarget('asvUserId', target.asvUserId, index);
     }
   }
 
-  private throwMissingTarget(field: AppSettingScopeIdField, id: string): never {
+  private throwMissingTarget(field: AppSettingScopeIdField, id: string, index: number): never {
     throwSettingsBadRequest<AppSettingsErrorDetail>('Scope target does not exist', [
-      { field, message: `No active ${SCOPE_ID_LABEL[field]} found with id ${id}` },
+      {
+        field: this.fieldPath(index, field),
+        message: `No active ${SCOPE_ID_LABEL[field]} found with id ${id}`,
+      },
     ]);
   }
 
-  private buildListWhere(queryDto: ListAppSettingValueQueryDto): Prisma.AppSettingValueWhereInput {
-    const where: Prisma.AppSettingValueWhereInput = { asvIsDeleted: false };
-    if (queryDto.asvSettingKey) where.asvSettingKey = queryDto.asvSettingKey;
-    if (queryDto.asvScope) where.asvScope = queryDto.asvScope;
-    if (queryDto.asvCompanyId) where.asvCompanyId = queryDto.asvCompanyId;
-    if (queryDto.asvBranchId) where.asvBranchId = queryDto.asvBranchId;
-    if (queryDto.asvDeviceId) where.asvDeviceId = queryDto.asvDeviceId;
-    if (queryDto.asvUserId) where.asvUserId = queryDto.asvUserId;
-    // Filtering by module reads through the FK rather than duplicating
-    // asd_module here — the catalog is the only place a setting's home is
-    // stated, and it moves when the catalog says so.
-    if (queryDto.asdModule) where.setting = { asdModule: queryDto.asdModule };
-    const search = queryDto.search?.trim();
-    if (search) {
-      where.OR = [
-        { asvSettingKey: { contains: search, mode: 'insensitive' } },
-        { asvValue: { contains: search, mode: 'insensitive' } },
-        { asvRemarks: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-    return where;
-  }
-
-  private hasStructuredFilters(queryDto: ListAppSettingValueQueryDto): boolean {
-    return (
-      queryDto.asvSettingKey !== undefined ||
-      queryDto.asdModule !== undefined ||
-      queryDto.asvScope !== undefined ||
-      queryDto.asvCompanyId !== undefined ||
-      queryDto.asvBranchId !== undefined ||
-      queryDto.asvDeviceId !== undefined ||
-      queryDto.asvUserId !== undefined
-    );
-  }
-
-  private requireScope(asvScope: AppSettingScope | undefined): AppSettingScope {
+  private requireScope(asvScope: AppSettingScope | undefined, index: number): AppSettingScope {
     if (!asvScope) {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Validation failed', [
-        { field: 'asvScope', message: 'asvScope must be provided when setting an override' },
+        {
+          field: this.fieldPath(index, 'asvScope'),
+          message: 'asvScope must be provided when setting an override',
+        },
       ]);
     }
     return asvScope;
   }
 
-  private requireField(value: string | undefined, field: string): string {
+  private requireField(value: string | undefined, field: string, index: number): string {
     const trimmed = value?.trim();
     if (!trimmed) {
       throwSettingsBadRequest<AppSettingsErrorDetail>('Validation failed', [
-        { field, message: `${field} must be provided when setting an override` },
+        {
+          field: this.fieldPath(index, field),
+          message: `${field} must be provided when setting an override`,
+        },
       ]);
     }
     return trimmed;
+  }
+
+  // Which entry of the array the complaint is about. A batch save answers for a
+  // page of boxes, and "asvValue is above the maximum" alone would not say which
+  // box the screen has to put the message on.
+  private fieldPath(index: number, field: string): string {
+    return `data[${index}].${field}`;
   }
 
   private displayName(record: AppSettingValue): string {
@@ -587,10 +641,12 @@ export class AppSettingValueService {
       : `${record.asvSettingKey} @ ${record.asvScope}`;
   }
 
-  private throwNotFound(asvId: string): never {
+  // `index` is absent on the delete path, which names one row and not an entry
+  // of a batch.
+  private throwNotFound(asvId: string, index?: number): never {
     throwSettingsNotFound<AppSettingsErrorDetail>(
       'Override not found',
-      'asvId',
+      index === undefined ? 'asvId' : this.fieldPath(index, 'asvId'),
       `No override found with id ${asvId}`,
     );
   }

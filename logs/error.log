@@ -5876,3 +5876,4 @@ Foreign key constraint violated on the constraint: `fk_so_device`
 2026-08-12T08:41:29.035Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-12T08:41:39.650Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-12T08:41:44.810Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-12T08:45:28.632Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
