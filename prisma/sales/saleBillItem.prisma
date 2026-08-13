@@ -140,6 +140,12 @@ model SaleBillItem {
   // before the migration was ever applied and are enforced in the
   // application layer instead (BillService.ensureBillItemValuesAreAllowed).
   @@id([sbiId, sbiAccYear], map: "pk_sale_bill_item")
+  // Migration 20260813050000. The sale-order module re-derives soi_delivered_qty
+  // by summing these rows for one order — across every partition, since an order
+  // taken in one year is routinely billed in the next — so the src-doc reference
+  // needs an index of its own. Plain and non-unique, so unlike the DB-only
+  // partial indexes on sale_order_item it is safe to declare here.
+  @@index([sbiSrcDocId, sbiSrcDocYear, sbiSrcDocLineNo], map: "ix_sbi_src_doc")
   @@map("sale_bill_item")
   @@schema("sales")
 }

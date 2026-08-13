@@ -89,28 +89,37 @@ export class SaleOrderController {
   @Put('cancel-lines')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Cancel the open lines of a sales order addressed by its source-document tuple',
+    summary: 'Cancel a sales order line, or every open line of the order, by its source tuple',
     description:
-      'Called from the sales line, which holds the order only as its source document. Moves every ' +
-      "still-open line's pending quantity into cancelled — line status PARTIAL where something had " +
-      'already been delivered, CANCELLED where nothing had — then recomputes the header amounts, ' +
-      'line counts and both status columns from what the lines then say. Idempotent: a second call ' +
-      'finds nothing open, writes no status-trail step and answers cancelledLines 0.',
+      'Called from the sales line, which holds the order only as its source document. Moves the ' +
+      "addressed still-open line's pending quantity into cancelled — line status PARTIAL where " +
+      'something had already been delivered, CANCELLED where nothing had — then recomputes the ' +
+      'header amounts, line counts and both status columns from what ALL the lines then say. ' +
+      'srcDocId decides the scope: an order id (so_id) closes out every open line, an order line ' +
+      'id (soi_id) closes out that one line and leaves its siblings alone. Idempotent: a second ' +
+      'call finds nothing open, writes no status-trail step and answers cancelledLines 0.',
   })
   @ApiQuery({
     name: 'srcModule',
-    schema: { type: 'string', example: 'SALES' },
-    description: 'Must be SALES — a sales order is not reachable from any other module',
+    schema: { type: 'string', enum: ['SALES', 'SALES_ORDER'], example: 'SALES' },
+    description:
+      'SALES, the only module a sales order is reachable from, or SALES_ORDER — the doc type a ' +
+      'downstream document stores beside the id, which is what the calling screen has on hand. ' +
+      'Case and separators are free ("sales order" and "Sales-Order" both name SALES_ORDER); ' +
+      'any other word is a 400.',
   })
   @ApiQuery({
     name: 'srcDocId',
     schema: { type: 'string', format: 'uuid' },
-    description: 'The order id (so_id)',
+    description:
+      'The order id (so_id) to cancel every open line of, or one order line id (soi_id) to cancel ' +
+      'just that line',
   })
   @ApiQuery({
     name: 'srcAccYear',
     schema: { type: 'string', example: '2026-2027' },
-    description: "The order's own accounting year (so_acc_year) — the partition key",
+    description:
+      'The accounting year of the order and its lines (so_acc_year / soi_acc_year) — the partition key',
   })
   @ApiOkResponse({ type: SaleOrderSuccessCancelLinesDto })
   @ApiBadRequestResponse({ type: SaleOrderErrorResponseDto })

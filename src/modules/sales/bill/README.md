@@ -33,6 +33,12 @@ ALLOCATION, with rates, discounts, tax breakup and the stock it was picked from)
   [`appendTxnStatusLog`](../../../common/txn-status-log/txn-status-log.helper.ts) helper. See
   [Status trail](#status-trail-publictxn_status_log).
 
+- **Source order:** `sale_order_item` (`sales` schema) — a bill line converted from a sale order
+  names it in `sbi_src_doc_type` / `sbi_src_doc_id` / `sbi_src_doc_year` / `sbi_src_doc_line_no`,
+  and that order's fulfilment caches are re-derived from it. **Owned by
+  [../sale-order](../sale-order)** — this module hands `SaleOrderService` the lines it touched
+  rather than writing that table itself. See [Converting a sale order](#converting-a-sale-order).
+
 This module is the sibling of [../quotation](../quotation) — same reconciliation shape for line
 items and applied charges, same audit/soft-delete conventions — with two structural differences
 called out below: the partitioned/composite-key tables, and how the document is numbered. A bill
@@ -42,7 +48,7 @@ additionally carries the **tendered amounts** a quotation has no use for: a quot
 
 | File | Purpose |
 | --- | --- |
-| [bill.module.ts](bill.module.ts) | Module wiring — imports `AuditLogModule` + `ChargeDetailModule` + `TenderDetailModule`, **exports `BillService`** |
+| [bill.module.ts](bill.module.ts) | Module wiring — imports `AuditLogModule` + `ChargeDetailModule` + `TenderDetailModule` + `SaleOrderModule`, **exports `BillService`** |
 | [bill.controller.ts](bill.controller.ts) | HTTP routes + Swagger docs |
 | [bill.service.ts](bill.service.ts) | Business logic, persistence, line-item reconciliation, audit logging |
 | [bill-exception.filter.ts](bill-exception.filter.ts) | Registered via `@UseFilters`; a pass-through that re-throws the `HttpException` (error shaping is done in the service) |
@@ -181,6 +187,54 @@ extra fields required for a new line:
   `sbiPriceLevel`) are inherited from the parent bill; any values sent on the item default to the
   parent scope.
 - Returned line items are sorted by `sbiLineNo` ascending.
+
+### Converting a sale order
+
+A bill line raised against a sale order says so on itself, and the order's fulfilment caches are
+drawn down from it. Send all four columns on the line:
+
+```jsonc
+{
+  "sbiSrcDocType": "SALES_ORDER",   // the discriminator — nothing happens without it
+  "sbiSrcDocId": "<so_id>",
+  "sbiSrcDocYear": "2026-2027",     // so_acc_year; with so_id this is the order's primary key
+  "sbiSrcDocLineNo": 1,             // soi_line_no — the printed order line, not soi_id
+  "sbiSrcDocRefno": "sor00042",     // so_order_refno, for display / reprint only
+  "sbiBillQty": 4
+}
+```
+
+`sbiSrcDocId`, `sbiSrcDocYear` and `sbiSrcDocLineNo` are **all required** once `sbiSrcDocType` is
+`SALES_ORDER` (400 naming whichever is missing): the back-write addresses one `sale_order_item` row
+by exactly those three, so a partial reference would leave the order sitting at `PENDING` with
+nothing saying why. On an update the check is judged on the *resolved* values — the payload's,
+falling back to the stored row's — so an edit that touches only the quantity need not resend the
+whole reference. The header's own `sb_src_doc_*` columns are display-level and drive nothing.
+
+One order line routinely becomes several bill lines (a batch split within one bill, or a part
+delivery across several bills); they are summed per **order** line.
+
+**What the order gets.** After the lines are written and the accounts posting has run,
+`BillService` hands `SaleOrderService.syncOrderFulfilment` every order line this bill touches — the
+ones it points at now **and** the ones it pointed at before the save — inside the same transaction.
+The order then re-derives `soi_delivered_qty` / `soi_pending_qty` / `soi_billed_amt` /
+`soi_line_status` and its header roll-ups. Full details, including the recompute-not-increment
+rationale, are in [../sale-order/README.md](../sale-order/README.md#converting-an-order-to-a-bill-syncorderfulfilment).
+
+**Only a `POSTED` bill draws quantity down.** A draft bill can name an order all it likes and the
+order will not move; posting it is what delivers, and moving it back to `DRAFT`, cancelling it or
+deleting it hands the quantity straight back to `soi_pending_qty`. `softDelete` therefore reads the
+bill's lines *before* the cascade flags them — a moment later nothing active would say which order
+lines to release.
+
+**Rejections** raised by the order module, surfaced as 400s on the bill save and naming this
+module's fields: `sbiSrcDocId` (no such active order), `sbiSrcDocLineNo` (the order has no such
+line), `sbiBillQty` (billed + already-cancelled exceeds the ordered quantity). The last one is
+refused rather than clamped, because clamping would break `ck_soi_qty_balance` on the order line and
+the save would come back a raw Postgres `23514` instead.
+
+A bill with no `sbiSrcDocType` on any line — a walk-in sale, which is most of them — never reaches
+the sale-order module at all.
 
 ### Nested applied charges
 

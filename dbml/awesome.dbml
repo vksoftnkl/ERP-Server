@@ -3385,6 +3385,7 @@ Table sale_bill {
   sbSrcDocId String
   sbSrcDocRefno String
   sbSrcDocDate DateTime
+  sbSrcDocYear String
   sbCustId String [not null]
   sbCustName String [not null]
   sbCustAddr String

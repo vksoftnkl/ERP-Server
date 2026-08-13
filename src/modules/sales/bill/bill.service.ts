@@ -7,6 +7,7 @@ import { SaveBillItemDto } from './dto/save-bill-item.dto';
 import {
   BILL_CHARGE_AUDIT,
   BILL_CHARGE_DOC_TYPE,
+  BILL_STATUS_POSTED,
   BILL_STATUS_SRC_DOC_TYPE,
   BILL_STATUS_SRC_MODULE,
   BILL_TENDER_AUDIT,
@@ -20,6 +21,12 @@ import {
   BillPayload,
   BillTenderPayload,
 } from './types/bill-api.types';
+import { SaleOrderService } from '../sale-order/sale-order.service';
+import {
+  SALE_ORDER_SRC_DOC_TYPE,
+  SaleOrderLineRef,
+  SaleOrderSrcDocFields,
+} from '../sale-order/types/sale-order-api.types';
 import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
 import { ChargeDocumentScope } from '../../master/charge-detail/types/charge-detail-api.types';
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
@@ -60,10 +67,6 @@ const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
 const BILL_DOC_TYPES = ['TAX_INVOICE', 'BILL_OF_SUPPLY'] as const;
 const BILL_TYPES = ['CASH', 'CREDIT'] as const;
 const BILL_STATUSES = ['DRAFT', 'POSTED', 'CANCELLED'] as const;
-// The status that puts the bill into the books. A bill created with this status
-// also writes accounts.acc_voucher_header + accounts.acc_bills — see
-// postBillToAccounts.
-const BILL_STATUS_POSTED = 'POSTED';
 // The status a soft-deleted bill is left in, and the reason recorded with it
 // when the bill carries none of its own (sb_cancel_reason is VarChar(250)).
 const BILL_STATUS_CANCELLED = 'CANCELLED';
@@ -71,6 +74,16 @@ const BILL_DELETE_CANCEL_REASON = 'Bill deleted';
 const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'] as const;
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'] as const;
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
+// How this module names the source-doc columns a line carries, handed to the
+// sale-order module so a rejection it raises (an unknown order line, a line
+// billed for more than it has left) comes back naming the field the client
+// actually sent instead of a token from that module's own vocabulary.
+const BILL_ITEM_SRC_DOC_FIELDS: SaleOrderSrcDocFields = {
+  docId: 'sbiSrcDocId',
+  accYear: 'sbiSrcDocYear',
+  lineNo: 'sbiSrcDocLineNo',
+  qty: 'sbiBillQty',
+};
 const BILL_VALUE_GUARDS = [
   { field: 'sbDocType', allowed: BILL_DOC_TYPES, nullable: false },
   { field: 'sbBillType', allowed: BILL_TYPES, nullable: false },
@@ -376,6 +389,11 @@ export class BillService {
     // the customer actually handed over, captured while the bill is still a
     // draft and carried through to posting.
     private readonly tenderDetailService: TenderDetailService,
+    // sale_order_item's fulfilment caches are the sale-order module's to write,
+    // so a bill raised against an order hands it the lines it touched rather
+    // than updating that table itself. The dependency only points this way —
+    // nothing in the sale-order module reaches back into this one.
+    private readonly saleOrderService: SaleOrderService,
   ) {}
   async save(saveBillDto: SaveBillDto): Promise<BillPayload> {
     this.ensureBillValuesAreAllowed(saveBillDto);
@@ -499,6 +517,16 @@ export class BillService {
           `No active bill found with id ${sbId}`,
         );
       }
+      // Read before the cascade flags them: these lines name the order lines
+      // that have to get their quantity back, and a moment later nothing active
+      // will say so.
+      const items = await tx.saleBillItem.findMany({
+        where: {
+          sbiBillId: sbId,
+          sbiAccYear: sbAccYear,
+          sbiIsDeleted: false,
+        },
+      });
       // Cascade the soft delete to the bill's line items so no line stays active
       // while the header is logically deleted.
       await tx.saleBillItem.updateMany({
@@ -515,6 +543,15 @@ export class BillService {
           sbiModifiedBy: actor,
         },
       });
+      // ... and hands the quantity back to the sale order lines it was drawing
+      // down. The header already says sbIsDeleted / CANCELLED at this point, so
+      // the order's recompute no longer counts a single one of these lines.
+      await this.saleOrderService.syncOrderFulfilment(
+        tx,
+        { refs: this.toOrderLineRefs(items), fields: BILL_ITEM_SRC_DOC_FIELDS },
+        actor,
+        modifiedOn,
+      );
       // Same cascade for the applied charges — an active charge line must never
       // outlive the document it was charged on.
       await this.chargeDetailService.softDeleteDocumentCharges(
@@ -665,6 +702,17 @@ export class BillService {
             },
           });
         }
+        // Draws the billed quantity down off the sale order lines these lines
+        // came from. Run after the lines are written so the rows this very save
+        // inserted are part of the sum the order re-derives, and inside the same
+        // transaction so an order can never claim a delivery from a bill that
+        // rolled back. A bill that names no order line is a no-op.
+        await this.saleOrderService.syncOrderFulfilment(
+          tx,
+          { refs: this.toOrderLineRefs(items), fields: BILL_ITEM_SRC_DOC_FIELDS },
+          createdBy,
+          now,
+        );
         // Opens the bill's status trail: from nothing to whatever it was
         // created as (DRAFT, or POSTED when it went straight into the books).
         await this.logStatusChange(tx, posted, null, createdBy, now);
@@ -741,6 +789,17 @@ export class BillService {
           sbSessionId: updated.sbSessionId,
           sbDeviceId: updated.sbDeviceId,
         };
+        // Which order lines the bill pointed at BEFORE this save. Read here
+        // because syncItems is about to overwrite them: a line the payload drops
+        // — or repoints at a different order line — has to hand the abandoned
+        // line its quantity back, and after the write there is nothing left
+        // saying which line that was.
+        const priorItems = await tx.saleBillItem.findMany({
+          // Exactly the filter syncItems is about to reconcile against, year
+          // included or not — a line whose sbiAccYear the payload overrode must
+          // not fall out of the release set.
+          where: { sbiBillId: sbId, sbiIsDeleted: false },
+        });
         const items = await this.syncItems(tx, scope, saveBillDto.items, modifiedBy);
         const charges = await this.chargeDetailService.syncDocumentCharges(
           tx,
@@ -778,6 +837,20 @@ export class BillService {
             },
           });
         }
+        // Re-derives the fulfilment of every order line this bill touches, on
+        // both sides of the edit: what it points at now, and what it pointed at
+        // before. Run after the posting sync because only a POSTED bill counts
+        // towards an order — moving this bill out of POSTED is exactly what
+        // releases its quantity back to soi_pending_qty.
+        await this.saleOrderService.syncOrderFulfilment(
+          tx,
+          {
+            refs: [...this.toOrderLineRefs(priorItems), ...this.toOrderLineRefs(items)],
+            fields: BILL_ITEM_SRC_DOC_FIELDS,
+          },
+          modifiedBy,
+          now,
+        );
         // A status STEP, not the save itself: an edit that leaves sbStatus alone
         // adds no row to the trail.
         if (posted.sbStatus !== existing.sbStatus) {
@@ -1102,9 +1175,74 @@ export class BillService {
         message: 'sbiBatchNo is required when sbiSplitNo is not 1',
       });
     }
+    // A line converted from a sale order must address ONE order line: the
+    // back-write finds it by (sbi_src_doc_id, sbi_src_doc_year,
+    // sbi_src_doc_line_no), so a reference missing any of the three would leave
+    // the order sitting at PENDING with nothing saying why. Judged on the
+    // resolved values — the payload's, falling back to the existing row's — the
+    // same way ck_sbi_batch_split is above, so an edit that touches only the
+    // quantity is not asked to resend the whole reference.
+    const srcDocType =
+      inputItem.sbiSrcDocType !== undefined
+        ? inputItem.sbiSrcDocType
+        : (existingItem?.sbiSrcDocType ?? null);
+    if (srcDocType === SALE_ORDER_SRC_DOC_TYPE) {
+      const srcDocId =
+        inputItem.sbiSrcDocId !== undefined
+          ? inputItem.sbiSrcDocId
+          : (existingItem?.sbiSrcDocId ?? null);
+      const srcDocYear =
+        inputItem.sbiSrcDocYear !== undefined
+          ? inputItem.sbiSrcDocYear
+          : (existingItem?.sbiSrcDocYear ?? null);
+      const srcDocLineNo =
+        inputItem.sbiSrcDocLineNo !== undefined
+          ? inputItem.sbiSrcDocLineNo
+          : (existingItem?.sbiSrcDocLineNo ?? null);
+      const required: [string, unknown][] = [
+        ['sbiSrcDocId', srcDocId],
+        ['sbiSrcDocYear', srcDocYear],
+        ['sbiSrcDocLineNo', srcDocLineNo],
+      ];
+      for (const [field, value] of required) {
+        if (value === null || value === '') {
+          details.push({
+            field,
+            message: `${field} is required when sbiSrcDocType is ${SALE_ORDER_SRC_DOC_TYPE}`,
+          });
+        }
+      }
+    }
     if (details.length > 0) {
       throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Invalid bill item value', details);
     }
+  }
+  // The sale order lines a set of bill lines draws down. A line that names no
+  // source document — a walk-in sale, which is most of them — or one that names
+  // a source that is not a sale order contributes nothing, so a bill with none
+  // of them never reaches the sale-order module at all.
+  //
+  // sbi_src_doc_year is CHAR(9) and comes back space-padded when a client sends
+  // it short, so it is trimmed before being used as half of an order's primary
+  // key.
+  private toOrderLineRefs(items: SaleBillItem[]): SaleOrderLineRef[] {
+    const refs: SaleOrderLineRef[] = [];
+    for (const item of items) {
+      if (
+        item.sbiSrcDocType !== SALE_ORDER_SRC_DOC_TYPE ||
+        !item.sbiSrcDocId ||
+        !item.sbiSrcDocYear ||
+        item.sbiSrcDocLineNo === null
+      ) {
+        continue;
+      }
+      refs.push({
+        soId: item.sbiSrcDocId,
+        soAccYear: item.sbiSrcDocYear.trim(),
+        soLineNo: item.sbiSrcDocLineNo,
+      });
+    }
+    return refs;
   }
   private requireItemField(value: string | undefined, field: string): string {
     if (!value) {

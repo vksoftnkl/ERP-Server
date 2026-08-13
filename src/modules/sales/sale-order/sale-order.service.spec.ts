@@ -381,6 +381,7 @@ type PrismaMock = {
   };
   saleOrderItem: {
     findMany: jest.Mock<Promise<SaleOrderItem[]>, unknown[]>;
+    findFirst: jest.Mock<Promise<SaleOrderItem | null>, unknown[]>;
     create: jest.Mock<Promise<SaleOrderItem>, [ItemCreateArgs]>;
     update: jest.Mock<Promise<SaleOrderItem>, [ItemUpdateArgs]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
@@ -495,6 +496,9 @@ const makePrismaMock = (): PrismaMock => {
     },
     saleOrderItem: {
       findMany: jest.fn(() => Promise.resolve([] as SaleOrderItem[])),
+      // Only cancelOpenLines reads a single line, and only to tell a caller who
+      // sent a line id which order it belongs to. Nothing found by default.
+      findFirst: jest.fn(() => Promise.resolve(null as SaleOrderItem | null)),
       create: jest.fn(({ data }: ItemCreateArgs) =>
         Promise.resolve(makeItem(data as unknown as Partial<SaleOrderItem>)),
       ),
@@ -1917,11 +1921,28 @@ describe('SaleOrderService', () => {
       );
     });
 
-    it('rejects a source module other than SALES before touching the database', async () => {
+    it('rejects a source module that is neither SALES nor SALES_ORDER before touching the database', async () => {
       await expect(
         service.cancelOpenLines('PURCHASE', SALE_ORDER_ID, ACC_YEAR, {}),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.saleOrder.findFirst).not.toHaveBeenCalled();
+    });
+
+    // The sales line screen holds the order as the source tuple it stores, whose
+    // discriminator is the doc type, so it forwards SALES_ORDER where the
+    // parameter is named for the module. Same document, so it is honoured.
+    it('accepts the SALES_ORDER doc-type spelling of the source module', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('0.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('10.000'),
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+      const result = await service.cancelOpenLines('SALES_ORDER', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(result).toEqual(containing({ cancelledLines: 1, soFulfilStatus: 'CANCELLED' }));
     });
 
     it('answers 404 when nothing active matches the source tuple', async () => {
@@ -1929,6 +1950,101 @@ describe('SaleOrderService', () => {
       await expect(
         service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {}),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    // The calling screen has the order LINE in front of it, so soi_id is the
+    // nearer id to hand — and naming a line means that line only. Its open
+    // sibling is what keeps the order PARTIAL rather than settling it.
+    it('cancels only the named line when srcDocId is a line id', async () => {
+      // Nothing matches as an order id; the line lookup then resolves the order.
+      prisma.saleOrder.findFirst.mockResolvedValueOnce(null);
+      prisma.saleOrderItem.findFirst.mockResolvedValue(
+        makeItem({ soiId: LINE_A_ID, soiOrderId: SALE_ORDER_ID, soiLineNo: 1 }),
+      );
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({
+          soiId: LINE_A_ID,
+          soiLineNo: 1,
+          soiOrderQty: new Prisma.Decimal('10.000'),
+          soiDeliveredQty: new Prisma.Decimal('0.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('10.000'),
+          soiNetAmt: new Prisma.Decimal('1000.00'),
+        } as Partial<SaleOrderItem>),
+        makeItem({
+          soiId: LINE_B_ID,
+          soiLineNo: 2,
+          soiOrderQty: new Prisma.Decimal('5.000'),
+          soiDeliveredQty: new Prisma.Decimal('0.000'),
+          soiCancelledQty: new Prisma.Decimal('0.000'),
+          soiPendingQty: new Prisma.Decimal('5.000'),
+          soiNetAmt: new Prisma.Decimal('500.00'),
+        } as Partial<SaleOrderItem>),
+      ]);
+
+      const result = await service.cancelOpenLines('SALES', LINE_A_ID, ACC_YEAR, {
+        soiCancelReason: 'Line withdrawn',
+      });
+
+      expect(lineUpdate(LINE_A_ID)).toEqual(
+        containing({
+          soiCancelledQty: 10,
+          soiPendingQty: 0,
+          soiLineStatus: 'CANCELLED',
+          soiCancelReason: 'Line withdrawn',
+        }),
+      );
+      // The sibling is wide open and stays that way.
+      expect(lineUpdate(LINE_B_ID)).toBeUndefined();
+      expect(result).toEqual(
+        containing({
+          soId: SALE_ORDER_ID,
+          cancelledLines: 1,
+          cancelledQty: 10,
+          soCancelledAmt: 1000,
+          soPendingAmt: 500,
+        }),
+      );
+      // so_fulfil_status tracks DELIVERY, not cancellation: the sibling is still
+      // pending and nothing has been delivered, so the order stays PENDING and
+      // so_status is left alone — neither column may claim this one is settled.
+      expect(headerUpdate()).toEqual(
+        containing({ soFulfilStatus: 'PENDING', soCancelledAmt: 1000, soPendingAmt: 500 }),
+      );
+      expect(headerUpdate()).not.toHaveProperty('soStatus');
+      expect(appendTxnStatusLog).not.toHaveBeenCalled();
+      // Addressed by the line, but the header it writes is still the order's.
+      expect(prisma.saleOrder.updateMany).toHaveBeenCalledWith(
+        containing({ where: containing({ soId: SALE_ORDER_ID }) }),
+      );
+      expect(prisma.saleOrderItem.findMany).toHaveBeenCalledWith(
+        containing({ where: containing({ soiOrderId: SALE_ORDER_ID }) }),
+      );
+    });
+
+    // A line id that resolves to nothing is as much a 404 as an unknown order —
+    // the soft-deleted ones included, which the lookup filters out.
+    it('answers 404 when srcDocId matches neither an order nor a line', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(null);
+      prisma.saleOrderItem.findFirst.mockResolvedValue(null);
+      await expect(
+        service.cancelOpenLines('SALES', LINE_A_ID, ACC_YEAR, {}),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma.saleOrder.updateMany).not.toHaveBeenCalled();
+    });
+
+    // The calling screen spells the doc type with a space; it names the same
+    // document, so it is honoured rather than bounced.
+    it('accepts a spaced or hyphenated source module', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeItem({ soiPendingQty: new Prisma.Decimal('10.000') } as Partial<SaleOrderItem>),
+      ]);
+      await expect(
+        service.cancelOpenLines('sales order', SALE_ORDER_ID, ACC_YEAR, {}),
+      ).resolves.toEqual(containing({ cancelledLines: 1 }));
+      await expect(
+        service.cancelOpenLines('Sales-Order', SALE_ORDER_ID, ACC_YEAR, {}),
+      ).resolves.toEqual(containing({ cancelledLines: 1 }));
     });
 
     it('refuses to cancel an order outright while it still holds an advance', async () => {

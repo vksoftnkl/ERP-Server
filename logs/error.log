@@ -5877,3 +5877,21 @@ Foreign key constraint violated on the constraint: `fk_so_device`
 2026-08-12T08:41:39.650Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-12T08:41:44.810Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-12T08:45:28.632Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-13T05:27:13.751Z ERROR [ModuleExceptionFilter] POST /api/v1/sale-orders/create
+PrismaClientKnownRequestError: 
+Invalid `tx.saleOrder.update()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:1288:44
+
+  1285 ) {
+  1286   data.soAdvanceBalanceAmt = this.deriveAdvanceBalance(saveOrderDto, existing);
+  1287 }
+→ 1288 const updated = await tx.saleOrder.update(
+Foreign key constraint violated on the constraint: `fk_so_device`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:1288:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async SaleOrderService.updateOrder (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.service.ts:1252:14)
+    at async SaleOrderController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/sale-order/sale-order.controller.ts:59:18)

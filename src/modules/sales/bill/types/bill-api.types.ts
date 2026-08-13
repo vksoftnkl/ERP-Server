@@ -51,6 +51,12 @@ export const BILL_TENDER_AUDIT: TenderDocumentAudit = {
 // vocabularies that happen to agree.
 export const BILL_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
 export const BILL_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALE_BILL;
+// The status that puts the bill into the books: a bill created or saved with it
+// also writes accounts.acc_voucher_header + accounts.acc_bill_balance (see
+// postBillToAccounts). It lives out here rather than in bill.service because the
+// sale-order module reads it too — only a POSTED bill draws quantity down off an
+// order line, so its fulfilment recompute has to know which bills count.
+export const BILL_STATUS_POSTED = 'POSTED';
 // sbBillSlno is a nullable bigint column; it is emitted as a string because
 // JSON has no bigint. Leaving it a bigint makes res.json() throw AFTER the save
 // transaction has committed, so the caller sees a 500 for a bill that was in

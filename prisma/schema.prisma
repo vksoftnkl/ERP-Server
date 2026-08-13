@@ -5482,6 +5482,7 @@ model SaleBill {
   sbSrcDocId         String?   @db.Uuid @map("sb_src_doc_id")
   sbSrcDocRefno      String?   @db.VarChar(100) @map("sb_src_doc_refno")
   sbSrcDocDate       DateTime? @db.Date @map("sb_src_doc_date")
+  sbSrcDocYear       String?   @db.VarChar(9) @map("sb_src_doc_year")
   // Customer, snapshotted at billing time
   sbCustId           String    @db.Uuid @map("sb_cust_id")
   sbCustName         String    @db.VarChar(200) @map("sb_cust_name")
@@ -5748,6 +5749,12 @@ model SaleBillItem {
   // before the migration was ever applied and are enforced in the
   // application layer instead (BillService.ensureBillItemValuesAreAllowed).
   @@id([sbiId, sbiAccYear], map: "pk_sale_bill_item")
+  // Migration 20260813050000. The sale-order module re-derives soi_delivered_qty
+  // by summing these rows for one order — across every partition, since an order
+  // taken in one year is routinely billed in the next — so the src-doc reference
+  // needs an index of its own. Plain and non-unique, so unlike the DB-only
+  // partial indexes on sale_order_item it is safe to declare here.
+  @@index([sbiSrcDocId, sbiSrcDocYear, sbiSrcDocLineNo], map: "ix_sbi_src_doc")
   @@map("sale_bill_item")
   @@schema("sales")
 }

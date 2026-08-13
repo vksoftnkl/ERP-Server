@@ -5,9 +5,10 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
 import { SaveSaleOrderItemDto } from './dto/save-sale-order-item.dto';
 import {
-  SALE_ORDER_CANCEL_SRC_MODULE,
+  SALE_ORDER_CANCEL_SRC_MODULES,
   SALE_ORDER_CHARGE_AUDIT,
   SALE_ORDER_CHARGE_DOC_TYPE,
+  SALE_ORDER_SRC_DOC_TYPE,
   SALE_ORDER_STATUS_SRC_DOC_TYPE,
   SALE_ORDER_STATUS_SRC_MODULE,
   SALE_ORDER_TENDER_AUDIT,
@@ -19,10 +20,19 @@ import {
   SaleOrderChargePayload,
   SaleOrderErrorDetail,
   SaleOrderErrorResponse,
+  SaleOrderFulfilledLine,
+  SaleOrderFulfilmentResult,
   SaleOrderItemPayload,
+  SaleOrderLineRef,
   SaleOrderPayload,
+  SaleOrderSrcDocFields,
   SaleOrderTenderPayload,
 } from './types/sale-order-api.types';
+// Which sale bills draw quantity down off an order line. Imported rather than
+// restated so the two modules can never disagree about what "billed" means; the
+// dependency only points this way, so it adds no cycle to the sale-bill module
+// that calls syncOrderFulfilment.
+import { BILL_STATUS_POSTED } from '../bill/types/bill-api.types';
 import { CancelSaleOrderLinesDto } from './dto/cancel-sale-order-lines.dto';
 import {
   TxnStatusEvent,
@@ -107,12 +117,20 @@ const SALE_ORDER_ITEM_LINE_STATUSES = ['PENDING', 'PARTIAL', 'DELIVERED', 'CANCE
 // off, which is not the same fact as a line nothing ever left the godown for.
 const SALE_ORDER_ITEM_STATUS_CANCELLED = 'CANCELLED';
 const SALE_ORDER_ITEM_STATUS_PARTIAL = 'PARTIAL';
+// ... plus the two the bill-driven recompute can also land on: a line nothing
+// has happened to yet, and one every ordered unit went out for.
+const SALE_ORDER_ITEM_STATUS_PENDING = 'PENDING';
+const SALE_ORDER_ITEM_STATUS_DELIVERED = 'DELIVERED';
 // Header fulfilment states the recompute can land on. COMPLETED / PARTIAL are
 // shared with ck_so_status, which is why the same tokens serve both columns.
 const SALE_ORDER_FULFIL_PENDING = 'PENDING';
 const SALE_ORDER_FULFIL_PARTIAL = 'PARTIAL';
 const SALE_ORDER_FULFIL_COMPLETED = 'COMPLETED';
 const SALE_ORDER_FULFIL_CANCELLED = 'CANCELLED';
+// The remark carried by a status step a BILL drove. ck_tsl_reason_required
+// wants one on a CANCELLED step, and an order whose status moved because a bill
+// was raised or retired against it has no reason of its own to give.
+const SALE_ORDER_FULFIL_STATUS_REMARK = 'Order fulfilment recomputed from its sale bills';
 const SALE_ORDER_VALUE_GUARDS = [
   { field: 'soDocType', allowed: SALE_ORDER_DOC_TYPES, nullable: false },
   { field: 'soOrderType', allowed: SALE_ORDER_TYPES, nullable: false },
@@ -728,17 +746,23 @@ export class SaleOrderService {
       };
     });
   }
-  // Closes out an order's remaining quantity: every still-open line has its
-  // pending quantity moved into cancelled, and the header roll-ups are
-  // recomputed from what the lines then say.
+  // Closes out an order's remaining quantity: every still-open line addressed
+  // has its pending quantity moved into cancelled, and the header roll-ups are
+  // recomputed from what ALL the lines then say.
   //
   // The order is addressed the way a DOWNSTREAM document holds it — the
   // (srcModule, srcDocId, srcAccYear) tuple a sale bill carries in
   // sb_src_doc_type / sb_src_doc_id — because the screen that calls this is the
-  // sales line, which knows the order only as its source. srcDocId is so_id and
-  // srcAccYear is so_acc_year, which together are the partitioned table's
-  // primary key, so no company / branch is needed to address one row
-  // unambiguously; both are read off the record instead.
+  // sales line, which knows the order only as its source. srcAccYear is the
+  // accounting year both tables are partitioned by, so no company / branch is
+  // needed to address one row unambiguously; both are read off the record.
+  //
+  // srcDocId is either id, and which one decides the SCOPE:
+  //   so_id  — the whole order: every open line closes out.
+  //   soi_id — that one line, its siblings left alone.
+  // The screen calling this has the order line in front of it, so soi_id is
+  // often the nearer id to hand; the header is tried first and the line lookup
+  // only runs when nothing matched, so the common path still costs one read.
   //
   // Idempotent by construction: a second call finds nothing open, writes
   // nothing and answers 0. That is what makes PUT the honest verb here.
@@ -752,39 +776,72 @@ export class SaleOrderService {
     srcAccYear: string,
     cancelDto: CancelSaleOrderLinesDto,
   ): Promise<SaleOrderCancelLinesResult> {
-    // A sale order is only ever reachable from SALES. Checking rather than
-    // ignoring the parameter means a screen that passes its own module blindly
-    // gets a 400 naming the field instead of cancelling an order it did not
-    // mean to address.
-    if ((srcModule ?? '').trim().toUpperCase() !== SALE_ORDER_CANCEL_SRC_MODULE) {
+    // A sale order is only ever reachable from SALES, and the sales line screen
+    // addresses it by the source tuple it stores — whose discriminator is the
+    // doc type SALES_ORDER, not the module. Both spellings name this document,
+    // so both are accepted; anything else gets a 400 naming the field rather
+    // than cancelling an order the caller did not mean to address.
+    //
+    // Separators are normalised before matching, so 'sales order' and
+    // 'Sales-Order' land on SALES_ORDER: the word the caller means is the same
+    // one either way, and a screen that spells it with a space is not making
+    // the kind of mistake this guard exists to catch.
+    const normalisedModule = (srcModule ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_');
+    if (!SALE_ORDER_CANCEL_SRC_MODULES.includes(normalisedModule)) {
       throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>('Invalid source module', [
         {
           field: 'srcModule',
-          message: `srcModule must be ${SALE_ORDER_CANCEL_SRC_MODULE} for a sales order`,
+          message: `srcModule must be one of ${SALE_ORDER_CANCEL_SRC_MODULES.join(', ')} for a sales order`,
         },
       ]);
     }
     return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.saleOrder.findFirst({
+      let existing = await tx.saleOrder.findFirst({
         where: {
           soId: srcDocId,
           soAccYear: srcAccYear,
           soIsDeleted: false,
         },
       });
+      // Null means srcDocId was not an order id — the other thing it is allowed
+      // to be is one of the order's own line ids, which narrows the call to that
+      // line. A soft-deleted line is not addressable: there is nothing left on
+      // it to cancel, and resolving through it would silently widen the call to
+      // its order.
+      let targetLineId: string | null = null;
+      if (!existing) {
+        const line = await tx.saleOrderItem.findFirst({
+          where: { soiId: srcDocId, soiAccYear: srcAccYear, soiIsDeleted: false },
+          select: { soiId: true, soiOrderId: true },
+        });
+        if (line) {
+          targetLineId = line.soiId;
+          existing = await tx.saleOrder.findFirst({
+            where: {
+              soId: line.soiOrderId,
+              soAccYear: srcAccYear,
+              soIsDeleted: false,
+            },
+          });
+        }
+      }
       if (!existing) {
         throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
           'Order not found',
           'srcDocId',
-          `No active order found with id ${srcDocId} in accounting year ${srcAccYear}`,
+          `No active order or order line found with id ${srcDocId} in accounting year ${srcAccYear}`,
         );
       }
-      // Read once: the same rows drive both the per-line writes and the header
-      // recompute, and the recompute needs the lines this call does NOT touch
-      // just as much as the ones it does.
+      // Read once, and always the WHOLE order: the same rows drive both the
+      // per-line writes and the header recompute, and the recompute needs the
+      // lines this call does not touch just as much as the ones it does — which
+      // is the whole point when a single line was named.
       const lines = await tx.saleOrderItem.findMany({
         where: {
-          soiOrderId: srcDocId,
+          soiOrderId: existing.soId,
           // sale_order_item is partitioned by soi_acc_year like its header, so
           // the year keeps the read on one partition.
           soiAccYear: srcAccYear,
@@ -794,17 +851,31 @@ export class SaleOrderService {
       });
       const now = new Date();
       const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-      // What each line will hold once this call is done: the open ones with
-      // their pending quantity moved across, the rest exactly as they are.
+      // What each line will hold once this call is done: the open ones this call
+      // addresses with their pending quantity moved across, the rest exactly as
+      // they are. A line the caller did not name is 'the rest' even when it is
+      // wide open — it still counts towards the header roll-ups below, which is
+      // how a one-line cancel leaves the order PARTIAL rather than settled.
       const settledLines = lines.map((line) => {
+        const delivered = asNumber(line.soiDeliveredQty);
+        const billedAmt = asNumber(line.soiBilledAmt);
         const pending = asNumber(line.soiPendingQty);
-        if (pending <= QTY_EPSILON) {
-          return { line, cancelled: asNumber(line.soiCancelledQty), pending, moved: 0 };
+        if (pending <= QTY_EPSILON || (targetLineId !== null && line.soiId !== targetLineId)) {
+          return {
+            line,
+            delivered,
+            cancelled: asNumber(line.soiCancelledQty),
+            pending,
+            billedAmt,
+            moved: 0,
+          };
         }
         return {
           line,
+          delivered,
           cancelled: roundQty(asNumber(line.soiCancelledQty) + pending),
           pending: 0,
+          billedAmt,
           moved: roundQty(pending),
         };
       });
@@ -923,7 +994,7 @@ export class SaleOrderService {
       }
       const result = await tx.saleOrder.updateMany({
         where: {
-          soId: srcDocId,
+          soId: existing.soId,
           soAccYear: srcAccYear,
           // Re-asserted rather than trusted from the read above: a concurrent
           // delete between the two is what this catches.
@@ -935,7 +1006,7 @@ export class SaleOrderService {
         throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
           'Order not found',
           'srcDocId',
-          `No active order found with id ${srcDocId} in accounting year ${srcAccYear}`,
+          `No active order found with id ${existing.soId} in accounting year ${srcAccYear}`,
         );
       }
       // Only a real status MOVE is a step in the trail, the same rule the
@@ -969,7 +1040,9 @@ export class SaleOrderService {
           originalRecord,
           modifiedRecord,
           userId: actor,
-          notes: `Order open lines cancelled (${cancelledLines.length})`,
+          notes: targetLineId
+            ? `Order line cancelled (${cancelledLines.length})`
+            : `Order open lines cancelled (${cancelledLines.length})`,
         },
         tx,
       );
@@ -1004,8 +1077,20 @@ export class SaleOrderService {
   // Nothing in the DB enforces these: sale_order's CHECK set covers the status
   // vocabularies and the advance equations, and stops there. The invariant is
   // this method's, which is why it is stated in one place.
+  //
+  // The quantities and the billed amount are passed in rather than read off
+  // `line`: both callers hold values the row does not yet carry — the cancel
+  // path has moved pending into cancelled, the bill path has just re-summed
+  // delivered — and summing the stored column would answer with the state the
+  // caller is in the middle of replacing.
   private summariseOrderLines(
-    settledLines: { line: SaleOrderItem; cancelled: number; pending: number }[],
+    settledLines: {
+      line: SaleOrderItem;
+      delivered: number;
+      cancelled: number;
+      pending: number;
+      billedAmt: number;
+    }[],
   ): {
     billedAmt: number;
     cancelledAmt: number;
@@ -1015,16 +1100,15 @@ export class SaleOrderService {
     fulfilStatus: string;
     headerStatus: string | null;
   } {
-    let billedAmt = 0;
+    let totalBilledAmt = 0;
     let cancelledAmt = 0;
     let pendingAmt = 0;
     let deliveredItems = 0;
     let deliveredQty = 0;
     let cancelledQty = 0;
     let pendingQty = 0;
-    for (const { line, cancelled, pending } of settledLines) {
+    for (const { line, delivered, cancelled, pending, billedAmt } of settledLines) {
       const orderQty = asNumber(line.soiOrderQty);
-      const delivered = asNumber(line.soiDeliveredQty);
       // soi_net_amt is the only line-level money covering the whole line (after
       // discount, tax and the per-line charges), so the cancelled / pending
       // split is taken pro-rata from it. A zero-quantity line contributes
@@ -1035,7 +1119,7 @@ export class SaleOrderService {
       // soi_billed_amt is a maintained cache, so it is summed as-is rather than
       // re-derived from soi_delivered_qty: a bill that priced differently from
       // the order must not be silently overwritten with the order's own rate.
-      billedAmt += asNumber(line.soiBilledAmt);
+      totalBilledAmt += billedAmt;
       deliveredQty += delivered;
       cancelledQty += cancelled;
       pendingQty += pending;
@@ -1047,7 +1131,7 @@ export class SaleOrderService {
       }
     }
     return {
-      billedAmt: roundAmount(billedAmt),
+      billedAmt: roundAmount(totalBilledAmt),
       cancelledAmt: roundAmount(cancelledAmt),
       pendingAmt: roundAmount(pendingAmt),
       totItems: settledLines.length,
@@ -1090,6 +1174,393 @@ export class SaleOrderService {
     return {
       fulfilStatus: SALE_ORDER_FULFIL_PARTIAL,
       headerStatus: SALE_ORDER_FULFIL_PARTIAL,
+    };
+  }
+  // ck_soi_line_status: PENDING / PARTIAL / DELIVERED / CANCELLED. The same
+  // reading of "partial" the cancel path uses — a line that both delivered and
+  // wrote the rest off is PARTIAL, not DELIVERED.
+  private deriveLineStatus(delivered: number, cancelled: number, pending: number): string {
+    // Stated first so a zero-quantity line — which has no pending quantity
+    // either — is not read as CANCELLED just for having nothing left.
+    if (delivered <= QTY_EPSILON && cancelled <= QTY_EPSILON) {
+      return SALE_ORDER_ITEM_STATUS_PENDING;
+    }
+    if (pending > QTY_EPSILON) {
+      return SALE_ORDER_ITEM_STATUS_PARTIAL;
+    }
+    if (delivered <= QTY_EPSILON) {
+      return SALE_ORDER_ITEM_STATUS_CANCELLED;
+    }
+    return cancelled <= QTY_EPSILON
+      ? SALE_ORDER_ITEM_STATUS_DELIVERED
+      : SALE_ORDER_ITEM_STATUS_PARTIAL;
+  }
+  // Re-derives the fulfilment caches — soi_delivered_qty / soi_pending_qty /
+  // soi_billed_amt / soi_line_status, then the header roll-ups — from the bills
+  // standing against the order. The sale-bill module calls this inside its own
+  // save / delete transaction, once its lines are written, handing over every
+  // order line the bill touches: the ones it points at NOW plus the ones it
+  // pointed at BEFORE the save, because a line the payload drops or repoints has
+  // to give the abandoned order line its quantity back.
+  //
+  // RECOMPUTED, never incremented. sale_bill_item is the truth (the comment on
+  // soi_delivered_qty says so), so every affected line is re-summed from
+  // scratch. That is what makes the call idempotent — a repeat save, a re-post,
+  // a retried transaction all land on the same numbers — and it repairs caches
+  // that were whatever the client last posted, which until now is all they were.
+  //
+  // Only a POSTED bill counts. A draft is still being keyed and may never become
+  // a document; taking a bill out of POSTED, cancelling it or deleting it
+  // releases its quantity back into soi_pending_qty on the very next call.
+  //
+  // soi_cancelled_qty is deliberately untouched: writing off what a customer no
+  // longer wants is the cancel endpoint's decision, not a bill's. This method
+  // only ever moves quantity between delivered and pending.
+  async syncOrderFulfilment(
+    tx: Prisma.TransactionClient,
+    request: { refs: SaleOrderLineRef[]; fields: SaleOrderSrcDocFields },
+    actor: string,
+    now: Date,
+  ): Promise<SaleOrderFulfilmentResult[]> {
+    if (request.refs.length === 0) {
+      return [];
+    }
+    // Grouped by the order's primary key: one recompute per order, however many
+    // of its lines the calling document happened to touch.
+    const byOrder = new Map<string, { soId: string; soAccYear: string; lineNos: Set<number> }>();
+    for (const ref of request.refs) {
+      const key = `${ref.soId}|${ref.soAccYear}`;
+      const entry = byOrder.get(key) ?? {
+        soId: ref.soId,
+        soAccYear: ref.soAccYear,
+        lineNos: new Set<number>(),
+      };
+      entry.lineNos.add(ref.soLineNo);
+      byOrder.set(key, entry);
+    }
+    const results: SaleOrderFulfilmentResult[] = [];
+    for (const order of byOrder.values()) {
+      results.push(
+        await this.syncOneOrderFulfilment(
+          tx,
+          order.soId,
+          order.soAccYear,
+          order.lineNos,
+          request.fields,
+          actor,
+          now,
+        ),
+      );
+    }
+    return results;
+  }
+  private async syncOneOrderFulfilment(
+    tx: Prisma.TransactionClient,
+    soId: string,
+    soAccYear: string,
+    lineNos: Set<number>,
+    fields: SaleOrderSrcDocFields,
+    actor: string,
+    now: Date,
+  ): Promise<SaleOrderFulfilmentResult> {
+    // Serialises concurrent recomputes of ONE order, and is taken before
+    // anything is read. Two bills posted against the same order line in
+    // overlapping transactions would otherwise each re-sum sale_bill_item
+    // without seeing the other's uncommitted line, and whichever committed
+    // second would write a delivered total that silently misses the first.
+    // Holding the header row makes the second wait; by the time it reads, READ
+    // COMMITTED gives its statement a snapshot that already includes the first.
+    //
+    // A bill racing PUT /cancel-lines is a different story and is deliberately
+    // left to the database: that one ends in a ck_soi_qty_balance violation, so
+    // the losing transaction rolls back with an error rather than committing a
+    // wrong number.
+    await tx.$queryRaw`
+      SELECT so_id
+        FROM sales.sale_order
+       WHERE so_id = ${soId}::uuid
+         AND so_acc_year = ${soAccYear}::bpchar
+         FOR UPDATE`;
+    const order = await tx.saleOrder.findFirst({
+      where: { soId, soAccYear, soIsDeleted: false },
+    });
+    if (!order) {
+      throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+        'Order not found',
+        fields.docId,
+        `No active order found with id ${soId} in accounting year ${soAccYear}`,
+      );
+    }
+    // Every line, not just the referenced ones: the header roll-up below needs
+    // the lines this call does NOT touch just as much as the ones it does.
+    const lines = await tx.saleOrderItem.findMany({
+      where: {
+        soiOrderId: soId,
+        // sale_order_item is partitioned by soi_acc_year like its header, so the
+        // year keeps the read on one partition.
+        soiAccYear: soAccYear,
+        soiIsDeleted: false,
+      },
+      orderBy: { soiLineNo: 'asc' },
+    });
+    const lineByNo = new Map(lines.map((line) => [line.soiLineNo, line]));
+    // A reference to a line that is not on the order is the caller's mistake,
+    // not an empty recompute: answering 200 would leave the operator looking at
+    // a bill that says it delivered an order which never moved.
+    const unknownLineNos = [...lineNos]
+      .filter((lineNo) => !lineByNo.has(lineNo))
+      .sort((left, right) => left - right);
+    if (unknownLineNos.length > 0) {
+      throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>('Unknown order line', [
+        {
+          field: fields.lineNo,
+          message:
+            `Order ${order.soOrderRefno || soId} has no active line numbered ` +
+            unknownLineNos.join(', '),
+        },
+      ]);
+    }
+    // Everything billed against this order, from every POSTED bill in ANY
+    // accounting year — an order taken in one year is routinely billed in the
+    // next — which is why this filters on sbi_src_doc_year (the ORDER's year)
+    // and not on the bill line's own partition key. The relation filter is what
+    // keeps a draft, a cancelled and a deleted bill out of the sum.
+    const billedItems = await tx.saleBillItem.findMany({
+      where: {
+        sbiSrcDocType: SALE_ORDER_SRC_DOC_TYPE,
+        sbiSrcDocId: soId,
+        sbiSrcDocYear: soAccYear,
+        sbiIsDeleted: false,
+        bill: { sbStatus: BILL_STATUS_POSTED, sbIsDeleted: false },
+      },
+      select: { sbiSrcDocLineNo: true, sbiBillQty: true, sbiNetAmt: true },
+    });
+    // Summed per ORDER line, not per bill line: one order line routinely becomes
+    // several bill lines — a batch split within one bill, or a part delivery
+    // spread across several.
+    const billedByLineNo = new Map<number, { qty: number; amt: number }>();
+    for (const item of billedItems) {
+      if (item.sbiSrcDocLineNo === null) {
+        // Names the order but not a line of it, so there is nothing to draw
+        // down. sale_bill also carries a header-level sb_src_doc_id, and a
+        // client that fills only that in lands here.
+        continue;
+      }
+      const total = billedByLineNo.get(item.sbiSrcDocLineNo) ?? { qty: 0, amt: 0 };
+      total.qty += asNumber(item.sbiBillQty);
+      total.amt += asNumber(item.sbiNetAmt);
+      billedByLineNo.set(item.sbiSrcDocLineNo, total);
+    }
+    const overBilled: SaleOrderErrorDetail[] = [];
+    const settledLines = lines.map((line) => {
+      const stored = {
+        line,
+        delivered: asNumber(line.soiDeliveredQty),
+        cancelled: asNumber(line.soiCancelledQty),
+        pending: asNumber(line.soiPendingQty),
+        billedAmt: asNumber(line.soiBilledAmt),
+        status: line.soiLineStatus,
+        changed: false,
+      };
+      // Recomputed for the lines this call was handed AND for any line that
+      // still carries billed quantity. The second set is what hands a line its
+      // quantity back when the bill that consumed it is edited to point
+      // elsewhere. Every other line keeps exactly what it holds — a quantity
+      // cancelled by hand is not this method's to reinterpret.
+      if (!lineNos.has(line.soiLineNo) && !billedByLineNo.has(line.soiLineNo)) {
+        return stored;
+      }
+      const billed = billedByLineNo.get(line.soiLineNo) ?? { qty: 0, amt: 0 };
+      const orderQty = asNumber(line.soiOrderQty);
+      const delivered = roundQty(billed.qty);
+      const billedAmt = roundAmount(billed.amt);
+      const cancelled = stored.cancelled;
+      // ck_soi_qty_balance: order_qty = delivered + cancelled + pending. Pending
+      // is therefore what the ordered quantity has left once the other two are
+      // taken off it, never a number of its own.
+      const pending = roundQty(orderQty - delivered - cancelled);
+      if (pending < -QTY_EPSILON) {
+        // The bill wants more than the order has left. Refused rather than
+        // clamped: clamping would break the balance CHECK and the save would
+        // come back a raw 23514 instead of a message naming the line.
+        overBilled.push({
+          field: fields.qty,
+          message:
+            `Line ${line.soiLineNo} of order ${order.soOrderRefno || soId} is over-billed: ` +
+            `${delivered} billed and ${cancelled} cancelled against ${orderQty} ordered`,
+        });
+        return stored;
+      }
+      // Only float noise can be left below zero once the guard above has passed.
+      const pendingQty = Math.max(pending, 0);
+      const status = this.deriveLineStatus(delivered, cancelled, pendingQty);
+      return {
+        line,
+        delivered,
+        cancelled,
+        pending: pendingQty,
+        billedAmt,
+        status,
+        changed:
+          Math.abs(delivered - stored.delivered) > QTY_EPSILON ||
+          Math.abs(pendingQty - stored.pending) > QTY_EPSILON ||
+          Math.abs(billedAmt - stored.billedAmt) > AMOUNT_EPSILON ||
+          status !== stored.status,
+      };
+    });
+    if (overBilled.length > 0) {
+      throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+        'Billed quantity exceeds the order',
+        overBilled,
+      );
+    }
+    const fulfilledLines: SaleOrderFulfilledLine[] = [];
+    for (const settled of settledLines) {
+      if (!settled.changed) {
+        continue;
+      }
+      const { line } = settled;
+      const updated = await tx.saleOrderItem.update({
+        where: { soiId_soiAccYear: { soiId: line.soiId, soiAccYear: line.soiAccYear } },
+        data: {
+          soiDeliveredQty: settled.delivered,
+          soiPendingQty: settled.pending,
+          soiBilledAmt: settled.billedAmt,
+          soiLineStatus: settled.status,
+          soiModifiedOn: now,
+          soiModifiedBy: actor,
+        },
+      });
+      await this.auditLogService.logEntityChange(
+        {
+          action: 'update',
+          tableName: SALE_ORDER_ITEM_TABLE_NAME,
+          screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+          screenType: 'transaction',
+          pk: line.soiId,
+          displayName: `${order.soOrderRefno || order.soId} #${line.soiLineNo}`,
+          originalRecord: this.toItemPayload(line),
+          modifiedRecord: this.toItemPayload(updated),
+          userId: actor,
+          notes: 'Order line fulfilment recomputed from its bills',
+        },
+        tx,
+      );
+      fulfilledLines.push({
+        soiId: line.soiId,
+        soiLineNo: line.soiLineNo,
+        soiDeliveredQty: settled.delivered,
+        soiCancelledQty: settled.cancelled,
+        soiPendingQty: settled.pending,
+        soiBilledAmt: settled.billedAmt,
+        soiLineStatus: settled.status,
+      });
+    }
+    const rollup = this.summariseOrderLines(settledLines);
+    // A still-open order keeps whatever it was (DRAFT / CONFIRMED): only a
+    // settled one has a header status its lines can dictate.
+    const soStatus = rollup.headerStatus ?? order.soStatus;
+    // The header is only rewritten when it has something new to say. A draft
+    // bill saved over and over against the same order reaches here every time,
+    // and must not leave an audit row and a bumped so_modified_on each time.
+    const headerChanged =
+      fulfilledLines.length > 0 ||
+      Math.abs(rollup.billedAmt - asNumber(order.soBilledAmt)) > AMOUNT_EPSILON ||
+      Math.abs(rollup.cancelledAmt - asNumber(order.soCancelledAmt)) > AMOUNT_EPSILON ||
+      Math.abs(rollup.pendingAmt - asNumber(order.soPendingAmt)) > AMOUNT_EPSILON ||
+      rollup.totItems !== order.soTotItems ||
+      rollup.deliveredItems !== order.soDeliveredItems ||
+      rollup.fulfilStatus !== order.soFulfilStatus ||
+      soStatus !== order.soStatus;
+    if (!headerChanged) {
+      return {
+        soId,
+        soAccYear,
+        soStatus: order.soStatus,
+        soFulfilStatus: order.soFulfilStatus,
+        lines: [],
+      };
+    }
+    const headerChanges: Prisma.SaleOrderUncheckedUpdateInput = {
+      soBilledAmt: rollup.billedAmt,
+      soCancelledAmt: rollup.cancelledAmt,
+      soPendingAmt: rollup.pendingAmt,
+      soTotItems: rollup.totItems,
+      soDeliveredItems: rollup.deliveredItems,
+      soFulfilStatus: rollup.fulfilStatus,
+      soModifiedOn: now,
+      soModifiedBy: actor,
+    };
+    if (rollup.headerStatus) {
+      headerChanges.soStatus = rollup.headerStatus;
+    }
+    // so_completed_on means completed, not closed, and is only ever set once —
+    // the same rule the cancel path follows.
+    if (rollup.fulfilStatus === SALE_ORDER_FULFIL_COMPLETED && !order.soCompletedOn) {
+      headerChanges.soCompletedOn = now;
+    }
+    const result = await tx.saleOrder.updateMany({
+      where: {
+        soId,
+        soAccYear,
+        // Re-asserted rather than trusted from the read above: a concurrent
+        // delete between the two is what this catches.
+        soIsDeleted: false,
+      },
+      data: headerChanges,
+    });
+    if (result.count === 0) {
+      throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+        'Order not found',
+        fields.docId,
+        `No active order found with id ${soId} in accounting year ${soAccYear}`,
+      );
+    }
+    // Only a real status MOVE is a step in the trail — an edit that leaves the
+    // order PARTIAL has nothing to say here. What changed field by field is
+    // audit.audit_log's job.
+    if (soStatus !== order.soStatus) {
+      await this.logStatusStep(
+        tx,
+        order,
+        {
+          // The chain's own word for it: the order became the next document.
+          // A recompute that RETIRES a bill can move the status back the other
+          // way; that is the same fact read in reverse and carries the same
+          // event, with the remark saying which direction it went.
+          event:
+            soStatus === SALE_ORDER_STATUS_CANCELLED
+              ? TxnStatusEvent.CANCELLED
+              : TxnStatusEvent.CONVERTED,
+          fromStatus: order.soStatus,
+          toStatus: soStatus,
+          remarks: SALE_ORDER_FULFIL_STATUS_REMARK,
+        },
+        actor,
+        now,
+      );
+    }
+    await this.auditLogService.logEntityChange(
+      {
+        action: 'update',
+        tableName: SALE_ORDER_TABLE_NAME,
+        screenName: SALE_ORDER_AUDIT_SCREEN_NAME,
+        screenType: 'transaction',
+        pk: order.soId,
+        displayName: order.soOrderRefno || order.soId,
+        originalRecord: this.toPayload(order),
+        modifiedRecord: this.toPayload({ ...order, ...headerChanges } as SaleOrder),
+        userId: actor,
+        notes: `Order fulfilment recomputed from its bills (${fulfilledLines.length} line(s))`,
+      },
+      tx,
+    );
+    return {
+      soId,
+      soAccYear,
+      soStatus,
+      soFulfilStatus: rollup.fulfilStatus,
+      lines: fulfilledLines,
     };
   }
   // One step of the order's history in public.txn_status_log. so_status is only
@@ -1970,33 +2441,33 @@ export class SaleOrderService {
     const [companies, branches, employees, ledgers, users, godownNameById] = await Promise.all([
       companyIds.length
         ? this.prisma.company.findMany({
-            where: { compId: { in: companyIds } },
-            select: { compId: true, compName: true },
-          })
+          where: { compId: { in: companyIds } },
+          select: { compId: true, compName: true },
+        })
         : [],
       branchIds.length
         ? this.prisma.branchMaster.findMany({
-            where: { brId: { in: branchIds } },
-            select: { brId: true, brName: true },
-          })
+          where: { brId: { in: branchIds } },
+          select: { brId: true, brName: true },
+        })
         : [],
       employeeIds.length
         ? this.prisma.employeeMaster.findMany({
-            where: { empId: { in: employeeIds } },
-            select: { empId: true, empName: true },
-          })
+          where: { empId: { in: employeeIds } },
+          select: { empId: true, empName: true },
+        })
         : [],
       ledgerIds.length
         ? this.prisma.accLedgerMaster.findMany({
-            where: { ledId: { in: ledgerIds } },
-            select: { ledId: true, ledName: true },
-          })
+          where: { ledId: { in: ledgerIds } },
+          select: { ledId: true, ledName: true },
+        })
         : [],
       userIds.length
         ? this.prisma.userMaster.findMany({
-            where: { usrId: { in: userIds } },
-            select: { usrId: true, usrDisplayName: true },
-          })
+          where: { usrId: { in: userIds } },
+          select: { usrId: true, usrDisplayName: true },
+        })
         : [],
       this.resolveGodownNames(items),
     ]);

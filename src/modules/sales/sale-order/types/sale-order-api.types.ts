@@ -52,11 +52,68 @@ export const SALE_ORDER_TENDER_AUDIT: TenderDocumentAudit = {
 // member since the helper shipped; this module is the first to write one.
 export const SALE_ORDER_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
 export const SALE_ORDER_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALES_ORDER;
-// The value the cancel endpoint's srcModule query param must carry. It is the
-// same token as the status trail's module — a sale order is only ever reachable
-// from SALES — and it exists so a screen that passes its own module blindly
-// gets a 400 naming the field rather than silently cancelling someone's order.
-export const SALE_ORDER_CANCEL_SRC_MODULE: string = SALE_ORDER_STATUS_SRC_MODULE;
+// What the cancel endpoint's srcModule query param accepts, in the order the
+// 400 message lists them. SALES is the module proper — the same token as the
+// status trail's, because a sale order is reachable from no other module;
+// SALES_ORDER is the DOC TYPE the downstream document stores beside the id
+// (sale_bill_item.sbi_src_doc_type / sale_bill.sb_src_doc_type), and the sales
+// line screen holds the order as that tuple, so it forwards the doc type here.
+// Both spell the same thing — this order — so both are honoured rather than
+// forcing every caller to carry a second constant just for this parameter.
+// Anything else still 400s naming the field, which is the point of validating
+// it at all: a screen passing its own module must not cancel someone's order.
+export const SALE_ORDER_CANCEL_SRC_MODULES: readonly string[] = [
+  SALE_ORDER_STATUS_SRC_MODULE,
+  SALE_ORDER_STATUS_SRC_DOC_TYPE,
+];
+// The token a DOWNSTREAM document writes into its own source-doc discriminator
+// to say "this line came from a sale order line". sale_bill_item carries it as
+// sbi_src_doc_type, alongside sbi_src_doc_id / sbi_src_doc_year /
+// sbi_src_doc_line_no — which together address exactly one sale_order_item row:
+// the order's (so_id, so_acc_year) primary key plus the line's number.
+//
+// Not to be confused with soi_src_doc_type on the order line itself, which
+// points the other way (UP the chain, at the quotation the order came from).
+export const SALE_ORDER_SRC_DOC_TYPE: string = SALE_ORDER_STATUS_SRC_DOC_TYPE;
+// One order line a downstream document draws down. soLineNo is soi_line_no, not
+// soi_id: a bill references the line the operator sees on the printed order.
+export type SaleOrderLineRef = {
+  soId: string;
+  soAccYear: string;
+  soLineNo: number;
+};
+// How the calling document names its own source-doc columns. Passed in so a
+// rejection raised by the fulfilment recompute comes back naming the field the
+// client actually sent (sbiSrcDocLineNo) instead of a token from this module's
+// vocabulary the caller never heard of.
+export type SaleOrderSrcDocFields = {
+  docId: string;
+  accYear: string;
+  lineNo: string;
+  qty: string;
+};
+// What one order line's caches were left holding. Running totals across every
+// posted bill, not the delta this call applied — the caller is a bill save that
+// wants to show the order's state, and the delta is not a fact any column keeps.
+export type SaleOrderFulfilledLine = {
+  soiId: string;
+  soiLineNo: number;
+  soiDeliveredQty: number;
+  soiCancelledQty: number;
+  soiPendingQty: number;
+  soiBilledAmt: number;
+  soiLineStatus: string;
+};
+// One order the fulfilment recompute touched. `lines` carries only the lines
+// whose caches actually moved — a repeat save answers with an empty array, the
+// same way the cancel endpoint answers 0 on a second call.
+export type SaleOrderFulfilmentResult = {
+  soId: string;
+  soAccYear: string;
+  soStatus: string;
+  soFulfilStatus: string;
+  lines: SaleOrderFulfilledLine[];
+};
 // soOrderSlno is a bigint column; it is emitted as a string because JSON has no
 // bigint. Leaving it a bigint makes res.json() throw AFTER the save transaction
 // has committed, so the caller sees a 500 for an order that was in fact written
