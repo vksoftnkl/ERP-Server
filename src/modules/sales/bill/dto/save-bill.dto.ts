@@ -172,6 +172,15 @@ export class SaveBillDto {
   @ApiPropertyOptional({ type: 'string', format: 'date', nullable: true })
   @NullableDateString()
   sbSrcDocDate?: string | null;
+  @ApiPropertyOptional({
+    maxLength: 9,
+    nullable: true,
+    example: '2026-2027',
+    description:
+      "The source document's OWN accounting year — with sbSrcDocId, that document's primary key",
+  })
+  @NullableStringStrict(9)
+  sbSrcDocYear?: string | null;
   @ApiProperty({ format: 'uuid' })
   @RequiredUuid()
   sbCustId!: string;

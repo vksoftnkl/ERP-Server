@@ -32,11 +32,13 @@ import {
   SaleOrderErrorResponseDto,
   SaleOrderSuccessCancelLinesDto,
   SaleOrderSuccessDeleteDto,
+  SaleOrderSuccessPendingAmountDto,
   SaleOrderSuccessSingleDto,
 } from './dto/sale-order-response.dto';
 import {
   SaleOrderCancelLinesResult,
   SaleOrderPayload,
+  SaleOrderSrcDocPendingAmount,
   SaleOrderSuccessResponse,
 } from './types/sale-order-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
@@ -86,6 +88,58 @@ export class SaleOrderController {
       data,
     };
   }
+  @Get('pending-amount')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: "One source document's outstanding amount from accounts.acc_bill_balance",
+    description:
+      'Answers with abl_pending_amount alone, summed over the live bill-balance rows whose source ' +
+      'document is the tuple given. For a sale order that is its ADVANCE row: the money the ' +
+      'customer handed over that no invoice has eaten yet. It is read off the bill row rather ' +
+      'than the order header because abl_pending_amount is a generated column (bill − alloc − ' +
+      'disc − writeoff) and moves the moment an adjustment is posted, with no save on the order. ' +
+      'A document with no bill row answers 0, not 404 — an order that took no advance, or one ' +
+      'whose advance is fully adjusted, is an ordinary state.',
+  })
+  @ApiQuery({
+    name: 'ablSrcDocType',
+    schema: { type: 'string', example: 'SALES_ORDER' },
+    description:
+      'abl_src_doc_type — the document discriminator the bill row carries (SALES_ORDER, BOOKING ' +
+      'or CUSTOM_ORDER for an order). Case and separators are free: "sales order" and ' +
+      '"Sales-Order" both name SALES_ORDER.',
+  })
+  @ApiQuery({
+    name: 'ablSrcDocId',
+    schema: { type: 'string', format: 'uuid' },
+    description: 'abl_src_doc_id — the document id, i.e. so_id for an order',
+  })
+  @ApiQuery({
+    name: 'ablSrcAccYear',
+    schema: { type: 'string', example: '2026-2027' },
+    description:
+      'abl_src_acc_year — the accounting year of the SOURCE DOCUMENT (so_acc_year), not of the ' +
+      'bill: a bill stays in the partition of the year it was raised in, so an advance adjusted ' +
+      'in a later year is still found by its order year.',
+  })
+  @ApiOkResponse({ type: SaleOrderSuccessPendingAmountDto })
+  @ApiBadRequestResponse({ type: SaleOrderErrorResponseDto })
+  async getPendingAmount(
+    @Query('ablSrcDocType') ablSrcDocType: string,
+    @Query('ablSrcDocId', new ParseUUIDPipe({ version: '7' })) ablSrcDocId: string,
+    @Query('ablSrcAccYear') ablSrcAccYear: string,
+  ): Promise<SaleOrderSuccessResponse<SaleOrderSrcDocPendingAmount>> {
+    const data = await this.orderService.getSrcDocPendingAmount(
+      ablSrcDocType,
+      ablSrcDocId,
+      ablSrcAccYear,
+    );
+    return {
+      success: true,
+      message: 'Pending amount fetched successfully',
+      data,
+    };
+  }
   @Put('cancel-lines')
   @Version(API_VERSION)
   @ApiOperation({
@@ -101,12 +155,17 @@ export class SaleOrderController {
   })
   @ApiQuery({
     name: 'srcModule',
-    schema: { type: 'string', enum: ['SALES', 'SALES_ORDER'], example: 'SALES' },
+    schema: {
+      type: 'string',
+      enum: ['SALES', 'SALES_ORDER', 'BOOKING', 'CUSTOM_ORDER'],
+      example: 'SALES_ORDER',
+    },
     description:
-      'SALES, the only module a sales order is reachable from, or SALES_ORDER — the doc type a ' +
-      'downstream document stores beside the id, which is what the calling screen has on hand. ' +
-      'Case and separators are free ("sales order" and "Sales-Order" both name SALES_ORDER); ' +
-      'any other word is a 400.',
+      'SALES, the only module a sales order is reachable from, or the order doc type the calling ' +
+      'screen has on hand — SALES_ORDER, the one a downstream document stores beside the id, or ' +
+      'BOOKING / CUSTOM_ORDER for an order carrying either. Case and separators are free ' +
+      '("sales order" and "Sales-Order" both name SALES_ORDER); any other word — a bill, a ' +
+      'delivery challan — is a 400.',
   })
   @ApiQuery({
     name: 'srcDocId',

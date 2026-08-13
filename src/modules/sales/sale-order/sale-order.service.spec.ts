@@ -435,6 +435,9 @@ type PrismaMock = {
     findMany: jest.Mock<Promise<AdvanceBill[]>, unknown[]>;
     create: jest.Mock<Promise<{ ablId: string }>, unknown[]>;
     update: jest.Mock<Promise<unknown>, unknown[]>;
+    // The pending-amount read: abl_pending_amount totalled over the rows raised
+    // against one source document.
+    aggregate: jest.Mock<Promise<{ _sum: { ablPendingAmount: Prisma.Decimal | null } }>, unknown[]>;
   };
   // Only counted: a real settlement against the advance is what stops it being
   // edited down or taken back out.
@@ -586,6 +589,11 @@ const makePrismaMock = (): PrismaMock => {
       findMany: jest.fn(() => Promise.resolve([] as AdvanceBill[])),
       create: jest.fn(() => Promise.resolve({ ablId: ADVANCE_BILL_ID })),
       update: jest.fn(() => Promise.resolve({})),
+      // ... so nothing is pending against it either. Prisma answers a null _sum
+      // when the filter matches no row at all.
+      aggregate: jest.fn(() =>
+        Promise.resolve({ _sum: { ablPendingAmount: null as Prisma.Decimal | null } }),
+      ),
     },
     accBillAdjustment: { count: jest.fn(() => Promise.resolve(0)) },
     accPdcRegister: {
@@ -1651,6 +1659,61 @@ describe('SaleOrderService', () => {
     });
   });
 
+  describe('getSrcDocPendingAmount', () => {
+    it('totals abl_pending_amount over the live rows raised against the source document', async () => {
+      prisma.accBillBalance.aggregate.mockResolvedValue({
+        _sum: { ablPendingAmount: new Prisma.Decimal('5000.00') },
+      });
+      const result = await service.getSrcDocPendingAmount('SALES_ORDER', SALE_ORDER_ID, ACC_YEAR);
+      expect(result).toEqual({ ablPendingAmount: 5000 });
+      expect(prisma.accBillBalance.aggregate).toHaveBeenCalledWith({
+        _sum: { ablPendingAmount: true },
+        where: {
+          ablSrcDocType: 'SALES_ORDER',
+          ablSrcDocId: SALE_ORDER_ID,
+          ablSrcAccYear: ACC_YEAR,
+          ablIsDeleted: false,
+        },
+      });
+    });
+
+    it('filters on the source tuple alone, never on the bill year', async () => {
+      await service.getSrcDocPendingAmount('SALES_ORDER', SALE_ORDER_ID, ACC_YEAR);
+      // A bill stays in the partition of the year it was RAISED in, so an
+      // advance adjusted in a later FY must still be found by its order year.
+      const [args] = prisma.accBillBalance.aggregate.mock.calls[0] as [
+        { where: Record<string, unknown> },
+      ];
+      expect(args.where).not.toHaveProperty('ablAccYear');
+    });
+
+    it('normalises the doc type the way cancel-lines normalises its module', async () => {
+      await service.getSrcDocPendingAmount(' sales-order ', SALE_ORDER_ID, ACC_YEAR);
+      expect(prisma.accBillBalance.aggregate).toHaveBeenCalledWith(
+        containing({ where: containing({ ablSrcDocType: 'SALES_ORDER' }) }),
+      );
+    });
+
+    it('answers 0 for a document with no bill row rather than 404', async () => {
+      const result = await service.getSrcDocPendingAmount('SALES_ORDER', SALE_ORDER_ID, ACC_YEAR);
+      expect(result).toEqual({ ablPendingAmount: 0 });
+    });
+
+    it('rejects an empty doc type instead of matching every row that has none', async () => {
+      await expect(
+        service.getSrcDocPendingAmount('   ', SALE_ORDER_ID, ACC_YEAR),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.accBillBalance.aggregate).not.toHaveBeenCalled();
+    });
+
+    it('rejects a malformed accounting year instead of reading it back as nothing pending', async () => {
+      await expect(
+        service.getSrcDocPendingAmount('SALES_ORDER', SALE_ORDER_ID, '2026'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.accBillBalance.aggregate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('softDelete', () => {
     it('cascades the soft delete to items, charges and tenders', async () => {
       const result = await service.softDelete(SALE_ORDER_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
@@ -1921,29 +1984,47 @@ describe('SaleOrderService', () => {
       );
     });
 
-    it('rejects a source module that is neither SALES nor SALES_ORDER before touching the database', async () => {
+    it('rejects a source module that names neither SALES nor an order doc type before touching the database', async () => {
       await expect(
         service.cancelOpenLines('PURCHASE', SALE_ORDER_ID, ACC_YEAR, {}),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prisma.saleOrder.findFirst).not.toHaveBeenCalled();
     });
 
+    // A bill and a delivery challan are documents of their own, each with its
+    // own endpoints. Reaching an order's lines through THIS one is the mistake
+    // the guard exists to catch, so neither token gets past it.
+    it.each(['SALE_BILL', 'BILL', 'DELIVERY_CHALLAN', 'DC'])(
+      'refuses %s as a source module',
+      async (srcModule) => {
+        await expect(
+          service.cancelOpenLines(srcModule, SALE_ORDER_ID, ACC_YEAR, {}),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.saleOrder.findFirst).not.toHaveBeenCalled();
+      },
+    );
+
     // The sales line screen holds the order as the source tuple it stores, whose
     // discriminator is the doc type, so it forwards SALES_ORDER where the
-    // parameter is named for the module. Same document, so it is honoured.
-    it('accepts the SALES_ORDER doc-type spelling of the source module', async () => {
-      prisma.saleOrderItem.findMany.mockResolvedValue([
-        makeItem({
-          soiOrderQty: new Prisma.Decimal('10.000'),
-          soiDeliveredQty: new Prisma.Decimal('0.000'),
-          soiCancelledQty: new Prisma.Decimal('0.000'),
-          soiPendingQty: new Prisma.Decimal('10.000'),
-          soiNetAmt: new Prisma.Decimal('1000.00'),
-        } as Partial<SaleOrderItem>),
-      ]);
-      const result = await service.cancelOpenLines('SALES_ORDER', SALE_ORDER_ID, ACC_YEAR, {});
-      expect(result).toEqual(containing({ cancelledLines: 1, soFulfilStatus: 'CANCELLED' }));
-    });
+    // parameter is named for the module. BOOKING and CUSTOM_ORDER are the same
+    // path from a screen whose order carries either so_doc_type. All name this
+    // document, so all are honoured.
+    it.each(['SALES_ORDER', 'BOOKING', 'CUSTOM_ORDER'])(
+      'accepts the %s doc-type spelling of the source module',
+      async (srcModule) => {
+        prisma.saleOrderItem.findMany.mockResolvedValue([
+          makeItem({
+            soiOrderQty: new Prisma.Decimal('10.000'),
+            soiDeliveredQty: new Prisma.Decimal('0.000'),
+            soiCancelledQty: new Prisma.Decimal('0.000'),
+            soiPendingQty: new Prisma.Decimal('10.000'),
+            soiNetAmt: new Prisma.Decimal('1000.00'),
+          } as Partial<SaleOrderItem>),
+        ]);
+        const result = await service.cancelOpenLines(srcModule, SALE_ORDER_ID, ACC_YEAR, {});
+        expect(result).toEqual(containing({ cancelledLines: 1, soFulfilStatus: 'CANCELLED' }));
+      },
+    );
 
     it('answers 404 when nothing active matches the source tuple', async () => {
       prisma.saleOrder.findFirst.mockResolvedValue(null);

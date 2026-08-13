@@ -351,6 +351,8 @@ export class BillPayloadDto {
   sbSrcDocRefno!: string | null;
   @ApiPropertyOptional({ nullable: true, format: 'date' })
   sbSrcDocDate!: string | null;
+  @ApiPropertyOptional({ maxLength: 9, nullable: true, example: '2026-2027' })
+  sbSrcDocYear!: string | null;
   @ApiProperty({ format: 'uuid' })
   sbCustId!: string;
   @ApiProperty({ maxLength: 200 })

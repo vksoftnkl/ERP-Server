@@ -52,19 +52,29 @@ export const SALE_ORDER_TENDER_AUDIT: TenderDocumentAudit = {
 // member since the helper shipped; this module is the first to write one.
 export const SALE_ORDER_STATUS_SRC_MODULE = TxnStatusSrcModule.SALES;
 export const SALE_ORDER_STATUS_SRC_DOC_TYPE = TxnStatusDocType.SALES_ORDER;
+// so_doc_type's allowed set, mirroring ck_so_doc_type (migration
+// 20260808132323) alongside the service's other CHECK mirrors. It lives here
+// rather than there because the cancel endpoint's srcModule vocabulary is built
+// from it, and one list is what keeps the two from drifting apart.
+export const SALE_ORDER_DOC_TYPES = ['SALES_ORDER', 'BOOKING', 'CUSTOM_ORDER'] as const;
 // What the cancel endpoint's srcModule query param accepts, in the order the
 // 400 message lists them. SALES is the module proper — the same token as the
-// status trail's, because a sale order is reachable from no other module;
-// SALES_ORDER is the DOC TYPE the downstream document stores beside the id
-// (sale_bill_item.sbi_src_doc_type / sale_bill.sb_src_doc_type), and the sales
-// line screen holds the order as that tuple, so it forwards the doc type here.
-// Both spell the same thing — this order — so both are honoured rather than
-// forcing every caller to carry a second constant just for this parameter.
-// Anything else still 400s naming the field, which is the point of validating
-// it at all: a screen passing its own module must not cancel someone's order.
+// status trail's, because a sale order is reachable from no other module — and
+// the rest are the doc types a sale_order row can carry. SALES_ORDER is the one
+// a downstream document stores beside the id (sale_bill_item.sbi_src_doc_type /
+// sale_bill.sb_src_doc_type), and the sales line screen holds the order as that
+// tuple, so it forwards the doc type where the parameter is named for the
+// module; BOOKING and CUSTOM_ORDER are sale_order rows just the same, and the
+// screen holding one forwards ITS so_doc_type by the identical path.
+//
+// Every one of them spells the same thing — this order — so all are honoured
+// rather than forcing every caller to carry a second constant just for this
+// parameter. A SALE_BILL or DELIVERY_CHALLAN still 400s naming the field, which
+// is the point of validating it at all: those are documents of their own with
+// their own endpoints, and neither may cancel an order through this one.
 export const SALE_ORDER_CANCEL_SRC_MODULES: readonly string[] = [
   SALE_ORDER_STATUS_SRC_MODULE,
-  SALE_ORDER_STATUS_SRC_DOC_TYPE,
+  ...SALE_ORDER_DOC_TYPES,
 ];
 // The token a DOWNSTREAM document writes into its own source-doc discriminator
 // to say "this line came from a sale order line". sale_bill_item carries it as
@@ -75,12 +85,23 @@ export const SALE_ORDER_CANCEL_SRC_MODULES: readonly string[] = [
 // Not to be confused with soi_src_doc_type on the order line itself, which
 // points the other way (UP the chain, at the quotation the order came from).
 export const SALE_ORDER_SRC_DOC_TYPE: string = SALE_ORDER_STATUS_SRC_DOC_TYPE;
-// One order line a downstream document draws down. soLineNo is soi_line_no, not
+// One order a downstream document points at. soLineNo is soi_line_no, not
 // soi_id: a bill references the line the operator sees on the printed order.
+//
+// It is null when the calling document names the ORDER but nothing finer — the
+// bill HEADER's sb_src_doc_id / sb_src_doc_year, which say which order the bill
+// was raised against without addressing a line of it. Such a reference asks for
+// the order to be re-derived from its bills and adds nothing to the set of
+// lines that must exist; the quantities still come from the bill LINES that
+// name a line, because a header reference carries no quantity of its own.
 export type SaleOrderLineRef = {
   soId: string;
   soAccYear: string;
-  soLineNo: number;
+  soLineNo: number | null;
+  // The columns THIS reference was read out of, so a rejection names the field
+  // the client actually sent — sbSrcDocId for a header reference, sbiSrcDocId
+  // for a line one.
+  fields: SaleOrderSrcDocFields;
 };
 // How the calling document names its own source-doc columns. Passed in so a
 // rejection raised by the fulfilment recompute comes back naming the field the
@@ -89,8 +110,10 @@ export type SaleOrderLineRef = {
 export type SaleOrderSrcDocFields = {
   docId: string;
   accYear: string;
-  lineNo: string;
-  qty: string;
+  // The line-number column, on a document that has one. A header-level
+  // reference names no line, so it has none — and, naming no line, can never
+  // raise the rejection this field exists to word.
+  lineNo?: string;
 };
 // What one order line's caches were left holding. Running totals across every
 // posted bill, not the delta this call applied — the caller is a bill save that
@@ -98,6 +121,10 @@ export type SaleOrderSrcDocFields = {
 export type SaleOrderFulfilledLine = {
   soiId: string;
   soiLineNo: number;
+  // Carried because the recompute can RAISE it: a bill that delivers more than
+  // the line ordered revises the order up to what actually went out, since
+  // ck_soi_qty_balance leaves no other way to record the extra.
+  soiOrderQty: number;
   soiDeliveredQty: number;
   soiCancelledQty: number;
   soiPendingQty: number;
@@ -223,4 +250,14 @@ export type SaleOrderCancelLinesResult = {
   soCancelledAmt: number;
   soPendingAmt: number;
   lines: SaleOrderCancelledLine[];
+};
+// What GET /sale-orders/pending-amount answers with: the money still
+// outstanding on the accounts.acc_bill_balance rows raised against one source
+// document. For an order that is its ADVANCE row — the customer's money the
+// company is still holding, no invoice having eaten it yet.
+//
+// The amount alone: the caller already holds the tuple it asked with, and the
+// screen reading this wants one figure to put in one box.
+export type SaleOrderSrcDocPendingAmount = {
+  ablPendingAmount: number;
 };

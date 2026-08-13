@@ -75,14 +75,20 @@ const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'] as const;
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'] as const;
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
 // How this module names the source-doc columns a line carries, handed to the
-// sale-order module so a rejection it raises (an unknown order line, a line
-// billed for more than it has left) comes back naming the field the client
-// actually sent instead of a token from that module's own vocabulary.
+// sale-order module so a rejection it raises (an unknown order line, an order
+// that is not there) comes back naming the field the client actually sent
+// instead of a token from that module's own vocabulary.
 const BILL_ITEM_SRC_DOC_FIELDS: SaleOrderSrcDocFields = {
   docId: 'sbiSrcDocId',
   accYear: 'sbiSrcDocYear',
   lineNo: 'sbiSrcDocLineNo',
-  qty: 'sbiBillQty',
+};
+// ... and the same for the HEADER's own reference. sale_bill says which order
+// the bill was raised against; it has no line-number column, because a header
+// names the document and nothing finer.
+const BILL_SRC_DOC_FIELDS: SaleOrderSrcDocFields = {
+  docId: 'sbSrcDocId',
+  accYear: 'sbSrcDocYear',
 };
 const BILL_VALUE_GUARDS = [
   { field: 'sbDocType', allowed: BILL_DOC_TYPES, nullable: false },
@@ -118,6 +124,7 @@ const BILL_OPTIONAL_FIELDS = [
   'sbSrcDocId',
   'sbSrcDocRefno',
   'sbSrcDocDate',
+  'sbSrcDocYear',
   'sbCustId',
   'sbCustName',
   'sbCustAddr',
@@ -545,10 +552,12 @@ export class BillService {
       });
       // ... and hands the quantity back to the sale order lines it was drawing
       // down. The header already says sbIsDeleted / CANCELLED at this point, so
-      // the order's recompute no longer counts a single one of these lines.
+      // the order's recompute no longer counts a single one of these lines. The
+      // header's own reference goes along too, so an order this bill named but
+      // drew nothing from is re-derived as well.
       await this.saleOrderService.syncOrderFulfilment(
         tx,
-        { refs: this.toOrderLineRefs(items), fields: BILL_ITEM_SRC_DOC_FIELDS },
+        { refs: [...this.toOrderHeaderRefs(existing), ...this.toOrderLineRefs(items)] },
         actor,
         modifiedOn,
       );
@@ -703,13 +712,14 @@ export class BillService {
           });
         }
         // Draws the billed quantity down off the sale order lines these lines
-        // came from. Run after the lines are written so the rows this very save
-        // inserted are part of the sum the order re-derives, and inside the same
-        // transaction so an order can never claim a delivery from a bill that
-        // rolled back. A bill that names no order line is a no-op.
+        // came from, plus the order the header itself names. Run after the lines
+        // are written so the rows this very save inserted are part of the sum
+        // the order re-derives, and inside the same transaction so an order can
+        // never claim a delivery from a bill that rolled back. A bill that names
+        // no order at all is a no-op.
         await this.saleOrderService.syncOrderFulfilment(
           tx,
-          { refs: this.toOrderLineRefs(items), fields: BILL_ITEM_SRC_DOC_FIELDS },
+          { refs: [...this.toOrderHeaderRefs(posted), ...this.toOrderLineRefs(items)] },
           createdBy,
           now,
         );
@@ -837,16 +847,22 @@ export class BillService {
             },
           });
         }
-        // Re-derives the fulfilment of every order line this bill touches, on
-        // both sides of the edit: what it points at now, and what it pointed at
-        // before. Run after the posting sync because only a POSTED bill counts
-        // towards an order — moving this bill out of POSTED is exactly what
-        // releases its quantity back to soi_pending_qty.
+        // Re-derives the fulfilment of every order this bill touches, on both
+        // sides of the edit: what it points at now, and what it pointed at
+        // before — headers included, so an edit that repoints sb_src_doc_id
+        // leaves the order it walked away from re-derived rather than frozen at
+        // the state this bill last put it in. Run after the posting sync because
+        // only a POSTED bill counts towards an order — moving this bill out of
+        // POSTED is exactly what releases its quantity back to soi_pending_qty.
         await this.saleOrderService.syncOrderFulfilment(
           tx,
           {
-            refs: [...this.toOrderLineRefs(priorItems), ...this.toOrderLineRefs(items)],
-            fields: BILL_ITEM_SRC_DOC_FIELDS,
+            refs: [
+              ...this.toOrderHeaderRefs(existing),
+              ...this.toOrderHeaderRefs(posted),
+              ...this.toOrderLineRefs(priorItems),
+              ...this.toOrderLineRefs(items),
+            ],
           },
           modifiedBy,
           now,
@@ -1175,44 +1191,11 @@ export class BillService {
         message: 'sbiBatchNo is required when sbiSplitNo is not 1',
       });
     }
-    // A line converted from a sale order must address ONE order line: the
-    // back-write finds it by (sbi_src_doc_id, sbi_src_doc_year,
-    // sbi_src_doc_line_no), so a reference missing any of the three would leave
-    // the order sitting at PENDING with nothing saying why. Judged on the
-    // resolved values — the payload's, falling back to the existing row's — the
-    // same way ck_sbi_batch_split is above, so an edit that touches only the
-    // quantity is not asked to resend the whole reference.
-    const srcDocType =
-      inputItem.sbiSrcDocType !== undefined
-        ? inputItem.sbiSrcDocType
-        : (existingItem?.sbiSrcDocType ?? null);
-    if (srcDocType === SALE_ORDER_SRC_DOC_TYPE) {
-      const srcDocId =
-        inputItem.sbiSrcDocId !== undefined
-          ? inputItem.sbiSrcDocId
-          : (existingItem?.sbiSrcDocId ?? null);
-      const srcDocYear =
-        inputItem.sbiSrcDocYear !== undefined
-          ? inputItem.sbiSrcDocYear
-          : (existingItem?.sbiSrcDocYear ?? null);
-      const srcDocLineNo =
-        inputItem.sbiSrcDocLineNo !== undefined
-          ? inputItem.sbiSrcDocLineNo
-          : (existingItem?.sbiSrcDocLineNo ?? null);
-      const required: [string, unknown][] = [
-        ['sbiSrcDocId', srcDocId],
-        ['sbiSrcDocYear', srcDocYear],
-        ['sbiSrcDocLineNo', srcDocLineNo],
-      ];
-      for (const [field, value] of required) {
-        if (value === null || value === '') {
-          details.push({
-            field,
-            message: `${field} is required when sbiSrcDocType is ${SALE_ORDER_SRC_DOC_TYPE}`,
-          });
-        }
-      }
-    }
+    // A sale-order reference is NOT checked for completeness here. A line that
+    // names SALES_ORDER but omits any of sbi_src_doc_id / _year / _line_no is
+    // saved as sent; toOrderLineRefs simply skips it, so the order it came from
+    // keeps whatever fulfilment state it already had instead of the save being
+    // rejected.
     if (details.length > 0) {
       throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Invalid bill item value', details);
     }
@@ -1240,9 +1223,37 @@ export class BillService {
         soId: item.sbiSrcDocId,
         soAccYear: item.sbiSrcDocYear.trim(),
         soLineNo: item.sbiSrcDocLineNo,
+        fields: BILL_ITEM_SRC_DOC_FIELDS,
       });
     }
     return refs;
+  }
+  // The order the BILL ITSELF was raised against — sb_src_doc_type /
+  // sb_src_doc_id / sb_src_doc_year, the header's own reference. It names no
+  // line and so draws nothing down; what it asks for is that the order be
+  // re-derived from its bills, which is what keeps so_status and
+  // so_fulfil_status honest on a bill that fills in only its header.
+  //
+  // Returned as an array so a caller can spread it: a walk-in bill, or one
+  // sourced from something that is not a sale order, contributes no reference
+  // at all.
+  private toOrderHeaderRefs(bill: SaleBill | null): SaleOrderLineRef[] {
+    if (!bill || bill.sbSrcDocType !== SALE_ORDER_SRC_DOC_TYPE) {
+      return [];
+    }
+    // Both halves of the order's primary key or nothing: an id without the year
+    // it lives in addresses no row, and sale_order is partitioned by that year.
+    if (!bill.sbSrcDocId || !bill.sbSrcDocYear) {
+      return [];
+    }
+    return [
+      {
+        soId: bill.sbSrcDocId,
+        soAccYear: bill.sbSrcDocYear.trim(),
+        soLineNo: null,
+        fields: BILL_SRC_DOC_FIELDS,
+      },
+    ];
   }
   private requireItemField(value: string | undefined, field: string): string {
     if (!value) {

@@ -73,13 +73,15 @@ and `tenders[]` the tender-detail module's
 | --- | --- | --- |
 | `POST` | `/create` | Create **or** update a sale order, chosen by `soId` presence in the body. |
 | `GET` | `/get` | Fetch one active order by `soId` (query param), including its active line items, applied charges and tender lines. |
+| `GET` | `/pending-amount` | `acc_bill_balance.abl_pending_amount` — and nothing else — for the bill rows raised against one source document, addressed by the `(ablSrcDocType, ablSrcDocId, ablSrcAccYear)` tuple. For an order that is the advance it still holds. |
 | `PUT` | `/cancel-lines` | Cancel the remaining open quantity of one order line (`srcDocId` = `soi_id`) or of the whole order (`srcDocId` = `so_id`), addressed by the `(srcModule, srcDocId, srcAccYear)` tuple a downstream document holds it as. |
 | `DELETE` | `/delete` | Soft-delete an order by `soId` (query param), cascading to its line items, applied charges and tender lines. |
 
 `GET /get` and `DELETE /delete` both additionally require `soCompanyId`, `soBranchId` and
 `soAccYear` as query parameters — the row is looked up by all four together, so an order can only
-be read or deleted from within its own company/branch/year scope. `PUT /cancel-lines` is the
-exception: it is addressed by the primary key alone (see below).
+be read or deleted from within its own company/branch/year scope. `PUT /cancel-lines` and
+`GET /pending-amount` are the exceptions: both are addressed by the document tuple alone (see
+below).
 
 ### Create / update semantics
 
@@ -304,6 +306,42 @@ than the raw `ck_abl_settled` 23514. The seeded allocation is deliberately not c
 fully refunded advance is "allocated" to its own value with no adjustment existing, and must still
 be deletable.
 
+### Reading what is still outstanding (`GET /pending-amount`)
+
+The write side above is what the save does; `GET /pending-amount` is how a screen asks the same
+table what is **left**. It takes the source-document tuple the bill row carries and answers with
+`abl_pending_amount` alone:
+
+```
+GET /v1/sale-orders/pending-amount?ablSrcDocType=SALES_ORDER
+                                  &ablSrcDocId=<so_id>
+                                  &ablSrcAccYear=2026-2027
+
+{ "success": true, "message": "Pending amount fetched successfully",
+  "data": { "ablPendingAmount": 5000 } }
+```
+
+- **Why not `so_advance_balance_amt`.** The header column is a cache this module writes on save.
+  `abl_pending_amount` is a **generated** column (`bill − alloc − disc − writeoff`) that moves the
+  moment an `acc_bill_adjustment` lands — an invoice eating the advance, a refund — with no save on
+  the order at all. Accounts settle against the bill row, so "how much is left" has to be asked of
+  the bill row.
+- **No bill-year filter.** Only the three source columns and `abl_is_deleted = false` are matched.
+  A bill lives in the partition of the year it was **raised** in and is never carried forward, which
+  is not necessarily the year of the document it points at — an advance adjusted in the next FY is
+  the ordinary case — so the read spans every partition on `ix_abl_src_doc`, exactly as the party
+  credit summary does.
+- **Summed, not single-row.** An order carries at most one live `ADVANCE` row today, but every row
+  against one source document sits on the same side of the books (an order's advances are all `CR`),
+  so the total is the amount outstanding however many rows exist.
+- **0, not 404.** An order that took no advance, or one whose advance has been adjusted away in
+  full, is an ordinary state; a screen asking "how much is left" wants the zero.
+- `ablSrcDocType` is normalised the way `PUT /cancel-lines` normalises its `srcModule` — trimmed,
+  uppercased, separators to `_`, so `sales order` and `Sales-Order` both name `SALES_ORDER`. An
+  empty one is a **400** rather than a filter that would match every row having no source document,
+  and `ablSrcAccYear` must be `YYYY-YYYY` or it is a 400 too — a malformed year would otherwise
+  match nothing and read back as an innocent "nothing pending".
+
 ### Cheque register (`acc_pdc_register`)
 
 A cheque is the one tender that does not end when the sale does. The receipt says the money came
@@ -372,7 +410,8 @@ already delivered stays on the record. This is what the **sales line** screen ca
 operator decides the balance of an order will never be delivered — soft-deleting the document
 would be wrong for an order that genuinely part-delivered.
 
-**Addressing.** The three query params are `srcModule` (`SALES` or `SALES_ORDER`), `srcDocId` and
+**Addressing.** The three query params are `srcModule` (`SALES`, `SALES_ORDER`, `BOOKING` or
+`CUSTOM_ORDER`), `srcDocId` and
 `srcAccYear` — the same source-document tuple a sale bill carries in `sb_src_doc_type` /
 `sb_src_doc_id`, because the calling screen knows the order only as its source. No `soCompanyId` /
 `soBranchId` is required: `(so_id, so_acc_year)` **is** the partitioned table's primary key, so it
@@ -393,12 +432,14 @@ whole-order path still costs one read. A soft-deleted line resolves to nothing (
 widening the call to its order. Step 2 below recomputes the header from **all** the order's lines
 either way — that is what leaves a one-line cancel showing as still-open rather than settled.
 
-`srcModule` takes either spelling because the tuple a downstream document stores discriminates by
-**doc type** (`SALES_ORDER`), not module (`SALES`), and the sales line forwards what it holds. Case
-and separators are normalised before matching, so `sales order` and `Sales-Order` both land on
-`SALES_ORDER`. The word itself is still validated rather than ignored, so a screen that passes its
-own module blindly gets a 400 naming the field instead of cancelling an order it did not mean to
-address.
+`srcModule` takes any of those spellings because the tuple a downstream document stores discriminates
+by **doc type** (`SALES_ORDER`), not module (`SALES`), and the sales line forwards what it holds;
+`BOOKING` and `CUSTOM_ORDER` are the other two `so_doc_type` values, forwarded the same way by a
+screen whose order carries one. Case and separators are normalised before matching, so `sales order`
+and `Sales-Order` both land on `SALES_ORDER`. The word itself is still validated rather than ignored:
+a bill or delivery-challan token (`SALE_BILL`, `DC`) is a 400 naming the field — those are documents
+of their own, with their own endpoints — as is a screen passing its own module blindly, instead of
+cancelling an order nobody meant to address.
 
 **Body.** Optional `soiCancelReason` (≤ 250 chars) — why the balance is being written off. One
 reason serves both places it is recorded: `sale_order_item.soi_cancel_reason` on every line the
@@ -485,6 +526,13 @@ columns:
 | `sbi_src_doc_line_no` | `soi_line_no` (the printed line, not `soi_id`) |
 | `sbi_src_doc_refno` | `so_order_refno`, carried for display / reprint only — nothing resolves off it |
 
+The bill **header** carries the same reference one grain coarser — `sb_src_doc_type` /
+`sb_src_doc_id` / `sb_src_doc_year`, which name the order the bill as a whole was raised against.
+It addresses no line and so draws nothing down; what it does is put that order into the recompute,
+so a bill that fills in only its header still leaves `so_status` / `so_fulfil_status` telling the
+truth. The quantities always come from the bill **lines** — a header reference carries none. An
+order named there that no longer exists is a 400 naming `sbSrcDocId`, the same as for a line.
+
 The arrow points **up** the chain, always. `soi_src_doc_*` on the order line is the same idea one
 level higher — it names the *quotation* the order came from — and is never overwritten by a bill.
 Reading "which bills delivered this order" is a query over `sale_bill_item`, which is exactly what
@@ -497,8 +545,23 @@ this method does.
 | `soi_delivered_qty` | Σ `sbi_bill_qty` over every **posted** bill line pointing at this order line |
 | `soi_billed_amt` | Σ `sbi_net_amt` over the same rows |
 | `soi_pending_qty` | `soi_order_qty − delivered − cancelled`, which is what `ck_soi_qty_balance` demands |
+| `soi_order_qty` | **only ever raised, and only by an over-delivery** — see below |
 | `soi_cancelled_qty` | **untouched** — writing off what a customer no longer wants is `PUT /cancel-lines`' decision |
 | `soi_line_status` | `PENDING` nothing yet · `DELIVERED` all of it · `CANCELLED` all written off · `PARTIAL` anything in between |
+
+**Over-delivery revises the order, it is not refused.** When `delivered + cancelled` comes out above
+`soi_order_qty` — the customer took more at the counter, or the order was keyed short —
+`soi_order_qty` becomes `delivered + cancelled` and nothing is left pending, because
+`ck_soi_qty_balance` leaves nowhere else to record what physically moved. It moves **upwards only**,
+and only from a bill: a bill for *less* than the line ordered is a part delivery, and the shortfall
+stays in `soi_pending_qty` where the pending-orders report expects it. Both quantities are written
+in one statement, so the CHECK never sees a half-applied line.
+
+The revision **sticks**. Nothing keeps the quantity the line was originally keyed with, so retiring
+the bill that caused the raise releases the *revised* quantity back into `soi_pending_qty` — a line
+raised 10 → 12 whose bill is then deleted sits at 12 pending, not 10. This is the one place the
+recompute is not fully reversible; `PUT /cancel-lines` is how the difference is written off if the
+customer never wanted it.
 
 The header then goes through the same `summariseOrderLines` / `deriveOrderStatus` pair the cancel
 endpoint uses, so both paths land on one definition of `so_fulfil_status` / `so_status` /
@@ -511,7 +574,9 @@ quantity back into `soi_pending_qty` on the very next save.
 **Which lines are recomputed.** The ones the calling bill points at *now*, the ones it pointed at
 *before* the save (so a line the payload drops or repoints hands the abandoned order line its
 quantity back), and any line that still carries billed quantity. Everything else is left exactly as
-it stands — a quantity cancelled by hand is not this method's to reinterpret.
+it stands — a quantity cancelled by hand is not this method's to reinterpret. A **header-only**
+reference names no line at all, so it recomputes exactly the lines of that order which carry billed
+quantity, and invents nothing for the rest.
 
 **Idempotent and self-healing**, because it re-sums rather than increments: a repeat save, a
 re-post, a retried transaction all land on the same numbers, and a cache the client had posted
@@ -522,12 +587,11 @@ order can never claim a delivery from a bill that rolled back.
 
 | Cause | Field |
 | --- | --- |
-| Order id / year names no active order | `sbiSrcDocId` |
+| Order id / year names no active order | `sbiSrcDocId`, or `sbSrcDocId` when the header is what named it |
 | Line number is not on that order | `sbiSrcDocLineNo` |
-| Billed + cancelled exceeds the ordered quantity | `sbiBillQty` |
 
-Over-billing is refused rather than clamped: clamping would break `ck_soi_qty_balance` and the save
-would come back a raw Postgres `23514` instead of a message naming the line.
+Each rejection is worded from the columns the reference was actually read out of, so a header-level
+reference is never reported against a line-level field the client never sent.
 
 **Status trail.** A real status move appends one step (`CONVERTED`, or `CANCELLED` when the order
 ends up there) with the remark *"Order fulfilment recomputed from its sale bills"*. A save that

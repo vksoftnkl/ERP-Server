@@ -732,6 +732,23 @@ export class SaleOrderSuccessDeleteDto {
   @ApiProperty({ type: SaleOrderDeleteResultDto })
   data!: SaleOrderDeleteResultDto;
 }
+export class SaleOrderPendingAmountResultDto {
+  @ApiProperty({
+    example: 5000,
+    description:
+      'accounts.acc_bill_balance.abl_pending_amount summed over the live rows raised against the ' +
+      'source document — for an order, the advance still held. 0 when the document has no bill row',
+  })
+  ablPendingAmount!: number;
+}
+export class SaleOrderSuccessPendingAmountDto {
+  @ApiProperty({ example: true })
+  success!: true;
+  @ApiProperty({ example: 'Pending amount fetched successfully' })
+  message!: string;
+  @ApiProperty({ type: SaleOrderPendingAmountResultDto })
+  data!: SaleOrderPendingAmountResultDto;
+}
 export class SaleOrderCancelledLineDto {
   @ApiProperty({ format: 'uuid' })
   soiId!: string;

@@ -2193,9 +2193,31 @@ describe('BillService', () => {
       expect(prisma.saleOrder.updateMany).not.toHaveBeenCalled();
     });
 
-    it('refuses a bill line that exceeds what the order line has left', async () => {
-      // 6 of the 10 were already written off, so only 4 remain — this bill
-      // wants 5.
+    // More went out than was ever ordered. ck_soi_qty_balance leaves nowhere to
+    // put the extra, so the ORDER is revised up to what the bill says actually
+    // moved rather than the delivery being refused, and the line closes.
+    it('raises the ordered quantity when the bill delivers more than the line ordered', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 12, 1200)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiOrderQty: 12,
+        soiDeliveredQty: 12,
+        soiPendingQty: 0,
+        soiLineStatus: 'DELIVERED',
+      });
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { soFulfilStatus: 'COMPLETED', soDeliveredItems: 1 },
+      });
+    });
+
+    // Same revision when it is the cancelled quantity the bill outruns: 6 of the
+    // 10 were written off, leaving 4, and this bill takes 5. The write-off is
+    // not reinterpreted — 5 delivered + 6 cancelled is what the line now ordered.
+    it('revises the order up rather than refusing a bill that outruns what is left', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([
         makeOrderItem({ soiCancelledQty: 6, soiPendingQty: 4 }),
       ]);
@@ -2203,9 +2225,32 @@ describe('BillService', () => {
         billedAgainstOrder: [billedLine(1, 5, 500)],
       });
 
-      await expect(service.save(convertedDto())).rejects.toBeInstanceOf(BadRequestException);
-      expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
-      expect(prisma.saleOrder.updateMany).not.toHaveBeenCalled();
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiOrderQty: 11,
+        soiDeliveredQty: 5,
+        soiPendingQty: 0,
+        // Part of it went out and the rest was written off, which is not the
+        // same fact as a line every ordered unit left the godown for.
+        soiLineStatus: 'PARTIAL',
+      });
+    });
+
+    // A short delivery is NOT a revision: the line ordered 10 and 4 went out, so
+    // the other 6 stay pending. Only an over-delivery moves soi_order_qty.
+    it('leaves the ordered quantity alone when the bill delivers less', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 4, 400)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiOrderQty: 10,
+        soiDeliveredQty: 4,
+        soiPendingQty: 6,
+      });
     });
 
     it('refuses a bill line pointing at a line number the order does not have', async () => {
@@ -2228,23 +2273,92 @@ describe('BillService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    it('refuses a source reference that names an order but not a line of it', async () => {
-      await expect(
-        service.save(
-          convertedDto({
-            items: [
-              {
-                sbiItemId: ITEM_MASTER_ID,
-                sbiItemUnitId: ITEM_UNIT_ID,
-                sbiGodownId: GODOWN_ID,
-                sbiSrcDocType: 'SALES_ORDER',
-                sbiSrcDocId: ORDER_ID,
-              },
-            ],
-          } as Partial<SaveBillDto>),
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
+    // A reference missing the year or the line number cannot address an order
+    // line, but it is not refused: the bill saves as sent and the order module
+    // is simply never consulted.
+    it('saves a source reference that names an order but not a line of it', async () => {
+      mockBillItemReads({ billedAgainstOrder: [] });
+
+      await service.save(
+        convertedDto({
+          items: [
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiSrcDocType: 'SALES_ORDER',
+              sbiSrcDocId: ORDER_ID,
+            },
+          ],
+        } as Partial<SaveBillDto>),
+      );
+
       expect(prisma.saleOrder.findFirst).not.toHaveBeenCalled();
+      expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+    });
+
+    // The HEADER's own reference. sb_src_doc_id says which order the bill was
+    // raised against; it names no line and so draws nothing down, but it does
+    // ask for the order to be re-derived — which is what keeps so_status honest
+    // on a bill that fills in only its header.
+    it('recomputes an order the bill names on its header alone', async () => {
+      prisma.saleBill.create.mockReset();
+      prisma.saleBill.create.mockResolvedValue(
+        makeBill({
+          sbStatus: 'POSTED',
+          sbBillAmt: new Prisma.Decimal(400),
+          sbSrcDocType: 'SALES_ORDER',
+          sbSrcDocId: ORDER_ID,
+          sbSrcDocYear: ACC_YEAR,
+        } as unknown as Partial<SaleBill>),
+      );
+      // A POSTED bill is written twice — the row, then its voucher id — and the
+      // reference is read off the second read-back. Real Prisma returns the
+      // whole row there; the shared mock echoes only what that write sent, so
+      // the header's reference is restated here.
+      prisma.saleBill.update.mockResolvedValueOnce(
+        makeBill({
+          sbStatus: 'POSTED',
+          sbBillAmt: new Prisma.Decimal(400),
+          sbSrcDocType: 'SALES_ORDER',
+          sbSrcDocId: ORDER_ID,
+          sbSrcDocYear: ACC_YEAR,
+        } as unknown as Partial<SaleBill>),
+      );
+      // Standing against the order from an earlier bill — this save contributes
+      // no line of its own, and the order's caches have gone stale.
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 4, 400)],
+      });
+
+      await service.save(
+        baseDto({
+          sbStatus: 'POSTED',
+          sbBillAmt: 400,
+          sbSrcDocType: 'SALES_ORDER',
+          sbSrcDocId: ORDER_ID,
+          sbSrcDocYear: ACC_YEAR,
+          items: [
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiBillQty: 4,
+              sbiNetAmt: 400,
+            },
+          ],
+        } as Partial<SaveBillDto>),
+      );
+
+      expect(prisma.saleOrder.findFirst).toHaveBeenCalled();
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiDeliveredQty: 4,
+        soiPendingQty: 6,
+        soiLineStatus: 'PARTIAL',
+      });
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { soFulfilStatus: 'PARTIAL' },
+      });
     });
 
     it('never touches the quantity the cancel endpoint wrote off', async () => {
