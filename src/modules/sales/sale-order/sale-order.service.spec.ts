@@ -1721,7 +1721,7 @@ describe('SaleOrderService', () => {
         } as Partial<SaleOrderItem>),
       ]);
       const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {
-        soCancelRemarks: 'Customer withdrew the balance',
+        soiCancelReason: 'Customer withdrew the balance',
       });
       expect(lineUpdate(LINE_A_ID)).toEqual(
         containing({ soiCancelledQty: 10, soiPendingQty: 0, soiLineStatus: 'CANCELLED' }),
@@ -1752,6 +1752,35 @@ describe('SaleOrderService', () => {
           remarks: 'Customer withdrew the balance',
         }),
       );
+    });
+
+    // The one reason the caller states lands in both places: the line column
+    // and the trail step asserted above.
+    it('writes soiCancelReason on every line it closes out, and only when given', async () => {
+      const openLine = {
+        soiOrderQty: new Prisma.Decimal('10.000'),
+        soiDeliveredQty: new Prisma.Decimal('0.000'),
+        soiCancelledQty: new Prisma.Decimal('0.000'),
+        soiPendingQty: new Prisma.Decimal('10.000'),
+        soiNetAmt: new Prisma.Decimal('1000.00'),
+      } as Partial<SaleOrderItem>;
+      prisma.saleOrderItem.findMany.mockResolvedValue([makeItem(openLine)]);
+      await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {
+        soiCancelReason: 'Item discontinued',
+      });
+      expect(lineUpdate(LINE_A_ID)).toEqual(
+        containing({ soiCancelReason: 'Item discontinued', soiLineStatus: 'CANCELLED' }),
+      );
+      expect(appendTxnStatusLog).toHaveBeenCalledWith(
+        expect.anything(),
+        containing({ remarks: 'Item discontinued' }),
+      );
+      // Omitted, the column is left alone rather than blanked — a line
+      // cancelled earlier keeps the reason it was given then.
+      prisma.saleOrderItem.update.mockClear();
+      prisma.saleOrderItem.findMany.mockResolvedValue([makeItem(openLine)]);
+      await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(lineUpdate(LINE_A_ID)).not.toHaveProperty('soiCancelReason');
     });
 
     // The headline case from the requirement: ordered 10, delivered 2, so the

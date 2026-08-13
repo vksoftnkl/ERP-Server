@@ -309,6 +309,12 @@ export class SaleOrderItemPayloadDto {
   soiSchemeName!: string | null;
   @ApiPropertyOptional({ maxLength: 250, nullable: true })
   soiRemarks!: string | null;
+  @ApiPropertyOptional({
+    maxLength: 250,
+    nullable: true,
+    description: 'Why the line was cancelled — written by PUT /sale-orders/cancel-lines',
+  })
+  soiCancelReason!: string | null;
   @ApiProperty()
   soiIsDeleted!: boolean;
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })

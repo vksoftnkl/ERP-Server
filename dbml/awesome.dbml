@@ -3499,7 +3499,9 @@ Table sale_bill_item {
   sbiSplitNo Int [not null, default: 1]
   sbiSrcDocType String
   sbiSrcDocId String
+  sbiSrcDocYear String
   sbiSrcDocRefno String
+  sbiSrcDocLineNo Int
   sbiSrcItemQty Decimal
   sbiSrcFreeQty Decimal
   sbiItemId String [not null]
@@ -3902,6 +3904,7 @@ Table sale_order_item {
   soiSchemeId String
   soiSchemeName String
   soiRemarks String
+  soiCancelReason String
   soiIsDeleted Boolean [not null, default: false]
   soiSyncDate DateTime
   soiCreatedOn DateTime [default: `now()`, not null]

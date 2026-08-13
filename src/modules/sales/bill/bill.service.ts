@@ -199,7 +199,9 @@ const BILL_OPTIONAL_FIELDS = [
 const BILL_ITEM_OPTIONAL_FIELDS = [
   'sbiSrcDocType',
   'sbiSrcDocId',
+  'sbiSrcDocYear',
   'sbiSrcDocRefno',
+  'sbiSrcDocLineNo',
   'sbiSrcItemQty',
   'sbiSrcFreeQty',
   'sbiToBaseFactor',

@@ -5622,7 +5622,9 @@ model SaleBillItem {
   // Which line of which source document this came from (order/quotation).
   sbiSrcDocType      String?   @db.VarChar(30) @map("sbi_src_doc_type")
   sbiSrcDocId        String?   @db.Uuid @map("sbi_src_doc_id")
+  sbiSrcDocYear      String?   @db.Char(9) @map("sbi_src_doc_year")
   sbiSrcDocRefno     String?   @db.VarChar(100) @map("sbi_src_doc_refno")
+  sbiSrcDocLineNo    Int?      @map("sbi_src_doc_line_no")
   sbiSrcItemQty      Decimal?  @db.Decimal(15, 3) @map("sbi_src_item_qty")
   sbiSrcFreeQty      Decimal?  @db.Decimal(15, 3) @map("sbi_src_free_qty")
   // What is being sold
@@ -6181,6 +6183,7 @@ model SaleOrderItem {
   soiSchemeId         String?   @db.Uuid @map("soi_scheme_id")
   soiSchemeName       String?   @db.VarChar(150) @map("soi_scheme_name")
   soiRemarks          String?   @db.VarChar(250) @map("soi_remarks")
+  soiCancelReason     String?   @db.VarChar(250) @map("soi_cancel_reason")
   // Audit
   soiIsDeleted        Boolean   @default(false) @map("soi_is_deleted")
   soiSyncDate         DateTime? @db.Timestamptz(6) @map("soi_sync_date")

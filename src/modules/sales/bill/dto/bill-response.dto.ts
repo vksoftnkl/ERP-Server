@@ -41,8 +41,12 @@ export class BillItemPayloadDto {
   sbiSrcDocType!: string | null;
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   sbiSrcDocId!: string | null;
+  @ApiPropertyOptional({ minLength: 9, maxLength: 9, nullable: true })
+  sbiSrcDocYear!: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   sbiSrcDocRefno!: string | null;
+  @ApiPropertyOptional({ nullable: true })
+  sbiSrcDocLineNo!: number | null;
   @ApiPropertyOptional({ nullable: true })
   sbiSrcItemQty!: number | null;
   @ApiPropertyOptional({ nullable: true })

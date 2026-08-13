@@ -846,6 +846,12 @@ export class SaleOrderService {
       // it at soi_order_qty, which does not move here, and releasing a
       // reservation is inventory's decision rather than this endpoint's.
       const cancelledLines: SaleOrderCancelledLine[] = [];
+      // One reason, both places it belongs: soi_cancel_reason on each line this
+      // call closes out, and the status-trail step below. Omitted is not the
+      // same as cleared — the key is left off the update entirely when the
+      // caller said nothing, so a line cancelled in an earlier call keeps the
+      // reason it was given then.
+      const cancelReason = cancelDto?.soiCancelReason;
       for (const settled of settledLines) {
         if (settled.moved <= 0) {
           continue;
@@ -859,6 +865,7 @@ export class SaleOrderService {
           soiCancelledQty: settled.cancelled,
           soiPendingQty: 0,
           soiLineStatus,
+          ...(cancelReason !== undefined ? { soiCancelReason: cancelReason } : {}),
           soiModifiedOn: now,
           soiModifiedBy: actor,
         };
@@ -943,7 +950,7 @@ export class SaleOrderService {
             event: TxnStatusEvent.CANCELLED,
             fromStatus: existing.soStatus,
             toStatus: soStatus,
-            remarks: cancelDto?.soCancelRemarks,
+            remarks: cancelReason,
           },
           actor,
           now,

@@ -130,6 +130,7 @@ model SaleOrderItem {
   soiSchemeId         String?   @db.Uuid @map("soi_scheme_id")
   soiSchemeName       String?   @db.VarChar(150) @map("soi_scheme_name")
   soiRemarks          String?   @db.VarChar(250) @map("soi_remarks")
+  soiCancelReason     String?   @db.VarChar(250) @map("soi_cancel_reason")
   // Audit
   soiIsDeleted        Boolean   @default(false) @map("soi_is_deleted")
   soiSyncDate         DateTime? @db.Timestamptz(6) @map("soi_sync_date")

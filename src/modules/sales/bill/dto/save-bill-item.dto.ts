@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableDateString,
+  NullableInteger,
   NullableNumber,
   NullableStringStrict,
   NullableUuid,
@@ -54,9 +55,23 @@ export class SaveBillItemDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
   sbiSrcDocId?: string | null;
+  @ApiPropertyOptional({
+    minLength: 9,
+    maxLength: 9,
+    nullable: true,
+    description: "The source document's OWN accounting year",
+  })
+  @NullableStringStrict(9)
+  sbiSrcDocYear?: string | null;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableStringStrict(100)
   sbiSrcDocRefno?: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The line number this came from on the source document',
+  })
+  @NullableInteger()
+  sbiSrcDocLineNo?: number | null;
   @ApiPropertyOptional({ nullable: true })
   @NullableNumber()
   sbiSrcItemQty?: string | number | null;

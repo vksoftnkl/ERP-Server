@@ -380,11 +380,15 @@ primary key, so it already addresses exactly one row, and the company/branch are
 `srcModule` is validated rather than ignored, so a screen that passes its own module blindly gets a
 400 naming the field.
 
-**Body.** Optional `soCancelRemarks` (≤ 500 chars) — why the balance is being written off.
-`sale_order` has no cancellation column to hold it, so it goes to the status trail.
+**Body.** Optional `soiCancelReason` (≤ 250 chars) — why the balance is being written off. One
+reason serves both places it is recorded: `sale_order_item.soi_cancel_reason` on every line the
+call closes out, and the status trail, which is the only place the *header's* reason can live
+(`sale_order` has no cancellation column). Omitted, the line column is left untouched rather than
+blanked, so a line cancelled by an earlier call keeps the reason it was given then.
 
 **Step 1 — the lines.** Every active line with `soi_pending_qty > 0` gets
-`soi_cancelled_qty += soi_pending_qty`, `soi_pending_qty = 0`, and a line status of:
+`soi_cancelled_qty += soi_pending_qty`, `soi_pending_qty = 0`, `soi_cancel_reason` (when the caller
+stated one), and a line status of:
 
 | Line had delivered | New `soi_line_status` |
 | --- | --- |
@@ -433,7 +437,7 @@ until this endpoint existed. This is what makes `PUT` the honest verb; it is als
 
 **Status trail.** A real status *move* appends one `CANCELLED` step to `public.txn_status_log` via
 the shared `appendTxnStatusLog` helper (`SALES` / `SALES_ORDER`, partitioned by the order's own
-`so_acc_year`), carrying `soCancelRemarks`; `ck_tsl_reason_required` means an omitted reason is
+`so_acc_year`), carrying `soiCancelReason`; `ck_tsl_reason_required` means an omitted reason is
 recorded as *"No reason recorded"* rather than failing the call. A call that changes no status adds
 nothing — that is `audit.audit_log`'s job. **This is the module's only status-trail writer so far**;
 create / update / delete do not append steps yet.
