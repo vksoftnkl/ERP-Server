@@ -363,8 +363,14 @@ export class QuotationItemPayloadDto {
   sqiRateDiff!: number;
   @ApiProperty()
   sqiHasFreight!: boolean;
-  @ApiPropertyOptional({ maxLength: 50, nullable: true })
-  sqiItemSize!: string | null;
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description: 'Free-text dimension the operator typed, stored verbatim',
+  })
+  sqiSize!: string | null;
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  sqiSizeUom!: string | null;
   @ApiProperty()
   sqiIsDeleted!: boolean;
   @ApiPropertyOptional({ nullable: true, format: 'date-time' })

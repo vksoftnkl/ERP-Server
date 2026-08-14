@@ -101,6 +101,19 @@ export class SaveBillItemDto {
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   @NullableStringStrict(100)
   sbiEanCode?: string | null;
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description:
+      'Free-text dimension the operator typed, e.g. "12*6*2*10" — stored verbatim so a ' +
+      'reprint shows the size the customer agreed to. Like every other line snapshot, the ' +
+      'caller sends it; billing against a sale order does not copy soiSize across',
+  })
+  @NullableStringStrict(50)
+  sbiSize?: string | null;
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableStringStrict(20)
+  sbiSizeUom?: string | null;
   @ApiProperty({ format: 'uuid', description: 'The inventory godown the stock was taken from' })
   @RequiredUuid()
   sbiGodownId!: string;

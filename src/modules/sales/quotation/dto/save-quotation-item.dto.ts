@@ -337,7 +337,17 @@ export class SaveQuotationItemDto {
   @OptionalBoolean()
   sqiHasFreight?: boolean;
 
-  @ApiPropertyOptional({ maxLength: 50, nullable: true })
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description:
+      'Free-text dimension the operator typed, e.g. "12*6*2*10" — stored verbatim so a ' +
+      'reprint shows the size the customer was quoted',
+  })
   @NullableStringStrict(50)
-  sqiItemSize?: string | null;
+  sqiSize?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  @NullableStringStrict(20)
+  sqiSizeUom?: string | null;
 }

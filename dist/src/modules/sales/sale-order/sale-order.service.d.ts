@@ -1,0 +1,64 @@
+import { Prisma, SaleOrder } from '@prisma/client';
+import { PrismaService } from '../../../database/prisma/prisma.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { SaveSaleOrderDto } from './dto/save-sale-order.dto';
+import { SaleOrderCancelLinesResult, SaleOrderFulfilmentResult, SaleOrderLineRef, SaleOrderPayload, SaleOrderSrcDocPendingAmount } from './types/sale-order-api.types';
+import { CancelSaleOrderLinesDto } from './dto/cancel-sale-order-lines.dto';
+import { ChargeDetailService } from '../../master/charge-detail/charge-detail.service';
+import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare class SaleOrderService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly requestContextService;
+    private readonly chargeDetailService;
+    private readonly tenderDetailService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService, chargeDetailService: ChargeDetailService, tenderDetailService: TenderDetailService);
+    save(saveOrderDto: SaveSaleOrderDto): Promise<SaleOrderPayload>;
+    getById(soId: string, soCompanyId: string, soBranchId: string, soAccYear: string): Promise<SaleOrderPayload>;
+    getSrcDocPendingAmount(ablSrcDocType: string, ablSrcDocId: string, ablSrcAccYear: string): Promise<SaleOrderSrcDocPendingAmount>;
+    softDelete(soId: string, soCompanyId: string, soBranchId: string, soAccYear: string): Promise<{
+        soId: string;
+        deleted: true;
+    }>;
+    cancelOpenLines(srcModule: string, srcDocId: string, srcAccYear: string, cancelDto: CancelSaleOrderLinesDto): Promise<SaleOrderCancelLinesResult>;
+    cancelOpenLinesForRefs(tx: Prisma.TransactionClient, refs: SaleOrderLineRef[], cancelReason: string | null | undefined, actor: string, now: Date): Promise<SaleOrderCancelLinesResult[]>;
+    cancelOrderOpenLines(tx: Prisma.TransactionClient, request: {
+        order: SaleOrder;
+        srcAccYear: string;
+        targetLineId: string | null;
+        cancelReason?: string | null;
+        actor: string;
+        now: Date;
+    }): Promise<SaleOrderCancelLinesResult>;
+    private summariseOrderLines;
+    private deriveLineStatus;
+    private deriveOrderStatus;
+    syncOrderFulfilment(tx: Prisma.TransactionClient, request: {
+        refs: SaleOrderLineRef[];
+    }, actor: string, now: Date): Promise<SaleOrderFulfilmentResult[]>;
+    private resolveOrderRefs;
+    private syncOneOrderFulfilment;
+    private logStatusStep;
+    private createOrder;
+    private updateOrder;
+    private syncItems;
+    private softDeleteItems;
+    private syncAdvanceVoucher;
+    private describeDuplicate;
+    private ensureOrderValuesAreAllowed;
+    private ensureAdvanceRollupsAreConsistent;
+    private deriveAdvanceBalance;
+    private ensureOrderItemValuesAreAllowed;
+    private applyDerivedItemQuantities;
+    private requireItemField;
+    private toChargeScope;
+    private toTenderScope;
+    private applyOptionalFields;
+    private resolveGodownNames;
+    private resolveDisplayNames;
+    private toPayload;
+    private toItemPayload;
+    private withChargeNames;
+    private withTenderNames;
+}

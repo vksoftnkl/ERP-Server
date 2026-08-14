@@ -1896,10 +1896,11 @@ describe('SaleOrderService', () => {
       expect(lineUpdate(LINE_A_ID)).not.toHaveProperty('soiCancelReason');
     });
 
-    // The headline case from the requirement: ordered 10, delivered 2, so the
-    // remaining 8 is written off and the line reads PARTIAL rather than
-    // CANCELLED — part of it did leave the godown.
-    it('leaves a part-delivered line PARTIAL and the order PARTIAL', async () => {
+    // Ordered 10, delivered 2, so the remaining 8 is written off. Nothing is
+    // outstanding on the line afterwards, so it is one of so_delivered_items and
+    // the order — its only line — is COMPLETED rather than left at PARTIAL
+    // waiting on 8 units nobody is going to deliver.
+    it('settles a part-delivered line and completes the order', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([
         makeItem({
           soiOrderQty: new Prisma.Decimal('10.000'),
@@ -1915,20 +1916,24 @@ describe('SaleOrderService', () => {
       expect(result.lines).toEqual([containing({ soiLineStatus: 'PARTIAL' })]);
       expect(headerUpdate()).toEqual(
         containing({
-          soStatus: 'PARTIAL',
-          soFulfilStatus: 'PARTIAL',
+          soStatus: 'COMPLETED',
+          soFulfilStatus: 'COMPLETED',
           // 8 of 10 units of a 1000.00 line.
           soCancelledAmt: 800,
           soPendingAmt: 0,
           soBilledAmt: 200,
-          // Delivered 2 of 10 is NOT a fully delivered line.
-          soDeliveredItems: 0,
+          // Delivered 2 and wrote off the rest: the line has nothing left to
+          // settle, so it counts.
+          soDeliveredItems: 1,
         }),
       );
       expect(result).toEqual(containing({ cancelledLines: 1, cancelledQty: 8 }));
     });
 
-    it('counts only fully delivered lines in soDeliveredItems and leaves them untouched', async () => {
+    // so_delivered_items is every SETTLED line: the one that shipped whole and
+    // the one this call writes off both stop being outstanding, so the order has
+    // nothing left and reads COMPLETED. The delivered line is not rewritten.
+    it('counts delivered and cancelled lines alike in soDeliveredItems', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([
         makeItem({
           soiId: LINE_A_ID,
@@ -1955,10 +1960,10 @@ describe('SaleOrderService', () => {
       expect(lineUpdate(LINE_B_ID)).toEqual(containing({ soiCancelledQty: 5 }));
       expect(headerUpdate()).toEqual(
         containing({
-          soStatus: 'PARTIAL',
-          soFulfilStatus: 'PARTIAL',
+          soStatus: 'COMPLETED',
+          soFulfilStatus: 'COMPLETED',
           soTotItems: 2,
-          soDeliveredItems: 1,
+          soDeliveredItems: 2,
           soCancelledAmt: 500,
         }),
       );
@@ -2130,11 +2135,17 @@ describe('SaleOrderService', () => {
           soPendingAmt: 500,
         }),
       );
-      // so_fulfil_status tracks DELIVERY, not cancellation: the sibling is still
-      // pending and nothing has been delivered, so the order stays PENDING and
-      // so_status is left alone — neither column may claim this one is settled.
+      // One line of two is settled, so the order is PARTIAL — but so_status is
+      // left alone, because a line still outstanding means nothing here may
+      // claim the order itself is finished.
       expect(headerUpdate()).toEqual(
-        containing({ soFulfilStatus: 'PENDING', soCancelledAmt: 1000, soPendingAmt: 500 }),
+        containing({
+          soFulfilStatus: 'PARTIAL',
+          soDeliveredItems: 1,
+          soTotItems: 2,
+          soCancelledAmt: 1000,
+          soPendingAmt: 500,
+        }),
       );
       expect(headerUpdate()).not.toHaveProperty('soStatus');
       expect(appendTxnStatusLog).not.toHaveBeenCalled();
@@ -2203,7 +2214,10 @@ describe('SaleOrderService', () => {
         } as Partial<SaleOrderItem>),
       ]);
       const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
-      expect(result.soFulfilStatus).toBe('PARTIAL');
+      // COMPLETED, not CANCELLED: the guard only refuses an order that never
+      // delivered anything, and this one shipped 2 of 10 before the rest was
+      // written off.
+      expect(result.soFulfilStatus).toBe('COMPLETED');
       expect(prisma.saleOrderItem.update).toHaveBeenCalled();
     });
 

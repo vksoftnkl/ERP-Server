@@ -109,6 +109,14 @@ export class BillItemPayloadDto {
   sbiPriceLevel!: number;
   @ApiPropertyOptional({ maxLength: 100, nullable: true })
   sbiEanCode!: string | null;
+  @ApiPropertyOptional({
+    maxLength: 50,
+    nullable: true,
+    description: 'Free-text dimension the operator typed, stored verbatim',
+  })
+  sbiSize!: string | null;
+  @ApiPropertyOptional({ maxLength: 20, nullable: true })
+  sbiSizeUom!: string | null;
   @ApiProperty({ format: 'uuid', description: 'The inventory godown the stock was taken from' })
   sbiGodownId!: string;
   @ApiPropertyOptional({
@@ -561,11 +569,56 @@ export class BillPayloadDto {
   @ApiProperty({ type: TenderDetailPayloadDto, isArray: true })
   tenders!: TenderDetailPayloadDto[];
 }
-export class BillDeleteResultDto {
+export class BillCancelledLineDto {
+  @ApiProperty({ format: 'uuid' })
+  soiId!: string;
+  @ApiProperty()
+  soiLineNo!: number;
+  @ApiProperty({ description: 'The quantity THIS call moved into soi_cancelled_qty' })
+  soiCancelledQty!: number;
+  @ApiProperty({
+    maxLength: 20,
+    description: 'Read back off the row: soi_line_status is a GENERATED column',
+  })
+  soiLineStatus!: string;
+}
+export class BillCancelledOrderDto {
+  @ApiProperty({ format: 'uuid' })
+  soId!: string;
+  @ApiProperty({ minLength: 9, maxLength: 9 })
+  soAccYear!: string;
+  @ApiProperty({ maxLength: 20, example: 'CANCELLED' })
+  soStatus!: string;
+  @ApiProperty({ maxLength: 20, example: 'CANCELLED' })
+  soFulfilStatus!: string;
+  @ApiProperty({ description: 'Lines this call closed out; 0 on a repeat call' })
+  cancelledLines!: number;
+  @ApiProperty({ description: 'Total quantity this call wrote off' })
+  cancelledQty!: number;
+  @ApiProperty()
+  soCancelledAmt!: number;
+  @ApiProperty()
+  soPendingAmt!: number;
+  @ApiProperty({ type: BillCancelledLineDto, isArray: true })
+  lines!: BillCancelledLineDto[];
+}
+export class BillCancelResultDto {
   @ApiProperty({ format: 'uuid' })
   sbId!: string;
   @ApiProperty({ example: true })
-  deleted!: true;
+  cancelled!: true;
+  @ApiProperty({ maxLength: 250 })
+  remarks!: string;
+  @ApiProperty({ maxLength: 50 })
+  username!: string;
+  @ApiProperty({ format: 'date-time' })
+  cancelledOn!: string;
+  @ApiProperty({
+    type: BillCancelledOrderDto,
+    isArray: true,
+    description: 'One entry per sale order this bill referenced',
+  })
+  orders!: BillCancelledOrderDto[];
 }
 export class BillSuccessSingleDto {
   @ApiProperty({ example: true })
@@ -578,11 +631,11 @@ export class BillSuccessSingleDto {
   })
   data!: BillPayloadDto;
 }
-export class BillSuccessDeleteDto {
+export class BillSuccessCancelDto {
   @ApiProperty({ example: true })
   success!: true;
-  @ApiProperty({ example: 'Bill deleted successfully' })
+  @ApiProperty({ example: 'Sale order cancelled successfully' })
   message!: string;
-  @ApiProperty({ type: BillDeleteResultDto })
-  data!: BillDeleteResultDto;
+  @ApiProperty({ type: BillCancelResultDto })
+  data!: BillCancelResultDto;
 }

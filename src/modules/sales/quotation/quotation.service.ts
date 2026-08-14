@@ -243,7 +243,8 @@ const QUOTATION_ITEM_OPTIONAL_FIELDS = [
   'sqiToBaseFactor',
   'sqiRateDiff',
   'sqiHasFreight',
-  'sqiItemSize',
+  'sqiSize',
+  'sqiSizeUom',
 ];
 // Charge-line fields copied straight through when present on the payload. The
 // scope keys (docType/docId/comp/branch/accYear/slno) and the two required

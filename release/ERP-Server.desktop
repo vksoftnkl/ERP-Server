@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=ERP Server
+Comment=Start the ERP backend server
+Exec=gnome-terminal --title="ERP Server" --working-directory="/home/vk/Dev/erp/ERP server/release" -- bash -c './erp-server-linux; echo; echo "[ERP Server stopped — press Enter to close]"; read'
+Path=/home/vk/Dev/erp/ERP server/release
+Terminal=false
+Icon=utilities-terminal
+Categories=Development;

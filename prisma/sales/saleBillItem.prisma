@@ -26,6 +26,13 @@ model SaleBillItem {
   sbiHsnCode         String?   @db.VarChar(8) @map("sbi_hsn_code")
   sbiPriceLevel      Int       @map("sbi_price_level")
   sbiEanCode         String?   @db.VarChar(100) @map("sbi_ean_code")
+  // Free-text dimension the operator typed, e.g. a timber shop's "12*6*2*10"
+  // (length ft * width in * thickness in * pieces), which is what sbiBillQty
+  // was derived from. Stored verbatim so a reprint shows the size the customer
+  // agreed to, not just the cubic feet it became. Mirrors soi_size/soi_size_uom
+  // on sale_order_item.
+  sbiSize            String?   @db.VarChar(50) @map("sbi_size")
+  sbiSizeUom         String?   @db.VarChar(20) @map("sbi_size_uom")
   // Where the stock came from. sbi_stock_id points at the inventory
   // batch/stock row the quantity was taken from, so a reversal knows exactly
   // what to put back.

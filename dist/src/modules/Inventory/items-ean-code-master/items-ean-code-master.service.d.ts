@@ -1,0 +1,34 @@
+import { Prisma } from '@prisma/client';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from "../../../common/configured-grid-sql/configured-grid-sql.service";
+import { GetItemEanCodeQueryDto } from './dto/get-item-ean-code-query.dto';
+import { SaveItemEanCodeDto } from './dto/save-item-ean-code.dto';
+import { ItemEanCodeDeleteResult, ItemEanCodeListItem, ItemEanCodeListMeta, ItemEanCodePayload } from './types/item-ean-code-api.types';
+import { PrismaService } from "../../../database/prisma/prisma.service";
+import { AuditLogService } from "../../audit-log/audit-log.service";
+import type { InventoryWriteClient } from "../../../common/utils/module-service.utils";
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare class ItemsEanCodeMasterService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly configuredGridSqlService;
+    private readonly requestContextService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService);
+    save(saveItemEanCodeDto: SaveItemEanCodeDto, tx?: Prisma.TransactionClient): Promise<ItemEanCodePayload>;
+    save(saveItemEanCodeDto: SaveItemEanCodeDto[], tx?: Prisma.TransactionClient): Promise<ItemEanCodePayload[]>;
+    save(saveItemEanCodeDto: SaveItemEanCodeDto | SaveItemEanCodeDto[], tx?: Prisma.TransactionClient): Promise<ItemEanCodePayload | ItemEanCodePayload[]>;
+    list(queryDto: GetItemEanCodeQueryDto): Promise<ConfiguredGridListResult<ItemEanCodeListItem, ItemEanCodeListMeta>>;
+    getById(eanId: string): Promise<ItemEanCodePayload>;
+    findByItemId(itemId: string, client?: InventoryWriteClient): Promise<ItemEanCodePayload[]>;
+    findIdsByItemId(itemId: string, isDeleted: boolean): Promise<string[]>;
+    toggleDelete(eanId: string, tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult>;
+    toggleDelete(eanId: string[], tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult[]>;
+    toggleDelete(eanId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemEanCodeDeleteResult | ItemEanCodeDeleteResult[]>;
+    private saveItemEanCode;
+    private toggleDeleteItemEanCode;
+    private createItemEanCode;
+    private updateItemEanCode;
+    private applyOptionalFields;
+    private enforceSingleDefaultInScope;
+    private toPayload;
+    private handleWriteError;
+}

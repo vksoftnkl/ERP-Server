@@ -472,8 +472,8 @@ the ones this call did not address (`summariseOrderLines` / `deriveOrderStatus`)
 | `so_pending_amt` | Σ `pending_qty × (soi_net_amt / soi_order_qty)` |
 | `so_billed_amt` | Σ `soi_billed_amt` — a maintained cache, summed as-is so a bill that priced differently is not overwritten |
 | `so_tot_items` | count of active lines |
-| `so_delivered_items` | count of **fully** delivered lines (`delivered ≈ ordered`); a 2-of-10 line does not count |
-| `so_fulfil_status` | Tracks **delivery**, not cancellation. Still pending → `PARTIAL` if anything delivered, else `PENDING`. Nothing pending → `CANCELLED` nothing delivered · `COMPLETED` nothing cancelled · `PARTIAL` some of each |
+| `so_delivered_items` | count of **settled** lines — `soi_line_status` `DELIVERED` **or** `CANCELLED`. A 2-of-10 line is `PARTIAL` and does not count; a line written off has nothing left to come and does |
+| `so_fulfil_status` | Decided by those COUNTS, so the header says what the line list shows: `delivered_items = tot_items` → `COMPLETED` · `0 < delivered_items < tot_items` → `PARTIAL` · else `PENDING`. Two riders: an order where every line settled but **nothing** was ever delivered is `CANCELLED`, not `COMPLETED` (the counts cannot tell those apart, and `PUT /cancel-lines` reads this to guard an unsettled advance); and an order that has delivered quantity is at least `PARTIAL`, even when the part-delivered line it sits on has settled nothing |
 | `so_status` | mirrors the fulfilment outcome; a still-open order keeps its `DRAFT` / `CONFIRMED` |
 | `so_completed_on` | stamped only on `COMPLETED`, and only if still null |
 

@@ -48,15 +48,16 @@ additionally carries the **tendered amounts** a quotation has no use for: a quot
 
 ## Files
 
-| File | Purpose |
-| --- | --- |
-| [bill.module.ts](bill.module.ts) | Module wiring — imports `AuditLogModule` + `ChargeDetailModule` + `TenderDetailModule` + `SaleOrderModule`, **exports `BillService`** |
-| [bill.controller.ts](bill.controller.ts) | HTTP routes + Swagger docs |
-| [bill.service.ts](bill.service.ts) | Business logic, persistence, line-item reconciliation, audit logging |
-| [bill-exception.filter.ts](bill-exception.filter.ts) | Registered via `@UseFilters`; a pass-through that re-throws the `HttpException` (error shaping is done in the service) |
-| [dto/save-bill.dto.ts](dto/save-bill.dto.ts) | Create/update payload for the header + nested `items[]` / `charges[]` / `tenders[]` |
-| [dto/save-bill-item.dto.ts](dto/save-bill-item.dto.ts) | A single bill line-item entry |
-| [dto/bill-response.dto.ts](dto/bill-response.dto.ts) | Swagger success/error response models |
+| File                                                   | Purpose                                                                                                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [bill.module.ts](bill.module.ts)                       | Module wiring — imports `AuditLogModule` + `ChargeDetailModule` + `TenderDetailModule` + `SaleOrderModule`, **exports `BillService`** |
+| [bill.controller.ts](bill.controller.ts)               | HTTP routes + Swagger docs                                                                                                            |
+| [bill.service.ts](bill.service.ts)                     | Business logic, persistence, line-item reconciliation, audit logging                                                                  |
+| [bill-exception.filter.ts](bill-exception.filter.ts)   | Registered via `@UseFilters`; a pass-through that re-throws the `HttpException` (error shaping is done in the service)                |
+| [dto/save-bill.dto.ts](dto/save-bill.dto.ts)           | Create/update payload for the header + nested `items[]` / `charges[]` / `tenders[]`                                                   |
+| [dto/save-bill-item.dto.ts](dto/save-bill-item.dto.ts) | A single bill line-item entry                                                                                                         |
+| [dto/cancel-bill.dto.ts](dto/cancel-bill.dto.ts)       | `POST /delete` payload — the bill's four identifiers plus the required `remarks` / `username`                                         |
+| [dto/bill-response.dto.ts](dto/bill-response.dto.ts)   | Swagger success/error response models                                                                                                 |
 
 | [types/bill-api.types.ts](types/bill-api.types.ts) | Payload / response / error TypeScript contracts |
 
@@ -70,15 +71,16 @@ are written and read back by `ChargeDetailService` / `TenderDetailService`. See
 
 ## Endpoints
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `POST` | `/create` | Create **or** update a bill, chosen by `sbId` presence in the body. |
-| `GET` | `/get` | Fetch one active bill by `sbId` (query param), including its active line items, applied charges and tender lines. |
-| `DELETE` | `/delete` | Soft-delete a bill by `sbId` (query param), cascading to its line items, applied charges and tender lines. |
+| Method | Path      | Description                                                                                                       |
+| ------ | --------- | ----------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/create` | Create **or** update a bill, chosen by `sbId` presence in the body.                                               |
+| `GET`  | `/get`    | Fetch one active bill by `sbId` (query param), including its active line items, applied charges and tender lines. |
+| `POST` | `/delete` | **Cancel the sale order the bill was raised against.** Despite the path, this deletes nothing.                    |
 
-`GET /get` and `DELETE /delete` both additionally require `sbCompanyId`, `sbBranchId` and
-`sbAccYear` as query parameters — the row is looked up by all four together, so a bill can only be
-read or deleted from within its own company/branch/year scope.
+`GET /get` requires `sbCompanyId`, `sbBranchId` and `sbAccYear` as query parameters alongside
+`sbId` — the row is looked up by all four together, so a bill can only be read from within its own
+company/branch/year scope. `POST /delete` takes the same four in its **body**, plus `remarks` and
+`username`.
 
 ### Create / update semantics
 
@@ -90,7 +92,7 @@ read or deleted from within its own company/branch/year scope.
   targets that compound key (`sbId_sbAccYear`), resolved from the row `findFirst` already loaded.
 - On **create**, `sbCustName` is normalized via `normalizeRequiredText` (trimmed and
   required-non-empty), `sbBillSlno` / `sbBillRefno` are allocated from the voucher sequence,
-  `sbBillDate` defaults to *now* when omitted, and `sbStatus` defaults to `'DRAFT'`.
+  `sbBillDate` defaults to _now_ when omitted, and `sbStatus` defaults to `'DRAFT'`.
 - Optional header fields are copied through only when present on the payload
   (`applyPresentFields` over the `BILL_OPTIONAL_FIELDS` list); absent fields are left as-is on
   update. The partition/scope keys (`sbCompanyId`, `sbBranchId`, `sbAccYear`, `sbPriceLevel`,
@@ -141,10 +143,10 @@ partitioned tables in this schema. Consequences that shape this module:
 - Every primary key is composite (`sbId, sbAccYear` / `sbiId, sbiAccYear`) because Postgres
   requires the partition key in every unique index including the PK. Prisma's generated compound
   unique input names are `sbId_sbAccYear` and `sbiId_sbiAccYear` — `bill.service.ts` uses these
-  wherever it calls `.update()` on a single row (`.updateMany()` calls, like the ones `softDelete`
-  uses, filter by `sbId` alone and do not need the compound key).
+  wherever it calls `.update()` on a single row (`.updateMany()` calls filter by `sbId` alone and
+  do not need the compound key).
   `sale_bill_item.sbiBillId` is likewise a **composite FK** — `(sbiBillId, sbiAccYear) →
-  (sbId, sbAccYear)` — so `sbiAccYear` must always match the parent bill's, and every line-item
+(sbId, sbAccYear)` — so `sbiAccYear` must always match the parent bill's, and every line-item
   `.update()` needs the item's own `sbiId_sbiAccYear` key (the loaded row's `sbiAccYear`, not the
   bill's, though the two are always equal).
 - The `CREATE TABLE ... PARTITION BY LIST` statement only declares the **parent shell**. Postgres
@@ -198,11 +200,11 @@ drawn down from it:
 
 ```jsonc
 {
-  "sbiSrcDocType": "SALES_ORDER",   // the discriminator — nothing happens without it
-  "sbiSrcDocId": "<soi_id>",        // the ORDER LINE's own id — it addresses the line by itself
-  "sbiSrcDocYear": "2026-2027",     // the ORDER's acc year; with sbiSrcDocId, the line's primary key
-  "sbiSrcDocRefno": "sor00042",     // so_order_refno, for display / reprint only
-  "sbiNetQty": 4                    // ← what draws down off soi_delivered_qty
+  "sbiSrcDocType": "SALES_ORDER", // the discriminator — nothing happens without it
+  "sbiSrcDocId": "<soi_id>", // the ORDER LINE's own id — it addresses the line by itself
+  "sbiSrcDocYear": "2026-2027", // the ORDER's acc year; with sbiSrcDocId, the line's primary key
+  "sbiSrcDocRefno": "sor00042", // so_order_refno, for display / reprint only
+  "sbiNetQty": 4, // ← what draws down off soi_delivered_qty
 }
 ```
 
@@ -224,11 +226,11 @@ The header's own `sb_src_doc_*` columns say which order the **bill** was raised 
 
 ```jsonc
 {
-  "sbSrcDocType": "SALES_ORDER",   // same discriminator, one grain coarser
+  "sbSrcDocType": "SALES_ORDER", // same discriminator, one grain coarser
   "sbSrcDocId": "<so_id>",
-  "sbSrcDocYear": "2026-2027",     // with sbSrcDocId, the order's primary key
-  "sbSrcDocRefno": "sor00042",     // display / reprint only
-  "sbSrcDocDate": "2026-07-20"
+  "sbSrcDocYear": "2026-2027", // with sbSrcDocId, the order's primary key
+  "sbSrcDocRefno": "sor00042", // display / reprint only
+  "sbSrcDocDate": "2026-07-20",
 }
 ```
 
@@ -251,10 +253,12 @@ details, including the recompute-not-increment rationale, are in
 [../sale-order/README.md](../sale-order/README.md#converting-an-order-to-a-bill-syncorderfulfilment).
 
 **Only a `POSTED` bill draws quantity down.** A draft bill can name an order all it likes and the
-order will not move; posting it is what delivers, and moving it back to `DRAFT`, cancelling it or
-deleting it hands the quantity straight back to `soi_pending_qty`. `softDelete` therefore reads the
-bill's lines *before* the cascade flags them — a moment later nothing active would say which order
-lines to release.
+order will not move; posting it is what delivers, and moving it back to `DRAFT` or repointing one of
+its lines hands the quantity straight back to `soi_pending_qty`.
+
+Note the direction: `POST /delete` does the **opposite** — it writes the open balance off into
+`soi_cancelled_qty` rather than releasing it, and the quantity the bill delivered stays delivered.
+Releasing is now only ever something a _save_ does.
 
 **Rejections** raised by the order module, surfaced as 400s on the bill save and naming this
 module's fields: `sbiSrcDocId` — or `sbSrcDocId`, whichever named it — for no such active order, and
@@ -294,8 +298,8 @@ whole array to `ChargeDetailService.syncDocumentCharges(tx, scope, charges, acto
   a 400 naming the field rather than an FK error). Errors surface through the same
   `{ success, message, errors[] }` shape, and `BillExceptionFilter` already recognises `cd*` fields.
 - Charge rows written during a bill save are audited against the bill (`tableName =
-  'txn_charge_detail'`, `screenName = 'Sale Bill'`, notes `Bill charge created/updated/soft
-  deleted`) — that labelling is the `BILL_CHARGE_AUDIT` argument, not a fork of the writer.
+'txn_charge_detail'`, `screenName = 'Sale Bill'`, notes `Bill charge created/updated/soft
+deleted`) — that labelling is the `BILL_CHARGE_AUDIT` argument, not a fork of the writer.
 
 The quotation module still has its own `syncCharges`; see
 [../quotation/README.md#nested-applied-charges](../quotation/README.md#nested-applied-charges).
@@ -321,15 +325,15 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
   `tdDeviceId` inherited from the header, `tdDrCr = 'DR'` (money in on a sale) and
   `tdPartyLedgerId = sbCustId`. That last default holds because a customer and its account ledger
   **share one primary key** — every customer is mirrored into `acc_ledger_master` under the same id
-  — so the bill's customer *is* the ledger the money is owed by. Any of these may be overridden per
+  — so the bill's customer _is_ the ledger the money is owed by. Any of these may be overridden per
   line except the document itself, which is a 400 if it names another document.
 - `tdTenderTypeId` / `tdTenderLedgerId` are snapshotted from the picked tender master when the line
   does not carry them, `tdTotalAmt` is derived as `round(tdAmount + tdSurchargeAmt, 2)`, and the
   remaining `ck_td_*` rules are enforced app-side on the merged row — see the tender module's
   [README](../../accountsModule/tenderDetail/README.md) for the full list.
 - Tender rows written during a bill save are audited against the bill (`tableName =
-  'acc_tender_detail'`, `screenName = 'Sale Bill'`, notes `Bill tender created/updated/soft
-  deleted`) via the `BILL_TENDER_AUDIT` argument.
+'acc_tender_detail'`, `screenName = 'Sale Bill'`, notes `Bill tender created/updated/soft
+deleted`) via the `BILL_TENDER_AUDIT` argument.
 - The header's own money columns (`sbTenderAmt`, `sbPaidAmt`, `sbBalanceAmt`, `sbSurchargeAmt`,
   `sbRefundAmt`, `sbPayMode`, `sbPayStatus`) are **not** recomputed from `tenders[]` — like every
   other amount on this module they are whatever the client sends. The tender lines are the detail
@@ -350,35 +354,64 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
   already exists" conflict rather than guessing at a specific field, unlike the quotation module's
   `describeDuplicate`, which resolves the actual offending index by name.
 
-### Soft delete
+### `POST /delete` — cancelling the order behind the bill
 
-- `DELETE /delete` sets `sbIsDeleted = true` (plus `sbModifiedOn` / `sbModifiedBy`) on the header,
-  then cascades the same to all its active line items, **applied charges and tender lines** so
-  nothing stays active under a logically deleted header. Rows are never hard-deleted.
-- **A deleted bill is also a cancelled one**: the same write sets `sbStatus = 'CANCELLED'`,
-  `sbCancelledOn`, `sbCancelledBy` and — when the bill carries none of its own — `sbCancelReason`
-  = `'Bill deleted'`, so anything reading the status rather than the flag still sees a document
-  that is out of play. A reason the bill was already cancelled with is kept.
-- **Accounts follow, in the same transaction** (`deleteBillPosting` in
-  [bill-posting.helper.ts](bill-posting.helper.ts)). Only a bill that was **POSTED** has anything
-  in accounts; for anything else this is a no-op. Located through the source document
-  (`ux_avh_src`: company + accYear + `SALES` / `BILL` / `sbId`) rather than
-  `sbPostedVoucherId`, which is client-writable — every non-deleted `acc_voucher_header` raised
-  from the bill gets `avhIsDeleted = true` / `avhIsActive = false` and is moved to `CANCELLED`
-  (with `avhCancelReason = 'Sale bill deleted'` and `avhStatusOn` / `avhStatusBy`, which
-  `ck_avh_cancel` / `ck_avh_status_on` demand), and its `acc_vouchers` ledger lines and `acc_bills`
-  receivables are flagged deleted with it.
-- This is deliberately **not** what unposting does. Moving a bill out of `POSTED` through
-  `POST /create` (`syncBillPosting`) only *cancels* the voucher and retires the receivable — the
-  header stays live, holding the number it consumed and blocking a re-post of the same bill.
-  Deleting the bill flags those rows deleted instead, because the document they were raised from is
-  gone.
-- **A settled bill cannot be deleted**: if any receivable carries a discount or write-off
-  (`ablDiscAmount` / `ablWriteoffAmount` > 0), the delete answers **400** and the whole transaction
-  rolls back — reverse the settlement first. `ablAllocAmount` on its own does not block it: a cash
-  bill seeds that column with its own tender at post time, so it is not a separate settlement.
-- `GET /get` and the update lookup only ever see rows with `sbIsDeleted = false` (and items with
-  `sbiIsDeleted = false`, charges with `cdIsDeleted = false`, tenders with `tdIsDeleted = false`).
+**The route no longer deletes anything.** It used to soft-delete the bill and unwind everything
+hanging off it; it now cancels the **sale order** the bill was raised against and leaves the bill
+itself completely untouched — `sbIsDeleted`, `sbStatus`, its line items, its applied charges, its
+tendered money and its voucher posting all stay exactly as they were.
+
+The reading behind that: a bill is a delivery that happened, and a cancellation is the customer
+saying they do not want the _rest_. So what the bill delivered stays delivered, and the order's
+**open balance** is written off.
+
+- **Body**, not query params (`CancelBillDto`): `sbId`, `sbCompanyId`, `sbBranchId`, `sbAccYear` —
+  the same four the old query string carried — plus two required fields:
+  - `remarks` (max **250**, the width of `sale_order_item.soi_cancel_reason`) — why.
+  - `username` (max **50**, matching the `created_by` / `modified_by` columns) — who. It becomes
+    the actor on every row the call writes, in preference to the request context.
+
+  Either one missing, blank or over-length is a **400** naming the field.
+
+- **`POST`, not `DELETE`**: the payload is the reason it moved. `DELETE`-with-a-body is not
+  reliably carried by every client in the path. The path itself is unchanged so the calling screens
+  do not have to move.
+- **What it writes**, all in one transaction, per order the bill references:
+  1. Every **open** line gets `soi_cancelled_qty += soi_pending_qty` and `soi_cancel_reason` =
+     `remarks`. `soi_pending_qty` and `soi_line_status` are **GENERATED** columns (migration
+     `20260814060000`), so they are never written — moving the quantity is what drives pending to
+     zero and the status to `CANCELLED`. A line already closed is skipped.
+  2. The **header** roll-ups are recomputed from what the lines then hold: `so_cancelled_amt`,
+     `so_pending_amt` (0), `so_tot_items` / `so_delivered_items`, and the two status columns. An
+     order with nothing delivered lands on `so_status` = `so_fulfil_status` = `CANCELLED`; one that
+     part-delivered settles as `COMPLETED`, since every line is closed and nothing is outstanding.
+  3. A **`CANCELLED` step on the order's status trail** (`public.txn_status_log`), carrying
+     `remarks` in `tsl_remarks` and `username` in `tsl_created_by` — only when the status actually
+     moved. `sale_order` has no cancellation columns of its own by design (see the comment on
+     `so_status`), so the trail _is_ where the reason is retrievable from. Plus an
+     `audit.audit_log` entry per order, and one against the bill the caller addressed.
+- **Which orders**: whatever the bill points at, at either grain — the header's `sb_src_doc_id` and
+  each line's `sbi_src_doc_id`, deduped, so a twenty-line bill off one order cancels it once. Both
+  grains cancel the **whole** order's open balance: a bill says "this order is finished", not
+  "write off this one line".
+- **Idempotent by construction**: a second call finds nothing open, writes nothing, appends no trail
+  row and answers 200 with `cancelledLines: 0`.
+- **Rejections**: a bill referencing no order at all → **400** on `sbSrcDocId` (there is nothing to
+  cancel, and a 200 would claim otherwise). An order still holding an advance balance that would go
+  fully `CANCELLED` → **400** on `soAdvanceBalanceAmt`; refund, forfeit or transfer it first. A
+  missing bill → **404**.
+
+> **Gap this opens.** There is now **no API route that deletes a bill.** The unwind that used to run
+> here — cascading `sbIsDeleted` to lines, charges and tenders, and `deleteBillPosting` taking the
+> voucher and receivable back out of the books, refusing when a receivable had been discounted or
+> written off — has no caller. `deleteBillPosting` is deliberately left in
+> [bill-posting.helper.ts](bill-posting.helper.ts) for whatever replaces it. Unposting through
+> `POST /create` is unaffected and still cancels the voucher and retires the receivable.
+
+- `GET /get` and the update lookup still only ever see rows with `sbIsDeleted = false` (and items
+  with `sbiIsDeleted = false`, charges with `cdIsDeleted = false`, tenders with
+  `tdIsDeleted = false`) — nothing about the soft-delete _reads_ changed, only the route that used
+  to set the flag.
 
 ### Validation
 
@@ -413,14 +446,12 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
   against the value sets the DB's `ck_sb_*` constraints used to define: `sbDocType` (`TAX_INVOICE` /
   `BILL_OF_SUPPLY`), `sbBillType` (`CASH` / `CREDIT`), `sbStatus` (`DRAFT` / `POSTED` /
   `CANCELLED`), `sbPayStatus` (`UNPAID` / `PARTIAL` / `PAID`), and the nullable `sbReturnStatus`
-  (`PARTIAL` / `FULL`). A bad value comes back as a 400 naming the field rather than a raw Postgres
-  23514.
+  (`PARTIAL` / `FULL`). A bad value comes back as a 400 naming the field rather than a raw Postgres 23514.
 - `ensurePosStateExists` checks `sbPosStcd` against `fixed.state_codes` before the write whenever
   the payload carries one, because `sb_pos_stcd` is the only header column with a foreign key to
   that table (`fk_sb_pos_state`). The place of supply is normally copied off the customer, whose
   own `cus_state_code` has no such key, so a customer holding something that is not a GST state
-  code (`TN` instead of `33`) used to reach the insert and come back as a raw Postgres 23503 — a
-  500. It is now a 400 naming `sbPosStcd`. The customer master refuses such a code outright (see
+  code (`TN` instead of `33`) used to reach the insert and come back as a raw Postgres 23503 — a 500. It is now a 400 naming `sbPosStcd`. The customer master refuses such a code outright (see
   the [customer module](../customer/README.md)); this guard is what keeps the bill's answer
   readable for rows saved before it did.
 - `ensureBillItemValuesAreAllowed` does the same for each line item: `sbiFreeType` (`SCHEME` /
@@ -464,18 +495,18 @@ correcting history means appending another row.
 - **Partitioned by LIST (`tsl_acc_year`)** like `sale_bill` itself, and the year written is the
   **bill's** (`sbAccYear`), not today's. A fiscal year that never had
   `public.ensure_acc_year_partitions('YYYY-YYYY')` run against it fails every insert with
-  *no partition of relation "txn_status_log" found for row* — and takes the bill save down with it.
+  _no partition of relation "txn_status_log" found for row_ — and takes the bill save down with it.
 - **Only a status STEP is logged.** An ordinary save that leaves `sbStatus` where it was adds no
   row; what changed field by field is [audit logging](#audit-logging)'s job.
 
-| When | `tslEvent` | `tslFromStatus` → `tslToStatus` |
-| --- | --- | --- |
-| `POST /create` (new bill) | `CREATED` | `NULL` → `DRAFT`, or `NULL` → `POSTED` when it was created straight into the books |
-| `POST /create` moving into `POSTED` | `POSTED` | `DRAFT` → `POSTED` |
-| `POST /create` leaving `POSTED` | `UNPOSTED` | `POSTED` → `DRAFT` |
-| `POST /create` moving to `CANCELLED` | `CANCELLED` | *(current)* → `CANCELLED` |
-| any other status move | `STATUS_CHANGED` | *(as saved)* |
-| `DELETE /delete` | `CANCELLED` | *(current)* → `CANCELLED` |
+| When                                 | `tslEvent`       | `tslFromStatus` → `tslToStatus`                                                    |
+| ------------------------------------ | ---------------- | ---------------------------------------------------------------------------------- |
+| `POST /create` (new bill)            | `CREATED`        | `NULL` → `DRAFT`, or `NULL` → `POSTED` when it was created straight into the books |
+| `POST /create` moving into `POSTED`  | `POSTED`         | `DRAFT` → `POSTED`                                                                 |
+| `POST /create` leaving `POSTED`      | `UNPOSTED`       | `POSTED` → `DRAFT`                                                                 |
+| `POST /create` moving to `CANCELLED` | `CANCELLED`      | _(current)_ → `CANCELLED`                                                          |
+| any other status move                | `STATUS_CHANGED` | _(as saved)_                                                                       |
+| `DELETE /delete`                     | `CANCELLED`      | _(current)_ → `CANCELLED`                                                          |
 
 - `tslSeqNo` is `1..n` within the document (`ux_tsl_doc_seq`), read as `max + 1` inside the
   transaction. Two concurrent status steps on **one** bill would pick the same number; the unique
@@ -519,16 +550,16 @@ returns the header as-is.
 Each line item **does** carry the same resolved-name fields the quotation module's items do, read
 via the identical `item` / `itemUnitConversion` → `unit` relations:
 
-| Response field | Source | Reached by |
-| --- | --- | --- |
-| `sbiItemName` | `inventory.item_master.item_name_en` | `item` relation on `sbiItemId` |
-| `sbiGroupId` | `inventory.item_master.item_group_id` | same relation |
-| `sbiBrandId` | `inventory.item_master.item_brand_id` | same relation |
-| `sbiSectionId` | `inventory.item_master.item_section_id` | same relation |
-| `sbiCategoryId` | `inventory.item_master.item_category_id` | same relation |
-| `sbiUnitName` | `inventory.item_unit_master.unit_name` | `itemUnitConversion` → `unit` on `sbiItemUnitId` |
-| `sbiDecimalCount` | `inventory.item_unit_master.unit_decimal_count` | same relation chain |
-| `sbiGodownName` | `inventory.godown_locations.gdl_name` | batched `findMany` on the bill's distinct `sbiGodownId`s |
+| Response field    | Source                                          | Reached by                                               |
+| ----------------- | ----------------------------------------------- | -------------------------------------------------------- |
+| `sbiItemName`     | `inventory.item_master.item_name_en`            | `item` relation on `sbiItemId`                           |
+| `sbiGroupId`      | `inventory.item_master.item_group_id`           | same relation                                            |
+| `sbiBrandId`      | `inventory.item_master.item_brand_id`           | same relation                                            |
+| `sbiSectionId`    | `inventory.item_master.item_section_id`         | same relation                                            |
+| `sbiCategoryId`   | `inventory.item_master.item_category_id`        | same relation                                            |
+| `sbiUnitName`     | `inventory.item_unit_master.unit_name`          | `itemUnitConversion` → `unit` on `sbiItemUnitId`         |
+| `sbiDecimalCount` | `inventory.item_unit_master.unit_decimal_count` | same relation chain                                      |
+| `sbiGodownName`   | `inventory.godown_locations.gdl_name`           | batched `findMany` on the bill's distinct `sbiGodownId`s |
 
 `sbi_godown_id` has no FK to `godown_locations`, so there is no relation to `include` — `getById`
 issues one extra `godownLocation.findMany` over the distinct godown ids on the bill and maps the

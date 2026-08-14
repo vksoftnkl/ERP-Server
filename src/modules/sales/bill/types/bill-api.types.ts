@@ -17,6 +17,7 @@ import {
   TxnStatusDocType,
   TxnStatusSrcModule,
 } from '../../../../common/txn-status-log/txn-status-log.helper';
+import type { SaleOrderCancelLinesResult } from '../../sale-order/types/sale-order-api.types';
 // txn_charge_detail is polymorphic — a bill's applied charges are the rows
 // carrying this discriminator plus cdDocId = sbId (see ck_cd_doc_type). A bill
 // IS the tax invoice, so it reuses the INVOICE discriminator rather than a new
@@ -104,6 +105,26 @@ export type BillChargePayload = ChargeDetailPayload;
 // Likewise for a tendered amount: the tender-detail module's payload verbatim,
 // whether it was read through this module or its own.
 export type BillTenderPayload = TenderDetailPayload;
+// What POST /bills/delete answers with. The bill itself is not in the payload
+// because the bill is not what changed: the route cancels the SALE ORDERS the
+// bill was raised against, and `orders` is one entry per order it closed out,
+// exactly as PUT /sale-orders/cancel-lines reports a single one.
+//
+// remarks / username are echoed back so the screen can show what was recorded
+// without re-reading the trail. They are persisted too — see the DTO — this is
+// a convenience, not the storage.
+//
+// cancelledLines is 0 across the board on a repeat call: the route is
+// idempotent, and a second cancel of the same bill is a successful no-op rather
+// than an error.
+export type BillCancelResult = {
+  sbId: string;
+  cancelled: true;
+  remarks: string;
+  username: string;
+  cancelledOn: string;
+  orders: SaleOrderCancelLinesResult[];
+};
 export type BillErrorDetail = {
   field: string;
   message: string;

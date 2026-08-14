@@ -118,7 +118,13 @@ model SaleQuotationItem {
   sqiToBaseFactor    Decimal   @default(0) @db.Decimal(15, 6) @map("sqi_to_base_factor")
   sqiRateDiff        Decimal   @default(0) @db.Decimal(15, 4) @map("sqi_rate_diff")
   sqiHasFreight      Boolean   @default(false) @map("sqi_has_freight")
-  sqiItemSize        String?   @db.VarChar(50) @map("sqi_item_size")
+  // Free-text dimension the operator typed, e.g. a timber shop's "12*6*2*10"
+  // (length ft * width in * thickness in * pieces), which is what sqiBillQty
+  // was derived from. Stored verbatim so a reprint shows the size the customer
+  // was quoted, not just the cubic feet it became. Renamed from sqi_item_size
+  // by 20260814080000 to match soi_size/sbi_size.
+  sqiSize            String?   @db.VarChar(50) @map("sqi_size")
+  sqiSizeUom         String?   @db.VarChar(20) @map("sqi_size_uom")
   // Relations
   quote      SaleQuotation  @relation(fields: [sqiQuoteId, sqiAccYear], references: [sqId, sqAccYear], onDelete: NoAction, onUpdate: NoAction, map: "fk_sqi_quote")
   item       ItemMaster     @relation(fields: [sqiItemId], references: [itemId], onDelete: Restrict, onUpdate: Cascade, map: "fk_sqi_item")

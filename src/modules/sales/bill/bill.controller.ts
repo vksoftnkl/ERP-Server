@@ -2,7 +2,6 @@ import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
-  Delete,
   Get,
   ParseUUIDPipe,
   Post,
@@ -26,12 +25,13 @@ import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dt
 import { BillExceptionFilter } from './bill-exception.filter';
 import { BillService } from './bill.service';
 import { SaveBillDto } from './dto/save-bill.dto';
+import { CancelBillDto } from './dto/cancel-bill.dto';
 import {
   BillErrorResponseDto,
-  BillSuccessDeleteDto,
+  BillSuccessCancelDto,
   BillSuccessSingleDto,
 } from './dto/bill-response.dto';
-import { BillPayload, BillSuccessResponse } from './types/bill-api.types';
+import { BillCancelResult, BillPayload, BillSuccessResponse } from './types/bill-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 @ApiTags('Bills')
 @ApiBearerAuth('access-token')
@@ -79,26 +79,33 @@ export class BillController {
       data,
     };
   }
-  @Delete('delete')
+  // POST, not DELETE, and it deletes nothing. The route keeps its path so the
+  // screens calling it do not have to move, but both the verb and the meaning
+  // changed: a cancellation has to carry a reason and an actor, which is a body,
+  // and DELETE-with-a-body is not something every client between here and the
+  // browser handles. What it now does is cancel the SALE ORDER the bill was
+  // raised against — the bill row, its lines, its charges, its tenders and its
+  // voucher posting are all left untouched.
+  @Post('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete bill by id' })
-  @ApiQuery({ name: 'sbId', schema: { type: 'string', format: 'uuid' } })
-  @ApiQuery({ name: 'sbCompanyId', schema: { type: 'string', format: 'uuid' } })
-  @ApiQuery({ name: 'sbBranchId', schema: { type: 'string', format: 'uuid' } })
-  @ApiQuery({ name: 'sbAccYear', schema: { type: 'string' } })
-  @ApiOkResponse({ type: BillSuccessDeleteDto })
+  @ApiOperation({
+    summary: 'Cancel the sale order this bill was raised against',
+    description:
+      'Writes off every OPEN line of the order(s) the bill references: soi_cancelled_qty takes ' +
+      'the pending quantity, which drives the GENERATED soi_pending_qty to zero and ' +
+      'soi_line_status to CANCELLED, and the header roll-ups follow. Nothing is deleted and no ' +
+      'is_deleted flag moves. Idempotent — calling it twice cancels nothing the second time.',
+  })
+  @ApiOkResponse({ type: BillSuccessCancelDto })
   @ApiBadRequestResponse({ type: BillErrorResponseDto })
   @ApiNotFoundResponse({ type: BillErrorResponseDto })
   async remove(
-    @Query('sbId', new ParseUUIDPipe({ version: '7' })) sbId: string,
-    @Query('sbCompanyId', new ParseUUIDPipe({ version: '7' })) sbCompanyId: string,
-    @Query('sbBranchId', new ParseUUIDPipe({ version: '7' })) sbBranchId: string,
-    @Query('sbAccYear') sbAccYear: string,
-  ): Promise<BillSuccessResponse<{ sbId: string; deleted: true }>> {
-    const data = await this.billService.softDelete(sbId, sbCompanyId, sbBranchId, sbAccYear);
+    @Body() cancelBillDto: CancelBillDto,
+  ): Promise<BillSuccessResponse<BillCancelResult>> {
+    const data = await this.billService.cancelSourceOrders(cancelBillDto);
     return {
       success: true,
-      message: 'Bill deleted successfully',
+      message: 'Sale order cancelled successfully',
       data,
     };
   }

@@ -17,6 +17,7 @@ import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-de
 import { SaleOrderService } from '../sale-order/sale-order.service';
 import { BillService } from './bill.service';
 import { SaveBillDto } from './dto/save-bill.dto';
+import { CancelBillDto } from './dto/cancel-bill.dto';
 
 const BILL_ID = '019c6f6c-be87-7a11-8905-36092c46fa01';
 const COMPANY_ID = '019c6f6c-be87-7a11-8905-36092c46fa02';
@@ -1504,27 +1505,11 @@ describe('BillService', () => {
       });
     });
 
-    it('closes the trail on delete, with the reason ck_tsl_reason_required demands', async () => {
-      await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
-
-      expect(loggedStep()).toMatchObject({
-        tslEvent: 'CANCELLED',
-        tslFromStatus: 'DRAFT',
-        tslToStatus: 'CANCELLED',
-        tslRemarks: 'Bill deleted',
-        tslChangedBy: USER_ID,
-      });
-    });
-
-    it('keeps the reason the bill was actually cancelled with', async () => {
-      prisma.saleBill.findFirst.mockResolvedValue(
-        makeBill({ sbCancelReason: 'Customer walked out' }),
-      );
-
-      await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
-
-      expect(loggedStep()).toMatchObject({ tslRemarks: 'Customer walked out' });
-    });
+    // The two tests that used to sit here asserted the trail row the SOFT
+    // DELETE appended to the BILL's own trail. That route is gone: POST
+    // /bills/delete does not move sbStatus, so it writes nothing here — the row
+    // it does write belongs to the sale ORDER, and is asserted under
+    // cancelSourceOrders.
 
     it('resolves the free-text device code to its device_master uuid', async () => {
       await service.save(baseDto());
@@ -1951,200 +1936,241 @@ describe('BillService', () => {
     });
   });
 
-  describe('softDelete', () => {
-    it('cascades the soft delete to line items, applied charges and tenders', async () => {
-      const result = await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+  // POST /bills/delete. The route stopped deleting: it now cancels the OPEN
+  // balance of the sale order the bill was raised against, and leaves the bill
+  // — header, lines, charges, tenders, voucher posting — exactly where it was.
+  describe('cancelSourceOrders', () => {
+    const cancelDto = (overrides: Partial<CancelBillDto> = {}): CancelBillDto => ({
+      sbId: BILL_ID,
+      sbCompanyId: COMPANY_ID,
+      sbBranchId: BRANCH_ID,
+      sbAccYear: ACC_YEAR,
+      remarks: 'Customer cancelled the balance',
+      username: 'karthik',
+      ...overrides,
+    });
 
-      expect(result).toEqual({ sbId: BILL_ID, deleted: true });
-      expect(prisma.saleBill.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            sbId: BILL_ID,
-            sbCompanyId: COMPANY_ID,
-            sbBranchId: BRANCH_ID,
-            sbAccYear: ACC_YEAR,
-            sbIsDeleted: false,
-          },
-          data: containing({ sbIsDeleted: true }),
-        }),
+    // A bill raised against the order, having delivered nothing of it yet: the
+    // whole 10 is still open, which is what the cancel writes off.
+    beforeEach(() => {
+      prisma.saleBill.findFirst.mockResolvedValue(
+        makeBill({
+          sbSrcDocType: 'SALES_ORDER',
+          sbSrcDocId: ORDER_ID,
+          sbSrcDocYear: ACC_YEAR,
+        } as unknown as Partial<SaleBill>),
       );
-      expect(prisma.saleBillItem.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { sbiBillId: BILL_ID, sbiAccYear: ACC_YEAR, sbiIsDeleted: false },
-          data: containing({ sbiIsDeleted: true }),
-        }),
+      prisma.saleBillItem.findMany.mockResolvedValue([billedLine(1, 0, 0)]);
+      prisma.saleOrder.findFirst.mockResolvedValue(makeOrder());
+      prisma.saleOrderItem.findMany.mockResolvedValue([makeOrderItem()]);
+    });
+
+    const orderLineWrite = () => prisma.saleOrderItem.update.mock.calls[0][0].data;
+    const orderHeaderWrite = () =>
+      (prisma.saleOrder.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    it('moves the pending quantity into soi_cancelled_qty on every open line', async () => {
+      const result = await service.cancelSourceOrders(cancelDto());
+
+      // 10 net, nothing delivered, nothing cancelled — so 10 was pending and 10
+      // is what moves across. soi_pending_qty and soi_line_status are GENERATED,
+      // so they are NOT in the write: driving them is the whole point of writing
+      // soi_cancelled_qty, and naming either would be a 428C9.
+      expect(orderLineWrite()).toMatchObject({ soiCancelledQty: 10 });
+      expect(orderLineWrite()).not.toHaveProperty('soiPendingQty');
+      expect(orderLineWrite()).not.toHaveProperty('soiLineStatus');
+      expect(result.orders[0].lines).toEqual([
+        expect.objectContaining({ soiLineNo: 1, soiCancelledQty: 10, soiLineStatus: 'CANCELLED' }),
+      ]);
+    });
+
+    it('adds the pending quantity to what a line had already given up', async () => {
+      // 10 net, 2 delivered, 3 already written off: 5 pending, so the line ends
+      // holding 8 cancelled rather than the 5 this call moved.
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeOrderItem({ soiDeliveredQty: 2, soiCancelledQty: 3, soiBilledAmt: 200 }),
+      ]);
+
+      await service.cancelSourceOrders(cancelDto());
+
+      expect(orderLineWrite()).toMatchObject({ soiCancelledQty: 8 });
+    });
+
+    it('settles the header: every line closed, both statuses CANCELLED', async () => {
+      const result = await service.cancelSourceOrders(cancelDto());
+
+      expect(orderHeaderWrite()).toMatchObject({
+        // Nothing is left to come off the order, so every line counts as
+        // settled — so_delivered_items reaches so_tot_items and the order stops
+        // waiting on a quantity nobody will ever deliver.
+        soTotItems: 1,
+        soDeliveredItems: 1,
+        soStatus: 'CANCELLED',
+        soFulfilStatus: 'CANCELLED',
+        soPendingAmt: 0,
+        soCancelledAmt: 1000,
+        soModifiedBy: 'karthik',
+      });
+      expect(result.orders[0]).toMatchObject({
+        soStatus: 'CANCELLED',
+        soFulfilStatus: 'CANCELLED',
+        cancelledLines: 1,
+        cancelledQty: 10,
+      });
+    });
+
+    // A bill that already delivered part of the order cancels only what is
+    // left: the delivered quantity is a fact — it went out of the door — so the
+    // order settles as COMPLETED rather than CANCELLED. COMPLETED, not PARTIAL,
+    // because every line is now settled and nothing is outstanding; PARTIAL is
+    // for an order that still has somewhere to go.
+    it('settles a part-delivered order as COMPLETED, writing off only the open balance', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeOrderItem({ soiDeliveredQty: 4, soiBilledAmt: 400 }),
+      ]);
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({ soFulfilStatus: 'PARTIAL', soBilledAmt: 400, soPendingAmt: 600 }),
       );
-      expect(prisma.transactionChargeDetail.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { cdDocType: 'INVOICE', cdDocId: BILL_ID, cdIsDeleted: false },
-          data: containing({ cdIsDeleted: true }),
-        }),
-      );
-      expect(prisma.accTenderDetail.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            tdSrcModule: 'SALES',
-            tdSrcDocType: 'SALE_BILL',
-            tdSrcDocId: BILL_ID,
-            tdIsDeleted: false,
-          },
-          data: containing({ tdIsDeleted: true }),
-        }),
-      );
+
+      const result = await service.cancelSourceOrders(cancelDto());
+
+      expect(orderLineWrite()).toMatchObject({ soiCancelledQty: 6 });
+      expect(orderHeaderWrite()).toMatchObject({
+        soStatus: 'COMPLETED',
+        soFulfilStatus: 'COMPLETED',
+        soPendingAmt: 0,
+      });
+      expect(result.orders[0].cancelledQty).toBe(6);
+    });
+
+    it('records the reason on every line it closes, and the actor from the payload', async () => {
+      await service.cancelSourceOrders(cancelDto({ remarks: 'Out of stock', username: 'vk' }));
+
+      expect(orderLineWrite()).toMatchObject({
+        soiCancelReason: 'Out of stock',
+        soiModifiedBy: 'vk',
+      });
+      expect(orderHeaderWrite()).toMatchObject({ soModifiedBy: 'vk' });
+    });
+
+    // sale_order has no cancellation columns by design — the comment on
+    // so_status says the reason belongs to the trail — so this row IS where the
+    // remark and the actor are retrievable from afterwards.
+    it('writes the cancel event to the order status trail', async () => {
+      await service.cancelSourceOrders(cancelDto({ remarks: 'Out of stock', username: 'vk' }));
+
+      expect(prisma.txnStatusLog.create).toHaveBeenCalledTimes(1);
+      expect(prisma.txnStatusLog.create.mock.calls[0][0].data).toMatchObject({
+        tslSrcModule: 'SALES',
+        tslSrcDocType: 'SALES_ORDER',
+        tslSrcDocId: ORDER_ID,
+        tslEvent: 'CANCELLED',
+        tslFromStatus: 'CONFIRMED',
+        tslToStatus: 'CANCELLED',
+        tslRemarks: 'Out of stock',
+        // tsl_changed_by is a uuid column, so a free-text actor lands on
+        // DEFAULT_ACTOR there and stays verbatim in the text column.
+        tslCreatedBy: 'vk',
+      });
+    });
+
+    it('answers with the reason, the actor and when it happened', async () => {
+      const result = await service.cancelSourceOrders(cancelDto());
+
+      expect(result).toMatchObject({
+        sbId: BILL_ID,
+        cancelled: true,
+        remarks: 'Customer cancelled the balance',
+        username: 'karthik',
+      });
+      expect(Date.parse(result.cancelledOn)).not.toBeNaN();
+    });
+
+    // The acceptance criterion this route was rewritten for: nothing is
+    // deleted. The bill is still there, still POSTED, still holding its
+    // charges, its tendered money and its voucher.
+    it('flips no is_deleted flag and touches neither the bill nor the books', async () => {
+      await service.cancelSourceOrders(cancelDto());
+
+      expect(prisma.saleBill.updateMany).not.toHaveBeenCalled();
+      expect(prisma.saleBillItem.updateMany).not.toHaveBeenCalled();
+      expect(prisma.transactionChargeDetail.updateMany).not.toHaveBeenCalled();
+      expect(prisma.accTenderDetail.updateMany).not.toHaveBeenCalled();
+      expect(prisma.accVoucherHeader.update).not.toHaveBeenCalled();
+      expect(prisma.accBillBalance.update).not.toHaveBeenCalled();
+    });
+
+    it('logs the request against the bill the caller addressed', async () => {
+      await service.cancelSourceOrders(cancelDto());
+
       expect(auditLogService.logEntityChange).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'cancel', tableName: 'sale_bill' }),
+        expect.objectContaining({
+          action: 'cancel',
+          tableName: 'sale_bill',
+          pk: BILL_ID,
+          userId: 'karthik',
+          notes: expect.stringContaining('Customer cancelled the balance') as unknown as string,
+        }),
         expect.anything(),
       );
     });
 
-    it('cancels the bill as it deletes it', async () => {
-      await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
-
-      const { data } = prisma.saleBill.updateMany.mock.calls[0][0] as {
-        data: Record<string, unknown>;
-      };
-      expect(data).toMatchObject({
-        sbStatus: 'CANCELLED',
-        sbCancelledBy: USER_ID,
-        sbCancelReason: 'Bill deleted',
-        sbIsDeleted: true,
-      });
-      expect(data.sbCancelledOn).toBeInstanceOf(Date);
-    });
-
-    it('keeps the reason the bill was cancelled with, when it already has one', async () => {
-      prisma.saleBill.findFirst.mockResolvedValue(
-        makeBill({ sbStatus: 'CANCELLED', sbCancelReason: 'Customer walked out' }),
+    // Idempotent, and by construction rather than by a guard: a second call
+    // finds nothing pending, so nothing moves.
+    it('is a no-op the second time, not a double-cancel', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeOrderItem({ soiCancelledQty: 10, soiBilledAmt: 0 }),
+      ]);
+      prisma.saleOrder.findFirst.mockResolvedValue(
+        makeOrder({ soStatus: 'CANCELLED', soFulfilStatus: 'CANCELLED', soPendingAmt: 0 }),
       );
 
-      await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      const result = await service.cancelSourceOrders(cancelDto());
 
-      expect(prisma.saleBill.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: containing({ sbCancelReason: 'Customer walked out' }),
-        }),
+      expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
+      expect(result.orders[0]).toMatchObject({ cancelledLines: 0, cancelledQty: 0 });
+      // The status did not MOVE, so nothing is appended to the trail either.
+      expect(prisma.txnStatusLog.create).not.toHaveBeenCalled();
+    });
+
+    // The order's own reference is enough on a bill whose lines name no order
+    // line: sb_src_doc_id says which order this bill was raised against.
+    it('cancels the order the bill header names, with no line references at all', async () => {
+      prisma.saleBillItem.findMany.mockResolvedValue([]);
+
+      await service.cancelSourceOrders(cancelDto());
+
+      expect(orderLineWrite()).toMatchObject({ soiCancelledQty: 10 });
+    });
+
+    it('rejects a bill that was raised against no order', async () => {
+      prisma.saleBill.findFirst.mockResolvedValue(makeBill());
+      prisma.saleBillItem.findMany.mockResolvedValue([]);
+
+      await expect(service.cancelSourceOrders(cancelDto())).rejects.toBeInstanceOf(
+        BadRequestException,
       );
+      expect(prisma.saleOrderItem.update).not.toHaveBeenCalled();
     });
 
-    it('leaves accounts alone when the bill was never posted', async () => {
-      await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
-
-      expect(prisma.accVoucherHeader.update).not.toHaveBeenCalled();
-      expect(prisma.accVoucher.updateMany).not.toHaveBeenCalled();
-      expect(prisma.accBillBalance.update).not.toHaveBeenCalled();
-    });
-
-    describe('a posted bill', () => {
-      // What deleteBillPosting selects: the voucher raised from this bill, and
-      // the untouched receivable behind it.
-      const postedVoucher = {
-        avhVoucherId: VOUCHER_HEADER_ID,
-        avhAccYear: ACC_YEAR,
-        avhPostedOn: new Date('2026-08-06T00:00:00.000Z'),
-      };
-      const openReceivable = {
-        ablId: ACC_BILL_ID,
-        ablAccYear: ACC_YEAR,
-        ablDocRefno: BILL_REFNO,
-        ablAllocAmount: new Prisma.Decimal(0),
-        ablDiscAmount: new Prisma.Decimal(0),
-        ablWriteoffAmount: new Prisma.Decimal(0),
-      };
-
-      beforeEach(() => {
-        prisma.saleBill.findFirst.mockResolvedValue(makeBill({ sbStatus: 'POSTED' }));
-        prisma.accVoucherHeader.findMany.mockResolvedValue([postedVoucher]);
-        prisma.accBillBalance.findMany.mockResolvedValue([openReceivable]);
-      });
-
-      it('deletes the voucher header it was posted through', async () => {
-        await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
-
-        expect(prisma.accVoucherHeader.findMany).toHaveBeenCalledWith(
-          expect.objectContaining({
-            where: containing({
-              avhSrcModule: 'SALES',
-              avhSrcDocType: 'BILL',
-              avhSrcDocId: BILL_ID,
-              avhIsDeleted: false,
-            }),
-          }),
-        );
-        const { where, data } = prisma.accVoucherHeader.update.mock.calls[0][0] as {
-          where: { avhVoucherId_avhAccYear: { avhVoucherId: string; avhAccYear: string } };
-          data: Record<string, unknown>;
-        };
-        expect(where.avhVoucherId_avhAccYear).toEqual({
-          avhVoucherId: VOUCHER_HEADER_ID,
-          avhAccYear: ACC_YEAR,
-        });
-        // Deleted AND cancelled — ck_avh_cancel wants the reason, ck_avh_status_on
-        // the who and when.
-        expect(data).toMatchObject({
-          avhVoucherStatus: 'CANCELLED',
-          avhCancelReason: 'Sale bill deleted',
-          avhStatusBy: USER_ID,
-          avhIsActive: false,
-          avhIsDeleted: true,
-        });
-      });
-
-      it('deletes the ledger lines behind that voucher', async () => {
-        await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
-
-        expect(prisma.accVoucher.updateMany).toHaveBeenCalledWith(
-          expect.objectContaining({
-            where: {
-              avVoucherId: VOUCHER_HEADER_ID,
-              avAccYear: ACC_YEAR,
-              avIsDeleted: false,
-            },
-            data: containing({ avIsActive: false, avIsDeleted: true }),
-          }),
-        );
-      });
-
-      it('deletes the receivable raised against it', async () => {
-        await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
-
-        expect(prisma.accBillBalance.update).toHaveBeenCalledWith(
-          expect.objectContaining({
-            where: { ablId_ablAccYear: { ablId: ACC_BILL_ID, ablAccYear: ACC_YEAR } },
-            data: containing({ ablIsActive: false, ablIsDeleted: true }),
-          }),
-        );
-      });
-
-      it('refuses the delete when the receivable has been discounted or written off', async () => {
-        prisma.accBillBalance.findMany.mockResolvedValue([
-          { ...openReceivable, ablWriteoffAmount: new Prisma.Decimal(50) },
-        ]);
-
-        await expect(
-          service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR),
-        ).rejects.toBeInstanceOf(BadRequestException);
-        expect(prisma.accVoucherHeader.update).not.toHaveBeenCalled();
-      });
-
-      // A cash bill seeds abl_alloc_amount with what was tendered at post time,
-      // so allocation on its own is not a settlement standing in the way.
-      it('allows the delete when the only allocation is the tender the bill was paid with', async () => {
-        prisma.accBillBalance.findMany.mockResolvedValue([
-          { ...openReceivable, ablAllocAmount: new Prisma.Decimal(500) },
-        ]);
-
-        await expect(service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR)).resolves.toEqual(
-          { sbId: BILL_ID, deleted: true },
-        );
-      });
-    });
-
-    it('throws not found when the bill is already deleted', async () => {
+    it('throws not found when the bill is gone', async () => {
       prisma.saleBill.findFirst.mockResolvedValue(null);
 
-      await expect(
-        service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.cancelSourceOrders(cancelDto())).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    // The advance guard the sale-order module already enforces: an order still
+    // holding the customer's money must not go fully CANCELLED behind their
+    // back. It fires here too, and takes the whole transaction with it.
+    it('refuses to cancel an order that still holds an advance', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(makeOrder({ soAdvanceBalanceAmt: 500 }));
+
+      await expect(service.cancelSourceOrders(cancelDto())).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.saleOrder.updateMany).not.toHaveBeenCalled();
     });
   });
 
@@ -2312,6 +2338,67 @@ describe('BillService', () => {
           soDeliveredItems: 1,
           soCompletedOn: expect.any(Date) as unknown,
         },
+      });
+    });
+
+    // so_delivered_items counts SETTLED lines, delivered or cancelled alike, so
+    // a bill that fills the only line still open completes the order even though
+    // the other one was written off and never shipped.
+    it('completes the order when the bill fills the lines a cancellation left open', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeOrderItem({ soiLineNo: 1 }),
+        // Withdrawn whole before this bill: nothing pending, nothing delivered.
+        makeOrderItem({
+          soiId: ORDER_LINE_B_ID,
+          soiLineNo: 2,
+          soiCancelledQty: 5,
+          soiOrderQty: 5,
+          soiNetAmt: 500,
+        }),
+      ]);
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 10, 1000)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: {
+          soStatus: 'COMPLETED',
+          soFulfilStatus: 'COMPLETED',
+          soTotItems: 2,
+          // One delivered, one cancelled — both settled.
+          soDeliveredItems: 2,
+          soPendingAmt: 0,
+          soCancelledAmt: 500,
+        },
+      });
+    });
+
+    // The mirror of that: while a line is still open, the order is PARTIAL
+    // however many of its siblings have settled — never COMPLETED.
+    it('holds the order at PARTIAL while a line is still open', async () => {
+      prisma.saleOrderItem.findMany.mockResolvedValue([
+        makeOrderItem({ soiLineNo: 1 }),
+        makeOrderItem({
+          soiId: ORDER_LINE_B_ID,
+          soiLineNo: 2,
+          soiOrderQty: 5,
+          soiNetAmt: 500,
+        }),
+      ]);
+      mockBillItemReads({
+        billedAgainstOrder: [billedLine(1, 10, 1000)],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { soFulfilStatus: 'PARTIAL', soTotItems: 2, soDeliveredItems: 1 },
+      });
+      // Still open, so the header's own status is not the recompute's to move.
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).not.toMatchObject({
+        data: { soStatus: expect.anything() as unknown },
       });
     });
 
@@ -2580,28 +2667,44 @@ describe('BillService', () => {
       );
     });
 
-    // Deleting the bill retires its lines, so the next recompute finds nothing
-    // billed and the order goes back to fully pending.
-    it('hands the quantity back to the order when the bill is deleted', async () => {
+    // The route that used to hand the quantity back is gone. POST /bills/delete
+    // no longer deletes the bill, so the 4 it delivered STAYS delivered and the
+    // open 6 is written off rather than released — the opposite direction to the
+    // old soft delete. Releasing quantity is now only what a save does, when it
+    // takes a bill out of POSTED or repoints one of its lines.
+    it('writes the open balance off rather than handing it back, when cancelled from the bill', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([
         makeOrderItem({ soiDeliveredQty: 4, soiBilledAmt: 400 }),
       ]);
       prisma.saleOrder.findFirst.mockResolvedValue(
         makeOrder({ soFulfilStatus: 'PARTIAL', soBilledAmt: 400, soPendingAmt: 600 }),
       );
-      mockBillItemReads({
-        billLines: [billedLine(1, 4, 400)],
-        billedAgainstOrder: [],
-      });
+      prisma.saleBill.findFirst.mockResolvedValue(
+        makeBill({
+          sbSrcDocType: 'SALES_ORDER',
+          sbSrcDocId: ORDER_ID,
+          sbSrcDocYear: ACC_YEAR,
+        } as unknown as Partial<SaleBill>),
+      );
+      mockBillItemReads({ billLines: [billedLine(1, 4, 400)], billedAgainstOrder: [] });
 
-      await service.softDelete(BILL_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+      await service.cancelSourceOrders({
+        sbId: BILL_ID,
+        sbCompanyId: COMPANY_ID,
+        sbBranchId: BRANCH_ID,
+        sbAccYear: ACC_YEAR,
+        remarks: 'Customer cancelled the balance',
+        username: 'karthik',
+      });
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiDeliveredQty: 0,
-        soiBilledAmt: 0,
+        soiCancelledQty: 6,
       });
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).not.toHaveProperty(
+        'soiDeliveredQty',
+      );
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
-        data: { soBilledAmt: 0, soPendingAmt: 1000, soFulfilStatus: 'PENDING' },
+        data: { soPendingAmt: 0, soFulfilStatus: 'COMPLETED' },
       });
     });
 

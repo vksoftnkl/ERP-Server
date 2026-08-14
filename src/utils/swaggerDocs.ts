@@ -18,6 +18,7 @@ import { LedgerShippingAddressModule } from '../modules/accountsModule/ledgerShi
 import { TenderMasterModule } from '../modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from '../modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { TenderDetailModule } from '../modules/accountsModule/tenderDetail/tender-detail.module';
+import { TransactionModule } from '../modules/accountsModule/transaction/transaction.module';
 import { AuthModule } from '../modules/auth/auth.module';
 import { AreaModule } from '../modules/sales/area/area.module';
 import { SaleFreightChargeModule } from '../modules/sales/sale-freight-charges/sale-freight-charges.module';
@@ -290,6 +291,14 @@ export const swaggerModuleDocuments = [
     title: 'Tender Detail API',
     description: 'Per-document tender lines (acc_tender_detail) endpoints',
     include: [TenderDetailModule],
+  },
+  {
+    path: 'transactions',
+    title: 'Transaction API',
+    description:
+      'Settlement reads over acc_bill_balance — the unspent credits (ADVANCE / SALES_RETURN) a ' +
+      'party holds, which the adjustment panel offers and acc_bill_adjustment is posted from',
+    include: [TransactionModule],
   },
   {
     path: 'sequences',

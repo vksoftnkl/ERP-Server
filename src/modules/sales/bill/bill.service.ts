@@ -4,6 +4,7 @@ import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SaveBillDto } from './dto/save-bill.dto';
 import { SaveBillItemDto } from './dto/save-bill-item.dto';
+import { CancelBillDto } from './dto/cancel-bill.dto';
 import {
   BILL_CHARGE_AUDIT,
   BILL_CHARGE_DOC_TYPE,
@@ -14,6 +15,7 @@ import {
   BILL_TENDER_DR_CR,
   BILL_TENDER_SRC_DOC_TYPE,
   BILL_TENDER_SRC_MODULE,
+  BillCancelResult,
   BillChargePayload,
   BillErrorDetail,
   BillErrorResponse,
@@ -32,7 +34,6 @@ import { ChargeDocumentScope } from '../../master/charge-detail/types/charge-det
 import { TenderDetailService } from '../../accountsModule/tenderDetail/tender-detail.service';
 import { TenderDocumentScope } from '../../accountsModule/tenderDetail/types/tender-detail-api.types';
 import {
-  DEFAULT_ACTOR,
   PresentFieldTransform,
   SalesWriteClient,
   applyPresentFields,
@@ -46,7 +47,11 @@ import {
 } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.helper';
-import { deleteBillPosting, postBillToAccounts, syncBillPosting } from './bill-posting.helper';
+// deleteBillPosting is deliberately NOT imported any more: POST /bills/delete
+// stopped deleting the bill, so nothing in this module takes a bill back out of
+// the books. The helper is left in place — it is the only implementation of
+// that unwind, and whatever replaces the delete route will want it.
+import { postBillToAccounts, syncBillPosting } from './bill-posting.helper';
 import {
   TxnStatusEvent,
   appendTxnStatusLog,
@@ -68,10 +73,11 @@ const BILL_AUDIT_SCREEN_NAME = 'Sale Bill';
 const BILL_DOC_TYPES = ['TAX_INVOICE', 'BILL_OF_SUPPLY'] as const;
 const BILL_TYPES = ['CASH', 'CREDIT'] as const;
 const BILL_STATUSES = ['DRAFT', 'POSTED', 'CANCELLED'] as const;
-// The status a soft-deleted bill is left in, and the reason recorded with it
-// when the bill carries none of its own (sb_cancel_reason is VarChar(250)).
+// The cancelled status, as the status trail names it. A bill only reaches it
+// through a save that sets sbStatus — POST /bills/delete no longer puts it
+// there, because that route cancels the ORDER behind the bill and leaves the
+// bill itself alone.
 const BILL_STATUS_CANCELLED = 'CANCELLED';
-const BILL_DELETE_CANCEL_REASON = 'Bill deleted';
 const BILL_PAY_STATUSES = ['UNPAID', 'PARTIAL', 'PAID'] as const;
 const BILL_RETURN_STATUSES = ['PARTIAL', 'FULL'] as const;
 const BILL_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
@@ -228,6 +234,8 @@ const BILL_ITEM_OPTIONAL_FIELDS = [
   'sbiToBaseFactor',
   'sbiHsnCode',
   'sbiEanCode',
+  'sbiSize',
+  'sbiSizeUom',
   'sbiBatchNo',
   'sbiBatchDate',
   'sbiExpiryDate',
@@ -470,12 +478,24 @@ export class BillService {
     const godownNameById = await this.resolveGodownNames(record.items);
     return this.toPayload({ ...record, charges, tenders }, godownNameById);
   }
-  async softDelete(
-    sbId: string,
-    sbCompanyId: string,
-    sbBranchId: string,
-    sbAccYear: string,
-  ): Promise<{ sbId: string; deleted: true }> {
+  // POST /bills/delete. The name is the route's history, not what it does: this
+  // no longer deletes anything. sale_bill, its line items, its applied charges,
+  // its tendered money and its voucher posting are all left exactly as they
+  // are — sb_is_deleted included — and what the call cancels is the SALE ORDER
+  // the bill was raised against.
+  //
+  // The reading behind that: a bill is a delivery that happened, and a
+  // cancellation is the customer saying they do not want the REST. So the
+  // quantity the bill delivered stays delivered, and the order's open balance
+  // is written off against the reason the caller gave. An order the bill
+  // delivered in full has no open balance and so ends up untouched, which is
+  // also what makes a second call a no-op.
+  //
+  // Everything here — every order line, every order header, every trail row —
+  // is one transaction. A bill naming three orders either cancels all three or
+  // none.
+  async cancelSourceOrders(cancelDto: CancelBillDto): Promise<BillCancelResult> {
+    const { sbId, sbCompanyId, sbBranchId, sbAccYear } = cancelDto;
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.saleBill.findFirst({
         where: {
@@ -493,127 +513,85 @@ export class BillService {
           `No active bill found with id ${sbId}`,
         );
       }
-      const modifiedOn = new Date();
-      const actor = this.requestContextService.getUserId() ?? DEFAULT_ACTOR;
-      // A deleted bill is a cancelled bill: the status moves with the flag so
-      // anything reading sbStatus rather than sbIsDeleted still sees a document
-      // that is out of play, and the cancellation columns say who did it and
-      // when.
-      const headerChanges = {
-        sbStatus: BILL_STATUS_CANCELLED,
-        sbCancelledOn: modifiedOn,
-        sbCancelledBy: actor,
-        sbCancelReason: existing.sbCancelReason ?? BILL_DELETE_CANCEL_REASON,
-        sbIsDeleted: true,
-        sbModifiedOn: modifiedOn,
-        sbModifiedBy: actor,
-      };
-      const result = await tx.saleBill.updateMany({
-        where: {
-          sbId,
-          sbCompanyId,
-          sbBranchId,
-          sbAccYear,
-          sbIsDeleted: false,
-        },
-        data: headerChanges,
-      });
-      if (result.count === 0) {
-        throwSalesNotFound<BillErrorDetail, BillErrorResponse>(
-          'Bill not found',
-          'sbId',
-          `No active bill found with id ${sbId}`,
-        );
-      }
-      // Read before the cascade flags them: these lines name the order lines
-      // that have to get their quantity back, and a moment later nothing active
-      // will say so.
+      const now = new Date();
+      // The payload's username is the actor, falling back to the request
+      // context only if it somehow arrived blank — the DTO requires it, so that
+      // fallback is belt and braces. It is what lands in soi_modified_by,
+      // so_modified_by, tsl_created_by and the audit-log row: one call, one
+      // name against every row it touched.
+      const actor = resolveActor(cancelDto.username, this.requestContextService.getUserId());
+      const remarks = cancelDto.remarks.trim();
       const items = await tx.saleBillItem.findMany({
         where: {
           sbiBillId: sbId,
-          sbiAccYear: sbAccYear,
-          sbiIsDeleted: false,
-        },
-      });
-      // Cascade the soft delete to the bill's line items so no line stays active
-      // while the header is logically deleted.
-      await tx.saleBillItem.updateMany({
-        where: {
-          sbiBillId: sbId,
           // sale_bill_item is partitioned by sbi_acc_year like its header, so
-          // the year is passed down to keep the cascade on one partition.
+          // the year keeps the read on one partition.
           sbiAccYear: sbAccYear,
           sbiIsDeleted: false,
         },
-        data: {
-          sbiIsDeleted: true,
-          sbiModifiedOn: modifiedOn,
-          sbiModifiedBy: actor,
-        },
       });
-      // ... and hands the quantity back to the sale order lines it was drawing
-      // down. The header already says sbIsDeleted / CANCELLED at this point, so
-      // the order's recompute no longer counts a single one of these lines. The
-      // header's own reference goes along too, so an order this bill named but
-      // drew nothing from is re-derived as well.
-      await this.saleOrderService.syncOrderFulfilment(
+      // Both grains the bill can point at: the header's own reference to the
+      // order (sb_src_doc_id) and each line's reference to an order LINE
+      // (sbi_src_doc_id). The sale-order module resolves either to the same
+      // set of orders and dedupes them, so a twenty-line bill off one order
+      // cancels that order once.
+      const refs = [...this.toOrderHeaderRefs(existing), ...this.toOrderLineRefs(items)];
+      if (refs.length === 0) {
+        // A walk-in bill converted from nothing. There is no order to cancel,
+        // and silently answering 200 would tell the screen a cancellation
+        // happened when none did — so it is a 400 naming the column that would
+        // have had to carry the reference.
+        throwSalesBadRequest<BillErrorDetail, BillErrorResponse>(
+          'Bill was not raised against a sale order',
+          [
+            {
+              field: 'sbSrcDocId',
+              message:
+                `Bill ${existing.sbBillRefno || sbId} references no sale order, on its header ` +
+                '(sbSrcDocType / sbSrcDocId / sbSrcDocYear) or on any of its lines ' +
+                '(sbiSrcDocType / sbiSrcDocId / sbiSrcDocYear), so there is nothing to cancel',
+            },
+          ],
+        );
+      }
+      // Steps 1 to 3 — the order lines, the order headers and the status
+      // trail — inside the transaction this method opened, so a failure on the
+      // third order rolls back the first two.
+      const orders = await this.saleOrderService.cancelOpenLinesForRefs(
         tx,
-        { refs: [...this.toOrderHeaderRefs(existing), ...this.toOrderLineRefs(items)] },
+        refs,
+        remarks,
         actor,
-        modifiedOn,
+        now,
       );
-      // Same cascade for the applied charges — an active charge line must never
-      // outlive the document it was charged on.
-      await this.chargeDetailService.softDeleteDocumentCharges(
-        tx,
-        BILL_CHARGE_DOC_TYPE,
-        sbId,
-        actor,
-        modifiedOn,
-      );
-      // ... and for the tendered money, so no payment line stays active against
-      // a bill that no longer exists.
-      await this.tenderDetailService.softDeleteDocumentTenders(
-        tx,
-        BILL_TENDER_SRC_MODULE,
-        BILL_TENDER_SRC_DOC_TYPE,
-        sbId,
-        actor,
-        modifiedOn,
-      );
-      // ... and out of the books, in the same transaction. Only a bill that was
-      // POSTED has anything in accounts; for anything else this is a no-op. A
-      // bill with money already settled against its receivable is refused here
-      // rather than deleted, so the transaction rolls back untouched.
-      await deleteBillPosting(tx, existing, actor, modifiedOn);
-      const cancelled = { ...existing, ...headerChanges };
-      // Closes the bill's status trail. A delete IS a cancellation here, so it
-      // is logged as one, with the reason the header was left carrying — which
-      // ck_tsl_reason_required demands of a CANCELLED step.
-      await this.logStatusChange(tx, cancelled, existing.sbStatus, actor, modifiedOn);
-      const originalRecord = this.toPayload(existing);
-      const modifiedRecord = this.toPayload(cancelled);
+      // The bill row does not change, so there is no before/after to log
+      // against it — but the request WAS made against this bill, and the audit
+      // trail is where "who asked for this, and why" is answered for the
+      // document the caller actually addressed. The orders log their own
+      // entries from inside cancelOpenLinesForRefs.
+      const record = this.toPayload(existing);
       await this.auditLogService.logEntityChange(
         {
-          // A soft delete is logged as 'cancel', the way every other module logs
-          // one: audit.audit_log_action has no 'delete' member, so
-          // AuditLogService.normalizeAction answers 400 for it.
           action: 'cancel',
           tableName: BILL_TABLE_NAME,
           screenName: BILL_AUDIT_SCREEN_NAME,
           screenType: 'transaction',
           pk: sbId,
           displayName: existing.sbBillRefno || sbId,
-          originalRecord,
-          modifiedRecord,
+          originalRecord: record,
+          modifiedRecord: record,
           userId: actor,
-          notes: 'Bill soft deleted',
+          notes: `Sale order cancelled from bill (${orders.length}): ${remarks}`,
         },
         tx,
       );
       return {
         sbId,
-        deleted: true,
+        cancelled: true as const,
+        remarks,
+        username: actor,
+        cancelledOn: now.toISOString(),
+        orders,
       };
     });
   }
