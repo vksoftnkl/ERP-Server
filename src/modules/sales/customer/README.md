@@ -36,7 +36,14 @@ are provisioned and kept in sync together.
 - On create, `cusName` is required and normalized ([`normalizeRequiredText`](customer.service.ts));
   it becomes both the customer name and the linked ledger's required `ledName`.
 - `cusStateName` is required and normalized; `cusStateCode` is trimmed, upper-cased, and must be
-  **exactly 2 characters** ([`normalizeStateCode`](customer.service.ts)).
+  **exactly 2 characters** ([`normalizeStateCode`](customer.service.ts)) **and an active row in
+  `fixed.state_codes`** ([`ensureStateCodeExists`](customer.service.ts)) — an unknown code is a 400
+  naming `cusStateCode`. `sales.customers` has no foreign key to that table, but the sales
+  documents that snapshot the customer's state as their **place of supply** do (`sale_bill`'s
+  `fk_sb_pos_state` and its `sale_order` / `sale_quotation` siblings), so a customer saved with a
+  code that is not a GST state code (`TN` for Tamil Nadu instead of `33`) could not be billed at
+  all — the bill failed on the FK. The code is refused here, where there is a field to name and a
+  state list to pick from, rather than at the transaction.
 - `cusBirthDate` / `cusMarriageDate` are parsed to dates (invalid ISO strings 400) and
   `cusCollectionDays` defaults to an empty array.
 - On create, `cusBilledDate` is set to now and `cusBilledCount` to `1`; on update, `cusBilledDate`

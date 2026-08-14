@@ -738,7 +738,12 @@ describe('SaleOrderService', () => {
       expect(result.soOrderRefno).toBe(SALE_ORDER_REFNO);
     });
 
-    it('creates a line deriving the pending quantity from ordered − delivered − cancelled', async () => {
+    // soi_pending_qty is GENERATED from soi_net_qty − delivered − cancelled, so
+    // the save writes none of it. What it does supply is the billable quantity a
+    // client that keyed only an ordered quantity left out — without it the line
+    // would sit at net 0, with nothing to deliver and the first bill against it
+    // reading as an over-delivery.
+    it('defaults the billable quantity from the ordered one and never writes the derived ones', async () => {
       await service.save(
         baseDto({
           items: [
@@ -757,9 +762,12 @@ describe('SaleOrderService', () => {
           soiOrderId: SALE_ORDER_ID,
           soiAccYear: ACC_YEAR,
           soiLineNo: 1,
-          soiPendingQty: 8,
+          soiNetQty: 10,
         }),
       });
+      const created = prisma.saleOrderItem.create.mock.calls[0][0].data;
+      expect(created).not.toHaveProperty('soiPendingQty');
+      expect(created).not.toHaveProperty('soiLineStatus');
     });
 
     it('rejects a stated pending quantity that breaks the balance', async () => {
@@ -1584,36 +1592,43 @@ describe('SaleOrderService', () => {
       );
     });
 
+    // Judged against the BILLABLE quantity, which is what the generated
+    // soi_pending_qty is computed from — a payload that cuts it below what the
+    // line has already delivered would make the column negative, and
+    // ck_soi_qty_signs would answer with a constraint name the client cannot act
+    // on. The 400 names soiNetQty instead.
     it('judges the quantity balance against the merged line on update', async () => {
       prisma.saleOrder.findFirst.mockResolvedValue(makeOrder());
       const line = makeItem({
         soiOrderQty: new Prisma.Decimal('10.000'),
         soiDeliveredQty: new Prisma.Decimal('4.000'),
-        soiPendingQty: new Prisma.Decimal('6.000'),
       });
       prisma.saleOrderItem.findMany.mockResolvedValue([line]);
-      // Payload halves the order quantity below what was already delivered.
+      // Payload cuts the billable quantity below what was already delivered.
       await expect(
         service.save(
           baseDto({
             soId: SALE_ORDER_ID,
-            items: [{ soiId: LINE_A_ID, soiOrderQty: 3 } as SaveSaleOrderItemDto],
+            items: [{ soiId: LINE_A_ID, soiNetQty: 3 } as SaveSaleOrderItemDto],
           }),
         ),
       ).rejects.toBeInstanceOf(BadRequestException);
-      // Raising it instead re-derives the pending cache.
+      // Raising it instead is written straight through, and the DB re-derives
+      // what is left pending off it.
       await service.save(
         baseDto({
           soId: SALE_ORDER_ID,
-          items: [{ soiId: LINE_A_ID, soiOrderQty: 12 } as SaveSaleOrderItemDto],
+          items: [{ soiId: LINE_A_ID, soiNetQty: 12 } as SaveSaleOrderItemDto],
         }),
       );
       expect(prisma.saleOrderItem.update).toHaveBeenCalledWith(
         containing({
           where: { soiId_soiAccYear: { soiId: LINE_A_ID, soiAccYear: ACC_YEAR } },
-          data: containing({ soiOrderQty: 12, soiPendingQty: 8 }),
+          data: containing({ soiNetQty: 12 }),
         }),
       );
+      const updated = prisma.saleOrderItem.update.mock.calls.at(-1)![0].data;
+      expect(updated).not.toHaveProperty('soiPendingQty');
     });
   });
 

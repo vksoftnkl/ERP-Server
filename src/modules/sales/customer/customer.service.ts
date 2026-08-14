@@ -273,6 +273,7 @@ export class CustomerService {
         await this.ensureCompanyExists(tx, data.cusCompanyId ?? null);
         await this.ensureAreaExists(tx, data.cusAreaId);
         await this.ensureCustomerGroupExists(tx, data.cusGroupId);
+        await this.ensureStateCodeExists(tx, normalizedStateCode);
         // Provision the linked account ledger first, then reuse its led_id as the
         // customer's cus_id so the two masters share one identity (1:1 link). The
         // area shares its id with a linked account group, so cusAreaId doubles as
@@ -354,6 +355,7 @@ export class CustomerService {
         await this.ensureCompanyExists(tx, nextCompanyId);
         await this.ensureAreaExists(tx, nextAreaId);
         await this.ensureCustomerGroupExists(tx, nextGroupId);
+        await this.ensureStateCodeExists(tx, normalizedStateCode);
         const now = new Date();
         const data: Prisma.CustomerUncheckedUpdateInput = {
           cusStateName: normalizedStateName,
@@ -561,6 +563,32 @@ export class CustomerService {
           },
         ],
       );
+    }
+  }
+  // sales.customers.cus_state_code carries no foreign key to fixed.state_codes,
+  // so nothing but this stops a customer being saved with a code that is not a
+  // GST state code ('TN' for Tamil Nadu instead of '33'). The transactions that
+  // snapshot the customer's state onto their place of supply — sale_bill's
+  // sb_pos_stcd and its siblings — DO have that key, so a customer saved with a
+  // bad code cannot be billed at all. It is refused at the master instead, where
+  // there is a field to name and a state list to pick from.
+  private async ensureStateCodeExists(tx: CustomerWriteClient, stateCode: string): Promise<void> {
+    const state = await tx.stateCode.findFirst({
+      where: {
+        stateCode,
+        isDeleted: false,
+      },
+      select: {
+        stateCode: true,
+      },
+    });
+    if (!state) {
+      throwSalesBadRequest<CustomerErrorDetail, CustomerErrorResponse>('State does not exist', [
+        {
+          field: 'cusStateCode',
+          message: `No active state found with code ${stateCode}`,
+        },
+      ]);
     }
   }
   // Map the customer payload onto a ledger DTO for the linked account ledger.

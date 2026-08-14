@@ -42,6 +42,9 @@ const STOCK_ID = '019c6f6c-be87-7a11-8905-36092c46fa15';
 const SEQ_ID = '019c6f6c-be87-7a11-8905-36092c46fa16';
 // fixed.device_master.dev_id behind the bill's free-text sbDeviceId ('till-1').
 const DEVICE_ID = '019c6f6c-be87-7a11-8905-36092c46fa17';
+// fixed.state_codes.state_code for Tamil Nadu — the place of supply sb_pos_stcd
+// points at.
+const POS_STATE_CODE = '33';
 // The sale order a converted bill draws its lines down off, and its one line.
 const ORDER_ID = '019c6f6c-be87-7a11-8905-36092c46fb01';
 const ORDER_LINE_ID = '019c6f6c-be87-7a11-8905-36092c46fb02';
@@ -520,6 +523,11 @@ type PrismaMock = {
   deviceMaster: {
     findFirst: jest.Mock<Promise<{ devId: string } | null>, unknown[]>;
   };
+  // sb_pos_stcd's FK target: checked before the write so an unknown place of
+  // supply comes back as a 400 instead of a raw fk_sb_pos_state violation.
+  stateCode: {
+    findUnique: jest.Mock<Promise<{ stateCode: string } | null>, unknown[]>;
+  };
   $queryRaw: jest.Mock<Promise<unknown>, unknown[]>;
   $transaction: jest.Mock<Promise<unknown>, [(tx: PrismaMock) => Promise<unknown>]>;
 };
@@ -693,6 +701,9 @@ const makePrismaMock = (): PrismaMock => {
     deviceMaster: {
       findFirst: jest.fn(() => Promise.resolve({ devId: DEVICE_ID })),
     },
+    stateCode: {
+      findUnique: jest.fn(() => Promise.resolve({ stateCode: POS_STATE_CODE })),
+    },
     // Two raw statements run while posting: the advisory lock, then the
     // company-wide voucher serial.
     $queryRaw: jest.fn((...args: unknown[]) =>
@@ -839,6 +850,35 @@ describe('BillService', () => {
       expect(prisma.saleBill.create).not.toHaveBeenCalled();
     });
 
+    // sb_pos_stcd is the customer's state copied onto the bill, and the customer
+    // master lets any two characters through. Left to the FK, a customer holding
+    // 'TN' rather than '33' answers a raw fk_sb_pos_state violation as a 500.
+    it('rejects a place of supply that is not a known state code', async () => {
+      prisma.stateCode.findUnique.mockResolvedValue(null);
+
+      await expect(service.save(baseDto({ sbPosStcd: 'TN' }))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.saleBill.create).not.toHaveBeenCalled();
+    });
+
+    it('checks the place of supply against fixed.state_codes before writing', async () => {
+      await service.save(baseDto({ sbPosStcd: POS_STATE_CODE }));
+
+      expect(prisma.stateCode.findUnique).toHaveBeenCalledWith(
+        containing({ where: { stateCode: POS_STATE_CODE } }),
+      );
+      expect(prisma.saleBill.create).toHaveBeenCalled();
+    });
+
+    // A payload that says nothing about the place of supply leaves the column
+    // alone, so there is nothing to check and no read to pay for.
+    it('does not look up a state when the payload omits sbPosStcd', async () => {
+      await service.save(baseDto());
+
+      expect(prisma.stateCode.findUnique).not.toHaveBeenCalled();
+    });
+
     it('creates a line item requiring sbiItemId, sbiItemUnitId, sbiGodownId and sbiStockId', async () => {
       await service.save(
         baseDto({
@@ -864,6 +904,9 @@ describe('BillService', () => {
       });
     });
 
+    // A 400: the field is missing off the payload, which is a bad request, not
+    // a missing resource. This asserted NotFoundException while requireItemField
+    // reached for the wrong helper.
     it('rejects a new line missing sbiGodownId', async () => {
       await expect(
         service.save(
@@ -877,7 +920,7 @@ describe('BillService', () => {
             ],
           }),
         ),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('rejects a duplicate sbiLineNo within one payload', async () => {
@@ -2162,16 +2205,65 @@ describe('BillService', () => {
 
       await service.save(convertedDto());
 
+      // Three columns are written; soi_pending_qty (6) and soi_line_status
+      // (PARTIAL) are GENERATED from them, and naming either would be a 428C9.
+      // The header roll-up asserted next is where that derivation shows up.
       expect(prisma.saleOrderItem.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { soiId_soiAccYear: { soiId: ORDER_LINE_ID, soiAccYear: ACC_YEAR } },
-          data: containing({
-            soiDeliveredQty: 4,
-            soiPendingQty: 6,
-            soiBilledAmt: 400,
-            soiLineStatus: 'PARTIAL',
-          }),
+          data: containing({ soiNetQty: 10, soiDeliveredQty: 4, soiBilledAmt: 400 }),
         }),
+      );
+      const written = prisma.saleOrderItem.update.mock.calls[0][0].data;
+      expect(written).not.toHaveProperty('soiPendingQty');
+      expect(written).not.toHaveProperty('soiLineStatus');
+    });
+
+    // A 400, not a 404. The document being saved is the bill; sbiSrcDocId
+    // addressing no live order or order line is a bad field on the bill's
+    // payload, and a 404 off POST /bills/create is indistinguishable in the
+    // access log from the route not existing at all.
+    it('rejects a bill line whose sbiSrcDocId names no live order or order line', async () => {
+      prisma.saleOrder.findFirst.mockResolvedValue(null);
+      prisma.saleOrderItem.findMany.mockResolvedValue([]);
+      mockBillItemReads({});
+
+      await expect(service.save(convertedDto())).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    // The same reference resolving to a live LINE whose parent order has since
+    // been deleted: caught after the FOR UPDATE lock instead, and answered the
+    // same way.
+    it('rejects a reference whose order is gone by the time the lock is taken', async () => {
+      // Pointed at the LINE's own soi_id, so resolveOrderRefs resolves it off
+      // the default makeOrderItem() and reads soi_order_id straight off it.
+      // Only the order HEADER is missing, which is what the read after the FOR
+      // UPDATE finds — the second of the two branches, told apart here by its
+      // own wording.
+      prisma.saleOrder.findFirst.mockResolvedValue(null);
+      mockBillItemReads({});
+
+      const error = await service
+        .save(
+          convertedDto({
+            items: [
+              {
+                sbiItemId: ITEM_MASTER_ID,
+                sbiItemUnitId: ITEM_UNIT_ID,
+                sbiGodownId: GODOWN_ID,
+                sbiBillQty: 4,
+                sbiNetAmt: 400,
+                ...orderSrcDoc(),
+                sbiSrcDocId: ORDER_LINE_ID,
+              },
+            ],
+          } as Partial<SaveBillDto>),
+        )
+        .catch((thrown: unknown) => thrown);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect(JSON.stringify((error as BadRequestException).getResponse())).toContain(
+        `No active order found with id ${ORDER_ID}`,
       );
     });
 
@@ -2210,9 +2302,8 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiNetQty: 10,
         soiDeliveredQty: 10,
-        soiPendingQty: 0,
-        soiLineStatus: 'DELIVERED',
       });
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
         data: {
@@ -2238,10 +2329,13 @@ describe('BillService', () => {
       expect(prisma.saleOrder.updateMany).not.toHaveBeenCalled();
     });
 
-    // More went out than was ever ordered. ck_soi_qty_balance leaves nowhere to
-    // put the extra, so the ORDER is revised up to what the bill says actually
-    // moved rather than the delivery being refused, and the line closes.
-    it('raises the ordered quantity when the bill delivers more than the line ordered', async () => {
+    // More went out than the line had to give. A generated soi_pending_qty
+    // leaves nowhere to put the extra — it would go negative and
+    // ck_soi_qty_signs would refuse the write — so the BILLABLE quantity is
+    // revised up to what the bill says actually moved rather than the delivery
+    // being refused, and the line closes. soi_order_qty, what the customer asked
+    // for, is not touched.
+    it('raises the billable quantity when the bill delivers more than the line had', async () => {
       mockBillItemReads({
         billedAgainstOrder: [billedLine(1, 12, 1200)],
       });
@@ -2249,11 +2343,10 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiOrderQty: 12,
+        soiNetQty: 12,
         soiDeliveredQty: 12,
-        soiPendingQty: 0,
-        soiLineStatus: 'DELIVERED',
       });
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).not.toHaveProperty('soiOrderQty');
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
         data: { soFulfilStatus: 'COMPLETED', soDeliveredItems: 1 },
       });
@@ -2263,9 +2356,7 @@ describe('BillService', () => {
     // 10 were written off, leaving 4, and this bill takes 5. The write-off is
     // not reinterpreted — 5 delivered + 6 cancelled is what the line now ordered.
     it('revises the order up rather than refusing a bill that outruns what is left', async () => {
-      prisma.saleOrderItem.findMany.mockResolvedValue([
-        makeOrderItem({ soiCancelledQty: 6, soiPendingQty: 4 }),
-      ]);
+      prisma.saleOrderItem.findMany.mockResolvedValue([makeOrderItem({ soiCancelledQty: 6 })]);
       mockBillItemReads({
         billedAgainstOrder: [billedLine(1, 5, 500)],
       });
@@ -2273,18 +2364,14 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiOrderQty: 11,
+        soiNetQty: 11,
         soiDeliveredQty: 5,
-        soiPendingQty: 0,
-        // Part of it went out and the rest was written off, which is not the
-        // same fact as a line every ordered unit left the godown for.
-        soiLineStatus: 'PARTIAL',
       });
     });
 
-    // A short delivery is NOT a revision: the line ordered 10 and 4 went out, so
-    // the other 6 stay pending. Only an over-delivery moves soi_order_qty.
-    it('leaves the ordered quantity alone when the bill delivers less', async () => {
+    // A short delivery is NOT a revision: the line carried 10 and 4 went out, so
+    // the other 6 stay pending. Only an over-delivery moves soi_net_qty.
+    it('leaves the billable quantity alone when the bill delivers less', async () => {
       mockBillItemReads({
         billedAgainstOrder: [billedLine(1, 4, 400)],
       });
@@ -2292,9 +2379,12 @@ describe('BillService', () => {
       await service.save(convertedDto());
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
-        soiOrderQty: 10,
+        soiNetQty: 10,
         soiDeliveredQty: 4,
-        soiPendingQty: 6,
+      });
+      // ... and the 6 that is left over is the DB's to derive.
+      expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
+        data: { soPendingAmt: 600, soFulfilStatus: 'PARTIAL' },
       });
     });
 
@@ -2356,11 +2446,7 @@ describe('BillService', () => {
       expect(prisma.saleOrderItem.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { soiId_soiAccYear: { soiId: ORDER_LINE_ID, soiAccYear: ACC_YEAR } },
-          data: containing({
-            soiDeliveredQty: 4,
-            soiPendingQty: 6,
-            soiLineStatus: 'PARTIAL',
-          }),
+          data: containing({ soiDeliveredQty: 4, soiBilledAmt: 400 }),
         }),
       );
     });
@@ -2384,7 +2470,7 @@ describe('BillService', () => {
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
         soiDeliveredQty: 6,
-        soiPendingQty: 4,
+        soiNetQty: 10,
       });
     });
 
@@ -2468,8 +2554,7 @@ describe('BillService', () => {
       expect(prisma.saleOrder.findFirst).toHaveBeenCalled();
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
         soiDeliveredQty: 4,
-        soiPendingQty: 6,
-        soiLineStatus: 'PARTIAL',
+        soiBilledAmt: 400,
       });
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
         data: { soFulfilStatus: 'PARTIAL' },
@@ -2477,20 +2562,18 @@ describe('BillService', () => {
     });
 
     it('never touches the quantity the cancel endpoint wrote off', async () => {
-      prisma.saleOrderItem.findMany.mockResolvedValue([
-        makeOrderItem({ soiCancelledQty: 2, soiPendingQty: 8 }),
-      ]);
+      prisma.saleOrderItem.findMany.mockResolvedValue([makeOrderItem({ soiCancelledQty: 2 })]);
       mockBillItemReads({
         billedAgainstOrder: [billedLine(1, 4, 400)],
       });
 
       await service.save(convertedDto());
 
-      // 10 ordered - 4 delivered - 2 cancelled = 4 pending, and soi_cancelled_qty
-      // is not among the columns written.
+      // 10 billable - 4 delivered - 2 cancelled leaves 4 for the DB to derive,
+      // and soi_cancelled_qty is not among the columns written.
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiNetQty: 10,
         soiDeliveredQty: 4,
-        soiPendingQty: 4,
       });
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).not.toHaveProperty(
         'soiCancelledQty',
@@ -2501,12 +2584,7 @@ describe('BillService', () => {
     // billed and the order goes back to fully pending.
     it('hands the quantity back to the order when the bill is deleted', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([
-        makeOrderItem({
-          soiDeliveredQty: 4,
-          soiPendingQty: 6,
-          soiBilledAmt: 400,
-          soiLineStatus: 'PARTIAL',
-        }),
+        makeOrderItem({ soiDeliveredQty: 4, soiBilledAmt: 400 }),
       ]);
       prisma.saleOrder.findFirst.mockResolvedValue(
         makeOrder({ soFulfilStatus: 'PARTIAL', soBilledAmt: 400, soPendingAmt: 600 }),
@@ -2520,9 +2598,7 @@ describe('BillService', () => {
 
       expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
         soiDeliveredQty: 0,
-        soiPendingQty: 10,
         soiBilledAmt: 0,
-        soiLineStatus: 'PENDING',
       });
       expect(prisma.saleOrder.updateMany.mock.calls[0][0]).toMatchObject({
         data: { soBilledAmt: 0, soPendingAmt: 1000, soFulfilStatus: 'PENDING' },

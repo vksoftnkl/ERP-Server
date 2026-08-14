@@ -36,6 +36,7 @@ import {
   PresentFieldTransform,
   SalesWriteClient,
   applyPresentFields,
+  hasOwnProperty,
   normalizeRequiredText,
   resolveActor,
   throwOnUniqueConstraintError,
@@ -626,6 +627,9 @@ export class BillService {
     const billDate = saveBillDto.sbBillDate ? new Date(saveBillDto.sbBillDate) : now;
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Ahead of the numbering, so a bill that cannot be written does not take
+        // the sequence's advisory lock to find that out.
+        await this.ensurePosStateExists(tx, saveBillDto);
         // Voucher type 22 numbers the document: the running number consumed from
         // accounts.acc_voucher_seq becomes sbBillSlno and its printable form
         // becomes sbBillRefno. Both are server-assigned — the voucher type is
@@ -781,6 +785,7 @@ export class BillService {
           sbModifiedBy: modifiedBy,
         };
         this.applyOptionalFields(data, saveBillDto);
+        await this.ensurePosStateExists(tx, saveBillDto);
         const updated = await tx.saleBill.update({
           where: { sbId_sbAccYear: { sbId: existing.sbId, sbAccYear: existing.sbAccYear } },
           data,
@@ -1159,6 +1164,37 @@ export class BillService {
       throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Invalid bill value', details);
     }
   }
+  // sb_pos_stcd is the one header column with a foreign key to
+  // fixed.state_codes (fk_sb_pos_state), and the place of supply is normally
+  // copied off the customer master — whose own cus_state_code has no such key.
+  // A customer carrying a code that is not a GST state code (e.g. 'TN' instead
+  // of '33') therefore reached the insert and came back as a raw Postgres
+  // 23503. It is checked here instead, so the answer names the field. Only a
+  // value actually on the payload is checked: an update that omits sbPosStcd
+  // leaves whatever is stored — already FK-valid — untouched.
+  private async ensurePosStateExists(tx: BillWriteClient, dto: SaveBillDto): Promise<void> {
+    if (!hasOwnProperty(dto, 'sbPosStcd')) {
+      return;
+    }
+    const posStcd = dto.sbPosStcd;
+    if (posStcd === undefined || posStcd === null) {
+      return;
+    }
+    // Soft-deleted states still satisfy the FK, so they are accepted here too —
+    // this guard mirrors what the database enforces, no more.
+    const state = await tx.stateCode.findUnique({
+      where: { stateCode: posStcd },
+      select: { stateCode: true },
+    });
+    if (!state) {
+      throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Place of supply does not exist', [
+        {
+          field: 'sbPosStcd',
+          message: `No state found with code ${posStcd}`,
+        },
+      ]);
+    }
+  }
   // Mirrors the DB CHECK constraints dropped from sale_bill_item
   // (ck_sbi_free_type / ck_sbi_split_no / ck_sbi_batch_split, migration
   // 20260731070026). ck_sbi_split_no (sbi_split_no >= 1) is covered by the
@@ -1259,12 +1295,22 @@ export class BillService {
       },
     ];
   }
+  // A missing required field is a 400. This answered 404 — the wrong helper —
+  // so a bill line that left out sbiItemId / sbiItemUnitId / sbiGodownId came
+  // back looking like an unrouted POST /bills/create rather than the field
+  // rejection it is. The DTO marks all three @RequiredUuid, so this fires on the
+  // update path, where an incoming line is only a partial and a NEW line on that
+  // payload can still reach here without them.
   private requireItemField(value: string | undefined, field: string): string {
     if (!value) {
-      throwSalesNotFound<BillErrorDetail, BillErrorResponse>(
+      throwSalesBadRequest<BillErrorDetail, BillErrorResponse>(
         `${field} is required for a new bill line`,
-        field,
-        `${field} must be provided when creating a bill line`,
+        [
+          {
+            field,
+            message: `${field} must be provided when creating a bill line`,
+          },
+        ],
       );
     }
     return value;

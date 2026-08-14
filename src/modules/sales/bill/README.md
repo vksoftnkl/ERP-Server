@@ -172,8 +172,9 @@ extra fields required for a new line:
 - Item **with** `sbiId` → updates that existing line (it must belong to this bill, else a
   not-found error).
 - Item **without** `sbiId` → inserts a new line; `sbiItemId`, `sbiItemUnitId`, `sbiGodownId` and
-  `sbiStockId` are all required (`requireItemField`) — a bill line allocates real stock, so it
-  must say which godown and which batch/stock row the quantity came from. (This module does not
+  `sbiStockId` are all required (`requireItemField`, a **400** naming the missing field) — a bill
+  line allocates real stock, so it must say which godown and which batch/stock row the quantity
+  came from. (This module does not
   itself move stock or validate availability; it trusts the client, exactly as `sqiAvailableStock`
   is informational-only on a quotation. Actual stock deduction is a separate concern.)
 - An existing active line **absent** from the array → **soft deleted** (`sbiIsDeleted = true`).
@@ -414,6 +415,14 @@ transaction, so header + items + charges + tenders remain all-or-nothing.
   `CANCELLED`), `sbPayStatus` (`UNPAID` / `PARTIAL` / `PAID`), and the nullable `sbReturnStatus`
   (`PARTIAL` / `FULL`). A bad value comes back as a 400 naming the field rather than a raw Postgres
   23514.
+- `ensurePosStateExists` checks `sbPosStcd` against `fixed.state_codes` before the write whenever
+  the payload carries one, because `sb_pos_stcd` is the only header column with a foreign key to
+  that table (`fk_sb_pos_state`). The place of supply is normally copied off the customer, whose
+  own `cus_state_code` has no such key, so a customer holding something that is not a GST state
+  code (`TN` instead of `33`) used to reach the insert and come back as a raw Postgres 23503 — a
+  500. It is now a 400 naming `sbPosStcd`. The customer master refuses such a code outright (see
+  the [customer module](../customer/README.md)); this guard is what keeps the bill's answer
+  readable for rows saved before it did.
 - `ensureBillItemValuesAreAllowed` does the same for each line item: `sbiFreeType` (`SCHEME` /
   `SAMPLE` / `REPLACEMENT`, nullable) mirrors `ck_sbi_free_type`, and the cross-field
   `ck_sbi_batch_split` rule (`sbiSplitNo = 1 OR sbiBatchNo IS NOT NULL`) is judged on the line's

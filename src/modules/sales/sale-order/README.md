@@ -530,7 +530,10 @@ id, the same pair `PUT /cancel-lines` accepts on its own `srcDocId` — no uuid 
 id resolves to its own line number, so everything downstream of the lookup sees one `(order, line
 number)` shape and neither grain is privileged. Bills written at either grain sum together against
 the same order line, which is what stops `soi_delivered_qty` depending on which client keyed which
-delivery. An id that is neither answers 404 naming `sbiSrcDocId`.
+delivery. An id that is neither answers **400** naming `sbiSrcDocId` — the document being saved is
+the bill, so a reference on its payload that addresses no order is a bad field on that payload, not
+a missing bill. A 404 here was indistinguishable in the access log from an unrouted
+`POST /bills/create`.
 
 The bill **header** carries the same reference one grain coarser — `sb_src_doc_type` /
 `sb_src_doc_id` / `sb_src_doc_year`, which name the order the bill as a whole was raised against.
@@ -593,7 +596,8 @@ order can never claim a delivery from a bill that rolled back.
 
 | Cause | Field |
 | --- | --- |
-| Id / year names no active order **and** no active order line (404) | `sbiSrcDocId`, or `sbSrcDocId` when the header is what named it |
+| Id / year names no active order **and** no active order line | `sbiSrcDocId`, or `sbSrcDocId` when the header is what named it |
+| The order is deleted between that resolution and the `FOR UPDATE` — or the reference resolved to a live line whose order is already gone | as above |
 | Line number is not on that order — only reachable at the `so_id` grain | `sbiSrcDocLineNo` |
 
 Each rejection is worded from the columns the reference was actually read out of, so a header-level

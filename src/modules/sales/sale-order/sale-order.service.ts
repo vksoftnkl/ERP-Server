@@ -1380,12 +1380,23 @@ export class SaleOrderService {
         // recompute below never has to care which grain it arrived as.
         const line = lineById.get(ref.srcDocId);
         const soId = line ? line.soiOrderId : orderIds.has(ref.srcDocId) ? ref.srcDocId : null;
+        // A 400, not a 404, and for the same reason the unknown-line rejection
+        // below is one: the document being saved is the BILL, and a reference on
+        // its payload that addresses no order is a bad field on that payload,
+        // not a missing bill. Answered as a 404 this was indistinguishable in
+        // the access log from an unrouted POST /bills/create, which is exactly
+        // how it was first misread.
         if (soId === null) {
-          throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
-            'Order not found',
-            ref.fields.docId,
-            `No active order or order line found with id ${ref.srcDocId} in accounting year ${srcAccYear}`,
-          );
+          throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>('Order not found', [
+            {
+              field: ref.fields.docId,
+              message:
+                `No active order or order line found with id ${ref.srcDocId} in accounting ` +
+                `year ${srcAccYear}. ${ref.fields.docId} takes the sale order LINE's soi_id ` +
+                `(or the order's so_id with ${ref.fields.lineNo ?? 'a line number'}), and ` +
+                `${ref.fields.accYear} takes that order's OWN accounting year, not the bill's.`,
+            },
+          ]);
         }
         const soLineNo = line ? line.soiLineNo : ref.soLineNo;
         const key = `${soId}|${srcAccYear}`;
@@ -1438,12 +1449,18 @@ export class SaleOrderService {
     const order = await tx.saleOrder.findFirst({
       where: { soId, soAccYear, soIsDeleted: false },
     });
+    // Reachable two ways, and a 400 for both. Either the order was soft-deleted
+    // in the window between resolveOrderRefs and this lock, or the reference
+    // arrived at a LINE whose parent order is already deleted — resolveOrderRefs
+    // filters deleted lines but reads soi_order_id straight off a live one. Both
+    // are the payload naming an order that cannot be billed, same as above.
     if (!order) {
-      throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
-        'Order not found',
-        fields.docId,
-        `No active order found with id ${soId} in accounting year ${soAccYear}`,
-      );
+      throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>('Order not found', [
+        {
+          field: fields.docId,
+          message: `No active order found with id ${soId} in accounting year ${soAccYear}`,
+        },
+      ]);
     }
     // Every line, not just the referenced ones: the header roll-up below needs
     // the lines this call does NOT touch just as much as the ones it does.

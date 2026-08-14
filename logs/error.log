@@ -5913,3 +5913,21 @@ Foreign key constraint violated on the constraint: `fk_sb_pos_state`
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:628:14)
     at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:52:18)
+2026-08-14T05:43:43.557Z ERROR [ModuleExceptionFilter] POST /api/v1/bills/create
+PrismaClientKnownRequestError: 
+Invalid `tx.saleBill.create()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:663:43
+
+  660 this.applyOptionalFields(data, saveBillDto);
+  661 data.sbCustName = normalizedCustName;
+  662 data.sbBillDate = billDate;
+→ 663 const created = await tx.saleBill.create(
+Foreign key constraint violated on the constraint: `fk_sb_pos_state`
+    at ei.handleRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:228:13)
+    at ei.handleAndLogRequestError (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:174:12)
+    at ei.request (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/RequestHandler.ts:143:12)
+    at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
+    at async <anonymous> (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:663:25)
+    at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
+    at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:628:14)
+    at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:52:18)
