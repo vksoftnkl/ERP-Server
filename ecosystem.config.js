@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'nest-app',
       script: 'dist/src/main.js',
-      cwd: '/home/vk/Dev/erp/ERP server',
+      cwd: __dirname,
       instances: 1,
       autorestart: true,
       watch: false,
