@@ -4,6 +4,7 @@
   "description": "Enterprise-grade NestJS boilerplate with PostgreSQL",
   "private": true,
   "license": "UNLICENSED",
+  "main": "dist/src/main.js",
   "engines": {
     "node": ">=20"
   },
