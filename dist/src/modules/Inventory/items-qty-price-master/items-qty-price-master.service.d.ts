@@ -1,0 +1,36 @@
+import { Prisma } from '@prisma/client';
+import { ConfiguredGridListResult, ConfiguredGridSqlService } from "../../../common/configured-grid-sql/configured-grid-sql.service";
+import { GetItemQtyPriceQueryDto } from './dto/get-item-qty-price-query.dto';
+import { SaveItemQtyPriceDto } from './dto/save-item-qty-price.dto';
+import { ItemQtyPriceDeleteResult, ItemQtyPriceListItem, ItemQtyPriceListMeta, ItemQtyPricePayload } from './types/item-qty-price-api.types';
+import { PrismaService } from "../../../database/prisma/prisma.service";
+import { AuditLogService } from "../../audit-log/audit-log.service";
+import { RequestContextService } from '../../../common/request-context/request-context.service';
+export declare class ItemsQtyPriceMasterService {
+    private readonly prisma;
+    private readonly auditLogService;
+    private readonly configuredGridSqlService;
+    private readonly requestContextService;
+    constructor(prisma: PrismaService, auditLogService: AuditLogService, configuredGridSqlService: ConfiguredGridSqlService, requestContextService: RequestContextService);
+    save(saveItemQtyPriceDto: SaveItemQtyPriceDto, tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload>;
+    save(saveItemQtyPriceDto: SaveItemQtyPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload[]>;
+    save(saveItemQtyPriceDto: SaveItemQtyPriceDto | SaveItemQtyPriceDto[], tx?: Prisma.TransactionClient): Promise<ItemQtyPricePayload | ItemQtyPricePayload[]>;
+    list(queryDto: GetItemQtyPriceQueryDto): Promise<ConfiguredGridListResult<ItemQtyPriceListItem, ItemQtyPriceListMeta>>;
+    getById(iqpId: string): Promise<ItemQtyPricePayload>;
+    toggleDelete(iqpId: string, tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult>;
+    toggleDelete(iqpId: string[], tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult[]>;
+    toggleDelete(iqpId: string | string[], tx?: Prisma.TransactionClient): Promise<ItemQtyPriceDeleteResult | ItemQtyPriceDeleteResult[]>;
+    private saveItemQtyPrice;
+    private toggleDeleteItemQtyPrice;
+    private createItemQtyPrice;
+    private updateItemQtyPrice;
+    private applyOptionalFields;
+    private validateDateRange;
+    private validateQtyRange;
+    private parseRequiredDate;
+    private parseOptionalDate;
+    private toPayload;
+    private buildDisplayName;
+    private handleWriteError;
+    private throwNotFound;
+}
