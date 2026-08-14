@@ -34,8 +34,8 @@ ALLOCATION, with rates, discounts, tax breakup and the stock it was picked from)
   [Status trail](#status-trail-publictxn_status_log).
 
 - **Source order:** `sale_order` / `sale_order_item` (`sales` schema) — a bill line converted from a
-  sale order names it in `sbi_src_doc_type` / `sbi_src_doc_id` / `sbi_src_doc_year` /
-  `sbi_src_doc_line_no`, the header names the order it was raised against in `sb_src_doc_type` /
+  sale order names the order LINE in `sbi_src_doc_type` / `sbi_src_doc_id` (`soi_id`) /
+  `sbi_src_doc_year`, the header names the order it was raised against in `sb_src_doc_type` /
   `sb_src_doc_id` / `sb_src_doc_year`, and that order's fulfilment caches and status are re-derived
   from both. **Owned by [../sale-order](../sale-order)** — this module hands `SaleOrderService` the
   orders and lines it touched rather than writing those tables itself. See
@@ -193,23 +193,31 @@ extra fields required for a new line:
 ### Converting a sale order
 
 A bill line raised against a sale order says so on itself, and the order's fulfilment caches are
-drawn down from it. Send all four columns on the line:
+drawn down from it:
 
 ```jsonc
 {
   "sbiSrcDocType": "SALES_ORDER",   // the discriminator — nothing happens without it
-  "sbiSrcDocId": "<so_id>",
-  "sbiSrcDocYear": "2026-2027",     // so_acc_year; with so_id this is the order's primary key
-  "sbiSrcDocLineNo": 1,             // soi_line_no — the printed order line, not soi_id
+  "sbiSrcDocId": "<soi_id>",        // the ORDER LINE's own id — it addresses the line by itself
+  "sbiSrcDocYear": "2026-2027",     // the ORDER's acc year; with sbiSrcDocId, the line's primary key
   "sbiSrcDocRefno": "sor00042",     // so_order_refno, for display / reprint only
-  "sbiBillQty": 4
+  "sbiNetQty": 4                    // ← what draws down off soi_delivered_qty
 }
 ```
 
-The back-write addresses one `sale_order_item` row by exactly `sbiSrcDocId` + `sbiSrcDocYear` +
-`sbiSrcDocLineNo`, so all three are needed for the order to move — but the save does **not** enforce
-that. A line naming `SALES_ORDER` with any of them missing is stored as sent and skipped by the
-fulfilment sync, leaving the order at whatever state it already had.
+`sbiSrcDocId` may also be the **order's** `so_id` rather than a line's `soi_id`, in which case
+`sbiSrcDocLineNo` (`soi_line_no`, the printed line) must come with it to say which line was drawn
+down. The sale-order module tells the two grains apart on the way in — no uuid is ever both — so
+bills keyed either way sum together against the same order line.
+
+The quantity that draws down is **`sbiNetQty`**, not `sbiBillQty`: it is the quantity in the order
+line's own terms, which is what `soi_order_qty` / `soi_delivered_qty` are counted in. A line that
+sends `sbiBillQty` but leaves `sbiNetQty` at its `0` default therefore delivers **nothing** — both
+columns are optional on the payload and neither is derived from the other.
+
+The back-write needs `sbiSrcDocId` + `sbiSrcDocYear` together for the order to move — but the save
+does **not** enforce that. A line naming `SALES_ORDER` with either missing is stored as sent and
+skipped by the fulfilment sync, leaving the order at whatever state it already had.
 
 The header's own `sb_src_doc_*` columns say which order the **bill** was raised against:
 

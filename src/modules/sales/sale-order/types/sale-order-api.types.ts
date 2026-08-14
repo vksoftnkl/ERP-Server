@@ -85,18 +85,29 @@ export const SALE_ORDER_CANCEL_SRC_MODULES: readonly string[] = [
 // Not to be confused with soi_src_doc_type on the order line itself, which
 // points the other way (UP the chain, at the quotation the order came from).
 export const SALE_ORDER_SRC_DOC_TYPE: string = SALE_ORDER_STATUS_SRC_DOC_TYPE;
-// One order a downstream document points at. soLineNo is soi_line_no, not
-// soi_id: a bill references the line the operator sees on the printed order.
+// One order — or one line of one — a downstream document points at.
 //
-// It is null when the calling document names the ORDER but nothing finer — the
-// bill HEADER's sb_src_doc_id / sb_src_doc_year, which say which order the bill
-// was raised against without addressing a line of it. Such a reference asks for
-// the order to be re-derived from its bills and adds nothing to the set of
-// lines that must exist; the quantities still come from the bill LINES that
-// name a line, because a header reference carries no quantity of its own.
+// srcDocId is whatever the calling document stored, at either of the two grains
+// this module answers to, exactly as PUT /cancel-lines resolves its own
+// srcDocId:
+//
+//   · a soi_id — the order LINE, addressed directly. This is what a bill line
+//     converted from an order carries in sbi_src_doc_id, and it needs no line
+//     number: the id IS the line.
+//   · a so_id — the ORDER. A bill line pairs it with soLineNo (soi_line_no, the
+//     printed line, not soi_id) to say which line it drew down; the bill HEADER
+//     pairs it with nothing, because sb_src_doc_id says which order the bill was
+//     raised against and nothing finer.
+//
+// A reference that names no line adds nothing to the set of lines that must
+// exist — it asks for the order to be re-derived from its bills. Quantity
+// always comes from the bill LINES that name one.
 export type SaleOrderLineRef = {
-  soId: string;
-  soAccYear: string;
+  srcDocId: string;
+  // The ORDER's own accounting year either way: sale_order and sale_order_item
+  // share it, so it is the second half of whichever primary key srcDocId
+  // belongs to.
+  srcAccYear: string;
   soLineNo: number | null;
   // The columns THIS reference was read out of, so a rejection names the field
   // the client actually sent — sbSrcDocId for a header reference, sbiSrcDocId
@@ -121,10 +132,11 @@ export type SaleOrderSrcDocFields = {
 export type SaleOrderFulfilledLine = {
   soiId: string;
   soiLineNo: number;
-  // Carried because the recompute can RAISE it: a bill that delivers more than
-  // the line ordered revises the order up to what actually went out, since
-  // ck_soi_qty_balance leaves no other way to record the extra.
-  soiOrderQty: number;
+  // The BILLABLE quantity, carried because the recompute can RAISE it: a bill
+  // that delivers more than the line had left revises it up to what actually
+  // went out, since a generated soi_pending_qty leaves no other way to record
+  // the extra. soi_order_qty — what the customer asked for — does not move.
+  soiNetQty: number;
   soiDeliveredQty: number;
   soiCancelledQty: number;
   soiPendingQty: number;

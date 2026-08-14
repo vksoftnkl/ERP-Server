@@ -270,8 +270,32 @@ const makeOrder = (overrides: Record<string, unknown> = {}): SaleOrder =>
     ...overrides,
   }) as unknown as SaleOrder;
 
+// soi_pending_qty and soi_line_status are GENERATED ALWAYS ... STORED since
+// migration 20260814060000: Postgres recomputes both from soi_net_qty and the
+// two settled quantities on every write, so the fixture does the same. A test
+// cannot pin them to something the three quantities do not say, which is exactly
+// the guarantee the real column gives.
+const withGeneratedColumns = (row: Record<string, unknown>): Record<string, unknown> => {
+  const qty = (value: unknown) => Number(value ?? 0);
+  const net = qty(row.soiNetQty);
+  const delivered = qty(row.soiDeliveredQty);
+  const cancelled = qty(row.soiCancelledQty);
+  const pending = Math.round((net - delivered - cancelled) * 1000) / 1000;
+  const status =
+    net <= 0
+      ? 'PENDING'
+      : pending <= 0 && delivered <= 0
+        ? 'CANCELLED'
+        : pending <= 0
+          ? 'DELIVERED'
+          : delivered + cancelled > 0
+            ? 'PARTIAL'
+            : 'PENDING';
+  return { ...row, soiPendingQty: pending, soiLineStatus: status };
+};
+
 const makeOrderItem = (overrides: Record<string, unknown> = {}): SaleOrderItem =>
-  ({
+  withGeneratedColumns({
     soiId: ORDER_LINE_ID,
     soiOrderId: ORDER_ID,
     soiCompanyId: COMPANY_ID,
@@ -282,18 +306,24 @@ const makeOrderItem = (overrides: Record<string, unknown> = {}): SaleOrderItem =
     soiItemId: ITEM_MASTER_ID,
     soiItemUnitId: ITEM_UNIT_ID,
     soiOrderQty: 10,
+    // The BILLABLE quantity, and the one the fulfilment recompute works in:
+    // soi_pending_qty is generated from it, not from soi_order_qty.
+    soiNetQty: 10,
     soiNetAmt: 1000,
     soiDeliveredQty: 0,
     soiCancelledQty: 0,
-    soiPendingQty: 10,
     soiBilledAmt: 0,
-    soiLineStatus: 'PENDING',
     soiIsDeleted: false,
     soiCreatedOn: new Date('2026-07-28T10:00:00.000Z'),
     soiCreatedBy: USER_ID,
     soiModifiedOn: null,
     soiModifiedBy: null,
     ...overrides,
+    // The billable quantity follows the ordered one unless a test says
+    // otherwise — the same default a line created through the API gets.
+    ...(overrides.soiOrderQty !== undefined && overrides.soiNetQty === undefined
+      ? { soiNetQty: overrides.soiOrderQty }
+      : {}),
   }) as unknown as SaleOrderItem;
 
 // The four columns a bill line carries to say "this came from order line N".
@@ -306,10 +336,14 @@ const orderSrcDoc = (lineNo = 1) => ({
 
 // A stored bill line standing against that order line, as the order's
 // fulfilment recompute reads it back.
+// sbi_net_qty is what the order draws down — the quantity in the order line's
+// own terms — so it is the one that has to be right here. sbi_bill_qty rides
+// along at the same value, which is what a plain unit sale looks like.
 const billedLine = (lineNo: number, qty: number, amt: number): SaleBillItem =>
   makeItem({
     ...orderSrcDoc(lineNo),
     sbiBillQty: qty,
+    sbiNetQty: qty,
     sbiNetAmt: amt,
   } as unknown as Partial<SaleBillItem>);
 
@@ -413,6 +447,9 @@ type PrismaMock = {
   // recomputed roll-ups.
   saleOrder: {
     findFirst: jest.Mock<Promise<SaleOrder | null>, unknown[]>;
+    // The reference resolution's read: which of the ids a bill points at are
+    // ORDER ids rather than order LINE ids.
+    findMany: jest.Mock<Promise<{ soId: string }[]>, unknown[]>;
     updateMany: jest.Mock<Promise<Prisma.BatchPayload>, unknown[]>;
   };
   saleOrderItem: {
@@ -529,6 +566,14 @@ const makePrismaMock = (): PrismaMock => {
     // the tests that DO convert point these at a real order.
     saleOrder: {
       findFirst: jest.fn(() => Promise.resolve(null)),
+      // Answers from whatever findFirst is set to resolve, filtered by the id
+      // list — so a test that says "this order exists" says it once and both
+      // reads agree, the way one real row would make them.
+      findMany: jest.fn(async (args: unknown) => {
+        const where = (args as { where?: { soId?: { in?: string[] } } }).where ?? {};
+        const order = await prisma.saleOrder.findFirst();
+        return order && (where.soId?.in ?? []).includes(order.soId) ? [{ soId: order.soId }] : [];
+      }),
       updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
     saleOrderItem: {
@@ -2273,9 +2318,79 @@ describe('BillService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
-    // A reference missing the year or the line number cannot address an order
-    // line, but it is not refused: the bill saves as sent and the order module
-    // is simply never consulted.
+    // The grain a converted bill line actually carries: sbi_src_doc_id holds the
+    // ORDER LINE's own soi_id, which addresses one sale_order_item row on its
+    // own — no line number needed, and none sent.
+    it('draws down the order line a bill line names by its soi_id', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [
+          makeItem({
+            sbiSrcDocType: 'SALES_ORDER',
+            sbiSrcDocId: ORDER_LINE_ID,
+            sbiSrcDocYear: ACC_YEAR,
+            sbiSrcDocLineNo: null,
+            sbiNetQty: 4,
+            sbiNetAmt: 400,
+          } as unknown as Partial<SaleBillItem>),
+        ],
+      });
+
+      await service.save(
+        convertedDto({
+          items: [
+            {
+              sbiItemId: ITEM_MASTER_ID,
+              sbiItemUnitId: ITEM_UNIT_ID,
+              sbiGodownId: GODOWN_ID,
+              sbiBillQty: 4,
+              sbiNetQty: 4,
+              sbiNetAmt: 400,
+              sbiSrcDocType: 'SALES_ORDER',
+              sbiSrcDocId: ORDER_LINE_ID,
+              sbiSrcDocYear: ACC_YEAR,
+            },
+          ],
+        } as Partial<SaveBillDto>),
+      );
+
+      expect(prisma.saleOrderItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { soiId_soiAccYear: { soiId: ORDER_LINE_ID, soiAccYear: ACC_YEAR } },
+          data: containing({
+            soiDeliveredQty: 4,
+            soiPendingQty: 6,
+            soiLineStatus: 'PARTIAL',
+          }),
+        }),
+      );
+    });
+
+    // sbi_net_qty is the quantity in the ORDER line's own terms, so it is what
+    // draws down — a bill keyed in cases against an order keyed in pieces is
+    // exactly the case this distinction exists for.
+    it('draws down sbi_net_qty, not sbi_bill_qty', async () => {
+      mockBillItemReads({
+        billedAgainstOrder: [
+          makeItem({
+            ...orderSrcDoc(1),
+            sbiBillQty: 1, // one case ...
+            sbiNetQty: 6, // ... of six
+            sbiNetAmt: 600,
+          } as unknown as Partial<SaleBillItem>),
+        ],
+      });
+
+      await service.save(convertedDto());
+
+      expect(prisma.saleOrderItem.update.mock.calls[0][0].data).toMatchObject({
+        soiDeliveredQty: 6,
+        soiPendingQty: 4,
+      });
+    });
+
+    // A reference missing the accounting year addresses neither an order nor an
+    // order line — both are keyed by it — but it is not refused: the bill saves
+    // as sent and the order module is simply never consulted.
     it('saves a source reference that names an order but not a line of it', async () => {
       mockBillItemReads({ billedAgainstOrder: [] });
 

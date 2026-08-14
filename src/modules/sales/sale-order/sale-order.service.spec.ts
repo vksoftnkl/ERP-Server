@@ -152,8 +152,32 @@ const makeOrder = (overrides: Partial<SaleOrder> = {}): SaleOrder =>
     ...overrides,
   }) as unknown as SaleOrder;
 
+// soi_pending_qty and soi_line_status are GENERATED ALWAYS ... STORED since
+// migration 20260814060000: Postgres recomputes both from soi_net_qty and the
+// two settled quantities on every write, so the fixture does the same. A test
+// cannot pin them to something the three quantities do not say, which is exactly
+// the guarantee the real column gives.
+const withGeneratedColumns = (row: Record<string, unknown>): Record<string, unknown> => {
+  const qty = (value: unknown) => Number(value ?? 0);
+  const net = qty(row.soiNetQty);
+  const delivered = qty(row.soiDeliveredQty);
+  const cancelled = qty(row.soiCancelledQty);
+  const pending = Math.round((net - delivered - cancelled) * 1000) / 1000;
+  const status =
+    net <= 0
+      ? 'PENDING'
+      : pending <= 0 && delivered <= 0
+        ? 'CANCELLED'
+        : pending <= 0
+          ? 'DELIVERED'
+          : delivered + cancelled > 0
+            ? 'PARTIAL'
+            : 'PENDING';
+  return { ...row, soiPendingQty: new Prisma.Decimal(pending.toFixed(3)), soiLineStatus: status };
+};
+
 const makeItem = (overrides: Partial<SaleOrderItem> = {}): SaleOrderItem =>
-  ({
+  withGeneratedColumns({
     soiId: LINE_A_ID,
     soiOrderId: SALE_ORDER_ID,
     soiCompanyId: COMPANY_ID,
@@ -166,9 +190,10 @@ const makeItem = (overrides: Partial<SaleOrderItem> = {}): SaleOrderItem =>
     soiGodownId: null,
     soiPriceLevel: 1,
     soiOrderQty: new Prisma.Decimal('10.000'),
+    // The BILLABLE quantity, which is what soi_pending_qty is generated from.
+    soiNetQty: new Prisma.Decimal('10.000'),
     soiDeliveredQty: new Prisma.Decimal('0.000'),
     soiCancelledQty: new Prisma.Decimal('0.000'),
-    soiPendingQty: new Prisma.Decimal('10.000'),
     soiReservedQty: new Prisma.Decimal('0.000'),
     soiIsDeleted: false,
     soiSyncDate: null,
@@ -177,6 +202,11 @@ const makeItem = (overrides: Partial<SaleOrderItem> = {}): SaleOrderItem =>
     soiModifiedOn: null,
     soiModifiedBy: null,
     ...overrides,
+    // The billable quantity follows the ordered one unless a test says
+    // otherwise — the same default a line created through the API gets.
+    ...(overrides.soiOrderQty !== undefined && overrides.soiNetQty === undefined
+      ? { soiNetQty: overrides.soiOrderQty }
+      : {}),
   }) as unknown as SaleOrderItem;
 
 const makeCharge = (overrides: Partial<TransactionChargeDetail> = {}): TransactionChargeDetail =>
@@ -1790,9 +1820,10 @@ describe('SaleOrderService', () => {
       const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {
         soiCancelReason: 'Customer withdrew the balance',
       });
-      expect(lineUpdate(LINE_A_ID)).toEqual(
-        containing({ soiCancelledQty: 10, soiPendingQty: 0, soiLineStatus: 'CANCELLED' }),
-      );
+      // Only the cancelled quantity is written: moving pending into it is what
+      // drives the two GENERATED columns, which the DB answers back with.
+      expect(lineUpdate(LINE_A_ID)).toEqual(containing({ soiCancelledQty: 10 }));
+      expect(result.lines).toEqual([containing({ soiCancelledQty: 10, soiLineStatus: 'CANCELLED' })]);
       expect(headerUpdate()).toEqual(
         containing({
           soStatus: 'CANCELLED',
@@ -1836,7 +1867,7 @@ describe('SaleOrderService', () => {
         soiCancelReason: 'Item discontinued',
       });
       expect(lineUpdate(LINE_A_ID)).toEqual(
-        containing({ soiCancelReason: 'Item discontinued', soiLineStatus: 'CANCELLED' }),
+        containing({ soiCancelReason: 'Item discontinued', soiCancelledQty: 10 }),
       );
       expect(appendTxnStatusLog).toHaveBeenCalledWith(
         expect.anything(),
@@ -1865,9 +1896,8 @@ describe('SaleOrderService', () => {
         } as Partial<SaleOrderItem>),
       ]);
       const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
-      expect(lineUpdate(LINE_A_ID)).toEqual(
-        containing({ soiCancelledQty: 8, soiPendingQty: 0, soiLineStatus: 'PARTIAL' }),
-      );
+      expect(lineUpdate(LINE_A_ID)).toEqual(containing({ soiCancelledQty: 8 }));
+      expect(result.lines).toEqual([containing({ soiLineStatus: 'PARTIAL' })]);
       expect(headerUpdate()).toEqual(
         containing({
           soStatus: 'PARTIAL',
@@ -1907,9 +1937,7 @@ describe('SaleOrderService', () => {
       ]);
       const result = await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
       expect(lineUpdate(LINE_A_ID)).toBeUndefined();
-      expect(lineUpdate(LINE_B_ID)).toEqual(
-        containing({ soiCancelledQty: 5, soiPendingQty: 0, soiLineStatus: 'CANCELLED' }),
-      );
+      expect(lineUpdate(LINE_B_ID)).toEqual(containing({ soiCancelledQty: 5 }));
       expect(headerUpdate()).toEqual(
         containing({
           soStatus: 'PARTIAL',
@@ -1945,15 +1973,20 @@ describe('SaleOrderService', () => {
       expect(appendTxnStatusLog).not.toHaveBeenCalled();
     });
 
-    // The whole point of moving both columns in one statement.
-    it('never writes a cancelled quantity without the matching pending quantity', async () => {
+    // soi_pending_qty and soi_line_status are GENERATED (migration
+    // 20260814060000): naming either in the statement is a Postgres 428C9, not a
+    // redundant assignment, so the cancel writes the cancelled quantity alone and
+    // lets the derivation follow.
+    it('never names the generated columns in the statement it writes', async () => {
       prisma.saleOrderItem.findMany.mockResolvedValue([
-        makeItem({ soiPendingQty: new Prisma.Decimal('4.000') } as Partial<SaleOrderItem>),
+        makeItem({ soiCancelledQty: new Prisma.Decimal('6.000') } as Partial<SaleOrderItem>),
       ]);
       await service.cancelOpenLines('SALES', SALE_ORDER_ID, ACC_YEAR, {});
+      expect(prisma.saleOrderItem.update).toHaveBeenCalled();
       for (const [args] of prisma.saleOrderItem.update.mock.calls) {
         expect(args.data).toHaveProperty('soiCancelledQty');
-        expect(args.data).toHaveProperty('soiPendingQty');
+        expect(args.data).not.toHaveProperty('soiPendingQty');
+        expect(args.data).not.toHaveProperty('soiLineStatus');
       }
     });
 
@@ -2068,13 +2101,9 @@ describe('SaleOrderService', () => {
       });
 
       expect(lineUpdate(LINE_A_ID)).toEqual(
-        containing({
-          soiCancelledQty: 10,
-          soiPendingQty: 0,
-          soiLineStatus: 'CANCELLED',
-          soiCancelReason: 'Line withdrawn',
-        }),
+        containing({ soiCancelledQty: 10, soiCancelReason: 'Line withdrawn' }),
       );
+      expect(result.lines).toEqual([containing({ soiLineStatus: 'CANCELLED' })]);
       // The sibling is wide open and stays that way.
       expect(lineUpdate(LINE_B_ID)).toBeUndefined();
       expect(result).toEqual(

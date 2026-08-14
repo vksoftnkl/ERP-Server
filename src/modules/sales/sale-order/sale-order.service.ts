@@ -116,16 +116,13 @@ const SALE_ORDER_ADVANCE_STATUSES = [
   'FORFEITED',
 ] as const;
 const SALE_ORDER_ITEM_FREE_TYPES = ['SCHEME', 'SAMPLE', 'REPLACEMENT'] as const;
+// ck_soi_line_status. No code picks between these any more — soi_line_status is
+// GENERATED from the three quantities (migration 20260814060000), so the CASE in
+// the DB is the only place the choice is made and every path reads the value
+// back off the row it just wrote. The vocabulary is still stated here because a
+// payload may carry the column and gets told when it names something that is not
+// one of these.
 const SALE_ORDER_ITEM_LINE_STATUSES = ['PENDING', 'PARTIAL', 'DELIVERED', 'CANCELLED'] as const;
-// The two states a cancel can leave a line in. A line that had already
-// delivered something is PARTIAL — part of it went out and the rest is written
-// off, which is not the same fact as a line nothing ever left the godown for.
-const SALE_ORDER_ITEM_STATUS_CANCELLED = 'CANCELLED';
-const SALE_ORDER_ITEM_STATUS_PARTIAL = 'PARTIAL';
-// ... plus the two the bill-driven recompute can also land on: a line nothing
-// has happened to yet, and one every ordered unit went out for.
-const SALE_ORDER_ITEM_STATUS_PENDING = 'PENDING';
-const SALE_ORDER_ITEM_STATUS_DELIVERED = 'DELIVERED';
 // Header fulfilment states the recompute can land on. COMPLETED / PARTIAL are
 // shared with ck_so_status, which is why the same tokens serve both columns.
 const SALE_ORDER_FULFIL_PENDING = 'PENDING';
@@ -308,6 +305,12 @@ const SALE_ORDER_OPTIONAL_FIELDS = [
 // scope keys (order/company/branch/tenant/accYear/lineNo/priceLevel) and the
 // two fields required for a new line (soiItemId, soiItemUnitId) are set
 // explicitly, so they are excluded here.
+//
+// soiPendingQty and soiLineStatus are excluded for a different reason: since
+// migration 20260814060000 the DB DERIVES both (GENERATED ALWAYS ... STORED),
+// and Postgres answers 428C9 to any statement that names a generated column.
+// The payload may still carry them — a client round-tripping a GET response
+// does — and they are validated below, but they are never written.
 const SALE_ORDER_ITEM_OPTIONAL_FIELDS = [
   'soiSrcDocType',
   'soiSrcDocId',
@@ -337,7 +340,6 @@ const SALE_ORDER_ITEM_OPTIONAL_FIELDS = [
   'soiAvailableStock',
   'soiDeliveredQty',
   'soiCancelledQty',
-  'soiPendingQty',
   'soiBilledAmt',
   'soiRate',
   'soiRatePreTax',
@@ -400,7 +402,6 @@ const SALE_ORDER_ITEM_OPTIONAL_FIELDS = [
   'soiMrpSavings',
   'soiMrpSavingsPerc',
   'soiDeliveryDate',
-  'soiLineStatus',
   'soiSalesmanId',
   'soiSchemeId',
   'soiSchemeName',
@@ -1002,16 +1003,17 @@ export class SaleOrderService {
           ],
         );
       }
-      // ck_soi_qty_balance compares round(order_qty, 3) against the sum of the
-      // other three, so both quantities move in the SAME statement — there is
-      // no valid intermediate state where only one of them has been written.
+      // Only soi_cancelled_qty is written: soi_pending_qty and soi_line_status
+      // are GENERATED columns since migration 20260814060000, so moving the
+      // pending quantity into cancelled IS what drives pending to zero and the
+      // status to CANCELLED / PARTIAL. Naming either of them in the statement
+      // would be a 428C9 rather than a redundant assignment.
       //
       // A loop rather than updateMany: soi_cancelled_qty += soi_pending_qty is a
-      // column-to-column increment (Prisma's { increment } takes a literal) and
-      // the line status is decided per row. The rows are already in memory and
-      // an order's line count is UI-bounded, so the round trips are cheap; if
-      // that ever stops being true the escape hatch is one raw UPDATE per
-      // target status.
+      // column-to-column increment (Prisma's { increment } takes a literal). The
+      // rows are already in memory and an order's line count is UI-bounded, so
+      // the round trips are cheap; if that ever stops being true the escape
+      // hatch is one raw UPDATE over the whole order.
       //
       // soi_reserved_qty is deliberately left alone: ck_soi_reserved only caps
       // it at soi_order_qty, which does not move here, and releasing a
@@ -1028,14 +1030,8 @@ export class SaleOrderService {
           continue;
         }
         const { line } = settled;
-        const soiLineStatus =
-          asNumber(line.soiDeliveredQty) > QTY_EPSILON
-            ? SALE_ORDER_ITEM_STATUS_PARTIAL
-            : SALE_ORDER_ITEM_STATUS_CANCELLED;
         const lineChanges = {
           soiCancelledQty: settled.cancelled,
-          soiPendingQty: 0,
-          soiLineStatus,
           ...(cancelReason !== undefined ? { soiCancelReason: cancelReason } : {}),
           soiModifiedOn: now,
           soiModifiedBy: actor,
@@ -1063,7 +1059,10 @@ export class SaleOrderService {
           soiId: line.soiId,
           soiLineNo: line.soiLineNo,
           soiCancelledQty: settled.moved,
-          soiLineStatus,
+          // Read back off the row the write returned rather than predicted here:
+          // the DB is what decides this column now, so what the caller is told is
+          // what the row actually holds.
+          soiLineStatus: updated.soiLineStatus,
         });
       }
       // The header caches are recomputed even when nothing was cancelled: they
@@ -1186,10 +1185,11 @@ export class SaleOrderService {
   private summariseOrderLines(
     settledLines: {
       line: SaleOrderItem;
-      // What the line will hold once the caller's write lands, which is not
-      // line.soiOrderQty on a line an over-delivery just revised upwards. Left
-      // off by the cancel path, which never moves the ordered quantity.
-      orderQty?: number;
+      // The BILLABLE quantity — soi_net_qty, the same base soi_pending_qty is
+      // generated from — as the line will hold it once the caller's write lands,
+      // which is not line.soiNetQty on a line an over-delivery just revised
+      // upwards. Left off by the cancel path, which never moves it.
+      netQty?: number;
       delivered: number;
       cancelled: number;
       pending: number;
@@ -1211,20 +1211,14 @@ export class SaleOrderService {
     let deliveredQty = 0;
     let cancelledQty = 0;
     let pendingQty = 0;
-    for (const {
-      line,
-      orderQty: settledQty,
-      delivered,
-      cancelled,
-      pending,
-      billedAmt,
-    } of settledLines) {
-      const orderQty = settledQty ?? asNumber(line.soiOrderQty);
+    for (const { line, netQty: settledQty, delivered, cancelled, pending, billedAmt } of
+      settledLines) {
+      const netQty = settledQty ?? asNumber(line.soiNetQty);
       // soi_net_amt is the only line-level money covering the whole line (after
       // discount, tax and the per-line charges), so the cancelled / pending
       // split is taken pro-rata from it. A zero-quantity line contributes
       // nothing rather than dividing by zero.
-      const unitShare = orderQty > 0 ? asNumber(line.soiNetAmt) / orderQty : 0;
+      const unitShare = netQty > 0 ? asNumber(line.soiNetAmt) / netQty : 0;
       cancelledAmt += cancelled * unitShare;
       pendingAmt += pending * unitShare;
       // soi_billed_amt is a maintained cache, so it is summed as-is rather than
@@ -1237,7 +1231,7 @@ export class SaleOrderService {
       // so_delivered_items counts FULLY delivered lines, the column's literal
       // meaning — a line that delivered 2 of 10 and cancelled the rest is
       // closed, but it is not one of these.
-      if (orderQty > 0 && Math.abs(delivered - orderQty) <= QTY_EPSILON) {
+      if (netQty > 0 && Math.abs(delivered - netQty) <= QTY_EPSILON) {
         deliveredItems += 1;
       }
     }
@@ -1287,28 +1281,9 @@ export class SaleOrderService {
       headerStatus: SALE_ORDER_FULFIL_PARTIAL,
     };
   }
-  // ck_soi_line_status: PENDING / PARTIAL / DELIVERED / CANCELLED. The same
-  // reading of "partial" the cancel path uses — a line that both delivered and
-  // wrote the rest off is PARTIAL, not DELIVERED.
-  private deriveLineStatus(delivered: number, cancelled: number, pending: number): string {
-    // Stated first so a zero-quantity line — which has no pending quantity
-    // either — is not read as CANCELLED just for having nothing left.
-    if (delivered <= QTY_EPSILON && cancelled <= QTY_EPSILON) {
-      return SALE_ORDER_ITEM_STATUS_PENDING;
-    }
-    if (pending > QTY_EPSILON) {
-      return SALE_ORDER_ITEM_STATUS_PARTIAL;
-    }
-    if (delivered <= QTY_EPSILON) {
-      return SALE_ORDER_ITEM_STATUS_CANCELLED;
-    }
-    return cancelled <= QTY_EPSILON
-      ? SALE_ORDER_ITEM_STATUS_DELIVERED
-      : SALE_ORDER_ITEM_STATUS_PARTIAL;
-  }
-  // Re-derives the fulfilment caches — soi_delivered_qty / soi_pending_qty /
-  // soi_billed_amt / soi_line_status, then the header roll-ups — from the bills
-  // standing against the order. The sale-bill module calls this inside its own
+  // Re-derives the fulfilment caches — soi_delivered_qty / soi_billed_amt, and
+  // through them the GENERATED soi_pending_qty / soi_line_status, then the header
+  // roll-ups — from the bills standing against the order. The sale-bill module calls this inside its own
   // save / delete transaction, once its lines are written, handing over every
   // order line the bill touches: the ones it points at NOW plus the ones it
   // pointed at BEFORE the save, because a line the payload drops or repoints has
@@ -1329,11 +1304,13 @@ export class SaleOrderService {
   // only ever moves quantity between delivered and pending — with one exception,
   // an over-delivery, which raises soi_order_qty; see the settlement below.
   //
-  // References come in two grains. A LINE reference (sbi_src_doc_line_no) names
-  // the order line it draws down; a HEADER one (sb_src_doc_id) names only the
-  // order, and asks for it to be re-derived from whatever bill lines actually
-  // point at it. Both are handled here, so a bill that fills in only its header
-  // still leaves the order's status telling the truth.
+  // References come at two grains, and both end up at the same place. A bill
+  // line carries the order LINE's own id in sbi_src_doc_id, which addresses one
+  // sale_order_item row by itself; the bill HEADER carries the ORDER's id in
+  // sb_src_doc_id, which names no line and asks only for the order to be
+  // re-derived. resolveOrderRefs turns either into the same (order, line number)
+  // pair, so a bill that fills in only its header still leaves the order's
+  // status telling the truth.
   async syncOrderFulfilment(
     tx: Prisma.TransactionClient,
     request: { refs: SaleOrderLineRef[] },
@@ -1343,35 +1320,95 @@ export class SaleOrderService {
     if (request.refs.length === 0) {
       return [];
     }
-    // Grouped by the order's primary key: one recompute per order, however many
-    // of its lines the calling document happened to touch. A header reference
-    // and the line references under it collapse into that same one recompute.
-    const byOrder = new Map<string, OrderFulfilmentTarget>();
-    for (const ref of request.refs) {
-      const key = `${ref.soId}|${ref.soAccYear}`;
-      const entry = byOrder.get(key) ?? {
-        soId: ref.soId,
-        soAccYear: ref.soAccYear,
-        lineNos: new Set<number>(),
-        // Whichever reference reached this order first words a rejection about
-        // the order itself; either one is true, and the first is the one the
-        // caller listed first.
-        fields: ref.fields,
-        lineNoField: null,
-      };
-      if (ref.soLineNo !== null) {
-        entry.lineNos.add(ref.soLineNo);
-        // Only a reference that named a line can produce an unknown-line
-        // rejection, so that message is worded from a reference that has one.
-        entry.lineNoField = entry.lineNoField ?? ref.fields.lineNo ?? null;
-      }
-      byOrder.set(key, entry);
-    }
+    const targets = await this.resolveOrderRefs(tx, request.refs);
     const results: SaleOrderFulfilmentResult[] = [];
-    for (const order of byOrder.values()) {
+    for (const order of targets) {
       results.push(await this.syncOneOrderFulfilment(tx, order, actor, now));
     }
     return results;
+  }
+  // Every reference the calling document made, resolved to the orders they
+  // actually name and grouped one entry per order — so a bill that points at
+  // four lines of one order recomputes it once, and a header reference collapses
+  // into that same recompute rather than adding a second.
+  //
+  // srcDocId is looked up as an ORDER id and as an order LINE id, the pair of
+  // grains PUT /cancel-lines already accepts on the same tuple. Both lookups run
+  // as one `in` read per accounting year rather than a pair per reference: a
+  // bill converting a twenty-line order would otherwise pay forty round trips to
+  // learn what two tell it.
+  //
+  // Deliberately BEFORE the per-order FOR UPDATE lock, because it is only a
+  // mapping from ids to ids. A line soft-deleted in the window between this read
+  // and that lock resolves to a line number the locked read no longer finds, and
+  // comes back as the unknown-line 400 below — a rejection, never a wrong
+  // number.
+  private async resolveOrderRefs(
+    tx: Prisma.TransactionClient,
+    refs: SaleOrderLineRef[],
+  ): Promise<OrderFulfilmentTarget[]> {
+    // sale_order and sale_order_item are both partitioned by the accounting
+    // year, so the reads are grouped by it: one partition each, never a scan
+    // across every year the database holds.
+    const byYear = new Map<string, SaleOrderLineRef[]>();
+    for (const ref of refs) {
+      const forYear = byYear.get(ref.srcAccYear) ?? [];
+      forYear.push(ref);
+      byYear.set(ref.srcAccYear, forYear);
+    }
+    const byOrder = new Map<string, OrderFulfilmentTarget>();
+    for (const [srcAccYear, yearRefs] of byYear) {
+      const srcDocIds = [...new Set(yearRefs.map((ref) => ref.srcDocId))];
+      const [orders, orderLines] = await Promise.all([
+        tx.saleOrder.findMany({
+          where: { soId: { in: srcDocIds }, soAccYear: srcAccYear, soIsDeleted: false },
+          select: { soId: true },
+        }),
+        // A soft-deleted line is not addressable: there is nothing left on it to
+        // draw down, and resolving through it would silently widen the reference
+        // to its whole order — the same rule the cancel endpoint follows.
+        tx.saleOrderItem.findMany({
+          where: { soiId: { in: srcDocIds }, soiAccYear: srcAccYear, soiIsDeleted: false },
+          select: { soiId: true, soiOrderId: true, soiLineNo: true },
+        }),
+      ]);
+      const orderIds = new Set(orders.map((order) => order.soId));
+      const lineById = new Map(orderLines.map((line) => [line.soiId, line]));
+      for (const ref of yearRefs) {
+        // The line grain first: an id that is a live order line is one, and no
+        // uuid is ever both. Its own line number is what it resolves to, so the
+        // recompute below never has to care which grain it arrived as.
+        const line = lineById.get(ref.srcDocId);
+        const soId = line ? line.soiOrderId : orderIds.has(ref.srcDocId) ? ref.srcDocId : null;
+        if (soId === null) {
+          throwSalesNotFound<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+            'Order not found',
+            ref.fields.docId,
+            `No active order or order line found with id ${ref.srcDocId} in accounting year ${srcAccYear}`,
+          );
+        }
+        const soLineNo = line ? line.soiLineNo : ref.soLineNo;
+        const key = `${soId}|${srcAccYear}`;
+        const entry = byOrder.get(key) ?? {
+          soId,
+          soAccYear: srcAccYear,
+          lineNos: new Set<number>(),
+          // Whichever reference reached this order first words a rejection about
+          // the order itself; either one is true, and the first is the one the
+          // caller listed first.
+          fields: ref.fields,
+          lineNoField: null,
+        };
+        if (soLineNo !== null) {
+          entry.lineNos.add(soLineNo);
+          // Only a reference that named a line can produce an unknown-line
+          // rejection, so that message is worded from a reference that has one.
+          entry.lineNoField = entry.lineNoField ?? ref.fields.lineNo ?? null;
+        }
+        byOrder.set(key, entry);
+      }
+    }
+    return [...byOrder.values()];
   }
   private async syncOneOrderFulfilment(
     tx: Prisma.TransactionClient,
@@ -1444,41 +1481,60 @@ export class SaleOrderService {
     // next — which is why this filters on sbi_src_doc_year (the ORDER's year)
     // and not on the bill line's own partition key. The relation filter is what
     // keeps a draft, a cancelled and a deleted bill out of the sum.
+    //
+    // Both grains are swept up in one read: bill lines that stored a soi_id and
+    // bill lines (or headers) that stored the so_id. A bill written before the
+    // line grain existed and one written after it therefore sum together, which
+    // is what stops an order's delivered quantity depending on which client
+    // keyed which delivery.
+    const lineIds = lines.map((line) => line.soiId);
     const billedItems = await tx.saleBillItem.findMany({
       where: {
         sbiSrcDocType: SALE_ORDER_SRC_DOC_TYPE,
-        sbiSrcDocId: soId,
+        sbiSrcDocId: { in: [soId, ...lineIds] },
         sbiSrcDocYear: soAccYear,
         sbiIsDeleted: false,
         bill: { sbStatus: BILL_STATUS_POSTED, sbIsDeleted: false },
       },
-      select: { sbiSrcDocLineNo: true, sbiBillQty: true, sbiNetAmt: true },
+      select: {
+        sbiSrcDocId: true,
+        sbiSrcDocLineNo: true,
+        sbiNetQty: true,
+        sbiNetAmt: true,
+      },
     });
+    const lineNoById = new Map(lines.map((line) => [line.soiId, line.soiLineNo]));
     // Summed per ORDER line, not per bill line: one order line routinely becomes
     // several bill lines — a batch split within one bill, or a part delivery
     // spread across several.
     const billedByLineNo = new Map<number, { qty: number; amt: number }>();
     for (const item of billedItems) {
-      if (item.sbiSrcDocLineNo === null) {
+      // The id first, exactly as the reference was resolved: a bill line holding
+      // a soi_id has already said which line it drew down, and its
+      // sbi_src_doc_line_no — sent or not — decides nothing.
+      const lineNo = lineNoById.get(item.sbiSrcDocId ?? '') ?? item.sbiSrcDocLineNo;
+      if (lineNo === null) {
         // Names the order but not a line of it, so there is nothing to draw
         // down. sale_bill also carries a header-level sb_src_doc_id, and a
         // client that fills only that in lands here.
         continue;
       }
-      const total = billedByLineNo.get(item.sbiSrcDocLineNo) ?? { qty: 0, amt: 0 };
-      total.qty += asNumber(item.sbiBillQty);
+      const total = billedByLineNo.get(lineNo) ?? { qty: 0, amt: 0 };
+      // sbi_net_qty, not sbi_bill_qty: the quantity in the order line's own
+      // terms — what soi_delivered_qty and soi_net_qty are counted in — after the
+      // bill line has resolved its case / length / pack into them.
+      total.qty += asNumber(item.sbiNetQty);
       total.amt += asNumber(item.sbiNetAmt);
-      billedByLineNo.set(item.sbiSrcDocLineNo, total);
+      billedByLineNo.set(lineNo, total);
     }
     const settledLines = lines.map((line) => {
       const stored = {
         line,
-        orderQty: asNumber(line.soiOrderQty),
+        netQty: asNumber(line.soiNetQty),
         delivered: asNumber(line.soiDeliveredQty),
         cancelled: asNumber(line.soiCancelledQty),
         pending: asNumber(line.soiPendingQty),
         billedAmt: asNumber(line.soiBilledAmt),
-        status: line.soiLineStatus,
         changed: false,
       };
       // Recomputed for the lines this call was handed AND for any line that
@@ -1493,41 +1549,44 @@ export class SaleOrderService {
       const delivered = roundQty(billed.qty);
       const billedAmt = roundAmount(billed.amt);
       const cancelled = stored.cancelled;
-      // ck_soi_qty_balance: order_qty = delivered + cancelled + pending. Pending
-      // is therefore what the ordered quantity has left once the other two are
-      // taken off it, never a number of its own.
-      let orderQty = stored.orderQty;
-      let pending = roundQty(orderQty - delivered - cancelled);
+      // soi_pending_qty is GENERATED as net − delivered − cancelled, so pending
+      // is not written and not decided here: this mirrors the DB's expression
+      // only to know what the row will hold, which the header roll-up needs
+      // before the write returns.
+      let netQty = stored.netQty;
+      let pending = roundQty(netQty - delivered - cancelled);
       if (pending < -QTY_EPSILON) {
-        // More went out than was ever ordered — the customer took the extra at
-        // the counter, or the order was keyed short. The bill is the record of
-        // what physically moved, so the ORDER is revised up to it rather than
-        // the delivery being refused: soi_order_qty becomes what is settled and
-        // nothing is left pending. Only ever upwards, and only from a bill that
-        // over-delivers; a bill for LESS than the line ordered leaves the
-        // shortfall sitting in soi_pending_qty, which is what a part delivery
-        // is. Written in the same statement as the quantities it balances, so
-        // ck_soi_qty_balance never sees a half-applied line.
-        orderQty = roundQty(delivered + cancelled);
+        // More went out than the line ever had to give — the customer took the
+        // extra at the counter, or the order was keyed short. The bill is the
+        // record of what physically moved, so the LINE is revised up to it rather
+        // than the delivery being refused: soi_net_qty becomes what is settled
+        // and nothing is left pending. Only ever upwards, and only from a bill
+        // that over-delivers; a bill for LESS than the line carried leaves the
+        // shortfall sitting in soi_pending_qty, which is what a part delivery is.
+        //
+        // soi_order_qty is deliberately not touched: it is what the customer
+        // asked for, in the unit they asked for it in, and no longer takes part
+        // in the fulfilment identity. Without this the generated pending would go
+        // negative and ck_soi_qty_signs would refuse the write.
+        netQty = roundQty(delivered + cancelled);
         pending = 0;
       }
       // Only float noise can be left below zero once the branch above has run.
       const pendingQty = Math.max(pending, 0);
-      const status = this.deriveLineStatus(delivered, cancelled, pendingQty);
       return {
         line,
-        orderQty,
+        netQty,
         delivered,
         cancelled,
         pending: pendingQty,
         billedAmt,
-        status,
+        // The three written columns are what decide the two generated ones, so
+        // comparing them is the whole test: a line whose net / delivered / billed
+        // amount all still stand cannot have a stale pending or status either.
         changed:
-          Math.abs(orderQty - stored.orderQty) > QTY_EPSILON ||
+          Math.abs(netQty - stored.netQty) > QTY_EPSILON ||
           Math.abs(delivered - stored.delivered) > QTY_EPSILON ||
-          Math.abs(pendingQty - stored.pending) > QTY_EPSILON ||
-          Math.abs(billedAmt - stored.billedAmt) > AMOUNT_EPSILON ||
-          status !== stored.status,
+          Math.abs(billedAmt - stored.billedAmt) > AMOUNT_EPSILON,
       };
     });
     const fulfilledLines: SaleOrderFulfilledLine[] = [];
@@ -1540,13 +1599,12 @@ export class SaleOrderService {
         where: { soiId_soiAccYear: { soiId: line.soiId, soiAccYear: line.soiAccYear } },
         data: {
           // Unchanged on all but an over-delivered line, and sent every time
-          // regardless: it is the left-hand side of ck_soi_qty_balance, and the
-          // three quantities it balances against are all in this same write.
-          soiOrderQty: settled.orderQty,
+          // regardless: it is the base soi_pending_qty is generated from, so it
+          // belongs in the same statement as the delivered quantity it is
+          // balanced against — the row the CHECK sees is the finished one.
+          soiNetQty: settled.netQty,
           soiDeliveredQty: settled.delivered,
-          soiPendingQty: settled.pending,
           soiBilledAmt: settled.billedAmt,
-          soiLineStatus: settled.status,
           soiModifiedOn: now,
           soiModifiedBy: actor,
         },
@@ -1569,12 +1627,14 @@ export class SaleOrderService {
       fulfilledLines.push({
         soiId: line.soiId,
         soiLineNo: line.soiLineNo,
-        soiOrderQty: settled.orderQty,
+        soiNetQty: settled.netQty,
         soiDeliveredQty: settled.delivered,
         soiCancelledQty: settled.cancelled,
-        soiPendingQty: settled.pending,
+        // The two generated columns come off the row the write returned, not off
+        // the prediction above: what the caller is told is what the DB derived.
+        soiPendingQty: asNumber(updated.soiPendingQty),
         soiBilledAmt: settled.billedAmt,
-        soiLineStatus: settled.status,
+        soiLineStatus: updated.soiLineStatus,
       });
     }
     const rollup = this.summariseOrderLines(settledLines);
@@ -2340,11 +2400,10 @@ export class SaleOrderService {
     return Math.round((recd - adjusted - refund - forfeit) * 100) / 100;
   }
   // Mirrors the DB CHECK constraints on sale_order_item (ck_soi_free_type /
-  // ck_soi_line_status / ck_soi_qty_signs / ck_soi_reserved / ck_soi_size,
-  // migration 20260808132323), judged on the FINAL resolved values. The
-  // quantity balance (ck_soi_qty_balance) is handled separately by
-  // applyDerivedItemQuantities, which derives the pending quantity when the
-  // payload does not carry it.
+  // ck_soi_line_status / ck_soi_qty_signs / ck_soi_reserved / ck_soi_size),
+  // judged on the FINAL resolved values. The fulfilment identity — what is left
+  // pending — is handled separately by applyDerivedItemQuantities, since
+  // migration 20260814060000 made soi_pending_qty a generated column.
   private ensureOrderItemValuesAreAllowed(
     inputItem: SaveSaleOrderItemDto,
     existingItem: SaleOrderItem | undefined,
@@ -2358,6 +2417,9 @@ export class SaleOrderService {
         });
       }
     }
+    // soi_line_status is generated, so a payload value is never written — but a
+    // client sending one that is not even in the vocabulary has misunderstood
+    // the column, and is told so rather than having it quietly dropped.
     if (inputItem.soiLineStatus !== undefined) {
       if (
         inputItem.soiLineStatus === null ||
@@ -2408,57 +2470,70 @@ export class SaleOrderService {
       );
     }
   }
-  // ck_soi_qty_balance: every ordered unit is delivered, cancelled or still
-  // pending. When the payload carries soiPendingQty the equation is judged and
-  // a mismatch is a 400; when it does not, the pending quantity is DERIVED as
-  // ordered − delivered − cancelled — a new line starts fully pending without
-  // the client having to restate the obvious, and an edit that moves the
-  // ordered quantity keeps the caches consistent.
+  // The fulfilment identity, now that the DB owns it: soi_pending_qty is
+  // GENERATED as soi_net_qty − delivered − cancelled (migration
+  // 20260814060000), so nothing here writes it. What is left is to keep a
+  // payload from producing a row Postgres would refuse, and to word the refusal
+  // in the client's own field names rather than as a raw ck_soi_qty_signs
+  // violation.
+  //
+  // soi_net_qty is the BILLABLE quantity — the one soi_delivered_qty is summed
+  // against from sbi_net_qty — so a new line that says only how much was ordered
+  // is given the same number to be billed against. Without it the line would sit
+  // at net 0 with nothing pending, and the first bill against it would be an
+  // over-delivery.
   private applyDerivedItemQuantities(
     data: Prisma.SaleOrderItemUncheckedCreateInput | Prisma.SaleOrderItemUncheckedUpdateInput,
     inputItem: SaveSaleOrderItemDto,
     existingItem: SaleOrderItem | undefined,
   ): void {
     const orderQty = asNumber(merged(inputItem.soiOrderQty, existingItem?.soiOrderQty));
+    if (!existingItem && inputItem.soiNetQty === undefined) {
+      data.soiNetQty = orderQty;
+    }
+    const netQty =
+      inputItem.soiNetQty !== undefined
+        ? asNumber(inputItem.soiNetQty)
+        : existingItem
+          ? asNumber(existingItem.soiNetQty)
+          : orderQty;
     const deliveredQty = asNumber(merged(inputItem.soiDeliveredQty, existingItem?.soiDeliveredQty));
     const cancelledQty = asNumber(merged(inputItem.soiCancelledQty, existingItem?.soiCancelledQty));
-    const expectedPending = orderQty - deliveredQty - cancelledQty;
-    if (inputItem.soiPendingQty !== undefined) {
-      const pendingQty = asNumber(inputItem.soiPendingQty);
-      if (Math.abs(orderQty - (deliveredQty + cancelledQty + pendingQty)) > QTY_EPSILON) {
-        throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
-          'Invalid order item value',
-          [
-            {
-              field: 'soiPendingQty',
-              message:
-                'soiOrderQty must equal soiDeliveredQty + soiCancelledQty + soiPendingQty ' +
-                '(ck_soi_qty_balance); omit soiPendingQty to have it derived',
-            },
-          ],
-        );
-      }
-      return;
-    }
-    if (expectedPending < -QTY_EPSILON) {
+    // Rounded to the milli-unit exactly as the numeric(15,3) column stores it,
+    // which is also how the generated column rounds.
+    const derivedPending = Math.round((netQty - deliveredQty - cancelledQty) * 1000) / 1000;
+    if (derivedPending < -QTY_EPSILON) {
       throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
         'Invalid order item value',
         [
           {
-            field: 'soiOrderQty',
+            field: 'soiNetQty',
             message:
-              'soiDeliveredQty + soiCancelledQty must not exceed soiOrderQty (ck_soi_qty_balance)',
+              'soiDeliveredQty + soiCancelledQty must not exceed soiNetQty ' +
+              '(soi_pending_qty is derived from the three and ck_soi_qty_signs keeps it positive)',
           },
         ],
       );
     }
-    // Rounded to the milli-unit exactly as the numeric(15,3) column stores it.
-    const derived = Math.round(expectedPending * 1000) / 1000;
-    // Only written when it differs from what the row would otherwise hold, so
-    // an update that touches no quantity writes no quantity.
-    const currentPending = existingItem ? asNumber(existingItem.soiPendingQty) : 0;
-    if (!existingItem || Math.abs(currentPending - derived) > QTY_EPSILON) {
-      data.soiPendingQty = derived;
+    // A payload that carries the derived column is not refused for carrying it —
+    // a client round-tripping a GET response does — but it IS told when the
+    // number it sent is not the number the row will hold, rather than saving
+    // something that silently disagrees with what it displayed.
+    if (
+      inputItem.soiPendingQty !== undefined &&
+      Math.abs(asNumber(inputItem.soiPendingQty) - derivedPending) > QTY_EPSILON
+    ) {
+      throwSalesBadRequest<SaleOrderErrorDetail, SaleOrderErrorResponse>(
+        'Invalid order item value',
+        [
+          {
+            field: 'soiPendingQty',
+            message:
+              'soiPendingQty is derived by the database as soiNetQty − soiDeliveredQty − ' +
+              'soiCancelledQty and cannot be set; omit it or send the derived value',
+          },
+        ],
+      );
     }
   }
   private requireItemField(value: string | undefined, field: string): string {

@@ -515,16 +515,22 @@ Not an endpoint of this module — a service method the **sale-bill** module cal
 save / delete transaction. A bill line says which order line it came from, and the order re-derives
 its fulfilment caches from the bills standing against it.
 
-**The link.** `sale_bill_item` carries the reference; the order line is addressed by three of its
-columns:
+**The link.** `sale_bill_item` carries the reference:
 
 | Bill line column | Points at |
 | --- | --- |
 | `sbi_src_doc_type` | must be `SALES_ORDER` for any of this to happen |
-| `sbi_src_doc_id` | `so_id` |
-| `sbi_src_doc_year` | `so_acc_year` — together with `so_id` this **is** the order's primary key |
-| `sbi_src_doc_line_no` | `soi_line_no` (the printed line, not `soi_id`) |
+| `sbi_src_doc_id` | **`soi_id`** — the order line itself. Also accepted: `so_id`, the order, which then needs `sbi_src_doc_line_no` with it |
+| `sbi_src_doc_year` | the **order's** accounting year — `soi_acc_year` / `so_acc_year`, the same value either way, and the second half of whichever primary key `sbi_src_doc_id` belongs to |
+| `sbi_src_doc_line_no` | `soi_line_no` (the printed line, not `soi_id`) — read only when `sbi_src_doc_id` is an order id, ignored when it is a line id |
 | `sbi_src_doc_refno` | `so_order_refno`, carried for display / reprint only — nothing resolves off it |
+
+**Two grains, one resolution.** `sbi_src_doc_id` is looked up as an order line id and as an order
+id, the same pair `PUT /cancel-lines` accepts on its own `srcDocId` — no uuid is ever both. A line
+id resolves to its own line number, so everything downstream of the lookup sees one `(order, line
+number)` shape and neither grain is privileged. Bills written at either grain sum together against
+the same order line, which is what stops `soi_delivered_qty` depending on which client keyed which
+delivery. An id that is neither answers 404 naming `sbiSrcDocId`.
 
 The bill **header** carries the same reference one grain coarser — `sb_src_doc_type` /
 `sb_src_doc_id` / `sb_src_doc_year`, which name the order the bill as a whole was raised against.
@@ -542,7 +548,7 @@ this method does.
 
 | Column | Derivation |
 | --- | --- |
-| `soi_delivered_qty` | Σ `sbi_bill_qty` over every **posted** bill line pointing at this order line |
+| `soi_delivered_qty` | Σ **`sbi_net_qty`** over every **posted** bill line pointing at this order line — the quantity in the order line's own terms, which is what `soi_order_qty` is counted in. Not `sbi_bill_qty`: a bill keyed in cases against an order keyed in pieces would draw down the wrong number |
 | `soi_billed_amt` | Σ `sbi_net_amt` over the same rows |
 | `soi_pending_qty` | `soi_order_qty − delivered − cancelled`, which is what `ck_soi_qty_balance` demands |
 | `soi_order_qty` | **only ever raised, and only by an over-delivery** — see below |
@@ -587,8 +593,8 @@ order can never claim a delivery from a bill that rolled back.
 
 | Cause | Field |
 | --- | --- |
-| Order id / year names no active order | `sbiSrcDocId`, or `sbSrcDocId` when the header is what named it |
-| Line number is not on that order | `sbiSrcDocLineNo` |
+| Id / year names no active order **and** no active order line (404) | `sbiSrcDocId`, or `sbSrcDocId` when the header is what named it |
+| Line number is not on that order — only reachable at the `so_id` grain | `sbiSrcDocLineNo` |
 
 Each rejection is worded from the columns the reference was actually read out of, so a header-level
 reference is never reported against a line-level field the client never sent.

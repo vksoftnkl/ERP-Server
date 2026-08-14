@@ -6059,9 +6059,9 @@ model SaleOrder {
 
 // ----- prisma/sales/saleOrderItem.prisma -----
 // One row per ORDERED LINE (not per batch: an order allocates no stock).
-// Fulfilment is tracked as three caches that must add up to the ordered
-// quantity (ck_soi_qty_balance), so "what is still pending" never needs the
-// bill table.
+// Fulfilment is tracked as two written caches — delivered and cancelled — from
+// which soi_pending_qty and soi_line_status are GENERATED, so "what is still
+// pending" never needs the bill table and can never disagree with itself.
 //
 // LIST-partitioned by soi_acc_year — see the note on SaleOrder.
 model SaleOrderItem {
@@ -6113,7 +6113,10 @@ model SaleOrderItem {
   // Fulfilment caches — sale_bill_item is the truth (sbi_src_doc_id).
   soiDeliveredQty     Decimal   @default(0) @db.Decimal(15, 3) @map("soi_delivered_qty")
   soiCancelledQty     Decimal   @default(0) @db.Decimal(15, 3) @map("soi_cancelled_qty")
-  soiPendingQty       Decimal   @default(0) @db.Decimal(15, 3) @map("soi_pending_qty")
+  // GENERATED ALWAYS ... STORED as round(net - delivered - cancelled, 3)
+  // (migration 20260814060000). Read-only: writing it raises 428C9. The
+  // no-arg dbgenerated() is what stops `migrate dev` emitting DROP DEFAULT.
+  soiPendingQty       Decimal   @default(dbgenerated()) @db.Decimal(15, 3) @map("soi_pending_qty")
   soiBilledAmt        Decimal   @default(0) @db.Decimal(15, 2) @map("soi_billed_amt")
   // Rates
   soiRate             Decimal   @default(0) @db.Decimal(15, 4) @map("soi_rate")
@@ -6185,7 +6188,9 @@ model SaleOrderItem {
   soiMrpSavingsPerc   Decimal?  @db.Decimal(15, 4) @map("soi_mrp_savings_perc")
   // Line fulfilment / attribution
   soiDeliveryDate     DateTime? @db.Date @map("soi_delivery_date") // a split delivery per line
-  soiLineStatus       String    @default("PENDING") @db.VarChar(20) @map("soi_line_status")
+  // GENERATED ALWAYS ... STORED from the three quantities (migration
+  // 20260814060000) — PENDING / PARTIAL / DELIVERED / CANCELLED. Read-only.
+  soiLineStatus       String    @default(dbgenerated()) @db.VarChar(20) @map("soi_line_status")
   soiSalesmanId       String?   @db.Uuid @map("soi_salesman_id")
   soiSchemeId         String?   @db.Uuid @map("soi_scheme_id")
   soiSchemeName       String?   @db.VarChar(150) @map("soi_scheme_name")
@@ -6211,8 +6216,9 @@ model SaleOrderItem {
   // existing names. Do NOT add @@unique/@@index for them.
   //
   // CHECK constraints (DB-only): ck_soi_free_type, ck_soi_line_no,
-  // ck_soi_line_status, ck_soi_qty_signs, ck_soi_qty_balance,
-  // ck_soi_reserved, ck_soi_size.
+  // ck_soi_line_status, ck_soi_qty_signs, ck_soi_reserved, ck_soi_size.
+  // ck_soi_qty_balance was dropped by 20260814060000 — the balance identity is
+  // now how soi_pending_qty is computed, so the CHECK was a tautology.
   @@id([soiId, soiAccYear], map: "pk_sale_order_item")
   @@index([soiOrderId], map: "ix_soi_order")
   @@map("sale_order_item")

@@ -3837,7 +3837,7 @@ Table sale_order_item {
   soiAvailableStock Decimal [not null, default: 0]
   soiDeliveredQty Decimal [not null, default: 0]
   soiCancelledQty Decimal [not null, default: 0]
-  soiPendingQty Decimal [not null, default: 0]
+  soiPendingQty Decimal [not null]
   soiBilledAmt Decimal [not null, default: 0]
   soiRate Decimal [not null, default: 0]
   soiRatePreTax Decimal [not null, default: 0]
@@ -3900,7 +3900,7 @@ Table sale_order_item {
   soiMrpSavings Decimal
   soiMrpSavingsPerc Decimal
   soiDeliveryDate DateTime
-  soiLineStatus String [not null, default: 'PENDING']
+  soiLineStatus String [not null]
   soiSalesmanId String
   soiSchemeId String
   soiSchemeName String

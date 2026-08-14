@@ -1211,17 +1211,21 @@ export class BillService {
   private toOrderLineRefs(items: SaleBillItem[]): SaleOrderLineRef[] {
     const refs: SaleOrderLineRef[] = [];
     for (const item of items) {
+      // Both halves of a primary key or nothing. sbi_src_doc_id is normally the
+      // soi_id of the order line the bill line came from, in which case it
+      // addresses that line on its own and sbi_src_doc_line_no adds nothing; a
+      // client that instead stored the so_id needs the line number with it. The
+      // sale-order module tells the two apart, so neither is asked for here.
       if (
         item.sbiSrcDocType !== SALE_ORDER_SRC_DOC_TYPE ||
         !item.sbiSrcDocId ||
-        !item.sbiSrcDocYear ||
-        item.sbiSrcDocLineNo === null
+        !item.sbiSrcDocYear
       ) {
         continue;
       }
       refs.push({
-        soId: item.sbiSrcDocId,
-        soAccYear: item.sbiSrcDocYear.trim(),
+        srcDocId: item.sbiSrcDocId,
+        srcAccYear: item.sbiSrcDocYear.trim(),
         soLineNo: item.sbiSrcDocLineNo,
         fields: BILL_ITEM_SRC_DOC_FIELDS,
       });
@@ -1248,8 +1252,8 @@ export class BillService {
     }
     return [
       {
-        soId: bill.sbSrcDocId,
-        soAccYear: bill.sbSrcDocYear.trim(),
+        srcDocId: bill.sbSrcDocId,
+        srcAccYear: bill.sbSrcDocYear.trim(),
         soLineNo: null,
         fields: BILL_SRC_DOC_FIELDS,
       },
