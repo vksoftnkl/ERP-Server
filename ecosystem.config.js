@@ -9,6 +9,10 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 8080,
+        // TLS is terminated by the platform load balancer, so the app serves plain
+        // HTTP on PORT. Pinned here (not left to .env) because dotenv does not
+        // override values already present in process.env.
+        HTTPS_ENABLED: 'false',
       },
     },
   ],

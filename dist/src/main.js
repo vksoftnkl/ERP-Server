@@ -230,5 +230,8 @@ async function bootstrap() {
     }
     logger.log(`DB connected: ${isDbConnected}`, 'Bootstrap');
 }
-void bootstrap();
+bootstrap().catch((error) => {
+    console.error('Fatal error during bootstrap:', error);
+    process.exit(1);
+});
 //# sourceMappingURL=main.js.map

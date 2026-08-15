@@ -247,4 +247,9 @@ async function bootstrap(): Promise<void> {
   }
   logger.log(`DB connected: ${isDbConnected}`, 'Bootstrap');
 }
-void bootstrap();
+bootstrap().catch((error: unknown) => {
+  // Exit non-zero so the process manager can distinguish a fatal startup failure
+  // from a clean shutdown and apply its restart backoff instead of looping.
+  console.error('Fatal error during bootstrap:', error);
+  process.exit(1);
+});
