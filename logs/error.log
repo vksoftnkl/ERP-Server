@@ -5931,3 +5931,6 @@ Foreign key constraint violated on the constraint: `fk_sb_pos_state`
     at async Proxy._transactionWithCallback (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:722:18)
     at async BillService.createBill (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.service.ts:628:14)
     at async BillController.save (/home/vk/Dev/erp/ERP server/src/modules/sales/bill/bill.controller.ts:52:18)
+2026-08-15T07:12:08.920Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-15T07:25:52.913Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-15T09:48:22.393Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

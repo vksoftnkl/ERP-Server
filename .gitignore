@@ -6,6 +6,9 @@ coverage
 .env.local
 .env.*.local
 
+# Local development TLS certificates
+certs
+
 # Local runtime logs and release binaries
 logs/*.log
 release/erp-server
