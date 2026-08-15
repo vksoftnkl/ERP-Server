@@ -38,11 +38,13 @@ let TransactionController = class TransactionController {
 };
 exports.TransactionController = TransactionController;
 __decorate([
-    (0, common_1.Get)('party-advance'),
+    (0, common_1.Get)('party-balance'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: "Get a party's unspent credits, available to adjust against a bill",
-        description: 'Every open ADVANCE and SALES_RETURN the party holds on the CR side, oldest first (FIFO), ' +
+        description: 'Every open ADVANCE and SALES_RETURN the party holds on the side named by `type` — CR ' +
+            '(the company owes the party) when it is omitted, DR (the party owes the company) when ' +
+            'asked for — oldest first (FIFO), ' +
             'tie-broken on docRefno so two credits dated the same day never swap places between fetches. ' +
             'Each row carries billType and the adjType / settlementMode it settles as, plus billAccYear — ' +
             'post that alongside billId, since acc_bill_balance is keyed on the pair. There is no ' +

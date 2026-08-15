@@ -19,10 +19,12 @@ let TransactionService = class TransactionService {
         this.pg = pg;
     }
     async getPartyAdjustableCredits(query) {
+        const side = query.type ?? transaction_api_types_1.DEFAULT_ADJUSTABLE_CREDIT_SIDE;
         const { rows } = await this.pg.query(ADJUSTABLE_CREDITS_SQL, [
             query.partyId,
             query.companyId,
             ADJUSTABLE_BILL_TYPES,
+            side,
         ]);
         return rows.map((row) => toAdjustableCredit(row));
     }
@@ -45,6 +47,7 @@ function toAdjustableCredit(row) {
         billAmount: Number(row.abl_bill_amount),
         pendingAmount: Number(row.abl_pending_amount),
         status: row.abl_status,
+        drCr: row.abl_dr_cr,
         srcModule: row.abl_src_module,
         srcDocType: row.abl_src_doc_type,
         srcDocId: row.abl_src_doc_id,
@@ -68,6 +71,7 @@ SELECT
     abl_bill_amount,        -- face value — tooltip only, the panel shows what is LEFT
     abl_pending_amount,     -- GENERATED: bill - alloc - disc - writeoff
     abl_status,             -- OPEN | PARTIAL  (GENERATED; CLOSED is filtered out)
+    abl_dr_cr,              -- echoes the requested side; ADVANCE means different things on each
     -- The FY the credit originated in. The bill is keyed on (id, year), so this
     -- travels with abl_id into abj_bill_acc_year.
     abl_acc_year,
@@ -85,12 +89,15 @@ WHERE  abl_party_id      = $1::uuid
   AND  abl_is_deleted    = false
   AND  abl_is_active     = true
 
-  -- CR = payable = the company owes the party. Required alongside the type
-  -- filter, not instead of it: ADVANCE is bidirectional in this schema (a
-  -- SUPPLIER advance is money paid out, and lands DR). Without this, a party
-  -- who is both customer and supplier would offer their own supplier advances
-  -- as settlement for a sales invoice.
-  AND  abl_dr_cr         = 'CR'
+  -- The side, from the "type" parameter — CR when the caller omits it.
+  --
+  -- CR = payable = the company owes the party; DR = receivable = the party owes
+  -- the company. Bound, but never dropped: ADVANCE is bidirectional in this
+  -- schema (a SUPPLIER advance is money paid out, and lands DR). Leave the side
+  -- unfiltered and a party who is both customer and supplier would offer their
+  -- own supplier advances as settlement for a sales invoice — which is why the
+  -- DTO defaults the parameter instead of treating "absent" as "both".
+  AND  abl_dr_cr         = $4::text
 
   -- OPENING and JOURNAL credits are deliberately NOT offered yet — see
   -- AdjustableCreditBillType, which is where this list comes from.

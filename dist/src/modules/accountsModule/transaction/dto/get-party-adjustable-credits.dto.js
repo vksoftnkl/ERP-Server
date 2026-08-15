@@ -11,10 +11,14 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GetPartyAdjustableCreditsDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
+const class_transformer_1 = require("class-transformer");
+const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
+const transaction_api_types_1 = require("../types/transaction-api.types");
 class GetPartyAdjustableCreditsDto {
     partyId;
     companyId;
+    type;
 }
 exports.GetPartyAdjustableCreditsDto = GetPartyAdjustableCreditsDto;
 __decorate([
@@ -33,4 +37,16 @@ __decorate([
     (0, dtoDecorators_1.RequiredUuid)(),
     __metadata("design:type", String)
 ], GetPartyAdjustableCreditsDto.prototype, "companyId", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        enum: transaction_api_types_1.AdjustableCreditSide,
+        default: transaction_api_types_1.DEFAULT_ADJUSTABLE_CREDIT_SIDE,
+        description: 'CR = the company owes the party (customer advances, sales returns) — the default. ' +
+            'DR = the party owes the company (supplier advances, purchase returns). Case-insensitive.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Transform)(({ value }) => (0, dtoDecorators_1.toUpperTrimmed)(value)),
+    (0, class_validator_1.IsEnum)(transaction_api_types_1.AdjustableCreditSide),
+    __metadata("design:type", String)
+], GetPartyAdjustableCreditsDto.prototype, "type", void 0);
 //# sourceMappingURL=get-party-adjustable-credits.dto.js.map

@@ -1,5 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { RequiredUuid } from 'src/common/dto/dtoDecorators';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsEnum, IsOptional } from 'class-validator';
+import { RequiredUuid, toUpperTrimmed } from 'src/common/dto/dtoDecorators';
+import {
+  AdjustableCreditSide,
+  DEFAULT_ADJUSTABLE_CREDIT_SIDE,
+} from '../types/transaction-api.types';
 
 /**
  * Both parameters are required. `companyId` is not a convenience narrowing here
@@ -28,4 +34,25 @@ export class GetPartyAdjustableCreditsDto {
   })
   @RequiredUuid()
   companyId!: string;
+
+  /**
+   * Which side of the party's account to read. Optional, and CR when omitted —
+   * every caller before this parameter existed asked the credit question, and
+   * silently widening them to both sides would offer a supplier advance as
+   * settlement on a sales invoice.
+   *
+   * Accepted in either case (`cr` / `CR`); the value is upper-cased before it is
+   * validated, so the enum stays the one spelling the SQL binds.
+   */
+  @ApiPropertyOptional({
+    enum: AdjustableCreditSide,
+    default: DEFAULT_ADJUSTABLE_CREDIT_SIDE,
+    description:
+      'CR = the company owes the party (customer advances, sales returns) — the default. ' +
+      'DR = the party owes the company (supplier advances, purchase returns). Case-insensitive.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => toUpperTrimmed(value))
+  @IsEnum(AdjustableCreditSide)
+  type?: AdjustableCreditSide;
 }

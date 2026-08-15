@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   AdjustableCreditBillType,
+  AdjustableCreditSide,
   AdjustableCreditStatus,
   BillAdjType,
   BillSettlementMode,
@@ -75,6 +76,14 @@ export class AdjustableCreditDto {
     description: 'CLOSED credits are never returned.',
   })
   status!: AdjustableCreditStatus;
+
+  @ApiProperty({
+    enum: AdjustableCreditSide,
+    enumName: 'AdjustableCreditSide',
+    description:
+      "abl_dr_cr — the side this row sits on, echoing the request's type. ADVANCE on CR is the customer's money held; the same ADVANCE on DR is money paid to a supplier.",
+  })
+  drCr!: AdjustableCreditSide;
 
   @ApiPropertyOptional({ nullable: true, example: 'SALES', maxLength: 20 })
   srcModule!: string | null;

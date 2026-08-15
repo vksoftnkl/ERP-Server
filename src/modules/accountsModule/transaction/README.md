@@ -10,13 +10,20 @@ and what `acc_bill_adjustment` is then posted from.
 ## Endpoint
 
 ```
-GET /api/v1/transactions/get?partyId=<uuid>&companyId=<uuid>
+GET /api/v1/transactions/party-advance?partyId=<uuid>&companyId=<uuid>&type=CR
 ```
 
 | Param | Type | Required | Notes |
 |---|---|---|---|
 | `partyId` | uuid | **yes** | `acc_bill_balance.abl_party_id` |
 | `companyId` | uuid | **yes** | Tenant scope — required, not a narrowing filter |
+| `type` | `CR` \| `DR` | no — defaults to `CR` | `abl_dr_cr`. Case-insensitive (`cr` works) |
+
+`type` picks the side of the party's account: `CR` is what the company owes the
+party (customer advances, sales returns) and is what the adjustment panel wants;
+`DR` is what the party owes the company (a supplier advance already paid out, a
+purchase return). Omitting it means `CR`, **not** both sides — see *Why the
+predicate is what it is*. Each row echoes the side back as `drCr`.
 
 `companyId` is required rather than optional (the credit summary treats it as a
 narrowing filter). Offering one tenant's credits as settlement on another
@@ -40,6 +47,7 @@ There is **no accounting-year parameter** — see *Accounting year* below.
       "billAmount": 50000,      // face value — display only
       "pendingAmount": 18500,   // what is LEFT; the ceiling for this row
       "status": "PARTIAL",
+      "drCr": "CR",             // the requested side, echoed back
       "srcModule": "SALES",
       "srcDocType": "SALES_ORDER",
       "srcDocId": "0197e0c5-...",
@@ -102,11 +110,13 @@ otherwise indistinguishable to the operator.
 
 ## Why the predicate is what it is
 
-- **`abl_dr_cr = 'CR'`** — CR = payable = the company owes the party. Required
-  *alongside* the type filter, not instead of it: `ADVANCE` is bidirectional in
-  this schema, and a **supplier** advance is money paid out and lands DR. Without
-  the `CR` clause a party who is both customer and supplier would offer their own
-  supplier advances as settlement for a sales invoice.
+- **`abl_dr_cr = $4`** — bound from `type`, defaulted to `CR`, and never left
+  out. CR = payable = the company owes the party; DR = receivable = the party
+  owes the company. The side filters *alongside* the bill-type filter, not
+  instead of it: `ADVANCE` is bidirectional in this schema, and a **supplier**
+  advance is money paid out and lands DR. Drop the side clause — or read a
+  missing `type` as "both sides" — and a party who is both customer and supplier
+  offers their own supplier advances as settlement for a sales invoice.
 - **`abl_bill_type IN (ADVANCE, SALES_RETURN)`** — `OPENING` and `JOURNAL`
   credits are deliberately not offered yet. `ck_abj_against` only lets
   `ADVANCE_ADJUST` / `NOTE_ADJUST` / `TRANSFER` name an opposite bill, and which

@@ -14,6 +14,11 @@ export declare enum BillSettlementMode {
     ADVANCE = "ADVANCE",
     CREDIT_NOTE = "CREDIT_NOTE"
 }
+export declare enum AdjustableCreditSide {
+    CR = "CR",
+    DR = "DR"
+}
+export declare const DEFAULT_ADJUSTABLE_CREDIT_SIDE = AdjustableCreditSide.CR;
 export declare enum AdjustableCreditStatus {
     OPEN = "OPEN",
     PARTIAL = "PARTIAL"
@@ -26,6 +31,7 @@ export interface AdjustableCredit {
     billId: string;
     billAccYear: string;
     billType: AdjustableCreditBillType;
+    drCr: AdjustableCreditSide;
     docRefno: string;
     docDate: string;
     billAmount: number;

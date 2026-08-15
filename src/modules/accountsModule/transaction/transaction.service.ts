@@ -4,8 +4,10 @@ import { GetPartyAdjustableCreditsDto } from './dto/get-party-adjustable-credits
 import {
   AdjustableCredit,
   AdjustableCreditBillType,
+  AdjustableCreditSide,
   AdjustableCreditStatus,
   CREDIT_ADJUSTMENT_ROUTING,
+  DEFAULT_ADJUSTABLE_CREDIT_SIDE,
 } from './types/transaction-api.types';
 /**
  * One row of the credit query. Every monetary column is `numeric(18,2)` and
@@ -21,6 +23,7 @@ interface AdjustableCreditRow {
   abl_bill_amount: string;
   abl_pending_amount: string;
   abl_status: string;
+  abl_dr_cr: string;
   abl_acc_year: string;
   abl_src_module: string | null;
   abl_src_doc_type: string | null;
@@ -42,6 +45,10 @@ export class TransactionService {
   /**
    * Every unspent credit the party holds, oldest first.
    *
+   * `query.type` picks the side: CR (the default) is what the party is owed and
+   * what the adjustment panel offers, DR is what the party owes. The side is
+   * never left unfiltered — see the SQL's note on ADVANCE being bidirectional.
+   *
    * Returns `[]` when the party holds nothing — which is also what an unknown
    * party returns. Deliberate: this is a panel feed, and "no credit to offer" is
    * the same screen either way. The party is validated where it is chosen (the
@@ -51,10 +58,12 @@ export class TransactionService {
   async getPartyAdjustableCredits(
     query: GetPartyAdjustableCreditsDto,
   ): Promise<AdjustableCredit[]> {
+    const side = query.type ?? DEFAULT_ADJUSTABLE_CREDIT_SIDE;
     const { rows } = await this.pg.query<AdjustableCreditRow>(ADJUSTABLE_CREDITS_SQL, [
       query.partyId,
       query.companyId,
       ADJUSTABLE_BILL_TYPES,
+      side,
     ]);
     return rows.map((row) => toAdjustableCredit(row));
   }
@@ -81,6 +90,9 @@ function toAdjustableCredit(row: AdjustableCreditRow): AdjustableCredit {
     pendingAmount: Number(row.abl_pending_amount),
     // Generated column; `abl_pending_amount > 0` has already excluded CLOSED.
     status: row.abl_status as AdjustableCreditStatus,
+    // The WHERE clause binds this to the requested side, so the cast is the
+    // value that was asked for and not a widening guess.
+    drCr: row.abl_dr_cr as AdjustableCreditSide,
     srcModule: row.abl_src_module,
     srcDocType: row.abl_src_doc_type,
     srcDocId: row.abl_src_doc_id,
@@ -90,7 +102,7 @@ function toAdjustableCredit(row: AdjustableCreditRow): AdjustableCredit {
     settlementMode: routing.settlementMode,
   };
 }
-// $1 party_id, $2 company_id, $3 the admitted bill types.
+// $1 party_id, $2 company_id, $3 the admitted bill types, $4 the CR/DR side.
 //
 // No acc-year filter: acc_bill_balance is partitioned by the year the credit
 // ORIGINATED in and is never carried forward, so the read scans every partition
@@ -115,6 +127,7 @@ SELECT
     abl_bill_amount,        -- face value — tooltip only, the panel shows what is LEFT
     abl_pending_amount,     -- GENERATED: bill - alloc - disc - writeoff
     abl_status,             -- OPEN | PARTIAL  (GENERATED; CLOSED is filtered out)
+    abl_dr_cr,              -- echoes the requested side; ADVANCE means different things on each
     -- The FY the credit originated in. The bill is keyed on (id, year), so this
     -- travels with abl_id into abj_bill_acc_year.
     abl_acc_year,
@@ -132,12 +145,15 @@ WHERE  abl_party_id      = $1::uuid
   AND  abl_is_deleted    = false
   AND  abl_is_active     = true
 
-  -- CR = payable = the company owes the party. Required alongside the type
-  -- filter, not instead of it: ADVANCE is bidirectional in this schema (a
-  -- SUPPLIER advance is money paid out, and lands DR). Without this, a party
-  -- who is both customer and supplier would offer their own supplier advances
-  -- as settlement for a sales invoice.
-  AND  abl_dr_cr         = 'CR'
+  -- The side, from the "type" parameter — CR when the caller omits it.
+  --
+  -- CR = payable = the company owes the party; DR = receivable = the party owes
+  -- the company. Bound, but never dropped: ADVANCE is bidirectional in this
+  -- schema (a SUPPLIER advance is money paid out, and lands DR). Leave the side
+  -- unfiltered and a party who is both customer and supplier would offer their
+  -- own supplier advances as settlement for a sales invoice — which is why the
+  -- DTO defaults the parameter instead of treating "absent" as "both".
+  AND  abl_dr_cr         = $4::text
 
   -- OPENING and JOURNAL credits are deliberately NOT offered yet — see
   -- AdjustableCreditBillType, which is where this list comes from.

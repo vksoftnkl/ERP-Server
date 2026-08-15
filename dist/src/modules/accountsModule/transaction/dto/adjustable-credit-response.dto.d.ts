@@ -1,4 +1,4 @@
-import { AdjustableCreditBillType, AdjustableCreditStatus, BillAdjType, BillSettlementMode } from '../types/transaction-api.types';
+import { AdjustableCreditBillType, AdjustableCreditSide, AdjustableCreditStatus, BillAdjType, BillSettlementMode } from '../types/transaction-api.types';
 export declare class TransactionErrorFieldDto {
     field: string;
     message: string;
@@ -17,6 +17,7 @@ export declare class AdjustableCreditDto {
     billAmount: number;
     pendingAmount: number;
     status: AdjustableCreditStatus;
+    drCr: AdjustableCreditSide;
     srcModule: string | null;
     srcDocType: string | null;
     srcDocId: string | null;

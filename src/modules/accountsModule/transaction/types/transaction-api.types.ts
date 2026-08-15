@@ -40,6 +40,24 @@ export enum BillSettlementMode {
   CREDIT_NOTE = 'CREDIT_NOTE',
 }
 
+/**
+ * `abl_dr_cr` — which side of the party's account the open amount sits on.
+ *
+ * CR = payable = the company owes the party (a customer advance, a sales
+ * return). DR = receivable = the party owes the company (a supplier advance
+ * already paid out, a purchase return). `ADVANCE` is bidirectional in this
+ * schema, so the side is a filter in its own right and not derivable from
+ * `abl_bill_type`: without it a party who is both customer and supplier would
+ * offer their own supplier advances as settlement for a sales invoice.
+ */
+export enum AdjustableCreditSide {
+  CR = 'CR',
+  DR = 'DR',
+}
+
+/** What the read defaults to when `type` is omitted — the credit side, which is what the adjustment panel asks for. */
+export const DEFAULT_ADJUSTABLE_CREDIT_SIDE = AdjustableCreditSide.CR;
+
 /** `abl_status`, the generated column. CLOSED never reaches the client — a bill with nothing left is not offered. */
 export enum AdjustableCreditStatus {
   OPEN = 'OPEN',
@@ -96,6 +114,13 @@ export interface AdjustableCredit {
   billAccYear: string;
   /** Decides how this row settles — see {@link CREDIT_ADJUSTMENT_ROUTING}. */
   billType: AdjustableCreditBillType;
+  /**
+   * `abl_dr_cr` — the side this row sits on, echoing the requested `type`. Sent
+   * back because `billType` alone no longer says what the row is: an `ADVANCE`
+   * on CR is the customer's money held, the same `ADVANCE` on DR is money the
+   * company paid a supplier.
+   */
+  drCr: AdjustableCreditSide;
   /** `abl_doc_refno` — "SO-2201" / "SR-4412". */
   docRefno: string;
   docDate: string;

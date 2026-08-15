@@ -26,13 +26,15 @@ import { AdjustableCredit, TransactionSuccessResponse } from './types/transactio
 @Controller('transactions')
 @UseFilters(TransactionExceptionFilter)
 export class TransactionController {
-  constructor(private readonly transactionService: TransactionService) {}
-  @Get('party-advance')
+  constructor(private readonly transactionService: TransactionService) { }
+  @Get('party-balance')
   @Version(API_VERSION)
   @ApiOperation({
     summary: "Get a party's unspent credits, available to adjust against a bill",
     description:
-      'Every open ADVANCE and SALES_RETURN the party holds on the CR side, oldest first (FIFO), ' +
+      'Every open ADVANCE and SALES_RETURN the party holds on the side named by `type` — CR ' +
+      '(the company owes the party) when it is omitted, DR (the party owes the company) when ' +
+      'asked for — oldest first (FIFO), ' +
       'tie-broken on docRefno so two credits dated the same day never swap places between fetches. ' +
       'Each row carries billType and the adjType / settlementMode it settles as, plus billAccYear — ' +
       'post that alongside billId, since acc_bill_balance is keyed on the pair. There is no ' +

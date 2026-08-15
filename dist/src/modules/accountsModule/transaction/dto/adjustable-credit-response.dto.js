@@ -52,6 +52,7 @@ class AdjustableCreditDto {
     billAmount;
     pendingAmount;
     status;
+    drCr;
     srcModule;
     srcDocType;
     srcDocId;
@@ -115,6 +116,14 @@ __decorate([
     }),
     __metadata("design:type", String)
 ], AdjustableCreditDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        enum: transaction_api_types_1.AdjustableCreditSide,
+        enumName: 'AdjustableCreditSide',
+        description: "abl_dr_cr — the side this row sits on, echoing the request's type. ADVANCE on CR is the customer's money held; the same ADVANCE on DR is money paid to a supplier.",
+    }),
+    __metadata("design:type", String)
+], AdjustableCreditDto.prototype, "drCr", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'SALES', maxLength: 20 }),
     __metadata("design:type", Object)

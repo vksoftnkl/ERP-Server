@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CREDIT_ADJUSTMENT_ROUTING = exports.AdjustableCreditStatus = exports.BillSettlementMode = exports.BillAdjType = exports.AdjustableCreditBillType = void 0;
+exports.CREDIT_ADJUSTMENT_ROUTING = exports.AdjustableCreditStatus = exports.DEFAULT_ADJUSTABLE_CREDIT_SIDE = exports.AdjustableCreditSide = exports.BillSettlementMode = exports.BillAdjType = exports.AdjustableCreditBillType = void 0;
 var AdjustableCreditBillType;
 (function (AdjustableCreditBillType) {
     AdjustableCreditBillType["ADVANCE"] = "ADVANCE";
@@ -16,6 +16,12 @@ var BillSettlementMode;
     BillSettlementMode["ADVANCE"] = "ADVANCE";
     BillSettlementMode["CREDIT_NOTE"] = "CREDIT_NOTE";
 })(BillSettlementMode || (exports.BillSettlementMode = BillSettlementMode = {}));
+var AdjustableCreditSide;
+(function (AdjustableCreditSide) {
+    AdjustableCreditSide["CR"] = "CR";
+    AdjustableCreditSide["DR"] = "DR";
+})(AdjustableCreditSide || (exports.AdjustableCreditSide = AdjustableCreditSide = {}));
+exports.DEFAULT_ADJUSTABLE_CREDIT_SIDE = AdjustableCreditSide.CR;
 var AdjustableCreditStatus;
 (function (AdjustableCreditStatus) {
     AdjustableCreditStatus["OPEN"] = "OPEN";
