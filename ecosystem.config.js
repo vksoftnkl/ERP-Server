@@ -6,9 +6,12 @@ module.exports = {
       instances: 1,
       exec_mode: 'fork',
       max_memory_restart: '512M',
+      max_restarts: 5,
+      min_uptime: '10s',
       env: {
         NODE_ENV: 'production',
-        PORT: 8080,
+        HOST: '0.0.0.0',
+        PORT: 80,
         // TLS is terminated by the platform load balancer, so the app serves plain
         // HTTP on PORT. Pinned here (not left to .env) because dotenv does not
         // override values already present in process.env.

@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BillService = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
 const bill_api_types_1 = require("./types/bill-api.types");
@@ -22,6 +23,7 @@ const module_service_utils_1 = require("../../../common/utils/module-service.uti
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const voucher_sequence_helper_1 = require("../../../common/Sequence/voucher-sequence.helper");
 const bill_posting_helper_1 = require("./bill-posting.helper");
+const bill_adjustment_helper_1 = require("./bill-adjustment.helper");
 const txn_status_log_helper_1 = require("../../../common/txn-status-log/txn-status-log.helper");
 const BILL_VCHR_TYPE_ID = 3;
 const BILL_TABLE_NAME = 'sale_bill';
@@ -468,6 +470,10 @@ let BillService = class BillService {
                             sbPostedOn: postingResult.postedOn,
                         },
                     });
+                    await this.syncAdjustments(tx, posted, postingResult.billId, saveBillDto.adjustments, createdBy, now);
+                }
+                else {
+                    await this.syncAdjustments(tx, created, null, saveBillDto.adjustments, createdBy, now);
                 }
                 await this.saleOrderService.syncOrderFulfilment(tx, { refs: [...this.toOrderHeaderRefs(posted), ...this.toOrderLineRefs(items)] }, createdBy, now);
                 await this.logStatusChange(tx, posted, null, createdBy, now);
@@ -539,6 +545,7 @@ let BillService = class BillService {
                 const charges = await this.chargeDetailService.syncDocumentCharges(tx, this.toChargeScope(scope), saveBillDto.charges, modifiedBy, bill_api_types_1.BILL_CHARGE_AUDIT);
                 const tenders = await this.tenderDetailService.syncDocumentTenders(tx, this.toTenderScope(scope), saveBillDto.tenders, modifiedBy, bill_api_types_1.BILL_TENDER_AUDIT);
                 const posting = await (0, bill_posting_helper_1.syncBillPosting)(tx, updated, BILL_VCHR_TYPE_ID, modifiedBy, now);
+                await this.syncAdjustments(tx, updated, posting.billId, saveBillDto.adjustments, modifiedBy, now);
                 let posted = updated;
                 if (updated.sbPostedVoucherId !== posting.voucherId ||
                     updated.sbPostedOn?.getTime() !== posting.postedOn?.getTime()) {
@@ -876,6 +883,37 @@ let BillService = class BillService {
             tdDeviceId: scope.sbDeviceId,
             tdDrCr: bill_api_types_1.BILL_TENDER_DR_CR,
         };
+    }
+    async syncAdjustments(tx, bill, billId, adjustments, actor, now) {
+        if (adjustments === undefined) {
+            return;
+        }
+        if (billId === null) {
+            if (adjustments.length === 0) {
+                return;
+            }
+            (0, module_service_utils_1.throwSalesBadRequest)('Bill cannot be saved', [
+                {
+                    field: 'adjustments',
+                    message: 'This bill carries no receivable in accounts — it is not POSTED, or its value is ' +
+                        'zero — so there is nothing for a credit to be adjusted against.',
+                },
+            ]);
+        }
+        await (0, bill_adjustment_helper_1.syncBillAdjustments)(tx, {
+            billId,
+            billAccYear: bill.sbAccYear,
+            billAmount: bill.sbBillAmt ?? new client_1.Prisma.Decimal(0),
+            paidAmount: bill.sbPaidAmt ?? new client_1.Prisma.Decimal(0),
+            companyId: bill.sbCompanyId,
+            branchId: bill.sbBranchId,
+            tenantId: bill.sbTenantId,
+            accYear: bill.sbAccYear,
+            partyId: bill.sbCustId,
+            adjDate: bill.sbBillDate,
+            userId: bill.sbUserId,
+            sessionId: bill.sbSessionId,
+        }, adjustments, actor, now);
     }
     async logStatusChange(tx, bill, fromStatus, actor, changedOn, remarks) {
         await (0, txn_status_log_helper_1.appendTxnStatusLog)(tx, {

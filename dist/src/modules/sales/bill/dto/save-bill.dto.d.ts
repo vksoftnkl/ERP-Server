@@ -1,5 +1,6 @@
 import { SaveChargeDetailDto } from '../../../master/charge-detail/dto/save-charge-detail.dto';
 import { SaveTenderDetailDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
+import { SaveBillAdjustmentDto } from './save-bill-adjustment.dto';
 import { SaveBillItemDto } from './save-bill-item.dto';
 export declare class SaveBillDto {
     sbId?: string;
@@ -119,4 +120,5 @@ export declare class SaveBillDto {
     items?: SaveBillItemDto[];
     charges?: SaveChargeDetailDto[];
     tenders?: SaveTenderDetailDto[];
+    adjustments?: SaveBillAdjustmentDto[];
 }

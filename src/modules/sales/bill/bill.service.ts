@@ -52,6 +52,8 @@ import { allocateVoucherNumber } from 'src/common/Sequence/voucher-sequence.help
 // the books. The helper is left in place — it is the only implementation of
 // that unwind, and whatever replaces the delete route will want it.
 import { postBillToAccounts, syncBillPosting } from './bill-posting.helper';
+import { syncBillAdjustments } from './bill-adjustment.helper';
+import { SaveBillAdjustmentDto } from './dto/save-bill-adjustment.dto';
 import {
   TxnStatusEvent,
   appendTxnStatusLog,
@@ -692,6 +694,18 @@ export class BillService {
               sbPostedOn: postingResult.postedOn,
             },
           });
+          await this.syncAdjustments(
+            tx,
+            posted,
+            postingResult.billId,
+            saveBillDto.adjustments,
+            createdBy,
+            now,
+          );
+        } else {
+          // A DRAFT has no receivable, so an adjustment has nothing to point at.
+          // Passed through anyway to reject a payload that tries.
+          await this.syncAdjustments(tx, created, null, saveBillDto.adjustments, createdBy, now);
         }
         // Draws the billed quantity down off the sale order lines these lines
         // came from, plus the order the header itself names. Run after the lines
@@ -813,6 +827,17 @@ export class BillService {
         // re-syncs them, and moving it out of POSTED cancels the voucher and
         // retires the receivable.
         const posting = await syncBillPosting(tx, updated, BILL_VCHR_TYPE_ID, modifiedBy, now);
+        // After the posting sync, for the same reason the create path runs it
+        // there: posting.billId is the receivable these rows are written
+        // against, and moving a bill out of POSTED retires it.
+        await this.syncAdjustments(
+          tx,
+          updated,
+          posting.billId,
+          saveBillDto.adjustments,
+          modifiedBy,
+          now,
+        );
         // sbPostedVoucherId / sbPostedOn are in BILL_OPTIONAL_FIELDS, so the
         // payload can carry them — but the posting result is what decides what
         // they say. Written back only when they actually differ, so an ordinary
@@ -1332,6 +1357,65 @@ export class BillService {
       tdDeviceId: scope.sbDeviceId,
       tdDrCr: BILL_TENDER_DR_CR,
     };
+  }
+  // Posts the credits the customer already holds — order advances, sale-return
+  // credit notes — against this bill's receivable.
+  //
+  // Runs after the posting sync, because the invoice's acc_bill_balance row is
+  // half of every adjustment row and only exists once the bill is in the books.
+  //
+  // Absent is not empty (see SaveBillAdjustmentDto): omitting the key leaves the
+  // existing settlement alone, so a DRAFT that was never posted is a no-op
+  // rather than an error. Sending adjustments for a bill that carries no
+  // receivable is not — there is nothing to settle, and silently dropping the
+  // array would tell the operator their credit was applied when it was not.
+  private async syncAdjustments(
+    tx: Prisma.TransactionClient,
+    bill: SaleBill,
+    billId: string | null,
+    adjustments: SaveBillAdjustmentDto[] | undefined,
+    actor: string,
+    now: Date,
+  ): Promise<void> {
+    if (adjustments === undefined) {
+      return;
+    }
+    if (billId === null) {
+      if (adjustments.length === 0) {
+        return;
+      }
+      throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
+        {
+          field: 'adjustments',
+          message:
+            'This bill carries no receivable in accounts — it is not POSTED, or its value is ' +
+            'zero — so there is nothing for a credit to be adjusted against.',
+        },
+      ]);
+    }
+    await syncBillAdjustments(
+      tx,
+      {
+        billId,
+        billAccYear: bill.sbAccYear,
+        billAmount: bill.sbBillAmt ?? new Prisma.Decimal(0),
+        paidAmount: bill.sbPaidAmt ?? new Prisma.Decimal(0),
+        companyId: bill.sbCompanyId,
+        branchId: bill.sbBranchId,
+        tenantId: bill.sbTenantId,
+        accYear: bill.sbAccYear,
+        // Customer and ledger share a primary key, so sbCustId is already the
+        // acc_ledger_master id abl_party_id / abj_party_id want — the same
+        // identity toTenderScope hands the tender module.
+        partyId: bill.sbCustId,
+        adjDate: bill.sbBillDate,
+        userId: bill.sbUserId,
+        sessionId: bill.sbSessionId,
+      },
+      adjustments,
+      actor,
+      now,
+    );
   }
   // One row on public.txn_status_log per status STEP — the bill's trail is the
   // ordered set of them, and sb_status is only ever the CURRENT state. Written

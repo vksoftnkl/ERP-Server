@@ -17,6 +17,7 @@ const class_validator_1 = require("class-validator");
 const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 const save_charge_detail_dto_1 = require("../../../master/charge-detail/dto/save-charge-detail.dto");
 const save_tender_detail_dto_1 = require("../../../accountsModule/tenderDetail/dto/save-tender-detail.dto");
+const save_bill_adjustment_dto_1 = require("./save-bill-adjustment.dto");
 const save_bill_item_dto_1 = require("./save-bill-item.dto");
 const toUuidArray = (value) => {
     if (value === undefined) {
@@ -155,6 +156,7 @@ class SaveBillDto {
     items;
     charges;
     tenders;
+    adjustments;
 }
 exports.SaveBillDto = SaveBillDto;
 __decorate([
@@ -853,4 +855,26 @@ __decorate([
     (0, class_transformer_1.Type)(() => save_tender_detail_dto_1.SaveTenderDetailDto),
     __metadata("design:type", Array)
 ], SaveBillDto.prototype, "tenders", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: save_bill_adjustment_dto_1.SaveBillAdjustmentDto,
+        isArray: true,
+        description: 'Credits the customer already holds — order advances and sale-return credit notes — set off ' +
+            'against this bill (accounts.acc_bill_adjustment). NOT tenders: the settle screen’s ADJUST row ' +
+            'is a read-only mirror of this array and must not also appear in `tenders`, or the same money ' +
+            'posts twice. ' +
+            'Reconciled differently from the other arrays, because absent is not empty: omit the property ' +
+            'entirely to leave the existing settlement alone (which is what a bill loaded for edit does ' +
+            'when its GET returned no array), and send [] to clear it. A changed set is reversed and ' +
+            're-posted as new rows — nothing here is ever edited in place. ' +
+            'Only againstBillId, againstBillAccYear and amount are used: billType / adjType / ' +
+            'settlementMode are accepted as audit echoes and ignored, since the server derives all three ' +
+            'from the credit’s own row.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => save_bill_adjustment_dto_1.SaveBillAdjustmentDto),
+    __metadata("design:type", Array)
+], SaveBillDto.prototype, "adjustments", void 0);
 //# sourceMappingURL=save-bill.dto.js.map

@@ -20,6 +20,7 @@ import {
 } from 'src/common/dto/dtoDecorators';
 import { SaveChargeDetailDto } from '../../../master/charge-detail/dto/save-charge-detail.dto';
 import { SaveTenderDetailDto } from '../../../accountsModule/tenderDetail/dto/save-tender-detail.dto';
+import { SaveBillAdjustmentDto } from './save-bill-adjustment.dto';
 import { SaveBillItemDto } from './save-bill-item.dto';
 // An array of uuids: undefined leaves the column untouched, null/'' clears it
 // to an empty array, and a non-array/non-string input is left for IsUUID to
@@ -537,4 +538,25 @@ export class SaveBillDto {
   @ValidateNested({ each: true })
   @Type(() => SaveTenderDetailDto)
   tenders?: SaveTenderDetailDto[];
+  @ApiPropertyOptional({
+    type: SaveBillAdjustmentDto,
+    isArray: true,
+    description:
+      'Credits the customer already holds — order advances and sale-return credit notes — set off ' +
+      'against this bill (accounts.acc_bill_adjustment). NOT tenders: the settle screen’s ADJUST row ' +
+      'is a read-only mirror of this array and must not also appear in `tenders`, or the same money ' +
+      'posts twice. ' +
+      'Reconciled differently from the other arrays, because absent is not empty: omit the property ' +
+      'entirely to leave the existing settlement alone (which is what a bill loaded for edit does ' +
+      'when its GET returned no array), and send [] to clear it. A changed set is reversed and ' +
+      're-posted as new rows — nothing here is ever edited in place. ' +
+      'Only againstBillId, againstBillAccYear and amount are used: billType / adjType / ' +
+      'settlementMode are accepted as audit echoes and ignored, since the server derives all three ' +
+      'from the credit’s own row.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaveBillAdjustmentDto)
+  adjustments?: SaveBillAdjustmentDto[];
 }
