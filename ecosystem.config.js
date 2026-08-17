@@ -11,7 +11,13 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         HOST: '0.0.0.0',
-        PORT: 8080,
+        // 3000 is the only application port the Jelastic Node.js layer whitelists in
+        // /etc/jelastic/jelastic.nft (the INPUT chain ends in a reject, and NAT
+        // PREROUTING is empty, so there is no 80 -> app redirect). Binding 8080 makes
+        // the app healthy inside the container but unreachable through the platform
+        // router, which answers 502. It is also unprivileged, so the container user
+        // can bind it.
+        PORT: 3000,
         // TLS is terminated by the platform load balancer, so the app serves plain
         // HTTP on PORT. Pinned here (not left to .env) because dotenv does not
         // override values already present in process.env.
