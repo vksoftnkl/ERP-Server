@@ -39,6 +39,7 @@ module.exports = {
           'https://erp-frontend.vercel.app',
           'https://erp-frontend-vksoftnkls-projects.vercel.app',
           'https://erp-frontend-7rixsf5qd-vksoftnkls-projects.vercel.app',
+          'https://vknexttimber-front.cloudjiffy.net',
         ].join(','),
         // Explicit origins (not '*'), so credentialed requests are allowed.
         CORS_CREDENTIALS: 'true',
