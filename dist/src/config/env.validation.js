@@ -5,7 +5,7 @@ const Joi = require("joi");
 exports.envValidationSchema = Joi.object({
     NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
     HOST: Joi.string().trim().default('0.0.0.0'),
-    PORT: Joi.number().port().default(3010),
+    PORT: Joi.number().port().default(3000),
     API_PREFIX: Joi.string().default('api'),
     CORS_ORIGINS: Joi.string().allow('').default(''),
     CORS_CREDENTIALS: Joi.boolean().optional(),
