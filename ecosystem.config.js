@@ -24,6 +24,13 @@ module.exports = {
         HTTPS_ENABLED: 'true',
         HTTPS_CERT_PATH: 'certs/localhost.crt',
         HTTPS_KEY_PATH: 'certs/localhost.key',
+        // No Redis node exists in the Jelastic topology, so REDIS_HOST's default of
+        // localhost:6379 is unreachable there. Left enabled, every cached GET logs a
+        // failed lookup (requests still succeed, HttpCacheInterceptor swallows it) and
+        // /api/v1/health reports cache "down" -> 503, marking the app unhealthy to any
+        // probe. Health treats "disabled" as OK, so pin this off until a real Redis
+        // node is provisioned, then set REDIS_HOST to it and flip this back.
+        REDIS_ENABLED: 'false',
       },
     },
   ],
