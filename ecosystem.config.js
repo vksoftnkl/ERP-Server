@@ -29,6 +29,19 @@ module.exports = {
         // probe. Health treats "disabled" as OK, so pin this off until a real Redis
         // node is provisioned, then set REDIS_HOST to it and flip this back.
         REDIS_ENABLED: 'false',
+        // Browser origins allowed to call this API. In production main.ts uses only
+        // this list (the dev-default localhost origins are not merged in), so an unset
+        // value means enableCors() is never called and every browser request is blocked.
+        // The hashed *-7rixsf5qd-* entry is a single Vercel deployment and is replaced
+        // on every redeploy; erp-frontend.vercel.app is the stable production alias and
+        // is the one worth relying on.
+        CORS_ORIGINS: [
+          'https://erp-frontend.vercel.app',
+          'https://erp-frontend-vksoftnkls-projects.vercel.app',
+          'https://erp-frontend-7rixsf5qd-vksoftnkls-projects.vercel.app',
+        ].join(','),
+        // Explicit origins (not '*'), so credentialed requests are allowed.
+        CORS_CREDENTIALS: 'true',
       },
     },
   ],
