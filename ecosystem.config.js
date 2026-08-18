@@ -22,7 +22,7 @@ module.exports = {
         // HTTP on PORT. Pinned here (not left to .env) because dotenv does not
         // override values already present in process.env.
         HTTPS_ENABLED: 'false',
-            // No Redis node exists in the Jelastic topology, so REDIS_HOST's default of
+        // No Redis node exists in the Jelastic topology, so REDIS_HOST's default of
         // localhost:6379 is unreachable there. Left enabled, every cached GET logs a
         // failed lookup (requests still succeed, HttpCacheInterceptor swallows it) and
         // /api/v1/health reports cache "down" -> 503, marking the app unhealthy to any
