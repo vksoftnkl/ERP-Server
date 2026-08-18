@@ -21,7 +21,9 @@ module.exports = {
         // TLS is terminated by the platform load balancer, so the app serves plain
         // HTTP on PORT. Pinned here (not left to .env) because dotenv does not
         // override values already present in process.env.
-        HTTPS_ENABLED: 'false',
+        HTTPS_ENABLED: 'true',
+        HTTPS_CERT_PATH: 'certs/localhost.crt',
+        HTTPS_KEY_PATH: 'certs/localhost.key',
       },
     },
   ],
