@@ -40,6 +40,8 @@ module.exports = {
           'https://erp-frontend-vksoftnkls-projects.vercel.app',
           'https://erp-frontend-7rixsf5qd-vksoftnkls-projects.vercel.app',
           'https://vknexttimber-front.cloudjiffy.net',
+          'https://localhost:3001',
+          'https://192.168.0.106:3001',
         ].join(','),
         // Explicit origins (not '*'), so credentialed requests are allowed.
         CORS_CREDENTIALS: 'true',
