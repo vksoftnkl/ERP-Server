@@ -12,7 +12,6 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
-  ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -20,9 +19,8 @@ import {
   ApiOperation,
   ApiQuery,
   ApiTags,
-  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
+import { Public } from '../../../common/decorators/public.decorator';
 import { DeviceListMasterExceptionFilter } from './device-list-master-exception.filter';
 import {
   DeviceListMasterErrorResponseDto,
@@ -40,9 +38,8 @@ import {
   DeviceListMasterSuccessResponse,
 } from './types/device-list-master-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
+@Public()
 @ApiTags('Device List Master')
-@ApiBearerAuth('access-token')
-@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @CacheTTL(1)
 @Controller('device-list-masters')
 @UseFilters(DeviceListMasterExceptionFilter)

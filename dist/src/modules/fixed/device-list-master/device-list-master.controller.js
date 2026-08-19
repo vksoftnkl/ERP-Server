@@ -16,7 +16,7 @@ exports.DeviceListMasterController = void 0;
 const cache_manager_1 = require("@nestjs/cache-manager");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
+const public_decorator_1 = require("../../../common/decorators/public.decorator");
 const device_list_master_exception_filter_1 = require("./device-list-master-exception.filter");
 const device_list_master_response_dto_1 = require("./dto/device-list-master-response.dto");
 const list_device_list_master_query_dto_1 = require("./dto/list-device-list-master-query.dto");
@@ -116,9 +116,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], DeviceListMasterController.prototype, "remove", null);
 exports.DeviceListMasterController = DeviceListMasterController = __decorate([
+    (0, public_decorator_1.Public)(),
     (0, swagger_1.ApiTags)('Device List Master'),
-    (0, swagger_1.ApiBearerAuth)('access-token'),
-    (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
     (0, cache_manager_1.CacheTTL)(1),
     (0, common_1.Controller)('device-list-masters'),
     (0, common_1.UseFilters)(device_list_master_exception_filter_1.DeviceListMasterExceptionFilter),
