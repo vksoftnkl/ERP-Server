@@ -509,9 +509,12 @@ type PrismaMock = {
     update: jest.Mock<Promise<unknown>, unknown[]>;
   };
   // Counted before an allocation is re-seeded: once a real adjustment exists,
-  // abl_alloc_amount stops being this module's to write.
+  // abl_alloc_amount stops being this module's to write. findMany is the
+  // adjustment sync reading what is live against the bill; [] means a save
+  // with no adjustments key leaves the balances to the posting code.
   accBillAdjustment: {
     count: jest.Mock<Promise<number>, unknown[]>;
+    findMany: jest.Mock<Promise<unknown[]>, unknown[]>;
   };
   // The bill's status trail. findFirst is the next-sequence read (the newest row
   // of this document's trail), create is the appended step.
@@ -692,6 +695,7 @@ const makePrismaMock = (): PrismaMock => {
     },
     accBillAdjustment: {
       count: jest.fn(() => Promise.resolve(0)),
+      findMany: jest.fn(() => Promise.resolve([])),
     },
     txnStatusLog: {
       // Default: the document has no trail yet, so the appended step is seq 1.

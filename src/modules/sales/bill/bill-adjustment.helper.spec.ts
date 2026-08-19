@@ -139,12 +139,26 @@ const adjust = (overrides: Partial<SaveBillAdjustmentDto> = {}): SaveBillAdjustm
 
 describe('syncBillAdjustments', () => {
   describe('absent is not empty', () => {
-    it('writes nothing when the key is omitted', async () => {
+    it('writes nothing when the key is omitted and nothing is posted', async () => {
       const { tx, created, balanceUpdates } = makeTx();
       const result = await syncBillAdjustments(tx, makeContext(), undefined, ACTOR, NOW);
       expect(result.action).toBe('unchanged');
       expect(created).toHaveLength(0);
+      // No live pairs means the posting code still owns the allocation.
       expect(balanceUpdates).toHaveLength(0);
+    });
+
+    it('re-settles the invoice when the key is omitted but pairs are posted', async () => {
+      const { tx, created, balanceUpdates } = makeTx({ live: [makeLiveRow()] });
+      const result = await syncBillAdjustments(tx, makeContext(), undefined, ACTOR, NOW);
+      expect(result.action).toBe('unchanged');
+      expect(created).toHaveLength(0);
+      // The pairs stay, but sbPaidAmt may have changed on this save: 1,500
+      // tendered + 2,000 already adjusted.
+      expect(balanceUpdates).toHaveLength(1);
+      const invoice = balanceUpdates[0];
+      expect((invoice.where.ablId_ablAccYear as { ablId: string }).ablId).toBe(BILL_ID);
+      expect((invoice.data.ablAllocAmount as Prisma.Decimal).toString()).toBe('3500');
     });
 
     it('reverses what is posted when the array is empty', async () => {
@@ -305,30 +319,38 @@ describe('syncBillAdjustments', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('rejects adjusted money that is also counted in sbPaidAmt', async () => {
-      const { tx } = makeTx();
+    it('caps the allocation at the bill when sbPaidAmt also counts the adjusted money', async () => {
+      const { tx, balanceUpdates } = makeTx();
       // 4,500 tendered + 2,000 adjusted on a 5,000 bill: the credit note was
-      // folded into sbPaidAmt as well, so ck_abl_settled would fail the whole
-      // transaction. Caught here with the arithmetic named instead.
-      await expect(
-        syncBillAdjustments(
-          tx,
-          makeContext({ paidAmount: new Prisma.Decimal(4500) }),
-          [adjust()],
-          ACTOR,
-          NOW,
-        ),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      // folded into sbPaidAmt as well. The sum overshoots, so the invoice's
+      // allocation is capped at the bill amount — ck_abl_settled would reject
+      // anything larger.
+      await syncBillAdjustments(
+        tx,
+        makeContext({ paidAmount: new Prisma.Decimal(4500) }),
+        [adjust()],
+        ACTOR,
+        NOW,
+      );
+      const invoice = balanceUpdates.find(
+        (update) => (update.where.ablId_ablAccYear as { ablId: string }).ablId === BILL_ID,
+      );
+      expect((invoice?.data.ablAllocAmount as Prisma.Decimal).toString()).toBe('5000');
     });
   });
 
   describe('re-saving', () => {
-    it('writes nothing when the payload asks for what is already posted', async () => {
+    it('writes no adjustment rows when the payload asks for what is already posted', async () => {
       const { tx, created, balanceUpdates } = makeTx({ live: [makeLiveRow()] });
       const result = await syncBillAdjustments(tx, makeContext(), [adjust()], ACTOR, NOW);
       expect(result.action).toBe('unchanged');
       expect(created).toHaveLength(0);
-      expect(balanceUpdates).toHaveLength(0);
+      // The credit is left alone, but the invoice is re-settled: 1,500 tendered
+      // + 2,000 already adjusted, in case sbPaidAmt changed on this save.
+      expect(balanceUpdates).toHaveLength(1);
+      const invoice = balanceUpdates[0];
+      expect((invoice.where.ablId_ablAccYear as { ablId: string }).ablId).toBe(BILL_ID);
+      expect((invoice.data.ablAllocAmount as Prisma.Decimal).toString()).toBe('3500');
     });
 
     it('reverses and re-posts when the amount changed', async () => {

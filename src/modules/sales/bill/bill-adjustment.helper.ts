@@ -119,15 +119,28 @@ export async function syncBillAdjustments(
   actor: string,
   now: Date,
 ): Promise<BillAdjustmentSyncResult> {
+  const live = await readLiveAdjustments(tx, ctx.billId);
   if (adjustments === undefined) {
-    return { action: 'unchanged', adjustments: await readLiveAdjustments(tx, ctx.billId) };
+    // The pairs stay as they are, but when any exist the invoice's allocation
+    // is still rewritten from them: sbPaidAmt may have changed on this save,
+    // and once an adjustment row exists resolveAllocation in
+    // bill-posting.helper leaves abl_alloc_amount to this file alone. With no
+    // live pairs the posting code still owns the allocation, so it is left to
+    // it.
+    if (live.length > 0) {
+      await settleInvoiceAllocation(tx, ctx, live, actor, now);
+    }
+    return { action: 'unchanged', adjustments: live };
   }
   const requested = normalizeRequest(adjustments);
-  const live = await readLiveAdjustments(tx, ctx.billId);
   if (matches(live, requested)) {
-    // An ordinary re-save of an unchanged bill. Reversing and re-posting the
-    // same pairs would double the audit trail on every keystroke-level save and
-    // leave the balances exactly where they started.
+    // An ordinary re-save of an unchanged settlement. Reversing and re-posting
+    // the same pairs would double the audit trail on every keystroke-level
+    // save, so the rows stay — but the allocation is re-settled for the same
+    // reason as above.
+    if (live.length > 0) {
+      await settleInvoiceAllocation(tx, ctx, live, actor, now);
+    }
     return { action: 'unchanged', adjustments: live };
   }
   if (live.length > 0) {
@@ -571,11 +584,12 @@ async function addToAllocation(
 // re-save idempotent — reverse-then-repost lands on the same number as a first
 // post of the same set.
 //
-// sbPaidAmt must therefore be TENDERS ONLY. If the client folds credit-note
-// money into it (the settle screen's header keeps advances out in sbAdvanceAmt,
-// but a credit note has no such field), the same money arrives twice and the
-// guard below is what catches it, rather than ck_abl_settled failing the whole
-// transaction with a bare 23514.
+// sbPaidAmt is expected to be tenders only, but a client may fold credit-note
+// money into it as well (the settle screen's header keeps advances out in
+// sbAdvanceAmt, but a credit note has no such field). When that happens the sum
+// overshoots the bill; it is capped at the bill amount below so the save still
+// succeeds instead of ck_abl_settled failing the whole transaction with a bare
+// 23514.
 async function settleInvoiceAllocation(
   tx: Prisma.TransactionClient,
   ctx: BillAdjustmentContext,
@@ -587,18 +601,10 @@ async function settleInvoiceAllocation(
     (total, row) => total.plus(row.amount),
     new Prisma.Decimal(0),
   );
-  const allocated = ctx.paidAmount.plus(adjusted);
-  if (allocated.greaterThan(ctx.billAmount)) {
-    throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
-      {
-        field: 'adjustments',
-        message:
-          `${ctx.paidAmount.toString()} tendered plus ${adjusted.toString()} adjusted comes to ` +
-          `${allocated.toString()}, which is more than the bill's ${ctx.billAmount.toString()}. ` +
-          'Adjusted credits must not also be counted in sbPaidAmt.',
-      },
-    ]);
-  }
+  const total = ctx.paidAmount.plus(adjusted);
+  // ck_abl_settled: allocation can never exceed the bill. Overpayment lives on
+  // the tender, not here — mirror resolveAllocation and cap rather than reject.
+  const allocated = total.greaterThan(ctx.billAmount) ? ctx.billAmount : total;
   await tx.accBillBalance.update({
     where: { ablId_ablAccYear: { ablId: ctx.billId, ablAccYear: ctx.billAccYear } },
     data: {

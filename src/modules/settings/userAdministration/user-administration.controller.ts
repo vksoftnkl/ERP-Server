@@ -12,7 +12,6 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
-  ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -20,9 +19,8 @@ import {
   ApiOperation,
   ApiQuery,
   ApiTags,
-  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
+import { Public } from '../../../common/decorators/public.decorator';
 import {
   UserAdminErrorResponseDto,
   UserAdminSuccessDeleteDto,
@@ -34,9 +32,8 @@ import { UserAdministrationService } from './user-administration.service';
 import { UserAdminPayload, UserAdminSuccessResponse } from './types/user-administration-api.types';
 import { API_VERSION } from '../../../common/constants/api-version';
 
+@Public()
 @ApiTags('User Administration')
-@ApiBearerAuth('access-token')
-@ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
 @CacheTTL(1)
 @Controller('user-administration')
 @UseFilters(UserAdministrationExceptionFilter)

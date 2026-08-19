@@ -1365,10 +1365,12 @@ export class BillService {
   // half of every adjustment row and only exists once the bill is in the books.
   //
   // Absent is not empty (see SaveBillAdjustmentDto): omitting the key leaves the
-  // existing settlement alone, so a DRAFT that was never posted is a no-op
-  // rather than an error. Sending adjustments for a bill that carries no
-  // receivable is not — there is nothing to settle, and silently dropping the
-  // array would tell the operator their credit was applied when it was not.
+  // existing settlement's rows alone, though the invoice's allocation is still
+  // re-settled from them — sbPaidAmt may have changed on this save. A DRAFT
+  // that was never posted stays a no-op rather than an error. Sending
+  // adjustments for a bill that carries no receivable is not — there is
+  // nothing to settle, and silently dropping the array would tell the operator
+  // their credit was applied when it was not.
   private async syncAdjustments(
     tx: Prisma.TransactionClient,
     bill: SaleBill,
@@ -1377,11 +1379,8 @@ export class BillService {
     actor: string,
     now: Date,
   ): Promise<void> {
-    if (adjustments === undefined) {
-      return;
-    }
     if (billId === null) {
-      if (adjustments.length === 0) {
+      if (adjustments === undefined || adjustments.length === 0) {
         return;
       }
       throwSalesBadRequest<BillErrorDetail, BillErrorResponse>('Bill cannot be saved', [
