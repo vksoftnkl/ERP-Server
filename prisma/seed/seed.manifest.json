@@ -8,6 +8,10 @@
     "mode: 'once' runs one time only, while the file's checksum stays unchanged."
   ],
   "seeds": [
+    {
+      "file": "Menu_Master.sql",
+      "description": "fixed.menu_master — the menu tree; runs first because form_section and user_menus reference menus by id"
+    },
     { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
     { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
     {
