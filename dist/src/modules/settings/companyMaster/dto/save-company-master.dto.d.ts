@@ -49,7 +49,7 @@ export declare class SaveCompanyMasterDto {
     compEwayIntraLimit?: number;
     compEinvoiceDate?: Date | null;
     compEinvoiceInclEway?: boolean | null;
-    compStylesheetId: number | null;
+    compStylesheetId?: number | null;
     compBankId?: string | null;
     compPriceFixing?: string | null;
     compPrefixCode?: string | null;
@@ -61,4 +61,5 @@ export declare class SaveCompanyMasterDto {
     compCurrencySymbol?: string | null;
     compLocaleCode?: string;
     compRemarks?: string | null;
+    compAuthorizeSignature?: string | null;
 }

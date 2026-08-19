@@ -4,6 +4,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableDate,
   NullableEmail,
+  NullableInteger,
   NullableString,
   NullableUpperString,
   NullableUuid,
@@ -207,10 +208,9 @@ export class SaveCompanyMasterDto {
   @OptionalBoolean()
   compEinvoiceInclEway?: boolean | null;
 
-  @ApiProperty({ type: Number, format: 'color', nullable: true })
-  @Type(() => Number)
-  @IsNumber()
-  compStylesheetId!: number | null;
+  @ApiPropertyOptional({ type: Number, format: 'color', nullable: true })
+  @NullableInteger()
+  compStylesheetId?: number | null;
 
   @ApiPropertyOptional({ format: 'uuid', nullable: true })
   @NullableUuid()
@@ -257,4 +257,8 @@ export class SaveCompanyMasterDto {
   @ApiPropertyOptional({ nullable: true })
   @NullableString()
   compRemarks?: string | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Authorized signature (image data / path)' })
+  @NullableString()
+  compAuthorizeSignature?: string | null;
 }

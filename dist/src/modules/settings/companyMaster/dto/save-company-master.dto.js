@@ -77,6 +77,7 @@ class SaveCompanyMasterDto {
     compCurrencySymbol;
     compLocaleCode;
     compRemarks;
+    compAuthorizeSignature;
 }
 exports.SaveCompanyMasterDto = SaveCompanyMasterDto;
 __decorate([
@@ -343,9 +344,8 @@ __decorate([
     __metadata("design:type", Object)
 ], SaveCompanyMasterDto.prototype, "compEinvoiceInclEway", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: Number, format: 'color', nullable: true }),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsNumber)(),
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, format: 'color', nullable: true }),
+    (0, dtoDecorators_1.NullableInteger)(),
     __metadata("design:type", Object)
 ], SaveCompanyMasterDto.prototype, "compStylesheetId", void 0);
 __decorate([
@@ -405,4 +405,9 @@ __decorate([
     (0, dtoDecorators_1.NullableString)(),
     __metadata("design:type", Object)
 ], SaveCompanyMasterDto.prototype, "compRemarks", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Authorized signature (image data / path)' }),
+    (0, dtoDecorators_1.NullableString)(),
+    __metadata("design:type", Object)
+], SaveCompanyMasterDto.prototype, "compAuthorizeSignature", void 0);
 //# sourceMappingURL=save-company-master.dto.js.map
