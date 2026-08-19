@@ -43,6 +43,10 @@ exports.envValidationSchema = Joi.object({
     DB_SSL: Joi.boolean().default(false),
     DB_SYNC: Joi.boolean().default(false),
     DB_LOGGING: Joi.boolean().default(false),
+    DB_AUTO_MIGRATE: Joi.boolean().default(false),
+    DB_AUTO_SEED: Joi.boolean().optional(),
+    DB_SEED_FAIL_FAST: Joi.boolean().default(false),
+    DB_SEED_LOCK_TIMEOUT_SECONDS: Joi.number().integer().min(1).default(60),
     JWT_SECRET: Joi.when('NODE_ENV', {
         is: 'test',
         then: Joi.string().min(16).default('test-jwt-secret-change-me'),

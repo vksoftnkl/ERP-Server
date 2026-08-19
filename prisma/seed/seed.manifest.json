@@ -1,0 +1,38 @@
+{
+  "$comment": [
+    "Execution order for the SQL files in this folder, used by the deploy seed runner",
+    "(src/database/seed/seed-runner.ts). Order matters where one seed reads rows another",
+    "one inserts. A .sql file that is not listed here still runs — appended after these,",
+    "in file-name order, with mode 'always' — so a new independent seed needs no edit here.",
+    "mode: 'always' (default) re-runs every deploy; every file below is idempotent.",
+    "mode: 'once' runs one time only, while the file's checksum stays unchanged."
+  ],
+  "seeds": [
+    { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
+    { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
+    {
+      "file": "Acc_Voucher_Types_Sale_Bill.sql",
+      "description": "accounts.acc_voucher_types — voucher type 22 (Bil)"
+    },
+    {
+      "file": "Acc_Voucher_Types_Sale_Order.sql",
+      "description": "accounts.acc_voucher_types — sales order voucher type"
+    },
+    {
+      "file": "Acc_Voucher_Types_Order_Advance_Receipt.sql",
+      "description": "accounts.acc_voucher_types — order advance receipt voucher type"
+    },
+    {
+      "file": "Acc_Voucher_Seq_Sale_Bill.sql",
+      "description": "accounts.acc_voucher_seq — counter row; joins the voucher type above, plus the company/branch masters, so it must run after them and stays 'always' (it inserts nothing until those rows exist)"
+    },
+    {
+      "file": "Item_Master_Widget_Config_Menu29.sql",
+      "description": "fixed.form_section / form_field — item master widget layout"
+    },
+    {
+      "file": "Quotation_Item_Grid_ItemSize_Column.sql",
+      "description": "fixed.ui_table_columns — ItemSize column on the quotation item grid"
+    }
+  ]
+}

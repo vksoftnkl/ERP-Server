@@ -31,6 +31,10 @@
     "perf:baseline": "node scripts/perf/load-test.js --scenario baseline",
     "perf:stress": "node scripts/perf/load-test.js --scenario stress",
     "perf:custom": "node scripts/perf/load-test.js --routes-file scripts/perf/routes.example.json",
+    "seed:run": "tsx src/database/seed/seed.cli.ts",
+    "seed:run:dist": "node dist/src/database/seed/seed.cli.js",
+    "db:deploy": "npm run prisma:migrate:deploy && npm run seed:run",
+    "db:deploy:dist": "npm run prisma:migrate:deploy && npm run seed:run:dist",
     "seed:item-groups": "node scripts/seed-item-group-master.js",
     "seed:supermarket-items": "node scripts/seed-supermarket-items.js",
     "prisma:schema:build": "node scripts/build-prisma-schema.js",
@@ -164,6 +168,6 @@
     }
   },
   "prisma": {
-    "seed": "tsx prisma/seed/Stock_Adjust_Reasons.ts"
+    "seed": "tsx src/database/seed/seed.cli.ts"
   }
 }

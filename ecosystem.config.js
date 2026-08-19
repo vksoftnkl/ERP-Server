@@ -45,6 +45,21 @@ module.exports = {
         ].join(','),
         // Explicit origins (not '*'), so credentialed requests are allowed.
         CORS_CREDENTIALS: 'true',
+        // Reference data in prisma/seed is applied on every boot, before the port
+        // opens (src/database/seed/startup-seed.ts). Every seed is idempotent, so a
+        // restart re-runs them as a no-op, and a session advisory lock keeps two
+        // instances from seeding at the same time. It defaults to on in production
+        // anyway; pinned here so the behaviour is visible where the deploy is
+        // configured. Set to 'false' to go back to seeding by hand.
+        DB_AUTO_SEED: 'true',
+        // Applies pending Prisma migrations (prisma migrate deploy) before the seeds.
+        // Off by default: turn it on only if nothing else in the deploy applies
+        // migrations -- with it off, deploy a schema change by running
+        // `npm run prisma:migrate:deploy` on the node before restarting the app.
+        DB_AUTO_MIGRATE: 'false',
+        // A failing seed logs and startup continues, so bad reference data cannot
+        // take the API down. Set to 'true' to make it a fatal startup error instead.
+        DB_SEED_FAIL_FAST: 'false',
       },
     },
   ],

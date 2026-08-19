@@ -14,6 +14,7 @@ const swagger_1 = require("@nestjs/swagger");
 const app_module_1 = require("./app.module");
 const file_logger_service_1 = require("./common/logging/file-logger.service");
 const prisma_service_1 = require("./database/prisma/prisma.service");
+const startup_seed_1 = require("./database/seed/startup-seed");
 const swaggerDocs_1 = require("./utils/swaggerDocs");
 const parseBoolean = (value, defaultValue = false) => {
     if (value === undefined) {
@@ -105,6 +106,10 @@ async function bootstrap() {
     app.useLogger(logger);
     const configService = app.get(config_1.ConfigService);
     const requestBodyLimit = configService.get('app.requestBodyLimit', '10mb');
+    await (0, startup_seed_1.runStartupDatabaseTasks)({
+        databaseUrl: configService.get('database.url'),
+        logger,
+    });
     const swaggerModuleDocs = swaggerDocs_1.swaggerModuleDocuments;
     app.enableShutdownHooks();
     app.use((0, express_1.json)({ limit: requestBodyLimit }));

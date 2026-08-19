@@ -12,6 +12,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { FileLoggerService } from './common/logging/file-logger.service';
 import { PrismaService } from './database/prisma/prisma.service';
+import { runStartupDatabaseTasks } from './database/seed/startup-seed';
 import { swaggerModuleDocuments } from './utils/swaggerDocs';
 const parseBoolean = (value: string | undefined, defaultValue = false): boolean => {
   if (value === undefined) {
@@ -109,6 +110,13 @@ async function bootstrap(): Promise<void> {
   app.useLogger(logger);
   const configService = app.get(ConfigService);
   const requestBodyLimit = configService.get<string>('app.requestBodyLimit', '10mb');
+  // Migrations/seeds run before the port opens, so the first request never lands on a
+  // half-seeded database. Controlled by DB_AUTO_MIGRATE / DB_AUTO_SEED; on by default
+  // in production, which is what makes a deploy self-seeding.
+  await runStartupDatabaseTasks({
+    databaseUrl: configService.get<string>('database.url'),
+    logger,
+  });
   const swaggerModuleDocs = swaggerModuleDocuments;
   app.enableShutdownHooks();
   app.use(json({ limit: requestBodyLimit }));
