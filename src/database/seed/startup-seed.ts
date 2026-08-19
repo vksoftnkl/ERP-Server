@@ -32,9 +32,15 @@ const parseNumber = (value: string | undefined, defaultValue: number): number =>
 };
 
 const toSeedLogger = (logger: LoggerService, context: string): SeedLogger => ({
-  log: (message) => logger.log(message, context),
-  warn: (message) => logger.warn(message, context),
-  error: (message) => logger.error(message, undefined, context),
+  log: (message) => {
+    logger.log(message, context);
+  },
+  warn: (message) => {
+    logger.warn(message, context);
+  },
+  error: (message) => {
+    logger.error(message, undefined, context);
+  },
 });
 
 export interface StartupDatabaseTaskOptions {

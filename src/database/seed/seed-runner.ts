@@ -240,7 +240,11 @@ export const runDatabaseSeeds = async (options: SeedRunOptions = {}): Promise<Se
   let prisma: PrismaClient | undefined = options.prisma;
 
   try {
-    lockHeld = await acquireLock(client, options.lockTimeoutSeconds ?? DEFAULT_LOCK_TIMEOUT_SECONDS, logger);
+    lockHeld = await acquireLock(
+      client,
+      options.lockTimeoutSeconds ?? DEFAULT_LOCK_TIMEOUT_SECONDS,
+      logger,
+    );
     if (!lockHeld) {
       summary.lockBusy = true;
       logger.warn('Seed lock is held by another process — skipping this run.');
@@ -249,7 +253,9 @@ export const runDatabaseSeeds = async (options: SeedRunOptions = {}): Promise<Se
 
     await ensureHistoryTable(client);
     const history = await loadHistory(client);
-    logger.log(`Running ${sqlEntries.length} SQL seed(s) and ${tsSeeds.length} TS seed(s) from ${seedDir}`);
+    logger.log(
+      `Running ${sqlEntries.length} SQL seed(s) and ${tsSeeds.length} TS seed(s) from ${seedDir}`,
+    );
 
     for (const entry of sqlEntries) {
       const filePath = join(seedDir, entry.file);
@@ -269,7 +275,13 @@ export const runDatabaseSeeds = async (options: SeedRunOptions = {}): Promise<Se
         // already carry their own BEGIN/COMMIT.
         await client.query(sql);
         const durationMs = Date.now() - startedAt;
-        await recordHistory(client, { name: entry.file, kind: 'sql', checksum }, 'success', durationMs, null);
+        await recordHistory(
+          client,
+          { name: entry.file, kind: 'sql', checksum },
+          'success',
+          durationMs,
+          null,
+        );
         results.push({ name: entry.file, kind: 'sql', status: 'applied', durationMs });
         summary.applied += 1;
         logger.log(`✔ ${entry.file} (${durationMs}ms)`);
@@ -286,7 +298,13 @@ export const runDatabaseSeeds = async (options: SeedRunOptions = {}): Promise<Se
           durationMs,
           message,
         ).catch(() => undefined);
-        results.push({ name: entry.file, kind: 'sql', status: 'failed', durationMs, error: message });
+        results.push({
+          name: entry.file,
+          kind: 'sql',
+          status: 'failed',
+          durationMs,
+          error: message,
+        });
         summary.failed += 1;
         logger.error(`✖ ${entry.file}: ${message}`);
         if (options.stopOnError) {
@@ -310,7 +328,13 @@ export const runDatabaseSeeds = async (options: SeedRunOptions = {}): Promise<Se
       try {
         await seed.run(prisma);
         const durationMs = Date.now() - startedAt;
-        await recordHistory(client, { name: seed.name, kind: 'ts', checksum }, 'success', durationMs, null);
+        await recordHistory(
+          client,
+          { name: seed.name, kind: 'ts', checksum },
+          'success',
+          durationMs,
+          null,
+        );
         results.push({ name: seed.name, kind: 'ts', status: 'applied', durationMs });
         summary.applied += 1;
         logger.log(`✔ ${seed.name} (${durationMs}ms)`);

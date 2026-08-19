@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { SeedLogger } from './seed.types';
 
@@ -30,7 +30,9 @@ export const resolvePrismaSchemaPath = (): string | undefined => {
 const resolvePrismaCliPath = (): string | undefined => {
   try {
     const packageJsonPath = require.resolve('prisma/package.json');
-    const packageJson = require(packageJsonPath) as { bin?: Record<string, string> | string };
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+      bin?: Record<string, string> | string;
+    };
     const binEntry =
       typeof packageJson.bin === 'string' ? packageJson.bin : packageJson.bin?.prisma;
     if (!binEntry) {

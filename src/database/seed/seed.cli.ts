@@ -14,7 +14,13 @@ import { runDatabaseSeeds } from './seed-runner';
  */
 
 const parseArgs = (argv: string[]) => {
-  const args = { force: false, migrate: false, stopOnError: false, only: [] as string[], help: false };
+  const args = {
+    force: false,
+    migrate: false,
+    stopOnError: false,
+    only: [] as string[],
+    help: false,
+  };
   for (const argument of argv) {
     if (argument === '--force') {
       args.force = true;
