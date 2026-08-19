@@ -12,6 +12,30 @@
       "file": "Menu_Master.sql",
       "description": "fixed.menu_master — the menu tree; runs first because form_section and user_menus reference menus by id"
     },
+    {
+      "file": "Ui_Tables.sql",
+      "description": "fixed.ui_tables — entry-screen item grid registry; parent of ui_table_columns"
+    },
+    {
+      "file": "Ui_Table_Columns.sql",
+      "description": "fixed.ui_table_columns — item grid layouts; after Ui_Tables.sql (FK) and before the targeted single-column seeds"
+    },
+    {
+      "file": "Grid_Details.sql",
+      "description": "fixed.grid_details — configured list/report grids and their SQL; parent of grid_columns"
+    },
+    {
+      "file": "Grid_Columns.sql",
+      "description": "fixed.grid_columns — grid column layouts; after Grid_Details.sql (FK)"
+    },
+    {
+      "file": "Dropdown_Details.sql",
+      "description": "fixed.dropdown_details — configured lookup popups and their SQL; parent of dropdown_columns"
+    },
+    {
+      "file": "Dropdown_Columns.sql",
+      "description": "fixed.dropdown_columns — dropdown column layouts; after Dropdown_Details.sql (FK)"
+    },
     { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
     { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
     {

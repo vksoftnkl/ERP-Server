@@ -35,6 +35,7 @@
     "seed:run:dist": "node dist/src/database/seed/seed.cli.js",
     "db:deploy": "npm run prisma:migrate:deploy && npm run seed:run",
     "db:deploy:dist": "npm run prisma:migrate:deploy && npm run seed:run:dist",
+    "seed:export:ui-config": "node scripts/export-ui-config-seeds.js",
     "seed:item-groups": "node scripts/seed-item-group-master.js",
     "seed:supermarket-items": "node scripts/seed-supermarket-items.js",
     "prisma:schema:build": "node scripts/build-prisma-schema.js",

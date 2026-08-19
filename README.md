@@ -168,6 +168,24 @@ A seed that depends on rows it does not create (a menu, a company, a branch) sho
 in the default `always` mode: it no-ops until those rows exist, then applies on a later
 deploy.
 
+### Regenerating the UI-configuration seeds
+
+`Ui_Tables.sql`, `Ui_Table_Columns.sql`, `Grid_Details.sql`, `Grid_Columns.sql`,
+`Dropdown_Details.sql` and `Dropdown_Columns.sql` are exported from a reference database
+rather than hand-written — screens read those tables to decide which columns exist, so an
+environment without them renders empty grids and saves NULLs. After changing a grid,
+dropdown or item-grid layout on the reference database:
+
+```bash
+npm run seed:export:ui-config      # rewrites the six files from DATABASE_URL
+git diff prisma/seed               # review
+```
+
+Each file skips a table/grid/dropdown that already has columns, so re-running never
+fights a site's own layout edits — which also means it will not add a newly introduced
+column to an already-configured grid. Use a targeted seed for that, like
+`Quotation_Item_Grid_ItemSize_Column.sql`.
+
 ## Performance and load testing
 
 Built-in load test runner commands:
