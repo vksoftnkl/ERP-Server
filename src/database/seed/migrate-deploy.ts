@@ -89,7 +89,10 @@ export const runPrismaMigrateDeploy = async (
       },
       options.timeoutMs ?? 10 * 60 * 1000,
     );
-    const emit = (chunk: Buffer, level: 'log' | 'error'): void => {
+    // The CLI writes informational lines ("Environment variables loaded from .env",
+    // deprecation notices) to stderr, so stderr is logged at warn level; the real
+    // verdict is the exit code handled below.
+    const emit = (chunk: Buffer, level: 'log' | 'warn'): void => {
       for (const line of chunk.toString().split('\n')) {
         if (line.trim()) {
           logger[level](line.trim());
@@ -97,7 +100,7 @@ export const runPrismaMigrateDeploy = async (
       }
     };
     child.stdout?.on('data', (chunk: Buffer) => emit(chunk, 'log'));
-    child.stderr?.on('data', (chunk: Buffer) => emit(chunk, 'error'));
+    child.stderr?.on('data', (chunk: Buffer) => emit(chunk, 'warn'));
     child.on('error', (error) => {
       clearTimeout(timeout);
       logger.error(`prisma migrate deploy could not start: ${error.message}`);
