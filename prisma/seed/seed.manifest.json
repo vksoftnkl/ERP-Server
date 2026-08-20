@@ -61,6 +61,10 @@
       "description": "fixed.stock_adj_reasons — physical stock adjustment reasons (replaces the former TypeScript seed)"
     },
     {
+      "file": "State_Codes.sql",
+      "description": "fixed.state_codes \u2014 GST state codes; sale_quotation/sale_bill/sale_order reference state_code, so they must exist before any sales document can save"
+    },
+    {
       "file": "Acc_Tender_Types.sql",
       "description": "accounts.acc_tender_types — payment tender types; referenced by acc_tender_master/detail"
     },
