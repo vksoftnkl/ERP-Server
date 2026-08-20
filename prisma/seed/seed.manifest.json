@@ -65,6 +65,10 @@
       "description": "fixed.state_codes \u2014 GST state codes; sale_quotation/sale_bill/sale_order reference state_code, so they must exist before any sales document can save"
     },
     {
+      "file": "Account_Groups.sql",
+      "description": "accounts.account_groups \u2014 the reserved chart of accounts, including the Customers/Suppliers groups the state, city, area and supplier services address by hardcoded id; without it those screens 400 with 'Parent account group does not exist'"
+    },
+    {
       "file": "Acc_Tender_Types.sql",
       "description": "accounts.acc_tender_types — payment tender types; referenced by acc_tender_master/detail"
     },

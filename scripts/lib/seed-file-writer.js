@@ -38,6 +38,10 @@ const dollar = (value) => {
  * @param kind    literal | plain | bool | dollar | const
  * @param pgType  type pinned on the first VALUES row (may be an enum, e.g. accounts."VoucherNature")
  * @param options value (for kind 'const'), quote (identifier needs double quotes), ownLine
+ *
+ * A table config may also carry `source`: a FROM clause used in place of the table
+ * name when reading the rows (a filtered or ordered derived table). The columns
+ * listed here must all exist on it.
  */
 const column = (name, kind, pgType, options = {}) => ({
   name,
@@ -168,7 +172,10 @@ const exportSeedFiles = async ({ client, seedDir, tables, regenerateScript }) =>
       .map((spec) => spec.sqlName)
       .join(', ');
     const { rows } = await client.query(
-      `SELECT ${columnList} FROM ${config.table} ORDER BY ${config.orderBy}`,
+      // `source` lets a table be read through a derived table instead of itself -- the
+      // account groups need a recursive CTE to come out parent-before-child. It only
+      // changes the read; INSERT INTO and the setval still name config.table.
+      `SELECT ${columnList} FROM ${config.source ?? config.table} ORDER BY ${config.orderBy}`,
     );
     const labels = new Map();
     if (config.groupBy) {

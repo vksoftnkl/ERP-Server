@@ -11,6 +11,7 @@
  *   Stock_Adjust_Reasons.sql  fixed.stock_adj_reasons
  *   Acc_Tender_Types.sql      accounts.acc_tender_types
  *   Acc_Voucher_Types.sql     accounts.acc_voucher_types
+ *   Account_Groups.sql        accounts.account_groups      (reserved chart of accounts)
  *
  * Small, slow-moving lists that transactions point at: a sale bill picks a price
  * level, a tender line picks a tender type, a voucher number comes from a voucher
@@ -288,6 +289,96 @@ const TABLES = [
       column('vchr_tally_voucher_type_name', 'literal', 'varchar'),
       column('vchr_tally_base_voucher_type', 'literal', 'varchar'),
       column('vchr_created_by', 'const', 'varchar', { value: "'system'" }),
+    ],
+  },
+  {
+    file: 'Account_Groups.sql',
+    table: 'accounts.account_groups',
+    // Read through a recursive CTE so the rows come out parent-before-child and the file
+    // reads like the tree it is. The anchor also picks up a reserved group whose parent is
+    // NOT reserved: such a row is a data bug, and emitting it (where it fails loudly on the
+    // parent foreign key) beats dropping it from the export in silence.
+    source: `(
+      WITH RECURSIVE reserved AS (
+        SELECT * FROM accounts.account_groups WHERE acc_group_is_reserved
+      ),
+      tree AS (
+        SELECT r.*, LPAD(COALESCE(r.acc_group_sort, 0)::text, 6, '0') || '/' || r.acc_group_name AS seed_path
+          FROM reserved r
+         WHERE r.acc_group_parent_id IS NULL
+            OR NOT EXISTS (SELECT 1 FROM reserved p WHERE p.acc_group_id = r.acc_group_parent_id)
+        UNION ALL
+        SELECT c.*, t.seed_path || ' > ' || LPAD(COALESCE(c.acc_group_sort, 0)::text, 6, '0') || '/' || c.acc_group_name
+          FROM reserved c
+          JOIN tree t ON t.acc_group_id = c.acc_group_parent_id
+      )
+      SELECT * FROM tree
+    ) AS seed_src`,
+    orderBy: 'seed_path',
+    conflictTarget: 'acc_group_id',
+    header: (count) => [
+      `-- Seed: accounts.account_groups -- the reserved chart of accounts (${count} rows).`,
+      '--',
+      '-- Only rows flagged acc_group_is_reserved are exported: the Tally-style default tree',
+      '-- (Capital Account, Current Assets, Sundry Debtors, ...) plus the two groups the',
+      '-- application addresses BY A HARDCODED ID:',
+      '--',
+      "--   Customers  019f081c-6764-73b0-b397-3f30a6efe73e  STATES_ACCOUNT_GROUP_ID",
+      '--       (src/modules/sales/state/utils/state.utils.ts, and the same constant copied',
+      '--        into city.service.ts and area.service.ts) -- state / city / area each mirror',
+      '--        themselves into an account group under it, so creating a state 400s with',
+      '--        "Parent account group does not exist" wherever this row is missing.',
+      "--   Suppliers  019f081c-98cc-757a-9346-4cfba810c47f  SUPPLIER_LINKED_LEDGER_GROUP_ID",
+      '--       (src/modules/purchase/suppliers/suppliers.service.ts) -- every supplier ledger',
+      '--       is created under it.',
+      '--',
+      '-- That is why the ids are written out rather than left to uuidv7(): they are compiled',
+      '-- into the server, so the same uuid has to mean the same group in every environment.',
+      '-- Groups a site creates for itself are NOT reserved and are not exported.',
+      '--',
+      '-- acc_group_parent_id is self-referential. The rows go in as ONE statement, so',
+      '-- PostgreSQL checks the foreign key once at the end of it and a child may sit beside',
+      '-- its parent in the same VALUES list; they are ordered parent-first for readability.',
+      '--',
+      '-- Columns deliberately not seeded:',
+      '--   * acc_group_company_id  -- a foreign key to companys, per-environment;',
+      '--   * acc_group_child_ids   -- denormalized LEDGER ids under the group, maintained by',
+      '--     AccountsGroupService as ledgers are created, so it starts empty;',
+      '--   * acc_group_tally_guid / _master_id / _alter_id -- filled by a Tally sync, and the',
+      '--     guid carries a unique index.',
+      '--',
+      '-- acc_ledger_profile (General / Party / Bank / Cash / Tax / SalesPurchase) and',
+      '-- acc_group_nature are what the mirroring services inherit from the parent, so they',
+      '-- matter as much as the ids do.',
+      '--',
+      '-- Idempotent: ON CONFLICT (acc_group_id) DO NOTHING -- a group already present keeps',
+      '-- its locally edited name, sort and flags. There is no unique index on the name, so a',
+      '-- database where someone hand-built the same tree under different ids would end up',
+      '-- with both; check before running it there.',
+    ],
+    columns: [
+      column('acc_group_id', 'literal', 'uuid'),
+      column('acc_group_name', 'literal', 'varchar'),
+      column('acc_group_alias', 'literal', 'varchar'),
+      column('acc_group_short', 'literal', 'varchar'),
+      column('acc_group_tally_name', 'literal', 'varchar'),
+      column('acc_group_primary_name', 'literal', 'varchar'),
+      column('acc_group_nature', 'literal', 'varchar'),
+      column('acc_group_parent_id', 'literal', 'uuid'),
+      column('acc_group_sort', 'plain', 'integer'),
+      column('acc_group_child_ids', 'const', 'uuid[]', { value: "'{}'" }),
+      column('acc_group_type', 'literal', 'varchar'),
+      column('acc_ledger_profile', 'literal', 'varchar'),
+      column('acc_group_is_default', 'bool', 'boolean'),
+      column('acc_group_is_reserved', 'bool', 'boolean'),
+      column('acc_group_behave_as_subledger', 'bool', 'boolean'),
+      column('acc_group_net_debit_credit', 'bool', 'boolean'),
+      column('acc_group_used_for_calculation', 'bool', 'boolean'),
+      column('acc_group_affects_gross_profit', 'bool', 'boolean'),
+      column('acc_group_is_active', 'bool', 'boolean'),
+      column('acc_group_is_deleted', 'bool', 'boolean'),
+      column('acc_group_created_by', 'const', 'varchar', { value: "'system'" }),
+      column('acc_group_modified_by', 'const', 'varchar', { value: "'system'" }),
     ],
   },
 ];
