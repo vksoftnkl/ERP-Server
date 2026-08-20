@@ -37,6 +37,14 @@
       "description": "fixed.dropdown_columns — dropdown column layouts; after Dropdown_Details.sql (FK)"
     },
     {
+      "file": "Form_Section.sql",
+      "description": "fixed.form_section — widget-master tabs; after Menu_Master.sql (FK) and before Item_Master_Widget_Config_Menu29.sql"
+    },
+    {
+      "file": "Form_Field.sql",
+      "description": "fixed.form_field — widget-master fields; after Form_Section.sql (FK)"
+    },
+    {
       "file": "Price_Levels.sql",
       "description": "fixed.price_levels — selling price levels"
     },

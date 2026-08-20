@@ -171,13 +171,14 @@ deploy.
 ### Regenerating the exported seeds
 
 `Ui_Tables.sql`, `Ui_Table_Columns.sql`, `Grid_Details.sql`, `Grid_Columns.sql`,
-`Dropdown_Details.sql` and `Dropdown_Columns.sql` are exported from a reference database
+`Dropdown_Details.sql`, `Dropdown_Columns.sql`, `Form_Section.sql` and `Form_Field.sql`
+are exported from a reference database
 rather than hand-written — screens read those tables to decide which columns exist, so an
 environment without them renders empty grids and saves NULLs. After changing a grid,
 dropdown or item-grid layout on the reference database:
 
 ```bash
-npm run seed:export:ui-config      # rewrites the six UI-config files from DATABASE_URL
+npm run seed:export:ui-config      # rewrites the UI-config files from DATABASE_URL
 git diff prisma/seed               # review
 ```
 
@@ -192,8 +193,8 @@ npm run seed:export:masters
 Both exporters share the writer in [scripts/lib/seed-file-writer.js](scripts/lib/seed-file-writer.js);
 adding a table means adding a config entry, not new code.
 
-Each file skips a table/grid/dropdown that already has columns, so re-running never
-fights a site's own layout edits — which also means it will not add a newly introduced
+Each file skips a table/grid/dropdown/form that already has columns or sections, so
+re-running never fights a site's own layout edits — which also means it will not add a newly introduced
 column to an already-configured grid. Use a targeted seed for that, like
 `Quotation_Item_Grid_ItemSize_Column.sql`.
 

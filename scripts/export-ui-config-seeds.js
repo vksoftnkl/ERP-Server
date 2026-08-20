@@ -11,6 +11,8 @@
  *   Grid_Columns.sql       fixed.grid_columns
  *   Dropdown_Details.sql   fixed.dropdown_details   (lookup popups + their SQL)
  *   Dropdown_Columns.sql   fixed.dropdown_columns
+ *   Form_Section.sql       fixed.form_section       (widget master: form tabs)
+ *   Form_Field.sql         fixed.form_field         (widget master: fields on a tab)
  *
  * These six tables are configuration, not transactions: screens read them to decide
  * which columns exist, so an environment without them renders empty grids and saves
@@ -259,6 +261,100 @@ const TABLES = [
       column('dropdown_columns_visiblity', 'bool', 'boolean'),
       column('dropdown_columns_filter', 'bool', 'boolean'),
       column('dropdown_columns_created_by', 'const', 'text', { value: "'system'" }),
+    ],
+  },
+  {
+    file: 'Form_Section.sql',
+    table: 'fixed.form_section',
+    orderBy: 'section_menu_id, section_position, section_id',
+    conflictTarget: 'section_id',
+    sequenceColumn: 'section_id',
+    guard: { column: 'section_menu_id', alias: 'existing', noun: 'menu' },
+    groupBy: {
+      column: 'section_menu_id',
+      labelSql: 'SELECT menu_id AS id, menu_name AS label FROM fixed.menu_master',
+    },
+    header: (count) => [
+      `-- Seed: fixed.form_section -- the widget-master tabs of each entry form (${count} rows).`,
+      '--',
+      '-- One row per group of fields on a screen ("Primary details", "Credit details", ...).',
+      '-- Together with fixed.form_field (Form_Field.sql) this is what the widget master edits',
+      '-- when a user re-labels, re-orders or hides part of a form, so a form with no rows here',
+      '-- cannot be customised at all.',
+      '--',
+      '-- Runs after Menu_Master.sql -- section_menu_id is a foreign key into fixed.menu_master',
+      '-- (ON DELETE CASCADE) -- and before Item_Master_Widget_Config_Menu29.sql, whose menu-29',
+      '-- sections are already part of this export and therefore no-op.',
+      '--',
+      '-- section_id is written out because fixed.form_field.field_section_id points at it.',
+      '-- section_name is the internal name and section_gui_name the label the screen shows;',
+      '-- section_platform separates the Web layout from the Desktop one.',
+      '--',
+      '-- Idempotency: a menu that ALREADY HAS ANY SECTION is left completely alone (the WHERE',
+      '-- NOT EXISTS below), so a site that laid out its own forms keeps them. A database that',
+      '-- grew its sections independently therefore keeps its own ids, and Form_Field.sql skips',
+      '-- that branch too rather than attaching fields to a foreign section.',
+    ],
+    columns: [
+      column('section_id', 'plain', 'integer'),
+      column('section_menu_id', 'plain', 'integer'),
+      column('section_name', 'literal', 'text'),
+      column('section_gui_name', 'literal', 'text'),
+      column('section_position', 'plain', 'integer'),
+      column('section_visibility', 'bool', 'boolean'),
+      column('section_platform', 'literal', 'varchar'),
+      column('section_created_by', 'const', 'text', { value: "'system'" }),
+    ],
+  },
+  {
+    file: 'Form_Field.sql',
+    table: 'fixed.form_field',
+    orderBy: 'field_section_id, field_position, field_id',
+    conflictTarget: 'field_id',
+    sequenceColumn: 'field_id',
+    guard: {
+      column: 'field_section_id',
+      alias: 'existing',
+      noun: 'section',
+      requireExists: {
+        table: 'fixed.form_section',
+        alias: 'parent',
+        column: 'section_id',
+        localColumn: 'field_section_id',
+      },
+    },
+    groupBy: {
+      column: 'field_section_id',
+      labelSql: `SELECT s.section_id AS id, m.menu_name || ' / ' || s.section_gui_name AS label
+                   FROM fixed.form_section s
+                   JOIN fixed.menu_master m ON m.menu_id = s.section_menu_id`,
+    },
+    header: (count) => [
+      `-- Seed: fixed.form_field -- the fields inside each widget-master tab (${count} rows).`,
+      '--',
+      '-- Runs after Form_Section.sql -- field_section_id is a foreign key into it, ON DELETE',
+      '-- CASCADE.',
+      '--',
+      '-- field_name MUST equal the form field\'s binding key (item_retail_item, cus_credit_days,',
+      '-- ...), not a label-derived name: the widget-master popup matches on it, and a field',
+      '-- whose name does not bind shows up as "not on form" and controls nothing.',
+      '-- field_gui_name is the label shown, field_secondary_text the helper line under it.',
+      '--',
+      '-- Two guards, because this is a grandchild of the menu tree:',
+      '--   * a section that ALREADY HAS ANY FIELD is skipped, so local re-labelling survives;',
+      '--   * a section that does not exist in the target database is skipped as well, instead',
+      '--     of failing the foreign key and aborting the file -- that is what happens to every',
+      '--     menu whose sections Form_Section.sql left alone.',
+    ],
+    columns: [
+      column('field_id', 'plain', 'integer'),
+      column('field_section_id', 'plain', 'integer'),
+      column('field_name', 'literal', 'varchar'),
+      column('field_gui_name', 'literal', 'varchar'),
+      column('field_secondary_text', 'literal', 'varchar'),
+      column('field_position', 'plain', 'integer'),
+      column('field_visibility', 'bool', 'boolean'),
+      column('field_created_by', 'const', 'text', { value: "'system'" }),
     ],
   },
 ];

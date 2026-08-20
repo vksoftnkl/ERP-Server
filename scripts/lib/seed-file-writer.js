@@ -137,6 +137,18 @@ const buildFile = (config, rows, labels) => {
       `   WHERE ${config.guard.alias}.${config.guard.column} = v.${config.guard.column}`,
       ')',
     );
+    // Optional second clause for a child table whose parent rows may have been
+    // skipped by their own guard: without it the insert would hit the foreign key
+    // and abort the file instead of quietly leaving that branch alone.
+    const parent = config.guard.requireExists;
+    if (parent) {
+      lines.push(
+        `  AND EXISTS (`,
+        `  SELECT 1 FROM ${parent.table} ${parent.alias}`,
+        `   WHERE ${parent.alias}.${parent.column} = v.${parent.localColumn}`,
+        ')',
+      );
+    }
   }
   lines.push(`ON CONFLICT (${config.conflictTarget}) DO NOTHING;`);
   if (config.sequenceColumn) {
