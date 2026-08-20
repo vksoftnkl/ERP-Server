@@ -9,6 +9,11 @@
     "target": "ES2022",
     "sourceMap": true,
     "outDir": "./dist",
+    // Pinned so the emitted layout is always dist/src/**. Without it tsc infers the
+    // common root of the included files, and dropping the last file outside src/
+    // silently flattens the output to dist/**, breaking dist/src/main.js -- the path
+    // package.json "main"/"bin", start:prod and ecosystem.config.js all point at.
+    "rootDir": "./",
     "baseUrl": "./",
     "incremental": true,
     "strict": true,

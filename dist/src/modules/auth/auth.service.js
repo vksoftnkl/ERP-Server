@@ -33,12 +33,14 @@ let AuthService = AuthService_1 = class AuthService {
         this.requestContextService = requestContextService;
     }
     async login(loginAuthDto, requestMetadata = { userAgent: null, appVersion: null }) {
-        const user = await this.findLoginUser(loginAuthDto.usrLoginName);
+        const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
         if (!user) {
+            await this.logUnmatchedLoginName(loginAuthDto.usrLoginName, loginAuthDto.device_type);
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
         const isPasswordValid = await this.verifyPassword(loginAuthDto.usrPassword, user.usrPasswordHash);
         if (!isPasswordValid) {
+            this.logger.warn(`Login rejected for '${user.usrLoginName}' (${user.usrId}): password mismatch.`);
             try {
                 await this.incrementFailedLogin(user.usrId);
             }
@@ -133,7 +135,7 @@ let AuthService = AuthService_1 = class AuthService {
             device_type: null,
         };
     }
-    async findLoginUser(userName) {
+    async findLoginUser(userName, deviceType) {
         const normalizedUserName = userName.trim();
         if (!normalizedUserName) {
             return null;
@@ -144,9 +146,83 @@ let AuthService = AuthService_1 = class AuthService {
                 usrIsDeleted: false,
                 usrIsActive: true,
                 usrIsLocked: false,
-                usrWebLogin: true,
+                ...this.buildLoginChannelFilter(deviceType),
             },
         });
+    }
+    buildLoginChannelFilter(deviceType) {
+        switch (this.resolveLoginChannel(deviceType)) {
+            case 'web':
+                return { usrWebLogin: true };
+            case 'mobile':
+                return { usrMobileLogin: true };
+            case 'desktop':
+                return { usrDesktopLogin: true };
+            default:
+                return {
+                    OR: [{ usrWebLogin: true }, { usrDesktopLogin: true }, { usrMobileLogin: true }],
+                };
+        }
+    }
+    resolveLoginChannel(deviceType) {
+        const normalized = deviceType?.trim().toLowerCase();
+        if (!normalized) {
+            return null;
+        }
+        if (['web', 'browser'].includes(normalized)) {
+            return 'web';
+        }
+        if (['mobile', 'android', 'ios', 'tablet', 'phone'].includes(normalized)) {
+            return 'mobile';
+        }
+        return 'desktop';
+    }
+    async logUnmatchedLoginName(userName, deviceType) {
+        const normalizedUserName = userName.trim();
+        const channel = this.resolveLoginChannel(deviceType) ?? 'unspecified';
+        if (!normalizedUserName) {
+            this.logger.warn(`Login rejected: empty login name (device type '${channel}').`);
+            return;
+        }
+        try {
+            const candidate = await this.prisma.userMaster.findFirst({
+                where: { usrLoginName: { equals: normalizedUserName, mode: 'insensitive' } },
+                select: {
+                    usrId: true,
+                    usrIsDeleted: true,
+                    usrIsActive: true,
+                    usrIsLocked: true,
+                    usrWebLogin: true,
+                    usrDesktopLogin: true,
+                    usrMobileLogin: true,
+                },
+            });
+            if (!candidate) {
+                this.logger.warn(`Login rejected: no user named '${normalizedUserName}' (device type '${channel}').`);
+                return;
+            }
+            const reasons = [];
+            if (candidate.usrIsDeleted)
+                reasons.push('user is deleted');
+            if (!candidate.usrIsActive)
+                reasons.push('user is inactive');
+            if (candidate.usrIsLocked)
+                reasons.push('user is locked');
+            if (channel === 'web' && !candidate.usrWebLogin)
+                reasons.push('web login is disabled');
+            if (channel === 'desktop' && !candidate.usrDesktopLogin)
+                reasons.push('desktop login is disabled');
+            if (channel === 'mobile' && !candidate.usrMobileLogin)
+                reasons.push('mobile login is disabled');
+            if (channel === 'unspecified' &&
+                !candidate.usrWebLogin && !candidate.usrDesktopLogin && !candidate.usrMobileLogin)
+                reasons.push('all login channels are disabled');
+            this.logger.warn(`Login rejected for '${normalizedUserName}' (${candidate.usrId}, device type '${channel}'): ` +
+                `${reasons.length ? reasons.join(', ') : 'user did not match the login filter'}.`);
+        }
+        catch (error) {
+            this.logger.warn(`Login rejected for '${normalizedUserName}': reason lookup failed: ${this.describeError(error)}`);
+        }
     }
     async findAndUpdateDeviceOnLogin(deviceUid, user, opts = {}) {
         const now = new Date();
@@ -157,14 +233,33 @@ let AuthService = AuthService_1 = class AuthService {
             throw new common_1.UnauthorizedException('Device not registered');
         }
         const isWeb = resolvedType.toLowerCase() === 'web';
-        const isDesktopOrMobile = ['desktop', 'mobile'].includes(resolvedType.toLowerCase());
+        const isDesktopOrMobile = this.resolveLoginChannel(resolvedType) !== 'web';
         if (isWeb) {
-            const webDevice = await this.prisma.deviceMaster.findFirst({
-                where: { devUserId: user.usrId, devDeviceType: 'Web' },
+            const webDevices = await this.prisma.deviceMaster.findMany({
+                where: {
+                    devUserId: user.usrId,
+                    devDeviceType: { equals: 'Web', mode: 'insensitive' },
+                },
+                orderBy: [
+                    { devLastLogin: { sort: 'desc', nulls: 'last' } },
+                    { devCreatedOn: 'desc' },
+                ],
             });
-            if (!webDevice) {
+            if (webDevices.length === 0) {
                 throw new common_1.UnauthorizedException('Device not registered. Please contact administrator.');
             }
+            const usableDevices = webDevices.filter((candidate) => !candidate.devIsBlocked && candidate.devIsActive && !candidate.devIsDeleted);
+            if (usableDevices.length === 0) {
+                const blockedDevice = webDevices.find((candidate) => candidate.devIsBlocked);
+                if (blockedDevice) {
+                    this.logger.warn(`Web login rejected for user ${user.usrId}: device ${blockedDevice.devDeviceUid} is blocked.`);
+                    throw new common_1.UnauthorizedException(this.describeBlockedDevice(blockedDevice));
+                }
+                this.logger.warn(`Web login rejected for user ${user.usrId}: no active web device among ` +
+                    `${webDevices.map((candidate) => candidate.devDeviceUid).join(', ')}.`);
+                throw new common_1.UnauthorizedException('Device is not available. Please contact administrator.');
+            }
+            const webDevice = usableDevices.find((candidate) => candidate.devDeviceUid === lookupUid) ?? usableDevices[0];
             return this.prisma.deviceMaster.update({
                 where: { devId: webDevice.devId },
                 data: {
@@ -183,9 +278,11 @@ let AuthService = AuthService_1 = class AuthService {
         }
         if (isDesktopOrMobile) {
             if (existing.devIsBlocked) {
-                throw new common_1.UnauthorizedException(existing.devBlockReason ?? 'Device is blocked. Please contact administrator.');
+                this.logger.warn(`Login rejected for user ${user.usrId}: device ${existing.devDeviceUid} is blocked.`);
+                throw new common_1.UnauthorizedException(this.describeBlockedDevice(existing));
             }
             if (!existing.devIsActive || existing.devIsDeleted) {
+                this.logger.warn(`Login rejected for user ${user.usrId}: device ${existing.devDeviceUid} is inactive or deleted.`);
                 throw new common_1.UnauthorizedException('Device is not available. Please contact administrator.');
             }
         }
@@ -202,6 +299,10 @@ let AuthService = AuthService_1 = class AuthService {
                 ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
             },
         });
+    }
+    describeBlockedDevice(device) {
+        const reason = device.devBlockReason?.trim();
+        return reason ? reason : 'Device is blocked. Please contact administrator.';
     }
     async updateUserOnLogin(usrId) {
         await this.prisma.userMaster.update({

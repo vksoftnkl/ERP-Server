@@ -24,50 +24,13 @@
  */
 
 const path = require('node:path');
-const { writeFileSync } = require('node:fs');
 const { Client } = require('pg');
 const dotenv = require('dotenv');
+const { column, exportSeedFiles } = require('./lib/seed-file-writer');
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const SEED_DIR = path.resolve(process.cwd(), 'prisma', 'seed');
-/** Tag for dollar-quoted SQL bodies; verified absent from the data before use. */
-const DOLLAR_TAG = '$seed$';
-/** Padding is for readability — long values are left unpadded so lines stay sane. */
-const MAX_PAD_WIDTH = 34;
-
-const literal = (value) => (value === null ? 'NULL' : `'${String(value).replace(/'/g, "''")}'`);
-const bool = (value) => (value === null ? 'NULL' : value ? 'true' : 'false');
-const plain = (value) => (value === null ? 'NULL' : String(value));
-const dollar = (value) => {
-  if (value === null) {
-    return 'NULL';
-  }
-  const text = String(value);
-  if (text.includes(DOLLAR_TAG)) {
-    throw new Error(`Value contains the dollar-quote tag ${DOLLAR_TAG}; pick another tag.`);
-  }
-  return `${DOLLAR_TAG}${text}${DOLLAR_TAG}`;
-};
-
-const column = (name, kind, pgType, options = {}) => ({ name, kind, pgType, ...options });
-
-const renderCell = (spec, row) => {
-  if (spec.kind === 'const') {
-    return spec.value;
-  }
-  const value = row[spec.name];
-  switch (spec.kind) {
-    case 'bool':
-      return bool(value);
-    case 'plain':
-      return plain(value);
-    case 'dollar':
-      return dollar(value);
-    default:
-      return literal(value);
-  }
-};
 
 const TABLES = [
   {
@@ -300,93 +263,6 @@ const TABLES = [
   },
 ];
 
-const buildRows = (config, rows) => {
-  const cells = rows.map((row) => config.columns.map((spec) => renderCell(spec, row)));
-  const widths = config.columns.map((spec, index) => {
-    if (spec.ownLine) {
-      return 0;
-    }
-    const widest = cells.reduce((max, cell) => Math.max(max, cell[index].length), 0);
-    return widest <= MAX_PAD_WIDTH ? widest : 0;
-  });
-  return cells.map((cell) =>
-    cell
-      .map((value, index) => (widths[index] ? value.padEnd(widths[index]) : value))
-      .join(', '),
-  );
-};
-
-const sequenceStatement = (config) =>
-  [
-    '',
-    '-- Keep the identity sequence ahead of the seeded ids, so the next row created from',
-    '-- the UI does not collide with one of them.',
-    'SELECT setval(',
-    `    pg_get_serial_sequence('${config.table}', '${config.sequenceColumn}'),`,
-    `    (SELECT GREATEST(COALESCE(MAX(${config.sequenceColumn}), 0), 1) FROM ${config.table}),`,
-    '    true',
-    ');',
-  ].join('\n');
-
-const buildFile = (config, rows, labels) => {
-  const columnNames = config.columns.map((spec) => spec.name);
-  const rendered = buildRows(config, rows);
-  const casts = config.columns.map((spec) => `::${spec.pgType}`);
-  const lines = [...config.header(rows.length)];
-  lines.push(
-    `-- Regenerate with: npm run seed:export:ui-config`,
-    `-- Run: psql "$DATABASE_URL" -f prisma/seed/${config.file}`,
-    `--      or: npm run seed:run -- --only=${config.file}`,
-    '',
-    'BEGIN;',
-    '',
-    `INSERT INTO ${config.table}`,
-    `    (${columnNames.join(', ')})`,
-  );
-  lines.push(config.guard ? 'SELECT v.* FROM (VALUES' : 'VALUES');
-
-  let currentGroup;
-  rows.forEach((row, index) => {
-    if (config.groupBy) {
-      const groupValue = row[config.groupBy.column];
-      if (groupValue !== currentGroup) {
-        currentGroup = groupValue;
-        const label = labels.get(String(groupValue)) ?? '(unnamed)';
-        lines.push(`    -- ============ ${label} (id ${groupValue}) ============`);
-      }
-    }
-    // Types are pinned on the first row only: PostgreSQL resolves each VALUES column
-    // from every entry, so the later unknown literals adopt these types. Without them
-    // a uuid/numeric column would arrive as text and the INSERT would be rejected.
-    const body =
-      index === 0
-        ? config.columns
-            .map((spec, columnIndex) => {
-              const cell = renderCell(spec, row);
-              return `${cell}${casts[columnIndex]}`;
-            })
-            .join(', ')
-        : rendered[index];
-    lines.push(`${index === 0 ? '     ' : '    ,'}(${body})`);
-  });
-
-  if (config.guard) {
-    lines.push(
-      `) AS v(${columnNames.join(', ')})`,
-      `WHERE NOT EXISTS (`,
-      `  SELECT 1 FROM ${config.table} ${config.guard.alias}`,
-      `   WHERE ${config.guard.alias}.${config.guard.column} = v.${config.guard.column}`,
-      `)`,
-    );
-  }
-  lines.push(`ON CONFLICT (${config.conflictTarget}) DO NOTHING;`);
-  if (config.sequenceColumn) {
-    lines.push(sequenceStatement(config));
-  }
-  lines.push('', 'COMMIT;', '');
-  return lines.join('\n');
-};
-
 const main = async () => {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -395,24 +271,14 @@ const main = async () => {
   const client = new Client({ connectionString });
   await client.connect();
   try {
-    for (const config of TABLES) {
-      const columnList = config.columns
-        .filter((spec) => spec.kind !== 'const')
-        .map((spec) => spec.name)
-        .join(', ');
-      const { rows } = await client.query(
-        `SELECT ${columnList} FROM ${config.table} ORDER BY ${config.orderBy}`,
-      );
-      const labels = new Map();
-      if (config.groupBy) {
-        const labelResult = await client.query(config.groupBy.labelSql);
-        for (const row of labelResult.rows) {
-          labels.set(String(row.id), row.label);
-        }
-      }
-      const filePath = path.join(SEED_DIR, config.file);
-      writeFileSync(filePath, buildFile(config, rows, labels));
-      console.log(`${config.file.padEnd(24)} ${String(rows.length).padStart(5)} rows`);
+    const written = await exportSeedFiles({
+      client,
+      seedDir: SEED_DIR,
+      tables: TABLES,
+      regenerateScript: 'seed:export:ui-config',
+    });
+    for (const entry of written) {
+      console.log(`${entry.file.padEnd(24)} ${String(entry.rows).padStart(5)} rows`);
     }
   } finally {
     await client.end();

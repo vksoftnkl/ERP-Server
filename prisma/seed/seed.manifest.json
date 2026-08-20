@@ -36,6 +36,30 @@
       "file": "Dropdown_Columns.sql",
       "description": "fixed.dropdown_columns — dropdown column layouts; after Dropdown_Details.sql (FK)"
     },
+    {
+      "file": "Price_Levels.sql",
+      "description": "fixed.price_levels — selling price levels"
+    },
+    {
+      "file": "Item_Price_Levels.sql",
+      "description": "inventory.item_price_levels — price levels sales documents reference (RESTRICT), so ids must match everywhere"
+    },
+    {
+      "file": "Item_Gst_Units.sql",
+      "description": "inventory.item_gst_units — GST UQC codes; item_unit_master.unit_code is an FK to the code"
+    },
+    {
+      "file": "Stock_Adjust_Reasons.sql",
+      "description": "fixed.stock_adj_reasons — physical stock adjustment reasons (replaces the former TypeScript seed)"
+    },
+    {
+      "file": "Acc_Tender_Types.sql",
+      "description": "accounts.acc_tender_types — payment tender types; referenced by acc_tender_master/detail"
+    },
+    {
+      "file": "Acc_Voucher_Types.sql",
+      "description": "accounts.acc_voucher_types — all document series; runs before the three single-type seeds and before Acc_Voucher_Seq_Sale_Bill.sql"
+    },
     { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
     { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
     {

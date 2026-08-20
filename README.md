@@ -168,7 +168,7 @@ A seed that depends on rows it does not create (a menu, a company, a branch) sho
 in the default `always` mode: it no-ops until those rows exist, then applies on a later
 deploy.
 
-### Regenerating the UI-configuration seeds
+### Regenerating the exported seeds
 
 `Ui_Tables.sql`, `Ui_Table_Columns.sql`, `Grid_Details.sql`, `Grid_Columns.sql`,
 `Dropdown_Details.sql` and `Dropdown_Columns.sql` are exported from a reference database
@@ -177,9 +177,20 @@ environment without them renders empty grids and saves NULLs. After changing a g
 dropdown or item-grid layout on the reference database:
 
 ```bash
-npm run seed:export:ui-config      # rewrites the six files from DATABASE_URL
+npm run seed:export:ui-config      # rewrites the six UI-config files from DATABASE_URL
 git diff prisma/seed               # review
 ```
+
+The reference masters are exported the same way — `Price_Levels.sql`,
+`Item_Price_Levels.sql`, `Item_Gst_Units.sql`, `Stock_Adjust_Reasons.sql`,
+`Acc_Tender_Types.sql` and `Acc_Voucher_Types.sql`:
+
+```bash
+npm run seed:export:masters
+```
+
+Both exporters share the writer in [scripts/lib/seed-file-writer.js](scripts/lib/seed-file-writer.js);
+adding a table means adding a config entry, not new code.
 
 Each file skips a table/grid/dropdown that already has columns, so re-running never
 fights a site's own layout edits — which also means it will not add a newly introduced

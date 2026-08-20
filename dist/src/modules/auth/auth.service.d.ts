@@ -18,7 +18,11 @@ export declare class AuthService {
     login(loginAuthDto: LoginAuthDto, requestMetadata?: LoginRequestMetadata): Promise<LoginResponseDto>;
     refresh(refreshToken: string): Promise<LoginResponseDto>;
     private findLoginUser;
+    private buildLoginChannelFilter;
+    private resolveLoginChannel;
+    private logUnmatchedLoginName;
     private findAndUpdateDeviceOnLogin;
+    private describeBlockedDevice;
     private updateUserOnLogin;
     private incrementFailedLogin;
     private verifyPassword;

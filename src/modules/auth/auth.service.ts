@@ -1,5 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { DeviceMaster, UserMaster } from '@prisma/client';
+import { DeviceMaster, Prisma, UserMaster } from '@prisma/client';
 import { createHash, scrypt as nodeScrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { RequestContextService } from '../../common/request-context/request-context.service';
@@ -27,8 +27,9 @@ export class AuthService {
     loginAuthDto: LoginAuthDto,
     requestMetadata: LoginRequestMetadata = { userAgent: null, appVersion: null },
   ): Promise<LoginResponseDto> {
-    const user = await this.findLoginUser(loginAuthDto.usrLoginName);
+    const user = await this.findLoginUser(loginAuthDto.usrLoginName, loginAuthDto.device_type);
     if (!user) {
+      await this.logUnmatchedLoginName(loginAuthDto.usrLoginName, loginAuthDto.device_type);
       throw new UnauthorizedException('Invalid credentials');
     }
     const isPasswordValid = await this.verifyPassword(
@@ -36,6 +37,9 @@ export class AuthService {
       user.usrPasswordHash,
     );
     if (!isPasswordValid) {
+      this.logger.warn(
+        `Login rejected for '${user.usrLoginName}' (${user.usrId}): password mismatch.`,
+      );
       try {
         await this.incrementFailedLogin(user.usrId);
       } catch (error: unknown) {
@@ -152,7 +156,10 @@ export class AuthService {
       device_type: null,
     };
   }
-  private async findLoginUser(userName: string): Promise<UserMaster | null> {
+  private async findLoginUser(
+    userName: string,
+    deviceType?: string | null,
+  ): Promise<UserMaster | null> {
     const normalizedUserName = userName.trim();
     if (!normalizedUserName) {
       return null;
@@ -163,9 +170,95 @@ export class AuthService {
         usrIsDeleted: false,
         usrIsActive: true,
         usrIsLocked: false,
-        usrWebLogin: true,
+        ...this.buildLoginChannelFilter(deviceType),
       },
     });
+  }
+  // Every login used to require usrWebLogin, so a desktop or mobile client was
+  // rejected with 'Invalid credentials' whenever web access happened to be off —
+  // even though its own channel flag was on. Gate on the flag for the channel the
+  // client actually logged in from.
+  private buildLoginChannelFilter(deviceType?: string | null): Prisma.UserMasterWhereInput {
+    switch (this.resolveLoginChannel(deviceType)) {
+      case 'web':
+        return { usrWebLogin: true };
+      case 'mobile':
+        return { usrMobileLogin: true };
+      case 'desktop':
+        return { usrDesktopLogin: true };
+      default:
+        // The client did not say where it is logging in from; accept the user as
+        // long as at least one channel is open to them.
+        return {
+          OR: [{ usrWebLogin: true }, { usrDesktopLogin: true }, { usrMobileLogin: true }],
+        };
+    }
+  }
+  private resolveLoginChannel(deviceType?: string | null): 'web' | 'mobile' | 'desktop' | null {
+    const normalized = deviceType?.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    if (['web', 'browser'].includes(normalized)) {
+      return 'web';
+    }
+    if (['mobile', 'android', 'ios', 'tablet', 'phone'].includes(normalized)) {
+      return 'mobile';
+    }
+    // device_master stores desktop terminals as 'Desktop', 'PC' and 'POS'; anything
+    // that is not a browser or a handheld is treated as a desktop client.
+    return 'desktop';
+  }
+  // 'Invalid credentials' is deliberately vague to the client, but the server log
+  // should say which of the four reasons it was, or a login problem cannot be
+  // diagnosed without guessing at the caller's payload.
+  private async logUnmatchedLoginName(userName: string, deviceType?: string | null): Promise<void> {
+    const normalizedUserName = userName.trim();
+    const channel = this.resolveLoginChannel(deviceType) ?? 'unspecified';
+    if (!normalizedUserName) {
+      this.logger.warn(`Login rejected: empty login name (device type '${channel}').`);
+      return;
+    }
+    try {
+      const candidate = await this.prisma.userMaster.findFirst({
+        where: { usrLoginName: { equals: normalizedUserName, mode: 'insensitive' } },
+        select: {
+          usrId: true,
+          usrIsDeleted: true,
+          usrIsActive: true,
+          usrIsLocked: true,
+          usrWebLogin: true,
+          usrDesktopLogin: true,
+          usrMobileLogin: true,
+        },
+      });
+      if (!candidate) {
+        this.logger.warn(
+          `Login rejected: no user named '${normalizedUserName}' (device type '${channel}').`,
+        );
+        return;
+      }
+      const reasons: string[] = [];
+      if (candidate.usrIsDeleted) reasons.push('user is deleted');
+      if (!candidate.usrIsActive) reasons.push('user is inactive');
+      if (candidate.usrIsLocked) reasons.push('user is locked');
+      if (channel === 'web' && !candidate.usrWebLogin) reasons.push('web login is disabled');
+      if (channel === 'desktop' && !candidate.usrDesktopLogin)
+        reasons.push('desktop login is disabled');
+      if (channel === 'mobile' && !candidate.usrMobileLogin)
+        reasons.push('mobile login is disabled');
+      if (channel === 'unspecified' &&
+        !candidate.usrWebLogin && !candidate.usrDesktopLogin && !candidate.usrMobileLogin)
+        reasons.push('all login channels are disabled');
+      this.logger.warn(
+        `Login rejected for '${normalizedUserName}' (${candidate.usrId}, device type '${channel}'): ` +
+          `${reasons.length ? reasons.join(', ') : 'user did not match the login filter'}.`,
+      );
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Login rejected for '${normalizedUserName}': reason lookup failed: ${this.describeError(error)}`,
+      );
+    }
   }
   private async findAndUpdateDeviceOnLogin(
     deviceUid: string | undefined,
@@ -181,15 +274,49 @@ export class AuthService {
       throw new UnauthorizedException('Device not registered');
     }
     const isWeb = resolvedType.toLowerCase() === 'web';
-    const isDesktopOrMobile = ['desktop', 'mobile'].includes(resolvedType.toLowerCase());
+    // The desktop client registers itself as 'PC', which used to fall outside this
+    // list and so skipped the blocked/inactive device checks altogether.
+    const isDesktopOrMobile = this.resolveLoginChannel(resolvedType) !== 'web';
 
     if (isWeb) {
-      const webDevice = await this.prisma.deviceMaster.findFirst({
-        where: { devUserId: user.usrId, devDeviceType: 'Web' },
+      // Device type is stored inconsistently ('Web' and 'web' both exist), so match
+      // it case-insensitively instead of pinning the exact casing.
+      const webDevices = await this.prisma.deviceMaster.findMany({
+        where: {
+          devUserId: user.usrId,
+          devDeviceType: { equals: 'Web', mode: 'insensitive' },
+        },
+        orderBy: [
+          { devLastLogin: { sort: 'desc', nulls: 'last' } },
+          { devCreatedOn: 'desc' },
+        ],
       });
-      if (!webDevice) {
+      if (webDevices.length === 0) {
         throw new UnauthorizedException('Device not registered. Please contact administrator.');
       }
+      // Web logins used to skip the blocked/inactive checks the desktop and mobile
+      // branch below applies, so a blocked or soft-deleted device still let the user in.
+      const usableDevices = webDevices.filter(
+        (candidate) => !candidate.devIsBlocked && candidate.devIsActive && !candidate.devIsDeleted,
+      );
+      if (usableDevices.length === 0) {
+        const blockedDevice = webDevices.find((candidate) => candidate.devIsBlocked);
+        if (blockedDevice) {
+          this.logger.warn(
+            `Web login rejected for user ${user.usrId}: device ${blockedDevice.devDeviceUid} is blocked.`,
+          );
+          throw new UnauthorizedException(this.describeBlockedDevice(blockedDevice));
+        }
+        this.logger.warn(
+          `Web login rejected for user ${user.usrId}: no active web device among ` +
+            `${webDevices.map((candidate) => candidate.devDeviceUid).join(', ')}.`,
+        );
+        throw new UnauthorizedException('Device is not available. Please contact administrator.');
+      }
+      // Prefer the canonical per-user row so repeat logins keep landing on the same
+      // device; older `WEB-<uuid>` registrations remain valid as a fallback.
+      const webDevice =
+        usableDevices.find((candidate) => candidate.devDeviceUid === lookupUid) ?? usableDevices[0];
       return this.prisma.deviceMaster.update({
         where: { devId: webDevice.devId },
         data: {
@@ -207,9 +334,15 @@ export class AuthService {
     }
     if (isDesktopOrMobile) {
       if (existing.devIsBlocked) {
-        throw new UnauthorizedException(existing.devBlockReason ?? 'Device is blocked. Please contact administrator.');
+        this.logger.warn(
+          `Login rejected for user ${user.usrId}: device ${existing.devDeviceUid} is blocked.`,
+        );
+        throw new UnauthorizedException(this.describeBlockedDevice(existing));
       }
       if (!existing.devIsActive || existing.devIsDeleted) {
+        this.logger.warn(
+          `Login rejected for user ${user.usrId}: device ${existing.devDeviceUid} is inactive or deleted.`,
+        );
         throw new UnauthorizedException('Device is not available. Please contact administrator.');
       }
     }
@@ -226,6 +359,12 @@ export class AuthService {
         ...(opts.deviceType !== undefined && { devDeviceType: opts.deviceType }),
       },
     });
+  }
+  private describeBlockedDevice(device: DeviceMaster): string {
+    // devBlockReason is often an empty string rather than NULL, so `??` alone
+    // would surface a blank message to the client.
+    const reason = device.devBlockReason?.trim();
+    return reason ? reason : 'Device is blocked. Please contact administrator.';
   }
   private async updateUserOnLogin(usrId: string): Promise<void> {
     await this.prisma.userMaster.update({
