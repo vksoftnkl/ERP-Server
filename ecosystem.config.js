@@ -6,8 +6,21 @@ module.exports = {
       instances: 1,
       exec_mode: 'fork',
       max_memory_restart: '512M',
-      max_restarts: 5,
-      min_uptime: '10s',
+      // Keep retrying forever. The previous `max_restarts: 5` was paired with an
+      // instant (no-delay) restart, so five boot failures burned in under a second
+      // and PM2 parked the process in `errored` state permanently -- the platform
+      // router then answers 502 until someone restarts it by hand. A boot failure
+      // here is usually transient (the Postgres node still coming up after an
+      // environment restart, a brief network blip), so the app must keep trying
+      // rather than give up during the one minute the database is unavailable.
+      autorestart: true,
+      max_restarts: 50,
+      // Back off 1s, 2s, 4s ... capped at 15s, instead of hot-looping. Without this
+      // a crash-on-boot spins the CPU and floods the log.
+      exponential_backoff_restart_delay: 1000,
+      // Seeds run before the port opens (src/database/seed/startup-seed.ts), so a
+      // cold start is legitimately slower than 10s and must not be judged unstable.
+      min_uptime: '60s',
       env: {
         NODE_ENV: 'production',
         HOST: '0.0.0.0',
