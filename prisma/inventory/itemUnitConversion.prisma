@@ -28,6 +28,8 @@ model ItemUnitConversion {
   itemReorders       ItemReorder[]       @relation("ItemReorderUnitConversion")
   itemPrices         ItemPriceMaster[]   @relation("ItemPriceMasterUnitConversion")
   itemQtyPrices      ItemQtyPrice[]      @relation("ItemQtyPriceUnitConversion")
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemUnit")
+  promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeUnit")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")

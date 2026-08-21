@@ -113,6 +113,7 @@ model Company {
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
   appSettingValues      AppSettingValue[]
+  promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
   @@map("companys")
   @@schema("public")
 }

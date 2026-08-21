@@ -69,6 +69,7 @@ model UserMaster {
   voucherHeaders         AccVoucherHeader[]
   tenderDetails          AccTenderDetail[]
   appSettingValues       AppSettingValue[]
+  approvedPromotionSchemes PromotionScheme[] @relation("PromotionSchemeApprovedBy")
 
   // ── Indexes ────────────────────────────────────────────────────────────────
   //   CREATE UNIQUE INDEX uix_user_login_name

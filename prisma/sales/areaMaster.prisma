@@ -19,6 +19,7 @@ model AreaMaster {
   city              CityMaster @relation(fields: [armCityId], references: [ctmId])
   customers         Customer[]
   saleQuotations    SaleQuotation[]
+  promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyArea")
   @@index([armCityId],   name: "idx_arm_city")
   @@index([armIsActive], name: "idx_arm_active")
   @@map("area_master")

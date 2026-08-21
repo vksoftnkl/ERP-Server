@@ -87,6 +87,8 @@ model BranchMaster {
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
   appSettingValues      AppSettingValue[]
+  promotionSchemes      PromotionScheme[]       @relation("PromotionSchemeBranchRef")
+  promotionSchemeBranches PromotionSchemeBranch[] @relation("PromotionSchemeBranchBranch")
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")

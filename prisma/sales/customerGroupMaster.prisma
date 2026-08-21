@@ -32,6 +32,7 @@ model CustGroup {
   // relation (assumes you have Company model mapped to public.companys(comp_id))
   company            Company?  @relation(fields: [cgrCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   customers          Customer[]
+  promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustGroup")
 
   @@map("cust_groups")
   @@index([cgrCompanyId], map: "idx_cgr_company")

@@ -74,6 +74,7 @@ import { WidgetMasterModule } from './modules/master/widget-master/widget-master
 import { ChargeMasterModule } from './modules/master/charge-master/charge-master.module';
 import { ChargeDetailModule } from './modules/master/charge-detail/charge-detail.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
+import { PromotionSchemeModule } from './modules/sales/promotion-scheme/promotion-scheme.module';
 // import { OpeningStockModule } from './modules/stocks/opening-stock/opening-stock.module';
 import { PhysicalStockModule } from './modules/stocks/physical-stock/physical-stock.module';
 import { ItemStockBalanceModule } from './modules/stocks/itemstockbalance/itemStockBalanceModule';
@@ -200,6 +201,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemStockBalanceModule,
     ItemBatchStockModule,
     PromotionLoyaltyPointsModule,
+    PromotionSchemeModule,
     GodownsMasterModule,
     GridDetailsModule,
     DropdownDetailsModule,

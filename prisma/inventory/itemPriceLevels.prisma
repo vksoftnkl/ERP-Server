@@ -19,6 +19,7 @@ model ItemPriceLevel {
   saleBillItems      SaleBillItem[] @relation("SaleBillItemPriceLevel")
   saleOrders         SaleOrder[]     @relation("SaleOrderPriceLevel")
   saleOrderItems     SaleOrderItem[] @relation("SaleOrderItemPriceLevel")
+  promotionSchemes   PromotionScheme[] @relation("PromotionSchemePriceLevel")
   @@map("item_price_levels")
   @@schema("inventory")
 }

@@ -17,6 +17,7 @@ model CityMaster {
   // Relations
   state         StateMaster  @relation(fields: [ctmStateId], references: [stmId])
   areas         AreaMaster[]
+  promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCity")
 
   @@index([ctmStateId],  name: "idx_ctm_state")
   @@index([ctmIsActive], name: "idx_ctm_active")

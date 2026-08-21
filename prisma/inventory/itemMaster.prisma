@@ -88,6 +88,8 @@ model ItemMaster {
   saleQuotationItems   SaleQuotationItem[]
   saleBillItems        SaleBillItem[]
   saleOrderItems       SaleOrderItem[]
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemItem")
+  promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeItem")
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)

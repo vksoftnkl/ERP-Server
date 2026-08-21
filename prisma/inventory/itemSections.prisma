@@ -12,6 +12,7 @@ model ItemSectionMaster {
   secParentId    String?  @db.Uuid @map("sec_parent_id")
   parent         ItemSectionMaster?  @relation("SectionParent", fields: [secParentId], references: [secId], onUpdate: Cascade, onDelete: Restrict)
   children       ItemSectionMaster[] @relation("SectionParent")
+  promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemSection")
 
   secSort        Int?     @map("sec_sort")
   secLevel       Int?     @map("sec_level")

@@ -1506,6 +1506,7 @@ Table item_category_master {
   parent item_category_master
   children item_category_master [not null]
   items item_master [not null]
+  promotionSchemeItems promotion_scheme_item [not null]
   categorySort Int
   categoryLevel Int
   categoryPathIdsCache String[] [not null]
@@ -1648,6 +1649,7 @@ Table item_brand_master {
   brand_modified_by String
   parent item_brand_master
   children item_brand_master [not null]
+  promotionSchemeItems promotion_scheme_item [not null]
 }
 
 Table item_ean_codes {
@@ -1677,6 +1679,7 @@ Table item_group_master {
   parent item_group_master
   children item_group_master [not null]
   items item_master [not null]
+  promotionSchemeItems promotion_scheme_item [not null]
   itgSort Int
   itgLevel Int
   itgPathIdsCache String[] [not null]
@@ -1788,6 +1791,8 @@ Table item_master {
   saleQuotationItems sale_quotation_item [not null]
   saleBillItems sale_bill_item [not null]
   saleOrderItems sale_order_item [not null]
+  promotionSchemeItems promotion_scheme_item [not null]
+  promotionSchemeSlabs promotion_scheme_slab [not null]
 }
 
 Table item_price_levels {
@@ -1810,6 +1815,7 @@ Table item_price_levels {
   saleBillItems sale_bill_item [not null]
   saleOrders sale_order [not null]
   saleOrderItems sale_order_item [not null]
+  promotionSchemes promotion_scheme [not null]
 }
 
 Table item_price_master {
@@ -1933,6 +1939,7 @@ Table item_section_master {
   secParentId String
   parent item_section_master
   children item_section_master [not null]
+  promotionSchemeItems promotion_scheme_item [not null]
   secSort Int
   secLevel Int
   secPathIds String[] [not null]
@@ -2123,6 +2130,8 @@ Table item_unit_conversion {
   itemReorders item_reorders [not null]
   itemPrices item_price_master [not null]
   itemQtyPrices item_qty_price [not null]
+  promotionSchemeItems promotion_scheme_item [not null]
+  promotionSchemeSlabs promotion_scheme_slab [not null]
 }
 
 Table item_unit_master {
@@ -2422,6 +2431,8 @@ Table branch_master {
   tenderMasters acc_tender_master [not null]
   tenderDetails acc_tender_detail [not null]
   appSettingValues app_setting_value [not null]
+  promotionSchemes promotion_scheme [not null]
+  promotionSchemeBranches promotion_scheme_branch [not null]
 }
 
 Table charge_master {
@@ -2560,6 +2571,7 @@ Table companys {
   tenderMasters acc_tender_master [not null]
   tenderDetails acc_tender_detail [not null]
   appSettingValues app_setting_value [not null]
+  promotionSchemes promotion_scheme [not null]
 }
 
 Table company_group_master {
@@ -2833,6 +2845,7 @@ Table user_master {
   voucherHeaders acc_voucher_header [not null]
   tenderDetails acc_tender_detail [not null]
   appSettingValues app_setting_value [not null]
+  approvedPromotionSchemes promotion_scheme [not null]
 }
 
 Table user_menus {
@@ -2951,6 +2964,7 @@ Table area_master {
   city city_master [not null]
   customers customers [not null]
   saleQuotations sale_quotation [not null]
+  promotionSchemeParties promotion_scheme_party [not null]
 }
 
 Table city_master {
@@ -2970,6 +2984,7 @@ Table city_master {
   ctmModifiedBy String
   state state_master [not null]
   areas area_master [not null]
+  promotionSchemeParties promotion_scheme_party [not null]
 }
 
 Table customers {
@@ -3057,6 +3072,7 @@ Table customers {
   saleBills sale_bill [not null]
   saleOrders sale_order [not null]
   itemQtyPrices item_qty_price [not null]
+  promotionSchemeParties promotion_scheme_party [not null]
 }
 
 Table cust_groups {
@@ -3081,6 +3097,7 @@ Table cust_groups {
   cgrModifiedOn DateTime [not null]
   company companys
   customers customers [not null]
+  promotionSchemeParties promotion_scheme_party [not null]
 }
 
 Table employee_departments {
@@ -3311,6 +3328,333 @@ Table loyalty_sch_points {
   lsptUpdatedBy String
   scheme loyalty_sch_list [not null]
   unit item_unit_master
+}
+
+Table promotion_scheme {
+  prmId String [pk]
+  prmCompId String [not null]
+  prmBranchId String
+  prmTenantId String
+  prmCode String [not null]
+  prmName String [not null]
+  prmStatus String [not null, default: 'DRAFT']
+  prmApplyOn String [not null, default: 'ITEM_QTY']
+  prmBenefit String [not null, default: 'DISC_PERC']
+  prmPriority Int [not null, default: 1]
+  prmStackMode String [not null, default: 'EXCLUSIVE']
+  prmAutoApply Boolean [not null, default: true]
+  prmAllowWithManualDisc Boolean [not null, default: false]
+  prmCalcOnAmountType String [not null, default: 'NET_AMOUNT']
+  prmIncludeTax Boolean [not null, default: false]
+  prmBillType String [not null, default: 'ALL']
+  prmMinBillAmount Decimal [not null, default: 0]
+  prmMinQty Decimal [not null, default: 0]
+  prmBranchScope String [not null, default: 'ALL']
+  prmCustScope String [not null, default: 'ALL']
+  prmItemScope String [not null, default: 'ALL']
+  prmPriceLevelId Int
+  prmMaxBenefitPerBill Decimal [not null, default: 0]
+  prmMaxUsesTotal Int [not null, default: 0]
+  prmMaxUsesPerCust Int [not null, default: 0]
+  prmBudgetAmount Decimal [not null, default: 0]
+  prmCouponBatchId String
+  prmStartDate DateTime [not null]
+  prmEndDate DateTime [not null]
+  prmValidFromTime DateTime
+  prmValidToTime DateTime
+  prmValidWeekdays String
+  prmRemarks String
+  prmIsActive Boolean [not null, default: true]
+  prmIsDeleted Boolean [not null, default: false]
+  prmSyncDate DateTime
+  prmCreatedOn DateTime [default: `now()`, not null]
+  prmCreatedBy String
+  prmModifiedOn DateTime
+  prmModifiedBy String
+  prmApprovedOn DateTime
+  prmApprovedBy String
+  company companys [not null]
+  branch branch_master
+  priceLevel item_price_levels
+  approvedBy user_master
+  branches promotion_scheme_branch [not null]
+  parties promotion_scheme_party [not null]
+  items promotion_scheme_item [not null]
+  slabs promotion_scheme_slab [not null]
+
+  indexes {
+    (prmId, prmBenefit) [unique]
+  }
+
+  Note: 'sales.promotion_scheme — §1, the campaign header.
+
+Declared here WITHOUT any CHECK constraint: the vocabulary rules
+(ck_prm_status, ck_prm_apply_on, ck_prm_benefit, ck_prm_stack_mode,
+ck_prm_calc_on, ck_prm_bill_type, the three *_scope checks,
+ck_prm_fixed_price_scope, ck_prm_dates, ck_prm_time_pair, ck_prm_weekdays,
+ck_prm_priority, ck_prm_thresholds, ck_prm_caps, ck_prm_approved) are
+enforced in PromotionSchemeService, not in the migration — same treatment
+item_unit_conversion already gets.
+
+DB-only objects Prisma cannot express, to be hand-authored in the migration:
+ux_prm_code      UNIQUE (prm_comp_id, lower(prm_code)) WHERE NOT deleted
+ix_prm_resolve   the per-bill resolver, covering, partial on
+(deleted = false AND active AND status = \'APPROVED\')
+ix_prm_company / ix_prm_branch / ix_prm_price_level /
+ix_prm_coupon_batch / ix_prm_approved_by   FK-covering, all partial
+ex_prm_exclusive_clash   EXCLUDE USING gist — two APPROVED, EXCLUSIVE
+campaigns on the same company/branch/trigger at
+the same priority may not overlap in date.
+Needs btree_gist.'
+}
+
+Table promotion_scheme_branch {
+  prbId String [pk]
+  prbPrmId String [not null]
+  prbSlno Int [not null, default: 1]
+  prbBranchId String [not null]
+  prbIsExclude Boolean [not null, default: false]
+  prbNotes String
+  prbIsActive Boolean [not null, default: true]
+  prbIsDeleted Boolean [not null, default: false]
+  prbSyncDate DateTime
+  prbCreatedOn DateTime [default: `now()`, not null]
+  prbCreatedBy String
+  prbModifiedOn DateTime
+  prbModifiedBy String
+  scheme promotion_scheme [not null]
+  branch branch_master [not null]
+
+  Note: 'sales.promotion_scheme_branch — §2, which branches run the campaign.
+
+Read only when prm_branch_scope = \'LIST\'. prbIsExclude makes "every branch
+except two" two rows rather than thirty-eight; an EXCLUDE row always beats
+an INCLUDE row for the same branch.
+
+CHECK ck_prb_slno (prb_slno > 0) is enforced in the service, not the DB.
+
+DB-only objects to hand-author in the migration:
+ux_prb_row     UNIQUE (prb_prm_id, prb_branch_id) WHERE NOT deleted
+ix_prb_scheme  (prb_prm_id) INCLUDE (branch, is_exclude), partial
+ix_prb_branch  (prb_branch_id), partial'
+}
+
+Table promotion_scheme_item {
+  priId String [pk]
+  priPrmId String [not null]
+  priSlno Int [not null, default: 1]
+  priKind String [not null]
+  priScopeId String [not null]
+  priItemId String
+  priGroupId String
+  priCategoryId String
+  priBrandId String
+  priSectionId String
+  priUnitId String
+  priIsExclude Boolean [not null, default: false]
+  priDiscPerc Decimal [not null, default: 0]
+  priDiscQty Decimal [not null, default: 0]
+  priDiscAmt Decimal [not null, default: 0]
+  priMinQty Decimal [not null, default: 0]
+  priFactor Decimal [not null, default: 1]
+  priMaxBenefit Decimal [not null, default: 0]
+  priMatchPriority Int [not null, default: 1]
+  priNotes String
+  priIsActive Boolean [not null, default: true]
+  priIsDeleted Boolean [not null, default: false]
+  priSyncDate DateTime
+  priCreatedOn DateTime [default: `now()`, not null]
+  priCreatedBy String
+  priModifiedOn DateTime
+  priModifiedBy String
+  scheme promotion_scheme [not null]
+  item item_master
+  itemGroup item_group_master
+  itemCategory item_category_master
+  itemBrand item_brand_master
+  itemSection item_section_master
+  unit item_unit_conversion
+
+  Note: 'sales.promotion_scheme_item — §4, which stock the campaign applies to.
+
+One kind + one scope id, with five GENERATED ALWAYS ... STORED columns
+carrying the foreign keys — the same shape as PromotionSchemeParty, read
+that model\'s header for the write rules and the migration caveat. In short:
+set priKind + priScopeId (+ priUnitId on an ITEM row) and never touch
+itemId / groupId / categoryId / brandId / sectionId.
+
+This is what makes "20% off own-brand, but nothing on tobacco" ONE scheme.
+
+priMatchPriority: most specific wins. Seed ITEM 4, BRAND 3, CATEGORY 2,
+SECTION 1, GROUP 0 — data, not a hard-coded rule. An EXCLUDE row kills the
+line regardless of any broader rule.
+
+Read only when prm_item_scope = \'LIST\'.
+
+── The discount trio ───────────────────────────────────────────────────
+A rate may be stated here, on the item row, instead of on a slab band —
+that is all "Discount On Items (Offer Per Item)" ever was. Stored in the
+bill\'s own idiom because they are copied straight onto
+sbi_sch_disc_perc / _qty / _amt:
+priDiscPerc  percentage off the line
+priDiscQty   rupees off PER UNIT
+priDiscAmt   flat rupees off the line
+At most one is non-zero. All three zero = this row only says "in scope".
+
+A unit is REQUIRED on an ITEM row and FORBIDDEN on every other kind:
+"10 of item X" is not a quantity until you say ten of WHAT, and a unit is a
+row of item_unit_conversion keyed to one item, so on a BRAND or CATEGORY
+row it would claim to apply to items that never define it.
+
+CHECK ck_pri_kind, ck_pri_unit, ck_pri_one_rate, ck_pri_exclude,
+ck_pri_values, ck_pri_slno and ck_pri_match_priority are enforced in the
+service, not the DB.
+
+DB-only objects to hand-author:
+ux_pri_row     UNIQUE (prm_id, kind, scope_id) WHERE NOT deleted
+ix_pri_scheme  (prm_id, match_priority DESC) INCLUDE (...), partial
+ix_pri_item / _group / _category / _brand / _section / _unit, all partial'
+}
+
+Table promotion_scheme_party {
+  prpId String [pk]
+  prpPrmId String [not null]
+  prpSlno Int [not null, default: 1]
+  prpKind String [not null]
+  prpScopeId String [not null]
+  prpCustId String
+  prpCustGroupId String
+  prpAreaId String
+  prpCityId String
+  prpIsExclude Boolean [not null, default: false]
+  prpMatchPriority Int [not null, default: 1]
+  prpNotes String
+  prpIsActive Boolean [not null, default: true]
+  prpIsDeleted Boolean [not null, default: false]
+  prpSyncDate DateTime
+  prpCreatedOn DateTime [default: `now()`, not null]
+  prpCreatedBy String
+  prpModifiedOn DateTime
+  prpModifiedBy String
+  scheme promotion_scheme [not null]
+  customer customers
+  customerGroup cust_groups
+  area area_master
+  city city_master
+
+  Note: 'sales.promotion_scheme_party — §3, who the campaign applies to.
+
+ONE KIND + ONE SCOPE ID, the shape the entry grid needs. The screen binds
+to exactly two columns, prpKind and prpScopeId; the four *_id fields below
+are GENERATED ALWAYS ... STORED in Postgres and exist only to carry a real
+foreign key per kind.
+
+prpKind = \'CUSTOMER\' | \'CUSTOMER_GROUP\' | \'AREA\' | \'CITY\'
+
+CITY reaches a customer THROUGH THEIR AREA and only that way
+(customers.cus_area_id -> area_master.arm_city_id -> city_master.ctm_id);
+customers.cus_city is free text and must never be matched on. A customer
+with no area is in no city.
+
+prpMatchPriority makes "a rule naming one CUSTOMER beats one naming their
+CITY" data rather than an assumption: CUSTOMER 4, AREA 3, CITY 2,
+CUSTOMER_GROUP 1 — narrowest first. EXCLUDE beats INCLUDE at equal priority.
+
+Read only when prm_cust_scope = \'LIST\'.
+
+── WRITING THIS MODEL ──────────────────────────────────────────────────
+NEVER set custId / custGroupId / areaId / cityId, and never use the four
+nested `connect`s. Postgres computes those columns and rejects any write.
+Set prpKind + prpScopeId; read the relations back.
+
+── MIGRATION ───────────────────────────────────────────────────────────
+prisma migrate cannot emit a generated column. The four must be
+hand-authored, e.g.
+prp_cust_id uuid GENERATED ALWAYS AS
+(CASE WHEN prp_kind::text = \'CUSTOMER\' THEN prp_scope_id END) STORED
+The `@default(dbgenerated())` below is the no-argument form: it stops every
+later `migrate dev` emitting an ALTER COLUMN ... DROP DEFAULT that Postgres
+rejects with 42601 on a generated column.
+
+The FKs are ON UPDATE NO ACTION, not CASCADE — Postgres forbids a cascading
+update on a key containing a generated column. Costs nothing: every master
+key here is a uuidv7() that is never reissued.
+
+CHECK ck_prp_kind, ck_prp_slno and ck_prp_match_priority are enforced in the
+service, not the DB.
+
+DB-only objects to hand-author:
+ux_prp_row       UNIQUE (prm_id, kind, scope_id) WHERE NOT deleted
+ix_prp_scheme    (prm_id, match_priority DESC) INCLUDE (...), partial
+ix_prp_cust / ix_prp_cust_group / ix_prp_area / ix_prp_city, all partial'
+}
+
+Table promotion_scheme_slab {
+  prsId String [pk]
+  prsPrmId String [not null]
+  prsSlno Int [not null, default: 1]
+  prsBenefit String [not null]
+  prsExceeds Decimal [not null, default: 0]
+  prsUpto Decimal
+  prsEach Decimal [not null, default: 1]
+  prsIsRepeat Boolean [not null, default: false]
+  prsMaxRepeats Int [not null, default: 0]
+  prsFreeItemId String
+  prsFreeUnitId String
+  prsFreeQty Decimal [not null, default: 0]
+  prsFreeStockCheck Boolean [not null, default: true]
+  prsDiscPerc Decimal [not null, default: 0]
+  prsDiscQty Decimal [not null, default: 0]
+  prsDiscAmt Decimal [not null, default: 0]
+  prsFixedPrice Decimal
+  prsMaxBenefitAmt Decimal [not null, default: 0]
+  prsNotes String
+  prsIsActive Boolean [not null, default: true]
+  prsIsDeleted Boolean [not null, default: false]
+  prsSyncDate DateTime
+  prsCreatedOn DateTime [default: `now()`, not null]
+  prsCreatedBy String
+  prsModifiedOn DateTime
+  prsModifiedBy String
+  scheme promotion_scheme [not null]
+  freeItem item_master
+  freeUnit item_unit_conversion
+
+  Note: 'sales.promotion_scheme_slab — §5, the offer bands.
+
+One row = one band. Read as: when the measured value is between prsExceeds
+and prsUpto, give the benefit; and if prsIsRepeat, give it once per prsEach
+above prsExceeds instead of once in total.
+
+"the measured value" is RUPEES when prm_apply_on is BILL_AMOUNT or
+ITEM_AMOUNT, and QUANTITY when it is BILL_QTY or ITEM_QTY — one column pair
+serving both, exactly as the loyalty slabs do.
+
+Bands are ROWS, not columns: 0-999 -> 2%, 1000-4999 -> 5%, 5000+ -> 8% is
+three rows.
+
+── The benefit is ENFORCED, not merely documented ──────────────────────
+prsBenefit is a copy of the header\'s prmBenefit tied to it by a COMPOSITE
+foreign key (prs_prm_id, prs_benefit) -> (prm_id, prm_benefit), which is
+why PromotionScheme carries the otherwise-redundant
+@@unique([prmId, prmBenefit]). A percentage-discount scheme therefore
+CANNOT physically hold a free-item band. This composite FK also carries the
+ON DELETE CASCADE, so no second plain FK on prsPrmId is declared.
+
+The other half of that pair — ck_prs_benefit_columns, "the benefit column
+is filled and the others are empty" — is a CHECK, so it lives in the
+service instead of the migration, along with ck_prs_band, ck_prs_each,
+ck_prs_amounts, ck_prs_free_unit_pair and ck_prs_slno. The FK still stops
+the header and its bands disagreeing; the service is what stops a
+DISC_PERC band being saved with a fixed price in it.
+
+DB-only objects to hand-author:
+ux_prs_band      UNIQUE (prm_id, exceeds, COALESCE(free_item_id, nil uuid))
+WHERE NOT deleted — so "spend 5000, get a mug AND a pen"
+is two rows at one threshold, while two rows claiming the
+same band with nothing to separate them stays impossible
+ix_prs_scheme    (prm_id, benefit, exceeds) INCLUDE (...), partial
+ix_prs_free_item / ix_prs_free_unit, partial'
 }
 
 Table sale_agents {
@@ -4883,6 +5227,48 @@ Ref: loyalty_sch_party.lpsLsId > loyalty_sch_list.lsId [delete: Cascade]
 Ref: loyalty_sch_points.lsptLsId > loyalty_sch_list.lsId [delete: Cascade]
 
 Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]
+
+Ref: promotion_scheme.prmCompId > companys.compId [delete: Restrict]
+
+Ref: promotion_scheme.prmBranchId > branch_master.brId [delete: Restrict]
+
+Ref: promotion_scheme.prmPriceLevelId > item_price_levels.iplId [delete: Restrict]
+
+Ref: promotion_scheme.prmApprovedBy > user_master.usrId [delete: Restrict]
+
+Ref: promotion_scheme_branch.prbPrmId > promotion_scheme.prmId [delete: Cascade]
+
+Ref: promotion_scheme_branch.prbBranchId > branch_master.brId [delete: Restrict]
+
+Ref: promotion_scheme_item.priPrmId > promotion_scheme.prmId [delete: Cascade]
+
+Ref: promotion_scheme_item.priItemId > item_master.itemId [delete: Restrict]
+
+Ref: promotion_scheme_item.priGroupId > item_group_master.itgId [delete: Restrict]
+
+Ref: promotion_scheme_item.priCategoryId > item_category_master.categoryId [delete: Restrict]
+
+Ref: promotion_scheme_item.priBrandId > item_brand_master.brand_id [delete: Restrict]
+
+Ref: promotion_scheme_item.priSectionId > item_section_master.secId [delete: Restrict]
+
+Ref: promotion_scheme_item.priUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: promotion_scheme_party.prpPrmId > promotion_scheme.prmId [delete: Cascade]
+
+Ref: promotion_scheme_party.prpCustId > customers.cusId [delete: Restrict]
+
+Ref: promotion_scheme_party.prpCustGroupId > cust_groups.cgrId [delete: Restrict]
+
+Ref: promotion_scheme_party.prpAreaId > area_master.armId [delete: Restrict]
+
+Ref: promotion_scheme_party.prpCityId > city_master.ctmId [delete: Restrict]
+
+Ref: promotion_scheme_slab.(prsPrmId, prsBenefit) > promotion_scheme.(prmId, prmBenefit) [delete: Cascade]
+
+Ref: promotion_scheme_slab.prsFreeItemId > item_master.itemId [delete: Restrict]
+
+Ref: promotion_scheme_slab.prsFreeUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: sale_agents.saCompanyId > companys.compId [delete: Restrict]
 

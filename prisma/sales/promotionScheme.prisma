@@ -1,0 +1,100 @@
+/// sales.promotion_scheme — §1, the campaign header.
+///
+/// Declared here WITHOUT any CHECK constraint: the vocabulary rules
+/// (ck_prm_status, ck_prm_apply_on, ck_prm_benefit, ck_prm_stack_mode,
+/// ck_prm_calc_on, ck_prm_bill_type, the three *_scope checks,
+/// ck_prm_fixed_price_scope, ck_prm_dates, ck_prm_time_pair, ck_prm_weekdays,
+/// ck_prm_priority, ck_prm_thresholds, ck_prm_caps, ck_prm_approved) are
+/// enforced in PromotionSchemeService, not in the migration — same treatment
+/// item_unit_conversion already gets.
+///
+/// DB-only objects Prisma cannot express, to be hand-authored in the migration:
+///   ux_prm_code      UNIQUE (prm_comp_id, lower(prm_code)) WHERE NOT deleted
+///   ix_prm_resolve   the per-bill resolver, covering, partial on
+///                    (deleted = false AND active AND status = 'APPROVED')
+///   ix_prm_company / ix_prm_branch / ix_prm_price_level /
+///   ix_prm_coupon_batch / ix_prm_approved_by   FK-covering, all partial
+///   ex_prm_exclusive_clash   EXCLUDE USING gist — two APPROVED, EXCLUSIVE
+///                            campaigns on the same company/branch/trigger at
+///                            the same priority may not overlap in date.
+///                            Needs btree_gist.
+model PromotionScheme {
+  prmId                   String    @id(map: "pk_promotion_scheme") @default(dbgenerated("uuidv7()")) @db.Uuid @map("prm_id")
+  prmCompId               String    @db.Uuid                                        @map("prm_comp_id")
+  prmBranchId             String?   @db.Uuid                                        @map("prm_branch_id")
+  prmTenantId             String?   @db.Uuid                                        @map("prm_tenant_id")
+
+  prmCode                 String    @db.VarChar(30)                                 @map("prm_code")
+  prmName                 String    @db.VarChar(150)                                @map("prm_name")
+  prmStatus               String    @default("DRAFT") @db.VarChar(20)               @map("prm_status")
+
+  // ── What it is ──────────────────────────────────────────────────────────
+  prmApplyOn              String    @default("ITEM_QTY") @db.VarChar(20)            @map("prm_apply_on")
+  prmBenefit              String    @default("DISC_PERC") @db.VarChar(20)           @map("prm_benefit")
+
+  // ── Which one wins ──────────────────────────────────────────────────────
+  prmPriority             Int       @default(1) @db.SmallInt                        @map("prm_priority")
+  prmStackMode            String    @default("EXCLUSIVE") @db.VarChar(10)           @map("prm_stack_mode")
+  prmAutoApply            Boolean   @default(true)                                  @map("prm_auto_apply")
+  prmAllowWithManualDisc  Boolean   @default(false)                                 @map("prm_allow_with_manual_disc")
+
+  // ── What it is measured on ──────────────────────────────────────────────
+  prmCalcOnAmountType     String    @default("NET_AMOUNT") @db.VarChar(20)          @map("prm_calc_on_amount_type")
+  prmIncludeTax           Boolean   @default(false)                                 @map("prm_include_tax")
+  prmBillType             String    @default("ALL") @db.VarChar(20)                 @map("prm_bill_type")
+  prmMinBillAmount        Decimal   @default(0) @db.Decimal(18, 2)                  @map("prm_min_bill_amount")
+  prmMinQty               Decimal   @default(0) @db.Decimal(18, 3)                  @map("prm_min_qty")
+
+  // ── Scope switches: 'ALL' = everything, 'LIST' = read the child table ────
+  prmBranchScope          String    @default("ALL") @db.VarChar(10)                 @map("prm_branch_scope")
+  prmCustScope            String    @default("ALL") @db.VarChar(10)                 @map("prm_cust_scope")
+  prmItemScope            String    @default("ALL") @db.VarChar(10)                 @map("prm_item_scope")
+  prmPriceLevelId         Int?                                                      @map("prm_price_level_id")
+
+  // ── Caps, counted by the usage tally ────────────────────────────────────
+  prmMaxBenefitPerBill    Decimal   @default(0) @db.Decimal(18, 2)                  @map("prm_max_benefit_per_bill")
+  prmMaxUsesTotal         Int       @default(0)                                     @map("prm_max_uses_total")
+  prmMaxUsesPerCust       Int       @default(0)                                     @map("prm_max_uses_per_cust")
+  prmBudgetAmount         Decimal   @default(0) @db.Decimal(18, 2)                  @map("prm_budget_amount")
+
+  // Points at sales.loyalty_coupon_batch(lcb_id). NO Prisma relation and no FK
+  // yet: that table is not in this schema. Add fk_prm_coupon_batch and the
+  // relation field when the coupon-batch model lands.
+  prmCouponBatchId        String?   @db.Uuid                                        @map("prm_coupon_batch_id")
+
+  // ── When it runs ────────────────────────────────────────────────────────
+  prmStartDate            DateTime  @db.Date                                        @map("prm_start_date")
+  prmEndDate              DateTime  @db.Date                                        @map("prm_end_date")
+  prmValidFromTime        DateTime? @db.Time(6)                                     @map("prm_valid_from_time")
+  prmValidToTime          DateTime? @db.Time(6)                                     @map("prm_valid_to_time")
+  prmValidWeekdays        String?   @db.VarChar(30)                                 @map("prm_valid_weekdays")
+
+  prmRemarks              String?   @db.Text                                        @map("prm_remarks")
+  prmIsActive             Boolean   @default(true)                                  @map("prm_is_active")
+  prmIsDeleted            Boolean   @default(false)                                 @map("prm_is_deleted")
+  prmSyncDate             DateTime? @db.Timestamptz(6)                              @map("prm_sync_date")
+  prmCreatedOn            DateTime  @default(now()) @db.Timestamptz(6)              @map("prm_created_on")
+  prmCreatedBy            String?   @db.VarChar(50)                                 @map("prm_created_by")
+  prmModifiedOn           DateTime? @db.Timestamptz(6)                              @map("prm_modified_on")
+  prmModifiedBy           String?   @db.VarChar(50)                                 @map("prm_modified_by")
+  prmApprovedOn           DateTime? @db.Timestamptz(6)                              @map("prm_approved_on")
+  prmApprovedBy           String?   @db.Uuid                                        @map("prm_approved_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company                 Company        @relation("PromotionSchemeCompany",    fields: [prmCompId],       references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_prm_company")
+  branch                  BranchMaster?  @relation("PromotionSchemeBranchRef",  fields: [prmBranchId],     references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_prm_branch")
+  priceLevel              ItemPriceLevel? @relation("PromotionSchemePriceLevel", fields: [prmPriceLevelId], references: [iplId], onUpdate: Cascade, onDelete: Restrict, map: "fk_prm_price_level")
+  approvedBy              UserMaster?    @relation("PromotionSchemeApprovedBy", fields: [prmApprovedBy],   references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_prm_approved_by")
+
+  branches                PromotionSchemeBranch[] @relation("PromotionSchemeBranches")
+  parties                 PromotionSchemeParty[]  @relation("PromotionSchemeParties")
+  items                   PromotionSchemeItem[]   @relation("PromotionSchemeItems")
+  slabs                   PromotionSchemeSlab[]   @relation("PromotionSchemeSlabs")
+
+  // Not a rule anybody needs in its own right — prmId is already unique — but
+  // the target of the slab's composite FK, and therefore the only way to make
+  // the database refuse a free-item band on a percentage scheme.
+  @@unique([prmId, prmBenefit], map: "uq_prm_benefit")
+  @@map("promotion_scheme")
+  @@schema("sales")
+}
