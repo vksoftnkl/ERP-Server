@@ -64,7 +64,7 @@ Every area master mirrors a subset of its fields into the account group that sha
   is `VarChar(250)` while the master column is unbounded `Text`), `accGroupSort ← Math.trunc(armSort)`
   (`acc_group_sort` is `Int`; `arm_sort` is `Decimal`), plus the active/deleted flags and audit
   columns.
-- **On update** — the same mirrored subset is re-applied via `accountGroup.updateMany`.
+- **On update** — the same mirrored subset is re-applied via `accGroupMaster.updateMany`.
 - **On soft delete** — the group is flagged `accGroupIsActive = false` / `accGroupIsDeleted = true`.
 
 The update and delete mirrors use `updateMany`, so they are a **no-op** for legacy area rows that

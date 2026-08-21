@@ -56,7 +56,7 @@ export class StateService {
         await ensureStateNameIsUnique(tx, normalizedName);
         // acc_group_type / company / nature / ledger profile are required (or NOT NULL) on
         // acc_group_master and are never client-supplied — inherit them from the parent group.
-        const parent = await tx.accountGroup.findFirst({
+        const parent = await tx.accGroupMaster.findFirst({
           where: {
             accGroupId: parentId,
             accGroupIsDeleted: false,
@@ -77,7 +77,7 @@ export class StateService {
           ]);
         }
         // Step 2-3: create the account group derived from the state fields; capture acc_group_id.
-        const accountGroupData: Prisma.AccountGroupUncheckedCreateInput = {
+        const accountGroupData: Prisma.AccGroupMasterUncheckedCreateInput = {
           accGroupName: normalizedName, // <- stmName
           accGroupShort: dto.stmShort ?? null, // <- stmShort
           // acc_group_description is VarChar(250) while the master column is unbounded Text;
@@ -97,7 +97,7 @@ export class StateService {
           accGroupModifiedOn: now,
           accGroupModifiedBy: actor,
         };
-        const accountGroup = await tx.accountGroup.create({ data: accountGroupData });
+        const accountGroup = await tx.accGroupMaster.create({ data: accountGroupData });
         const accGroupId = accountGroup.accGroupId;
         // Step 4-5: the state master shares its PK with the account group. stm_id is set
         // EXPLICITLY to acc_group_id; the model has no uuidv7() default, so this exact value
@@ -195,7 +195,7 @@ export class StateService {
       }
       // Mirror the soft delete onto the linked account group (shares stm_id as its PK) so it
       // can't stay active while the state is logically deleted. No-op for legacy rows.
-      await tx.accountGroup.updateMany({
+      await tx.accGroupMaster.updateMany({
         where: { accGroupId: stmId },
         data: {
           accGroupIsActive: false,
@@ -263,7 +263,7 @@ export class StateService {
         // Keep the linked account group (shares stm_id as its PK) in sync with the mirrored
         // state fields, the same subset the create flow derives. updateMany is a no-op for
         // legacy rows that have no linked group, so it can't fail the update.
-        await tx.accountGroup.updateMany({
+        await tx.accGroupMaster.updateMany({
           where: { accGroupId: stmId },
           data: {
             accGroupName: updated.stmName,

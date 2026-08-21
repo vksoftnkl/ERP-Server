@@ -42,7 +42,7 @@ let StateService = class StateService {
         try {
             return await this.prisma.$transaction(async (tx) => {
                 await (0, state_utils_1.ensureStateNameIsUnique)(tx, normalizedName);
-                const parent = await tx.accountGroup.findFirst({
+                const parent = await tx.accGroupMaster.findFirst({
                     where: {
                         accGroupId: parentId,
                         accGroupIsDeleted: false,
@@ -80,7 +80,7 @@ let StateService = class StateService {
                     accGroupModifiedOn: now,
                     accGroupModifiedBy: actor,
                 };
-                const accountGroup = await tx.accountGroup.create({ data: accountGroupData });
+                const accountGroup = await tx.accGroupMaster.create({ data: accountGroupData });
                 const accGroupId = accountGroup.accGroupId;
                 const stateMasterData = {
                     stmId: accGroupId,
@@ -171,7 +171,7 @@ let StateService = class StateService {
             if (result.count === 0) {
                 (0, state_utils_1.throwStateNotFound)(stmId);
             }
-            await tx.accountGroup.updateMany({
+            await tx.accGroupMaster.updateMany({
                 where: { accGroupId: stmId },
                 data: {
                     accGroupIsActive: false,
@@ -233,7 +233,7 @@ let StateService = class StateService {
                     },
                     data,
                 });
-                await tx.accountGroup.updateMany({
+                await tx.accGroupMaster.updateMany({
                     where: { accGroupId: stmId },
                     data: {
                         accGroupName: updated.stmName,

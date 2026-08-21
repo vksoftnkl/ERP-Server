@@ -1,0 +1,66 @@
+model AccGroupMaster {
+  accGroupId                  String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("acc_group_id")
+  accGroupCompanyId           String?        @db.Uuid                                       @map("acc_group_company_id")
+
+  // Master fields
+  accGroupName                String         @db.VarChar(150)                               @map("acc_group_name")
+  accGroupAlias               String?        @db.VarChar(100)                               @map("acc_group_alias")
+  accGroupShort               String?        @db.VarChar(50)                                @map("acc_group_short")
+  accGroupDescription         String?        @db.VarChar(250)                               @map("acc_group_description")
+
+  // Tally export mapping
+  accGroupTallyName           String?        @db.VarChar(150)                               @map("acc_group_tally_name")
+  accGroupPrimaryName         String?        @db.VarChar(150)                               @map("acc_group_primary_name")
+  accGroupNature              String?        @db.VarChar(20)                                @map("acc_group_nature")
+  accLedgerProfile            String         @default("General") @db.VarChar(16)            @map("acc_ledger_profile")
+  // Tally identity (sync round-trip)
+  accGroupTallyGuid           String?        @db.VarChar(64)                                @map("acc_group_tally_guid")
+  accGroupTallyMasterId       BigInt?                                                       @map("acc_group_tally_master_id")
+  accGroupTallyAlterId        BigInt?                                                       @map("acc_group_tally_alter_id")
+
+  // Hierarchy
+  accGroupParentId            String?        @db.Uuid                                       @map("acc_group_parent_id")
+  accGroupSort                Int?                                                          @map("acc_group_sort")
+  accGroupChildIds            String[]       @db.Uuid                                       @map("acc_group_child_ids")
+
+  // Classification
+  accGroupType                String         @db.VarChar(20)                                @map("acc_group_type")
+  accGroupIsDefault           Boolean        @default(false)                                @map("acc_group_is_default")
+  accGroupIsReserved          Boolean        @default(false)                                @map("acc_group_is_reserved")
+
+  // Tally-like behaviour flags
+  accGroupBehaveAsSubledger   Boolean        @default(false)                                @map("acc_group_behave_as_subledger")
+  accGroupNetDebitCredit      Boolean        @default(false)                                @map("acc_group_net_debit_credit")
+  accGroupUsedForCalculation  Boolean        @default(false)                                @map("acc_group_used_for_calculation")
+  accGroupAffectsGrossProfit  Boolean        @default(false)                                @map("acc_group_affects_gross_profit")
+
+  // Status
+  accGroupIsActive            Boolean        @default(true)                                 @map("acc_group_is_active")
+  accGroupIsDeleted           Boolean        @default(false)                                @map("acc_group_is_deleted")
+
+  // Audit / Sync
+  accGroupSyncDate            DateTime?      @db.Timestamptz                                @map("acc_group_sync_date")
+  accGroupCreatedOn           DateTime       @default(now()) @db.Timestamptz                @map("acc_group_created_on")
+  accGroupCreatedBy           String?        @db.VarChar(100)                               @map("acc_group_created_by")
+  accGroupModifiedOn          DateTime       @default(now()) @db.Timestamptz                @map("acc_group_modified_on")
+  accGroupModifiedBy          String?        @db.VarChar(100)                               @map("acc_group_modified_by")
+
+  // Self-relation (hierarchy)
+  parent                      AccGroupMaster? @relation("AccGroupMasterHierarchy", fields: [accGroupParentId], references: [accGroupId])
+  children                    AccGroupMaster[] @relation("AccGroupMasterHierarchy")
+  company                     Company?       @relation(fields: [accGroupCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
+
+  // Back-relations
+  ledgers                     AccLedgerMaster[]
+
+  @@index([accGroupCompanyId], name: "idx_acc_group_company_id")
+  @@index([accGroupParentId],  name: "idx_acc_group_parent_id")
+  @@index([accGroupType],      name: "idx_acc_group_type")
+  // Partial unique index uq_acc_group_tally_guid (WHERE acc_group_tally_guid IS NOT NULL)
+  // is managed in raw SQL — Prisma can't express it. Allowed-value validation for
+  // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer
+  // (accGroupMaster enums); the old chk_* CHECK constraints were dropped in migration
+  // 20260623100000_remove_acc_group_check_constraints_to_app_layer.
+  @@map("acc_group_master")
+  @@schema("accounts")
+}

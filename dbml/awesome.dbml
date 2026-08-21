@@ -272,7 +272,7 @@ Table acc_ledger_master {
   ledModifiedOn DateTime [default: `now()`, not null]
   ledModifiedBy String
   company companys
-  accountGroup acc_group_master [not null]
+  accGroupMaster acc_group_master [not null]
   branches branch_master
   bankAccounts acc_ledger_bank_accounts [not null]
   shipAddrs acc_ship_addrs [not null]
@@ -2529,7 +2529,7 @@ Table companys {
   compTdsApplicable String
   stylesheet app_theme_master
   branches branch_master [not null]
-  accountGroups acc_group_master [not null]
+  accGroupMasters acc_group_master [not null]
   ledgers acc_ledger_master [not null]
   employees employee_master [not null]
   ledgerBankAccounts acc_ledger_bank_accounts [not null]

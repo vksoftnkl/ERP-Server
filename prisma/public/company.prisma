@@ -82,7 +82,7 @@ model Company {
   // Relations
   stylesheet            AppThemeMaster? @relation("CompanyStylesheet", fields: [compStylesheetId], references: [thmId])
   branches              BranchMaster[]
-  accountGroups         AccountGroup[]
+  accGroupMasters       AccGroupMaster[]
   ledgers               AccLedgerMaster[]
   employees             EmployeeMaster[]
   ledgerBankAccounts    AccLedgerBankAccount[]

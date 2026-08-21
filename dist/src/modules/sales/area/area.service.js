@@ -54,7 +54,7 @@ let AreaService = class AreaService {
             return await this.prisma.$transaction(async (tx) => {
                 await this.ensureCityExists(tx, dto.armCityId);
                 await this.ensureNameIsUnique(tx, normalizedName, dto.armCityId);
-                const parent = await tx.accountGroup.findFirst({
+                const parent = await tx.accGroupMaster.findFirst({
                     where: {
                         accGroupId: parentId,
                         accGroupIsDeleted: false,
@@ -92,7 +92,7 @@ let AreaService = class AreaService {
                     accGroupModifiedOn: now,
                     accGroupModifiedBy: actor,
                 };
-                const accountGroup = await tx.accountGroup.create({ data: accountGroupData });
+                const accountGroup = await tx.accGroupMaster.create({ data: accountGroupData });
                 const accGroupId = accountGroup.accGroupId;
                 const areaData = {
                     armId: accGroupId,
@@ -197,7 +197,7 @@ let AreaService = class AreaService {
             if (result.count === 0) {
                 (0, module_service_utils_1.throwSalesNotFound)('Area not found', 'armId', `No active area found with id ${armId}`);
             }
-            await tx.accountGroup.updateMany({
+            await tx.accGroupMaster.updateMany({
                 where: { accGroupId: armId },
                 data: {
                     accGroupIsActive: false,
@@ -264,7 +264,7 @@ let AreaService = class AreaService {
                     },
                     data,
                 });
-                await tx.accountGroup.updateMany({
+                await tx.accGroupMaster.updateMany({
                     where: { accGroupId: armId },
                     data: {
                         accGroupName: updated.armName,

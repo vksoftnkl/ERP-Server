@@ -353,7 +353,7 @@ const TABLES = [
       '-- Columns deliberately not seeded:',
       '--   * acc_group_company_id  -- a foreign key to companys, per-environment;',
       '--   * acc_group_child_ids   -- denormalized LEDGER ids under the group, maintained by',
-      '--     AccountsGroupService as ledgers are created, so it starts empty;',
+      '--     AccGroupMasterService as ledgers are created, so it starts empty;',
       '--   * acc_group_tally_guid / _master_id / _alter_id -- filled by a Tally sync, and the',
       '--     guid carries a unique index.',
       '--',

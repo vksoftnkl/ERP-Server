@@ -19,7 +19,7 @@ function buildModuleFetchers(prisma) {
             select: { brId: true, brName: true },
             orderBy: [{ brName: 'asc' }, { brId: 'asc' }],
         }), (row) => (0, lookup_option_utils_1.toOption)(row.brId, row.brName)),
-        accountGroups: simpleFetcher(() => prisma.accountGroup.findMany({
+        accountGroups: simpleFetcher(() => prisma.accGroupMaster.findMany({
             where: { accGroupIsDeleted: false, accGroupIsActive: true },
             select: { accGroupId: true, accGroupName: true },
             orderBy: [{ accGroupName: 'asc' }, { accGroupId: 'asc' }],

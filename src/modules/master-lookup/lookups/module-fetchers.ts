@@ -39,7 +39,7 @@ export function buildModuleFetchers(prisma: PrismaService): Record<LookupModuleK
     ),
     accountGroups: simpleFetcher(
       () =>
-        prisma.accountGroup.findMany({
+        prisma.accGroupMaster.findMany({
           where: { accGroupIsDeleted: false, accGroupIsActive: true },
           select: { accGroupId: true, accGroupName: true },
           orderBy: [{ accGroupName: 'asc' }, { accGroupId: 'asc' }],

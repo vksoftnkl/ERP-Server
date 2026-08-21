@@ -1,7 +1,7 @@
 import { AuditLogModule } from '../modules/audit-log/audit-log.module';
 import { SequenceModule } from '../common/Sequence/sequence.module';
 import { AccountLedgerMastersModule } from '../modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
-import { AccountsGroupModule } from '../modules/accountsModule/accountsGroup/accounts-group.module';
+import { AccGroupMasterModule } from '../modules/accountsModule/accGroupMaster/acc-group-master.module';
 import { LedgerBankAccountModule } from '../modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
 import { BranchMasterModule } from '../modules/settings/branchMaster/branch-master.module';
 import { CompanyGroupMasterModule } from '../modules/accountsModule/companyGroupMaster/company-group-master.module';
@@ -197,7 +197,7 @@ export const swaggerModuleDocuments = [
     path: 'accounts-group',
     title: 'Account Group API',
     description: 'Account group module endpoints',
-    include: [AccountsGroupModule],
+    include: [AccGroupMasterModule],
   },
   {
     path: 'account-ledger-masters',

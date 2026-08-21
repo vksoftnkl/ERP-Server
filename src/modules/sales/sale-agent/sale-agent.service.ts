@@ -533,7 +533,7 @@ export class SaleAgentService {
   // Pick any active account group. The linked ledger requires a non-nullable ledGroupId FK,
   // but a sale agent has no account-group of its own, so any existing group satisfies it.
   private async resolveAnyAccountGroupId(tx: SaleAgentWriteClient): Promise<string> {
-    const group = await tx.accountGroup.findFirst({
+    const group = await tx.accGroupMaster.findFirst({
       where: { accGroupIsDeleted: false },
       select: { accGroupId: true },
     });

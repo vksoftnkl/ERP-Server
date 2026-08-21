@@ -35,7 +35,7 @@ const audit_log_module_1 = require("./modules/audit-log/audit-log.module");
 const access_token_guard_1 = require("./modules/auth/guards/access-token.guard");
 const items_cust_rates_master_module_1 = require("./modules/items-cust-rates-master/items-cust-rates-master.module");
 const item_price_details_module_1 = require("./modules/Inventory/item-price-details/item-price-details.module");
-const accounts_group_module_1 = require("./modules/accountsModule/accountsGroup/accounts-group.module");
+const acc_group_master_module_1 = require("./modules/accountsModule/accGroupMaster/acc-group-master.module");
 const account_ledger_masters_module_1 = require("./modules/accountsModule/accountLedgerMasters/account-ledger-masters.module");
 const ledger_bank_account_module_1 = require("./modules/accountsModule/ledgerBankAccount/ledger-bank-account.module");
 const branch_master_module_1 = require("./modules/settings/branchMaster/branch-master.module");
@@ -163,7 +163,7 @@ exports.AppModule = AppModule = __decorate([
             items_qty_price_master_module_1.ItemsQtyPriceMasterModule,
             items_tax_history_master_module_1.ItemsTaxHistoryMasterModule,
             items_master_module_1.ItemsMasterModule,
-            accounts_group_module_1.AccountsGroupModule,
+            acc_group_master_module_1.AccGroupMasterModule,
             account_ledger_masters_module_1.AccountLedgerMastersModule,
             ledger_bank_account_module_1.LedgerBankAccountModule,
             ledger_shipping_address_module_1.LedgerShippingAddressModule,

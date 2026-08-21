@@ -69,7 +69,7 @@ export class CityService {
         await this.ensureNameIsUnique(tx, normalizedName, dto.ctmStateId);
         // acc_group_type / company / nature / ledger profile are required (or NOT NULL) on
         // acc_group_master and are never client-supplied — inherit them from the parent group.
-        const parent = await tx.accountGroup.findFirst({
+        const parent = await tx.accGroupMaster.findFirst({
           where: {
             accGroupId: parentId,
             accGroupIsDeleted: false,
@@ -93,7 +93,7 @@ export class CityService {
           );
         }
         // Create the account group derived from the city fields; capture acc_group_id.
-        const accountGroupData: Prisma.AccountGroupUncheckedCreateInput = {
+        const accountGroupData: Prisma.AccGroupMasterUncheckedCreateInput = {
           accGroupName: normalizedName, // <- ctmName
           accGroupShort: dto.ctmShort ?? null, // <- ctmShort
           // acc_group_description is VarChar(250) while the master column is unbounded Text;
@@ -113,7 +113,7 @@ export class CityService {
           accGroupModifiedOn: now,
           accGroupModifiedBy: actor,
         };
-        const accountGroup = await tx.accountGroup.create({ data: accountGroupData });
+        const accountGroup = await tx.accGroupMaster.create({ data: accountGroupData });
         const accGroupId = accountGroup.accGroupId;
         // The city master shares its PK with the account group. ctm_id is set EXPLICITLY to
         // acc_group_id, overriding the uuidv7() default, so the two rows share one id.
@@ -237,7 +237,7 @@ export class CityService {
       }
       // Mirror the soft delete onto the linked account group (shares ctm_id as its PK) so it
       // can't stay active while the city is logically deleted. No-op for legacy rows.
-      await tx.accountGroup.updateMany({
+      await tx.accGroupMaster.updateMany({
         where: { accGroupId: ctmId },
         data: {
           accGroupIsActive: false,
@@ -378,7 +378,7 @@ export class CityService {
         // Keep the linked account group (shares ctm_id as its PK) in sync with the mirrored
         // city fields, the same subset the create flow derives. updateMany is a no-op for
         // legacy rows that have no linked group, so it can't fail the update.
-        await tx.accountGroup.updateMany({
+        await tx.accGroupMaster.updateMany({
           where: { accGroupId: ctmId },
           data: {
             accGroupName: updated.ctmName,

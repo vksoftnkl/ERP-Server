@@ -4,7 +4,7 @@ exports.swaggerModuleDocuments = void 0;
 const audit_log_module_1 = require("../modules/audit-log/audit-log.module");
 const sequence_module_1 = require("../common/Sequence/sequence.module");
 const account_ledger_masters_module_1 = require("../modules/accountsModule/accountLedgerMasters/account-ledger-masters.module");
-const accounts_group_module_1 = require("../modules/accountsModule/accountsGroup/accounts-group.module");
+const acc_group_master_module_1 = require("../modules/accountsModule/accGroupMaster/acc-group-master.module");
 const ledger_bank_account_module_1 = require("../modules/accountsModule/ledgerBankAccount/ledger-bank-account.module");
 const branch_master_module_1 = require("../modules/settings/branchMaster/branch-master.module");
 const company_group_master_module_1 = require("../modules/accountsModule/companyGroupMaster/company-group-master.module");
@@ -199,7 +199,7 @@ exports.swaggerModuleDocuments = [
         path: 'accounts-group',
         title: 'Account Group API',
         description: 'Account group module endpoints',
-        include: [accounts_group_module_1.AccountsGroupModule],
+        include: [acc_group_master_module_1.AccGroupMasterModule],
     },
     {
         path: 'account-ledger-masters',

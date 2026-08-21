@@ -438,7 +438,7 @@ let SaleAgentService = class SaleAgentService {
         (0, module_service_utils_1.applyPresentFields)(data, saveSaleAgentDto, SALE_AGENT_OPTIONAL_FIELDS);
     }
     async resolveAnyAccountGroupId(tx) {
-        const group = await tx.accountGroup.findFirst({
+        const group = await tx.accGroupMaster.findFirst({
             where: { accGroupIsDeleted: false },
             select: { accGroupId: true },
         });

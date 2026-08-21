@@ -293,8 +293,8 @@ model AccBillBalance {
   //     abl_agent_id: the source DDL declares none.
 }
 
-// ----- prisma/accounts/accountGroups.prisma -----
-model AccountGroup {
+// ----- prisma/accounts/accountGroupMaster.prisma -----
+model AccGroupMaster {
   accGroupId                  String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("acc_group_id")
   accGroupCompanyId           String?        @db.Uuid                                       @map("acc_group_company_id")
 
@@ -342,8 +342,8 @@ model AccountGroup {
   accGroupModifiedBy          String?        @db.VarChar(100)                               @map("acc_group_modified_by")
 
   // Self-relation (hierarchy)
-  parent                      AccountGroup?  @relation("AccountGroupHierarchy", fields: [accGroupParentId], references: [accGroupId])
-  children                    AccountGroup[] @relation("AccountGroupHierarchy")
+  parent                      AccGroupMaster? @relation("AccGroupMasterHierarchy", fields: [accGroupParentId], references: [accGroupId])
+  children                    AccGroupMaster[] @relation("AccGroupMasterHierarchy")
   company                     Company?       @relation(fields: [accGroupCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
 
   // Back-relations
@@ -355,7 +355,7 @@ model AccountGroup {
   // Partial unique index uq_acc_group_tally_guid (WHERE acc_group_tally_guid IS NOT NULL)
   // is managed in raw SQL — Prisma can't express it. Allowed-value validation for
   // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer
-  // (accountsGroup enums); the old chk_* CHECK constraints were dropped in migration
+  // (accGroupMaster enums); the old chk_* CHECK constraints were dropped in migration
   // 20260623100000_remove_acc_group_check_constraints_to_app_layer.
   @@map("acc_group_master")
   @@schema("accounts")
@@ -463,7 +463,7 @@ model AccLedgerMaster {
   ledModifiedBy            String?   @db.VarChar(100)                                 @map("led_modified_by")
   // Relations
   company                  Company?               @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  accountGroup             AccountGroup           @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
+  accGroupMaster           AccGroupMaster         @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
   branches                 BranchMaster?          @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
   bankAccounts             AccLedgerBankAccount[]
   shipAddrs                AccShipAddr[]
@@ -4113,7 +4113,7 @@ model Company {
   // Relations
   stylesheet            AppThemeMaster? @relation("CompanyStylesheet", fields: [compStylesheetId], references: [thmId])
   branches              BranchMaster[]
-  accountGroups         AccountGroup[]
+  accGroupMasters       AccGroupMaster[]
   ledgers               AccLedgerMaster[]
   employees             EmployeeMaster[]
   ledgerBankAccounts    AccLedgerBankAccount[]

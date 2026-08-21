@@ -222,7 +222,7 @@ falls back to the id.
 | `companies` | `company` | `compName` |
 | `companyGroups` | `companyGroupMaster` | `cogGroupName` |
 | `branches` | `branchMaster` | `brName` |
-| `accountGroups` | `accountGroup` | `accGroupName` |
+| `accountGroups` | `accGroupMaster` | `accGroupName` |
 | `accountLedgers` | `accLedgerMaster` | `ledName` |
 | `ledgerBankAccounts` | `accLedgerBankAccount` | `accountHolder (accountNo) - ledgerName`; ordered by holder |
 | `ledgerShippingAddresses` | `accShipAddr` | `saaTradeName` → `saaContactName` → ledger name; ordered by `saaSort` |

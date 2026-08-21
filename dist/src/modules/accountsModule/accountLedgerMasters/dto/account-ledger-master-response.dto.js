@@ -12,7 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AccountLedgerMasterBankAccountsDeleteDto = exports.AccountLedgerMasterBankAccountsDeleteResultDto = exports.AccountLedgerMasterBankAccountListDto = exports.AccountLedgerMasterBankAccountListDataDto = exports.AccountLedgerMasterBankAccountSingleDto = exports.AccountLedgerMasterSuccessListDto = exports.AccountLedgerMasterSuccessDeleteDto = exports.AccountLedgerMasterSuccessSingleDto = exports.AccountLedgerMasterDeleteResultDto = exports.AccountLedgerMasterPayloadDto = exports.AccountLedgerMasterErrorResponseDto = exports.AccountLedgerMasterErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const account_ledger_master_enum_1 = require("../types/account-ledger-master-enum");
-const account_group_enum_1 = require("../../accountsGroup/types/account-group-enum");
+const acc_group_master_enum_1 = require("../../accGroupMaster/types/acc-group-master-enum");
 const ledger_bank_account_response_dto_1 = require("../../ledgerBankAccount/dto/ledger-bank-account-response.dto");
 class AccountLedgerMasterErrorFieldDto {
     field;
@@ -166,7 +166,7 @@ __decorate([
 ], AccountLedgerMasterPayloadDto.prototype, "ledGroupName", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        enum: account_group_enum_1.AccLedgerProfile,
+        enum: acc_group_master_enum_1.AccLedgerProfile,
         enumName: 'AccLedgerProfile',
         nullable: true,
         description: 'Ledger profile inherited from the account group',

@@ -761,7 +761,7 @@ let AuditLogService = class AuditLogService {
         }
         switch (lookupType) {
             case 'accountGroup': {
-                const groups = await this.prisma.accountGroup.findMany({
+                const groups = await this.prisma.accGroupMaster.findMany({
                     where: {
                         accGroupId: {
                             in: [...ids],

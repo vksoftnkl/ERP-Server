@@ -99,7 +99,7 @@ model AccLedgerMaster {
   ledModifiedBy            String?   @db.VarChar(100)                                 @map("led_modified_by")
   // Relations
   company                  Company?               @relation(fields: [ledCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  accountGroup             AccountGroup           @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
+  accGroupMaster           AccGroupMaster         @relation(fields: [ledGroupId], references: [accGroupId], onUpdate: Cascade, onDelete: Restrict)
   branches                 BranchMaster?          @relation(fields: [ledBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict)
   bankAccounts             AccLedgerBankAccount[]
   shipAddrs                AccShipAddr[]

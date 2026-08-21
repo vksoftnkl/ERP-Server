@@ -26,7 +26,7 @@ const LEDGER_BANK_ACCOUNT_ORDER_BY = [
 const ACCOUNT_LEDGER_MASTER_RELATIONS = {
     company: { select: { compName: true } },
     branches: { select: { brName: true } },
-    accountGroup: { select: { accGroupName: true, accLedgerProfile: true } },
+    accGroupMaster: { select: { accGroupName: true, accLedgerProfile: true } },
     bankAccounts: {
         where: { lbaIsDeleted: false },
         orderBy: LEDGER_BANK_ACCOUNT_ORDER_BY,
@@ -252,7 +252,7 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
         return payload;
     }
     async ensureGroupExists(groupId, tx) {
-        const group = await tx.accountGroup.findFirst({
+        const group = await tx.accGroupMaster.findFirst({
             where: {
                 accGroupId: groupId,
                 accGroupIsDeleted: false,
@@ -521,8 +521,8 @@ let AccountLedgerMastersService = class AccountLedgerMastersService {
             ledBranchId: record.ledBranchId,
             ledBranchName: record.branches?.brName ?? null,
             ledGroupId: record.ledGroupId,
-            ledGroupName: record.accountGroup?.accGroupName ?? null,
-            ledGroupLedgerProfile: record.accountGroup?.accLedgerProfile ?? null,
+            ledGroupName: record.accGroupMaster?.accGroupName ?? null,
+            ledGroupLedgerProfile: record.accGroupMaster?.accLedgerProfile ?? null,
             ledName: record.ledName,
             ledAlias: record.ledAlias,
             ledShort: record.ledShort,

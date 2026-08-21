@@ -46,7 +46,7 @@ let CityService = class CityService {
             return await this.prisma.$transaction(async (tx) => {
                 await this.ensureStateExists(tx, dto.ctmStateId);
                 await this.ensureNameIsUnique(tx, normalizedName, dto.ctmStateId);
-                const parent = await tx.accountGroup.findFirst({
+                const parent = await tx.accGroupMaster.findFirst({
                     where: {
                         accGroupId: parentId,
                         accGroupIsDeleted: false,
@@ -84,7 +84,7 @@ let CityService = class CityService {
                     accGroupModifiedOn: now,
                     accGroupModifiedBy: actor,
                 };
-                const accountGroup = await tx.accountGroup.create({ data: accountGroupData });
+                const accountGroup = await tx.accGroupMaster.create({ data: accountGroupData });
                 const accGroupId = accountGroup.accGroupId;
                 const cityData = {
                     ctmId: accGroupId,
@@ -183,7 +183,7 @@ let CityService = class CityService {
             if (result.count === 0) {
                 (0, module_service_utils_1.throwSalesNotFound)('City not found', 'ctmId', `No active city found with id ${ctmId}`);
             }
-            await tx.accountGroup.updateMany({
+            await tx.accGroupMaster.updateMany({
                 where: { accGroupId: ctmId },
                 data: {
                     accGroupIsActive: false,
@@ -250,7 +250,7 @@ let CityService = class CityService {
                     },
                     data,
                 });
-                await tx.accountGroup.updateMany({
+                await tx.accGroupMaster.updateMany({
                     where: { accGroupId: ctmId },
                     data: {
                         accGroupName: updated.ctmName,

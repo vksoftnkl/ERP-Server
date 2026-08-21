@@ -26,7 +26,7 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard';
 import { ItemsCustRatesMasterModule } from './modules/items-cust-rates-master/items-cust-rates-master.module';
 import { ItemPriceDetailsModule } from './modules/Inventory/item-price-details/item-price-details.module';
-import { AccountsGroupModule } from './modules/accountsModule/accountsGroup/accounts-group.module';
+import { AccGroupMasterModule } from './modules/accountsModule/accGroupMaster/acc-group-master.module';
 import { AccountLedgerMastersModule } from './modules/accountsModule/accountLedgerMasters/account-ledger-masters.module';
 import { LedgerBankAccountModule } from './modules/accountsModule/ledgerBankAccount/ledger-bank-account.module';
 import { BranchMasterModule } from './modules/settings/branchMaster/branch-master.module';
@@ -148,7 +148,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemsQtyPriceMasterModule,
     ItemsTaxHistoryMasterModule,
     ItemsMasterModule,
-    AccountsGroupModule,
+    AccGroupMasterModule,
     AccountLedgerMastersModule,
     LedgerBankAccountModule,
     LedgerShippingAddressModule,

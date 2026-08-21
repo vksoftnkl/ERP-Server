@@ -1,5 +1,5 @@
 import { LedGstPartyRegType, LedObType } from '../types/account-ledger-master-enum';
-import { AccLedgerProfile } from '../../accountsGroup/types/account-group-enum';
+import { AccLedgerProfile } from '../../accGroupMaster/types/acc-group-master-enum';
 import { LedgerBankAccountPayloadDto } from '../../ledgerBankAccount/dto/ledger-bank-account-response.dto';
 export declare class AccountLedgerMasterErrorFieldDto {
     field: string;

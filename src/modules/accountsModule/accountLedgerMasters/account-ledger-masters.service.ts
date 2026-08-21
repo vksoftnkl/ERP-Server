@@ -24,7 +24,7 @@ import {
 } from 'src/common/utils/module-service.utils';
 import type { AccountsWriteClient } from 'src/common/utils/module-service.utils';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import { AccLedgerProfile } from '../accountsGroup/types/account-group-enum';
+import { AccLedgerProfile } from '../accGroupMaster/types/acc-group-master-enum';
 const ACCOUNT_LEDGER_MASTER_TABLE_NAME = 'acc_ledger_master';
 const ACCOUNT_LEDGER_MASTER_AUDIT_SCREEN_NAME = 'Account Ledger Master';
 const LEDGER_BANK_ACCOUNT_TABLE_NAME = 'acc_ledger_bank_accounts';
@@ -38,7 +38,7 @@ const LEDGER_BANK_ACCOUNT_ORDER_BY: Prisma.AccLedgerBankAccountOrderByWithRelati
 const ACCOUNT_LEDGER_MASTER_RELATIONS = {
   company: { select: { compName: true } },
   branches: { select: { brName: true } },
-  accountGroup: { select: { accGroupName: true, accLedgerProfile: true } },
+  accGroupMaster: { select: { accGroupName: true, accLedgerProfile: true } },
   bankAccounts: {
     where: { lbaIsDeleted: false },
     orderBy: LEDGER_BANK_ACCOUNT_ORDER_BY,
@@ -354,7 +354,7 @@ export class AccountLedgerMastersService {
     return payload;
   }
   private async ensureGroupExists(groupId: string, tx: AccountLedgerWriteClient): Promise<void> {
-    const group = await tx.accountGroup.findFirst({
+    const group = await tx.accGroupMaster.findFirst({
       where: {
         accGroupId: groupId,
         accGroupIsDeleted: false,
@@ -634,9 +634,9 @@ export class AccountLedgerMastersService {
       ledBranchId: record.ledBranchId,
       ledBranchName: record.branches?.brName ?? null,
       ledGroupId: record.ledGroupId,
-      ledGroupName: record.accountGroup?.accGroupName ?? null,
+      ledGroupName: record.accGroupMaster?.accGroupName ?? null,
       ledGroupLedgerProfile:
-        (record.accountGroup?.accLedgerProfile as AccLedgerProfile | null) ?? null,
+        (record.accGroupMaster?.accLedgerProfile as AccLedgerProfile | null) ?? null,
       ledName: record.ledName,
       ledAlias: record.ledAlias,
       ledShort: record.ledShort,
