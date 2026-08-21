@@ -52,6 +52,28 @@ scp deploy/nginx/erp.conf       root@169.58.213.171:/etc/nginx/sites-available/e
 scp deploy/nginx/erp-proxy.conf root@169.58.213.171:/etc/nginx/snippets/erp-proxy.conf
 ```
 
+## Managing CORS origins
+
+In production `main.ts` uses **only** `CORS_ORIGINS` — the localhost development
+defaults are not merged in — so any origin missing from it fails preflight with
+"No 'Access-Control-Allow-Origin' header is present".
+
+```bash
+ssh root@169.58.213.171 /opt/erp-server/bin/add-cors-origin.sh --list
+ssh root@169.58.213.171 /opt/erp-server/bin/add-cors-origin.sh https://192.168.0.106:3001
+ssh root@169.58.213.171 /opt/erp-server/bin/add-cors-origin.sh --remove https://old-host:3001
+```
+
+It edits `.env` in place, reloads the API with `--update-env`, and prints the
+resulting list. An origin is `scheme://host[:port]` with **no trailing slash and
+no path** — a trailing slash is the most common reason a rule never matches, so
+the script rejects malformed input rather than writing a rule that silently
+cannot fire.
+
+Note that LAN origins pin a DHCP address. When the dev machine's lease changes,
+`https://192.168.0.106:3001` stops matching and the failure looks identical to
+this one.
+
 ## Two things that make a naive deploy fail
 
 **1. Migrations need a superuser; the app must not be one.** Seven migrations
