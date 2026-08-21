@@ -84,3 +84,15 @@ module is not registered with NestJS and exposes no HTTP endpoints or DI
 provider. The functions are consumed by other modules that compose voucher-header
 writes into their own transactions; wiring a controller/service (or a shared
 provider) would be the remaining work to make this a self-contained module.
+
+## Status: disabled
+
+`account-voucher-header.helper.ts` is fully commented out as of `61f16c1`, so this
+folder currently exports nothing. Its unit test is parked as
+`account-voucher-header.helper.spec.ts.disabled` — kept for restoration, but held
+out of Jest's `testRegex` (`.*\.spec\.ts$`) and `tsc`, which would otherwise fail
+on a spec importing a module with no exports.
+
+To restore: uncomment the helper, drop the `.disabled` suffix, then reconcile the
+test against the current schema (`avhBillRefno`, `avhBillDate` and `avhUpdatedOn`
+were removed from `AccVoucherHeader`).

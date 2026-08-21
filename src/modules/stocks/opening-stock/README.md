@@ -161,3 +161,19 @@ The stock engine uses further enums in [types/item-stock.types.ts](types/item-st
 - `StockTxnType` — `OPENING` · `PURCHASE` · `PURCHASE_RETURN` · `SALE` · `SALES_RETURN` ·
   `TRANSFER_IN` · `TRANSFER_OUT` · `ADJUSTMENT_IN` · `ADJUSTMENT_OUT` · `PRODUCTION_IN` ·
   `CONSUMPTION` · `DAMAGE` · `EXPIRED` (opening stock always posts `OPENING`)
+
+## Status: disabled
+
+Every implementation file in this folder is commented out and `OpeningStockModule`
+is unregistered in `src/app.module.ts`, so the feature ships no routes. This was
+done in `61f16c1` alongside dropping the `AccVoucherHeader` and bill models.
+
+Its unit tests are parked as `*.spec.ts.disabled` rather than deleted, because
+Jest's `testRegex` (`.*\.spec\.ts$`) and `tsc` would otherwise pick up tests whose
+subject no longer exports anything — that failed the suite with *0 tests run* and
+broke `npm run typecheck`. Commenting them out is not an option: Jest rejects an
+empty suite with "must contain at least one test".
+
+To re-enable the feature, uncomment the sources and drop the `.disabled` suffix.
+The tests were written against the pre-`61f16c1` schema and will need field names
+reconciled (e.g. `avhBillRefno`, `avhBillDate`, `avhUpdatedOn` no longer exist).
