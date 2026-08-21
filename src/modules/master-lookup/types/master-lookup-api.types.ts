@@ -371,6 +371,7 @@ export const LOOKUP_MODULE_ALIASES: Record<LookupModuleKey, readonly string[]> =
     'ledger group',
     'account-ledger-groups-master',
     'account_groups',
+    'acc_group_master',
   ],
   accountLedgers: [
     'account ledgers',

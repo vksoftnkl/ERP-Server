@@ -7,7 +7,7 @@ each created together with a mirrored **account group** that shares its primary 
 - **Swagger tag:** `Areas`
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `area_master` (`sales` schema) — PK `armId`
-- **Linked table:** `account_groups` (`accounts` schema) — PK `accGroupId`, created with the **same id** as `armId`
+- **Linked table:** `acc_group_master` (`accounts` schema) — PK `accGroupId`, created with the **same id** as `armId`
 
 ## Files
 
@@ -37,7 +37,7 @@ There is no list-all endpoint — `GET /get` returns a **single** area, and `arm
 
 - **Omit `armId` → create; include `armId` → update** the existing area.
 - **Create (`createAreaMaster`)** runs in a `$transaction` that is the rollback boundary: it
-  first inserts an `account_groups` row, then inserts the `area_master` row with `armId` set
+  first inserts an `acc_group_master` row, then inserts the `area_master` row with `armId` set
   **explicitly** to the new `accGroupId` (overriding the `uuidv7()` default) so the two rows
   share one primary key. If either insert throws, **both** roll back.
 - The parent account group is fixed

@@ -8,7 +8,7 @@ CRUD API for **city masters** — the geographic cities that live under a **stat
 - **Swagger tag:** `Cities`
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `city_master` (`sales` schema) — PK `ctm_id` (`ctmId`)
-- **Linked table:** `account_groups` (`accounts` schema) — PK `acc_group_id`, created with the
+- **Linked table:** `acc_group_master` (`accounts` schema) — PK `acc_group_id`, created with the
   **same id** as `ctm_id`
 
 ## Files
@@ -47,7 +47,7 @@ CRUD API for **city masters** — the geographic cities that live under a **stat
 
 ## Linked account group
 
-A city master **shares its primary key** with an `account_groups` row.
+A city master **shares its primary key** with an `acc_group_master` row.
 
 - On **create**, the account group is inserted **first**, under the fixed parent group
   `CITY_ACCOUNT_GROUP_PARENT_ID` (`019f081c-6764-73b0-b397-3f30a6efe73e`), which must exist and

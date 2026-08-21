@@ -95,6 +95,7 @@ exports.LOOKUP_MODULE_ALIASES = {
         'ledger group',
         'account-ledger-groups-master',
         'account_groups',
+        'acc_group_master',
     ],
     accountLedgers: [
         'account ledgers',

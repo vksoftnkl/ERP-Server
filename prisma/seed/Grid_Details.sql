@@ -183,8 +183,8 @@ where ed_is_deleted=wantdelete$seed$)
 	GRP.acc_group_type,
 	GRP.acc_group_is_reserved
 FROM
-	accounts.account_groups GRP
-	LEFT JOIN accounts.account_groups PRN ON PRN.acc_group_id = GRP.acc_group_id
+	accounts.acc_group_master GRP
+	LEFT JOIN accounts.acc_group_master PRN ON PRN.acc_group_id = GRP.acc_group_id
 WHERE
 	GRP.acc_group_is_deleted = wantdelete
 ORDER BY
@@ -201,7 +201,7 @@ ORDER BY
     LM.led_city,
     LM.led_is_active
 FROM accounts.acc_ledger_master LM
-    INNER JOIN accounts.account_groups AG ON AG.acc_group_id = LM.led_group_id
+    INNER JOIN accounts.acc_group_master AG ON AG.acc_group_id = LM.led_group_id
 WHERE
 	LM.led_is_deleted = wantdelete
 ORDER BY
@@ -392,8 +392,8 @@ ORDER BY comp_id$seed$)
 	GRP.acc_group_type,
 	GRP.acc_group_is_reserved
 FROM
-	accounts.account_groups GRP
-	LEFT JOIN accounts.account_groups PRN ON PRN.acc_group_id = GRP.acc_group_id
+	accounts.acc_group_master GRP
+	LEFT JOIN accounts.acc_group_master PRN ON PRN.acc_group_id = GRP.acc_group_id
 WHERE
 	GRP.acc_group_is_deleted = false
 ORDER BY
@@ -410,7 +410,7 @@ ORDER BY
     LM.led_city,
     LM.led_is_active
 FROM accounts.acc_ledger_master LM
-    INNER JOIN accounts.account_groups AG ON AG.acc_group_id = LM.led_group_id
+    INNER JOIN accounts.acc_group_master AG ON AG.acc_group_id = LM.led_group_id
 WHERE
 	LM.led_is_deleted = iled_is_deleted
 ORDER BY

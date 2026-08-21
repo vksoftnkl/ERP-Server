@@ -61,6 +61,6 @@ model AccountGroup {
   // acc_group_type / acc_group_nature / acc_ledger_profile lives in the app layer
   // (accountsGroup enums); the old chk_* CHECK constraints were dropped in migration
   // 20260623100000_remove_acc_group_check_constraints_to_app_layer.
-  @@map("account_groups")
+  @@map("acc_group_master")
   @@schema("accounts")
 }

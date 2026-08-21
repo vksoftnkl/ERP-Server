@@ -5942,3 +5942,4 @@ Foreign key constraint violated on the constraint: `fk_sb_pos_state`
 2026-08-15T10:05:02.190Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-15T10:05:52.322Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-08-15T10:05:58.226Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-21T04:43:01.018Z ERROR [Seed] Seeding failed: getaddrinfo ENOTFOUND localhost. Continuing startup (DB_SEED_FAIL_FAST is off).

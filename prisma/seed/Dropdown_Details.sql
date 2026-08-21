@@ -112,7 +112,7 @@ ORDER BY comp_name;$seed$, NULL)
 	acc_group_id,
 	acc_group_short,
 	acc_group_name
-FROM accounts.account_groups
+FROM accounts.acc_group_master
 WHERE acc_group_is_active = true AND acc_group_is_deleted = false
 ORDER BY acc_group_name;$seed$, NULL)
     ,(24, 'BRANCH - ACTIVE LIST', NULL, 'br_name'             , 'asc', 10, false, 0   , 'Desktop', 'br_name'           , 'system', $seed$SELECT

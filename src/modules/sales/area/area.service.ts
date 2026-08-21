@@ -76,7 +76,7 @@ export class AreaService {
         await this.ensureCityExists(tx, dto.armCityId);
         await this.ensureNameIsUnique(tx, normalizedName, dto.armCityId);
         // acc_group_type / company / nature / ledger profile are required (or NOT NULL) on
-        // account_groups and are never client-supplied — inherit them from the parent group.
+        // acc_group_master and are never client-supplied — inherit them from the parent group.
         const parent = await tx.accountGroup.findFirst({
           where: {
             accGroupId: parentId,

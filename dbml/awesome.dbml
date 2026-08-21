@@ -150,7 +150,7 @@ trigger-maintained from AccBillAdjustment and must never be written from
 application code.'
 }
 
-Table account_groups {
+Table acc_group_master {
   accGroupId String [pk]
   accGroupCompanyId String
   accGroupName String [not null]
@@ -181,8 +181,8 @@ Table account_groups {
   accGroupCreatedBy String
   accGroupModifiedOn DateTime [default: `now()`, not null]
   accGroupModifiedBy String
-  parent account_groups
-  children account_groups [not null]
+  parent acc_group_master
+  children acc_group_master [not null]
   company companys
   ledgers acc_ledger_master [not null]
 }
@@ -272,7 +272,7 @@ Table acc_ledger_master {
   ledModifiedOn DateTime [default: `now()`, not null]
   ledModifiedBy String
   company companys
-  accountGroup account_groups [not null]
+  accountGroup acc_group_master [not null]
   branches branch_master
   bankAccounts acc_ledger_bank_accounts [not null]
   shipAddrs acc_ship_addrs [not null]
@@ -2529,7 +2529,7 @@ Table companys {
   compTdsApplicable String
   stylesheet app_theme_master
   branches branch_master [not null]
-  accountGroups account_groups [not null]
+  accountGroups acc_group_master [not null]
   ledgers acc_ledger_master [not null]
   employees employee_master [not null]
   ledgerBankAccounts acc_ledger_bank_accounts [not null]
@@ -4578,13 +4578,13 @@ Ref: acc_bill_balance.ablPartyId > acc_ledger_master.ledId [delete: Restrict]
 
 Ref: acc_bill_balance.(ablParentBillId, ablParentAccYear) - acc_bill_balance.(ablId, ablAccYear) [delete: Restrict]
 
-Ref: account_groups.accGroupParentId - account_groups.accGroupId
+Ref: acc_group_master.accGroupParentId - acc_group_master.accGroupId
 
-Ref: account_groups.accGroupCompanyId > companys.compId [delete: Restrict]
+Ref: acc_group_master.accGroupCompanyId > companys.compId [delete: Restrict]
 
 Ref: acc_ledger_master.ledCompanyId > companys.compId [delete: Restrict]
 
-Ref: acc_ledger_master.ledGroupId > account_groups.accGroupId [delete: Restrict]
+Ref: acc_ledger_master.ledGroupId > acc_group_master.accGroupId [delete: Restrict]
 
 Ref: acc_ledger_master.ledBranchId > branch_master.brId [delete: Restrict]
 

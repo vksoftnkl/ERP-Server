@@ -11,7 +11,7 @@
  *   Stock_Adjust_Reasons.sql  fixed.stock_adj_reasons
  *   Acc_Tender_Types.sql      accounts.acc_tender_types
  *   Acc_Voucher_Types.sql     accounts.acc_voucher_types
- *   Account_Groups.sql        accounts.account_groups      (reserved chart of accounts)
+ *   Account_Groups.sql        accounts.acc_group_master      (reserved chart of accounts)
  *
  * Small, slow-moving lists that transactions point at: a sale bill picks a price
  * level, a tender line picks a tender type, a voucher number comes from a voucher
@@ -293,14 +293,14 @@ const TABLES = [
   },
   {
     file: 'Account_Groups.sql',
-    table: 'accounts.account_groups',
+    table: 'accounts.acc_group_master',
     // Read through a recursive CTE so the rows come out parent-before-child and the file
     // reads like the tree it is. The anchor also picks up a reserved group whose parent is
     // NOT reserved: such a row is a data bug, and emitting it (where it fails loudly on the
     // parent foreign key) beats dropping it from the export in silence.
     source: `(
       WITH RECURSIVE reserved AS (
-        SELECT * FROM accounts.account_groups WHERE acc_group_is_reserved
+        SELECT * FROM accounts.acc_group_master WHERE acc_group_is_reserved
       ),
       tree AS (
         SELECT r.*, LPAD(COALESCE(r.acc_group_sort, 0)::text, 6, '0') || '/' || r.acc_group_name AS seed_path
@@ -317,7 +317,7 @@ const TABLES = [
     orderBy: 'seed_path',
     conflictTarget: 'acc_group_id',
     header: (count) => [
-      `-- Seed: accounts.account_groups -- the reserved chart of accounts (${count} rows).`,
+      `-- Seed: accounts.acc_group_master -- the reserved chart of accounts (${count} rows).`,
       '--',
       '-- Only rows flagged acc_group_is_reserved are exported: the Tally-style default tree',
       '-- (Capital Account, Current Assets, Sundry Debtors, ...) plus the two groups the',

@@ -8,7 +8,7 @@ each group inherits its classification (type, ledger profile, nature) and compan
 - **Swagger tag:** `Account Groups`
 - **Auth:** Bearer `access-token` (required)
 - **Cache:** controller-level `@CacheTTL(1)`
-- **Primary table:** `account_groups` (`accounts` schema) — PK `accGroupId` (`uuidv7()`)
+- **Primary table:** `acc_group_master` (`accounts` schema) — PK `accGroupId` (`uuidv7()`)
 
 ## Files
 

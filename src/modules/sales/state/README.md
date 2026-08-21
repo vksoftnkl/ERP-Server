@@ -8,7 +8,7 @@ appears in the chart of accounts.
 - **Swagger tag:** `States`
 - **Auth:** Bearer `access-token` (required)
 - **Primary table:** `state_master` (`sales` schema) — PK `stmId`
-- **Linked table:** `account_groups` (`accounts` schema) — PK `accGroupId`; a state's group row reuses the state's `stmId` as its id
+- **Linked table:** `acc_group_master` (`accounts` schema) — PK `accGroupId`; a state's group row reuses the state's `stmId` as its id
 - **Related table:** `city_master` — checked (via `ctmStateId`) to block deleting a state that still has cities
 
 ## Files
@@ -50,7 +50,7 @@ commit together; any throw rolls back **both** rows):
 2. Loads the **fixed parent "States" account group** (`STATES_ACCOUNT_GROUP_ID`,
    `019f081c-6764-73b0-b397-3f30a6efe73e`); a missing/deleted parent is a bad request. `parentId`
    is a service argument defaulting to this constant, so callers may override it.
-3. Creates a child `account_groups` row: `accGroupName/Short/Description/Sort` are **mirrored from**
+3. Creates a child `acc_group_master` row: `accGroupName/Short/Description/Sort` are **mirrored from**
    the state's `stmName/stmShort/stmDescription/stmOrder`, while `company / type / nature / ledger
    profile` are **inherited from the parent** (they are `NOT NULL` and never client-supplied).
 4. Creates the `state_master` row with `stmId` set **explicitly** to the new `accGroupId` — the two

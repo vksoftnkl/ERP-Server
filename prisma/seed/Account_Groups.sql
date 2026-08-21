@@ -1,4 +1,4 @@
--- Seed: accounts.account_groups -- the reserved chart of accounts (30 rows).
+-- Seed: accounts.acc_group_master -- the reserved chart of accounts (30 rows).
 --
 -- Only rows flagged acc_group_is_reserved are exported: the Tally-style default tree
 -- (Capital Account, Current Assets, Sundry Debtors, ...) plus the two groups the
@@ -42,7 +42,7 @@
 
 BEGIN;
 
-INSERT INTO accounts.account_groups
+INSERT INTO accounts.acc_group_master
     (acc_group_id, acc_group_name, acc_group_alias, acc_group_short, acc_group_tally_name, acc_group_primary_name, acc_group_nature, acc_group_parent_id, acc_group_sort, acc_group_child_ids, acc_group_type, acc_ledger_profile, acc_group_is_default, acc_group_is_reserved, acc_group_behave_as_subledger, acc_group_net_debit_credit, acc_group_used_for_calculation, acc_group_affects_gross_profit, acc_group_is_active, acc_group_is_deleted, acc_group_created_by, acc_group_modified_by)
 VALUES
      ('019eee86-f34b-7adf-8432-7f089663ac61'::uuid, 'Capital Account'::varchar, NULL::varchar, NULL::varchar, 'Capital Account'::varchar, 'Capital Account'::varchar, 'Liabilities'::varchar, NULL::uuid, 10::integer, '{}'::uuid[], 'BALANCESHEET'::varchar, 'General'::varchar, true::boolean, true::boolean, false::boolean, false::boolean, false::boolean, false::boolean, true::boolean, false::boolean, 'system'::varchar, 'system'::varchar)

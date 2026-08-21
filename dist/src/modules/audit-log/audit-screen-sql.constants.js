@@ -394,7 +394,7 @@ exports.AUDIT_SCREEN_SQL_BY_NAME = new Map([
     ],
     [
         'Account Group Master',
-        buildAuditSql('accounts.account_groups', [
+        buildAuditSql('accounts.acc_group_master', [
             ['acc_group_name', 'Group Name'],
             ['acc_group_alias', 'Alias'],
             ['acc_group_short', 'Short Code'],
