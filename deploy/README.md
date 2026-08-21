@@ -23,6 +23,7 @@ nothing else.
 | `/opt/erp-server/ecosystem.config.js` | PM2 config (`ecosystem.vps.config.js` here) |
 | `/opt/erp-server/bin/` | the scripts in this directory |
 | `/opt/erp-server/logs/` | PM2 stdout/stderr |
+| `/etc/systemd/system/pm2-erp.service.d/` | boot-ordering drop-in (`systemd/` here) |
 | `/root/.erp-deploy-secrets` | DB password, JWT secret, superuser URL (mode 600) |
 
 The PM2 config lives **outside** the git tree on purpose: `deploy.sh` runs
