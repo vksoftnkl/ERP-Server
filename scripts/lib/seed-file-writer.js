@@ -154,7 +154,16 @@ const buildFile = (config, rows, labels) => {
       );
     }
   }
-  lines.push(`ON CONFLICT (${config.conflictTarget}) DO NOTHING;`);
+  // A null conflictTarget emits the untargeted form, which swallows a violation of ANY
+  // unique constraint on the table -- not just the primary key. Needed where a database
+  // may already hold the same logical row under a different id (see Acc_Voucher_Type.sql):
+  // a targeted ON CONFLICT would let that row raise on the other unique index and abort
+  // the whole file, taking the rows that WERE missing down with it.
+  lines.push(
+    config.conflictTarget
+      ? `ON CONFLICT (${config.conflictTarget}) DO NOTHING;`
+      : 'ON CONFLICT DO NOTHING;',
+  );
   if (config.sequenceColumn) {
     lines.push(sequenceStatement(config));
   }

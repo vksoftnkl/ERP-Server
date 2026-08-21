@@ -10,7 +10,7 @@
  *   Item_Gst_Units.sql        inventory.item_gst_units      (GST UQC list)
  *   Stock_Adjust_Reasons.sql  fixed.stock_adj_reasons
  *   Acc_Tender_Types.sql      accounts.acc_tender_types
- *   Acc_Voucher_Types.sql     accounts.acc_voucher_types
+ *   Acc_Voucher_Type.sql      accounts.acc_voucher_types
  *   Account_Groups.sql        accounts.acc_group_master      (reserved chart of accounts)
  *
  * Small, slow-moving lists that transactions point at: a sale bill picks a price
@@ -238,10 +238,15 @@ const TABLES = [
     ],
   },
   {
-    file: 'Acc_Voucher_Types.sql',
+    file: 'Acc_Voucher_Type.sql',
     table: 'accounts.acc_voucher_types',
     orderBy: 'vchr_type_id',
-    conflictTarget: 'vchr_type_id',
+    // Untargeted ON CONFLICT: the table carries uq_acc_voucher_types_code and
+    // uq_acc_voucher_types_name besides the primary key, and an environment seeded by the
+    // older single-type files holds Sales Bill under id 22 rather than the id exported
+    // here. Conflicting on vchr_type_id alone would let that row raise on the code/name
+    // index and roll back the file, so the types genuinely missing there never land.
+    conflictTarget: null,
     sequenceColumn: 'vchr_type_id',
     header: (count) => [
       `-- Seed: accounts.acc_voucher_types -- one row per document series (${count} rows).`,
@@ -262,8 +267,13 @@ const TABLES = [
       '-- are cast to their accounts."..." enum types on the first row; PostgreSQL resolves',
       '-- the rest of the VALUES list from it.',
       '--',
-      '-- Idempotent: ON CONFLICT (vchr_type_id) DO NOTHING, and the setval keeps the sequence',
-      '-- past the seeded ids.',
+      '-- Idempotent: ON CONFLICT DO NOTHING with no target, so a row already present under',
+      '-- ANY unique key -- vchr_type_id, vchr_type_code or vchr_type_name -- is left exactly',
+      '-- as it is. That matters because a database seeded from Acc_Voucher_Types_Sale_Bill.sql',
+      '-- carries Sales Bill as id 22: the id 3 row below is skipped there, the existing 22 is',
+      '-- kept (acc_vouchers, acc_voucher_seq and acc_bill_balance all point at it), and only',
+      '-- the types actually missing are inserted. The setval then keeps the sequence past',
+      '-- whatever the highest id turns out to be.',
     ],
     columns: [
       column('vchr_type_id', 'plain', 'integer'),
