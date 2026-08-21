@@ -3,8 +3,9 @@ node_modules
 coverage
 .DS_Store
 .env
-.env.local
-.env.*.local
+.env.*
+# ...but keep a committed template if one is ever added.
+!.env.example
 
 # Local development TLS certificates
 certs
