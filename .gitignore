@@ -10,7 +10,7 @@ coverage
 certs
 
 # Local runtime logs and release binaries
-logs/*.log
+logs
 release/erp-server
 release/erp-server-linux
 release/erp-server-win.exe
