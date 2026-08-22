@@ -9,10 +9,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SavePromotionSchemeSlabsDto = exports.PromotionSchemeSlabRowDto = void 0;
+exports.PromotionSchemeSlabRowDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
-const class_transformer_1 = require("class-transformer");
-const class_validator_1 = require("class-validator");
 const promotion_scheme_dto_helpers_1 = require("./promotion-scheme-dto.helpers");
 const promotion_scheme_utils_1 = require("../utils/promotion-scheme.utils");
 class PromotionSchemeSlabRowDto {
@@ -68,7 +66,7 @@ __decorate([
     __metadata("design:type", Number)
 ], PromotionSchemeSlabRowDto.prototype, "prs_exceeds", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'Ceiling. NULL = open-ended.' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true, description: 'Ceiling. NULL = open-ended.' }),
     (0, promotion_scheme_dto_helpers_1.NullableNumber)(0),
     __metadata("design:type", Object)
 ], PromotionSchemeSlabRowDto.prototype, "prs_upto", void 0);
@@ -91,12 +89,13 @@ __decorate([
     __metadata("design:type", Number)
 ], PromotionSchemeSlabRowDto.prototype, "prs_max_repeats", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'FREE_ITEM only' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'FREE_ITEM only' }),
     (0, promotion_scheme_dto_helpers_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], PromotionSchemeSlabRowDto.prototype, "prs_free_item_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        type: String,
         nullable: true,
         description: 'FREE_ITEM only. Required whenever prs_free_item_id is set, and vice versa.',
     }),
@@ -140,7 +139,7 @@ __decorate([
     __metadata("design:type", Number)
 ], PromotionSchemeSlabRowDto.prototype, "prs_disc_amt", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'FIXED_PRICE only' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true, description: 'FIXED_PRICE only' }),
     (0, promotion_scheme_dto_helpers_1.NullableNumber)(0),
     __metadata("design:type", Object)
 ], PromotionSchemeSlabRowDto.prototype, "prs_fixed_price", void 0);
@@ -150,7 +149,7 @@ __decorate([
     __metadata("design:type", Number)
 ], PromotionSchemeSlabRowDto.prototype, "prs_max_benefit_amt", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     (0, promotion_scheme_dto_helpers_1.NullableString)(65535),
     __metadata("design:type", Object)
 ], PromotionSchemeSlabRowDto.prototype, "prs_notes", void 0);
@@ -169,22 +168,4 @@ __decorate([
     (0, promotion_scheme_dto_helpers_1.OptionalTrimmedString)(50),
     __metadata("design:type", String)
 ], PromotionSchemeSlabRowDto.prototype, "prs_modified_by", void 0);
-class SavePromotionSchemeSlabsDto {
-    prm_id;
-    slabs;
-}
-exports.SavePromotionSchemeSlabsDto = SavePromotionSchemeSlabsDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' }),
-    (0, promotion_scheme_dto_helpers_1.RequiredUuid)(),
-    __metadata("design:type", String)
-], SavePromotionSchemeSlabsDto.prototype, "prm_id", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: [PromotionSchemeSlabRowDto] }),
-    (0, class_validator_1.IsArray)(),
-    (0, class_validator_1.ArrayMaxSize)(1000),
-    (0, class_validator_1.ValidateNested)({ each: true }),
-    (0, class_transformer_1.Type)(() => PromotionSchemeSlabRowDto),
-    __metadata("design:type", Array)
-], SavePromotionSchemeSlabsDto.prototype, "slabs", void 0);
 //# sourceMappingURL=save-promotion-scheme-slab.dto.js.map

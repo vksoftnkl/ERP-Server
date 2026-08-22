@@ -11,7 +11,12 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SavePromotionSchemeDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
+const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
+const save_promotion_scheme_branch_dto_1 = require("./save-promotion-scheme-branch.dto");
+const save_promotion_scheme_item_dto_1 = require("./save-promotion-scheme-item.dto");
+const save_promotion_scheme_party_dto_1 = require("./save-promotion-scheme-party.dto");
+const save_promotion_scheme_slab_dto_1 = require("./save-promotion-scheme-slab.dto");
 const promotion_scheme_dto_helpers_1 = require("./promotion-scheme-dto.helpers");
 const promotion_scheme_utils_1 = require("../utils/promotion-scheme.utils");
 class SavePromotionSchemeDto {
@@ -53,6 +58,10 @@ class SavePromotionSchemeDto {
     prm_modified_by;
     prm_approved_on;
     prm_approved_by;
+    branches;
+    parties;
+    items;
+    slabs;
 }
 exports.SavePromotionSchemeDto = SavePromotionSchemeDto;
 __decorate([
@@ -70,12 +79,12 @@ __decorate([
     __metadata("design:type", String)
 ], SavePromotionSchemeDto.prototype, "prm_comp_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'NULL = the whole company' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'NULL = the whole company' }),
     (0, promotion_scheme_dto_helpers_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_branch_id", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     (0, promotion_scheme_dto_helpers_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_tenant_id", void 0);
@@ -170,7 +179,7 @@ __decorate([
     __metadata("design:type", String)
 ], SavePromotionSchemeDto.prototype, "prm_item_scope", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, description: 'NULL = every price level' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true, description: 'NULL = every price level' }),
     (0, promotion_scheme_dto_helpers_1.OptionalInteger)(1),
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_price_level_id", void 0);
@@ -196,6 +205,7 @@ __decorate([
 ], SavePromotionSchemeDto.prototype, "prm_budget_amount", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        type: String,
         nullable: true,
         description: 'sales.loyalty_coupon_batch(lcb_id). NULL = applies automatically, no code needed. ' +
             'Stored without a foreign key until that table exists.',
@@ -218,6 +228,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         example: '22:00',
+        type: String,
         nullable: true,
         description: 'Both time bounds or neither. from > to legitimately means "spans midnight".',
     }),
@@ -225,13 +236,14 @@ __decorate([
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_valid_from_time", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ example: '04:00', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ example: '04:00', type: String, nullable: true }),
     (0, promotion_scheme_dto_helpers_1.OptionalTimeString)(),
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_valid_to_time", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         example: 'MON,TUE,WED',
+        type: String,
         nullable: true,
         description: 'Three-letter day names, comma separated. NULL = every day.',
     }),
@@ -239,7 +251,7 @@ __decorate([
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_valid_weekdays", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     (0, promotion_scheme_dto_helpers_1.NullableString)(65535),
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_remarks", void 0);
@@ -259,16 +271,69 @@ __decorate([
     __metadata("design:type", String)
 ], SavePromotionSchemeDto.prototype, "prm_modified_by", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: '2025-09-28T09:30:00.000Z' }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, example: '2025-09-28T09:30:00.000Z' }),
     (0, promotion_scheme_dto_helpers_1.NullableString)(40),
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_approved_on", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        type: String,
         nullable: true,
         description: 'public.user_master(usr_id). Required once prm_status is APPROVED.',
     }),
     (0, promotion_scheme_dto_helpers_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], SavePromotionSchemeDto.prototype, "prm_approved_by", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: save_promotion_scheme_branch_dto_1.PromotionSchemeBranchRowDto,
+        isArray: true,
+        description: 'Branch scope grid. Read only when prm_branch_scope is LIST.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(1000),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => save_promotion_scheme_branch_dto_1.PromotionSchemeBranchRowDto),
+    __metadata("design:type", Array)
+], SavePromotionSchemeDto.prototype, "branches", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: save_promotion_scheme_party_dto_1.PromotionSchemePartyRowDto,
+        isArray: true,
+        description: 'Customer/group/area/city scope grid. Read only when prm_cust_scope is LIST.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(1000),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => save_promotion_scheme_party_dto_1.PromotionSchemePartyRowDto),
+    __metadata("design:type", Array)
+], SavePromotionSchemeDto.prototype, "parties", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: save_promotion_scheme_item_dto_1.PromotionSchemeItemRowDto,
+        isArray: true,
+        description: 'Item scope grid. Read only when prm_item_scope is LIST.',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(1000),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => save_promotion_scheme_item_dto_1.PromotionSchemeItemRowDto),
+    __metadata("design:type", Array)
+], SavePromotionSchemeDto.prototype, "items", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: save_promotion_scheme_slab_dto_1.PromotionSchemeSlabRowDto,
+        isArray: true,
+        description: "Offer bands. prs_benefit defaults to the header's prm_benefit and may not disagree with it.",
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.ArrayMaxSize)(1000),
+    (0, class_validator_1.ValidateNested)({ each: true }),
+    (0, class_transformer_1.Type)(() => save_promotion_scheme_slab_dto_1.PromotionSchemeSlabRowDto),
+    __metadata("design:type", Array)
+], SavePromotionSchemeDto.prototype, "slabs", void 0);
 //# sourceMappingURL=save-promotion-scheme.dto.js.map

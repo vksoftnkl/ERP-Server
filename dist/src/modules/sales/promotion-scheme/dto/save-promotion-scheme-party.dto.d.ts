@@ -10,7 +10,3 @@ export declare class PromotionSchemePartyRowDto {
     prp_created_by?: string;
     prp_modified_by?: string;
 }
-export declare class SavePromotionSchemePartiesDto {
-    prm_id: string;
-    parties: PromotionSchemePartyRowDto[];
-}

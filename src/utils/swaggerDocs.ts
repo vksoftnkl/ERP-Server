@@ -54,6 +54,7 @@ import { UiTableMasterModule } from '../modules/fixed/ui-table-master/ui-table-m
 import { UserLoginSessionsModule } from '../modules/fixed/user-login-sessions/user-login-sessions.module';
 import { StockAdjReasonsModule } from '../modules/fixed/stock-adj-reasons/stock-adj-reasons.module';
 import { PromotionLoyaltyPointsModule } from '../modules/sales/loyalty/promotion-loyalty-points.module';
+import { PromotionSchemeModule } from '../modules/sales/promotion-scheme/promotion-scheme.module';
 import { ItemsGroupMasterModule } from 'src/modules/Inventory/items-group-master/items-group-master.module';
 import { ItemsBrandMasterModule } from 'src/modules/Inventory/items-brand-master/items-brand-master.module';
 import { ItemsSectionMasterModule } from 'src/modules/Inventory/items-section-master/items-section-master.module';
@@ -359,6 +360,14 @@ export const swaggerModuleDocuments = [
     title: 'Promotion Loyalty Points API',
     description: 'Single-call loyalty scheme endpoints with nested parties, points, and gifts',
     include: [PromotionLoyaltyPointsModule],
+  },
+  {
+    path: 'promotion-scheme',
+    title: 'Promotion Scheme API',
+    description:
+      'Promotion scheme header endpoints plus the branch, party, item and slab scope grids saved ' +
+      'a page of rows at a time',
+    include: [PromotionSchemeModule],
   },
   {
     path: 'grid-details',

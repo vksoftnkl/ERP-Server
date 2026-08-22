@@ -6,6 +6,8 @@ export declare class PromotionSchemeBranchPayloadDto {
     prb_prm_id: string;
     prb_slno: number;
     prb_branch_id: string;
+    prb_branch_name: string | null;
+    prb_branch_code: string | null;
     prb_is_exclude: boolean;
     prb_notes: string | null;
     prb_is_active: boolean;
@@ -26,6 +28,8 @@ export declare class PromotionSchemePartyPayloadDto {
     prp_cust_group_id: string | null;
     prp_area_id: string | null;
     prp_city_id: string | null;
+    prp_target_name: string | null;
+    prp_target_code: string | null;
     prp_is_exclude: boolean;
     prp_match_priority: number;
     prp_notes: string | null;
@@ -49,6 +53,8 @@ export declare class PromotionSchemeItemPayloadDto {
     pri_brand_id: string | null;
     pri_section_id: string | null;
     pri_unit_id: string | null;
+    pri_target_name: string | null;
+    pri_unit_name: string | null;
     pri_is_exclude: boolean;
     pri_disc_perc: number;
     pri_disc_qty: number;
@@ -78,6 +84,8 @@ export declare class PromotionSchemeSlabPayloadDto {
     prs_max_repeats: number;
     prs_free_item_id: string | null;
     prs_free_unit_id: string | null;
+    prs_free_item_name: string | null;
+    prs_free_unit_name: string | null;
     prs_free_qty: number;
     prs_free_stock_check: boolean;
     prs_disc_perc: number;
@@ -146,9 +154,6 @@ export declare class PromotionSchemeDeleteResultDto {
     deleted: true;
     prm_id: string;
 }
-export declare class PromotionSchemeChildDeleteResultDto extends PromotionSchemeDeleteResultDto {
-    row_id: string;
-}
 export declare class PromotionSchemeSuccessSingleDto {
     success: true;
     message: string;
@@ -159,28 +164,19 @@ export declare class PromotionSchemeSuccessDeleteDto {
     message: string;
     data: PromotionSchemeDeleteResultDto;
 }
-export declare class PromotionSchemeChildSuccessDeleteDto {
-    success: true;
-    message: string;
-    data: PromotionSchemeChildDeleteResultDto;
+export declare class PromotionSchemeEligibilityPayloadDto {
+    prm_id: string;
+    cus_id: string;
+    qualifies: boolean;
+    decided_by: 'ALL' | 'RULE' | 'NO_RULE';
+    matched_by: string | null;
+    matched_row_id: string | null;
+    match_priority: number | null;
+    is_exclude: boolean | null;
+    reason: string;
 }
-export declare class PromotionSchemeBranchSuccessListDto {
+export declare class PromotionSchemeEligibilitySuccessDto {
     success: true;
     message: string;
-    data: PromotionSchemeBranchPayloadDto[];
-}
-export declare class PromotionSchemePartySuccessListDto {
-    success: true;
-    message: string;
-    data: PromotionSchemePartyPayloadDto[];
-}
-export declare class PromotionSchemeItemSuccessListDto {
-    success: true;
-    message: string;
-    data: PromotionSchemeItemPayloadDto[];
-}
-export declare class PromotionSchemeSlabSuccessListDto {
-    success: true;
-    message: string;
-    data: PromotionSchemeSlabPayloadDto[];
+    data: PromotionSchemeEligibilityPayloadDto;
 }

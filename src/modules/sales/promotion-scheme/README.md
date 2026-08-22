@@ -17,38 +17,110 @@ whole graph.
 
 ## Payload shape
 
-The header takes a **plain object**. The four child endpoints each take an **array of
-objects** under a `prm_id`, because that is how their grids are edited — a page of rows at
-once, not one HTTP call per line.
+`POST /create` takes the **whole campaign in one object** — the header fields plus optional
+`branches`, `parties`, `items` and `slabs` arrays. Header and grids are written in a single
+transaction, and the response is the same graph `GET /get` returns, so a screen can post
+back exactly what it loaded.
 
-Arrays are an **upsert, not a replace**: rows carrying their own id are updated, rows
-without one are inserted, and rows already on the scheme but absent from the array are left
-alone. A half-built grid POST must never wipe rows the user cannot see, so deleting is
-always an explicit call.
+A grid array that is **present replaces** that grid: rows carrying their own id are updated,
+rows without one are inserted, and rows already on the scheme but absent from the array are
+soft deleted. That is what lets one POST save a grid the user edited, removed lines and all.
+
+There are no per-grid routes. A grid row is created, changed and removed by posting the
+array it belongs to — `prb_id`/`prp_id`/`pri_id`/`prs_id` on a row means "update this one",
+no id means "insert", and leaving a row out means "delete it".
+
+A grid key that is **absent leaves that grid alone**. This is the distinction that keeps a
+header-only save (a status flip, an approval) from wiping rows the caller never loaded:
+
+| Body | Effect on the item grid |
+| --- | --- |
+| no `items` key | untouched |
+| `"items": []` | every item row soft deleted |
+| `"items": [ … ]` | the grid is made to match the array |
+
+```jsonc
+POST /api/v1/promotion-scheme/create
+{
+  "prm_comp_id": "01963d86-caf0-7b26-89f0-58ac380a2d5e",
+  "prm_code": "DIWALI25",
+  "prm_name": "Diwali 2025 — 10% off own brand",
+  "prm_apply_on": "ITEM_QTY",
+  "prm_benefit": "DISC_PERC",
+  "prm_item_scope": "LIST",
+  "prm_start_date": "2025-10-01",
+  "prm_end_date": "2025-10-31",
+  "items": [
+    { "pri_kind": "ITEM_BRAND", "pri_scope_id": "0196…", "pri_match_priority": 3 }
+  ],
+  "slabs": [
+    { "prs_exceeds": 1000, "prs_upto": 4999, "prs_disc_perc": 5 }
+  ]
+}
+```
+
+Nullable fields are genuinely nullable — send `null` or omit the key. Swagger UI renders
+them as `{}` in the generated example body; that is a UI placeholder, not a valid value.
 
 ## Endpoints
 
 | Method | Path | Body | Description |
 | --- | --- | --- | --- |
-| `POST` | `/create` | object | Create or update a header by `prm_id` presence |
-| `GET` | `/get?prm_id=` | — | Header + branches + parties + items + slabs |
+| `POST` | `/create` | object | Create or update header + all four grids by `prm_id` presence |
+| `GET` | `/get?prm_id=` | — | Header + branches + parties + items + slabs, grid-ready |
+| `GET` | `/eligibility?prm_id=&cus_id=` | — | Does this one customer qualify for this one scheme? |
 | `DELETE` | `/delete?prm_id=&prm_modified_by=` | — | Soft delete the header **and all four child sets** |
-| `POST` | `/branches/create` | `{ prm_id, branches[] }` | Upsert branch scope rows |
-| `GET` | `/branches/get?prm_id=` | — | List branch scope rows |
-| `DELETE` | `/branches/delete?row_id=&modified_by=` | — | Soft delete one `prb_id` |
-| `POST` | `/parties/create` | `{ prm_id, parties[] }` | Upsert party scope rows |
-| `GET` | `/parties/get?prm_id=` | — | List party scope rows, narrowest match first |
-| `DELETE` | `/parties/delete?row_id=&modified_by=` | — | Soft delete one `prp_id` |
-| `POST` | `/items/create` | `{ prm_id, items[] }` | Upsert item scope rows |
-| `GET` | `/items/get?prm_id=` | — | List item scope rows, most specific first |
-| `DELETE` | `/items/delete?row_id=&modified_by=` | — | Soft delete one `pri_id` |
-| `POST` | `/slabs/create` | `{ prm_id, slabs[] }` | Upsert offer bands |
-| `GET` | `/slabs/get?prm_id=` | — | List bands, lowest threshold first |
-| `DELETE` | `/slabs/delete?row_id=&modified_by=` | — | Soft delete one `prs_id` |
 
-Every response is the shared sales envelope: `{ success, message, data }`, with errors as
-`{ success: false, message, errors: [{ field, message }] }` through
-`PromotionSchemeExceptionFilter`.
+## Display names on the read paths
+
+A scope row stores an id and a kind; the name behind that id lives in one of nine masters.
+Every read joins them through the relations Prisma declares on the generated columns — one
+join per kind, no `CASE` — so a grid renders straight off the response:
+
+| Grid | Resolved fields | Source |
+| --- | --- | --- |
+| branches | `prb_branch_name`, `prb_branch_code` | `br_name`, then `br_code` else `br_short` |
+| parties | `prp_target_name`, `prp_target_code` | `cus_name`/`cgr_name`/`arm_name`/`ctm_name`, and `cus_code`/`cgr_short`/`arm_short`/`ctm_short` |
+| items | `pri_target_name`, `pri_unit_name` | `item_name_en`/`itg_name`/`category_name`/`brand_name`/`sec_name`, and `unit_name` via `item_unit_conversion` |
+| slabs | `prs_free_item_name`, `prs_free_unit_name` | `item_name_en`, `unit_name` |
+
+These are **display only**. They are ignored on write — the id columns are the truth, and
+the four/five FK carrier columns beside them are generated by Postgres and rejected on
+write. Note the master columns are not uniform: customers use `cus_code`, but cust_groups
+use `cgr_short` (there is no `cgr_code`), area uses `arm_short`, city uses `ctm_short`.
+
+## Eligibility — the other direction
+
+`/get` answers "who does this scheme cover". `/eligibility` answers the question the till
+asks: "does THIS customer qualify". A customer can be reached by four rows at once — by
+name, by their group, by their area and by their city — so the response names the row that
+decided it:
+
+```jsonc
+GET /api/v1/promotion-scheme/eligibility?prm_id=…&cus_id=…
+{
+  "qualifies": false,
+  "decided_by": "RULE",
+  "matched_by": "AREA",
+  "matched_row_id": "0196…",
+  "match_priority": 3,
+  "is_exclude": true,
+  "reason": "NO — carved out by the AREA rule"
+}
+```
+
+Highest `prp_match_priority` wins, and at equal priority an **EXCLUDE beats an INCLUDE**.
+Seeded priorities: `CUSTOMER` 4, `AREA` 3, `CITY` 2, `CUSTOMER_GROUP` 1 — CITY sits *below*
+area on purpose, because a city contains many areas, so an AREA rule is the more specific
+statement about the same customer.
+
+`decided_by` distinguishes the three ways an answer is reached: `ALL` (the scheme's
+`prm_cust_scope` is `ALL`, so no party row is consulted and everyone qualifies), `RULE` (a
+party row decided it), `NO_RULE` (scoped to a LIST that nothing on it reaches — not
+eligible).
+
+A customer reaches a CITY rule **only through their area**; `cus_area_id` is the one path,
+whatever their free-text `cus_city` says.
 
 ## The generated columns
 

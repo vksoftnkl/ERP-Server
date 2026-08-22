@@ -41,6 +41,79 @@ let PromotionSchemeService = class PromotionSchemeService {
         }
         return (0, promotion_scheme_utils_1.toSchemePayload)(scheme);
     }
+    async checkEligibility(prmId, cusId) {
+        const scheme = await this.requireScheme(this.prisma, prmId);
+        if (scheme.prmCustScope !== 'LIST') {
+            return {
+                prm_id: prmId,
+                cus_id: cusId,
+                qualifies: true,
+                decided_by: 'ALL',
+                matched_by: null,
+                matched_row_id: null,
+                match_priority: null,
+                is_exclude: null,
+                reason: `YES — prm_cust_scope is ${scheme.prmCustScope}, the scheme covers every customer`,
+            };
+        }
+        const customer = await this.prisma.customer.findFirst({
+            where: { cusId, cusIsDeleted: false },
+            select: {
+                cusId: true,
+                cusGroupId: true,
+                cusAreaId: true,
+                area: { select: { armCityId: true } },
+            },
+        });
+        if (!customer) {
+            this.throwNotFound('cus_id', cusId, 'Customer not found');
+        }
+        const scopeMatches = [{ prpCustId: customer.cusId }];
+        if (customer.cusGroupId) {
+            scopeMatches.push({ prpCustGroupId: customer.cusGroupId });
+        }
+        if (customer.cusAreaId) {
+            scopeMatches.push({ prpAreaId: customer.cusAreaId });
+        }
+        if (customer.area?.armCityId) {
+            scopeMatches.push({ prpCityId: customer.area.armCityId });
+        }
+        const decider = await this.prisma.promotionSchemeParty.findFirst({
+            where: {
+                prpPrmId: prmId,
+                prpIsDeleted: false,
+                prpIsActive: true,
+                OR: scopeMatches,
+            },
+            orderBy: [{ prpMatchPriority: 'desc' }, { prpIsExclude: 'desc' }],
+        });
+        if (!decider) {
+            return {
+                prm_id: prmId,
+                cus_id: cusId,
+                qualifies: false,
+                decided_by: 'NO_RULE',
+                matched_by: null,
+                matched_row_id: null,
+                match_priority: null,
+                is_exclude: null,
+                reason: 'NO — the scheme is scoped to a list and no row on it reaches this customer',
+            };
+        }
+        return {
+            prm_id: prmId,
+            cus_id: cusId,
+            qualifies: !decider.prpIsExclude,
+            decided_by: 'RULE',
+            matched_by: decider.prpKind,
+            matched_row_id: decider.prpId,
+            match_priority: decider.prpMatchPriority,
+            is_exclude: decider.prpIsExclude,
+            reason: decider.prpIsExclude
+                ? `NO — carved out by the ${decider.prpKind} rule`
+                : `YES — via ${decider.prpKind}`,
+        };
+    }
     async softDeleteScheme(prmId, modifiedBy) {
         return this.prisma.$transaction(async (tx) => {
             const existing = await this.findSchemeWithChildren(tx, prmId);
@@ -114,17 +187,18 @@ let PromotionSchemeService = class PromotionSchemeService {
         const effective = this.effectiveScheme(null, data);
         this.assertSchemeInvariants(effective);
         await this.assertCodeIsFree(this.prisma, data.prmCompId, effective.prmCode, null);
-        const created = await this.prisma
+        return this.prisma
             .$transaction(async (tx) => {
             const row = await tx.promotionScheme.create({ data });
             await this.audit(tx, 'create', SCHEME_TABLE_NAME, row.prmId, row.prmName, null, (0, promotion_scheme_utils_1.toSchemePayload)({ ...row, branches: [], parties: [], items: [], slabs: [] }), 'Promotion scheme created');
-            return row;
+            await this.syncChildren(tx, row, dto);
+            const after = await this.findSchemeWithChildren(tx, row.prmId);
+            return (0, promotion_scheme_utils_1.toSchemePayload)(after ?? { ...row, branches: [], parties: [], items: [], slabs: [] });
         })
             .catch((error) => {
             (0, promotion_scheme_utils_1.handlePromotionWriteError)(error);
             throw error;
         });
-        return (0, promotion_scheme_utils_1.toSchemePayload)({ ...created, branches: [], parties: [], items: [], slabs: [] });
     }
     async updateScheme(dto) {
         const prmId = (0, promotion_scheme_utils_1.requireUuid)(dto.prm_id, 'prm_id');
@@ -156,18 +230,21 @@ let PromotionSchemeService = class PromotionSchemeService {
             this.applySchemeFields(data, dto);
             const effective = this.effectiveScheme(existing, data);
             this.assertSchemeInvariants(effective);
-            if (effective.prmBenefit !== existing.prmBenefit && existing.slabs.length > 0) {
+            if (effective.prmBenefit !== existing.prmBenefit &&
+                existing.slabs.length > 0 &&
+                dto.slabs === undefined) {
                 this.throwBadRequest('Validation failed', [
                     {
                         field: 'prm_benefit',
                         message: `Cannot change prm_benefit while ${existing.slabs.length} slab band(s) exist. ` +
-                            'Delete or retype the bands first.',
+                            'Send the retyped bands as `slabs` in this same call, or delete them first.',
                     },
                 ]);
             }
             const compId = data.prmCompId ?? existing.prmCompId;
             await this.assertCodeIsFree(tx, compId, effective.prmCode, prmId);
             const updated = await tx.promotionScheme.update({ where: { prmId }, data });
+            await this.syncChildren(tx, updated, dto);
             const after = await this.findSchemeWithChildren(tx, prmId);
             await this.audit(tx, 'update', SCHEME_TABLE_NAME, prmId, updated.prmName, (0, promotion_scheme_utils_1.toSchemePayload)(existing), after ? (0, promotion_scheme_utils_1.toSchemePayload)(after) : null, 'Promotion scheme updated');
             return after
@@ -368,51 +445,6 @@ let PromotionSchemeService = class PromotionSchemeService {
             ]);
         }
     }
-    async saveBranches(dto) {
-        return this.prisma
-            .$transaction(async (tx) => {
-            const scheme = await this.requireScheme(tx, dto.prm_id);
-            this.assertNoDuplicates(dto.branches.map((row, index) => ({ key: row.prb_branch_id ?? `#${index}`, index })), 'prb_branch_id');
-            const saved = [];
-            for (let index = 0; index < dto.branches.length; index += 1) {
-                saved.push(await this.saveBranchRow(tx, scheme.prmId, dto.branches[index], index));
-            }
-            return saved.map(promotion_scheme_utils_1.toBranchPayload);
-        })
-            .catch((error) => {
-            (0, promotion_scheme_utils_1.handlePromotionWriteError)(error);
-            throw error;
-        });
-    }
-    async getBranches(prmId) {
-        await this.requireScheme(this.prisma, prmId);
-        const rows = await this.prisma.promotionSchemeBranch.findMany({
-            where: { prbPrmId: prmId, prbIsDeleted: false },
-            orderBy: [{ prbSlno: 'asc' }, { prbId: 'asc' }],
-        });
-        return rows.map(promotion_scheme_utils_1.toBranchPayload);
-    }
-    async deleteBranch(prbId, modifiedBy) {
-        return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.promotionSchemeBranch.findFirst({
-                where: { prbId, prbIsDeleted: false },
-            });
-            if (!existing) {
-                this.throwNotFound('prb_id', prbId, 'Promotion scheme branch row not found');
-            }
-            const updated = await tx.promotionSchemeBranch.update({
-                where: { prbId },
-                data: {
-                    prbIsDeleted: true,
-                    prbIsActive: false,
-                    prbModifiedOn: new Date(),
-                    prbModifiedBy: this.resolveWriteActor(modifiedBy),
-                },
-            });
-            await this.audit(tx, 'cancel', BRANCH_TABLE_NAME, prbId, `Scheme ${existing.prbPrmId} / Branch ${existing.prbSlno}`, (0, promotion_scheme_utils_1.toBranchPayload)(existing), (0, promotion_scheme_utils_1.toBranchPayload)(updated), 'Promotion scheme branch row soft deleted');
-            return { deleted: true, prm_id: existing.prbPrmId, row_id: prbId };
-        });
-    }
     async saveBranchRow(tx, prmId, row, index) {
         const slno = row.prb_slno ?? index + 1;
         (0, promotion_scheme_utils_1.requireInteger)(slno, 'prb_slno', 1);
@@ -438,7 +470,11 @@ let PromotionSchemeService = class PromotionSchemeService {
                 data.prbNotes = (0, promotion_scheme_utils_1.normalizeNullableString)(row.prb_notes);
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prb_is_active'))
                 data.prbIsActive = row.prb_is_active ?? true;
-            const updated = await tx.promotionSchemeBranch.update({ where: { prbId: row.prb_id }, data });
+            const updated = await tx.promotionSchemeBranch.update({
+                where: { prbId: row.prb_id },
+                data,
+                include: promotion_scheme_utils_1.BRANCH_LOOKUP,
+            });
             await this.audit(tx, 'update', BRANCH_TABLE_NAME, updated.prbId, `Scheme ${prmId} / Branch ${updated.prbSlno}`, (0, promotion_scheme_utils_1.toBranchPayload)(existing), (0, promotion_scheme_utils_1.toBranchPayload)(updated), 'Promotion scheme branch row updated');
             return updated;
         }
@@ -452,57 +488,10 @@ let PromotionSchemeService = class PromotionSchemeService {
                 prbIsActive: row.prb_is_active ?? true,
                 prbCreatedBy: this.resolveWriteActor(row.prb_created_by),
             },
+            include: promotion_scheme_utils_1.BRANCH_LOOKUP,
         });
         await this.audit(tx, 'create', BRANCH_TABLE_NAME, created.prbId, `Scheme ${prmId} / Branch ${created.prbSlno}`, null, (0, promotion_scheme_utils_1.toBranchPayload)(created), 'Promotion scheme branch row created');
         return created;
-    }
-    async saveParties(dto) {
-        return this.prisma
-            .$transaction(async (tx) => {
-            const scheme = await this.requireScheme(tx, dto.prm_id);
-            this.assertNoDuplicates(dto.parties.map((row, index) => ({
-                key: `${(row.prp_kind ?? '').toUpperCase()}:${row.prp_scope_id ?? `#${index}`}`,
-                index,
-            })), 'prp_scope_id');
-            const saved = [];
-            for (let index = 0; index < dto.parties.length; index += 1) {
-                saved.push(await this.savePartyRow(tx, scheme.prmId, dto.parties[index], index));
-            }
-            return saved.map(promotion_scheme_utils_1.toPartyPayload);
-        })
-            .catch((error) => {
-            (0, promotion_scheme_utils_1.handlePromotionWriteError)(error);
-            throw error;
-        });
-    }
-    async getParties(prmId) {
-        await this.requireScheme(this.prisma, prmId);
-        const rows = await this.prisma.promotionSchemeParty.findMany({
-            where: { prpPrmId: prmId, prpIsDeleted: false },
-            orderBy: [{ prpMatchPriority: 'desc' }, { prpSlno: 'asc' }, { prpId: 'asc' }],
-        });
-        return rows.map(promotion_scheme_utils_1.toPartyPayload);
-    }
-    async deleteParty(prpId, modifiedBy) {
-        return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.promotionSchemeParty.findFirst({
-                where: { prpId, prpIsDeleted: false },
-            });
-            if (!existing) {
-                this.throwNotFound('prp_id', prpId, 'Promotion scheme party row not found');
-            }
-            const updated = await tx.promotionSchemeParty.update({
-                where: { prpId },
-                data: {
-                    prpIsDeleted: true,
-                    prpIsActive: false,
-                    prpModifiedOn: new Date(),
-                    prpModifiedBy: this.resolveWriteActor(modifiedBy),
-                },
-            });
-            await this.audit(tx, 'cancel', PARTY_TABLE_NAME, prpId, `Scheme ${existing.prpPrmId} / ${existing.prpKind} ${existing.prpScopeId}`, (0, promotion_scheme_utils_1.toPartyPayload)(existing), (0, promotion_scheme_utils_1.toPartyPayload)(updated), 'Promotion scheme party row soft deleted');
-            return { deleted: true, prm_id: existing.prpPrmId, row_id: prpId };
-        });
     }
     async savePartyRow(tx, prmId, row, index) {
         const slno = row.prp_slno ?? index + 1;
@@ -535,7 +524,11 @@ let PromotionSchemeService = class PromotionSchemeService {
                 data.prpNotes = (0, promotion_scheme_utils_1.normalizeNullableString)(row.prp_notes);
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_is_active'))
                 data.prpIsActive = row.prp_is_active ?? true;
-            const updated = await tx.promotionSchemeParty.update({ where: { prpId: row.prp_id }, data });
+            const updated = await tx.promotionSchemeParty.update({
+                where: { prpId: row.prp_id },
+                data,
+                include: promotion_scheme_utils_1.PARTY_LOOKUP,
+            });
             await this.audit(tx, 'update', PARTY_TABLE_NAME, updated.prpId, `Scheme ${prmId} / ${updated.prpKind} ${updated.prpScopeId}`, (0, promotion_scheme_utils_1.toPartyPayload)(existing), (0, promotion_scheme_utils_1.toPartyPayload)(updated), 'Promotion scheme party row updated');
             return updated;
         }
@@ -552,57 +545,10 @@ let PromotionSchemeService = class PromotionSchemeService {
                 prpIsActive: row.prp_is_active ?? true,
                 prpCreatedBy: this.resolveWriteActor(row.prp_created_by),
             },
+            include: promotion_scheme_utils_1.PARTY_LOOKUP,
         });
         await this.audit(tx, 'create', PARTY_TABLE_NAME, created.prpId, `Scheme ${prmId} / ${created.prpKind} ${created.prpScopeId}`, null, (0, promotion_scheme_utils_1.toPartyPayload)(created), 'Promotion scheme party row created');
         return created;
-    }
-    async saveItems(dto) {
-        return this.prisma
-            .$transaction(async (tx) => {
-            const scheme = await this.requireScheme(tx, dto.prm_id);
-            this.assertNoDuplicates(dto.items.map((row, index) => ({
-                key: `${(row.pri_kind ?? '').toUpperCase()}:${row.pri_scope_id ?? `#${index}`}`,
-                index,
-            })), 'pri_scope_id');
-            const saved = [];
-            for (let index = 0; index < dto.items.length; index += 1) {
-                saved.push(await this.saveItemRow(tx, scheme.prmId, dto.items[index], index));
-            }
-            return saved.map(promotion_scheme_utils_1.toItemPayload);
-        })
-            .catch((error) => {
-            (0, promotion_scheme_utils_1.handlePromotionWriteError)(error);
-            throw error;
-        });
-    }
-    async getItems(prmId) {
-        await this.requireScheme(this.prisma, prmId);
-        const rows = await this.prisma.promotionSchemeItem.findMany({
-            where: { priPrmId: prmId, priIsDeleted: false },
-            orderBy: [{ priMatchPriority: 'desc' }, { priSlno: 'asc' }, { priId: 'asc' }],
-        });
-        return rows.map(promotion_scheme_utils_1.toItemPayload);
-    }
-    async deleteItem(priId, modifiedBy) {
-        return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.promotionSchemeItem.findFirst({
-                where: { priId, priIsDeleted: false },
-            });
-            if (!existing) {
-                this.throwNotFound('pri_id', priId, 'Promotion scheme item row not found');
-            }
-            const updated = await tx.promotionSchemeItem.update({
-                where: { priId },
-                data: {
-                    priIsDeleted: true,
-                    priIsActive: false,
-                    priModifiedOn: new Date(),
-                    priModifiedBy: this.resolveWriteActor(modifiedBy),
-                },
-            });
-            await this.audit(tx, 'cancel', ITEM_TABLE_NAME, priId, `Scheme ${existing.priPrmId} / ${existing.priKind} ${existing.priScopeId}`, (0, promotion_scheme_utils_1.toItemPayload)(existing), (0, promotion_scheme_utils_1.toItemPayload)(updated), 'Promotion scheme item row soft deleted');
-            return { deleted: true, prm_id: existing.priPrmId, row_id: priId };
-        });
     }
     async saveItemRow(tx, prmId, row, index) {
         const slno = row.pri_slno ?? index + 1;
@@ -679,6 +625,7 @@ let PromotionSchemeService = class PromotionSchemeService {
             const updated = await tx.promotionSchemeItem.update({
                 where: { priId: existing.priId },
                 data,
+                include: promotion_scheme_utils_1.ITEM_LOOKUP,
             });
             await this.audit(tx, 'update', ITEM_TABLE_NAME, updated.priId, `Scheme ${prmId} / ${updated.priKind} ${updated.priScopeId}`, (0, promotion_scheme_utils_1.toItemPayload)(existing), (0, promotion_scheme_utils_1.toItemPayload)(updated), 'Promotion scheme item row updated');
             return updated;
@@ -702,6 +649,7 @@ let PromotionSchemeService = class PromotionSchemeService {
                 priIsActive: row.pri_is_active ?? true,
                 priCreatedBy: this.resolveWriteActor(row.pri_created_by),
             },
+            include: promotion_scheme_utils_1.ITEM_LOOKUP,
         });
         await this.audit(tx, 'create', ITEM_TABLE_NAME, created.priId, `Scheme ${prmId} / ${created.priKind} ${created.priScopeId}`, null, (0, promotion_scheme_utils_1.toItemPayload)(created), 'Promotion scheme item row created');
         return created;
@@ -750,54 +698,6 @@ let PromotionSchemeService = class PromotionSchemeService {
         if (errors.length > 0) {
             this.throwBadRequest('Validation failed', errors);
         }
-    }
-    async saveSlabs(dto) {
-        return this.prisma
-            .$transaction(async (tx) => {
-            const scheme = await this.requireScheme(tx, dto.prm_id);
-            this.assertNoDuplicates(dto.slabs.map((row, index) => ({
-                key: `${row.prs_exceeds ?? 0}:${row.prs_free_item_id ?? '-'}`,
-                index,
-            })), 'prs_exceeds');
-            const saved = [];
-            for (let index = 0; index < dto.slabs.length; index += 1) {
-                saved.push(await this.saveSlabRow(tx, scheme, dto.slabs[index], index));
-            }
-            return saved.map(promotion_scheme_utils_1.toSlabPayload);
-        })
-            .catch((error) => {
-            (0, promotion_scheme_utils_1.handlePromotionWriteError)(error);
-            throw error;
-        });
-    }
-    async getSlabs(prmId) {
-        await this.requireScheme(this.prisma, prmId);
-        const rows = await this.prisma.promotionSchemeSlab.findMany({
-            where: { prsPrmId: prmId, prsIsDeleted: false },
-            orderBy: [{ prsExceeds: 'asc' }, { prsSlno: 'asc' }, { prsId: 'asc' }],
-        });
-        return rows.map(promotion_scheme_utils_1.toSlabPayload);
-    }
-    async deleteSlab(prsId, modifiedBy) {
-        return this.prisma.$transaction(async (tx) => {
-            const existing = await tx.promotionSchemeSlab.findFirst({
-                where: { prsId, prsIsDeleted: false },
-            });
-            if (!existing) {
-                this.throwNotFound('prs_id', prsId, 'Promotion scheme slab row not found');
-            }
-            const updated = await tx.promotionSchemeSlab.update({
-                where: { prsId },
-                data: {
-                    prsIsDeleted: true,
-                    prsIsActive: false,
-                    prsModifiedOn: new Date(),
-                    prsModifiedBy: this.resolveWriteActor(modifiedBy),
-                },
-            });
-            await this.audit(tx, 'cancel', SLAB_TABLE_NAME, prsId, `Scheme ${existing.prsPrmId} / Band ${existing.prsSlno}`, (0, promotion_scheme_utils_1.toSlabPayload)(existing), (0, promotion_scheme_utils_1.toSlabPayload)(updated), 'Promotion scheme slab row soft deleted');
-            return { deleted: true, prm_id: existing.prsPrmId, row_id: prsId };
-        });
     }
     async saveSlabRow(tx, scheme, row, index) {
         const slno = row.prs_slno ?? index + 1;
@@ -897,6 +797,7 @@ let PromotionSchemeService = class PromotionSchemeService {
             const updated = await tx.promotionSchemeSlab.update({
                 where: { prsId: existing.prsId },
                 data,
+                include: promotion_scheme_utils_1.SLAB_LOOKUP,
             });
             await this.audit(tx, 'update', SLAB_TABLE_NAME, updated.prsId, `Scheme ${scheme.prmId} / Band ${updated.prsSlno}`, (0, promotion_scheme_utils_1.toSlabPayload)(existing), (0, promotion_scheme_utils_1.toSlabPayload)(updated), 'Promotion scheme slab row updated');
             return updated;
@@ -924,6 +825,7 @@ let PromotionSchemeService = class PromotionSchemeService {
                 prsIsActive: row.prs_is_active ?? true,
                 prsCreatedBy: this.resolveWriteActor(row.prs_created_by),
             },
+            include: promotion_scheme_utils_1.SLAB_LOOKUP,
         });
         await this.audit(tx, 'create', SLAB_TABLE_NAME, created.prsId, `Scheme ${scheme.prmId} / Band ${created.prsSlno}`, null, (0, promotion_scheme_utils_1.toSlabPayload)(created), 'Promotion scheme slab row created');
         return created;
@@ -1036,18 +938,22 @@ let PromotionSchemeService = class PromotionSchemeService {
                 branches: {
                     where: { prbIsDeleted: false },
                     orderBy: [{ prbSlno: 'asc' }, { prbId: 'asc' }],
+                    include: promotion_scheme_utils_1.BRANCH_LOOKUP,
                 },
                 parties: {
                     where: { prpIsDeleted: false },
                     orderBy: [{ prpMatchPriority: 'desc' }, { prpSlno: 'asc' }, { prpId: 'asc' }],
+                    include: promotion_scheme_utils_1.PARTY_LOOKUP,
                 },
                 items: {
                     where: { priIsDeleted: false },
                     orderBy: [{ priMatchPriority: 'desc' }, { priSlno: 'asc' }, { priId: 'asc' }],
+                    include: promotion_scheme_utils_1.ITEM_LOOKUP,
                 },
                 slabs: {
                     where: { prsIsDeleted: false },
                     orderBy: [{ prsExceeds: 'asc' }, { prsSlno: 'asc' }, { prsId: 'asc' }],
+                    include: promotion_scheme_utils_1.SLAB_LOOKUP,
                 },
             },
         });
@@ -1060,6 +966,122 @@ let PromotionSchemeService = class PromotionSchemeService {
             this.throwNotFound('prm_id', prmId, 'Promotion scheme not found');
         }
         return scheme;
+    }
+    async syncChildren(tx, scheme, dto) {
+        const actor = dto.prm_modified_by ?? dto.prm_created_by;
+        if (dto.branches !== undefined) {
+            this.assertNoDuplicates(dto.branches.map((row, index) => ({ key: row.prb_branch_id ?? `#${index}`, index })), 'prb_branch_id');
+            const kept = [];
+            for (let index = 0; index < dto.branches.length; index += 1) {
+                const saved = await this.saveBranchRow(tx, scheme.prmId, dto.branches[index], index);
+                kept.push(saved.prbId);
+            }
+            const stale = await tx.promotionSchemeBranch.findMany({
+                where: { prbPrmId: scheme.prmId, prbIsDeleted: false, prbId: { notIn: kept } },
+            });
+            for (const row of stale) {
+                await this.softDeleteBranchRow(tx, row, actor);
+            }
+        }
+        if (dto.parties !== undefined) {
+            this.assertNoDuplicates(dto.parties.map((row, index) => ({
+                key: `${(row.prp_kind ?? '').toUpperCase()}:${row.prp_scope_id ?? `#${index}`}`,
+                index,
+            })), 'prp_scope_id');
+            const kept = [];
+            for (let index = 0; index < dto.parties.length; index += 1) {
+                const saved = await this.savePartyRow(tx, scheme.prmId, dto.parties[index], index);
+                kept.push(saved.prpId);
+            }
+            const stale = await tx.promotionSchemeParty.findMany({
+                where: { prpPrmId: scheme.prmId, prpIsDeleted: false, prpId: { notIn: kept } },
+            });
+            for (const row of stale) {
+                await this.softDeletePartyRow(tx, row, actor);
+            }
+        }
+        if (dto.items !== undefined) {
+            this.assertNoDuplicates(dto.items.map((row, index) => ({
+                key: `${(row.pri_kind ?? '').toUpperCase()}:${row.pri_scope_id ?? `#${index}`}`,
+                index,
+            })), 'pri_scope_id');
+            const kept = [];
+            for (let index = 0; index < dto.items.length; index += 1) {
+                const saved = await this.saveItemRow(tx, scheme.prmId, dto.items[index], index);
+                kept.push(saved.priId);
+            }
+            const stale = await tx.promotionSchemeItem.findMany({
+                where: { priPrmId: scheme.prmId, priIsDeleted: false, priId: { notIn: kept } },
+            });
+            for (const row of stale) {
+                await this.softDeleteItemRow(tx, row, actor);
+            }
+        }
+        if (dto.slabs !== undefined) {
+            this.assertNoDuplicates(dto.slabs.map((row, index) => ({
+                key: `${row.prs_exceeds ?? 0}:${row.prs_free_item_id ?? '-'}`,
+                index,
+            })), 'prs_exceeds');
+            const kept = [];
+            for (let index = 0; index < dto.slabs.length; index += 1) {
+                const saved = await this.saveSlabRow(tx, scheme, dto.slabs[index], index);
+                kept.push(saved.prsId);
+            }
+            const stale = await tx.promotionSchemeSlab.findMany({
+                where: { prsPrmId: scheme.prmId, prsIsDeleted: false, prsId: { notIn: kept } },
+            });
+            for (const row of stale) {
+                await this.softDeleteSlabRow(tx, row, actor);
+            }
+        }
+    }
+    async softDeleteBranchRow(tx, existing, modifiedBy) {
+        const updated = await tx.promotionSchemeBranch.update({
+            where: { prbId: existing.prbId },
+            data: {
+                prbIsDeleted: true,
+                prbIsActive: false,
+                prbModifiedOn: new Date(),
+                prbModifiedBy: this.resolveWriteActor(modifiedBy),
+            },
+        });
+        await this.audit(tx, 'cancel', BRANCH_TABLE_NAME, existing.prbId, `Scheme ${existing.prbPrmId} / Branch ${existing.prbSlno}`, (0, promotion_scheme_utils_1.toBranchPayload)(existing), (0, promotion_scheme_utils_1.toBranchPayload)(updated), 'Promotion scheme branch row soft deleted');
+    }
+    async softDeletePartyRow(tx, existing, modifiedBy) {
+        const updated = await tx.promotionSchemeParty.update({
+            where: { prpId: existing.prpId },
+            data: {
+                prpIsDeleted: true,
+                prpIsActive: false,
+                prpModifiedOn: new Date(),
+                prpModifiedBy: this.resolveWriteActor(modifiedBy),
+            },
+        });
+        await this.audit(tx, 'cancel', PARTY_TABLE_NAME, existing.prpId, `Scheme ${existing.prpPrmId} / ${existing.prpKind} ${existing.prpScopeId}`, (0, promotion_scheme_utils_1.toPartyPayload)(existing), (0, promotion_scheme_utils_1.toPartyPayload)(updated), 'Promotion scheme party row soft deleted');
+    }
+    async softDeleteItemRow(tx, existing, modifiedBy) {
+        const updated = await tx.promotionSchemeItem.update({
+            where: { priId: existing.priId },
+            data: {
+                priIsDeleted: true,
+                priIsActive: false,
+                priModifiedOn: new Date(),
+                priModifiedBy: this.resolveWriteActor(modifiedBy),
+            },
+        });
+        await this.audit(tx, 'cancel', ITEM_TABLE_NAME, existing.priId, `Scheme ${existing.priPrmId} / ${existing.priKind} ${existing.priScopeId}`, (0, promotion_scheme_utils_1.toItemPayload)(existing), (0, promotion_scheme_utils_1.toItemPayload)(updated), 'Promotion scheme item row soft deleted');
+    }
+    async softDeleteSlabRow(tx, existing, modifiedBy) {
+        const updated = await tx.promotionSchemeSlab.update({
+            where: { prsId: existing.prsId },
+            data: {
+                prsIsDeleted: true,
+                prsIsActive: false,
+                prsModifiedOn: new Date(),
+                prsModifiedBy: this.resolveWriteActor(modifiedBy),
+            },
+        });
+        await this.audit(tx, 'cancel', SLAB_TABLE_NAME, existing.prsId, `Scheme ${existing.prsPrmId} / Band ${existing.prsSlno}`, (0, promotion_scheme_utils_1.toSlabPayload)(existing), (0, promotion_scheme_utils_1.toSlabPayload)(updated), 'Promotion scheme slab row soft deleted');
     }
     assertNoDuplicates(keys, field) {
         const seen = new Map();

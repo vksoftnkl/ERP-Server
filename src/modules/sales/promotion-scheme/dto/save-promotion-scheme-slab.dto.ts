@@ -1,6 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, ValidateNested } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   NullableNumber,
   NullableString,
@@ -10,10 +8,19 @@ import {
   OptionalQueryBoolean,
   OptionalTrimmedString,
   OptionalUuid,
-  RequiredUuid,
 } from './promotion-scheme-dto.helpers';
 import { PRM_BENEFITS } from '../utils/promotion-scheme.utils';
 
+/**
+ * One row of the `slabs` array on POST /create — one band, not one scheme:
+ * 0-999 -> 2%, 1000-4999 -> 5%, 5000+ -> 8% is three rows, not three columns.
+ *
+ * Which of the benefit columns you fill is decided by the HEADER's prm_benefit,
+ * and the service checks the whole matrix before writing: a DISC_PERC scheme
+ * needs prs_disc_perc > 0 and everything else empty, a FREE_ITEM scheme needs an
+ * item, a unit and a quantity, DISC_AMT needs exactly one of prs_disc_amt or
+ * prs_disc_qty, FIXED_PRICE needs prs_fixed_price.
+ */
 export class PromotionSchemeSlabRowDto {
   @ApiPropertyOptional({ description: 'Present = update that row, absent = insert a new one' })
   @OptionalUuid()
@@ -40,7 +47,7 @@ export class PromotionSchemeSlabRowDto {
   @OptionalNumber(0)
   prs_exceeds?: number;
 
-  @ApiPropertyOptional({ nullable: true, description: 'Ceiling. NULL = open-ended.' })
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Ceiling. NULL = open-ended.' })
   @NullableNumber(0)
   prs_upto?: number | null;
 
@@ -59,11 +66,12 @@ export class PromotionSchemeSlabRowDto {
   @OptionalInteger(0)
   prs_max_repeats?: number;
 
-  @ApiPropertyOptional({ nullable: true, description: 'FREE_ITEM only' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'FREE_ITEM only' })
   @NullableUuid()
   prs_free_item_id?: string | null;
 
   @ApiPropertyOptional({
+    type: String,
     nullable: true,
     description: 'FREE_ITEM only. Required whenever prs_free_item_id is set, and vice versa.',
   })
@@ -101,7 +109,7 @@ export class PromotionSchemeSlabRowDto {
   @OptionalNumber(0)
   prs_disc_amt?: number;
 
-  @ApiPropertyOptional({ nullable: true, description: 'FIXED_PRICE only' })
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'FIXED_PRICE only' })
   @NullableNumber(0)
   prs_fixed_price?: number | null;
 
@@ -109,7 +117,7 @@ export class PromotionSchemeSlabRowDto {
   @OptionalNumber(0)
   prs_max_benefit_amt?: number;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   @NullableString(65535)
   prs_notes?: string | null;
 
@@ -124,29 +132,4 @@ export class PromotionSchemeSlabRowDto {
   @ApiPropertyOptional({ maxLength: 50 })
   @OptionalTrimmedString(50)
   prs_modified_by?: string;
-}
-
-/**
- * The offer bands. Upsert semantics — see SavePromotionSchemeBranchesDto.
- *
- * One row = one band: 0-999 -> 2%, 1000-4999 -> 5%, 5000+ -> 8% is three rows,
- * not three columns.
- *
- * Which of the benefit columns you fill is decided by the HEADER's prm_benefit,
- * and the service checks the whole matrix before writing: a DISC_PERC scheme
- * needs prs_disc_perc > 0 and everything else empty, a FREE_ITEM scheme needs an
- * item, a unit and a quantity, DISC_AMT needs exactly one of prs_disc_amt or
- * prs_disc_qty, FIXED_PRICE needs prs_fixed_price.
- */
-export class SavePromotionSchemeSlabsDto {
-  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
-  @RequiredUuid()
-  prm_id!: string;
-
-  @ApiProperty({ type: [PromotionSchemeSlabRowDto] })
-  @IsArray()
-  @ArrayMaxSize(1000)
-  @ValidateNested({ each: true })
-  @Type(() => PromotionSchemeSlabRowDto)
-  slabs!: PromotionSchemeSlabRowDto[];
 }

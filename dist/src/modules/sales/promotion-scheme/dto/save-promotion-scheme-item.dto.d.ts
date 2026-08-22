@@ -17,7 +17,3 @@ export declare class PromotionSchemeItemRowDto {
     pri_created_by?: string;
     pri_modified_by?: string;
 }
-export declare class SavePromotionSchemeItemsDto {
-    prm_id: string;
-    items: PromotionSchemeItemRowDto[];
-}

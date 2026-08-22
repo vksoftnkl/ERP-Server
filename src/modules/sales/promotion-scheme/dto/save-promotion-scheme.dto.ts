@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ValidateIf } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsOptional, ValidateIf, ValidateNested } from 'class-validator';
+import { PromotionSchemeBranchRowDto } from './save-promotion-scheme-branch.dto';
+import { PromotionSchemeItemRowDto } from './save-promotion-scheme-item.dto';
+import { PromotionSchemePartyRowDto } from './save-promotion-scheme-party.dto';
+import { PromotionSchemeSlabRowDto } from './save-promotion-scheme-slab.dto';
 import {
   NullableString,
   NullableUuid,
@@ -34,6 +39,10 @@ import {
  *
  * Vocabulary values (status, apply_on, benefit, …) are checked in the service
  * rather than here, so one list governs both paths.
+ *
+ * The four scope/band grids ride along in the same body — one call saves the
+ * whole campaign, header and grids together, in one transaction. See the
+ * comment above `branches` for what sending (or omitting) an array means.
  */
 export class SavePromotionSchemeDto {
   @ApiPropertyOptional({
@@ -48,11 +57,11 @@ export class SavePromotionSchemeDto {
   @RequiredUuid()
   prm_comp_id?: string;
 
-  @ApiPropertyOptional({ nullable: true, description: 'NULL = the whole company' })
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'NULL = the whole company' })
   @NullableUuid()
   prm_branch_id?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   @NullableUuid()
   prm_tenant_id?: string | null;
 
@@ -129,7 +138,7 @@ export class SavePromotionSchemeDto {
   @OptionalTrimmedString(10)
   prm_item_scope?: string;
 
-  @ApiPropertyOptional({ nullable: true, description: 'NULL = every price level' })
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'NULL = every price level' })
   @OptionalInteger(1)
   prm_price_level_id?: number | null;
 
@@ -150,6 +159,7 @@ export class SavePromotionSchemeDto {
   prm_budget_amount?: number;
 
   @ApiPropertyOptional({
+    type: String,
     nullable: true,
     description:
       'sales.loyalty_coupon_batch(lcb_id). NULL = applies automatically, no code needed. ' +
@@ -172,25 +182,27 @@ export class SavePromotionSchemeDto {
 
   @ApiPropertyOptional({
     example: '22:00',
+    type: String,
     nullable: true,
     description: 'Both time bounds or neither. from > to legitimately means "spans midnight".',
   })
   @OptionalTimeString()
   prm_valid_from_time?: string | null;
 
-  @ApiPropertyOptional({ example: '04:00', nullable: true })
+  @ApiPropertyOptional({ example: '04:00', type: String, nullable: true })
   @OptionalTimeString()
   prm_valid_to_time?: string | null;
 
   @ApiPropertyOptional({
     example: 'MON,TUE,WED',
+    type: String,
     nullable: true,
     description: 'Three-letter day names, comma separated. NULL = every day.',
   })
   @NullableString(30)
   prm_valid_weekdays?: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   @NullableString(65535)
   prm_remarks?: string | null;
 
@@ -206,14 +218,74 @@ export class SavePromotionSchemeDto {
   @OptionalTrimmedString(50)
   prm_modified_by?: string;
 
-  @ApiPropertyOptional({ nullable: true, example: '2025-09-28T09:30:00.000Z' })
+  @ApiPropertyOptional({ type: String, nullable: true, example: '2025-09-28T09:30:00.000Z' })
   @NullableString(40)
   prm_approved_on?: string | null;
 
   @ApiPropertyOptional({
+    type: String,
     nullable: true,
     description: 'public.user_master(usr_id). Required once prm_status is APPROVED.',
   })
   @NullableUuid()
   prm_approved_by?: string | null;
+
+  // ─── the four child grids ───────────────────────────────────────────────────
+  //
+  // Each array REPLACES that grid: a row carrying its own id is updated, a row
+  // without one is inserted, and a row already on the scheme but missing from
+  // the array is soft deleted. That is what lets one POST save a grid the user
+  // edited — including the lines they removed — without a second call.
+  //
+  // OMIT the key entirely to leave that grid untouched. A header-only save must
+  // send no `items` key at all; `"items": []` means "delete every item row".
+
+  @ApiPropertyOptional({
+    type: PromotionSchemeBranchRowDto,
+    isArray: true,
+    description: 'Branch scope grid. Read only when prm_branch_scope is LIST.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => PromotionSchemeBranchRowDto)
+  branches?: PromotionSchemeBranchRowDto[];
+
+  @ApiPropertyOptional({
+    type: PromotionSchemePartyRowDto,
+    isArray: true,
+    description: 'Customer/group/area/city scope grid. Read only when prm_cust_scope is LIST.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => PromotionSchemePartyRowDto)
+  parties?: PromotionSchemePartyRowDto[];
+
+  @ApiPropertyOptional({
+    type: PromotionSchemeItemRowDto,
+    isArray: true,
+    description: 'Item scope grid. Read only when prm_item_scope is LIST.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => PromotionSchemeItemRowDto)
+  items?: PromotionSchemeItemRowDto[];
+
+  @ApiPropertyOptional({
+    type: PromotionSchemeSlabRowDto,
+    isArray: true,
+    description:
+      "Offer bands. prs_benefit defaults to the header's prm_benefit and may not disagree with it.",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => PromotionSchemeSlabRowDto)
+  slabs?: PromotionSchemeSlabRowDto[];
 }

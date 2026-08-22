@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PRI_DEFAULT_MATCH_PRIORITY = exports.PRP_DEFAULT_MATCH_PRIORITY = exports.PRM_WEEKDAYS_PATTERN = exports.PRM_CODE_PATTERN = exports.PRI_KINDS = exports.PRP_KINDS = exports.PRM_SCOPES = exports.PRM_BILL_TYPES = exports.PRM_CALC_ON = exports.PRM_STACK_MODES = exports.PRM_BENEFITS = exports.PRM_APPLY_ON = exports.PRM_STATUSES = exports.UUID_PATTERN = void 0;
+exports.SLAB_LOOKUP = exports.ITEM_LOOKUP = exports.PARTY_LOOKUP = exports.BRANCH_LOOKUP = exports.PRI_DEFAULT_MATCH_PRIORITY = exports.PRP_DEFAULT_MATCH_PRIORITY = exports.PRM_WEEKDAYS_PATTERN = exports.PRM_CODE_PATTERN = exports.PRI_KINDS = exports.PRP_KINDS = exports.PRM_SCOPES = exports.PRM_BILL_TYPES = exports.PRM_CALC_ON = exports.PRM_STACK_MODES = exports.PRM_BENEFITS = exports.PRM_APPLY_ON = exports.PRM_STATUSES = exports.UUID_PATTERN = void 0;
 exports.throwBadRequest = throwBadRequest;
 exports.throwConflict = throwConflict;
 exports.fieldError = fieldError;
@@ -56,6 +56,30 @@ exports.PRI_DEFAULT_MATCH_PRIORITY = {
     ITEM_SECTION: 1,
     ITEM_GROUP: 0,
 };
+exports.BRANCH_LOOKUP = {
+    branch: { select: { brName: true, brCode: true, brShort: true } },
+};
+exports.PARTY_LOOKUP = {
+    customer: { select: { cusName: true, cusCode: true } },
+    customerGroup: { select: { cgrName: true, cgrShort: true } },
+    area: { select: { armName: true, armShort: true } },
+    city: { select: { ctmName: true, ctmShort: true } },
+};
+exports.ITEM_LOOKUP = {
+    item: { select: { itemNameEn: true } },
+    itemGroup: { select: { itgName: true } },
+    itemCategory: { select: { categoryName: true } },
+    itemBrand: { select: { brand_name: true } },
+    itemSection: { select: { secName: true } },
+    unit: { select: { unit: { select: { unit_name: true } } } },
+};
+exports.SLAB_LOOKUP = {
+    freeItem: { select: { itemNameEn: true } },
+    freeUnit: { select: { unit: { select: { unit_name: true } } } },
+};
+function firstName(...candidates) {
+    return candidates.find((value) => value !== null && value !== undefined) ?? null;
+}
 function throwBadRequest(message, errors) {
     (0, module_service_utils_1.throwSalesBadRequest)(message, errors);
 }
@@ -159,6 +183,8 @@ function toBranchPayload(row) {
         prb_prm_id: row.prbPrmId,
         prb_slno: row.prbSlno,
         prb_branch_id: row.prbBranchId,
+        prb_branch_name: row.branch?.brName ?? null,
+        prb_branch_code: firstName(row.branch?.brCode, row.branch?.brShort),
         prb_is_exclude: row.prbIsExclude,
         prb_notes: row.prbNotes,
         prb_is_active: row.prbIsActive,
@@ -181,6 +207,8 @@ function toPartyPayload(row) {
         prp_cust_group_id: row.prpCustGroupId,
         prp_area_id: row.prpAreaId,
         prp_city_id: row.prpCityId,
+        prp_target_name: firstName(row.customer?.cusName, row.customerGroup?.cgrName, row.area?.armName, row.city?.ctmName),
+        prp_target_code: firstName(row.customer?.cusCode, row.customerGroup?.cgrShort, row.area?.armShort, row.city?.ctmShort),
         prp_is_exclude: row.prpIsExclude,
         prp_match_priority: row.prpMatchPriority,
         prp_notes: row.prpNotes,
@@ -206,6 +234,8 @@ function toItemPayload(row) {
         pri_brand_id: row.priBrandId,
         pri_section_id: row.priSectionId,
         pri_unit_id: row.priUnitId,
+        pri_target_name: firstName(row.item?.itemNameEn, row.itemGroup?.itgName, row.itemCategory?.categoryName, row.itemBrand?.brand_name, row.itemSection?.secName),
+        pri_unit_name: row.unit?.unit.unit_name ?? null,
         pri_is_exclude: row.priIsExclude,
         pri_disc_perc: (0, module_service_utils_1.toNumber)(row.priDiscPerc),
         pri_disc_qty: (0, module_service_utils_1.toNumber)(row.priDiscQty),
@@ -237,6 +267,8 @@ function toSlabPayload(row) {
         prs_max_repeats: row.prsMaxRepeats,
         prs_free_item_id: row.prsFreeItemId,
         prs_free_unit_id: row.prsFreeUnitId,
+        prs_free_item_name: row.freeItem?.itemNameEn ?? null,
+        prs_free_unit_name: row.freeUnit?.unit.unit_name ?? null,
         prs_free_qty: (0, module_service_utils_1.toNumber)(row.prsFreeQty),
         prs_free_stock_check: row.prsFreeStockCheck,
         prs_disc_perc: (0, module_service_utils_1.toNumber)(row.prsDiscPerc),

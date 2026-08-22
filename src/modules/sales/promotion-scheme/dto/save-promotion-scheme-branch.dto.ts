@@ -1,6 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, ValidateIf, ValidateNested } from 'class-validator';
+import { ValidateIf } from 'class-validator';
 import {
   NullableString,
   OptionalInteger,
@@ -10,6 +9,11 @@ import {
   RequiredUuid,
 } from './promotion-scheme-dto.helpers';
 
+/**
+ * One row of the `branches` array on POST /create.
+ *
+ * Read only when the header says prm_branch_scope = 'LIST'.
+ */
 export class PromotionSchemeBranchRowDto {
   @ApiPropertyOptional({ description: 'Present = update that row, absent = insert a new one' })
   @OptionalUuid()
@@ -33,7 +37,7 @@ export class PromotionSchemeBranchRowDto {
   @OptionalQueryBoolean()
   prb_is_exclude?: boolean;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   @NullableString(65535)
   prb_notes?: string | null;
 
@@ -48,25 +52,4 @@ export class PromotionSchemeBranchRowDto {
   @ApiPropertyOptional({ maxLength: 50 })
   @OptionalTrimmedString(50)
   prb_modified_by?: string;
-}
-
-/**
- * Read only when the header says prm_branch_scope = 'LIST'.
- *
- * The array is an UPSERT, not a replace: rows carrying prb_id are updated, rows
- * without one are inserted, and rows already on the scheme but absent from the
- * array are left alone. Deleting is an explicit call to branches/delete — a
- * half-built grid POST must never wipe branches the user cannot see.
- */
-export class SavePromotionSchemeBranchesDto {
-  @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
-  @RequiredUuid()
-  prm_id!: string;
-
-  @ApiProperty({ type: [PromotionSchemeBranchRowDto] })
-  @IsArray()
-  @ArrayMaxSize(1000)
-  @ValidateNested({ each: true })
-  @Type(() => PromotionSchemeBranchRowDto)
-  branches!: PromotionSchemeBranchRowDto[];
 }

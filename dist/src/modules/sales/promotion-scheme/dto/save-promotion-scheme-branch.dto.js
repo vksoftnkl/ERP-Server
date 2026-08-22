@@ -9,9 +9,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SavePromotionSchemeBranchesDto = exports.PromotionSchemeBranchRowDto = void 0;
+exports.PromotionSchemeBranchRowDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
-const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const promotion_scheme_dto_helpers_1 = require("./promotion-scheme-dto.helpers");
 class PromotionSchemeBranchRowDto {
@@ -50,7 +49,7 @@ __decorate([
     __metadata("design:type", Boolean)
 ], PromotionSchemeBranchRowDto.prototype, "prb_is_exclude", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     (0, promotion_scheme_dto_helpers_1.NullableString)(65535),
     __metadata("design:type", Object)
 ], PromotionSchemeBranchRowDto.prototype, "prb_notes", void 0);
@@ -69,22 +68,4 @@ __decorate([
     (0, promotion_scheme_dto_helpers_1.OptionalTrimmedString)(50),
     __metadata("design:type", String)
 ], PromotionSchemeBranchRowDto.prototype, "prb_modified_by", void 0);
-class SavePromotionSchemeBranchesDto {
-    prm_id;
-    branches;
-}
-exports.SavePromotionSchemeBranchesDto = SavePromotionSchemeBranchesDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' }),
-    (0, promotion_scheme_dto_helpers_1.RequiredUuid)(),
-    __metadata("design:type", String)
-], SavePromotionSchemeBranchesDto.prototype, "prm_id", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: [PromotionSchemeBranchRowDto] }),
-    (0, class_validator_1.IsArray)(),
-    (0, class_validator_1.ArrayMaxSize)(1000),
-    (0, class_validator_1.ValidateNested)({ each: true }),
-    (0, class_transformer_1.Type)(() => PromotionSchemeBranchRowDto),
-    __metadata("design:type", Array)
-], SavePromotionSchemeBranchesDto.prototype, "branches", void 0);
 //# sourceMappingURL=save-promotion-scheme-branch.dto.js.map

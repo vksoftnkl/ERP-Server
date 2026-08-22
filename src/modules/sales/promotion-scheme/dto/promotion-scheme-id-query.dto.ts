@@ -16,16 +16,12 @@ export class DeletePromotionSchemeQueryDto extends PromotionSchemeIdQueryDto {
   prm_modified_by?: string;
 }
 
-/** Every child row is deleted the same way: its own id, plus who did it. */
-export class DeletePromotionChildQueryDto {
+/** GET /eligibility — one customer against one scheme. */
+export class PromotionSchemeEligibilityQueryDto extends PromotionSchemeIdQueryDto {
   @ApiProperty({
     example: '01963d86-caf0-7b26-89f0-58ac380a2d5e',
-    description: 'prb_id / prp_id / pri_id / prs_id, depending on the endpoint',
+    description: 'sales.customers(cus_id) — the customer on the bill',
   })
   @RequiredUuid()
-  row_id!: string;
-
-  @ApiPropertyOptional({ maxLength: 50 })
-  @OptionalTrimmedString(50)
-  modified_by?: string;
+  cus_id!: string;
 }

@@ -7,6 +7,8 @@ export interface PromotionSchemeBranchPayload {
     prb_prm_id: string;
     prb_slno: number;
     prb_branch_id: string;
+    prb_branch_name: string | null;
+    prb_branch_code: string | null;
     prb_is_exclude: boolean;
     prb_notes: string | null;
     prb_is_active: boolean;
@@ -27,6 +29,8 @@ export interface PromotionSchemePartyPayload {
     prp_cust_group_id: string | null;
     prp_area_id: string | null;
     prp_city_id: string | null;
+    prp_target_name: string | null;
+    prp_target_code: string | null;
     prp_is_exclude: boolean;
     prp_match_priority: number;
     prp_notes: string | null;
@@ -50,6 +54,8 @@ export interface PromotionSchemeItemPayload {
     pri_brand_id: string | null;
     pri_section_id: string | null;
     pri_unit_id: string | null;
+    pri_target_name: string | null;
+    pri_unit_name: string | null;
     pri_is_exclude: boolean;
     pri_disc_perc: number;
     pri_disc_qty: number;
@@ -79,6 +85,8 @@ export interface PromotionSchemeSlabPayload {
     prs_max_repeats: number;
     prs_free_item_id: string | null;
     prs_free_unit_id: string | null;
+    prs_free_item_name: string | null;
+    prs_free_unit_name: string | null;
     prs_free_qty: number;
     prs_free_stock_check: boolean;
     prs_disc_perc: number;
@@ -149,8 +157,14 @@ export interface PromotionSchemeDeleteResult {
     deleted: true;
     prm_id: string;
 }
-export interface PromotionSchemeChildDeleteResult {
-    deleted: true;
+export interface PromotionSchemeEligibilityPayload {
     prm_id: string;
-    row_id: string;
+    cus_id: string;
+    qualifies: boolean;
+    decided_by: 'ALL' | 'RULE' | 'NO_RULE';
+    matched_by: string | null;
+    matched_row_id: string | null;
+    match_priority: number | null;
+    is_exclude: boolean | null;
+    reason: string;
 }

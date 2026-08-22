@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DeletePromotionChildQueryDto = exports.DeletePromotionSchemeQueryDto = exports.PromotionSchemeIdQueryDto = void 0;
+exports.PromotionSchemeEligibilityQueryDto = exports.DeletePromotionSchemeQueryDto = exports.PromotionSchemeIdQueryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const promotion_scheme_dto_helpers_1 = require("./promotion-scheme-dto.helpers");
 class PromotionSchemeIdQueryDto {
@@ -33,22 +33,16 @@ __decorate([
     (0, promotion_scheme_dto_helpers_1.OptionalTrimmedString)(50),
     __metadata("design:type", String)
 ], DeletePromotionSchemeQueryDto.prototype, "prm_modified_by", void 0);
-class DeletePromotionChildQueryDto {
-    row_id;
-    modified_by;
+class PromotionSchemeEligibilityQueryDto extends PromotionSchemeIdQueryDto {
+    cus_id;
 }
-exports.DeletePromotionChildQueryDto = DeletePromotionChildQueryDto;
+exports.PromotionSchemeEligibilityQueryDto = PromotionSchemeEligibilityQueryDto;
 __decorate([
     (0, swagger_1.ApiProperty)({
         example: '01963d86-caf0-7b26-89f0-58ac380a2d5e',
-        description: 'prb_id / prp_id / pri_id / prs_id, depending on the endpoint',
+        description: 'sales.customers(cus_id) — the customer on the bill',
     }),
     (0, promotion_scheme_dto_helpers_1.RequiredUuid)(),
     __metadata("design:type", String)
-], DeletePromotionChildQueryDto.prototype, "row_id", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ maxLength: 50 }),
-    (0, promotion_scheme_dto_helpers_1.OptionalTrimmedString)(50),
-    __metadata("design:type", String)
-], DeletePromotionChildQueryDto.prototype, "modified_by", void 0);
+], PromotionSchemeEligibilityQueryDto.prototype, "cus_id", void 0);
 //# sourceMappingURL=promotion-scheme-id-query.dto.js.map

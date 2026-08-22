@@ -9,9 +9,8 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SavePromotionSchemeItemsDto = exports.PromotionSchemeItemRowDto = void 0;
+exports.PromotionSchemeItemRowDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
-const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
 const promotion_scheme_dto_helpers_1 = require("./promotion-scheme-dto.helpers");
 const promotion_scheme_utils_1 = require("../utils/promotion-scheme.utils");
@@ -62,6 +61,7 @@ __decorate([
 ], PromotionSchemeItemRowDto.prototype, "pri_scope_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        type: String,
         nullable: true,
         description: 'inventory.item_unit_conversion(iuc_id). REQUIRED when pri_kind is ITEM — ten pieces, ' +
             'ten boxes and ten cases are three different offers — and must be null for every other kind.',
@@ -121,7 +121,7 @@ __decorate([
     __metadata("design:type", Number)
 ], PromotionSchemeItemRowDto.prototype, "pri_match_priority", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     (0, promotion_scheme_dto_helpers_1.NullableString)(65535),
     __metadata("design:type", Object)
 ], PromotionSchemeItemRowDto.prototype, "pri_notes", void 0);
@@ -140,22 +140,4 @@ __decorate([
     (0, promotion_scheme_dto_helpers_1.OptionalTrimmedString)(50),
     __metadata("design:type", String)
 ], PromotionSchemeItemRowDto.prototype, "pri_modified_by", void 0);
-class SavePromotionSchemeItemsDto {
-    prm_id;
-    items;
-}
-exports.SavePromotionSchemeItemsDto = SavePromotionSchemeItemsDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' }),
-    (0, promotion_scheme_dto_helpers_1.RequiredUuid)(),
-    __metadata("design:type", String)
-], SavePromotionSchemeItemsDto.prototype, "prm_id", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: [PromotionSchemeItemRowDto] }),
-    (0, class_validator_1.IsArray)(),
-    (0, class_validator_1.ArrayMaxSize)(1000),
-    (0, class_validator_1.ValidateNested)({ each: true }),
-    (0, class_transformer_1.Type)(() => PromotionSchemeItemRowDto),
-    __metadata("design:type", Array)
-], SavePromotionSchemeItemsDto.prototype, "items", void 0);
 //# sourceMappingURL=save-promotion-scheme-item.dto.js.map

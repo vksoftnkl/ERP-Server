@@ -20,10 +20,6 @@ const api_version_1 = require("../../../common/constants/api-version");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
 const promotion_scheme_id_query_dto_1 = require("./dto/promotion-scheme-id-query.dto");
 const promotion_scheme_response_dto_1 = require("./dto/promotion-scheme-response.dto");
-const save_promotion_scheme_branch_dto_1 = require("./dto/save-promotion-scheme-branch.dto");
-const save_promotion_scheme_item_dto_1 = require("./dto/save-promotion-scheme-item.dto");
-const save_promotion_scheme_party_dto_1 = require("./dto/save-promotion-scheme-party.dto");
-const save_promotion_scheme_slab_dto_1 = require("./dto/save-promotion-scheme-slab.dto");
 const save_promotion_scheme_dto_1 = require("./dto/save-promotion-scheme.dto");
 const promotion_scheme_exception_filter_1 = require("./promotion-scheme-exception.filter");
 const promotion_scheme_service_1 = require("./promotion-scheme.service");
@@ -46,57 +42,17 @@ let PromotionSchemeController = class PromotionSchemeController {
         const data = await this.promotionSchemeService.getSchemeById(query.prm_id);
         return { success: true, message: 'Promotion scheme fetched successfully', data };
     }
+    async checkEligibility(query) {
+        const data = await this.promotionSchemeService.checkEligibility(query.prm_id, query.cus_id);
+        return {
+            success: true,
+            message: 'Promotion scheme eligibility evaluated successfully',
+            data,
+        };
+    }
     async deleteScheme(query) {
         const data = await this.promotionSchemeService.softDeleteScheme(query.prm_id, query.prm_modified_by);
         return { success: true, message: 'Promotion scheme deleted successfully', data };
-    }
-    async saveBranches(dto) {
-        const data = await this.promotionSchemeService.saveBranches(dto);
-        return { success: true, message: 'Promotion scheme branches saved successfully', data };
-    }
-    async getBranches(query) {
-        const data = await this.promotionSchemeService.getBranches(query.prm_id);
-        return { success: true, message: 'Promotion scheme branches fetched successfully', data };
-    }
-    async deleteBranch(query) {
-        const data = await this.promotionSchemeService.deleteBranch(query.row_id, query.modified_by);
-        return { success: true, message: 'Promotion scheme branch deleted successfully', data };
-    }
-    async saveParties(dto) {
-        const data = await this.promotionSchemeService.saveParties(dto);
-        return { success: true, message: 'Promotion scheme parties saved successfully', data };
-    }
-    async getParties(query) {
-        const data = await this.promotionSchemeService.getParties(query.prm_id);
-        return { success: true, message: 'Promotion scheme parties fetched successfully', data };
-    }
-    async deleteParty(query) {
-        const data = await this.promotionSchemeService.deleteParty(query.row_id, query.modified_by);
-        return { success: true, message: 'Promotion scheme party deleted successfully', data };
-    }
-    async saveItems(dto) {
-        const data = await this.promotionSchemeService.saveItems(dto);
-        return { success: true, message: 'Promotion scheme items saved successfully', data };
-    }
-    async getItems(query) {
-        const data = await this.promotionSchemeService.getItems(query.prm_id);
-        return { success: true, message: 'Promotion scheme items fetched successfully', data };
-    }
-    async deleteItem(query) {
-        const data = await this.promotionSchemeService.deleteItem(query.row_id, query.modified_by);
-        return { success: true, message: 'Promotion scheme item deleted successfully', data };
-    }
-    async saveSlabs(dto) {
-        const data = await this.promotionSchemeService.saveSlabs(dto);
-        return { success: true, message: 'Promotion scheme slabs saved successfully', data };
-    }
-    async getSlabs(query) {
-        const data = await this.promotionSchemeService.getSlabs(query.prm_id);
-        return { success: true, message: 'Promotion scheme slabs fetched successfully', data };
-    }
-    async deleteSlab(query) {
-        const data = await this.promotionSchemeService.deleteSlab(query.row_id, query.modified_by);
-        return { success: true, message: 'Promotion scheme slab deleted successfully', data };
     }
 };
 exports.PromotionSchemeController = PromotionSchemeController;
@@ -104,9 +60,14 @@ __decorate([
     (0, common_1.Post)('create'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
-        summary: 'Create or update a promotion scheme header by prm_id presence',
+        summary: 'Create or update a whole promotion scheme — header and all four grids — in one call',
         description: 'Object payload. Omit prm_id to create, send it to update — on update only the keys present ' +
-            'in the body are written.',
+            'in the body are written.\n\n' +
+            'The `branches`, `parties`, `items` and `slabs` arrays are optional and save with the ' +
+            'header in the same transaction. An array that is present REPLACES that grid: rows ' +
+            'carrying their own id are updated, rows without one are inserted, and rows already on the ' +
+            'scheme but missing from the array are soft deleted. Omit the key to leave the grid ' +
+            'untouched — `"items": []` means "delete every item row", which is not the same thing.',
     }),
     (0, swagger_1.ApiCreatedResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
@@ -122,6 +83,7 @@ __decorate([
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({
         summary: 'Get one promotion scheme with its branches, parties, items and slabs',
+        description: 'Returns the same shape POST /create accepts, ready to edit and post back.',
     }),
     (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
@@ -131,6 +93,28 @@ __decorate([
     __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.PromotionSchemeIdQueryDto]),
     __metadata("design:returntype", Promise)
 ], PromotionSchemeController.prototype, "getScheme", null);
+__decorate([
+    (0, common_1.Get)('eligibility'),
+    (0, common_1.Version)(api_version_1.API_VERSION),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Ask whether one customer qualifies for one scheme',
+        description: 'The read the till needs, as opposed to /get which is the read the grid needs. A customer ' +
+            'can be reached by four party rows at once — by name, by their group, by their area and by ' +
+            'their city — so the answer names the row that decided it: highest prp_match_priority ' +
+            'wins, and at equal priority an EXCLUDE beats an INCLUDE.\n\n' +
+            'A scheme whose prm_cust_scope is ALL answers YES without reading a single party row. A ' +
+            'scheme scoped to a LIST that no row reaches answers NO.\n\n' +
+            'A customer reaches a CITY rule only through their area — cus_area_id is the one path, ' +
+            'whatever their free-text city says.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeEligibilitySuccessDto }),
+    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
+    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
+    __param(0, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.PromotionSchemeEligibilityQueryDto]),
+    __metadata("design:returntype", Promise)
+], PromotionSchemeController.prototype, "checkEligibility", null);
 __decorate([
     (0, common_1.Delete)('delete'),
     (0, common_1.Version)(api_version_1.API_VERSION),
@@ -145,170 +129,6 @@ __decorate([
     __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.DeletePromotionSchemeQueryDto]),
     __metadata("design:returntype", Promise)
 ], PromotionSchemeController.prototype, "deleteScheme", null);
-__decorate([
-    (0, common_1.Post)('branches/create'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({
-        summary: 'Upsert the branch scope rows of a scheme',
-        description: 'Array payload. Rows carrying prb_id are updated, rows without one are inserted, and rows ' +
-            'omitted from the array are left untouched — delete explicitly.',
-    }),
-    (0, swagger_1.ApiCreatedResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeBranchSuccessListDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiConflictResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [save_promotion_scheme_branch_dto_1.SavePromotionSchemeBranchesDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "saveBranches", null);
-__decorate([
-    (0, common_1.Get)('branches/get'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'List the branch scope rows of a scheme' }),
-    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeBranchSuccessListDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.PromotionSchemeIdQueryDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "getBranches", null);
-__decorate([
-    (0, common_1.Delete)('branches/delete'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete one branch scope row by prb_id (row_id)' }),
-    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeChildSuccessDeleteDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.DeletePromotionChildQueryDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "deleteBranch", null);
-__decorate([
-    (0, common_1.Post)('parties/create'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({
-        summary: 'Upsert the customer/group/area/city scope rows of a scheme',
-        description: 'Array payload. Send prp_kind + prp_scope_id per row; the four FK carrier columns are ' +
-            'generated by the database and are not accepted here.',
-    }),
-    (0, swagger_1.ApiCreatedResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemePartySuccessListDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiConflictResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [save_promotion_scheme_party_dto_1.SavePromotionSchemePartiesDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "saveParties", null);
-__decorate([
-    (0, common_1.Get)('parties/get'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'List the party scope rows of a scheme, narrowest match first' }),
-    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemePartySuccessListDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.PromotionSchemeIdQueryDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "getParties", null);
-__decorate([
-    (0, common_1.Delete)('parties/delete'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete one party scope row by prp_id (row_id)' }),
-    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeChildSuccessDeleteDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.DeletePromotionChildQueryDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "deleteParty", null);
-__decorate([
-    (0, common_1.Post)('items/create'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({
-        summary: 'Upsert the item scope rows of a scheme',
-        description: 'Array payload. Send pri_kind + pri_scope_id per row (plus pri_unit_id when the kind is ' +
-            'ITEM); the five FK carrier columns are generated by the database.',
-    }),
-    (0, swagger_1.ApiCreatedResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeItemSuccessListDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiConflictResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [save_promotion_scheme_item_dto_1.SavePromotionSchemeItemsDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "saveItems", null);
-__decorate([
-    (0, common_1.Get)('items/get'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'List the item scope rows of a scheme, most specific first' }),
-    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeItemSuccessListDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.PromotionSchemeIdQueryDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "getItems", null);
-__decorate([
-    (0, common_1.Delete)('items/delete'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete one item scope row by pri_id (row_id)' }),
-    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeChildSuccessDeleteDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.DeletePromotionChildQueryDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "deleteItem", null);
-__decorate([
-    (0, common_1.Post)('slabs/create'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({
-        summary: 'Upsert the offer bands of a scheme',
-        description: "Array payload. prs_benefit defaults to the header's prm_benefit and may not disagree " +
-            'with it; the benefit decides which of the band columns must be filled.',
-    }),
-    (0, swagger_1.ApiCreatedResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeSlabSuccessListDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiConflictResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [save_promotion_scheme_slab_dto_1.SavePromotionSchemeSlabsDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "saveSlabs", null);
-__decorate([
-    (0, common_1.Get)('slabs/get'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'List the offer bands of a scheme, lowest threshold first' }),
-    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeSlabSuccessListDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.PromotionSchemeIdQueryDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "getSlabs", null);
-__decorate([
-    (0, common_1.Delete)('slabs/delete'),
-    (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Soft delete one offer band by prs_id (row_id)' }),
-    (0, swagger_1.ApiOkResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeChildSuccessDeleteDto }),
-    (0, swagger_1.ApiBadRequestResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    (0, swagger_1.ApiNotFoundResponse)({ type: promotion_scheme_response_dto_1.PromotionSchemeErrorResponseDto }),
-    __param(0, (0, common_1.Query)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [promotion_scheme_id_query_dto_1.DeletePromotionChildQueryDto]),
-    __metadata("design:returntype", Promise)
-], PromotionSchemeController.prototype, "deleteSlab", null);
 exports.PromotionSchemeController = PromotionSchemeController = __decorate([
     (0, swagger_1.ApiTags)('Promotion Scheme'),
     (0, swagger_1.ApiBearerAuth)('access-token'),

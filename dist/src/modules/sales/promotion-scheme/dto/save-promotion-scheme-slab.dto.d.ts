@@ -21,7 +21,3 @@ export declare class PromotionSchemeSlabRowDto {
     prs_created_by?: string;
     prs_modified_by?: string;
 }
-export declare class SavePromotionSchemeSlabsDto {
-    prm_id: string;
-    slabs: PromotionSchemeSlabRowDto[];
-}

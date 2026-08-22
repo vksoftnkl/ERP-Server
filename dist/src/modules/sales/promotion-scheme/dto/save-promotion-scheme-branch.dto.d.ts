@@ -8,7 +8,3 @@ export declare class PromotionSchemeBranchRowDto {
     prb_created_by?: string;
     prb_modified_by?: string;
 }
-export declare class SavePromotionSchemeBranchesDto {
-    prm_id: string;
-    branches: PromotionSchemeBranchRowDto[];
-}

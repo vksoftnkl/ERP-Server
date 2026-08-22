@@ -1,3 +1,7 @@
+import { PromotionSchemeBranchRowDto } from './save-promotion-scheme-branch.dto';
+import { PromotionSchemeItemRowDto } from './save-promotion-scheme-item.dto';
+import { PromotionSchemePartyRowDto } from './save-promotion-scheme-party.dto';
+import { PromotionSchemeSlabRowDto } from './save-promotion-scheme-slab.dto';
 export declare class SavePromotionSchemeDto {
     prm_id?: string;
     prm_comp_id?: string;
@@ -37,4 +41,8 @@ export declare class SavePromotionSchemeDto {
     prm_modified_by?: string;
     prm_approved_on?: string | null;
     prm_approved_by?: string | null;
+    branches?: PromotionSchemeBranchRowDto[];
+    parties?: PromotionSchemePartyRowDto[];
+    items?: PromotionSchemeItemRowDto[];
+    slabs?: PromotionSchemeSlabRowDto[];
 }

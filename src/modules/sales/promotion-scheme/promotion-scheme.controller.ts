@@ -14,45 +14,34 @@ import {
 import { API_VERSION } from '../../../common/constants/api-version';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import {
-  DeletePromotionChildQueryDto,
   DeletePromotionSchemeQueryDto,
+  PromotionSchemeEligibilityQueryDto,
   PromotionSchemeIdQueryDto,
 } from './dto/promotion-scheme-id-query.dto';
 import {
-  PromotionSchemeBranchSuccessListDto,
-  PromotionSchemeChildSuccessDeleteDto,
+  PromotionSchemeEligibilitySuccessDto,
   PromotionSchemeErrorResponseDto,
-  PromotionSchemeItemSuccessListDto,
-  PromotionSchemePartySuccessListDto,
-  PromotionSchemeSlabSuccessListDto,
   PromotionSchemeSuccessDeleteDto,
   PromotionSchemeSuccessSingleDto,
 } from './dto/promotion-scheme-response.dto';
-import { SavePromotionSchemeBranchesDto } from './dto/save-promotion-scheme-branch.dto';
-import { SavePromotionSchemeItemsDto } from './dto/save-promotion-scheme-item.dto';
-import { SavePromotionSchemePartiesDto } from './dto/save-promotion-scheme-party.dto';
-import { SavePromotionSchemeSlabsDto } from './dto/save-promotion-scheme-slab.dto';
 import { SavePromotionSchemeDto } from './dto/save-promotion-scheme.dto';
 import { PromotionSchemeExceptionFilter } from './promotion-scheme-exception.filter';
 import { PromotionSchemeService } from './promotion-scheme.service';
 import {
-  PromotionSchemeBranchPayload,
-  PromotionSchemeChildDeleteResult,
   PromotionSchemeDeleteResult,
-  PromotionSchemeItemPayload,
-  PromotionSchemePartyPayload,
+  PromotionSchemeEligibilityPayload,
   PromotionSchemePayload,
-  PromotionSchemeSlabPayload,
   PromotionSchemeSuccessResponse,
 } from './types/promotion-scheme-api.types';
 
 /**
- * One module, five tables.
+ * One module, five tables, one URL.
  *
- * The header (§1) is a PLAIN OBJECT body — one campaign per call. The four
- * scope/band tables (§2 branches, §3 parties, §4 items, §5 slabs) each take an
- * ARRAY under a scheme id, because that is how their grids are edited: a whole
- * page of rows at once, not one HTTP call per line.
+ * POST /create saves the campaign whole: the header plus the four scope/band
+ * grids (branches, parties, items, slabs) nested in the same body, in one
+ * transaction. GET /get returns the same shape back, names resolved and ready
+ * to edit. There is deliberately no per-grid endpoint — a grid row is created,
+ * changed and removed by posting the array it belongs to.
  */
 @ApiTags('Promotion Scheme')
 @ApiBearerAuth('access-token')
@@ -68,10 +57,15 @@ export class PromotionSchemeController {
   @Post('create')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Create or update a promotion scheme header by prm_id presence',
+    summary: 'Create or update a whole promotion scheme — header and all four grids — in one call',
     description:
       'Object payload. Omit prm_id to create, send it to update — on update only the keys present ' +
-      'in the body are written.',
+      'in the body are written.\n\n' +
+      'The `branches`, `parties`, `items` and `slabs` arrays are optional and save with the ' +
+      'header in the same transaction. An array that is present REPLACES that grid: rows ' +
+      'carrying their own id are updated, rows without one are inserted, and rows already on the ' +
+      'scheme but missing from the array are soft deleted. Omit the key to leave the grid ' +
+      'untouched — `"items": []` means "delete every item row", which is not the same thing.',
   })
   @ApiCreatedResponse({ type: PromotionSchemeSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
@@ -94,6 +88,7 @@ export class PromotionSchemeController {
   @Version(API_VERSION)
   @ApiOperation({
     summary: 'Get one promotion scheme with its branches, parties, items and slabs',
+    description: 'Returns the same shape POST /create accepts, ready to edit and post back.',
   })
   @ApiOkResponse({ type: PromotionSchemeSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
@@ -103,6 +98,34 @@ export class PromotionSchemeController {
   ): Promise<PromotionSchemeSuccessResponse<PromotionSchemePayload>> {
     const data = await this.promotionSchemeService.getSchemeById(query.prm_id);
     return { success: true, message: 'Promotion scheme fetched successfully', data };
+  }
+
+  @Get('eligibility')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Ask whether one customer qualifies for one scheme',
+    description:
+      'The read the till needs, as opposed to /get which is the read the grid needs. A customer ' +
+      'can be reached by four party rows at once — by name, by their group, by their area and by ' +
+      'their city — so the answer names the row that decided it: highest prp_match_priority ' +
+      'wins, and at equal priority an EXCLUDE beats an INCLUDE.\n\n' +
+      'A scheme whose prm_cust_scope is ALL answers YES without reading a single party row. A ' +
+      'scheme scoped to a LIST that no row reaches answers NO.\n\n' +
+      'A customer reaches a CITY rule only through their area — cus_area_id is the one path, ' +
+      'whatever their free-text city says.',
+  })
+  @ApiOkResponse({ type: PromotionSchemeEligibilitySuccessDto })
+  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
+  async checkEligibility(
+    @Query() query: PromotionSchemeEligibilityQueryDto,
+  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeEligibilityPayload>> {
+    const data = await this.promotionSchemeService.checkEligibility(query.prm_id, query.cus_id);
+    return {
+      success: true,
+      message: 'Promotion scheme eligibility evaluated successfully',
+      data,
+    };
   }
 
   @Delete('delete')
@@ -121,193 +144,5 @@ export class PromotionSchemeController {
       query.prm_modified_by,
     );
     return { success: true, message: 'Promotion scheme deleted successfully', data };
-  }
-
-  // ─── §2 branches ────────────────────────────────────────────────────────────
-
-  @Post('branches/create')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Upsert the branch scope rows of a scheme',
-    description:
-      'Array payload. Rows carrying prb_id are updated, rows without one are inserted, and rows ' +
-      'omitted from the array are left untouched — delete explicitly.',
-  })
-  @ApiCreatedResponse({ type: PromotionSchemeBranchSuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiConflictResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async saveBranches(
-    @Body() dto: SavePromotionSchemeBranchesDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeBranchPayload[]>> {
-    const data = await this.promotionSchemeService.saveBranches(dto);
-    return { success: true, message: 'Promotion scheme branches saved successfully', data };
-  }
-
-  @Get('branches/get')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'List the branch scope rows of a scheme' })
-  @ApiOkResponse({ type: PromotionSchemeBranchSuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async getBranches(
-    @Query() query: PromotionSchemeIdQueryDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeBranchPayload[]>> {
-    const data = await this.promotionSchemeService.getBranches(query.prm_id);
-    return { success: true, message: 'Promotion scheme branches fetched successfully', data };
-  }
-
-  @Delete('branches/delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete one branch scope row by prb_id (row_id)' })
-  @ApiOkResponse({ type: PromotionSchemeChildSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async deleteBranch(
-    @Query() query: DeletePromotionChildQueryDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeChildDeleteResult>> {
-    const data = await this.promotionSchemeService.deleteBranch(query.row_id, query.modified_by);
-    return { success: true, message: 'Promotion scheme branch deleted successfully', data };
-  }
-
-  // ─── §3 parties ─────────────────────────────────────────────────────────────
-
-  @Post('parties/create')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Upsert the customer/group/area/city scope rows of a scheme',
-    description:
-      'Array payload. Send prp_kind + prp_scope_id per row; the four FK carrier columns are ' +
-      'generated by the database and are not accepted here.',
-  })
-  @ApiCreatedResponse({ type: PromotionSchemePartySuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiConflictResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async saveParties(
-    @Body() dto: SavePromotionSchemePartiesDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemePartyPayload[]>> {
-    const data = await this.promotionSchemeService.saveParties(dto);
-    return { success: true, message: 'Promotion scheme parties saved successfully', data };
-  }
-
-  @Get('parties/get')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'List the party scope rows of a scheme, narrowest match first' })
-  @ApiOkResponse({ type: PromotionSchemePartySuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async getParties(
-    @Query() query: PromotionSchemeIdQueryDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemePartyPayload[]>> {
-    const data = await this.promotionSchemeService.getParties(query.prm_id);
-    return { success: true, message: 'Promotion scheme parties fetched successfully', data };
-  }
-
-  @Delete('parties/delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete one party scope row by prp_id (row_id)' })
-  @ApiOkResponse({ type: PromotionSchemeChildSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async deleteParty(
-    @Query() query: DeletePromotionChildQueryDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeChildDeleteResult>> {
-    const data = await this.promotionSchemeService.deleteParty(query.row_id, query.modified_by);
-    return { success: true, message: 'Promotion scheme party deleted successfully', data };
-  }
-
-  // ─── §4 items ───────────────────────────────────────────────────────────────
-
-  @Post('items/create')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Upsert the item scope rows of a scheme',
-    description:
-      'Array payload. Send pri_kind + pri_scope_id per row (plus pri_unit_id when the kind is ' +
-      'ITEM); the five FK carrier columns are generated by the database.',
-  })
-  @ApiCreatedResponse({ type: PromotionSchemeItemSuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiConflictResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async saveItems(
-    @Body() dto: SavePromotionSchemeItemsDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeItemPayload[]>> {
-    const data = await this.promotionSchemeService.saveItems(dto);
-    return { success: true, message: 'Promotion scheme items saved successfully', data };
-  }
-
-  @Get('items/get')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'List the item scope rows of a scheme, most specific first' })
-  @ApiOkResponse({ type: PromotionSchemeItemSuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async getItems(
-    @Query() query: PromotionSchemeIdQueryDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeItemPayload[]>> {
-    const data = await this.promotionSchemeService.getItems(query.prm_id);
-    return { success: true, message: 'Promotion scheme items fetched successfully', data };
-  }
-
-  @Delete('items/delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete one item scope row by pri_id (row_id)' })
-  @ApiOkResponse({ type: PromotionSchemeChildSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async deleteItem(
-    @Query() query: DeletePromotionChildQueryDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeChildDeleteResult>> {
-    const data = await this.promotionSchemeService.deleteItem(query.row_id, query.modified_by);
-    return { success: true, message: 'Promotion scheme item deleted successfully', data };
-  }
-
-  // ─── §5 slabs ───────────────────────────────────────────────────────────────
-
-  @Post('slabs/create')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Upsert the offer bands of a scheme',
-    description:
-      "Array payload. prs_benefit defaults to the header's prm_benefit and may not disagree " +
-      'with it; the benefit decides which of the band columns must be filled.',
-  })
-  @ApiCreatedResponse({ type: PromotionSchemeSlabSuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiConflictResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async saveSlabs(
-    @Body() dto: SavePromotionSchemeSlabsDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeSlabPayload[]>> {
-    const data = await this.promotionSchemeService.saveSlabs(dto);
-    return { success: true, message: 'Promotion scheme slabs saved successfully', data };
-  }
-
-  @Get('slabs/get')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'List the offer bands of a scheme, lowest threshold first' })
-  @ApiOkResponse({ type: PromotionSchemeSlabSuccessListDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async getSlabs(
-    @Query() query: PromotionSchemeIdQueryDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeSlabPayload[]>> {
-    const data = await this.promotionSchemeService.getSlabs(query.prm_id);
-    return { success: true, message: 'Promotion scheme slabs fetched successfully', data };
-  }
-
-  @Delete('slabs/delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete one offer band by prs_id (row_id)' })
-  @ApiOkResponse({ type: PromotionSchemeChildSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: PromotionSchemeErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionSchemeErrorResponseDto })
-  async deleteSlab(
-    @Query() query: DeletePromotionChildQueryDto,
-  ): Promise<PromotionSchemeSuccessResponse<PromotionSchemeChildDeleteResult>> {
-    const data = await this.promotionSchemeService.deleteSlab(query.row_id, query.modified_by);
-    return { success: true, message: 'Promotion scheme slab deleted successfully', data };
   }
 }

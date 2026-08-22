@@ -14,11 +14,152 @@ export declare const PRM_CODE_PATTERN: RegExp;
 export declare const PRM_WEEKDAYS_PATTERN: RegExp;
 export declare const PRP_DEFAULT_MATCH_PRIORITY: Record<string, number>;
 export declare const PRI_DEFAULT_MATCH_PRIORITY: Record<string, number>;
+export declare const BRANCH_LOOKUP: {
+    readonly branch: {
+        readonly select: {
+            readonly brName: true;
+            readonly brCode: true;
+            readonly brShort: true;
+        };
+    };
+};
+export declare const PARTY_LOOKUP: {
+    readonly customer: {
+        readonly select: {
+            readonly cusName: true;
+            readonly cusCode: true;
+        };
+    };
+    readonly customerGroup: {
+        readonly select: {
+            readonly cgrName: true;
+            readonly cgrShort: true;
+        };
+    };
+    readonly area: {
+        readonly select: {
+            readonly armName: true;
+            readonly armShort: true;
+        };
+    };
+    readonly city: {
+        readonly select: {
+            readonly ctmName: true;
+            readonly ctmShort: true;
+        };
+    };
+};
+export declare const ITEM_LOOKUP: {
+    readonly item: {
+        readonly select: {
+            readonly itemNameEn: true;
+        };
+    };
+    readonly itemGroup: {
+        readonly select: {
+            readonly itgName: true;
+        };
+    };
+    readonly itemCategory: {
+        readonly select: {
+            readonly categoryName: true;
+        };
+    };
+    readonly itemBrand: {
+        readonly select: {
+            readonly brand_name: true;
+        };
+    };
+    readonly itemSection: {
+        readonly select: {
+            readonly secName: true;
+        };
+    };
+    readonly unit: {
+        readonly select: {
+            readonly unit: {
+                readonly select: {
+                    readonly unit_name: true;
+                };
+            };
+        };
+    };
+};
+export declare const SLAB_LOOKUP: {
+    readonly freeItem: {
+        readonly select: {
+            readonly itemNameEn: true;
+        };
+    };
+    readonly freeUnit: {
+        readonly select: {
+            readonly unit: {
+                readonly select: {
+                    readonly unit_name: true;
+                };
+            };
+        };
+    };
+};
+type UnitLookup = {
+    unit: {
+        unit_name: string;
+    };
+} | null;
+export type BranchRow = PromotionSchemeBranch & {
+    branch?: {
+        brName: string;
+        brCode: string | null;
+        brShort: string | null;
+    } | null;
+};
+export type PartyRow = PromotionSchemeParty & {
+    customer?: {
+        cusName: string | null;
+        cusCode: string | null;
+    } | null;
+    customerGroup?: {
+        cgrName: string;
+        cgrShort: string | null;
+    } | null;
+    area?: {
+        armName: string;
+        armShort: string | null;
+    } | null;
+    city?: {
+        ctmName: string;
+        ctmShort: string | null;
+    } | null;
+};
+export type ItemRow = PromotionSchemeItem & {
+    item?: {
+        itemNameEn: string;
+    } | null;
+    itemGroup?: {
+        itgName: string;
+    } | null;
+    itemCategory?: {
+        categoryName: string;
+    } | null;
+    itemBrand?: {
+        brand_name: string;
+    } | null;
+    itemSection?: {
+        secName: string;
+    } | null;
+    unit?: UnitLookup;
+};
+export type SlabRow = PromotionSchemeSlab & {
+    freeItem?: {
+        itemNameEn: string;
+    } | null;
+    freeUnit?: UnitLookup;
+};
 export type SchemeWithChildren = PromotionScheme & {
-    branches: PromotionSchemeBranch[];
-    parties: PromotionSchemeParty[];
-    items: PromotionSchemeItem[];
-    slabs: PromotionSchemeSlab[];
+    branches: BranchRow[];
+    parties: PartyRow[];
+    items: ItemRow[];
+    slabs: SlabRow[];
 };
 export declare function throwBadRequest(message: string, errors: PromotionSchemeErrorDetail[]): never;
 export declare function throwConflict(message: string, errors: PromotionSchemeErrorDetail[]): never;
@@ -35,10 +176,11 @@ export declare function requireNumber(value: number | undefined | null, field: s
 export declare function requireInteger(value: number | undefined | null, field: string, minValue: number, maxValue?: number): number;
 export declare function parseDateOnly(value: string | undefined | null, field: string): Date;
 export declare function parseTimeToUtcDate(value: string, field: string): Date;
-export declare function toBranchPayload(row: PromotionSchemeBranch): PromotionSchemeBranchPayload;
-export declare function toPartyPayload(row: PromotionSchemeParty): PromotionSchemePartyPayload;
-export declare function toItemPayload(row: PromotionSchemeItem): PromotionSchemeItemPayload;
-export declare function toSlabPayload(row: PromotionSchemeSlab): PromotionSchemeSlabPayload;
+export declare function toBranchPayload(row: BranchRow): PromotionSchemeBranchPayload;
+export declare function toPartyPayload(row: PartyRow): PromotionSchemePartyPayload;
+export declare function toItemPayload(row: ItemRow): PromotionSchemeItemPayload;
+export declare function toSlabPayload(row: SlabRow): PromotionSchemeSlabPayload;
 export declare function toSchemeSummaryPayload(scheme: PromotionScheme): PromotionSchemeSummaryPayload;
 export declare function toSchemePayload(scheme: SchemeWithChildren): PromotionSchemePayload;
 export declare function handlePromotionWriteError(error: unknown): void;
+export {};

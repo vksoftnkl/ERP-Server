@@ -4,7 +4,6 @@ export declare class PromotionSchemeIdQueryDto {
 export declare class DeletePromotionSchemeQueryDto extends PromotionSchemeIdQueryDto {
     prm_modified_by?: string;
 }
-export declare class DeletePromotionChildQueryDto {
-    row_id: string;
-    modified_by?: string;
+export declare class PromotionSchemeEligibilityQueryDto extends PromotionSchemeIdQueryDto {
+    cus_id: string;
 }

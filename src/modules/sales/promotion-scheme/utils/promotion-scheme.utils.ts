@@ -67,12 +67,89 @@ export const PRI_DEFAULT_MATCH_PRIORITY: Record<string, number> = {
   ITEM_GROUP: 0,
 };
 
-export type SchemeWithChildren = PromotionScheme & {
-  branches: PromotionSchemeBranch[];
-  parties: PromotionSchemeParty[];
-  items: PromotionSchemeItem[];
-  slabs: PromotionSchemeSlab[];
+// ─── Display lookups ──────────────────────────────────────────────────────────
+//
+// Every scope row stores an id and a kind; the NAME behind that id lives in one
+// of nine masters. The grid needs the name, so the read paths pull it through
+// the relations Prisma already declares on the generated columns — one JOIN per
+// kind, no CASE, exactly as 15q_promotion_scope_queries.sql does it.
+//
+// These are `select`s rather than `include`s on purpose: a scope row must not
+// drag a whole item or customer record into a grid response.
+
+export const BRANCH_LOOKUP = {
+  branch: { select: { brName: true, brCode: true, brShort: true } },
+} as const;
+
+export const PARTY_LOOKUP = {
+  customer: { select: { cusName: true, cusCode: true } },
+  customerGroup: { select: { cgrName: true, cgrShort: true } },
+  area: { select: { armName: true, armShort: true } },
+  city: { select: { ctmName: true, ctmShort: true } },
+} as const;
+
+export const ITEM_LOOKUP = {
+  item: { select: { itemNameEn: true } },
+  itemGroup: { select: { itgName: true } },
+  itemCategory: { select: { categoryName: true } },
+  itemBrand: { select: { brand_name: true } },
+  itemSection: { select: { secName: true } },
+  // item_unit_conversion carries no name of its own — only a pointer at
+  // item_unit_master — so the unit needs the second hop.
+  unit: { select: { unit: { select: { unit_name: true } } } },
+} as const;
+
+export const SLAB_LOOKUP = {
+  freeItem: { select: { itemNameEn: true } },
+  freeUnit: { select: { unit: { select: { unit_name: true } } } },
+} as const;
+
+type UnitLookup = { unit: { unit_name: string } } | null;
+
+/**
+ * A child row that may or may not arrive with its lookups attached.
+ *
+ * The relations are OPTIONAL so a bare Prisma row still satisfies the type —
+ * the write paths build audit records from rows they never joined, and those
+ * have no business paying for a lookup. Read paths pass the joined row and the
+ * *_name fields come back filled.
+ */
+export type BranchRow = PromotionSchemeBranch & {
+  branch?: { brName: string; brCode: string | null; brShort: string | null } | null;
 };
+
+export type PartyRow = PromotionSchemeParty & {
+  customer?: { cusName: string | null; cusCode: string | null } | null;
+  customerGroup?: { cgrName: string; cgrShort: string | null } | null;
+  area?: { armName: string; armShort: string | null } | null;
+  city?: { ctmName: string; ctmShort: string | null } | null;
+};
+
+export type ItemRow = PromotionSchemeItem & {
+  item?: { itemNameEn: string } | null;
+  itemGroup?: { itgName: string } | null;
+  itemCategory?: { categoryName: string } | null;
+  itemBrand?: { brand_name: string } | null;
+  itemSection?: { secName: string } | null;
+  unit?: UnitLookup;
+};
+
+export type SlabRow = PromotionSchemeSlab & {
+  freeItem?: { itemNameEn: string } | null;
+  freeUnit?: UnitLookup;
+};
+
+export type SchemeWithChildren = PromotionScheme & {
+  branches: BranchRow[];
+  parties: PartyRow[];
+  items: ItemRow[];
+  slabs: SlabRow[];
+};
+
+/** First non-null of the lookups, or null when none of them was joined. */
+function firstName(...candidates: Array<string | null | undefined>): string | null {
+  return candidates.find((value) => value !== null && value !== undefined) ?? null;
+}
 
 // ─── Internal throw helpers ───────────────────────────────────────────────────
 
@@ -208,12 +285,14 @@ export function parseTimeToUtcDate(value: string, field: string): Date {
 
 // ─── Row mappers ──────────────────────────────────────────────────────────────
 
-export function toBranchPayload(row: PromotionSchemeBranch): PromotionSchemeBranchPayload {
+export function toBranchPayload(row: BranchRow): PromotionSchemeBranchPayload {
   return {
     prb_id: row.prbId,
     prb_prm_id: row.prbPrmId,
     prb_slno: row.prbSlno,
     prb_branch_id: row.prbBranchId,
+    prb_branch_name: row.branch?.brName ?? null,
+    prb_branch_code: firstName(row.branch?.brCode, row.branch?.brShort),
     prb_is_exclude: row.prbIsExclude,
     prb_notes: row.prbNotes,
     prb_is_active: row.prbIsActive,
@@ -226,7 +305,7 @@ export function toBranchPayload(row: PromotionSchemeBranch): PromotionSchemeBran
   };
 }
 
-export function toPartyPayload(row: PromotionSchemeParty): PromotionSchemePartyPayload {
+export function toPartyPayload(row: PartyRow): PromotionSchemePartyPayload {
   return {
     prp_id: row.prpId,
     prp_prm_id: row.prpPrmId,
@@ -237,6 +316,20 @@ export function toPartyPayload(row: PromotionSchemeParty): PromotionSchemePartyP
     prp_cust_group_id: row.prpCustGroupId,
     prp_area_id: row.prpAreaId,
     prp_city_id: row.prpCityId,
+    // COALESCE over the four masters — only the one matching prp_kind is joined.
+    prp_target_name: firstName(
+      row.customer?.cusName,
+      row.customerGroup?.cgrName,
+      row.area?.armName,
+      row.city?.ctmName,
+    ),
+    // Note the master columns are not uniform: cus_code, then the three shorts.
+    prp_target_code: firstName(
+      row.customer?.cusCode,
+      row.customerGroup?.cgrShort,
+      row.area?.armShort,
+      row.city?.ctmShort,
+    ),
     prp_is_exclude: row.prpIsExclude,
     prp_match_priority: row.prpMatchPriority,
     prp_notes: row.prpNotes,
@@ -250,7 +343,7 @@ export function toPartyPayload(row: PromotionSchemeParty): PromotionSchemePartyP
   };
 }
 
-export function toItemPayload(row: PromotionSchemeItem): PromotionSchemeItemPayload {
+export function toItemPayload(row: ItemRow): PromotionSchemeItemPayload {
   return {
     pri_id: row.priId,
     pri_prm_id: row.priPrmId,
@@ -263,6 +356,14 @@ export function toItemPayload(row: PromotionSchemeItem): PromotionSchemeItemPayl
     pri_brand_id: row.priBrandId,
     pri_section_id: row.priSectionId,
     pri_unit_id: row.priUnitId,
+    pri_target_name: firstName(
+      row.item?.itemNameEn,
+      row.itemGroup?.itgName,
+      row.itemCategory?.categoryName,
+      row.itemBrand?.brand_name,
+      row.itemSection?.secName,
+    ),
+    pri_unit_name: row.unit?.unit.unit_name ?? null,
     pri_is_exclude: row.priIsExclude,
     pri_disc_perc: toNumber(row.priDiscPerc),
     pri_disc_qty: toNumber(row.priDiscQty),
@@ -282,7 +383,7 @@ export function toItemPayload(row: PromotionSchemeItem): PromotionSchemeItemPayl
   };
 }
 
-export function toSlabPayload(row: PromotionSchemeSlab): PromotionSchemeSlabPayload {
+export function toSlabPayload(row: SlabRow): PromotionSchemeSlabPayload {
   return {
     prs_id: row.prsId,
     prs_prm_id: row.prsPrmId,
@@ -295,6 +396,8 @@ export function toSlabPayload(row: PromotionSchemeSlab): PromotionSchemeSlabPayl
     prs_max_repeats: row.prsMaxRepeats,
     prs_free_item_id: row.prsFreeItemId,
     prs_free_unit_id: row.prsFreeUnitId,
+    prs_free_item_name: row.freeItem?.itemNameEn ?? null,
+    prs_free_unit_name: row.freeUnit?.unit.unit_name ?? null,
     prs_free_qty: toNumber(row.prsFreeQty),
     prs_free_stock_check: row.prsFreeStockCheck,
     prs_disc_perc: toNumber(row.prsDiscPerc),

@@ -16,6 +16,9 @@ export interface PromotionSchemeBranchPayload {
   prb_prm_id: string;
   prb_slno: number;
   prb_branch_id: string;
+  // Display only — joined from branch_master, never written back.
+  prb_branch_name: string | null;
+  prb_branch_code: string | null;
   prb_is_exclude: boolean;
   prb_notes: string | null;
   prb_is_active: boolean;
@@ -38,6 +41,10 @@ export interface PromotionSchemePartyPayload {
   prp_cust_group_id: string | null;
   prp_area_id: string | null;
   prp_city_id: string | null;
+  // Display only — the name behind prp_scope_id, from whichever master
+  // prp_kind names. Never written back.
+  prp_target_name: string | null;
+  prp_target_code: string | null;
   prp_is_exclude: boolean;
   prp_match_priority: number;
   prp_notes: string | null;
@@ -63,6 +70,9 @@ export interface PromotionSchemeItemPayload {
   pri_brand_id: string | null;
   pri_section_id: string | null;
   pri_unit_id: string | null;
+  // Display only.
+  pri_target_name: string | null;
+  pri_unit_name: string | null;
   pri_is_exclude: boolean;
   pri_disc_perc: number;
   pri_disc_qty: number;
@@ -93,6 +103,9 @@ export interface PromotionSchemeSlabPayload {
   prs_max_repeats: number;
   prs_free_item_id: string | null;
   prs_free_unit_id: string | null;
+  // Display only.
+  prs_free_item_name: string | null;
+  prs_free_unit_name: string | null;
   prs_free_qty: number;
   prs_free_stock_check: boolean;
   prs_disc_perc: number;
@@ -167,9 +180,24 @@ export interface PromotionSchemeDeleteResult {
   prm_id: string;
 }
 
-/** Every child delete answers the same shape: the row that went, and its parent. */
-export interface PromotionSchemeChildDeleteResult {
-  deleted: true;
+/**
+ * "Does THIS customer qualify for THIS scheme?" — the question the till asks,
+ * as opposed to the grid, which asks who a scheme covers.
+ *
+ * One customer can be hit by several rows at once: by name, by their group, by
+ * their area and by their city. `matched_by` names the row that actually
+ * decided it — highest prp_match_priority, with an EXCLUDE beating an INCLUDE
+ * at equal priority.
+ */
+export interface PromotionSchemeEligibilityPayload {
   prm_id: string;
-  row_id: string;
+  cus_id: string;
+  qualifies: boolean;
+  /** 'ALL' when the scheme covers everyone and no party row was consulted. */
+  decided_by: 'ALL' | 'RULE' | 'NO_RULE';
+  matched_by: string | null;
+  matched_row_id: string | null;
+  match_priority: number | null;
+  is_exclude: boolean | null;
+  reason: string;
 }

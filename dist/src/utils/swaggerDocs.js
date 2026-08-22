@@ -57,6 +57,7 @@ const ui_table_master_module_1 = require("../modules/fixed/ui-table-master/ui-ta
 const user_login_sessions_module_1 = require("../modules/fixed/user-login-sessions/user-login-sessions.module");
 const stock_adj_reasons_module_1 = require("../modules/fixed/stock-adj-reasons/stock-adj-reasons.module");
 const promotion_loyalty_points_module_1 = require("../modules/sales/loyalty/promotion-loyalty-points.module");
+const promotion_scheme_module_1 = require("../modules/sales/promotion-scheme/promotion-scheme.module");
 const items_group_master_module_1 = require("../modules/Inventory/items-group-master/items-group-master.module");
 const items_brand_master_module_1 = require("../modules/Inventory/items-brand-master/items-brand-master.module");
 const items_section_master_module_1 = require("../modules/Inventory/items-section-master/items-section-master.module");
@@ -357,6 +358,13 @@ exports.swaggerModuleDocuments = [
         title: 'Promotion Loyalty Points API',
         description: 'Single-call loyalty scheme endpoints with nested parties, points, and gifts',
         include: [promotion_loyalty_points_module_1.PromotionLoyaltyPointsModule],
+    },
+    {
+        path: 'promotion-scheme',
+        title: 'Promotion Scheme API',
+        description: 'Promotion scheme header endpoints plus the branch, party, item and slab scope grids saved ' +
+            'a page of rows at a time',
+        include: [promotion_scheme_module_1.PromotionSchemeModule],
     },
     {
         path: 'grid-details',
