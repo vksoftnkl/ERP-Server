@@ -21,6 +21,7 @@ export declare class PromotionSchemeService {
     private saveBranchRow;
     private savePartyRow;
     private saveItemRow;
+    private assertPartyInvariants;
     private assertItemInvariants;
     private saveSlabRow;
     private assertSlabInvariants;

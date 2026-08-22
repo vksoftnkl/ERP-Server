@@ -223,16 +223,13 @@ export function requireUuid(value: string | undefined | null, field: string): st
   return value;
 }
 
-export function requireEnum<T extends string>(
-  value: string | undefined | null,
-  field: string,
-  allowed: readonly T[],
-): T {
-  const candidate = requireString(value, field).toUpperCase();
-  if (!(allowed as readonly string[]).includes(candidate)) {
-    fieldError(field, `${field} must be one of ${allowed.join(', ')}`);
-  }
-  return candidate as T;
+/**
+ * Trim and upper-case a vocabulary value without judging it. The verdict is the
+ * invariants layer's job, so that one bad payload reports every problem at once
+ * instead of dying on the first field.
+ */
+export function normalizeEnum(value: string | undefined | null): string {
+  return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
 
 export function requireNumber(

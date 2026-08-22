@@ -11,7 +11,7 @@ exports.resolveActor = resolveActor;
 exports.resolveActorUuid = resolveActorUuid;
 exports.requireString = requireString;
 exports.requireUuid = requireUuid;
-exports.requireEnum = requireEnum;
+exports.normalizeEnum = normalizeEnum;
 exports.requireNumber = requireNumber;
 exports.requireInteger = requireInteger;
 exports.parseDateOnly = parseDateOnly;
@@ -136,12 +136,8 @@ function requireUuid(value, field) {
     }
     return value;
 }
-function requireEnum(value, field, allowed) {
-    const candidate = requireString(value, field).toUpperCase();
-    if (!allowed.includes(candidate)) {
-        fieldError(field, `${field} must be one of ${allowed.join(', ')}`);
-    }
-    return candidate;
+function normalizeEnum(value) {
+    return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
 function requireNumber(value, field, minValue, maxValue) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < minValue) {

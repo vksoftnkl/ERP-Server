@@ -171,7 +171,7 @@ export declare function resolveActor(...candidates: Array<string | null | undefi
 export declare function resolveActorUuid(...candidates: Array<string | null | undefined>): string | null;
 export declare function requireString(value: string | undefined | null, field: string): string;
 export declare function requireUuid(value: string | undefined | null, field: string): string;
-export declare function requireEnum<T extends string>(value: string | undefined | null, field: string, allowed: readonly T[]): T;
+export declare function normalizeEnum(value: string | undefined | null): string;
 export declare function requireNumber(value: number | undefined | null, field: string, minValue: number, maxValue?: number): number;
 export declare function requireInteger(value: number | undefined | null, field: string, minValue: number, maxValue?: number): number;
 export declare function parseDateOnly(value: string | undefined | null, field: string): Date;

@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const request_context_service_1 = require("../../../common/request-context/request-context.service");
 const prisma_service_1 = require("../../../database/prisma/prisma.service");
 const audit_log_service_1 = require("../../audit-log/audit-log.service");
+const promotion_scheme_invariants_1 = require("./utils/promotion-scheme-invariants");
 const promotion_scheme_utils_1 = require("./utils/promotion-scheme.utils");
 const module_service_utils_1 = require("../../../common/utils/module-service.utils");
 const SCREEN_NAME = 'Promotion Scheme';
@@ -262,19 +263,19 @@ let PromotionSchemeService = class PromotionSchemeService {
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_tenant_id'))
             data.prmTenantId = dto.prm_tenant_id ?? null;
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_status')) {
-            data.prmStatus = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_status, 'prm_status', promotion_scheme_utils_1.PRM_STATUSES);
+            data.prmStatus = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_status);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_apply_on')) {
-            data.prmApplyOn = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_apply_on, 'prm_apply_on', promotion_scheme_utils_1.PRM_APPLY_ON);
+            data.prmApplyOn = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_apply_on);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_benefit')) {
-            data.prmBenefit = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_benefit, 'prm_benefit', promotion_scheme_utils_1.PRM_BENEFITS);
+            data.prmBenefit = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_benefit);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_priority')) {
-            data.prmPriority = (0, promotion_scheme_utils_1.requireInteger)(dto.prm_priority, 'prm_priority', 1, 9);
+            data.prmPriority = dto.prm_priority;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_stack_mode')) {
-            data.prmStackMode = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_stack_mode, 'prm_stack_mode', promotion_scheme_utils_1.PRM_STACK_MODES);
+            data.prmStackMode = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_stack_mode);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_auto_apply'))
             data.prmAutoApply = dto.prm_auto_apply ?? true;
@@ -282,42 +283,42 @@ let PromotionSchemeService = class PromotionSchemeService {
             data.prmAllowWithManualDisc = dto.prm_allow_with_manual_disc ?? false;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_calc_on_amount_type')) {
-            data.prmCalcOnAmountType = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_calc_on_amount_type, 'prm_calc_on_amount_type', promotion_scheme_utils_1.PRM_CALC_ON);
+            data.prmCalcOnAmountType = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_calc_on_amount_type);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_include_tax'))
             data.prmIncludeTax = dto.prm_include_tax ?? false;
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_bill_type')) {
-            data.prmBillType = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_bill_type, 'prm_bill_type', promotion_scheme_utils_1.PRM_BILL_TYPES);
+            data.prmBillType = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_bill_type);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_min_bill_amount')) {
-            data.prmMinBillAmount = (0, promotion_scheme_utils_1.requireNumber)(dto.prm_min_bill_amount, 'prm_min_bill_amount', 0);
+            data.prmMinBillAmount = dto.prm_min_bill_amount;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_min_qty')) {
-            data.prmMinQty = (0, promotion_scheme_utils_1.requireNumber)(dto.prm_min_qty, 'prm_min_qty', 0);
+            data.prmMinQty = dto.prm_min_qty;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_branch_scope')) {
-            data.prmBranchScope = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_branch_scope, 'prm_branch_scope', promotion_scheme_utils_1.PRM_SCOPES);
+            data.prmBranchScope = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_branch_scope);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_cust_scope')) {
-            data.prmCustScope = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_cust_scope, 'prm_cust_scope', promotion_scheme_utils_1.PRM_SCOPES);
+            data.prmCustScope = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_cust_scope);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_item_scope')) {
-            data.prmItemScope = (0, promotion_scheme_utils_1.requireEnum)(dto.prm_item_scope, 'prm_item_scope', promotion_scheme_utils_1.PRM_SCOPES);
+            data.prmItemScope = (0, promotion_scheme_utils_1.normalizeEnum)(dto.prm_item_scope);
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_price_level_id')) {
             data.prmPriceLevelId = dto.prm_price_level_id ?? null;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_max_benefit_per_bill')) {
-            data.prmMaxBenefitPerBill = (0, promotion_scheme_utils_1.requireNumber)(dto.prm_max_benefit_per_bill, 'prm_max_benefit_per_bill', 0);
+            data.prmMaxBenefitPerBill = dto.prm_max_benefit_per_bill;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_max_uses_total')) {
-            data.prmMaxUsesTotal = (0, promotion_scheme_utils_1.requireInteger)(dto.prm_max_uses_total, 'prm_max_uses_total', 0);
+            data.prmMaxUsesTotal = dto.prm_max_uses_total;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_max_uses_per_cust')) {
-            data.prmMaxUsesPerCust = (0, promotion_scheme_utils_1.requireInteger)(dto.prm_max_uses_per_cust, 'prm_max_uses_per_cust', 0);
+            data.prmMaxUsesPerCust = dto.prm_max_uses_per_cust;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_budget_amount')) {
-            data.prmBudgetAmount = (0, promotion_scheme_utils_1.requireNumber)(dto.prm_budget_amount, 'prm_budget_amount', 0);
+            data.prmBudgetAmount = dto.prm_budget_amount;
         }
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'prm_coupon_batch_id')) {
             data.prmCouponBatchId = dto.prm_coupon_batch_id ?? null;
@@ -377,6 +378,12 @@ let PromotionSchemeService = class PromotionSchemeService {
             prmCustScope: pick('prmCustScope', existing?.prmCustScope ?? 'ALL'),
             prmItemScope: pick('prmItemScope', existing?.prmItemScope ?? 'ALL'),
             prmPriority: pick('prmPriority', existing?.prmPriority ?? 1),
+            prmMinBillAmount: pick('prmMinBillAmount', (0, module_service_utils_1.toNumber)(existing?.prmMinBillAmount ?? 0)),
+            prmMinQty: pick('prmMinQty', (0, module_service_utils_1.toNumber)(existing?.prmMinQty ?? 0)),
+            prmMaxBenefitPerBill: pick('prmMaxBenefitPerBill', (0, module_service_utils_1.toNumber)(existing?.prmMaxBenefitPerBill ?? 0)),
+            prmMaxUsesTotal: pick('prmMaxUsesTotal', existing?.prmMaxUsesTotal ?? 0),
+            prmMaxUsesPerCust: pick('prmMaxUsesPerCust', existing?.prmMaxUsesPerCust ?? 0),
+            prmBudgetAmount: pick('prmBudgetAmount', (0, module_service_utils_1.toNumber)(existing?.prmBudgetAmount ?? 0)),
             prmStartDate: pick('prmStartDate', existing?.prmStartDate ?? new Date(0)),
             prmEndDate: pick('prmEndDate', existing?.prmEndDate ?? new Date(0)),
             prmValidFromTime: pick('prmValidFromTime', existing?.prmValidFromTime ?? null),
@@ -386,45 +393,7 @@ let PromotionSchemeService = class PromotionSchemeService {
         };
     }
     assertSchemeInvariants(scheme) {
-        const errors = [];
-        if (!promotion_scheme_utils_1.PRM_CODE_PATTERN.test(scheme.prmCode)) {
-            errors.push({
-                field: 'prm_code',
-                message: 'prm_code may contain only letters, digits, underscore and hyphen',
-            });
-        }
-        if (scheme.prmEndDate.getTime() < scheme.prmStartDate.getTime()) {
-            errors.push({
-                field: 'prm_end_date',
-                message: 'prm_end_date must be on or after prm_start_date',
-            });
-        }
-        if ((scheme.prmValidFromTime === null) !== (scheme.prmValidToTime === null)) {
-            errors.push({
-                field: 'prm_valid_to_time',
-                message: 'Send both prm_valid_from_time and prm_valid_to_time, or neither',
-            });
-        }
-        if (scheme.prmValidWeekdays && !promotion_scheme_utils_1.PRM_WEEKDAYS_PATTERN.test(scheme.prmValidWeekdays)) {
-            errors.push({
-                field: 'prm_valid_weekdays',
-                message: 'prm_valid_weekdays must be comma-separated MON,TUE,WED,THU,FRI,SAT,SUN',
-            });
-        }
-        if (scheme.prmBenefit === 'FIXED_PRICE' &&
-            !['ITEM_QTY', 'ITEM_AMOUNT'].includes(scheme.prmApplyOn)) {
-            errors.push({
-                field: 'prm_apply_on',
-                message: 'A FIXED_PRICE benefit needs an item trigger (ITEM_QTY or ITEM_AMOUNT) — there is no ' +
-                    'line to reprice on a bill-level scheme',
-            });
-        }
-        if (scheme.prmStatus === 'APPROVED' && !scheme.prmApprovedBy) {
-            errors.push({
-                field: 'prm_approved_by',
-                message: 'prm_approved_by is required once prm_status is APPROVED',
-            });
-        }
+        const errors = (0, promotion_scheme_invariants_1.collectSchemeInvariantErrors)(scheme);
         if (errors.length > 0) {
             this.throwBadRequest('Validation failed', errors);
         }
@@ -494,45 +463,54 @@ let PromotionSchemeService = class PromotionSchemeService {
         return created;
     }
     async savePartyRow(tx, prmId, row, index) {
-        const slno = row.prp_slno ?? index + 1;
-        (0, promotion_scheme_utils_1.requireInteger)(slno, 'prp_slno', 1);
-        if (row.prp_id) {
-            const existing = await tx.promotionSchemeParty.findFirst({
+        const existing = row.prp_id
+            ? await tx.promotionSchemeParty.findFirst({
                 where: { prpId: row.prp_id, prpPrmId: prmId, prpIsDeleted: false },
-            });
-            if (!existing) {
-                this.throwNotFound('prp_id', row.prp_id, 'Promotion scheme party row not found');
-            }
+            })
+            : null;
+        if (row.prp_id && !existing) {
+            this.throwNotFound('prp_id', row.prp_id, 'Promotion scheme party row not found');
+        }
+        const slno = row.prp_slno ?? existing?.prpSlno ?? index + 1;
+        const kind = (0, module_service_utils_1.hasOwnProperty)(row, 'prp_kind')
+            ? (0, promotion_scheme_utils_1.normalizeEnum)(row.prp_kind)
+            : (existing?.prpKind ?? (0, promotion_scheme_utils_1.normalizeEnum)(row.prp_kind));
+        const matchPriority = (0, module_service_utils_1.hasOwnProperty)(row, 'prp_match_priority')
+            ? row.prp_match_priority
+            : (existing?.prpMatchPriority ?? promotion_scheme_utils_1.PRP_DEFAULT_MATCH_PRIORITY[kind] ?? 1);
+        this.assertPartyInvariants({
+            prpSlno: slno,
+            prpKind: kind,
+            prpMatchPriority: matchPriority,
+        });
+        if (existing) {
             const data = {
                 prpModifiedOn: new Date(),
                 prpModifiedBy: this.resolveWriteActor(row.prp_modified_by),
             };
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_slno'))
                 data.prpSlno = slno;
-            if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_kind')) {
-                data.prpKind = (0, promotion_scheme_utils_1.requireEnum)(row.prp_kind, 'prp_kind', promotion_scheme_utils_1.PRP_KINDS);
-            }
+            if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_kind'))
+                data.prpKind = kind;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_scope_id')) {
                 data.prpScopeId = (0, promotion_scheme_utils_1.requireUuid)(row.prp_scope_id, 'prp_scope_id');
             }
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_is_exclude'))
                 data.prpIsExclude = row.prp_is_exclude ?? false;
-            if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_match_priority')) {
-                data.prpMatchPriority = (0, promotion_scheme_utils_1.requireInteger)(row.prp_match_priority, 'prp_match_priority', 0, 9);
-            }
+            if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_match_priority'))
+                data.prpMatchPriority = matchPriority;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_notes'))
                 data.prpNotes = (0, promotion_scheme_utils_1.normalizeNullableString)(row.prp_notes);
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prp_is_active'))
                 data.prpIsActive = row.prp_is_active ?? true;
             const updated = await tx.promotionSchemeParty.update({
-                where: { prpId: row.prp_id },
+                where: { prpId: existing.prpId },
                 data,
                 include: promotion_scheme_utils_1.PARTY_LOOKUP,
             });
             await this.audit(tx, 'update', PARTY_TABLE_NAME, updated.prpId, `Scheme ${prmId} / ${updated.prpKind} ${updated.prpScopeId}`, (0, promotion_scheme_utils_1.toPartyPayload)(existing), (0, promotion_scheme_utils_1.toPartyPayload)(updated), 'Promotion scheme party row updated');
             return updated;
         }
-        const kind = (0, promotion_scheme_utils_1.requireEnum)(row.prp_kind, 'prp_kind', promotion_scheme_utils_1.PRP_KINDS);
         const created = await tx.promotionSchemeParty.create({
             data: {
                 prpPrmId: prmId,
@@ -540,7 +518,7 @@ let PromotionSchemeService = class PromotionSchemeService {
                 prpKind: kind,
                 prpScopeId: (0, promotion_scheme_utils_1.requireUuid)(row.prp_scope_id, 'prp_scope_id'),
                 prpIsExclude: row.prp_is_exclude ?? false,
-                prpMatchPriority: row.prp_match_priority ?? promotion_scheme_utils_1.PRP_DEFAULT_MATCH_PRIORITY[kind] ?? 1,
+                prpMatchPriority: matchPriority,
                 prpNotes: (0, promotion_scheme_utils_1.normalizeNullableString)(row.prp_notes),
                 prpIsActive: row.prp_is_active ?? true,
                 prpCreatedBy: this.resolveWriteActor(row.prp_created_by),
@@ -551,8 +529,6 @@ let PromotionSchemeService = class PromotionSchemeService {
         return created;
     }
     async saveItemRow(tx, prmId, row, index) {
-        const slno = row.pri_slno ?? index + 1;
-        (0, promotion_scheme_utils_1.requireInteger)(slno, 'pri_slno', 1);
         const existing = row.pri_id
             ? await tx.promotionSchemeItem.findFirst({
                 where: { priId: row.pri_id, priPrmId: prmId, priIsDeleted: false },
@@ -561,9 +537,10 @@ let PromotionSchemeService = class PromotionSchemeService {
         if (row.pri_id && !existing) {
             this.throwNotFound('pri_id', row.pri_id, 'Promotion scheme item row not found');
         }
+        const slno = row.pri_slno ?? existing?.priSlno ?? index + 1;
         const kind = (0, module_service_utils_1.hasOwnProperty)(row, 'pri_kind')
-            ? (0, promotion_scheme_utils_1.requireEnum)(row.pri_kind, 'pri_kind', promotion_scheme_utils_1.PRI_KINDS)
-            : (existing?.priKind ?? (0, promotion_scheme_utils_1.requireEnum)(row.pri_kind, 'pri_kind', promotion_scheme_utils_1.PRI_KINDS));
+            ? (0, promotion_scheme_utils_1.normalizeEnum)(row.pri_kind)
+            : (existing?.priKind ?? (0, promotion_scheme_utils_1.normalizeEnum)(row.pri_kind));
         const unitId = (0, module_service_utils_1.hasOwnProperty)(row, 'pri_unit_id')
             ? (row.pri_unit_id ?? null)
             : (existing?.priUnitId ?? null);
@@ -576,16 +553,21 @@ let PromotionSchemeService = class PromotionSchemeService {
         const isExclude = (0, module_service_utils_1.hasOwnProperty)(row, 'pri_is_exclude')
             ? (row.pri_is_exclude ?? false)
             : (existing?.priIsExclude ?? false);
+        const matchPriority = (0, module_service_utils_1.hasOwnProperty)(row, 'pri_match_priority')
+            ? row.pri_match_priority
+            : (existing?.priMatchPriority ?? promotion_scheme_utils_1.PRI_DEFAULT_MATCH_PRIORITY[kind] ?? 1);
         this.assertItemInvariants({
-            kind,
-            unitId,
-            discPerc,
-            discQty,
-            discAmt,
-            minQty,
-            factor,
-            maxBenefit,
-            isExclude,
+            priSlno: slno,
+            priKind: kind,
+            priUnitId: unitId,
+            priIsExclude: isExclude,
+            priDiscPerc: discPerc,
+            priDiscQty: discQty,
+            priDiscAmt: discAmt,
+            priMinQty: minQty,
+            priFactor: factor,
+            priMaxBenefit: maxBenefit,
+            priMatchPriority: matchPriority,
         });
         if (existing) {
             const data = {
@@ -615,9 +597,8 @@ let PromotionSchemeService = class PromotionSchemeService {
                 data.priFactor = factor;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'pri_max_benefit'))
                 data.priMaxBenefit = maxBenefit;
-            if ((0, module_service_utils_1.hasOwnProperty)(row, 'pri_match_priority')) {
-                data.priMatchPriority = (0, promotion_scheme_utils_1.requireInteger)(row.pri_match_priority, 'pri_match_priority', 0, 9);
-            }
+            if ((0, module_service_utils_1.hasOwnProperty)(row, 'pri_match_priority'))
+                data.priMatchPriority = matchPriority;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'pri_notes'))
                 data.priNotes = (0, promotion_scheme_utils_1.normalizeNullableString)(row.pri_notes);
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'pri_is_active'))
@@ -644,7 +625,7 @@ let PromotionSchemeService = class PromotionSchemeService {
                 priMinQty: minQty,
                 priFactor: factor,
                 priMaxBenefit: maxBenefit,
-                priMatchPriority: row.pri_match_priority ?? promotion_scheme_utils_1.PRI_DEFAULT_MATCH_PRIORITY[kind] ?? 1,
+                priMatchPriority: matchPriority,
                 priNotes: (0, promotion_scheme_utils_1.normalizeNullableString)(row.pri_notes),
                 priIsActive: row.pri_is_active ?? true,
                 priCreatedBy: this.resolveWriteActor(row.pri_created_by),
@@ -654,54 +635,19 @@ let PromotionSchemeService = class PromotionSchemeService {
         await this.audit(tx, 'create', ITEM_TABLE_NAME, created.priId, `Scheme ${prmId} / ${created.priKind} ${created.priScopeId}`, null, (0, promotion_scheme_utils_1.toItemPayload)(created), 'Promotion scheme item row created');
         return created;
     }
+    assertPartyInvariants(row) {
+        const errors = (0, promotion_scheme_invariants_1.collectPartyInvariantErrors)(row);
+        if (errors.length > 0) {
+            this.throwBadRequest('Validation failed', errors);
+        }
+    }
     assertItemInvariants(row) {
-        const errors = [];
-        if ((row.kind === 'ITEM') !== (row.unitId !== null)) {
-            errors.push({
-                field: 'pri_unit_id',
-                message: row.kind === 'ITEM'
-                    ? 'pri_unit_id is required on an ITEM row — a quantity is meaningless without a unit'
-                    : `pri_unit_id must be null on an ${row.kind} row — a unit belongs to one item`,
-            });
-        }
-        const rates = Number(row.discPerc !== 0) + Number(row.discQty !== 0) + Number(row.discAmt !== 0);
-        if (rates > 1) {
-            errors.push({
-                field: 'pri_disc_perc',
-                message: 'Set at most one of pri_disc_perc, pri_disc_qty, pri_disc_amt',
-            });
-        }
-        if (row.isExclude && (rates > 0 || row.factor !== 1)) {
-            errors.push({
-                field: 'pri_is_exclude',
-                message: 'An exclude row gives nothing — leave every rate at 0 and pri_factor at 1',
-            });
-        }
-        if (row.discPerc < 0 || row.discPerc > 100) {
-            errors.push({ field: 'pri_disc_perc', message: 'pri_disc_perc must be between 0 and 100' });
-        }
-        if (row.discQty < 0) {
-            errors.push({ field: 'pri_disc_qty', message: 'pri_disc_qty must be 0 or more' });
-        }
-        if (row.discAmt < 0) {
-            errors.push({ field: 'pri_disc_amt', message: 'pri_disc_amt must be 0 or more' });
-        }
-        if (row.minQty < 0) {
-            errors.push({ field: 'pri_min_qty', message: 'pri_min_qty must be 0 or more' });
-        }
-        if (!(row.factor > 0)) {
-            errors.push({ field: 'pri_factor', message: 'pri_factor must be greater than 0' });
-        }
-        if (row.maxBenefit < 0) {
-            errors.push({ field: 'pri_max_benefit', message: 'pri_max_benefit must be 0 or more' });
-        }
+        const errors = (0, promotion_scheme_invariants_1.collectItemInvariantErrors)(row);
         if (errors.length > 0) {
             this.throwBadRequest('Validation failed', errors);
         }
     }
     async saveSlabRow(tx, scheme, row, index) {
-        const slno = row.prs_slno ?? index + 1;
-        (0, promotion_scheme_utils_1.requireInteger)(slno, 'prs_slno', 1);
         const existing = row.prs_id
             ? await tx.promotionSchemeSlab.findFirst({
                 where: { prsId: row.prs_id, prsPrmId: scheme.prmId, prsIsDeleted: false },
@@ -710,8 +656,9 @@ let PromotionSchemeService = class PromotionSchemeService {
         if (row.prs_id && !existing) {
             this.throwNotFound('prs_id', row.prs_id, 'Promotion scheme slab row not found');
         }
+        const slno = row.prs_slno ?? existing?.prsSlno ?? index + 1;
         const benefit = (0, module_service_utils_1.hasOwnProperty)(row, 'prs_benefit')
-            ? (0, promotion_scheme_utils_1.requireEnum)(row.prs_benefit, 'prs_benefit', promotion_scheme_utils_1.PRM_BENEFITS)
+            ? (0, promotion_scheme_utils_1.normalizeEnum)(row.prs_benefit)
             : scheme.prmBenefit;
         if (benefit !== scheme.prmBenefit) {
             this.throwBadRequest('Validation failed', [
@@ -722,36 +669,37 @@ let PromotionSchemeService = class PromotionSchemeService {
             ]);
         }
         const band = {
-            benefit,
-            exceeds: this.pickNumber(row, 'prs_exceeds', existing?.prsExceeds, 0),
-            upto: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_upto')
+            prsSlno: slno,
+            prsBenefit: benefit,
+            prsExceeds: this.pickNumber(row, 'prs_exceeds', existing?.prsExceeds, 0),
+            prsUpto: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_upto')
                 ? (row.prs_upto ?? null)
                 : existing?.prsUpto === undefined || existing?.prsUpto === null
                     ? null
                     : Number(existing.prsUpto.toString()),
-            each: this.pickNumber(row, 'prs_each', existing?.prsEach, 1),
-            isRepeat: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_is_repeat')
+            prsEach: this.pickNumber(row, 'prs_each', existing?.prsEach, 1),
+            prsIsRepeat: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_is_repeat')
                 ? (row.prs_is_repeat ?? false)
                 : (existing?.prsIsRepeat ?? false),
-            maxRepeats: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_max_repeats')
+            prsMaxRepeats: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_max_repeats')
                 ? (row.prs_max_repeats ?? 0)
                 : (existing?.prsMaxRepeats ?? 0),
-            freeItemId: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_free_item_id')
+            prsFreeItemId: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_free_item_id')
                 ? (row.prs_free_item_id ?? null)
                 : (existing?.prsFreeItemId ?? null),
-            freeUnitId: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_free_unit_id')
+            prsFreeUnitId: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_free_unit_id')
                 ? (row.prs_free_unit_id ?? null)
                 : (existing?.prsFreeUnitId ?? null),
-            freeQty: this.pickNumber(row, 'prs_free_qty', existing?.prsFreeQty, 0),
-            discPerc: this.pickNumber(row, 'prs_disc_perc', existing?.prsDiscPerc, 0),
-            discQty: this.pickNumber(row, 'prs_disc_qty', existing?.prsDiscQty, 0),
-            discAmt: this.pickNumber(row, 'prs_disc_amt', existing?.prsDiscAmt, 0),
-            fixedPrice: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_fixed_price')
+            prsFreeQty: this.pickNumber(row, 'prs_free_qty', existing?.prsFreeQty, 0),
+            prsDiscPerc: this.pickNumber(row, 'prs_disc_perc', existing?.prsDiscPerc, 0),
+            prsDiscQty: this.pickNumber(row, 'prs_disc_qty', existing?.prsDiscQty, 0),
+            prsDiscAmt: this.pickNumber(row, 'prs_disc_amt', existing?.prsDiscAmt, 0),
+            prsFixedPrice: (0, module_service_utils_1.hasOwnProperty)(row, 'prs_fixed_price')
                 ? (row.prs_fixed_price ?? null)
                 : existing?.prsFixedPrice === undefined || existing?.prsFixedPrice === null
                     ? null
                     : Number(existing.prsFixedPrice.toString()),
-            maxBenefitAmt: this.pickNumber(row, 'prs_max_benefit_amt', existing?.prsMaxBenefitAmt, 0),
+            prsMaxBenefitAmt: this.pickNumber(row, 'prs_max_benefit_amt', existing?.prsMaxBenefitAmt, 0),
         };
         this.assertSlabInvariants(band);
         if (existing) {
@@ -762,34 +710,34 @@ let PromotionSchemeService = class PromotionSchemeService {
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_slno'))
                 data.prsSlno = slno;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_exceeds'))
-                data.prsExceeds = band.exceeds;
+                data.prsExceeds = band.prsExceeds;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_upto'))
-                data.prsUpto = band.upto;
+                data.prsUpto = band.prsUpto;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_each'))
-                data.prsEach = band.each;
+                data.prsEach = band.prsEach;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_is_repeat'))
-                data.prsIsRepeat = band.isRepeat;
+                data.prsIsRepeat = band.prsIsRepeat;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_max_repeats'))
-                data.prsMaxRepeats = band.maxRepeats;
+                data.prsMaxRepeats = band.prsMaxRepeats;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_free_item_id'))
-                data.prsFreeItemId = band.freeItemId;
+                data.prsFreeItemId = band.prsFreeItemId;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_free_unit_id'))
-                data.prsFreeUnitId = band.freeUnitId;
+                data.prsFreeUnitId = band.prsFreeUnitId;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_free_qty'))
-                data.prsFreeQty = band.freeQty;
+                data.prsFreeQty = band.prsFreeQty;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_free_stock_check')) {
                 data.prsFreeStockCheck = row.prs_free_stock_check ?? true;
             }
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_disc_perc'))
-                data.prsDiscPerc = band.discPerc;
+                data.prsDiscPerc = band.prsDiscPerc;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_disc_qty'))
-                data.prsDiscQty = band.discQty;
+                data.prsDiscQty = band.prsDiscQty;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_disc_amt'))
-                data.prsDiscAmt = band.discAmt;
+                data.prsDiscAmt = band.prsDiscAmt;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_fixed_price'))
-                data.prsFixedPrice = band.fixedPrice;
+                data.prsFixedPrice = band.prsFixedPrice;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_max_benefit_amt'))
-                data.prsMaxBenefitAmt = band.maxBenefitAmt;
+                data.prsMaxBenefitAmt = band.prsMaxBenefitAmt;
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_notes'))
                 data.prsNotes = (0, promotion_scheme_utils_1.normalizeNullableString)(row.prs_notes);
             if ((0, module_service_utils_1.hasOwnProperty)(row, 'prs_is_active'))
@@ -807,20 +755,20 @@ let PromotionSchemeService = class PromotionSchemeService {
                 prsPrmId: scheme.prmId,
                 prsSlno: slno,
                 prsBenefit: benefit,
-                prsExceeds: band.exceeds,
-                prsUpto: band.upto,
-                prsEach: band.each,
-                prsIsRepeat: band.isRepeat,
-                prsMaxRepeats: band.maxRepeats,
-                prsFreeItemId: band.freeItemId,
-                prsFreeUnitId: band.freeUnitId,
-                prsFreeQty: band.freeQty,
+                prsExceeds: band.prsExceeds,
+                prsUpto: band.prsUpto,
+                prsEach: band.prsEach,
+                prsIsRepeat: band.prsIsRepeat,
+                prsMaxRepeats: band.prsMaxRepeats,
+                prsFreeItemId: band.prsFreeItemId,
+                prsFreeUnitId: band.prsFreeUnitId,
+                prsFreeQty: band.prsFreeQty,
                 prsFreeStockCheck: row.prs_free_stock_check ?? true,
-                prsDiscPerc: band.discPerc,
-                prsDiscQty: band.discQty,
-                prsDiscAmt: band.discAmt,
-                prsFixedPrice: band.fixedPrice,
-                prsMaxBenefitAmt: band.maxBenefitAmt,
+                prsDiscPerc: band.prsDiscPerc,
+                prsDiscQty: band.prsDiscQty,
+                prsDiscAmt: band.prsDiscAmt,
+                prsFixedPrice: band.prsFixedPrice,
+                prsMaxBenefitAmt: band.prsMaxBenefitAmt,
                 prsNotes: (0, promotion_scheme_utils_1.normalizeNullableString)(row.prs_notes),
                 prsIsActive: row.prs_is_active ?? true,
                 prsCreatedBy: this.resolveWriteActor(row.prs_created_by),
@@ -831,102 +779,7 @@ let PromotionSchemeService = class PromotionSchemeService {
         return created;
     }
     assertSlabInvariants(band) {
-        const errors = [];
-        if (band.exceeds < 0) {
-            errors.push({ field: 'prs_exceeds', message: 'prs_exceeds must be 0 or more' });
-        }
-        if (band.upto !== null && band.upto <= band.exceeds) {
-            errors.push({ field: 'prs_upto', message: 'prs_upto must be greater than prs_exceeds' });
-        }
-        if (!(band.each > 0)) {
-            errors.push({ field: 'prs_each', message: 'prs_each must be greater than 0' });
-        }
-        if (band.maxRepeats < 0) {
-            errors.push({ field: 'prs_max_repeats', message: 'prs_max_repeats must be 0 or more' });
-        }
-        if (!band.isRepeat && band.maxRepeats !== 0) {
-            errors.push({
-                field: 'prs_max_repeats',
-                message: 'prs_max_repeats only means something when prs_is_repeat is true',
-            });
-        }
-        if ((band.freeItemId === null) !== (band.freeUnitId === null)) {
-            errors.push({
-                field: 'prs_free_unit_id',
-                message: 'A free item needs the unit it is issued in — send both or neither',
-            });
-        }
-        if (band.discPerc < 0 || band.discPerc > 100) {
-            errors.push({ field: 'prs_disc_perc', message: 'prs_disc_perc must be between 0 and 100' });
-        }
-        if (band.maxBenefitAmt < 0) {
-            errors.push({
-                field: 'prs_max_benefit_amt',
-                message: 'prs_max_benefit_amt must be 0 or more',
-            });
-        }
-        const noDiscounts = band.discPerc === 0 && band.discQty === 0 && band.discAmt === 0;
-        const noFree = band.freeItemId === null && band.freeQty === 0;
-        switch (band.benefit) {
-            case 'FREE_ITEM':
-                if (band.freeItemId === null || !(band.freeQty > 0)) {
-                    errors.push({
-                        field: 'prs_free_item_id',
-                        message: 'A FREE_ITEM band needs prs_free_item_id and prs_free_qty greater than 0',
-                    });
-                }
-                if (!noDiscounts || band.fixedPrice !== null) {
-                    errors.push({
-                        field: 'prs_benefit',
-                        message: 'A FREE_ITEM band must leave the discount and fixed-price columns empty',
-                    });
-                }
-                break;
-            case 'DISC_PERC':
-                if (!(band.discPerc > 0)) {
-                    errors.push({
-                        field: 'prs_disc_perc',
-                        message: 'A DISC_PERC band needs prs_disc_perc greater than 0',
-                    });
-                }
-                if (!noFree || band.discQty !== 0 || band.discAmt !== 0 || band.fixedPrice !== null) {
-                    errors.push({
-                        field: 'prs_benefit',
-                        message: 'A DISC_PERC band must leave every other benefit column empty',
-                    });
-                }
-                break;
-            case 'DISC_AMT':
-                if (band.discAmt > 0 === band.discQty > 0) {
-                    errors.push({
-                        field: 'prs_disc_amt',
-                        message: 'A DISC_AMT band needs exactly one of prs_disc_amt (flat) or prs_disc_qty (per unit)',
-                    });
-                }
-                if (!noFree || band.discPerc !== 0 || band.fixedPrice !== null) {
-                    errors.push({
-                        field: 'prs_benefit',
-                        message: 'A DISC_AMT band must leave the free-item, percentage and price columns empty',
-                    });
-                }
-                break;
-            case 'FIXED_PRICE':
-                if (band.fixedPrice === null) {
-                    errors.push({
-                        field: 'prs_fixed_price',
-                        message: 'A FIXED_PRICE band needs prs_fixed_price',
-                    });
-                }
-                if (!noFree || !noDiscounts) {
-                    errors.push({
-                        field: 'prs_benefit',
-                        message: 'A FIXED_PRICE band must leave the free-item and discount columns empty',
-                    });
-                }
-                break;
-            default:
-                errors.push({ field: 'prs_benefit', message: `Unknown benefit ${band.benefit}` });
-        }
+        const errors = (0, promotion_scheme_invariants_1.collectSlabInvariantErrors)(band);
         if (errors.length > 0) {
             this.throwBadRequest('Validation failed', errors);
         }

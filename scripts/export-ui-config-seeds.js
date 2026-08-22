@@ -21,6 +21,11 @@
  * Usage:
  *   npm run seed:export:ui-config                 # reads DATABASE_URL from .env
  *   DATABASE_URL=postgres://... npm run seed:export:ui-config
+ *   npm run seed:export:ui-config -- --only=Form_Section.sql,Form_Field.sql
+ *
+ * --only= takes the same comma-separated file names the seed runner takes, so a
+ * single area (the widget master, say) can be re-exported without rewriting the
+ * grid and dropdown files from whatever the local database happens to hold.
  *
  * Then review `git diff prisma/seed` and apply with `npm run seed:run`.
  */
@@ -359,18 +364,40 @@ const TABLES = [
   },
 ];
 
+const parseOnly = (argv) =>
+  argv
+    .filter((argument) => argument.startsWith('--only='))
+    .flatMap((argument) => argument.slice('--only='.length).split(','))
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+const selectTables = (only) => {
+  if (only.length === 0) return TABLES;
+  const known = new Map(TABLES.map((table) => [table.file.toLowerCase(), table]));
+  return only.map((name) => {
+    const table = known.get(name.toLowerCase()) ?? known.get(`${name.toLowerCase()}.sql`);
+    if (!table) {
+      throw new Error(
+        `--only=${name} is not exported by this script. Known files: ${TABLES.map((t) => t.file).join(', ')}`,
+      );
+    }
+    return table;
+  });
+};
+
 const main = async () => {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error('DATABASE_URL is not set — point it at the reference database.');
   }
+  const tables = selectTables(parseOnly(process.argv.slice(2)));
   const client = new Client({ connectionString });
   await client.connect();
   try {
     const written = await exportSeedFiles({
       client,
       seedDir: SEED_DIR,
-      tables: TABLES,
+      tables,
       regenerateScript: 'seed:export:ui-config',
     });
     for (const entry of written) {
