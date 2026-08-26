@@ -9,7 +9,12 @@ export interface LoadConfiguredGridSqlCandidatesOptions {
 }
 export interface ValidateConfiguredGridSqlOptions {
   sql: string;
-  tableName: string;
+  /**
+   * Table the query must be anchored to. Omit for callers with no single anchor
+   * table — a report dataset joins freely and is scoped by its p_company_id
+   * token instead. When omitted, `primaryTableSchema` is ignored too.
+   */
+  tableName?: string;
   primaryTableSchema?: string;
   extraForbiddenPatterns?: Array<{
     pattern: RegExp;

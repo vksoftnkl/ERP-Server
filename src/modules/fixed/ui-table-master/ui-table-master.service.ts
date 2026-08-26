@@ -6,7 +6,10 @@ import { ListUiTableMasterQueryDto } from './dto/list-ui-table-master-query.dto'
 import { SaveUiTableMasterDto } from './dto/save-ui-table-master.dto';
 import { SaveUiTableColumnDto } from './dto/save-ui-table-column.dto';
 import { SaveUiTableColumnWidthDto } from './dto/save-ui-table-column-width.dto';
-import { SaveUiTableVisibilitySettingsDto } from './dto/save-ui-table-visibility-settings.dto';
+import {
+  SaveUiTableVisibilitySettingsDto,
+  UiTableVisibilitySettingItemDto,
+} from './dto/save-ui-table-visibility-settings.dto';
 import {
   UiTableMasterErrorDetail,
   UiTableMasterErrorResponse,
@@ -30,6 +33,16 @@ const UI_TABLE_MASTER_TABLE_NAME = 'ui tables';
 const UI_TABLE_COLUMN_TABLE_NAME = 'ui table columns';
 const UI_TABLE_MASTER_AUDIT_SCREEN_NAME = 'UI Table Master';
 const UI_TABLE_MASTER_OPTIONAL_FIELDS = ['uiTblEditable', 'uiTblIsActive', 'uiTblDeviceType'];
+
+const UI_TABLE_VISIBILITY_SETTING_FIELDS = [
+  'uiTblClmColumnWidth',
+  'uiTblClmColumnVisibility',
+  'uiTblClmColumnFocus',
+  'uiTblClmColumnPosition',
+  'uiTblClmColumnNecessity',
+  'uiTblClmNextColumn',
+  'uiTblClmPreviousColumn',
+] as const satisfies readonly (keyof UiTableVisibilitySettingItemDto)[];
 
 const UI_TABLE_COLUMN_OPTIONAL_FIELDS = [
   'uiTblClmColumnWidth',
@@ -154,14 +167,17 @@ export class UiTableMasterService {
             `No active UI table column found with id ${item.uiTblClmId}`,
           );
         }
-        await tx.uitableColumns.update({
-          where: { uiTblClmId: columnId },
-          data: {
-            uiTblClmColumnVisibility: item.uiTblClmColumnVisibility,
-            uiTblClmModifiedOn: new Date(),
-            uiTblClmModifiedBy: actor,
-          },
-        });
+        const data: Prisma.UitableColumnsUncheckedUpdateInput = {
+          uiTblClmModifiedOn: new Date(),
+          uiTblClmModifiedBy: actor,
+        };
+        for (const field of UI_TABLE_VISIBILITY_SETTING_FIELDS) {
+          const value = item[field];
+          if (value !== undefined) {
+            (data as Record<string, unknown>)[field] = value;
+          }
+        }
+        await tx.uitableColumns.update({ where: { uiTblClmId: columnId }, data });
         count++;
       }
     });

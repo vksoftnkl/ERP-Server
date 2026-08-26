@@ -3,6 +3,7 @@ import { RequestContextService } from '../../common/request-context/request-cont
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { AuditLogService } from './audit-log.service';
 import { getAuditScreenSql } from './audit-screen-sql.constants';
+import type { AuditActionInput } from './types/audit-log.types';
 
 type PrismaMock = {
   $executeRaw: jest.Mock;
@@ -463,7 +464,10 @@ describe('AuditLogService', () => {
   it('createAuditLog rejects unsupported delete action', async () => {
     await expect(
       service.createAuditLog({
-        action: 'delete',
+        // AuditActionInput rejects this at compile time now; the cast stands in
+        // for an untyped caller (the list filter takes the action off a query
+        // string), so the runtime guard in normalizeAction still has to hold.
+        action: 'delete' as AuditActionInput,
         screenId: 10,
         tableName: 'item_group_master',
         pk: '018f0a2b-7c4d-7e8f-9a0b-c1d2e3f45678',

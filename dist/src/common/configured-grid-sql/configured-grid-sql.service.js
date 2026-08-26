@@ -105,28 +105,30 @@ let ConfiguredGridSqlService = class ConfiguredGridSqlService {
                 message: 'Positional parameters are not allowed in configured query',
             };
         }
-        const tableNameTerms = this.buildTableNameSearchTerms(options.tableName);
-        const referencesConfiguredTable = tableNameTerms.some((term) => {
-            const tableNameRegex = new RegExp(`\\b${this.escapeRegex(term)}\\b`, 'i');
-            return tableNameRegex.test(normalizedSql);
-        });
-        if (!referencesConfiguredTable) {
-            return {
-                isValid: false,
-                message: `Configured query must reference ${options.tableName} table`,
-            };
-        }
-        if (options.primaryTableSchema) {
-            const primaryRelation = this.extractTopLevelFromRelation(normalizedSql);
-            if (primaryRelation !== null &&
-                this.normalizeRelationName(primaryRelation.tableName) ===
-                    this.normalizeRelationName(options.tableName) &&
-                primaryRelation.schemaName !== null &&
-                primaryRelation.schemaName !== options.primaryTableSchema.toLowerCase()) {
+        if (options.tableName !== undefined) {
+            const tableNameTerms = this.buildTableNameSearchTerms(options.tableName);
+            const referencesConfiguredTable = tableNameTerms.some((term) => {
+                const tableNameRegex = new RegExp(`\\b${this.escapeRegex(term)}\\b`, 'i');
+                return tableNameRegex.test(normalizedSql);
+            });
+            if (!referencesConfiguredTable) {
                 return {
                     isValid: false,
-                    message: `Configured query must reference ${options.primaryTableSchema}.${options.tableName}`,
+                    message: `Configured query must reference ${options.tableName} table`,
                 };
+            }
+            if (options.primaryTableSchema) {
+                const primaryRelation = this.extractTopLevelFromRelation(normalizedSql);
+                if (primaryRelation !== null &&
+                    this.normalizeRelationName(primaryRelation.tableName) ===
+                        this.normalizeRelationName(options.tableName) &&
+                    primaryRelation.schemaName !== null &&
+                    primaryRelation.schemaName !== options.primaryTableSchema.toLowerCase()) {
+                    return {
+                        isValid: false,
+                        message: `Configured query must reference ${options.primaryTableSchema}.${options.tableName}`,
+                    };
+                }
             }
         }
         if (options.extraForbiddenPatterns) {

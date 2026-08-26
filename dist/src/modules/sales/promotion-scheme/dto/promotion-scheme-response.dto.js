@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PromotionSchemeEligibilitySuccessDto = exports.PromotionSchemeEligibilityPayloadDto = exports.PromotionSchemeSuccessDeleteDto = exports.PromotionSchemeSuccessSingleDto = exports.PromotionSchemeDeleteResultDto = exports.PromotionSchemePayloadDto = exports.PromotionSchemeSlabPayloadDto = exports.PromotionSchemeItemPayloadDto = exports.PromotionSchemePartyPayloadDto = exports.PromotionSchemeBranchPayloadDto = exports.PromotionSchemeErrorResponseDto = exports.PromotionSchemeErrorFieldDto = void 0;
+exports.PromotionSchemeEligibilitySuccessDto = exports.PromotionSchemeEligibilityPayloadDto = exports.PromotionSchemeSuccessDeleteDto = exports.PromotionSchemeSuccessListDto = exports.PromotionSchemeSuccessSingleDto = exports.PromotionSchemeDeleteResultDto = exports.PromotionSchemePayloadDto = exports.PromotionSchemeSummaryPayloadDto = exports.PromotionSchemeSlabPayloadDto = exports.PromotionSchemeItemPayloadDto = exports.PromotionSchemePartyPayloadDto = exports.PromotionSchemeBranchPayloadDto = exports.PromotionSchemeErrorResponseDto = exports.PromotionSchemeErrorFieldDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 const module_response_dto_1 = require("../../../../common/utils/module-response.dto");
 Object.defineProperty(exports, "PromotionSchemeErrorFieldDto", { enumerable: true, get: function () { return module_response_dto_1.SalesErrorFieldDto; } });
@@ -102,8 +102,8 @@ class PromotionSchemePartyPayloadDto {
     prp_cust_group_id;
     prp_area_id;
     prp_city_id;
-    prp_target_name;
-    prp_target_code;
+    prp_scope_name;
+    prp_scope_code;
     prp_is_exclude;
     prp_match_priority;
     prp_notes;
@@ -161,7 +161,7 @@ __decorate([
             'ctm_name, whichever prp_kind names.',
     }),
     __metadata("design:type", Object)
-], PromotionSchemePartyPayloadDto.prototype, "prp_target_name", void 0);
+], PromotionSchemePartyPayloadDto.prototype, "prp_scope_name", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: String,
@@ -170,7 +170,7 @@ __decorate([
         description: 'Display only. cus_code / cgr_short / arm_short / ctm_short.',
     }),
     __metadata("design:type", Object)
-], PromotionSchemePartyPayloadDto.prototype, "prp_target_code", void 0);
+], PromotionSchemePartyPayloadDto.prototype, "prp_scope_code", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: false }),
     __metadata("design:type", Boolean)
@@ -223,7 +223,7 @@ class PromotionSchemeItemPayloadDto {
     pri_brand_id;
     pri_section_id;
     pri_unit_id;
-    pri_target_name;
+    pri_scope_name;
     pri_unit_name;
     pri_is_exclude;
     pri_disc_perc;
@@ -296,7 +296,7 @@ __decorate([
             'whichever pri_kind names.',
     }),
     __metadata("design:type", Object)
-], PromotionSchemeItemPayloadDto.prototype, "pri_target_name", void 0);
+], PromotionSchemeItemPayloadDto.prototype, "pri_scope_name", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         type: String,
@@ -513,10 +513,12 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
     __metadata("design:type", Object)
 ], PromotionSchemeSlabPayloadDto.prototype, "prs_modified_by", void 0);
-class PromotionSchemePayloadDto {
+class PromotionSchemeSummaryPayloadDto {
     prm_id;
     prm_comp_id;
     prm_branch_id;
+    prm_comp_name;
+    prm_branch_name;
     prm_tenant_id;
     prm_code;
     prm_name;
@@ -556,180 +558,195 @@ class PromotionSchemePayloadDto {
     prm_modified_by;
     prm_approved_on;
     prm_approved_by;
+}
+exports.PromotionSchemeSummaryPayloadDto = PromotionSchemeSummaryPayloadDto;
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_comp_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_branch_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, description: 'company.comp_name' }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_comp_name", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        type: String,
+        nullable: true,
+        description: 'branch_master.br_name — null when the scheme is company-wide',
+    }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_branch_name", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_tenant_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'DIWALI25' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_code", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Diwali 2025' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_name", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'DRAFT' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_status", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'ITEM_QTY' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_apply_on", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'DISC_PERC' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_benefit", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1 }),
+    __metadata("design:type", Number)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_priority", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'EXCLUSIVE' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_stack_mode", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_auto_apply", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_allow_with_manual_disc", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'NET_AMOUNT' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_calc_on_amount_type", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_include_tax", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'ALL' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_bill_type", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0 }),
+    __metadata("design:type", Number)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_min_bill_amount", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0 }),
+    __metadata("design:type", Number)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_min_qty", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'ALL' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_branch_scope", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'ALL' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_cust_scope", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'ALL' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_item_scope", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_price_level_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0 }),
+    __metadata("design:type", Number)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_max_benefit_per_bill", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0 }),
+    __metadata("design:type", Number)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_max_uses_total", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0 }),
+    __metadata("design:type", Number)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_max_uses_per_cust", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 0 }),
+    __metadata("design:type", Number)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_budget_amount", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_coupon_batch_id", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2025-10-01' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_start_date", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2025-10-31' }),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_end_date", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, example: '22:00:00' }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_valid_from_time", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, example: '04:00:00' }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_valid_to_time", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, example: 'MON,TUE' }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_valid_weekdays", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_remarks", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_is_active", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false }),
+    __metadata("design:type", Boolean)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_is_deleted", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_sync_date", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)(),
+    __metadata("design:type", String)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_created_on", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_created_by", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_modified_on", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_modified_by", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_approved_on", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
+    __metadata("design:type", Object)
+], PromotionSchemeSummaryPayloadDto.prototype, "prm_approved_by", void 0);
+class PromotionSchemePayloadDto extends PromotionSchemeSummaryPayloadDto {
     branches;
     parties;
     items;
     slabs;
 }
 exports.PromotionSchemePayloadDto = PromotionSchemePayloadDto;
-__decorate([
-    (0, swagger_1.ApiProperty)(),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_id", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)(),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_comp_id", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_branch_id", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_tenant_id", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'DIWALI25' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_code", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'Diwali 2025' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_name", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'DRAFT' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_status", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'ITEM_QTY' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_apply_on", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'DISC_PERC' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_benefit", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 1 }),
-    __metadata("design:type", Number)
-], PromotionSchemePayloadDto.prototype, "prm_priority", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'EXCLUSIVE' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_stack_mode", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], PromotionSchemePayloadDto.prototype, "prm_auto_apply", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: false }),
-    __metadata("design:type", Boolean)
-], PromotionSchemePayloadDto.prototype, "prm_allow_with_manual_disc", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'NET_AMOUNT' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_calc_on_amount_type", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: false }),
-    __metadata("design:type", Boolean)
-], PromotionSchemePayloadDto.prototype, "prm_include_tax", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'ALL' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_bill_type", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 0 }),
-    __metadata("design:type", Number)
-], PromotionSchemePayloadDto.prototype, "prm_min_bill_amount", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 0 }),
-    __metadata("design:type", Number)
-], PromotionSchemePayloadDto.prototype, "prm_min_qty", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'ALL' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_branch_scope", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'ALL' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_cust_scope", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'ALL' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_item_scope", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_price_level_id", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 0 }),
-    __metadata("design:type", Number)
-], PromotionSchemePayloadDto.prototype, "prm_max_benefit_per_bill", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 0 }),
-    __metadata("design:type", Number)
-], PromotionSchemePayloadDto.prototype, "prm_max_uses_total", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 0 }),
-    __metadata("design:type", Number)
-], PromotionSchemePayloadDto.prototype, "prm_max_uses_per_cust", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 0 }),
-    __metadata("design:type", Number)
-], PromotionSchemePayloadDto.prototype, "prm_budget_amount", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_coupon_batch_id", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-10-01' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_start_date", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-10-31' }),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_end_date", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, example: '22:00:00' }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_valid_from_time", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, example: '04:00:00' }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_valid_to_time", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, example: 'MON,TUE' }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_valid_weekdays", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_remarks", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], PromotionSchemePayloadDto.prototype, "prm_is_active", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: false }),
-    __metadata("design:type", Boolean)
-], PromotionSchemePayloadDto.prototype, "prm_is_deleted", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_sync_date", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)(),
-    __metadata("design:type", String)
-], PromotionSchemePayloadDto.prototype, "prm_created_on", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_created_by", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_modified_on", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_modified_by", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_approved_on", void 0);
-__decorate([
-    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true }),
-    __metadata("design:type", Object)
-], PromotionSchemePayloadDto.prototype, "prm_approved_by", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ type: [PromotionSchemeBranchPayloadDto] }),
     __metadata("design:type", Array)
@@ -777,6 +794,24 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: PromotionSchemePayloadDto }),
     __metadata("design:type", PromotionSchemePayloadDto)
 ], PromotionSchemeSuccessSingleDto.prototype, "data", void 0);
+class PromotionSchemeSuccessListDto {
+    success;
+    message;
+    data;
+}
+exports.PromotionSchemeSuccessListDto = PromotionSchemeSuccessListDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], PromotionSchemeSuccessListDto.prototype, "success", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Promotion schemes fetched successfully' }),
+    __metadata("design:type", String)
+], PromotionSchemeSuccessListDto.prototype, "message", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: [PromotionSchemePayloadDto] }),
+    __metadata("design:type", Array)
+], PromotionSchemeSuccessListDto.prototype, "data", void 0);
 class PromotionSchemeSuccessDeleteDto {
     success;
     message;

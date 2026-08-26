@@ -23,17 +23,15 @@ import {
   PromotionSchemeSlabPayload,
   PromotionSchemeSummaryPayload,
 } from '../types/promotion-scheme-api.types';
-
 export const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 // ─── The vocabularies ─────────────────────────────────────────────────────────
 // These were CHECK constraints in the DDL. They are deliberately NOT in the
 // migration, so this file is the only thing standing between the till and a
 // scheme nobody can evaluate. Keep them in step with the .prisma headers.
 export const PRM_STATUSES = ['DRAFT', 'APPROVED', 'SUSPENDED', 'CLOSED'] as const;
 export const PRM_APPLY_ON = ['BILL_AMOUNT', 'BILL_QTY', 'ITEM_AMOUNT', 'ITEM_QTY'] as const;
-export const PRM_BENEFITS = ['FREE_ITEM', 'DISC_PERC', 'DISC_AMT', 'FIXED_PRICE'] as const;
+export const PRM_BENEFITS = ['FREE_ITEM', 'DISC_PERC', 'DISC_AMT', 'FIXED_PRICE','DISC_PER_ITEM'] as const;
 export const PRM_STACK_MODES = ['EXCLUSIVE', 'STACKABLE'] as const;
 export const PRM_CALC_ON = ['GROSS_AMOUNT', 'NET_AMOUNT', 'TAXABLE_AMOUNT'] as const;
 export const PRM_BILL_TYPES = ['ALL', 'CASH', 'CREDIT'] as const;
@@ -46,11 +44,9 @@ export const PRI_KINDS = [
   'ITEM_BRAND',
   'ITEM_SECTION',
 ] as const;
-
 export const PRM_CODE_PATTERN = /^[A-Za-z0-9_-]+$/;
 export const PRM_WEEKDAYS_PATTERN =
   /^(MON|TUE|WED|THU|FRI|SAT|SUN)(,(MON|TUE|WED|THU|FRI|SAT|SUN))*$/;
-
 /** Narrowest first — the seed the engine reads when two rules both match. */
 export const PRP_DEFAULT_MATCH_PRIORITY: Record<string, number> = {
   CUSTOMER: 4,
@@ -58,7 +54,6 @@ export const PRP_DEFAULT_MATCH_PRIORITY: Record<string, number> = {
   CITY: 2,
   CUSTOMER_GROUP: 1,
 };
-
 export const PRI_DEFAULT_MATCH_PRIORITY: Record<string, number> = {
   ITEM: 4,
   ITEM_BRAND: 3,
@@ -66,7 +61,6 @@ export const PRI_DEFAULT_MATCH_PRIORITY: Record<string, number> = {
   ITEM_SECTION: 1,
   ITEM_GROUP: 0,
 };
-
 // ─── Display lookups ──────────────────────────────────────────────────────────
 //
 // Every scope row stores an id and a kind; the NAME behind that id lives in one
@@ -76,18 +70,25 @@ export const PRI_DEFAULT_MATCH_PRIORITY: Record<string, number> = {
 //
 // These are `select`s rather than `include`s on purpose: a scope row must not
 // drag a whole item or customer record into a grid response.
-
+/**
+ * The two masters the HEADER points at. Same idea as the grid lookups below:
+ * the id is the truth, the name is for the screen, and neither is ever written
+ * back. Read paths join them; the write paths' audit snapshots do not, which is
+ * why the fields are optional on SchemeRow.
+ */
+export const SCHEME_LOOKUP = {
+  company: { select: { compName: true } },
+  branch: { select: { brName: true } },
+} as const;
 export const BRANCH_LOOKUP = {
   branch: { select: { brName: true, brCode: true, brShort: true } },
 } as const;
-
 export const PARTY_LOOKUP = {
   customer: { select: { cusName: true, cusCode: true } },
   customerGroup: { select: { cgrName: true, cgrShort: true } },
   area: { select: { armName: true, armShort: true } },
   city: { select: { ctmName: true, ctmShort: true } },
 } as const;
-
 export const ITEM_LOOKUP = {
   item: { select: { itemNameEn: true } },
   itemGroup: { select: { itgName: true } },
@@ -98,14 +99,11 @@ export const ITEM_LOOKUP = {
   // item_unit_master — so the unit needs the second hop.
   unit: { select: { unit: { select: { unit_name: true } } } },
 } as const;
-
 export const SLAB_LOOKUP = {
   freeItem: { select: { itemNameEn: true } },
   freeUnit: { select: { unit: { select: { unit_name: true } } } },
 } as const;
-
 type UnitLookup = { unit: { unit_name: string } } | null;
-
 /**
  * A child row that may or may not arrive with its lookups attached.
  *
@@ -117,14 +115,12 @@ type UnitLookup = { unit: { unit_name: string } } | null;
 export type BranchRow = PromotionSchemeBranch & {
   branch?: { brName: string; brCode: string | null; brShort: string | null } | null;
 };
-
 export type PartyRow = PromotionSchemeParty & {
   customer?: { cusName: string | null; cusCode: string | null } | null;
   customerGroup?: { cgrName: string; cgrShort: string | null } | null;
   area?: { armName: string; armShort: string | null } | null;
   city?: { ctmName: string; ctmShort: string | null } | null;
 };
-
 export type ItemRow = PromotionSchemeItem & {
   item?: { itemNameEn: string } | null;
   itemGroup?: { itgName: string } | null;
@@ -133,44 +129,38 @@ export type ItemRow = PromotionSchemeItem & {
   itemSection?: { secName: string } | null;
   unit?: UnitLookup;
 };
-
 export type SlabRow = PromotionSchemeSlab & {
   freeItem?: { itemNameEn: string } | null;
   freeUnit?: UnitLookup;
 };
-
-export type SchemeWithChildren = PromotionScheme & {
+export type SchemeRow = PromotionScheme & {
+  company?: { compName: string } | null;
+  branch?: { brName: string } | null;
+};
+export type SchemeWithChildren = SchemeRow & {
   branches: BranchRow[];
   parties: PartyRow[];
   items: ItemRow[];
   slabs: SlabRow[];
 };
-
 /** First non-null of the lookups, or null when none of them was joined. */
 function firstName(...candidates: Array<string | null | undefined>): string | null {
   return candidates.find((value) => value !== null && value !== undefined) ?? null;
 }
-
 // ─── Internal throw helpers ───────────────────────────────────────────────────
-
 export function throwBadRequest(message: string, errors: PromotionSchemeErrorDetail[]): never {
   throwSalesBadRequest<PromotionSchemeErrorDetail, PromotionSchemeErrorResponse>(message, errors);
 }
-
 export function throwConflict(message: string, errors: PromotionSchemeErrorDetail[]): never {
   throwSalesConflict<PromotionSchemeErrorDetail, PromotionSchemeErrorResponse>(message, errors);
 }
-
 export function fieldError(field: string, message: string): never {
   throwBadRequest('Validation failed', [{ field, message }]);
 }
-
 // ─── Format helpers ───────────────────────────────────────────────────────────
-
 export function toIsoDate(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
-
 export function toIsoTime(value: Date | null): string | null {
   if (!value) {
     return null;
@@ -180,7 +170,6 @@ export function toIsoTime(value: Date | null): string | null {
   const seconds = String(value.getUTCSeconds()).padStart(2, '0');
   return `${hours}:${minutes}:${seconds}`;
 }
-
 export function normalizeNullableString(value: string | null | undefined): string | null {
   if (value === undefined || value === null) {
     return null;
@@ -188,7 +177,6 @@ export function normalizeNullableString(value: string | null | undefined): strin
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 }
-
 export function resolveActor(...candidates: Array<string | null | undefined>): string | null {
   for (const candidate of candidates) {
     if (candidate && candidate.trim()) {
@@ -197,7 +185,6 @@ export function resolveActor(...candidates: Array<string | null | undefined>): s
   }
   return null;
 }
-
 export function resolveActorUuid(...candidates: Array<string | null | undefined>): string | null {
   for (const candidate of candidates) {
     if (candidate && UUID_PATTERN.test(candidate)) {
@@ -206,23 +193,19 @@ export function resolveActorUuid(...candidates: Array<string | null | undefined>
   }
   return null;
 }
-
 // ─── Validation primitives ────────────────────────────────────────────────────
-
 export function requireString(value: string | undefined | null, field: string): string {
   if (typeof value !== 'string' || !value.trim()) {
     fieldError(field, `${field} is required`);
   }
   return value.trim();
 }
-
 export function requireUuid(value: string | undefined | null, field: string): string {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
     fieldError(field, `${field} must be a valid uuid`);
   }
   return value;
 }
-
 /**
  * Trim and upper-case a vocabulary value without judging it. The verdict is the
  * invariants layer's job, so that one bad payload reports every problem at once
@@ -231,7 +214,6 @@ export function requireUuid(value: string | undefined | null, field: string): st
 export function normalizeEnum(value: string | undefined | null): string {
   return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
-
 export function requireNumber(
   value: number | undefined | null,
   field: string,
@@ -246,7 +228,6 @@ export function requireNumber(
   }
   return value;
 }
-
 export function requireInteger(
   value: number | undefined | null,
   field: string,
@@ -258,7 +239,6 @@ export function requireInteger(
   }
   return requireNumber(value as number, field, minValue, maxValue);
 }
-
 export function parseDateOnly(value: string | undefined | null, field: string): Date {
   const trimmed = typeof value === 'string' ? value.trim() : '';
   if (!trimmed) {
@@ -270,7 +250,6 @@ export function parseDateOnly(value: string | undefined | null, field: string): 
   }
   return parsed;
 }
-
 export function parseTimeToUtcDate(value: string, field: string): Date {
   const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value.trim());
   if (!match) {
@@ -279,9 +258,7 @@ export function parseTimeToUtcDate(value: string, field: string): Date {
   const [, hours, minutes, seconds] = match;
   return new Date(Date.UTC(1970, 0, 1, Number(hours), Number(minutes), Number(seconds ?? 0)));
 }
-
 // ─── Row mappers ──────────────────────────────────────────────────────────────
-
 export function toBranchPayload(row: BranchRow): PromotionSchemeBranchPayload {
   return {
     prb_id: row.prbId,
@@ -301,7 +278,6 @@ export function toBranchPayload(row: BranchRow): PromotionSchemeBranchPayload {
     prb_modified_by: row.prbModifiedBy,
   };
 }
-
 export function toPartyPayload(row: PartyRow): PromotionSchemePartyPayload {
   return {
     prp_id: row.prpId,
@@ -314,14 +290,14 @@ export function toPartyPayload(row: PartyRow): PromotionSchemePartyPayload {
     prp_area_id: row.prpAreaId,
     prp_city_id: row.prpCityId,
     // COALESCE over the four masters — only the one matching prp_kind is joined.
-    prp_target_name: firstName(
+    prp_scope_name: firstName(
       row.customer?.cusName,
       row.customerGroup?.cgrName,
       row.area?.armName,
       row.city?.ctmName,
     ),
     // Note the master columns are not uniform: cus_code, then the three shorts.
-    prp_target_code: firstName(
+    prp_scope_code: firstName(
       row.customer?.cusCode,
       row.customerGroup?.cgrShort,
       row.area?.armShort,
@@ -339,7 +315,6 @@ export function toPartyPayload(row: PartyRow): PromotionSchemePartyPayload {
     prp_modified_by: row.prpModifiedBy,
   };
 }
-
 export function toItemPayload(row: ItemRow): PromotionSchemeItemPayload {
   return {
     pri_id: row.priId,
@@ -353,7 +328,7 @@ export function toItemPayload(row: ItemRow): PromotionSchemeItemPayload {
     pri_brand_id: row.priBrandId,
     pri_section_id: row.priSectionId,
     pri_unit_id: row.priUnitId,
-    pri_target_name: firstName(
+    pri_scope_name: firstName(
       row.item?.itemNameEn,
       row.itemGroup?.itgName,
       row.itemCategory?.categoryName,
@@ -379,7 +354,6 @@ export function toItemPayload(row: ItemRow): PromotionSchemeItemPayload {
     pri_modified_by: row.priModifiedBy,
   };
 }
-
 export function toSlabPayload(row: SlabRow): PromotionSchemeSlabPayload {
   return {
     prs_id: row.prsId,
@@ -412,12 +386,14 @@ export function toSlabPayload(row: SlabRow): PromotionSchemeSlabPayload {
     prs_modified_by: row.prsModifiedBy,
   };
 }
-
-export function toSchemeSummaryPayload(scheme: PromotionScheme): PromotionSchemeSummaryPayload {
+export function toSchemeSummaryPayload(scheme: SchemeRow): PromotionSchemeSummaryPayload {
   return {
     prm_id: scheme.prmId,
     prm_comp_id: scheme.prmCompId,
     prm_branch_id: scheme.prmBranchId,
+    // Display only — joined from company and branch_master, never written back.
+    prm_comp_name: scheme.company?.compName ?? null,
+    prm_branch_name: scheme.branch?.brName ?? null,
     prm_tenant_id: scheme.prmTenantId,
     prm_code: scheme.prmCode,
     prm_name: scheme.prmName,
@@ -459,7 +435,6 @@ export function toSchemeSummaryPayload(scheme: PromotionScheme): PromotionScheme
     prm_approved_by: scheme.prmApprovedBy,
   };
 }
-
 export function toSchemePayload(scheme: SchemeWithChildren): PromotionSchemePayload {
   return {
     ...toSchemeSummaryPayload(scheme),
@@ -469,9 +444,7 @@ export function toSchemePayload(scheme: SchemeWithChildren): PromotionSchemePayl
     slabs: scheme.slabs.map(toSlabPayload),
   };
 }
-
 // ─── Error mapping ────────────────────────────────────────────────────────────
-
 function resolveForeignKeyField(error: Prisma.PrismaClientKnownRequestError): string {
   const meta =
     typeof error.meta?.field_name === 'string'
@@ -480,7 +453,6 @@ function resolveForeignKeyField(error: Prisma.PrismaClientKnownRequestError): st
         ? error.meta.target
         : '';
   const normalized = meta.toLowerCase();
-
   if (normalized.includes('prm_company')) return 'prm_comp_id';
   if (normalized.includes('prm_branch')) return 'prm_branch_id';
   if (normalized.includes('prm_price_level')) return 'prm_price_level_id';
@@ -495,7 +467,6 @@ function resolveForeignKeyField(error: Prisma.PrismaClientKnownRequestError): st
   if (normalized.includes('prs_scheme_benefit')) return 'prs_benefit';
   return 'request';
 }
-
 /**
  * Turns the three write failures this module can provoke into answers a screen
  * can show, instead of a 500.
@@ -518,11 +489,9 @@ export function handlePromotionWriteError(error: unknown): void {
       },
     ]);
   }
-
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
     return;
   }
-
   if (error.code === 'P2002') {
     throwConflict('Duplicate promotion data is not allowed', [
       {
@@ -532,7 +501,6 @@ export function handlePromotionWriteError(error: unknown): void {
     ]);
     return;
   }
-
   if (error.code === 'P2003') {
     throwBadRequest('Validation failed', [
       {

@@ -71,5 +71,6 @@ exports.MODULE_DROPDOWN_NAME_ALIASES = {
     supplierGroups: ['supplier groups', 'supplier group'],
     suppliers: ['suppliers', 'supplier'],
     userMasters: ['user masters', 'user master', 'users', 'user'],
+    devices: ['devices', 'device', 'device list', 'device lists'],
 };
 //# sourceMappingURL=master-lookup.constants.js.map

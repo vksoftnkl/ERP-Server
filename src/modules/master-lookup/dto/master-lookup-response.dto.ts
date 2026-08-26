@@ -74,6 +74,8 @@ export class MastersLookupPayloadDto {
   suppliers!: NameIdOptionDto[];
   @ApiProperty({ type: NameIdOptionDto, isArray: true })
   userMasters!: NameIdOptionDto[];
+  @ApiProperty({ type: NameIdOptionDto, isArray: true })
+  devices!: NameIdOptionDto[];
 }
 export class MasterLookupPayloadDto {
   @ApiProperty({ type: AccountsLookupPayloadDto })

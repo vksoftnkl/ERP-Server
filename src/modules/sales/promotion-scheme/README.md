@@ -68,20 +68,75 @@ them as `{}` in the generated example body; that is a UI placeholder, not a vali
 | --- | --- | --- | --- |
 | `POST` | `/create` | object | Create or update header + all four grids by `prm_id` presence |
 | `GET` | `/get?prm_id=` | — | Header + branches + parties + items + slabs, grid-ready |
+| `GET` | `/list?company=&branch=` | — | The live schemes, each with all four grids; both filters optional |
 | `GET` | `/eligibility?prm_id=&cus_id=` | — | Does this one customer qualify for this one scheme? |
 | `DELETE` | `/delete?prm_id=&prm_modified_by=` | — | Soft delete the header **and all four child sets** |
 
+### `GET /list` — every live campaign
+
+Same graph as `/get`, many schemes at a time: each row carries its `branches`, `parties`,
+`items` and `slabs` arrays, so a screen can load the campaigns and edit any one of them
+without a second call.
+
+```jsonc
+GET /api/v1/promotion-scheme/list?company=01963d86-…&branch=01963d86-…
+{
+  "success": true,
+  "message": "Promotion schemes fetched successfully",
+  "data": [
+    {
+      "prm_id": "0196…", "prm_code": "DIWALI25", "prm_name": "Diwali 2025",
+      "prm_comp_id": "0196…", "prm_comp_name": "Sri Krishna Traders",
+      "prm_branch_id": "0196…", "prm_branch_name": "Main Shop",
+      "prm_status": "APPROVED", "prm_benefit": "DISC_PERC",
+      "prm_start_date": "2025-10-01", "prm_end_date": "2025-10-31", …
+      "branches": [ { "prb_id": "0196…", "prb_branch_name": "Main Shop", … } ],
+      "parties":  [ { "prp_id": "0196…", "prp_kind": "CUSTOMER_GROUP", … } ],
+      "items":    [ { "pri_id": "0196…", "pri_scope_name": "Own Brand", … } ],
+      "slabs":    [ { "prs_id": "0196…", "prs_exceeds": 1000, "prs_disc_perc": 5, … } ]
+    }
+  ]
+}
+```
+
+Two filters are **not parameters**: `is_deleted = false` and `is_active = true`. They hold
+for the child rows as well as the header, so a deactivated slab band or party rule is
+absent from its array rather than present and flagged — stricter than `/get`, which keeps
+deactivated rows so the grid can switch them back on. `prm_status` is a separate axis: an
+`APPROVED` scheme that has been deactivated is still absent here, a `DRAFT` active one is
+present.
+
+**Both params are optional** and each narrows independently — no company means every
+company, no branch means every branch, and a bare `/list` is every live scheme there is:
+
+| Query | Returns |
+| --- | --- |
+| `/list` | every live scheme, all companies |
+| `/list?company=` | every live scheme of that company, all branches |
+| `/list?branch=` | every live scheme stamped with that branch, whatever the company |
+| `/list?company=&branch=` | both narrowings together |
+
+`branch` matches the `prm_branch_id` **column** literally, so company-wide schemes
+(`prm_branch_id` NULL) come back only when no branch is named. It does **not** consult
+`prm_branch_scope` or the branch grid — "which schemes run at this till" is a resolver
+question, not a pick-list one.
+
+`company`/`branch` are short spellings; `prm_comp_id`/`prm_branch_id` are accepted for the
+same two params. Schemes come back ordered by `prm_code`, their grids in `slno` order.
+
 ## Display names on the read paths
 
-A scope row stores an id and a kind; the name behind that id lives in one of nine masters.
+The header points at a company and (optionally) a branch; a scope row stores an id and a
+kind, and the name behind that id lives in one of nine masters.
 Every read joins them through the relations Prisma declares on the generated columns — one
 join per kind, no `CASE` — so a grid renders straight off the response:
 
 | Grid | Resolved fields | Source |
 | --- | --- | --- |
+| header | `prm_comp_name`, `prm_branch_name` | `comp_name`, `br_name` — `prm_branch_name` is null on a company-wide scheme |
 | branches | `prb_branch_name`, `prb_branch_code` | `br_name`, then `br_code` else `br_short` |
-| parties | `prp_target_name`, `prp_target_code` | `cus_name`/`cgr_name`/`arm_name`/`ctm_name`, and `cus_code`/`cgr_short`/`arm_short`/`ctm_short` |
-| items | `pri_target_name`, `pri_unit_name` | `item_name_en`/`itg_name`/`category_name`/`brand_name`/`sec_name`, and `unit_name` via `item_unit_conversion` |
+| parties | `prp_scope_name`, `prp_scope_code` | `cus_name`/`cgr_name`/`arm_name`/`ctm_name`, and `cus_code`/`cgr_short`/`arm_short`/`ctm_short` |
+| items | `pri_scope_name`, `pri_unit_name` | `item_name_en`/`itg_name`/`category_name`/`brand_name`/`sec_name`, and `unit_name` via `item_unit_conversion` |
 | slabs | `prs_free_item_name`, `prs_free_unit_name` | `item_name_en`, `unit_name` |
 
 These are **display only**. They are ignored on write — the id columns are the truth, and

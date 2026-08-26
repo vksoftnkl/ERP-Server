@@ -195,6 +195,11 @@ function buildModuleFetchers(prisma) {
             select: { usrId: true, usrDisplayName: true },
             orderBy: [{ usrDisplayName: 'asc' }, { usrId: 'asc' }],
         }), (row) => (0, lookup_option_utils_1.toOption)(row.usrId, row.usrDisplayName)),
+        devices: simpleFetcher(() => prisma.deviceMaster.findMany({
+            where: { devIsDeleted: false, devIsActive: true },
+            select: { devId: true, devDeviceName: true, devDeviceUid: true },
+            orderBy: [{ devDeviceName: 'asc' }, { devId: 'asc' }],
+        }), (row) => (0, lookup_option_utils_1.toOption)(row.devId, row.devDeviceName ?? row.devDeviceUid)),
     };
 }
 function simpleFetcher(queryFn, mapper) {

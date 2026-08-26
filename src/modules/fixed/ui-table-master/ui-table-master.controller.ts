@@ -89,7 +89,7 @@ export class UiTableMasterController {
     return { success: true, message: 'Column widths updated successfully', data };
   }
 
-  @Put('visibility-settings')
+  @Put('layout-settings')
   @Version(API_VERSION)
   @ApiOperation({ summary: 'Update visibility setting for one or more UI table columns' })
   @ApiOkResponse({ type: UiTableMasterSuccessColumnUpdateDto })

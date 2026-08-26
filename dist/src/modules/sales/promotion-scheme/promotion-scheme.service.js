@@ -23,6 +23,28 @@ const BRANCH_TABLE_NAME = 'promotion scheme branch';
 const PARTY_TABLE_NAME = 'promotion scheme party';
 const ITEM_TABLE_NAME = 'promotion scheme item';
 const SLAB_TABLE_NAME = 'promotion scheme slab';
+const LIVE_CHILDREN_INCLUDE = {
+    branches: {
+        where: { prbIsDeleted: false, prbIsActive: true },
+        orderBy: [{ prbSlno: 'asc' }, { prbId: 'asc' }],
+        include: promotion_scheme_utils_1.BRANCH_LOOKUP,
+    },
+    parties: {
+        where: { prpIsDeleted: false, prpIsActive: true },
+        orderBy: [{ prpSlno: 'asc' }, { prpId: 'asc' }],
+        include: promotion_scheme_utils_1.PARTY_LOOKUP,
+    },
+    items: {
+        where: { priIsDeleted: false, priIsActive: true },
+        orderBy: [{ priSlno: 'asc' }, { priId: 'asc' }],
+        include: promotion_scheme_utils_1.ITEM_LOOKUP,
+    },
+    slabs: {
+        where: { prsIsDeleted: false, prsIsActive: true },
+        orderBy: [{ prsExceeds: 'asc' }, { prsSlno: 'asc' }, { prsId: 'asc' }],
+        include: promotion_scheme_utils_1.SLAB_LOOKUP,
+    },
+};
 let PromotionSchemeService = class PromotionSchemeService {
     prisma;
     auditLogService;
@@ -34,6 +56,19 @@ let PromotionSchemeService = class PromotionSchemeService {
     }
     async saveScheme(dto) {
         return dto.prm_id ? this.updateScheme(dto) : this.createScheme(dto);
+    }
+    async listSchemes(query) {
+        const schemes = await this.prisma.promotionScheme.findMany({
+            where: {
+                ...(query.prm_comp_id ? { prmCompId: query.prm_comp_id } : {}),
+                ...(query.prm_branch_id ? { prmBranchId: query.prm_branch_id } : {}),
+                prmIsDeleted: false,
+                prmIsActive: true,
+            },
+            orderBy: [{ prmCode: 'asc' }, { prmId: 'asc' }],
+            include: { ...promotion_scheme_utils_1.SCHEME_LOOKUP, ...LIVE_CHILDREN_INCLUDE },
+        });
+        return schemes.map(promotion_scheme_utils_1.toSchemePayload);
     }
     async getSchemeById(prmId) {
         const scheme = await this.findSchemeWithChildren(this.prisma, prmId);
@@ -191,7 +226,7 @@ let PromotionSchemeService = class PromotionSchemeService {
         return this.prisma
             .$transaction(async (tx) => {
             const row = await tx.promotionScheme.create({ data });
-            await this.audit(tx, 'create', SCHEME_TABLE_NAME, row.prmId, row.prmName, null, (0, promotion_scheme_utils_1.toSchemePayload)({ ...row, branches: [], parties: [], items: [], slabs: [] }), 'Promotion scheme created');
+            await this.audit(tx, 'insert', SCHEME_TABLE_NAME, row.prmId, row.prmName, null, (0, promotion_scheme_utils_1.toSchemePayload)({ ...row, branches: [], parties: [], items: [], slabs: [] }), 'Promotion scheme created');
             await this.syncChildren(tx, row, dto);
             const after = await this.findSchemeWithChildren(tx, row.prmId);
             return (0, promotion_scheme_utils_1.toSchemePayload)(after ?? { ...row, branches: [], parties: [], items: [], slabs: [] });
@@ -459,7 +494,7 @@ let PromotionSchemeService = class PromotionSchemeService {
             },
             include: promotion_scheme_utils_1.BRANCH_LOOKUP,
         });
-        await this.audit(tx, 'create', BRANCH_TABLE_NAME, created.prbId, `Scheme ${prmId} / Branch ${created.prbSlno}`, null, (0, promotion_scheme_utils_1.toBranchPayload)(created), 'Promotion scheme branch row created');
+        await this.audit(tx, 'insert', BRANCH_TABLE_NAME, created.prbId, `Scheme ${prmId} / Branch ${created.prbSlno}`, null, (0, promotion_scheme_utils_1.toBranchPayload)(created), 'Promotion scheme branch row created');
         return created;
     }
     async savePartyRow(tx, prmId, row, index) {
@@ -525,7 +560,7 @@ let PromotionSchemeService = class PromotionSchemeService {
             },
             include: promotion_scheme_utils_1.PARTY_LOOKUP,
         });
-        await this.audit(tx, 'create', PARTY_TABLE_NAME, created.prpId, `Scheme ${prmId} / ${created.prpKind} ${created.prpScopeId}`, null, (0, promotion_scheme_utils_1.toPartyPayload)(created), 'Promotion scheme party row created');
+        await this.audit(tx, 'insert', PARTY_TABLE_NAME, created.prpId, `Scheme ${prmId} / ${created.prpKind} ${created.prpScopeId}`, null, (0, promotion_scheme_utils_1.toPartyPayload)(created), 'Promotion scheme party row created');
         return created;
     }
     async saveItemRow(tx, prmId, row, index) {
@@ -632,7 +667,7 @@ let PromotionSchemeService = class PromotionSchemeService {
             },
             include: promotion_scheme_utils_1.ITEM_LOOKUP,
         });
-        await this.audit(tx, 'create', ITEM_TABLE_NAME, created.priId, `Scheme ${prmId} / ${created.priKind} ${created.priScopeId}`, null, (0, promotion_scheme_utils_1.toItemPayload)(created), 'Promotion scheme item row created');
+        await this.audit(tx, 'insert', ITEM_TABLE_NAME, created.priId, `Scheme ${prmId} / ${created.priKind} ${created.priScopeId}`, null, (0, promotion_scheme_utils_1.toItemPayload)(created), 'Promotion scheme item row created');
         return created;
     }
     assertPartyInvariants(row) {
@@ -775,7 +810,7 @@ let PromotionSchemeService = class PromotionSchemeService {
             },
             include: promotion_scheme_utils_1.SLAB_LOOKUP,
         });
-        await this.audit(tx, 'create', SLAB_TABLE_NAME, created.prsId, `Scheme ${scheme.prmId} / Band ${created.prsSlno}`, null, (0, promotion_scheme_utils_1.toSlabPayload)(created), 'Promotion scheme slab row created');
+        await this.audit(tx, 'insert', SLAB_TABLE_NAME, created.prsId, `Scheme ${scheme.prmId} / Band ${created.prsSlno}`, null, (0, promotion_scheme_utils_1.toSlabPayload)(created), 'Promotion scheme slab row created');
         return created;
     }
     assertSlabInvariants(band) {
@@ -788,6 +823,7 @@ let PromotionSchemeService = class PromotionSchemeService {
         return client.promotionScheme.findFirst({
             where: { prmId, prmIsDeleted: false },
             include: {
+                ...promotion_scheme_utils_1.SCHEME_LOOKUP,
                 branches: {
                     where: { prbIsDeleted: false },
                     orderBy: [{ prbSlno: 'asc' }, { prbId: 'asc' }],
@@ -795,12 +831,12 @@ let PromotionSchemeService = class PromotionSchemeService {
                 },
                 parties: {
                     where: { prpIsDeleted: false },
-                    orderBy: [{ prpMatchPriority: 'desc' }, { prpSlno: 'asc' }, { prpId: 'asc' }],
+                    orderBy: [{ prpSlno: 'asc' }, { prpId: 'asc' }],
                     include: promotion_scheme_utils_1.PARTY_LOOKUP,
                 },
                 items: {
                     where: { priIsDeleted: false },
-                    orderBy: [{ priMatchPriority: 'desc' }, { priSlno: 'asc' }, { priId: 'asc' }],
+                    orderBy: [{ priSlno: 'asc' }, { priId: 'asc' }],
                     include: promotion_scheme_utils_1.ITEM_LOOKUP,
                 },
                 slabs: {

@@ -1,4 +1,5 @@
 export type AuditAction = 'insert' | 'update' | 'approve' | 'cancel';
+export type AuditActionInput = AuditAction | 'new' | Capitalize<AuditAction | 'new'>;
 export type AuditScreenKind = 'master' | 'transaction' | 'settings' | 'other';
 export type CaptureScreenSnapshotInput = {
     screenId: number;
@@ -6,7 +7,7 @@ export type CaptureScreenSnapshotInput = {
     accYear?: string | null;
 };
 export type CreateAuditLogInput = {
-    action: AuditAction | (string & {});
+    action: AuditActionInput;
     screenId: number;
     tableName: string;
     pk?: string | number | bigint | null;
@@ -20,7 +21,7 @@ export type CreateAuditLogInput = {
     notes?: string | null;
 };
 export type LogEntityChangeInput = {
-    action: AuditAction | (string & {});
+    action: AuditActionInput;
     tableName: string;
     screenId?: number;
     screenName?: string;

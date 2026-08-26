@@ -38,6 +38,7 @@ export declare class MastersLookupPayloadDto {
     supplierGroups: NameIdOptionDto[];
     suppliers: NameIdOptionDto[];
     userMasters: NameIdOptionDto[];
+    devices: NameIdOptionDto[];
 }
 export declare class MasterLookupPayloadDto {
     accounts: AccountsLookupPayloadDto;

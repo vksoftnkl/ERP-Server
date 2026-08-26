@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SLAB_LOOKUP = exports.ITEM_LOOKUP = exports.PARTY_LOOKUP = exports.BRANCH_LOOKUP = exports.PRI_DEFAULT_MATCH_PRIORITY = exports.PRP_DEFAULT_MATCH_PRIORITY = exports.PRM_WEEKDAYS_PATTERN = exports.PRM_CODE_PATTERN = exports.PRI_KINDS = exports.PRP_KINDS = exports.PRM_SCOPES = exports.PRM_BILL_TYPES = exports.PRM_CALC_ON = exports.PRM_STACK_MODES = exports.PRM_BENEFITS = exports.PRM_APPLY_ON = exports.PRM_STATUSES = exports.UUID_PATTERN = void 0;
+exports.SLAB_LOOKUP = exports.ITEM_LOOKUP = exports.PARTY_LOOKUP = exports.BRANCH_LOOKUP = exports.SCHEME_LOOKUP = exports.PRI_DEFAULT_MATCH_PRIORITY = exports.PRP_DEFAULT_MATCH_PRIORITY = exports.PRM_WEEKDAYS_PATTERN = exports.PRM_CODE_PATTERN = exports.PRI_KINDS = exports.PRP_KINDS = exports.PRM_SCOPES = exports.PRM_BILL_TYPES = exports.PRM_CALC_ON = exports.PRM_STACK_MODES = exports.PRM_BENEFITS = exports.PRM_APPLY_ON = exports.PRM_STATUSES = exports.UUID_PATTERN = void 0;
 exports.throwBadRequest = throwBadRequest;
 exports.throwConflict = throwConflict;
 exports.fieldError = fieldError;
@@ -28,7 +28,7 @@ const module_service_utils_1 = require("../../../../common/utils/module-service.
 exports.UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 exports.PRM_STATUSES = ['DRAFT', 'APPROVED', 'SUSPENDED', 'CLOSED'];
 exports.PRM_APPLY_ON = ['BILL_AMOUNT', 'BILL_QTY', 'ITEM_AMOUNT', 'ITEM_QTY'];
-exports.PRM_BENEFITS = ['FREE_ITEM', 'DISC_PERC', 'DISC_AMT', 'FIXED_PRICE'];
+exports.PRM_BENEFITS = ['FREE_ITEM', 'DISC_PERC', 'DISC_AMT', 'FIXED_PRICE', 'DISC_PER_ITEM'];
 exports.PRM_STACK_MODES = ['EXCLUSIVE', 'STACKABLE'];
 exports.PRM_CALC_ON = ['GROSS_AMOUNT', 'NET_AMOUNT', 'TAXABLE_AMOUNT'];
 exports.PRM_BILL_TYPES = ['ALL', 'CASH', 'CREDIT'];
@@ -55,6 +55,10 @@ exports.PRI_DEFAULT_MATCH_PRIORITY = {
     ITEM_CATEGORY: 2,
     ITEM_SECTION: 1,
     ITEM_GROUP: 0,
+};
+exports.SCHEME_LOOKUP = {
+    company: { select: { compName: true } },
+    branch: { select: { brName: true } },
 };
 exports.BRANCH_LOOKUP = {
     branch: { select: { brName: true, brCode: true, brShort: true } },
@@ -203,8 +207,8 @@ function toPartyPayload(row) {
         prp_cust_group_id: row.prpCustGroupId,
         prp_area_id: row.prpAreaId,
         prp_city_id: row.prpCityId,
-        prp_target_name: firstName(row.customer?.cusName, row.customerGroup?.cgrName, row.area?.armName, row.city?.ctmName),
-        prp_target_code: firstName(row.customer?.cusCode, row.customerGroup?.cgrShort, row.area?.armShort, row.city?.ctmShort),
+        prp_scope_name: firstName(row.customer?.cusName, row.customerGroup?.cgrName, row.area?.armName, row.city?.ctmName),
+        prp_scope_code: firstName(row.customer?.cusCode, row.customerGroup?.cgrShort, row.area?.armShort, row.city?.ctmShort),
         prp_is_exclude: row.prpIsExclude,
         prp_match_priority: row.prpMatchPriority,
         prp_notes: row.prpNotes,
@@ -230,7 +234,7 @@ function toItemPayload(row) {
         pri_brand_id: row.priBrandId,
         pri_section_id: row.priSectionId,
         pri_unit_id: row.priUnitId,
-        pri_target_name: firstName(row.item?.itemNameEn, row.itemGroup?.itgName, row.itemCategory?.categoryName, row.itemBrand?.brand_name, row.itemSection?.secName),
+        pri_scope_name: firstName(row.item?.itemNameEn, row.itemGroup?.itgName, row.itemCategory?.categoryName, row.itemBrand?.brand_name, row.itemSection?.secName),
         pri_unit_name: row.unit?.unit.unit_name ?? null,
         pri_is_exclude: row.priIsExclude,
         pri_disc_perc: (0, module_service_utils_1.toNumber)(row.priDiscPerc),
@@ -287,6 +291,8 @@ function toSchemeSummaryPayload(scheme) {
         prm_id: scheme.prmId,
         prm_comp_id: scheme.prmCompId,
         prm_branch_id: scheme.prmBranchId,
+        prm_comp_name: scheme.company?.compName ?? null,
+        prm_branch_name: scheme.branch?.brName ?? null,
         prm_tenant_id: scheme.prmTenantId,
         prm_code: scheme.prmCode,
         prm_name: scheme.prmName,

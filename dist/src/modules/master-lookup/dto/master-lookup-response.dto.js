@@ -117,6 +117,7 @@ class MastersLookupPayloadDto {
     supplierGroups;
     suppliers;
     userMasters;
+    devices;
 }
 exports.MastersLookupPayloadDto = MastersLookupPayloadDto;
 __decorate([
@@ -195,6 +196,10 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: NameIdOptionDto, isArray: true }),
     __metadata("design:type", Array)
 ], MastersLookupPayloadDto.prototype, "userMasters", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: NameIdOptionDto, isArray: true }),
+    __metadata("design:type", Array)
+], MastersLookupPayloadDto.prototype, "devices", void 0);
 class MasterLookupPayloadDto {
     accounts;
     masters;

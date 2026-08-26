@@ -94,6 +94,7 @@ import { ItemsReorderMasterModule } from './modules/Inventory/items-reorder-mast
 import { ItemsQtyPriceMasterModule } from './modules/Inventory/items-qty-price-master/items-qty-price-master.module';
 import { ItemsTaxHistoryMasterModule } from './modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from './modules/Inventory/items-master/items-master.module';
+import { ReportingModule } from './modules/reporting/reporting.module';
 const parseNumber = (value: string | undefined, fallback: number): number => {
   if (!value) {
     return fallback;
@@ -149,6 +150,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemsQtyPriceMasterModule,
     ItemsTaxHistoryMasterModule,
     ItemsMasterModule,
+    ReportingModule,
     AccGroupMasterModule,
     AccountLedgerMastersModule,
     LedgerBankAccountModule,

@@ -10,6 +10,8 @@ import {
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import type { AuditAction } from '../../audit-log/types/audit-log.types';
+import { ListPromotionSchemeQueryDto } from './dto/list-promotion-scheme-query.dto';
 import { PromotionSchemeBranchRowDto } from './dto/save-promotion-scheme-branch.dto';
 import { PromotionSchemeItemRowDto } from './dto/save-promotion-scheme-item.dto';
 import { PromotionSchemePartyRowDto } from './dto/save-promotion-scheme-party.dto';
@@ -39,6 +41,7 @@ import {
   ItemRow,
   PARTY_LOOKUP,
   PRI_DEFAULT_MATCH_PRIORITY,
+  SCHEME_LOOKUP,
   PartyRow,
   SLAB_LOOKUP,
   SlabRow,
@@ -79,6 +82,38 @@ const SLAB_TABLE_NAME = 'promotion scheme slab';
 
 type WriteClient = SalesWriteClient;
 
+/**
+ * The four grids as GET /list wants them: live rows only.
+ *
+ * Stricter than the include /get uses, which drops deleted rows but keeps
+ * deactivated ones so a grid can still show — and let the operator switch back
+ * on — a row somebody turned off. /list makes the same promise about the child
+ * rows that it makes about the header, so a row with is_active = false is
+ * absent, not present-and-flagged.
+ */
+const LIVE_CHILDREN_INCLUDE = {
+  branches: {
+    where: { prbIsDeleted: false, prbIsActive: true },
+    orderBy: [{ prbSlno: 'asc' }, { prbId: 'asc' }],
+    include: BRANCH_LOOKUP,
+  },
+  parties: {
+    where: { prpIsDeleted: false, prpIsActive: true },
+    orderBy: [{ prpSlno: 'asc' }, { prpId: 'asc' }],
+    include: PARTY_LOOKUP,
+  },
+  items: {
+    where: { priIsDeleted: false, priIsActive: true },
+    orderBy: [{ priSlno: 'asc' }, { priId: 'asc' }],
+    include: ITEM_LOOKUP,
+  },
+  slabs: {
+    where: { prsIsDeleted: false, prsIsActive: true },
+    orderBy: [{ prsExceeds: 'asc' }, { prsSlno: 'asc' }, { prsId: 'asc' }],
+    include: SLAB_LOOKUP,
+  },
+} satisfies Prisma.PromotionSchemeInclude;
+
 @Injectable()
 export class PromotionSchemeService {
   constructor(
@@ -91,6 +126,37 @@ export class PromotionSchemeService {
 
   async saveScheme(dto: SavePromotionSchemeDto): Promise<PromotionSchemePayload> {
     return dto.prm_id ? this.updateScheme(dto) : this.createScheme(dto);
+  }
+
+  /**
+   * Every live campaign, each one WHOLE — the header plus its branches,
+   * parties, items and slabs, the same graph GET /get answers with for a
+   * single scheme.
+   *
+   * Both parameters are optional narrowings, applied only when sent: no company
+   * means every company, no branch means every branch, and a bare /list is
+   * every live scheme there is. The branch filter is a plain column match on
+   * prm_branch_id, so company-wide schemes (prm_branch_id NULL) come back only
+   * when no branch is named.
+   *
+   * Two filters are NOT parameters and cannot be turned off — is_deleted =
+   * false and is_active = true — and they are applied to the child rows as well
+   * as to the header, so a deactivated slab band cannot ride into a response on
+   * the back of a live scheme.
+   */
+  async listSchemes(query: ListPromotionSchemeQueryDto): Promise<PromotionSchemePayload[]> {
+    const schemes = await this.prisma.promotionScheme.findMany({
+      where: {
+        ...(query.prm_comp_id ? { prmCompId: query.prm_comp_id } : {}),
+        ...(query.prm_branch_id ? { prmBranchId: query.prm_branch_id } : {}),
+        prmIsDeleted: false,
+        prmIsActive: true,
+      },
+      orderBy: [{ prmCode: 'asc' }, { prmId: 'asc' }],
+      include: { ...SCHEME_LOOKUP, ...LIVE_CHILDREN_INCLUDE },
+    });
+
+    return schemes.map(toSchemePayload);
   }
 
   async getSchemeById(prmId: string): Promise<PromotionSchemePayload> {
@@ -301,7 +367,7 @@ export class PromotionSchemeService {
         const row = await tx.promotionScheme.create({ data });
         await this.audit(
           tx,
-          'create',
+          'insert',
           SCHEME_TABLE_NAME,
           row.prmId,
           row.prmName,
@@ -651,7 +717,7 @@ export class PromotionSchemeService {
     });
     await this.audit(
       tx,
-      'create',
+      'insert',
       BRANCH_TABLE_NAME,
       created.prbId,
       `Scheme ${prmId} / Branch ${created.prbSlno}`,
@@ -745,7 +811,7 @@ export class PromotionSchemeService {
     });
     await this.audit(
       tx,
-      'create',
+      'insert',
       PARTY_TABLE_NAME,
       created.prpId,
       `Scheme ${prmId} / ${created.prpKind} ${created.prpScopeId}`,
@@ -873,7 +939,7 @@ export class PromotionSchemeService {
     });
     await this.audit(
       tx,
-      'create',
+      'insert',
       ITEM_TABLE_NAME,
       created.priId,
       `Scheme ${prmId} / ${created.priKind} ${created.priScopeId}`,
@@ -1038,7 +1104,7 @@ export class PromotionSchemeService {
     });
     await this.audit(
       tx,
-      'create',
+      'insert',
       SLAB_TABLE_NAME,
       created.prsId,
       `Scheme ${scheme.prmId} / Band ${created.prsSlno}`,
@@ -1067,6 +1133,7 @@ export class PromotionSchemeService {
     return client.promotionScheme.findFirst({
       where: { prmId, prmIsDeleted: false },
       include: {
+        ...SCHEME_LOOKUP,
         branches: {
           where: { prbIsDeleted: false },
           orderBy: [{ prbSlno: 'asc' }, { prbId: 'asc' }],
@@ -1074,12 +1141,16 @@ export class PromotionSchemeService {
         },
         parties: {
           where: { prpIsDeleted: false },
-          orderBy: [{ prpMatchPriority: 'desc' }, { prpSlno: 'asc' }, { prpId: 'asc' }],
+          // Entry order, as 15q_promotion_scope_queries.sql reads it — this is
+          // the read the GRID needs. Match priority decides which rule wins at
+          // the till, not which row the operator typed first; checkEligibility
+          // does that ranking in its own query.
+          orderBy: [{ prpSlno: 'asc' }, { prpId: 'asc' }],
           include: PARTY_LOOKUP,
         },
         items: {
           where: { priIsDeleted: false },
-          orderBy: [{ priMatchPriority: 'desc' }, { priSlno: 'asc' }, { priId: 'asc' }],
+          orderBy: [{ priSlno: 'asc' }, { priId: 'asc' }],
           include: ITEM_LOOKUP,
         },
         slabs: {
@@ -1356,7 +1427,7 @@ export class PromotionSchemeService {
 
   private async audit(
     tx: Prisma.TransactionClient,
-    action: 'create' | 'update' | 'cancel',
+    action: Extract<AuditAction, 'insert' | 'update' | 'cancel'>,
     tableName: string,
     pk: string,
     displayName: string,

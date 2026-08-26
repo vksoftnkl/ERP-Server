@@ -1,6 +1,12 @@
 export declare class UiTableVisibilitySettingItemDto {
     uiTblClmId: string;
-    uiTblClmColumnVisibility: boolean;
+    uiTblClmColumnWidth?: number | null;
+    uiTblClmColumnVisibility?: boolean;
+    uiTblClmColumnFocus?: boolean;
+    uiTblClmColumnPosition?: number;
+    uiTblClmColumnNecessity?: boolean;
+    uiTblClmNextColumn?: number | null;
+    uiTblClmPreviousColumn?: number | null;
 }
 export declare class SaveUiTableVisibilitySettingsDto {
     columns: UiTableVisibilitySettingItemDto[];

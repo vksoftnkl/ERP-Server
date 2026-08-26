@@ -22,7 +22,7 @@ visibility, focus, position, necessity, and next/previous links).
 | [dto/save-ui-table-master.dto.ts](dto/save-ui-table-master.dto.ts) | Create/update payload for a table (with nested `uiTblColumns[]`) |
 | [dto/save-ui-table-column.dto.ts](dto/save-ui-table-column.dto.ts) | A single nested column create/update entry |
 | [dto/save-ui-table-column-width.dto.ts](dto/save-ui-table-column-width.dto.ts) | Batch column-width update payload (`{ columns: [...] }`) |
-| [dto/save-ui-table-visibility-settings.dto.ts](dto/save-ui-table-visibility-settings.dto.ts) | Batch column-visibility update payload (`{ columns: [...] }`) |
+| [dto/save-ui-table-visibility-settings.dto.ts](dto/save-ui-table-visibility-settings.dto.ts) | Batch column display-settings payload (`{ columns: [...] }`) — width, visibility, focus, position, necessity, next/previous |
 | [dto/list-ui-table-master-query.dto.ts](dto/list-ui-table-master-query.dto.ts) | Query filters for the list endpoint |
 | [dto/ui-table-master-response.dto.ts](dto/ui-table-master-response.dto.ts) | Swagger response models (success + delete/update results; re-exports the shared error DTOs) |
 | [dto/ui-table-column-response.dto.ts](dto/ui-table-column-response.dto.ts) | Swagger response model for a single column |
@@ -35,7 +35,7 @@ visibility, focus, position, necessity, and next/previous links).
 | `POST` | `/create` | Create **or** update a table (chosen by `uiTblId` presence), including its nested columns. |
 | `GET` | `/get` | List active tables with their active columns; filter by `uiTableId`/`uiTblId` or `search` (name). |
 | `PUT` | `/column-width` | Batch-update `uiTblClmColumnWidth` for one or more columns. |
-| `PUT` | `/visibility-settings` | Batch-update `uiTblClmColumnVisibility` for one or more columns. |
+| `PUT` | `/visibility-settings` | Batch-update column display settings (width, visibility, focus, position, necessity, next/previous) for one or more columns. |
 | `DELETE` | `/column-delete` | Soft-delete a single column by `uiTblClmId` (query param). |
 | `DELETE` | `/delete` | Soft-delete a table by `uiTblId` (query param). |
 
@@ -66,7 +66,12 @@ A table's columns are managed through the `uiTblColumns[]` array on the create/u
 
 - `PUT /column-width` and `PUT /visibility-settings` each iterate their `columns[]` in one
   `$transaction`, verify every column exists and is not deleted (else `404`), update only the
-  target field plus `uiTblClmModifiedOn`/`uiTblClmModifiedBy`, and return `{ updated: <count> }`.
+  target fields plus `uiTblClmModifiedOn`/`uiTblClmModifiedBy`, and return `{ updated: <count> }`.
+- `PUT /visibility-settings` takes `uiTblClmId` (required) plus any of `uiTblClmColumnWidth`,
+  `uiTblClmColumnVisibility`, `uiTblClmColumnFocus`, `uiTblClmColumnPosition`,
+  `uiTblClmColumnNecessity`, `uiTblClmNextColumn`, `uiTblClmPreviousColumn`. Fields omitted from
+  an item are left untouched; `uiTblClmColumnWidth`, `uiTblClmNextColumn` and
+  `uiTblClmPreviousColumn` accept `null`.
 - These two batch updates are **not** written to the audit log.
 
 ## Business rules

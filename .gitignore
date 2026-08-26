@@ -15,3 +15,8 @@ logs
 release/erp-server
 release/erp-server-linux
 release/erp-server-win.exe
+
+# Reporting: rendered samples, spike outputs, and bulk-print output
+artifacts/reporting-samples
+artifacts/reporting-spikes
+artifacts/bulk-print

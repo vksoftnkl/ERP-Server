@@ -3,7 +3,7 @@ import { PromotionSchemeBranchPayload, PromotionSchemeErrorDetail, PromotionSche
 export declare const UUID_PATTERN: RegExp;
 export declare const PRM_STATUSES: readonly ["DRAFT", "APPROVED", "SUSPENDED", "CLOSED"];
 export declare const PRM_APPLY_ON: readonly ["BILL_AMOUNT", "BILL_QTY", "ITEM_AMOUNT", "ITEM_QTY"];
-export declare const PRM_BENEFITS: readonly ["FREE_ITEM", "DISC_PERC", "DISC_AMT", "FIXED_PRICE"];
+export declare const PRM_BENEFITS: readonly ["FREE_ITEM", "DISC_PERC", "DISC_AMT", "FIXED_PRICE", "DISC_PER_ITEM"];
 export declare const PRM_STACK_MODES: readonly ["EXCLUSIVE", "STACKABLE"];
 export declare const PRM_CALC_ON: readonly ["GROSS_AMOUNT", "NET_AMOUNT", "TAXABLE_AMOUNT"];
 export declare const PRM_BILL_TYPES: readonly ["ALL", "CASH", "CREDIT"];
@@ -14,6 +14,18 @@ export declare const PRM_CODE_PATTERN: RegExp;
 export declare const PRM_WEEKDAYS_PATTERN: RegExp;
 export declare const PRP_DEFAULT_MATCH_PRIORITY: Record<string, number>;
 export declare const PRI_DEFAULT_MATCH_PRIORITY: Record<string, number>;
+export declare const SCHEME_LOOKUP: {
+    readonly company: {
+        readonly select: {
+            readonly compName: true;
+        };
+    };
+    readonly branch: {
+        readonly select: {
+            readonly brName: true;
+        };
+    };
+};
 export declare const BRANCH_LOOKUP: {
     readonly branch: {
         readonly select: {
@@ -155,7 +167,15 @@ export type SlabRow = PromotionSchemeSlab & {
     } | null;
     freeUnit?: UnitLookup;
 };
-export type SchemeWithChildren = PromotionScheme & {
+export type SchemeRow = PromotionScheme & {
+    company?: {
+        compName: string;
+    } | null;
+    branch?: {
+        brName: string;
+    } | null;
+};
+export type SchemeWithChildren = SchemeRow & {
     branches: BranchRow[];
     parties: PartyRow[];
     items: ItemRow[];
@@ -180,7 +200,7 @@ export declare function toBranchPayload(row: BranchRow): PromotionSchemeBranchPa
 export declare function toPartyPayload(row: PartyRow): PromotionSchemePartyPayload;
 export declare function toItemPayload(row: ItemRow): PromotionSchemeItemPayload;
 export declare function toSlabPayload(row: SlabRow): PromotionSchemeSlabPayload;
-export declare function toSchemeSummaryPayload(scheme: PromotionScheme): PromotionSchemeSummaryPayload;
+export declare function toSchemeSummaryPayload(scheme: SchemeRow): PromotionSchemeSummaryPayload;
 export declare function toSchemePayload(scheme: SchemeWithChildren): PromotionSchemePayload;
 export declare function handlePromotionWriteError(error: unknown): void;
 export {};

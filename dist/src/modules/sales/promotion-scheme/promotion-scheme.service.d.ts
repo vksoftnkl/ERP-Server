@@ -1,6 +1,7 @@
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { ListPromotionSchemeQueryDto } from './dto/list-promotion-scheme-query.dto';
 import { SavePromotionSchemeDto } from './dto/save-promotion-scheme.dto';
 import { PromotionSchemeDeleteResult, PromotionSchemeEligibilityPayload, PromotionSchemePayload } from './types/promotion-scheme-api.types';
 export declare class PromotionSchemeService {
@@ -9,6 +10,7 @@ export declare class PromotionSchemeService {
     private readonly requestContextService;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     saveScheme(dto: SavePromotionSchemeDto): Promise<PromotionSchemePayload>;
+    listSchemes(query: ListPromotionSchemeQueryDto): Promise<PromotionSchemePayload[]>;
     getSchemeById(prmId: string): Promise<PromotionSchemePayload>;
     checkEligibility(prmId: string, cusId: string): Promise<PromotionSchemeEligibilityPayload>;
     softDeleteScheme(prmId: string, modifiedBy?: string): Promise<PromotionSchemeDeleteResult>;

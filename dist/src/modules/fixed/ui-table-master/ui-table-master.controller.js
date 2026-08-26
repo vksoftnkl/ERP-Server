@@ -103,7 +103,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], UiTableMasterController.prototype, "updateColumnWidths", null);
 __decorate([
-    (0, common_1.Put)('visibility-settings'),
+    (0, common_1.Put)('layout-settings'),
     (0, common_1.Version)(api_version_1.API_VERSION),
     (0, swagger_1.ApiOperation)({ summary: 'Update visibility setting for one or more UI table columns' }),
     (0, swagger_1.ApiOkResponse)({ type: ui_table_master_response_dto_1.UiTableMasterSuccessColumnUpdateDto }),

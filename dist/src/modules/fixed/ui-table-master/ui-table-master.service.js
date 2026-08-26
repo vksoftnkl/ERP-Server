@@ -19,6 +19,15 @@ const UI_TABLE_MASTER_TABLE_NAME = 'ui tables';
 const UI_TABLE_COLUMN_TABLE_NAME = 'ui table columns';
 const UI_TABLE_MASTER_AUDIT_SCREEN_NAME = 'UI Table Master';
 const UI_TABLE_MASTER_OPTIONAL_FIELDS = ['uiTblEditable', 'uiTblIsActive', 'uiTblDeviceType'];
+const UI_TABLE_VISIBILITY_SETTING_FIELDS = [
+    'uiTblClmColumnWidth',
+    'uiTblClmColumnVisibility',
+    'uiTblClmColumnFocus',
+    'uiTblClmColumnPosition',
+    'uiTblClmColumnNecessity',
+    'uiTblClmNextColumn',
+    'uiTblClmPreviousColumn',
+];
 const UI_TABLE_COLUMN_OPTIONAL_FIELDS = [
     'uiTblClmColumnWidth',
     'uiTblClmColumnVisibility',
@@ -122,14 +131,17 @@ let UiTableMasterService = class UiTableMasterService {
                 if (!existing) {
                     (0, module_service_utils_1.throwFixedNotFound)('UI table column not found', 'uiTblClmId', `No active UI table column found with id ${item.uiTblClmId}`);
                 }
-                await tx.uitableColumns.update({
-                    where: { uiTblClmId: columnId },
-                    data: {
-                        uiTblClmColumnVisibility: item.uiTblClmColumnVisibility,
-                        uiTblClmModifiedOn: new Date(),
-                        uiTblClmModifiedBy: actor,
-                    },
-                });
+                const data = {
+                    uiTblClmModifiedOn: new Date(),
+                    uiTblClmModifiedBy: actor,
+                };
+                for (const field of UI_TABLE_VISIBILITY_SETTING_FIELDS) {
+                    const value = item[field];
+                    if (value !== undefined) {
+                        data[field] = value;
+                    }
+                }
+                await tx.uitableColumns.update({ where: { uiTblClmId: columnId }, data });
                 count++;
             }
         });

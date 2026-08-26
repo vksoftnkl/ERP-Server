@@ -1,0 +1,71 @@
+/// reports.report_dataset — a dataset the designer can bind, defined at RUNTIME.
+///
+/// The compiled providers in modules/reporting/providers/impl are the static
+/// half of the same contract: a token, a field list, sample rows, and a way to
+/// turn a ReportContext into rows. This table is the dynamic half, so a new
+/// dataset is an INSERT rather than a deploy.
+///
+/// ── Why this is not a hole in the template security model ───────────────────
+/// The rule "a template carries tokens, never SQL" is unchanged. A template
+/// still names `rds_token`; it can neither supply SQL nor edit a row here.
+/// These rows are VENDOR-authored (see DatasetAdminGuard) precisely so that SQL
+/// never originates from tenant-authored content.
+///
+/// ── Tenant scoping ──────────────────────────────────────────────────────────
+/// rds_sql MUST reference the p_company_id token; the service refuses to save
+/// one that does not. At run time the reserved tokens (p_company_id,
+/// p_branch_id, p_acc_year, p_doc_id, p_user_id) are bound from ReportContext
+/// as $n parameters and can never be overridden by a caller. Execution goes
+/// through PgService.queryReadOnly, so a statement that slips past validation
+/// still cannot write.
+///
+/// rds_fields is INTROSPECTED, not typed by hand: the service runs the query
+/// with WHERE false at save time and reads the pg field descriptors. That is
+/// also what proves the SQL executes before anyone binds it to a design.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_rds_token   UNIQUE on lower(rds_token) WHERE NOT rds_is_deleted — a
+///                  soft-deleted token must be reusable, and token lookup is
+///                  case-insensitive.
+///   ix_rds_active  partial on (rds_is_active) WHERE NOT rds_is_deleted, the
+///                  registry's warm-load and refresh probe.
+model ReportDataset {
+  rdsId          String    @id(map: "pk_report_dataset") @default(dbgenerated("uuidv7()")) @db.Uuid @map("rds_id")
+
+  /// Dataset token a template binds, e.g. `custom.sales.daybook`.
+  /// Namespaced so a runtime dataset can never shadow a compiled provider.
+  rdsToken       String    @db.VarChar(120)                              @map("rds_token")
+  rdsLabel       String    @db.VarChar(160)                              @map("rds_label")
+  /// `one` | `many`. A `one` dataset cannot drive a repeating band.
+  rdsCardinality String    @db.VarChar(10)                               @map("rds_cardinality")
+  /// Document types this dataset is offered for. Empty = any.
+  rdsDocTypes    String[]  @db.VarChar(40)                               @map("rds_doc_types")
+
+  /// Validated SELECT, with p_* tokens bound as $n at run time.
+  rdsSql         String                                                  @map("rds_sql")
+  /// Author-declared non-reserved parameters: ReportDatasetParamSpec[].
+  rdsParams      Json      @default("[]") @db.JsonB                      @map("rds_params")
+  /// Introspected FieldMeta[] — powers the designer field tree.
+  rdsFields      Json      @default("[]") @db.JsonB                      @map("rds_fields")
+  /// Optional hand-authored preview rows. NULL = synthesise from rds_fields.
+  /// Never populated from a live query: these rows are visible to every tenant.
+  rdsSampleRows  Json?     @db.JsonB                                     @map("rds_sample_rows")
+
+  /// Hard row cap applied as a LIMIT wrapper. A runaway dataset is a failed
+  /// print, not a stalled counter queue.
+  rdsMaxRows     Int       @default(5000)                                @map("rds_max_rows")
+  rdsNotes       String?   @db.VarChar(500)                              @map("rds_notes")
+
+  /// Bumped on every write. The registry's refresh probe watches max(version).
+  rdsVersion     Int       @default(1)                                   @map("rds_version")
+  rdsIsActive    Boolean   @default(true)                                @map("rds_is_active")
+  rdsIsDeleted   Boolean   @default(false)                               @map("rds_is_deleted")
+
+  rdsCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)            @map("rds_created_on")
+  rdsCreatedBy   String?   @db.Uuid                                      @map("rds_created_by")
+  rdsModifiedOn  DateTime? @db.Timestamptz(6)                            @map("rds_modified_on")
+  rdsModifiedBy  String?   @db.Uuid                                      @map("rds_modified_by")
+
+  @@map("report_dataset")
+  @@schema("reports")
+}

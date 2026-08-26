@@ -37,6 +37,7 @@ exports.MASTER_LOOKUP_MODULE_KEYS = [
     'supplierGroups',
     'suppliers',
     'userMasters',
+    'devices',
 ];
 exports.LOOKUP_MODULE_KEYS = [
     ...exports.ACCOUNT_LOOKUP_MODULE_KEYS,
@@ -291,5 +292,15 @@ exports.LOOKUP_MODULE_ALIASES = {
     ],
     suppliers: ['suppliers', 'supplier', 'suppliers master', 'supplier master', 'supplier-master'],
     userMasters: ['user masters', 'user master', 'users', 'user', 'user-master', 'user_master'],
+    devices: [
+        'devices',
+        'device',
+        'device list',
+        'device lists',
+        'device master',
+        'device list master',
+        'device-list-master',
+        'device_master',
+    ],
 };
 //# sourceMappingURL=master-lookup-api.types.js.map

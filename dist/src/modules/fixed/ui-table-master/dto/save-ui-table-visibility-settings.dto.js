@@ -13,9 +13,16 @@ exports.SaveUiTableVisibilitySettingsDto = exports.UiTableVisibilitySettingItemD
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
 const swagger_1 = require("@nestjs/swagger");
+const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 class UiTableVisibilitySettingItemDto {
     uiTblClmId;
+    uiTblClmColumnWidth;
     uiTblClmColumnVisibility;
+    uiTblClmColumnFocus;
+    uiTblClmColumnPosition;
+    uiTblClmColumnNecessity;
+    uiTblClmNextColumn;
+    uiTblClmPreviousColumn;
 }
 exports.UiTableVisibilitySettingItemDto = UiTableVisibilitySettingItemDto;
 __decorate([
@@ -26,10 +33,41 @@ __decorate([
     __metadata("design:type", String)
 ], UiTableVisibilitySettingItemDto.prototype, "uiTblClmId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: Boolean }),
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true, example: 100 }),
+    (0, dtoDecorators_1.NullableNumber)(),
+    __metadata("design:type", Object)
+], UiTableVisibilitySettingItemDto.prototype, "uiTblClmColumnWidth", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: Boolean, example: true }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], UiTableVisibilitySettingItemDto.prototype, "uiTblClmColumnVisibility", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: Boolean, example: false }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], UiTableVisibilitySettingItemDto.prototype, "uiTblClmColumnFocus", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, example: 0 }),
+    (0, dtoDecorators_1.OptionalInteger)(),
+    __metadata("design:type", Number)
+], UiTableVisibilitySettingItemDto.prototype, "uiTblClmColumnPosition", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: Boolean, example: false }),
+    (0, dtoDecorators_1.OptionalBoolean)(),
+    __metadata("design:type", Boolean)
+], UiTableVisibilitySettingItemDto.prototype, "uiTblClmColumnNecessity", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true, example: 2 }),
+    (0, dtoDecorators_1.NullableInteger)(),
+    __metadata("design:type", Object)
+], UiTableVisibilitySettingItemDto.prototype, "uiTblClmNextColumn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: Number, nullable: true, example: null }),
+    (0, dtoDecorators_1.NullableInteger)(),
+    __metadata("design:type", Object)
+], UiTableVisibilitySettingItemDto.prototype, "uiTblClmPreviousColumn", void 0);
 class SaveUiTableVisibilitySettingsDto {
     columns;
 }

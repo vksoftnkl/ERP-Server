@@ -28,8 +28,8 @@ export declare class PromotionSchemePartyPayloadDto {
     prp_cust_group_id: string | null;
     prp_area_id: string | null;
     prp_city_id: string | null;
-    prp_target_name: string | null;
-    prp_target_code: string | null;
+    prp_scope_name: string | null;
+    prp_scope_code: string | null;
     prp_is_exclude: boolean;
     prp_match_priority: number;
     prp_notes: string | null;
@@ -53,7 +53,7 @@ export declare class PromotionSchemeItemPayloadDto {
     pri_brand_id: string | null;
     pri_section_id: string | null;
     pri_unit_id: string | null;
-    pri_target_name: string | null;
+    pri_scope_name: string | null;
     pri_unit_name: string | null;
     pri_is_exclude: boolean;
     pri_disc_perc: number;
@@ -102,10 +102,12 @@ export declare class PromotionSchemeSlabPayloadDto {
     prs_modified_on: string | null;
     prs_modified_by: string | null;
 }
-export declare class PromotionSchemePayloadDto {
+export declare class PromotionSchemeSummaryPayloadDto {
     prm_id: string;
     prm_comp_id: string;
     prm_branch_id: string | null;
+    prm_comp_name: string | null;
+    prm_branch_name: string | null;
     prm_tenant_id: string | null;
     prm_code: string;
     prm_name: string;
@@ -145,6 +147,8 @@ export declare class PromotionSchemePayloadDto {
     prm_modified_by: string | null;
     prm_approved_on: string | null;
     prm_approved_by: string | null;
+}
+export declare class PromotionSchemePayloadDto extends PromotionSchemeSummaryPayloadDto {
     branches: PromotionSchemeBranchPayloadDto[];
     parties: PromotionSchemePartyPayloadDto[];
     items: PromotionSchemeItemPayloadDto[];
@@ -158,6 +162,11 @@ export declare class PromotionSchemeSuccessSingleDto {
     success: true;
     message: string;
     data: PromotionSchemePayloadDto;
+}
+export declare class PromotionSchemeSuccessListDto {
+    success: true;
+    message: string;
+    data: PromotionSchemePayloadDto[];
 }
 export declare class PromotionSchemeSuccessDeleteDto {
     success: true;

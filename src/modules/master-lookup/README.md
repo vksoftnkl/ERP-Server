@@ -257,6 +257,7 @@ falls back to the id.
 | `supplierGroups` | `supplierGroup` | `spgName` |
 | `suppliers` | `supplier` | `supName` |
 | `userMasters` | `userMaster` | `usrDisplayName` |
+| `devices` | `deviceMaster` | `devDeviceName` → `devDeviceUid` |
 
 ### Configured dropdown SQL
 
@@ -318,7 +319,7 @@ DTO) rather than TypeScript `enum`s:
 - **`MASTER_LOOKUP_MODULE_KEYS`** (`masters` scope): `itemGroups`, `itemCategories`, `itemSections`,
   `itemBrands`, `units`, `itemTaxes`, `priceLevels`, `hsnCodes`, `items`, `godownLocations`,
   `stateCodes`, `states`, `cities`, `areas`, `customerGroups`, `customers`, `supplierGroups`,
-  `suppliers`, `userMasters`.
+  `suppliers`, `userMasters`, `devices`.
 - **`LOOKUP_MODULE_KEYS`** — the concatenation of both, and the full set accepted by `?module=`.
 - **`LOOKUP_MODULE_ALIASES`** — per-key alias lists (route/display/table names) used to resolve the
   `module` param and to match configured dropdowns to a module.

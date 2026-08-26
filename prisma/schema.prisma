@@ -4899,6 +4899,224 @@ model SupplierGroup {
   @@schema("purchase")
 }
 
+// ----- prisma/reports/printerProfile.prisma -----
+/// reports.printer_profile — the escape-command dialect of one printer model.
+///
+/// Risk R6: the ESC/P and ESC/POS command sets differ by model family, and the
+/// differences cannot be guessed from a datasheet. Rather than compile a
+/// customer's printer quirks into the renderer, every raw renderer reads its
+/// command bytes from a profile row. Onboarding a new printer model is then a
+/// seed row, not a deploy.
+///
+/// pp_commands holds hex-encoded byte strings keyed by capability name, e.g.
+///   { "init": "1B40", "draft": "1B7800", "boldOn": "1B45", ... }
+/// Unknown keys are ignored; missing keys fall back to the built-in Epson
+/// (ESC/P) or Epson TM (ESC/POS) defaults, so a sparse profile only has to
+/// state what actually differs.
+///
+/// DB-only objects hand-authored in the migration:
+///   ux_pp_code   UNIQUE (lower(pp_code)) WHERE NOT pp_is_deleted
+model PrinterProfile {
+  ppId            String   @id(map: "pk_printer_profile") @default(dbgenerated("uuidv7()")) @db.Uuid @map("pp_id")
+
+  /// NULL = a stock profile shipped with the product.
+  ppCompanyId     String?  @db.Uuid                                        @map("pp_company_id")
+
+  ppCode          String   @db.VarChar(40)                                 @map("pp_code")
+  ppName          String   @db.VarChar(120)                                @map("pp_name")
+  /// ESCP_DOTMATRIX | ESCPOS
+  ppOutputMode    String   @db.VarChar(20)                                 @map("pp_output_mode")
+  /// Manufacturer family the command set derives from, e.g. EPSON_ESCP, TVS_MSP.
+  ppFamily        String   @db.VarChar(40)                                 @map("pp_family")
+
+  /// Printable character columns at the profile's default pitch.
+  ppColumns       Int                                                      @map("pp_columns")
+  /// Characters per inch for dot matrix (10/12/15); NULL for thermal.
+  ppCpi           Int?                                                     @map("pp_cpi")
+  /// Paper width in mm for thermal (58/80); NULL for dot matrix.
+  ppPaperWidthMm  Int?                                                     @map("pp_paper_width_mm")
+  /// Single-byte code page used to encode text, e.g. CP437, CP850, CP1252.
+  ppCodepage      String   @default("CP437") @db.VarChar(20)               @map("pp_codepage")
+
+  ppSupportsBold      Boolean @default(true)                               @map("pp_supports_bold")
+  ppSupportsUnderline Boolean @default(true)                               @map("pp_supports_underline")
+  ppSupportsCut       Boolean @default(false)                              @map("pp_supports_cut")
+  ppSupportsGraphics  Boolean @default(false)                              @map("pp_supports_graphics")
+
+  /// Capability name -> hex byte string. Sparse; merged over built-in defaults.
+  ppCommands      Json?    @db.JsonB                                       @map("pp_commands")
+
+  ppIsActive      Boolean  @default(true)                                  @map("pp_is_active")
+  ppIsDeleted     Boolean  @default(false)                                 @map("pp_is_deleted")
+
+  ppCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)             @map("pp_created_on")
+  ppCreatedBy     String?   @db.Uuid                                       @map("pp_created_by")
+  ppModifiedOn    DateTime? @db.Timestamptz(6)                             @map("pp_modified_on")
+  ppModifiedBy    String?   @db.Uuid                                       @map("pp_modified_by")
+
+  @@map("printer_profile")
+  @@schema("reports")
+}
+
+// ----- prisma/reports/printTemplate.prisma -----
+/// reports.print_template — one band-based report design.
+///
+/// The design itself lives in pt_definition (jsonb), validated against the zod
+/// schema in modules/reporting/templates/dto/template-definition.schema.ts.
+/// It is deliberately NOT normalised into element/band tables: the designer
+/// saves and loads it whole, the layout engine reads it whole, and nothing ever
+/// queries inside it. pt_schema_ver is what makes that safe — every read runs
+/// through TemplateMigrationService.migrateDefinition() first.
+///
+/// pt_company_id NULL = system template, shipped with the product and cloned
+/// into a tenant before it can be edited. pt_branch_id NULL = applies to every
+/// branch of that company.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_pt_default   UNIQUE NULLS NOT DISTINCT (company, branch, doc_type,
+///                   output_mode, paper_code) WHERE pt_is_default AND NOT
+///                   is_deleted. NULLS NOT DISTINCT is the whole point: without
+///                   it Postgres treats every system template (company NULL) as
+///                   distinct and lets a second default in. Needs PG15+.
+///   ix_pt_lookup    the resolver's covering index, partial on
+///                   (pt_is_active AND NOT is_deleted)
+///   ix_pt_company / ix_pt_branch / ix_pt_parent   FK-covering, all partial
+model PrintTemplate {
+  ptId            String    @id(map: "pk_print_template") @default(dbgenerated("uuidv7()")) @db.Uuid @map("pt_id")
+
+  /// NULL = system template.
+  ptCompanyId     String?   @db.Uuid                                        @map("pt_company_id")
+  /// NULL = every branch of the company.
+  ptBranchId      String?   @db.Uuid                                        @map("pt_branch_id")
+
+  ptDocType       String    @db.VarChar(40)                                 @map("pt_doc_type")
+  ptOutputMode    String    @db.VarChar(20)                                 @map("pt_output_mode")
+  ptPaperCode     String    @db.VarChar(20)                                 @map("pt_paper_code")
+  ptName          String    @db.VarChar(120)                                @map("pt_name")
+
+  /// Bumped on every definition write; the previous body lands in a revision row.
+  ptVersion       Int       @default(1)                                     @map("pt_version")
+  /// Set when this row was cloned from another template (usually a system one).
+  ptParentId      String?   @db.Uuid                                        @map("pt_parent_id")
+  /// Definition JSON schema version, migrated forward on read.
+  ptSchemaVer     Int       @default(1)                                     @map("pt_schema_ver")
+
+  ptDefinition    Json      @db.JsonB                                       @map("pt_definition")
+
+  ptIsDefault     Boolean   @default(false)                                 @map("pt_is_default")
+  ptIsActive      Boolean   @default(true)                                  @map("pt_is_active")
+  ptIsDeleted     Boolean   @default(false)                                 @map("pt_is_deleted")
+
+  ptCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)              @map("pt_created_on")
+  ptCreatedBy     String?   @db.Uuid                                        @map("pt_created_by")
+  ptModifiedOn    DateTime? @db.Timestamptz(6)                              @map("pt_modified_on")
+  ptModifiedBy    String?   @db.Uuid                                        @map("pt_modified_by")
+
+  parent          PrintTemplate?         @relation("PrintTemplateLineage", fields: [ptParentId], references: [ptId], onDelete: Restrict, onUpdate: Cascade, map: "fk_pt_parent")
+  clones          PrintTemplate[]        @relation("PrintTemplateLineage")
+  revisions       PrintTemplateRevision[] @relation("PrintTemplateRevisions")
+
+  @@map("print_template")
+  @@schema("reports")
+}
+
+/// reports.print_template_revision — the body of every superseded version.
+///
+/// Written on the same transaction as the parent's version bump, so
+/// (template, version) is a complete history with no gaps. Rollback reads a row
+/// here and writes it back as a NEW version rather than rewinding the counter —
+/// history stays append-only.
+model PrintTemplateRevision {
+  ptrId          String   @id(map: "pk_print_template_revision") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptr_id")
+  ptrTemplateId  String   @db.Uuid                                         @map("ptr_template_id")
+  ptrVersion     Int                                                       @map("ptr_version")
+  ptrSchemaVer   Int      @default(1)                                      @map("ptr_schema_ver")
+  ptrDefinition  Json     @db.JsonB                                        @map("ptr_definition")
+  /// Free-text note, e.g. 'rollback to v3' or the designer's save label.
+  ptrNote        String?  @db.VarChar(200)                                 @map("ptr_note")
+  ptrCreatedOn   DateTime @default(now()) @db.Timestamptz(6)               @map("ptr_created_on")
+  ptrCreatedBy   String?  @db.Uuid                                         @map("ptr_created_by")
+
+  template       PrintTemplate @relation("PrintTemplateRevisions", fields: [ptrTemplateId], references: [ptId], onDelete: Cascade, onUpdate: Cascade, map: "fk_ptr_template")
+
+  @@unique([ptrTemplateId, ptrVersion], map: "ux_ptr_template_version")
+  @@map("print_template_revision")
+  @@schema("reports")
+}
+
+// ----- prisma/reports/reportDataset.prisma -----
+/// reports.report_dataset — a dataset the designer can bind, defined at RUNTIME.
+///
+/// The compiled providers in modules/reporting/providers/impl are the static
+/// half of the same contract: a token, a field list, sample rows, and a way to
+/// turn a ReportContext into rows. This table is the dynamic half, so a new
+/// dataset is an INSERT rather than a deploy.
+///
+/// ── Why this is not a hole in the template security model ───────────────────
+/// The rule "a template carries tokens, never SQL" is unchanged. A template
+/// still names `rds_token`; it can neither supply SQL nor edit a row here.
+/// These rows are VENDOR-authored (see DatasetAdminGuard) precisely so that SQL
+/// never originates from tenant-authored content.
+///
+/// ── Tenant scoping ──────────────────────────────────────────────────────────
+/// rds_sql MUST reference the p_company_id token; the service refuses to save
+/// one that does not. At run time the reserved tokens (p_company_id,
+/// p_branch_id, p_acc_year, p_doc_id, p_user_id) are bound from ReportContext
+/// as $n parameters and can never be overridden by a caller. Execution goes
+/// through PgService.queryReadOnly, so a statement that slips past validation
+/// still cannot write.
+///
+/// rds_fields is INTROSPECTED, not typed by hand: the service runs the query
+/// with WHERE false at save time and reads the pg field descriptors. That is
+/// also what proves the SQL executes before anyone binds it to a design.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_rds_token   UNIQUE on lower(rds_token) WHERE NOT rds_is_deleted — a
+///                  soft-deleted token must be reusable, and token lookup is
+///                  case-insensitive.
+///   ix_rds_active  partial on (rds_is_active) WHERE NOT rds_is_deleted, the
+///                  registry's warm-load and refresh probe.
+model ReportDataset {
+  rdsId          String    @id(map: "pk_report_dataset") @default(dbgenerated("uuidv7()")) @db.Uuid @map("rds_id")
+
+  /// Dataset token a template binds, e.g. `custom.sales.daybook`.
+  /// Namespaced so a runtime dataset can never shadow a compiled provider.
+  rdsToken       String    @db.VarChar(120)                              @map("rds_token")
+  rdsLabel       String    @db.VarChar(160)                              @map("rds_label")
+  /// `one` | `many`. A `one` dataset cannot drive a repeating band.
+  rdsCardinality String    @db.VarChar(10)                               @map("rds_cardinality")
+  /// Document types this dataset is offered for. Empty = any.
+  rdsDocTypes    String[]  @db.VarChar(40)                               @map("rds_doc_types")
+
+  /// Validated SELECT, with p_* tokens bound as $n at run time.
+  rdsSql         String                                                  @map("rds_sql")
+  /// Author-declared non-reserved parameters: ReportDatasetParamSpec[].
+  rdsParams      Json      @default("[]") @db.JsonB                      @map("rds_params")
+  /// Introspected FieldMeta[] — powers the designer field tree.
+  rdsFields      Json      @default("[]") @db.JsonB                      @map("rds_fields")
+  /// Optional hand-authored preview rows. NULL = synthesise from rds_fields.
+  /// Never populated from a live query: these rows are visible to every tenant.
+  rdsSampleRows  Json?     @db.JsonB                                     @map("rds_sample_rows")
+
+  /// Hard row cap applied as a LIMIT wrapper. A runaway dataset is a failed
+  /// print, not a stalled counter queue.
+  rdsMaxRows     Int       @default(5000)                                @map("rds_max_rows")
+  rdsNotes       String?   @db.VarChar(500)                              @map("rds_notes")
+
+  /// Bumped on every write. The registry's refresh probe watches max(version).
+  rdsVersion     Int       @default(1)                                   @map("rds_version")
+  rdsIsActive    Boolean   @default(true)                                @map("rds_is_active")
+  rdsIsDeleted   Boolean   @default(false)                               @map("rds_is_deleted")
+
+  rdsCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)            @map("rds_created_on")
+  rdsCreatedBy   String?   @db.Uuid                                      @map("rds_created_by")
+  rdsModifiedOn  DateTime? @db.Timestamptz(6)                            @map("rds_modified_on")
+  rdsModifiedBy  String?   @db.Uuid                                      @map("rds_modified_by")
+
+  @@map("report_dataset")
+  @@schema("reports")
+}
+
 // ----- prisma/sales/areaMaster.prisma -----
 model AreaMaster {
   armId             String    @id @default(dbgenerated("uuidv7()")) @db.Uuid   @map("arm_id")

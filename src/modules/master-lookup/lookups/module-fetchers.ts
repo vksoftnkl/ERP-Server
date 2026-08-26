@@ -328,6 +328,17 @@ export function buildModuleFetchers(prisma: PrismaService): Record<LookupModuleK
         }),
       (row) => toOption(row.usrId, row.usrDisplayName),
     ),
+    // A device is identified by its uid; the name is optional free text, so the
+    // uid stands in whenever it was left blank.
+    devices: simpleFetcher(
+      () =>
+        prisma.deviceMaster.findMany({
+          where: { devIsDeleted: false, devIsActive: true },
+          select: { devId: true, devDeviceName: true, devDeviceUid: true },
+          orderBy: [{ devDeviceName: 'asc' }, { devId: 'asc' }],
+        }),
+      (row) => toOption(row.devId, row.devDeviceName ?? row.devDeviceUid),
+    ),
   };
 }
 /** Maps a Prisma table query to `{ id, name }` options. */

@@ -46,14 +46,14 @@ export class PromotionSchemePartyPayloadDto {
       'Display only. The name behind prp_scope_id — cus_name / cgr_name / arm_name / ' +
       'ctm_name, whichever prp_kind names.',
   })
-  prp_target_name!: string | null;
+  prp_scope_name!: string | null;
   @ApiPropertyOptional({
     type: String,
     nullable: true,
     example: 'gn',
     description: 'Display only. cus_code / cgr_short / arm_short / ctm_short.',
   })
-  prp_target_code!: string | null;
+  prp_scope_code!: string | null;
   @ApiProperty({ example: false }) prp_is_exclude!: boolean;
   @ApiProperty({ example: 1 }) prp_match_priority!: number;
   @ApiPropertyOptional({ type: String, nullable: true }) prp_notes!: string | null;
@@ -91,7 +91,7 @@ export class PromotionSchemeItemPayloadDto {
       'Display only. item_name_en / itg_name / category_name / brand_name / sec_name, ' +
       'whichever pri_kind names.',
   })
-  pri_target_name!: string | null;
+  pri_scope_name!: string | null;
   @ApiPropertyOptional({
     type: String,
     nullable: true,
@@ -150,10 +150,23 @@ export class PromotionSchemeSlabPayloadDto {
   @ApiPropertyOptional({ type: String, nullable: true }) prs_modified_by!: string | null;
 }
 
-export class PromotionSchemePayloadDto {
+/**
+ * The campaign header on its own — every scalar column of promotion_scheme and
+ * not one child row. This is what GET /list answers with, one object per
+ * scheme; PromotionSchemePayloadDto adds the four grids on top of it.
+ */
+export class PromotionSchemeSummaryPayloadDto {
   @ApiProperty() prm_id!: string;
   @ApiProperty() prm_comp_id!: string;
   @ApiPropertyOptional({ type: String, nullable: true }) prm_branch_id!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true, description: 'company.comp_name' })
+  prm_comp_name!: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'branch_master.br_name — null when the scheme is company-wide',
+  })
+  prm_branch_name!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) prm_tenant_id!: string | null;
   @ApiProperty({ example: 'DIWALI25' }) prm_code!: string;
   @ApiProperty({ example: 'Diwali 2025' }) prm_name!: string;
@@ -198,7 +211,10 @@ export class PromotionSchemePayloadDto {
   @ApiPropertyOptional({ type: String, nullable: true }) prm_modified_by!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) prm_approved_on!: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) prm_approved_by!: string | null;
+}
 
+/** The header plus its four grids — what POST /create and GET /get answer with. */
+export class PromotionSchemePayloadDto extends PromotionSchemeSummaryPayloadDto {
   @ApiProperty({ type: [PromotionSchemeBranchPayloadDto] })
   branches!: PromotionSchemeBranchPayloadDto[];
 
@@ -221,6 +237,12 @@ export class PromotionSchemeSuccessSingleDto {
   @ApiProperty({ example: true }) success!: true;
   @ApiProperty({ example: 'Promotion scheme fetched successfully' }) message!: string;
   @ApiProperty({ type: PromotionSchemePayloadDto }) data!: PromotionSchemePayloadDto;
+}
+
+export class PromotionSchemeSuccessListDto {
+  @ApiProperty({ example: true }) success!: true;
+  @ApiProperty({ example: 'Promotion schemes fetched successfully' }) message!: string;
+  @ApiProperty({ type: [PromotionSchemePayloadDto] }) data!: PromotionSchemePayloadDto[];
 }
 
 export class PromotionSchemeSuccessDeleteDto {

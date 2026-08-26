@@ -1,0 +1,559 @@
+import { TemplateDefinitionInput } from '../dto/template-definition.schema';
+
+/**
+ * A4 party outstanding statement, aged.
+ *
+ * ── Why the gallery needs a non-invoice design ──────────────────────────────
+ * An invoice is one document with a fixed shape. A statement is a LIST — it can
+ * run to twenty pages for a large distributor's customer — so it is the design
+ * that actually exercises the parts of the engine an invoice never reaches:
+ * repeated column heads on every page, a PAGE-scope subtotal in the footer, a
+ * carried-forward running balance, and a GROUP_HEADER/FOOTER pair over ageing
+ * buckets. If the engine is wrong about any of those, an invoice will not show
+ * it and a statement will.
+ *
+ * ── The ageing group ────────────────────────────────────────────────────────
+ * Grouped on `row.ageBucket`, which the provider computes from the due date
+ * plus grace days. The rows arrive sorted by document date, so a bucket break
+ * happens whenever the age band changes — meaning the statement reads
+ * chronologically with subtotals wherever the ageing shifts, rather than being
+ * re-sorted into buckets. Collections staff read it top to bottom.
+ */
+
+const LEFT_MARGIN = 10;
+const RIGHT_MARGIN = 10;
+const PAGE_WIDTH = 210;
+const CONTENT_WIDTH = PAGE_WIDTH - LEFT_MARGIN - RIGHT_MARGIN; // 190mm
+
+interface Column {
+  readonly key: string;
+  readonly label: string;
+  readonly widthMm: number;
+  readonly align: 'left' | 'center' | 'right';
+}
+
+const COLUMN_SPEC: readonly Column[] = [
+  { key: 'sl', label: '#', widthMm: 8, align: 'right' },
+  { key: 'doc', label: 'Document', widthMm: 40, align: 'left' },
+  { key: 'date', label: 'Date', widthMm: 20, align: 'left' },
+  { key: 'due', label: 'Due', widthMm: 20, align: 'left' },
+  { key: 'bill', label: 'Bill Amount', widthMm: 24, align: 'right' },
+  { key: 'recd', label: 'Received', widthMm: 22, align: 'right' },
+  { key: 'pending', label: 'Pending', widthMm: 24, align: 'right' },
+  { key: 'age', label: 'Days', widthMm: 12, align: 'right' },
+  { key: 'running', label: 'Balance', widthMm: 20, align: 'right' },
+];
+
+const COLUMNS = (() => {
+  let cursor = LEFT_MARGIN;
+  const resolved = COLUMN_SPEC.map((column) => {
+    const entry = { ...column, x: cursor };
+    cursor += column.widthMm;
+    return entry;
+  });
+
+  const total = cursor - LEFT_MARGIN;
+  if (Math.abs(total - CONTENT_WIDTH) > 0.001) {
+    throw new Error(`Party statement column widths total ${total}mm, expected ${CONTENT_WIDTH}mm.`);
+  }
+
+  return resolved;
+})();
+
+const column = (key: string) => {
+  const found = COLUMNS.find((candidate) => candidate.key === key);
+  if (!found) {
+    throw new Error(`Unknown statement column '${key}'`);
+  }
+  return found;
+};
+
+const FONT_BASE = { family: 'NotoSans', size: 7.5 } as const;
+const FONT_SMALL = { family: 'NotoSans', size: 6.5 } as const;
+
+export const PARTY_STATEMENT_A4_NAME = 'Party Outstanding Statement — A4';
+
+export const buildPartyStatementA4 = (): TemplateDefinitionInput => ({
+  schemaVersion: 1,
+  layoutMode: 'GRAPHIC',
+  meta: {
+    gallery: 'party-statement-a4',
+    description:
+      'Aged outstanding statement with per-bucket subtotals, a running balance ' +
+      'and a per-page subtotal in the footer.',
+  },
+  paper: {
+    code: 'A4',
+    widthMm: PAGE_WIDTH,
+    heightMm: 297,
+    orientation: 'PORTRAIT',
+    margins: { top: 10, right: RIGHT_MARGIN, bottom: 12, left: LEFT_MARGIN },
+  },
+  datasets: [
+    { name: 'company', provider: 'company.profile', cardinality: 'one' },
+    { name: 'branch', provider: 'branch.profile', cardinality: 'one' },
+    { name: 'outstanding', provider: 'accounts.party.outstanding', cardinality: 'many' },
+  ],
+  bands: [
+    // ─── Page header, repeated so page 12 is still readable on its own ────
+    {
+      type: 'PAGE_HEADER',
+      heightMm: 34,
+      printOn: 'ALL_PAGES',
+      elements: [
+        {
+          id: 'co',
+          kind: 'TEXT',
+          x: LEFT_MARGIN,
+          y: 0,
+          w: 120,
+          h: 6,
+          value: '{{ company.name }}',
+          font: { family: 'NotoSans', size: 12, bold: true },
+        },
+        {
+          id: 'co-addr',
+          kind: 'TEXT',
+          x: LEFT_MARGIN,
+          y: 6.5,
+          w: 120,
+          h: 4,
+          value: '{{ branch.addressBlock|default(company.addressBlock) }}',
+          font: FONT_SMALL,
+        },
+        {
+          id: 'title',
+          kind: 'TEXT',
+          x: LEFT_MARGIN + CONTENT_WIDTH - 80,
+          y: 0,
+          w: 80,
+          h: 6,
+          value: 'OUTSTANDING STATEMENT',
+          align: 'right',
+          font: { family: 'NotoSans', size: 11, bold: true },
+        },
+        {
+          id: 'asof',
+          kind: 'TEXT',
+          x: LEFT_MARGIN + CONTENT_WIDTH - 80,
+          y: 7,
+          w: 80,
+          h: 4,
+          value: "As on {{ sys.now|date('dd-MM-yyyy') }}",
+          align: 'right',
+          font: FONT_SMALL,
+        },
+        {
+          id: 'rule1',
+          kind: 'LINE',
+          x1: LEFT_MARGIN,
+          y1: 13,
+          x2: LEFT_MARGIN + CONTENT_WIDTH,
+          y2: 13,
+          widthPt: 0.6,
+        },
+
+        // Column head, boxed and repeated. On a twenty-page statement a head
+        // that appeared only on page 1 makes every other page unreadable.
+        {
+          id: 'head-bg',
+          kind: 'RECT',
+          x: LEFT_MARGIN,
+          y: 25,
+          w: CONTENT_WIDTH,
+          h: 6,
+          style: { fill: '#E8E8E8', stroke: '#000000', strokeWidthPt: 0.4 },
+        },
+        ...COLUMNS.map((col) => ({
+          id: `head-${col.key}`,
+          kind: 'TEXT' as const,
+          z: 1,
+          x: col.x + 0.5,
+          y: 26.6,
+          w: col.widthMm - 1,
+          h: 4,
+          value: col.label,
+          align: col.align,
+          font: { family: 'NotoSans', size: 6.5, bold: true },
+        })),
+      ],
+    },
+
+    // ─── Ageing bucket header ─────────────────────────────────────────────
+    {
+      type: 'GROUP_HEADER',
+      dataset: 'outstanding',
+      groupBy: '{{ row.ageBucket }}',
+      groupLevel: 0,
+      heightMm: 6,
+      keepWithNext: true,
+      elements: [
+        {
+          id: 'g-label',
+          kind: 'TEXT',
+          x: LEFT_MARGIN + 1,
+          y: 1.5,
+          w: 60,
+          h: 4,
+          value: 'Ageing {{ group.key }} days',
+          font: { family: 'NotoSans', size: 7.5, bold: true },
+        },
+        {
+          id: 'g-total',
+          kind: 'FIELD',
+          x: column('pending').x,
+          y: 1.5,
+          w: column('pending').widthMm - 1,
+          h: 4,
+          value: "{{ row.pendingAmount|fmt('#,##0.00') }}",
+          align: 'right',
+          // The forward reference: this prints the bucket's total BEFORE its
+          // rows are emitted, which only works because the engine pre-computes
+          // group aggregates.
+          aggregate: {
+            fn: 'sum',
+            scope: 'GROUP',
+            dataset: 'outstanding',
+            over: '{{ row.pendingAmount }}',
+          },
+          font: { family: 'NotoSans', size: 7.5, bold: true },
+        },
+      ],
+    },
+
+    // ─── Rows ─────────────────────────────────────────────────────────────
+    {
+      type: 'DETAIL',
+      dataset: 'outstanding',
+      heightMm: 4.6,
+      elements: [
+        {
+          id: 'd-sl',
+          kind: 'FIELD',
+          x: column('sl').x,
+          y: 0.4,
+          w: column('sl').widthMm - 1,
+          h: 3.6,
+          value: '{{ row.__index }}',
+          align: 'right',
+          font: FONT_BASE,
+        },
+        {
+          id: 'd-doc',
+          kind: 'FIELD',
+          x: column('doc').x,
+          y: 0.4,
+          w: column('doc').widthMm - 1,
+          h: 3.6,
+          value: '{{ row.docRefNo }}',
+          ellipsis: true,
+          font: FONT_BASE,
+        },
+        {
+          id: 'd-date',
+          kind: 'FIELD',
+          x: column('date').x,
+          y: 0.4,
+          w: column('date').widthMm - 1,
+          h: 3.6,
+          value: "{{ row.docDate|date('dd-MM-yy') }}",
+          font: FONT_BASE,
+        },
+        {
+          id: 'd-due',
+          kind: 'FIELD',
+          x: column('due').x,
+          y: 0.4,
+          w: column('due').widthMm - 1,
+          h: 3.6,
+          value: "{{ row.dueDate|date('dd-MM-yy') }}",
+          font: FONT_BASE,
+        },
+        {
+          id: 'd-bill',
+          kind: 'FIELD',
+          x: column('bill').x,
+          y: 0.4,
+          w: column('bill').widthMm - 1,
+          h: 3.6,
+          value: "{{ row.billAmount|fmt('#,##0.00') }}",
+          align: 'right',
+          font: FONT_BASE,
+        },
+        {
+          id: 'd-recd',
+          kind: 'FIELD',
+          x: column('recd').x,
+          y: 0.4,
+          w: column('recd').widthMm - 1,
+          h: 3.6,
+          value: "{{ row.allocAmount|fmt('#,##0.00') }}",
+          align: 'right',
+          blankWhenZero: true,
+          font: FONT_BASE,
+        },
+        {
+          id: 'd-pending',
+          kind: 'FIELD',
+          x: column('pending').x,
+          y: 0.4,
+          w: column('pending').widthMm - 1,
+          h: 3.6,
+          value: "{{ row.pendingAmount|fmt('#,##0.00;(#,##0.00)') }}",
+          align: 'right',
+          font: FONT_BASE,
+          // A CR row is the customer's own money held as an advance. Printing it
+          // the same colour as debt is how a statement starts an argument.
+          style: { color: "{{ row.drCr == 'CR' ? '#1D4E8B' : '#000000' }}" },
+        },
+        {
+          id: 'd-age',
+          kind: 'FIELD',
+          x: column('age').x,
+          y: 0.4,
+          w: column('age').widthMm - 1,
+          h: 3.6,
+          value: '{{ row.overdueDays }}',
+          align: 'right',
+          blankWhenZero: true,
+          font: FONT_BASE,
+          style: { color: "{{ row.overdueDays > 90 ? '#8B1D1D' : '#000000' }}" },
+        },
+        {
+          id: 'd-running',
+          kind: 'FIELD',
+          x: column('running').x,
+          y: 0.4,
+          w: column('running').widthMm - 1,
+          h: 3.6,
+          value: "{{ row.runningTotal|fmt('#,##0.00') }}",
+          align: 'right',
+          font: FONT_BASE,
+        },
+      ],
+    },
+
+    // ─── Ageing bucket footer ─────────────────────────────────────────────
+    {
+      type: 'GROUP_FOOTER',
+      dataset: 'outstanding',
+      groupBy: '{{ row.ageBucket }}',
+      groupLevel: 0,
+      heightMm: 6,
+      spacingRows: 1,
+      elements: [
+        {
+          id: 'gf-rule',
+          kind: 'LINE',
+          x1: column('bill').x,
+          y1: 0.5,
+          x2: LEFT_MARGIN + CONTENT_WIDTH,
+          y2: 0.5,
+          widthPt: 0.3,
+        },
+        {
+          id: 'gf-label',
+          kind: 'TEXT',
+          x: LEFT_MARGIN + 1,
+          y: 1.5,
+          w: 70,
+          h: 4,
+          value: '{{ group.key }} subtotal ({{ group.count }} bills)',
+          font: FONT_SMALL,
+        },
+        {
+          id: 'gf-total',
+          kind: 'FIELD',
+          x: column('pending').x,
+          y: 1.5,
+          w: column('pending').widthMm - 1,
+          h: 4,
+          value: "{{ row.pendingAmount|fmt('#,##0.00') }}",
+          align: 'right',
+          aggregate: {
+            fn: 'sum',
+            scope: 'GROUP',
+            dataset: 'outstanding',
+            over: '{{ row.pendingAmount }}',
+          },
+          font: { family: 'NotoSans', size: 7.5, bold: true },
+        },
+      ],
+    },
+
+    // ─── Closing total and ageing recap ───────────────────────────────────
+    {
+      type: 'SUMMARY',
+      heightMm: 34,
+      keepWithLastDetail: true,
+      elements: [
+        {
+          id: 's-rule',
+          kind: 'LINE',
+          x1: LEFT_MARGIN,
+          y1: 1,
+          x2: LEFT_MARGIN + CONTENT_WIDTH,
+          y2: 1,
+          widthPt: 0.7,
+        },
+        {
+          id: 's-count',
+          kind: 'FIELD',
+          x: LEFT_MARGIN + 1,
+          y: 3,
+          w: 70,
+          h: 4,
+          value: 'Open documents: {{ row.pendingAbs|fmt("0") }}',
+          aggregate: {
+            fn: 'count',
+            scope: 'REPORT',
+            dataset: 'outstanding',
+            over: '{{ row.pendingAbs }}',
+          },
+          font: FONT_SMALL,
+        },
+        {
+          id: 's-l',
+          kind: 'TEXT',
+          x: column('bill').x,
+          y: 3,
+          w: 60,
+          h: 4,
+          value: 'Closing Balance',
+          align: 'right',
+          font: { family: 'NotoSans', size: 9, bold: true },
+        },
+        {
+          id: 's-v',
+          kind: 'FIELD',
+          x: column('pending').x,
+          y: 3,
+          w: column('pending').widthMm + column('age').widthMm + column('running').widthMm - 1,
+          h: 4,
+          value: "{{ row.pendingAmount|fmt('#,##0.00;(#,##0.00)') }}",
+          align: 'right',
+          // `over` names the raw field: the display pattern brackets negatives,
+          // and a bracketed number cannot be read back as a signed one.
+          aggregate: {
+            fn: 'sum',
+            scope: 'REPORT',
+            dataset: 'outstanding',
+            over: '{{ row.pendingAmount }}',
+          },
+          font: { family: 'NotoSans', size: 10, bold: true },
+        },
+        {
+          id: 's-oldest-l',
+          kind: 'TEXT',
+          x: LEFT_MARGIN + 1,
+          y: 10,
+          w: 70,
+          h: 4,
+          value: 'Oldest overdue (days)',
+          font: FONT_SMALL,
+        },
+        {
+          id: 's-oldest',
+          kind: 'FIELD',
+          x: LEFT_MARGIN + 72,
+          y: 10,
+          w: 20,
+          h: 4,
+          value: "{{ row.overdueDays|fmt('0') }}",
+          align: 'right',
+          aggregate: {
+            fn: 'max',
+            scope: 'REPORT',
+            dataset: 'outstanding',
+            over: '{{ row.overdueDays }}',
+          },
+          font: { family: 'NotoSans', size: 7.5, bold: true },
+        },
+        {
+          id: 's-note',
+          kind: 'TEXT',
+          x: LEFT_MARGIN + 1,
+          y: 17,
+          w: 130,
+          h: 12,
+          value:
+            'Amounts shown in brackets are credits held on your account. ' +
+            'Please reconcile and advise any discrepancy within 7 days. ' +
+            'Cheques to be drawn in favour of {{ company.name }}.',
+          wrap: true,
+          font: { family: 'NotoSans', size: 6 },
+        },
+        {
+          id: 's-sign',
+          kind: 'TEXT',
+          x: LEFT_MARGIN + CONTENT_WIDTH - 70,
+          y: 24,
+          w: 70,
+          h: 4,
+          value: 'For {{ company.name }}',
+          align: 'right',
+          font: FONT_SMALL,
+        },
+      ],
+    },
+
+    // ─── Page footer with a PER-PAGE subtotal ─────────────────────────────
+    {
+      type: 'PAGE_FOOTER',
+      heightMm: 10,
+      printOn: 'ALL_PAGES',
+      elements: [
+        {
+          id: 'f-rule',
+          kind: 'LINE',
+          x1: LEFT_MARGIN,
+          y1: 0.5,
+          x2: LEFT_MARGIN + CONTENT_WIDTH,
+          y2: 0.5,
+          widthPt: 0.3,
+        },
+        {
+          id: 'f-sub-l',
+          kind: 'TEXT',
+          x: LEFT_MARGIN,
+          y: 2,
+          w: 60,
+          h: 4,
+          value: 'Carried on this page',
+          font: FONT_SMALL,
+        },
+        {
+          id: 'f-sub',
+          kind: 'FIELD',
+          x: column('pending').x,
+          y: 2,
+          w: column('pending').widthMm - 1,
+          h: 4,
+          // PAGE scope: accumulated live as rows land, read when the page
+          // closes. The one aggregate that cannot be pre-computed, because
+          // where the page ends is not known until it has ended.
+          value: "{{ row.pendingAmount|fmt('#,##0.00') }}",
+          align: 'right',
+          aggregate: {
+            fn: 'sum',
+            scope: 'PAGE',
+            dataset: 'outstanding',
+            over: '{{ row.pendingAmount }}',
+          },
+          font: FONT_SMALL,
+        },
+        {
+          id: 'f-page',
+          kind: 'TEXT',
+          x: LEFT_MARGIN + CONTENT_WIDTH - 40,
+          y: 2,
+          w: 40,
+          h: 4,
+          value: 'Page {{ page.number }} of {{ page.total }}',
+          align: 'right',
+          font: FONT_SMALL,
+        },
+      ],
+    },
+  ],
+});

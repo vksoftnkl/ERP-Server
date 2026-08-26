@@ -6105,3 +6105,22 @@ Inconsistent column data: Error creating UUID, invalid length: expected length 3
     at async a (/home/vk/Dev/erp/ERP server/node_modules/@prisma/client/src/runtime/getPrismaClient.ts:833:24)
     at async MenuMasterService.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.service.ts:62:23)
     at async MenuMasterController.getUserMenu (/home/vk/Dev/erp/ERP server/src/modules/fixed/menu-master/menu-master.controller.ts:64:20)
+2026-08-24T06:47:28.643Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-25T09:35:00.422Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `this.prisma.reportDataset.aggregate()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/reporting/providers/dynamic/dynamic-dataset.source.ts:157:51
+
+  154 }
+  155 
+  156 private async readSignature(): Promise<string> {
+→ 157   const probe = await this.prisma.reportDataset.aggregate(
+The table `reports.report_dataset` does not exist in the current database.
+2026-08-25T09:35:12.793Z ERROR [DynamicDatasetSource] Runtime report datasets could not be loaded — serving none. Templates binding a custom.* dataset will fail at print time until this clears. Cause: 
+Invalid `this.prisma.reportDataset.findMany()` invocation in
+/home/vk/Dev/erp/ERP server/src/modules/reporting/providers/dynamic/dynamic-dataset.source.ts:172:50
+
+  169 }
+  170 
+  171 private async refresh(): Promise<void> {
+→ 172   const rows = await this.prisma.reportDataset.findMany(
+The table `reports.report_dataset` does not exist in the current database.

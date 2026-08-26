@@ -43,8 +43,8 @@ export interface PromotionSchemePartyPayload {
   prp_city_id: string | null;
   // Display only — the name behind prp_scope_id, from whichever master
   // prp_kind names. Never written back.
-  prp_target_name: string | null;
-  prp_target_code: string | null;
+  prp_scope_name: string | null;
+  prp_scope_code: string | null;
   prp_is_exclude: boolean;
   prp_match_priority: number;
   prp_notes: string | null;
@@ -71,7 +71,7 @@ export interface PromotionSchemeItemPayload {
   pri_section_id: string | null;
   pri_unit_id: string | null;
   // Display only.
-  pri_target_name: string | null;
+  pri_scope_name: string | null;
   pri_unit_name: string | null;
   pri_is_exclude: boolean;
   pri_disc_perc: number;
@@ -127,6 +127,11 @@ export interface PromotionSchemeSummaryPayload {
   prm_id: string;
   prm_comp_id: string;
   prm_branch_id: string | null;
+  // Display only — the names behind the two ids, from company and
+  // branch_master. Never written back; null on the audit snapshots, which are
+  // built from unjoined rows.
+  prm_comp_name: string | null;
+  prm_branch_name: string | null;
   prm_tenant_id: string | null;
   prm_code: string;
   prm_name: string;

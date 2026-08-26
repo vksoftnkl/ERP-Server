@@ -1,0 +1,10 @@
+import { Prisma } from '@prisma/client';
+export declare const toNumber: (value: Prisma.Decimal | number | string | null | undefined) => number;
+export declare const toNullableNumber: (value: Prisma.Decimal | number | string | null | undefined) => number | null;
+export declare const toDateOnly: (value: Date | string | null | undefined) => string | null;
+export declare const toIsoDateTime: (value: Date | string | null | undefined) => string | null;
+export declare const toText: (value: unknown) => string;
+export declare const toBigIntText: (value: bigint | null | undefined) => string;
+export declare const joinAddress: (...parts: Array<string | null | undefined>) => string;
+export declare const round2: (value: number) => number;
+export declare const round3: (value: number) => number;
