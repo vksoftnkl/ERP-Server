@@ -29,6 +29,13 @@ model DeviceMaster {
   txnHoldLocks    TxnHold[]     @relation("TxnHoldLockDevice")  // the till currently holding the lease
   appSettingValues AppSettingValue[]
 
+
+  // ── printing (17_printing.sql) — the counter, and the design it reaches for
+  printAssignments PrintTemplateAssignment[] @relation("PrintTemplateAssignmentDevice")
+
+  printerProfiles  PrinterProfile[]          @relation("PrinterProfileDevice")
+  printLogs        PrintLog[]                @relation("PrintLogDevice")
+
   @@index([devDeviceUid], name: "idx_device_uid")
   @@map("device_master")
   @@schema("fixed")

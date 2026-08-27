@@ -1,0 +1,101 @@
+/// public.print_template — §2, the design's IDENTITY, and nothing else.
+///
+/// Deliberately almost empty: a name, an owner, and a pointer to the revision
+/// that is currently published. Everything editable — the body, the page, the
+/// datasets — lives on PrintTemplateVersion, because it is versioned and this
+/// row is not.
+///
+/// It carries NO branch, NO device and NO isDefault. Every one of those is a
+/// RESOLUTION question and belongs to PrintTemplateAssignment. 3.0 split that
+/// question across pgrp_style_id (never read by anything) and pstyl_default
+/// (a boolean with no unique constraint), and both were wrong.
+///
+/// ptlCompanyId NULL = shipped with the product. A company customises one by
+/// cloning it, which ptlForkedFromId/ptlForkedFromRev record — replacing 3.0's
+/// pstyl_id < 5000 reserved range, a convention nothing enforced.
+///
+/// Declared here WITHOUT any CHECK constraint: ck_ptl_code_shape,
+/// ck_ptl_not_own_fork, ck_ptl_fork_pair and ck_ptl_sort live in the migration
+/// and in PrintTemplateService.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_ptl_code    UNIQUE (ptl_company_id, lower(ptl_code)) NULLS NOT DISTINCT
+///                  WHERE NOT deleted. As with ux_ppo_code, a shipped code and
+///                  a company's own code coexist — that is what forking means.
+///   ix_ptl_purpose (ptl_purpose_id, ptl_company_id, ptl_sort_order) INCLUDE
+///                  (code, name, published_rev_id), partial on active AND NOT
+///                  deleted — the "print in format" list.
+///   ix_ptl_company / ix_ptl_forked_from / ix_ptl_published_rev /
+///   ix_ptl_created_by / ix_ptl_modified_by     FK-covering, all partial
+///
+/// NOT YET ENFORCED ANYWHERE, and worth adding: fk_ptl_published_rev points at
+/// ptv_id alone, so nothing stops it naming a DRAFT, a RETIRED version, or a
+/// version of a DIFFERENT template. The fix is a composite FK on
+/// (ptl_id, ptl_published_rev_id) against a UNIQUE (ptv_template_id, ptv_id)
+/// on the version table; status still needs a trigger. Until then it is
+/// PrintTemplateService's job.
+model PrintTemplate {
+  ptlId               String    @id(map: "pk_print_template") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptl_id")
+  /// NULL = shipped with the product. The only scope column here.
+  ptlCompanyId        String?   @db.Uuid                                     @map("ptl_company_id")
+
+  ptlPurposeId        String    @db.Uuid                                     @map("ptl_purpose_id")
+  ptlCode             String    @db.VarChar(60)                              @map("ptl_code")
+  ptlName             String    @db.VarChar(120)                             @map("ptl_name")
+  ptlDescription      String?   @db.Text                                     @map("ptl_description")
+
+  /// The revision a render actually uses. NULL until something is published,
+  /// which is why a template with only a draft simply does not resolve.
+  ptlPublishedRevId   String?   @db.Uuid                                     @map("ptl_published_rev_id")
+
+  // ── Where this came from, when cloned from a shipped design ─────────────
+  ptlForkedFromId     String?   @db.Uuid                                     @map("ptl_forked_from_id")
+  ptlForkedFromRev    Int?                                                   @map("ptl_forked_from_rev")
+
+  ptlSortOrder        Int       @default(100) @db.SmallInt                   @map("ptl_sort_order")
+
+  /// GENERATED ALWAYS ... STORED: the owner with NULL folded to the nil uuid,
+  /// so that §5's composite fk_pta_template can point at (id, owner).
+  /// Read-only — writing it raises 428C9; the no-arg dbgenerated() is what
+  /// stops `migrate dev` emitting DROP DEFAULT.
+  ///
+  /// It exists because MATCH SIMPLE treats a composite key as satisfied the
+  /// moment ANY of its columns is NULL, so a key on (ptl_id, ptl_company_id)
+  /// would stop checking anything at all for a SHIPPED design — exactly the
+  /// case the check is for. Folding NULL to the sentinel keeps every column
+  /// non-null, so the key always fires.
+  ptlCompanyKey       String?   @default(dbgenerated()) @db.Uuid             @map("ptl_company_key")
+
+  ptlIsActive         Boolean   @default(true)                               @map("ptl_is_active")
+  ptlIsDeleted        Boolean   @default(false)                              @map("ptl_is_deleted")
+  ptlSyncDate         DateTime? @db.Timestamptz(6)                           @map("ptl_sync_date")
+  ptlCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("ptl_created_on")
+  ptlCreatedBy        String?   @db.Uuid                                     @map("ptl_created_by")
+  ptlModifiedOn       DateTime? @db.Timestamptz(6)                           @map("ptl_modified_on")
+  ptlModifiedBy       String?   @db.Uuid                                     @map("ptl_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company?      @relation("PrintTemplateCompany",    fields: [ptlCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_company")
+  purpose             PrintPurpose  @relation("PrintTemplatePurpose",    fields: [ptlPurposeId],  references: [ppoId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_purpose")
+  forkedFrom          PrintTemplate? @relation("PrintTemplateFork",      fields: [ptlForkedFromId], references: [ptlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_forked_from")
+  createdByUser       UserMaster?   @relation("PrintTemplateCreatedBy",  fields: [ptlCreatedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_created_by")
+  modifiedByUser      UserMaster?   @relation("PrintTemplateModifiedBy", fields: [ptlModifiedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_modified_by")
+
+  /// The circular half. Prisma needs both sides named; in SQL this is the
+  /// ALTER at the end of §3, because neither table can be created with a
+  /// foreign key to the other.
+  publishedRev        PrintTemplateVersion? @relation("PrintTemplatePublishedRev", fields: [ptlPublishedRevId], references: [ptvId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_published_rev")
+
+  forks               PrintTemplate[]           @relation("PrintTemplateFork")
+  versions            PrintTemplateVersion[]    @relation("PrintTemplateVersions")
+  assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentTemplate")
+
+  printLogs           PrintLog[]                @relation("PrintLogTemplate")
+
+  /// The target of §5's composite fk_pta_template. ptlId alone is already the
+  /// primary key, so this constrains nothing new; it exists so that a foreign
+  /// key can name (id, owner) as a pair.
+  @@unique([ptlId, ptlCompanyKey], map: "ux_ptl_id_company_key")
+  @@map("print_template")
+  @@schema("public")
+}

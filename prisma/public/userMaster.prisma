@@ -71,6 +71,23 @@ model UserMaster {
   appSettingValues       AppSettingValue[]
   approvedPromotionSchemes PromotionScheme[] @relation("PromotionSchemeApprovedBy")
 
+  // ── printing (17_printing.sql) — every *_created_by / *_modified_by in
+  // that schema carries a real FK, unlike the reports.* tables it replaces.
+  printPurposesCreated       PrintPurpose[]            @relation("PrintPurposeCreatedBy")
+  printPurposesModified      PrintPurpose[]            @relation("PrintPurposeModifiedBy")
+  printTemplatesCreated      PrintTemplate[]           @relation("PrintTemplateCreatedBy")
+  printTemplatesModified     PrintTemplate[]           @relation("PrintTemplateModifiedBy")
+  printVersionsApproved      PrintTemplateVersion[]    @relation("PrintTemplateVersionApprovedBy")
+  printVersionsCreated       PrintTemplateVersion[]    @relation("PrintTemplateVersionCreatedBy")
+  printVersionsModified      PrintTemplateVersion[]    @relation("PrintTemplateVersionModifiedBy")
+  printDatasetsCreated       PrintTemplateDataset[]    @relation("PrintTemplateDatasetCreatedBy")
+  printDatasetsModified      PrintTemplateDataset[]    @relation("PrintTemplateDatasetModifiedBy")
+  printAssignmentsCreated    PrintTemplateAssignment[] @relation("PrintTemplateAssignmentCreatedBy")
+  printAssignmentsModified   PrintTemplateAssignment[] @relation("PrintTemplateAssignmentModifiedBy")
+  printerProfilesCreated     PrinterProfile[]          @relation("PrinterProfileCreatedBy")
+  printerProfilesModified    PrinterProfile[]          @relation("PrinterProfileModifiedBy")
+  printLogs                  PrintLog[]                @relation("PrintLogPrintedBy")
+
   // ── Indexes ────────────────────────────────────────────────────────────────
   //   CREATE UNIQUE INDEX uix_user_login_name
   //       ON public.user_master (usr_login_name)

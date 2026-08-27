@@ -89,6 +89,13 @@ model BranchMaster {
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[]       @relation("PromotionSchemeBranchRef")
   promotionSchemeBranches PromotionSchemeBranch[] @relation("PromotionSchemeBranchBranch")
+
+  // ── printing (17_printing.sql) ─────────────────────────────────────────
+  printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")
+
+  printerProfiles       PrinterProfile[]          @relation("PrinterProfileBranch")
+  printLogs             PrintLog[]                @relation("PrintLogBranch")
+
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")

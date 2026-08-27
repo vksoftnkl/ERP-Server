@@ -2250,6 +2250,13 @@ model DeviceMaster {
   txnHoldLocks    TxnHold[]     @relation("TxnHoldLockDevice")  // the till currently holding the lease
   appSettingValues AppSettingValue[]
 
+
+  // ── printing (17_printing.sql) — the counter, and the design it reaches for
+  printAssignments PrintTemplateAssignment[] @relation("PrintTemplateAssignmentDevice")
+
+  printerProfiles  PrinterProfile[]          @relation("PrinterProfileDevice")
+  printLogs        PrintLog[]                @relation("PrintLogDevice")
+
   @@index([devDeviceUid], name: "idx_device_uid")
   @@map("device_master")
   @@schema("fixed")
@@ -3988,6 +3995,13 @@ model BranchMaster {
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[]       @relation("PromotionSchemeBranchRef")
   promotionSchemeBranches PromotionSchemeBranch[] @relation("PromotionSchemeBranchBranch")
+
+  // ── printing (17_printing.sql) ─────────────────────────────────────────
+  printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")
+
+  printerProfiles       PrinterProfile[]          @relation("PrinterProfileBranch")
+  printLogs             PrintLog[]                @relation("PrintLogBranch")
+
   @@index([brCompId],    name: "idx_branch_comp_id")
   @@index([brStateCode], name: "idx_branch_state_code")
   @@map("branch_master")
@@ -4157,6 +4171,15 @@ model Company {
   tenderDetails         AccTenderDetail[]
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
+
+  // ── printing (17_printing.sql) ─────────────────────────────────────────
+  printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")
+  printTemplates        PrintTemplate[]           @relation("PrintTemplateCompany")
+  printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentCompany")
+
+  printerProfiles       PrinterProfile[]          @relation("PrinterProfileCompany")
+  printLogs             PrintLog[]                @relation("PrintLogCompany")
+
   @@map("companys")
   @@schema("public")
 }
@@ -4250,6 +4273,838 @@ model FiscalYear {
 
   @@index([compId, isDeleted], map: "idx_fiscal_years_comp")
   @@map("fiscal_years")
+  @@schema("public")
+}
+
+// ----- prisma/public/printerProfile.prisma -----
+/// public.printer_profile — §6, the physical device.
+///
+/// ┌─────────────────────────────────────────────────────────────────────────┐
+/// │ RECONSTRUCTED, NOT TRANSCRIBED. §6 of 17_printing.sql has not reached   │
+/// │ me — both pastes of the file hit the 50,000-character message limit     │
+/// │ before it. This model is derived from what the rest of the file states  │
+/// │ about printer_profile plus the house conventions, so the field list is  │
+/// │ a proposal. RECONCILE IT AGAINST §6 BEFORE GENERATING A CLIENT.         │
+/// │                                                                         │
+/// │ Load-bearing and safe (the file says so directly):                     │
+/// │   * prefix prf_, table public.printer_profile                          │
+/// │   * FK to fixed.device_master(dev_id) — "the counter, and its printer"  │
+/// │   * it "asserts compatibility against" §3's page geometry, so it must   │
+/// │     carry a paper code and dimensions of its own to assert with         │
+/// │   * the full audit block, _is_active included (it is a master)          │
+/// │   * NO is_default boolean — §5 owns that question, and the file is      │
+/// │     emphatic that a second place to say which one wins is one too many  │
+/// │                                                                         │
+/// │ Inferred, most likely to differ from §6: everything from prfConnKind    │
+/// │ down to prfCutSequence — the connection and capability block. The       │
+/// │ vocabularies below are guesses at the CHECK lists.                      │
+/// └─────────────────────────────────────────────────────────────────────────┘
+///
+/// Declared here WITHOUT any CHECK constraint, as every other model in this
+/// module is: the vocabularies live in the migration and in
+/// PrinterProfileService.
+///   prfConnKind     LOCAL | NETWORK | CUPS | WINDOWS | RAW_TCP | FILE
+///   prfEmulation    ESCPOS | ESCP2 | PCL | PDF | RAW
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_prf_code    UNIQUE (prf_company_id, lower(prf_code)) WHERE NOT deleted
+///   ix_prf_device  (prf_device_id) — "which printers hang off this counter"
+///   ix_prf_company / ix_prf_branch / ix_prf_created_by / ix_prf_modified_by
+///                  FK-covering, all partial
+model PrinterProfile {
+  prfId               String    @id(map: "pk_printer_profile") @default(dbgenerated("uuidv7()")) @db.Uuid @map("prf_id")
+  prfCompanyId        String    @db.Uuid                                     @map("prf_company_id")
+  /// NULL = available at every branch.
+  prfBranchId         String?   @db.Uuid                                     @map("prf_branch_id")
+  /// The counter this printer hangs off. NULL = a shared/server-side queue.
+  prfDeviceId         String?   @db.Uuid                                     @map("prf_device_id")
+
+  prfCode             String    @db.VarChar(40)                              @map("prf_code")
+  prfName             String    @db.VarChar(120)                             @map("prf_name")
+
+  // ── How the server reaches it ───────────────────────────────────────────
+  prfConnKind         String    @default("CUPS") @db.VarChar(15)             @map("prf_conn_kind")
+  /// The OS print queue, share name, or device path.
+  prfQueueName        String?   @db.VarChar(120)                             @map("prf_queue_name")
+  prfHost             String?   @db.VarChar(120)                             @map("prf_host")
+  prfPort             Int?                                                   @map("prf_port")
+
+  // ── What it understands ─────────────────────────────────────────────────
+  // ptv_engine says what a template body IS; this says what the hardware can
+  // consume. The renderer is what reconciles the two.
+  prfEmulation        String    @default("ESCPOS") @db.VarChar(20)           @map("prf_emulation")
+  prfCodepage         String?   @db.VarChar(20)                              @map("prf_codepage")
+
+  // ── The paper actually loaded ───────────────────────────────────────────
+  // Asserted against ptv_paper_code / ptv_width_mm / ptv_columns at render
+  // time. This is the check §5 deliberately does NOT put in the assignment
+  // key: paper is a property of the version and of the device, never a
+  // resolution axis.
+  prfPaperCode        String    @default("A4") @db.VarChar(20)               @map("prf_paper_code")
+  prfWidthMm          Decimal?  @db.Decimal(8, 2)                            @map("prf_width_mm")
+  prfHeightMm         Decimal?  @db.Decimal(8, 2)                            @map("prf_height_mm")
+  /// Characters per line. The text-engine counterpart of ptv_columns.
+  prfColumns          Int?      @db.SmallInt                                 @map("prf_columns")
+  prfDpi              Int?      @db.SmallInt                                 @map("prf_dpi")
+
+  // ── Capabilities ────────────────────────────────────────────────────────
+  prfSupportsCut      Boolean   @default(false)                              @map("prf_supports_cut")
+  prfSupportsDrawer   Boolean   @default(false)                              @map("prf_supports_drawer")
+  prfSupportsColor    Boolean   @default(false)                              @map("prf_supports_color")
+  /// Raw escape sequences, hex or the printer's own notation.
+  prfInitSequence     String?   @db.Text                                     @map("prf_init_sequence")
+  prfCutSequence      String?   @db.Text                                     @map("prf_cut_sequence")
+
+  prfSortOrder        Int       @default(100) @db.SmallInt                   @map("prf_sort_order")
+  prfRemarks          String?   @db.VarChar(250)                             @map("prf_remarks")
+
+  prfIsActive         Boolean   @default(true)                               @map("prf_is_active")
+  prfIsDeleted        Boolean   @default(false)                              @map("prf_is_deleted")
+  prfSyncDate         DateTime? @db.Timestamptz(6)                           @map("prf_sync_date")
+  prfCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("prf_created_on")
+  prfCreatedBy        String?   @db.Uuid                                     @map("prf_created_by")
+  prfModifiedOn       DateTime? @db.Timestamptz(6)                           @map("prf_modified_on")
+  prfModifiedBy       String?   @db.Uuid                                     @map("prf_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company       @relation("PrinterProfileCompany",    fields: [prfCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_company")
+  branch              BranchMaster? @relation("PrinterProfileBranch",     fields: [prfBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_branch")
+  device              DeviceMaster? @relation("PrinterProfileDevice",     fields: [prfDeviceId],   references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_device")
+  createdByUser       UserMaster?   @relation("PrinterProfileCreatedBy",  fields: [prfCreatedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_created_by")
+  modifiedByUser      UserMaster?   @relation("PrinterProfileModifiedBy", fields: [prfModifiedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_prf_modified_by")
+
+  assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentPrinter")
+  printLogs           PrintLog[]                @relation("PrintLogPrinter")
+
+  @@map("printer_profile")
+  @@schema("public")
+}
+
+// ----- prisma/public/printLog.prisma -----
+/// public.print_log — §7, every render, immutable.
+///
+/// ┌─────────────────────────────────────────────────────────────────────────┐
+/// │ RECONSTRUCTED, NOT TRANSCRIBED. §7 of 17_printing.sql has not reached   │
+/// │ me — both pastes of the file hit the 50,000-character message limit     │
+/// │ before it. RECONCILE AGAINST §7 BEFORE GENERATING A CLIENT.             │
+/// │                                                                         │
+/// │ Load-bearing and safe (the file states each of these directly):        │
+/// │   * prefix plg_, table public.print_log                                │
+/// │   * PARTITIONED BY LIST (plg_acc_year), one partition per accounting   │
+/// │     year, created by public.fn_create_printing_partitions('YYYY-YYYY') │
+/// │     as public.print_log_YYYY_YYYY. Retiring a year is a DROP of one    │
+/// │     partition; retention is policy, not schema.                        │
+/// │   * plg_version_id is a REAL FK to print_template_version — "what did  │
+/// │     this bill look like when it was printed" is enforced, not          │
+/// │     snapshotted and hoped for. This is the whole reason the body lives │
+/// │     on the version rather than the template.                           │
+/// │   * NO foreign key to any document. The subject is named by the        │
+/// │     POLYMORPHIC SOURCE QUAD (module, doc type, doc id, acc year),      │
+/// │     because the documents are themselves partitioned by their own      │
+/// │     accounting year and a purpose may name a master or a report.       │
+/// │   * plg_copy_label records what was printed on the paper. Deciding that │
+/// │     the second print of a tax invoice is a DUPLICATE is a rule about   │
+/// │     GST and belongs to the service layer, not here.                    │
+/// │   * plg_params is ONE jsonb object per render — the answers to         │
+/// │     ptv_params — not one per dataset. §3 cites this table as the       │
+/// │     reason the declaration moved to the version.                       │
+/// │   * A REPRINT IS NOT A STATUS TRANSITION. This table is the record of  │
+/// │     printing; sale_bill.sb_print_count and its siblings stay a         │
+/// │     denormalised cache of COUNT(*) over it, never the truth.           │
+/// │                                                                         │
+/// │ Inferred, most likely to differ from §7: the outcome block             │
+/// │ (plgStatus … plgDurationMs) and the exact spelling of the quad.        │
+/// └─────────────────────────────────────────────────────────────────────────┘
+///
+/// The composite primary key is the house shape for a partitioned fact table —
+/// sale_bill does the same — because PostgreSQL requires the partition key to
+/// be part of every unique constraint.
+///
+/// IMMUTABLE means immutable: there is no _is_deleted, no _modified_on and no
+/// _sync_date here. Enforce append-only with a REVOKE UPDATE, DELETE on the
+/// application role and, if you want it in the database, a BEFORE UPDATE OR
+/// DELETE trigger that raises. Prisma cannot express either.
+///
+/// Declared here WITHOUT any CHECK constraint:
+///   ck_plg_acc_year_shape   ^[0-9]{4}-[0-9]{4}$ with consecutive years, the
+///                           same rule fn_create_printing_partitions enforces
+///   ck_plg_src_module       the ppo_src_module vocabulary
+///   ck_plg_output_mode      PRINT | PREVIEW | EMAIL | FILE | REPRINT
+///   ck_plg_status           SUCCESS | FAILED | QUEUED | CANCELLED
+///   ck_plg_copy_no          >= 1
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ix_plg_subject   (plg_src_module, plg_src_doc_type, plg_src_doc_id,
+///                     plg_src_acc_year) — "how many times was this printed",
+///                     the query sb_print_count caches
+///   ix_plg_recent    (plg_company_id, plg_printed_on DESC) per partition
+///   ix_plg_version / ix_plg_purpose / ix_plg_template / ix_plg_printer /
+///   ix_plg_device / ix_plg_branch / ix_plg_printed_by   FK-covering
+model PrintLog {
+  plgId               String    @default(dbgenerated("uuidv7()")) @db.Uuid   @map("plg_id")
+  /// THE PARTITION KEY. One partition per accounting year.
+  plgAccYear          String    @db.Char(9)                                  @map("plg_acc_year")
+
+  plgCompanyId        String    @db.Uuid                                     @map("plg_company_id")
+  plgBranchId         String?   @db.Uuid                                     @map("plg_branch_id")
+  /// The counter the render came from.
+  plgDeviceId         String?   @db.Uuid                                     @map("plg_device_id")
+
+  // ── The subject, as the polymorphic source quad ─────────────────────────
+  // Deliberately NOT a foreign key to any document: the same shape every
+  // other polymorphic table in this chain uses.
+  plgSrcModule        String    @default("SALES") @db.VarChar(20)            @map("plg_src_module")
+  plgSrcDocType       String    @db.VarChar(40)                              @map("plg_src_doc_type")
+  plgSrcDocId         String?   @db.Uuid                                     @map("plg_src_doc_id")
+  /// The DOCUMENT's accounting year, which is not necessarily the year the
+  /// render happened in — a reprint of last year's bill is logged this year.
+  plgSrcAccYear       String?   @db.Char(9)                                  @map("plg_src_acc_year")
+
+  // ── What was rendered, and with what ────────────────────────────────────
+  plgPurposeId        String    @db.Uuid                                     @map("plg_purpose_id")
+  plgTemplateId       String    @db.Uuid                                     @map("plg_template_id")
+  /// The exact bytes. A real FK, and the point of the whole versioning design.
+  plgVersionId        String    @db.Uuid                                     @map("plg_version_id")
+  plgPrinterId        String?   @db.Uuid                                     @map("plg_printer_id")
+
+  plgOutputMode       String    @default("PRINT") @db.VarChar(15)            @map("plg_output_mode")
+  plgCopyNo           Int       @default(1) @db.SmallInt                     @map("plg_copy_no")
+  /// ORIGINAL / DUPLICATE / TRIPLICATE — what the paper actually said.
+  plgCopyLabel        String?   @db.VarChar(20)                              @map("plg_copy_label")
+  plgLang             String?   @db.VarChar(5)                               @map("plg_lang")
+
+  /// The answers to ptv_params, ONE object for the whole render.
+  plgParams           Json?     @db.JsonB                                    @map("plg_params")
+
+  // ── Outcome ─────────────────────────────────────────────────────────────
+  plgStatus           String    @default("SUCCESS") @db.VarChar(15)          @map("plg_status")
+  plgError            String?   @db.Text                                     @map("plg_error")
+  plgPageCount        Int?      @db.SmallInt                                 @map("plg_page_count")
+  plgByteCount        Int?                                                   @map("plg_byte_count")
+  plgDurationMs       Int?                                                   @map("plg_duration_ms")
+
+  plgPrintedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("plg_printed_on")
+  plgPrintedBy        String?   @db.Uuid                                     @map("plg_printed_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company              @relation("PrintLogCompany",   fields: [plgCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_company")
+  branch              BranchMaster?        @relation("PrintLogBranch",    fields: [plgBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_branch")
+  device              DeviceMaster?        @relation("PrintLogDevice",    fields: [plgDeviceId],   references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_device")
+  purpose             PrintPurpose         @relation("PrintLogPurpose",   fields: [plgPurposeId],  references: [ppoId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_purpose")
+  template            PrintTemplate        @relation("PrintLogTemplate",  fields: [plgTemplateId], references: [ptlId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_template")
+  version             PrintTemplateVersion @relation("PrintLogVersion",   fields: [plgVersionId],  references: [ptvId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_version")
+  printer             PrinterProfile?      @relation("PrintLogPrinter",   fields: [plgPrinterId],  references: [prfId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_printer")
+  printedByUser       UserMaster?          @relation("PrintLogPrintedBy", fields: [plgPrintedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_plg_printed_by")
+
+  // Declared so `migrate dev` does not offer to drop them. The PARTIAL ones
+  // (ix_plg_subject, ix_plg_printer, ix_plg_device, ix_plg_branch,
+  // ix_plg_printed_by) stay DB-only — Prisma cannot express a WHERE clause and
+  // therefore ignores them.
+  @@index([plgCompanyId, plgPrintedOn(sort: Desc)], map: "ix_plg_recent")
+  @@index([plgVersionId],  map: "ix_plg_version")
+  @@index([plgPurposeId],  map: "ix_plg_purpose")
+  @@index([plgTemplateId], map: "ix_plg_template")
+  @@id([plgId, plgAccYear], map: "pk_print_log")
+  @@map("print_log")
+  @@schema("public")
+}
+
+// ----- prisma/public/printPurpose.prisma -----
+/// public.print_purpose — §1, WHAT can be printed.
+///
+/// 3.0 kept this list in C++ as a magic integer at ten call sites
+/// (PrintUtil(this, 9) = Sales Bill). It is a table now, and that is the first
+/// half of "printing is never controlled by code".
+///
+/// A purpose is (document type, what you want printed OF it): the same sale
+/// bill is a tax invoice, a delivery slip and a godown slip.
+/// ppoCompanyId NULL = shipped with the product, visible to every company.
+///
+/// Declared here WITHOUT any CHECK constraint, the same treatment
+/// promotion_scheme gets: ck_ppo_code_shape, ck_ppo_src_module, ck_ppo_copies
+/// and ck_ppo_sort live in the migration and in PrintPurposeService.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_ppo_code    UNIQUE (ppo_company_id, lower(ppo_code)) NULLS NOT DISTINCT
+///                  WHERE NOT deleted. NOTE: NULLS NOT DISTINCT dedupes the
+///                  SHIPPED rows against each other only — a shipped
+///                  SALE_INVOICE and a company's own SALE_INVOICE coexist by
+///                  design, which is what makes forking (§2) possible.
+///   ix_ppo_doc     (ppo_src_module, ppo_doc_type, ppo_sort_order), partial on
+///                  (NOT deleted AND active)
+///   ix_ppo_company / ix_ppo_created_by / ix_ppo_modified_by
+///                  FK-covering, all partial on IS NOT NULL
+model PrintPurpose {
+  ppoId               String    @id(map: "pk_print_purpose") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ppo_id")
+  /// NULL = shipped with the product, visible to every company.
+  ppoCompanyId        String?   @db.Uuid                                     @map("ppo_company_id")
+
+  ppoCode             String    @db.VarChar(40)                              @map("ppo_code")
+  ppoName             String    @db.VarChar(120)                             @map("ppo_name")
+
+  // ── The document this prints ────────────────────────────────────────────
+  // Free-form on purpose: a purpose may name a transaction (SALE_BILL), a
+  // master (ITEM_LABEL) or a report (STOCK_AGEING).
+  ppoSrcModule        String    @default("SALES") @db.VarChar(20)            @map("ppo_src_module")
+  ppoDocType          String    @db.VarChar(40)                              @map("ppo_doc_type")
+
+  // ── Copies ──────────────────────────────────────────────────────────────
+  // How many the paper normally carries, and what they are called. Deciding
+  // that the second print of a tax invoice is a DUPLICATE is a rule about
+  // GST, not about this table — the service layer labels the copies.
+  ppoCopyCount        Int       @default(1) @db.SmallInt                     @map("ppo_copy_count")
+  ppoCopyLabels       String?   @db.VarChar(120)                             @map("ppo_copy_labels")
+
+  ppoAllowReprint     Boolean   @default(true)                               @map("ppo_allow_reprint")
+
+  ppoSortOrder        Int       @default(100) @db.SmallInt                   @map("ppo_sort_order")
+  ppoNotes            String?   @db.Text                                     @map("ppo_notes")
+
+  ppoIsActive         Boolean   @default(true)                               @map("ppo_is_active")
+  ppoIsDeleted        Boolean   @default(false)                              @map("ppo_is_deleted")
+  ppoSyncDate         DateTime? @db.Timestamptz(6)                           @map("ppo_sync_date")
+  ppoCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("ppo_created_on")
+  ppoCreatedBy        String?   @db.Uuid                                     @map("ppo_created_by")
+  ppoModifiedOn       DateTime? @db.Timestamptz(6)                           @map("ppo_modified_on")
+  ppoModifiedBy       String?   @db.Uuid                                     @map("ppo_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company?    @relation("PrintPurposeCompany",    fields: [ppoCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ppo_company")
+  createdByUser       UserMaster? @relation("PrintPurposeCreatedBy",  fields: [ppoCreatedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ppo_created_by")
+  modifiedByUser      UserMaster? @relation("PrintPurposeModifiedBy", fields: [ppoModifiedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ppo_modified_by")
+
+  templates           PrintTemplate[]           @relation("PrintTemplatePurpose")
+  assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentPurpose")
+
+  printLogs           PrintLog[]                @relation("PrintLogPurpose")
+
+  @@map("print_purpose")
+  @@schema("public")
+}
+
+// ----- prisma/public/printTemplate.prisma -----
+/// public.print_template — §2, the design's IDENTITY, and nothing else.
+///
+/// Deliberately almost empty: a name, an owner, and a pointer to the revision
+/// that is currently published. Everything editable — the body, the page, the
+/// datasets — lives on PrintTemplateVersion, because it is versioned and this
+/// row is not.
+///
+/// It carries NO branch, NO device and NO isDefault. Every one of those is a
+/// RESOLUTION question and belongs to PrintTemplateAssignment. 3.0 split that
+/// question across pgrp_style_id (never read by anything) and pstyl_default
+/// (a boolean with no unique constraint), and both were wrong.
+///
+/// ptlCompanyId NULL = shipped with the product. A company customises one by
+/// cloning it, which ptlForkedFromId/ptlForkedFromRev record — replacing 3.0's
+/// pstyl_id < 5000 reserved range, a convention nothing enforced.
+///
+/// Declared here WITHOUT any CHECK constraint: ck_ptl_code_shape,
+/// ck_ptl_not_own_fork, ck_ptl_fork_pair and ck_ptl_sort live in the migration
+/// and in PrintTemplateService.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_ptl_code    UNIQUE (ptl_company_id, lower(ptl_code)) NULLS NOT DISTINCT
+///                  WHERE NOT deleted. As with ux_ppo_code, a shipped code and
+///                  a company's own code coexist — that is what forking means.
+///   ix_ptl_purpose (ptl_purpose_id, ptl_company_id, ptl_sort_order) INCLUDE
+///                  (code, name, published_rev_id), partial on active AND NOT
+///                  deleted — the "print in format" list.
+///   ix_ptl_company / ix_ptl_forked_from / ix_ptl_published_rev /
+///   ix_ptl_created_by / ix_ptl_modified_by     FK-covering, all partial
+///
+/// NOT YET ENFORCED ANYWHERE, and worth adding: fk_ptl_published_rev points at
+/// ptv_id alone, so nothing stops it naming a DRAFT, a RETIRED version, or a
+/// version of a DIFFERENT template. The fix is a composite FK on
+/// (ptl_id, ptl_published_rev_id) against a UNIQUE (ptv_template_id, ptv_id)
+/// on the version table; status still needs a trigger. Until then it is
+/// PrintTemplateService's job.
+model PrintTemplate {
+  ptlId               String    @id(map: "pk_print_template") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptl_id")
+  /// NULL = shipped with the product. The only scope column here.
+  ptlCompanyId        String?   @db.Uuid                                     @map("ptl_company_id")
+
+  ptlPurposeId        String    @db.Uuid                                     @map("ptl_purpose_id")
+  ptlCode             String    @db.VarChar(60)                              @map("ptl_code")
+  ptlName             String    @db.VarChar(120)                             @map("ptl_name")
+  ptlDescription      String?   @db.Text                                     @map("ptl_description")
+
+  /// The revision a render actually uses. NULL until something is published,
+  /// which is why a template with only a draft simply does not resolve.
+  ptlPublishedRevId   String?   @db.Uuid                                     @map("ptl_published_rev_id")
+
+  // ── Where this came from, when cloned from a shipped design ─────────────
+  ptlForkedFromId     String?   @db.Uuid                                     @map("ptl_forked_from_id")
+  ptlForkedFromRev    Int?                                                   @map("ptl_forked_from_rev")
+
+  ptlSortOrder        Int       @default(100) @db.SmallInt                   @map("ptl_sort_order")
+
+  /// GENERATED ALWAYS ... STORED: the owner with NULL folded to the nil uuid,
+  /// so that §5's composite fk_pta_template can point at (id, owner).
+  /// Read-only — writing it raises 428C9; the no-arg dbgenerated() is what
+  /// stops `migrate dev` emitting DROP DEFAULT.
+  ///
+  /// It exists because MATCH SIMPLE treats a composite key as satisfied the
+  /// moment ANY of its columns is NULL, so a key on (ptl_id, ptl_company_id)
+  /// would stop checking anything at all for a SHIPPED design — exactly the
+  /// case the check is for. Folding NULL to the sentinel keeps every column
+  /// non-null, so the key always fires.
+  ptlCompanyKey       String?   @default(dbgenerated()) @db.Uuid             @map("ptl_company_key")
+
+  ptlIsActive         Boolean   @default(true)                               @map("ptl_is_active")
+  ptlIsDeleted        Boolean   @default(false)                              @map("ptl_is_deleted")
+  ptlSyncDate         DateTime? @db.Timestamptz(6)                           @map("ptl_sync_date")
+  ptlCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("ptl_created_on")
+  ptlCreatedBy        String?   @db.Uuid                                     @map("ptl_created_by")
+  ptlModifiedOn       DateTime? @db.Timestamptz(6)                           @map("ptl_modified_on")
+  ptlModifiedBy       String?   @db.Uuid                                     @map("ptl_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company?      @relation("PrintTemplateCompany",    fields: [ptlCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_company")
+  purpose             PrintPurpose  @relation("PrintTemplatePurpose",    fields: [ptlPurposeId],  references: [ppoId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_purpose")
+  forkedFrom          PrintTemplate? @relation("PrintTemplateFork",      fields: [ptlForkedFromId], references: [ptlId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_forked_from")
+  createdByUser       UserMaster?   @relation("PrintTemplateCreatedBy",  fields: [ptlCreatedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_created_by")
+  modifiedByUser      UserMaster?   @relation("PrintTemplateModifiedBy", fields: [ptlModifiedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_modified_by")
+
+  /// The circular half. Prisma needs both sides named; in SQL this is the
+  /// ALTER at the end of §3, because neither table can be created with a
+  /// foreign key to the other.
+  publishedRev        PrintTemplateVersion? @relation("PrintTemplatePublishedRev", fields: [ptlPublishedRevId], references: [ptvId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptl_published_rev")
+
+  forks               PrintTemplate[]           @relation("PrintTemplateFork")
+  versions            PrintTemplateVersion[]    @relation("PrintTemplateVersions")
+  assignments         PrintTemplateAssignment[] @relation("PrintTemplateAssignmentTemplate")
+
+  printLogs           PrintLog[]                @relation("PrintLogTemplate")
+
+  /// The target of §5's composite fk_pta_template. ptlId alone is already the
+  /// primary key, so this constrains nothing new; it exists so that a foreign
+  /// key can name (id, owner) as a pair.
+  @@unique([ptlId, ptlCompanyKey], map: "ux_ptl_id_company_key")
+  @@map("print_template")
+  @@schema("public")
+}
+
+// ----- prisma/public/printTemplateAssignment.prisma -----
+/// public.print_template_assignment — §5, WHICH design wins, and WHERE.
+///
+/// THERE IS DELIBERATELY NO isDefault COLUMN. Default-ness is the ROW'S
+/// EXISTENCE. A pta_ row is the choice for one scope; templates that are merely
+/// available are PrintTemplate rows matching the purpose, which is what the
+/// "print in format" list shows.
+///
+/// That removes three defects at once:
+///   * "exactly one default" becomes a plain unique index on the scope key,
+///     with no flag anyone can forget to clear.
+///   * THERE IS NO CLEAR STEP. Changing the default is an UPDATE of ONE row.
+///     3.0's clear-then-set was scope-unaware, so on a mixed site setting the
+///     Windows default silently unset the Linux one.
+///   * A partial unique index on a boolean cannot be DEFERRED, so flipping two
+///     rows in one UPDATE can fail on row order alone. With no boolean there is
+///     no swap to get wrong.
+///
+/// Narrowest wins: counter -> branch -> company -> EVERY COMPANY, via
+/// ptaSpecificity. Four rungs, not three: ptaCompanyId is nullable, so a
+/// shipped design can be the default for every company that has not said
+/// otherwise.
+///
+/// PAPER IS NOT IN THE KEY. Output mode is: a 3-inch thermal receipt genuinely
+/// is a different artifact from an A4 tax invoice. Paper is a PROPERTY of the
+/// chosen version, asserted against the counter's printer profile at render
+/// time.
+///
+/// Declared here WITHOUT any CHECK constraint: ck_pta_output_mode,
+/// ck_pta_device_needs_branch, ck_pta_branch_needs_company,
+/// ck_pta_template_scope, ck_pta_copies and ck_pta_printer_one_of live in the
+/// migration and in PrintTemplateAssignmentService.
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_pta_scope     UNIQUE (COALESCE(company, nil), purpose,
+///                    COALESCE(branch, nil), COALESCE(device, nil),
+///                    output_mode) WHERE NOT deleted — "exactly one default
+///                    per scope", as an index rather than as care. COALESCE to
+///                    the nil uuid rather than NULLS NOT DISTINCT, because it
+///                    is the same expression the resolver uses.
+///   ix_pta_resolve   the render-time resolver, leading with the SAME COALESCE
+///                    expression and ordered by specificity DESC, so that
+///                    "this company's rows plus the global ones" is one index
+///                    scan.
+///   ix_pta_company / ix_pta_branch / ix_pta_device / ix_pta_purpose /
+///   ix_pta_template / ix_pta_printer / ix_pta_created_by / ix_pta_modified_by
+///                    FK-covering, all partial
+model PrintTemplateAssignment {
+  ptaId               String    @id(map: "pk_print_template_assignment") @default(dbgenerated("uuidv7()")) @db.Uuid @map("pta_id")
+  /// NULL = EVERY COMPANY, the ladder's widest rung.
+  ///
+  /// A global row can only ever name a SHIPPED design, and that is enforced
+  /// rather than trusted: ptaTemplateCompanyKey carries the template's owner
+  /// and ck_pta_template_scope ties the two together. Without it a global
+  /// assignment could point at one company's private design and every other
+  /// company's till would render it — their logo, their address, on somebody
+  /// else's paper.
+  ptaCompanyId        String?   @db.Uuid                                     @map("pta_company_id")
+  /// NULL = every branch.
+  ptaBranchId         String?   @db.Uuid                                     @map("pta_branch_id")
+  /// NULL = every counter.
+  ptaDeviceId         String?   @db.Uuid                                     @map("pta_device_id")
+
+  ptaPurposeId        String    @db.Uuid                                     @map("pta_purpose_id")
+  ptaTemplateId       String    @db.Uuid                                     @map("pta_template_id")
+  /// The OWNER of ptaTemplateId, carried so that the composite fk_pta_template
+  /// can exist. Same idiom as the promotion schema's benefit lock: a fact a
+  /// single-column key cannot check is made checkable by carrying the second
+  /// half of the parent's identity.
+  ///
+  /// NOT NULL, and the nil uuid means "a shipped design" — matching
+  /// ptlCompanyKey rather than ptlCompanyId, so no NULL ever reaches the key
+  /// and MATCH SIMPLE cannot quietly stop checking. There is no default: the
+  /// writer must state which design's owner this is, because defaulting it to
+  /// the sentinel would mean defaulting to "shipped", and that is the one
+  /// answer that must never be assumed. PrintTemplateAssignmentService reads it
+  /// off the template rather than trusting the caller.
+  ptaTemplateCompanyKey String  @db.Uuid                                     @map("pta_template_company_key")
+  ptaOutputMode       String    @default("PRINT") @db.VarChar(15)            @map("pta_output_mode")
+
+  /// Where the paper comes out for this scope. NULL = the server's default
+  /// queue for the device.
+  /// Points at public.printer_profile(prf_id) — §6.
+  ptaPrinterId        String?   @db.Uuid                                     @map("pta_printer_id")
+
+  /// The same answer given as a bare queue or share name, for a scope whose
+  /// printer nobody has registered as a profile.
+  ///
+  /// A FALLBACK, never a copy of the profile's name: ck_pta_printer_one_of
+  /// refuses it alongside ptaPrinterId. Two columns answering "which printer"
+  /// is the same defect §5 spent its whole argument removing from 3.0's default
+  /// handling, and a denormalised name on a MASTER goes stale the day the
+  /// profile is renamed — unlike plgPrinterName, which is a snapshot on an
+  /// immutable log and is meant to be frozen.
+  ///
+  /// What it costs: a registered profile carries the family, the codepage, the
+  /// column count and what the device can physically do. A bare name carries
+  /// none of that, so a render through this column falls back to the counter's
+  /// defaults for all of it and prfPaperCode cannot assert anything — which is
+  /// exactly the check that stops an A4 invoice going to an 80mm roll.
+  ptaPrinterName      String?   @db.VarChar(150)                             @map("pta_printer_name")
+
+  /// Overrides the purpose's copy count for this scope. NULL = use it.
+  ptaCopies           Int?      @db.SmallInt                                 @map("pta_copies")
+
+  /// GENERATED ALWAYS ... STORED: 3 counter, 2 branch, 1 company, 0 every
+  /// company. Read-only — writing it raises 428C9. The no-arg dbgenerated() is
+  /// what stops `migrate dev` emitting DROP DEFAULT.
+  ///
+  /// A single CASE rather than added weights, because a counter row must also
+  /// name its branch (ck_pta_device_needs_branch), so device 4 + branch 2 would
+  /// score SIX and every reader would have to know that 6, not 4, means
+  /// counter. Consecutive values cost nothing and cannot be misread.
+  ///
+  /// Rung 0 is its own rung and not shared with rung 1: if a global row and a
+  /// company row both scored 0 the resolver would have a tie it cannot break,
+  /// and ux_pta_scope would let both exist.
+  ptaSpecificity      Int?      @default(dbgenerated()) @db.SmallInt         @map("pta_specificity")
+
+  ptaRemarks          String?   @db.VarChar(250)                             @map("pta_remarks")
+  ptaIsActive         Boolean   @default(true)                               @map("pta_is_active")
+  ptaIsDeleted        Boolean   @default(false)                              @map("pta_is_deleted")
+  ptaSyncDate         DateTime? @db.Timestamptz(6)                           @map("pta_sync_date")
+  ptaCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("pta_created_on")
+  ptaCreatedBy        String?   @db.Uuid                                     @map("pta_created_by")
+  ptaModifiedOn       DateTime? @db.Timestamptz(6)                           @map("pta_modified_on")
+  ptaModifiedBy       String?   @db.Uuid                                     @map("pta_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company             Company?      @relation("PrintTemplateAssignmentCompany",    fields: [ptaCompanyId],  references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_company")
+  branch              BranchMaster? @relation("PrintTemplateAssignmentBranch",     fields: [ptaBranchId],   references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_branch")
+  device              DeviceMaster? @relation("PrintTemplateAssignmentDevice",     fields: [ptaDeviceId],   references: [devId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_device")
+  purpose             PrintPurpose  @relation("PrintTemplateAssignmentPurpose",    fields: [ptaPurposeId],  references: [ppoId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_purpose")
+  /// COMPOSITE, against ux_ptl_id_company_key — (ptl_id, ptl_company_key) —
+  /// so that a company cannot assign another company's private template. Both
+  /// columns are NOT NULL on this side and generated non-null on the other, so
+  /// the key always fires; it subsumes the plain existence check a
+  /// single-column key would give.
+  template            PrintTemplate @relation("PrintTemplateAssignmentTemplate",   fields: [ptaTemplateId, ptaTemplateCompanyKey], references: [ptlId, ptlCompanyKey], onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_template")
+  printer             PrinterProfile? @relation("PrintTemplateAssignmentPrinter", fields: [ptaPrinterId],  references: [prfId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_printer")
+  createdByUser       UserMaster?   @relation("PrintTemplateAssignmentCreatedBy",  fields: [ptaCreatedBy],  references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_created_by")
+  modifiedByUser      UserMaster?   @relation("PrintTemplateAssignmentModifiedBy", fields: [ptaModifiedBy], references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_pta_modified_by")
+
+  @@map("print_template_assignment")
+  @@schema("public")
+}
+
+// ----- prisma/public/printTemplateDataset.prisma -----
+/// public.print_template_dataset — §4, where the rows come from.
+///
+/// This model and PrintTemplateAssignment are the whole point of the module. A
+/// layout has been data since 3.0; what was never data is WHICH QUERY feeds it.
+///
+/// It hangs off the VERSION, not the template. A dataset is part of the report
+/// definition, not a setting beside it — if it hung off the template, editing a
+/// query would silently change what every past version rendered, and print_log's
+/// version reference would be a lie.
+///
+/// THE 3.0 FIX, in two columns:
+///   ptdDatasetNo   THE BINDING. The body's bands reference this number. The
+///                  master is always 0.
+///   ptdSortOrder   Display order in the designer. Binds nothing.
+/// pssql_slno was both jobs at once — documented as a serial number, actually
+/// the DataSet index — so reordering rows in the editor rebound every band to
+/// the wrong query, with no error and no visible cause.
+///
+/// Declared here WITHOUT any CHECK constraint. That is a bigger omission than
+/// usual, so the full list is below and PrintTemplateDatasetService must carry
+/// every one of them:
+///   ck_ptd_role                  MASTER | DETAIL
+///   ck_ptd_source_kind           PROVIDER | SQL
+///   ck_ptd_source_biconditional  PROVIDER <=> provider_code, SQL <=> sql
+///   ck_ptd_master_is_zero        MASTER <=> dataset_no = 0
+///   ck_ptd_dataset_no            0..99
+///   ck_ptd_name_shape            ^[a-z][a-z0-9_]*$
+///   ck_ptd_provider_shape        dotted lower snake
+///   ck_ptd_parent                no self-parent, MASTER may not have one
+///   ck_ptd_parent_pair           parent_no <=> link_fields
+///   ck_ptd_link_fields_shape     parent=child, comma separated, no spaces
+///   ck_ptd_limits                row_limit 1..200000, timeout 100..120000 ms
+///   ck_ptd_sql_*                 the eleven stored-SQL guards, below
+///
+/// ── THE STORED-SQL GUARDS ARE AN AUTHORING LINT, NOT A SECURITY BOUNDARY ──
+/// The boundary is three runtime facts: parameters BOUND over the extended
+/// protocol (which makes a second statement structurally impossible rather than
+/// merely filtered), the query run in a READ ONLY transaction, and a role with
+/// no write privilege. A CHECK cannot parse SQL and never will.
+///
+/// Verified behaviour of the guards against PostgreSQL 18, so the service layer
+/// can reproduce it exactly:
+///   REFUSED   ':iacc_year' (3.0's quoted param), :1, arr[2:5], two statements,
+///             data-modifying CTE, $q$dollar quotes$q$, nested block comments,
+///             pg_sleep and friends, a query with no :company_id
+///   ACCEPTED  'last updated' AND x = :company_id (a literal BEFORE a param —
+///             the false positive the count-based check was written to kill),
+///             'it''s', a ';' inside a literal, last_updated_on, updated_at,
+///             E'...' and U&'...' (the comment claiming these are caught is
+///             wrong; they normalise harmlessly)
+///   KNOWN FALSE POSITIVES, both undocumented in §4 — the service layer should
+///   give a better message than the constraint name does:
+///     * a :name inside a "--" comment trips ck_ptd_sql_no_quoted_param, whose
+///       error talks about literals
+///     * a "--" inside a literal mangles the residue and the query is refused
+///       by ck_ptd_sql_company_scoped, i.e. a company-scoped query is told it
+///       is not company-scoped
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_ptd_dataset_no   UNIQUE (ptd_version_id, ptd_dataset_no) WHERE NOT deleted
+///   ux_ptd_name         UNIQUE (ptd_version_id, ptd_name)       WHERE NOT deleted
+///   ux_ptd_one_master   UNIQUE (ptd_version_id) WHERE role = 'MASTER' AND NOT deleted
+///   ix_ptd_version      (ptd_version_id, ptd_sort_order) WHERE NOT deleted
+///   ix_ptd_created_by / ix_ptd_modified_by   FK-covering, partial
+model PrintTemplateDataset {
+  ptdId               String    @id(map: "pk_print_template_dataset") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptd_id")
+  ptdVersionId        String    @db.Uuid                                     @map("ptd_version_id")
+
+  /// MASTER: exactly one, the header context, one row read (3.0's pstyl_sql).
+  /// DETAIL: the repeating bands (3.0's printing_style_sql rows).
+  ptdRole             String    @default("DETAIL") @db.VarChar(10)           @map("ptd_role")
+
+  /// THE BINDING — what a band actually points at. Unique per version.
+  ptdDatasetNo        Int       @db.SmallInt                                 @map("ptd_dataset_no")
+  /// Display order in the designer. Binds nothing. Safe to reorder.
+  ptdSortOrder        Int       @default(0) @db.SmallInt                     @map("ptd_sort_order")
+  /// The same binding by name, so a later engine can address 'items' rather
+  /// than 2 and ptdDatasetNo becomes pure back-compatibility.
+  ptdName             String    @db.VarChar(40)                              @map("ptd_name")
+  ptdLabel            String?   @db.VarChar(120)                             @map("ptd_label")
+
+  // ── PROVIDER or SQL ─────────────────────────────────────────────────────
+  // A code-registered PROVIDER for anything needing joins across partitioned
+  // tables or real business logic — the e-invoice QR, tax summaries, amount in
+  // words. Stored SQL for everything else, so a new report costs no release.
+  ptdSourceKind       String    @default("PROVIDER") @db.VarChar(10)         @map("ptd_source_kind")
+  ptdProviderCode     String?   @db.VarChar(80)                              @map("ptd_provider_code")
+  ptdSql              String?   @db.Text                                     @map("ptd_sql")
+
+  /// GENERATED ALWAYS ... STORED: comments stripped, literals and quoted
+  /// identifiers replaced by tokens, casts flattened, lowercased. Read-only —
+  /// writing it raises 428C9. The no-arg dbgenerated() is what stops
+  /// `migrate dev` emitting DROP DEFAULT. EVERY sql guard reads this and not
+  /// ptdSql, so a keyword inside a literal is neither a false positive nor a
+  /// way through.
+  ptdSqlNorm          String?   @default(dbgenerated()) @db.Text             @map("ptd_sql_norm")
+
+  // There is deliberately NO per-dataset params column. USER prompts are
+  // declared once on print_template_version.ptv_params; CONTEXT parameters
+  // (:company_id, :branch_id, :acc_year, :doc_id, :user_id, :device_id) are a
+  // closed set the server finds by reading the query text.
+
+  /// A report that is not company-scoped shows one company another's numbers.
+  /// Set false only for genuinely global data, such as a state-code list.
+  ptdRequiresCompany  Boolean   @default(true)                               @map("ptd_requires_company")
+
+  /// Nested detail, which 3.0 could not express at all: this dataset's rows are
+  /// the children of the current row of the dataset numbered ptdParentNo.
+  ///
+  /// ptdLinkFields says HOW they match, as parent=child pairs, comma separated
+  /// for a composite — `sbi_id=line_id` or `sb_id=bill_id,sbi_slno=slno`. LEFT
+  /// is a column the PARENT dataset returns; RIGHT is a column THIS dataset
+  /// returns. Both are output columns, neither side is a bound parameter.
+  ///
+  /// THE CHILD QUERY RUNS ONCE FOR THE WHOLE RENDER, NOT ONCE PER PARENT ROW.
+  /// It is bound with the same context every other dataset gets, returns the
+  /// parent's key as an ordinary column, and the RENDERER groups on it. A
+  /// 14-line bill costs one query, not fifteen — which is also why ptdRowLimit
+  /// and ptdTimeoutMs measure the whole band, not a single child execution.
+  ptdParentNo         Int?      @db.SmallInt                                 @map("ptd_parent_no")
+  ptdLinkFields       String?   @db.VarChar(200)                             @map("ptd_link_fields")
+
+  ptdRowLimit         Int       @default(5000)                               @map("ptd_row_limit")
+  ptdTimeoutMs        Int       @default(15000)                              @map("ptd_timeout_ms")
+
+  ptdRemarks          String?   @db.VarChar(250)                             @map("ptd_remarks")
+  ptdIsDeleted        Boolean   @default(false)                              @map("ptd_is_deleted")
+  ptdSyncDate         DateTime? @db.Timestamptz(6)                           @map("ptd_sync_date")
+  ptdCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("ptd_created_on")
+  ptdCreatedBy        String?   @db.Uuid                                     @map("ptd_created_by")
+  ptdModifiedOn       DateTime? @db.Timestamptz(6)                           @map("ptd_modified_on")
+  ptdModifiedBy       String?   @db.Uuid                                     @map("ptd_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  version             PrintTemplateVersion @relation("PrintTemplateDatasetVersion",    fields: [ptdVersionId],  references: [ptvId], onUpdate: Cascade, onDelete: Cascade,  map: "fk_ptd_version")
+  createdByUser       UserMaster?          @relation("PrintTemplateDatasetCreatedBy",  fields: [ptdCreatedBy],  references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptd_created_by")
+  modifiedByUser      UserMaster?          @relation("PrintTemplateDatasetModifiedBy", fields: [ptdModifiedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptd_modified_by")
+
+  @@map("print_template_dataset")
+  @@schema("public")
+}
+
+// ----- prisma/public/printTemplateVersion.prisma -----
+/// public.print_template_version — §3, the design itself, frozen once published.
+///
+/// THE BODY LIVES HERE, not on the template. That one decision is what makes
+/// the rest of the module honest:
+///   * print_log.plg_version_id is a real FK to the exact bytes that were
+///     rendered, so "what did this bill look like" is enforced, not hoped for.
+///   * Publishing and rolling back are a POINTER MOVE on ptl_published_rev_id
+///     — one row, atomic. Rollback writes FORWARD as a new version, so the
+///     history is append-only and a rolled-back design is still evidence.
+///   * A render in flight cannot see a half-saved template, because a
+///     published version is never UPDATEd.
+///
+/// ptvEngine declares what ptvBody IS. 3.0 had no such column — "the body is
+/// QtRPT XML" lived in C++, so moving off QtRPT would have been a flag day for
+/// every customer at once.
+///
+/// Declared here WITHOUT any CHECK constraint: ck_ptv_status, ck_ptv_engine,
+/// ck_ptv_body_is_json (ptv_body IS JSON OBJECT when engine = JSON_BANDS),
+/// ck_ptv_body_size, ck_ptv_rev_no, ck_ptv_orientation, ck_ptv_geometry,
+/// ck_ptv_published (a PUBLISHED row must name an approver, the same shape
+/// ck_prm_approved uses), ck_ptv_lang_shape and ck_ptv_params_is_array live in
+/// the migration and in PrintTemplateVersionService.
+///
+/// Vocabularies, for the service layer:
+///   ptvStatus       DRAFT | PUBLISHED | RETIRED
+///   ptvEngine       JSON_BANDS | HTML_CSS | QTRPT_XML | ESCPOS_TEXT | RAW
+///   ptvOrientation  PORTRAIT | LANDSCAPE
+///
+/// DB-only objects Prisma cannot express, hand-authored in the migration:
+///   ux_ptv_template_rev    UNIQUE (ptv_template_id, ptv_rev_no) — NOT partial
+///                          on is_deleted, unlike every other unique index in
+///                          this module, because the history is append-only.
+///                          Note the tension with ptvIsDeleted existing at all;
+///                          resolve it one way or the other.
+///   ix_ptv_template_recent (ptv_template_id, ptv_rev_no DESC) INCLUDE
+///                          (status, engine, paper_code) WHERE NOT deleted
+///   ix_ptv_approved_by / ix_ptv_created_by / ix_ptv_modified_by  FK-covering
+model PrintTemplateVersion {
+  ptvId               String    @id(map: "pk_print_template_version") @default(dbgenerated("uuidv7()")) @db.Uuid @map("ptv_id")
+  ptvTemplateId       String    @db.Uuid                                     @map("ptv_template_id")
+  ptvRevNo            Int                                                    @map("ptv_rev_no")
+
+  ptvStatus           String    @default("DRAFT") @db.VarChar(15)            @map("ptv_status")
+
+  // ── What the body IS ────────────────────────────────────────────────────
+  ptvEngine           String    @default("JSON_BANDS") @db.VarChar(20)       @map("ptv_engine")
+  ptvBody             String    @db.Text                                     @map("ptv_body")
+  ptvSchemaVer        Int       @default(1)                                  @map("ptv_schema_ver")
+
+  // ── The page ────────────────────────────────────────────────────────────
+  // Authoritative here, unlike 3.0 where pstyl_size sat beside an XML that
+  // actually decided, and the two were free to disagree.
+  ptvPaperCode        String    @default("A4") @db.VarChar(20)               @map("ptv_paper_code")
+  ptvOrientation      String    @default("PORTRAIT") @db.VarChar(10)         @map("ptv_orientation")
+  ptvWidthMm          Decimal?  @db.Decimal(8, 2)                            @map("ptv_width_mm")
+  ptvHeightMm         Decimal?  @db.Decimal(8, 2)                            @map("ptv_height_mm")
+  ptvMarginTopMm      Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_margin_top_mm")
+  ptvMarginBottomMm   Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_margin_bottom_mm")
+  ptvMarginLeftMm     Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_margin_left_mm")
+  ptvMarginRightMm    Decimal   @default(0) @db.Decimal(6, 2)                @map("ptv_margin_right_mm")
+  /// Characters per line for the text engines. Meaningless for a page one.
+  ptvColumns          Int?      @db.SmallInt                                 @map("ptv_columns")
+
+  // ── Language ────────────────────────────────────────────────────────────
+  // The DEFAULT, not a resolution key. A render may override it. Language must
+  // never fork a template the way pstyl_platform forked every one of 3.0's.
+  ptvLang             String    @default("en-IN") @db.VarChar(5)             @map("ptv_lang")
+  ptvFontFamily       String?   @db.VarChar(80)                              @map("ptv_font_family")
+
+  /// ── What the OPERATOR is asked, once, for the whole render ─────────────
+  /// A JSON array, one entry per prompt:
+  ///   [{"name":"from_date","type":"DATE","required":true,"label":"From date"},
+  ///    {"name":"godown_id","type":"UUID","required":false,"label":"Godown"}]
+  ///
+  /// ON THE VERSION, not on the dataset. The operator is asked ONCE — if
+  /// dataset 1 declared from_date as DATE required and dataset 3 declared it
+  /// as TEXT optional there is no answer to what the screen should ask — and
+  /// print_log.plg_params is one jsonb object per render, not one per dataset.
+  ///
+  /// CONTEXT PARAMETERS ARE NOT DECLARED ANYWHERE. :company_id, :branch_id,
+  /// :acc_year, :doc_id, :user_id and :device_id are a closed set the server
+  /// holds the types for, and it finds which of them a query uses by reading
+  /// the query — exactly as ck_ptd_sql_company_scoped already reads
+  /// ptd_sql_norm for :company_id. So there is no "source" field here:
+  /// everything in this array is asked, everything else is context.
+  ///
+  /// ck_ptv_params_is_array (jsonb_typeof = 'array') is enforced in the
+  /// migration and in PrintTemplateVersionService.
+  ptvParams           Json?     @db.JsonB                                    @map("ptv_params")
+
+  // There is deliberately NO sample-document pointer. Which bill a designer
+  // previews against is a property of the EDITING SESSION, not of the
+  // published design: it is one user's convenience, meaningless to every other
+  // user of the same template, and a version is frozen once published while
+  // the document it named can be cancelled, corrected or purged with the year.
+  // The designer holds the last previewed document in its own state.
+
+  ptvNote             String?   @db.VarChar(250)                             @map("ptv_note")
+
+  /// Publishing is a privileged act: a version whose datasets carry stored SQL
+  /// is, in every meaningful sense, code.
+  ptvApprovedOn       DateTime? @db.Timestamptz(6)                           @map("ptv_approved_on")
+  ptvApprovedBy       String?   @db.Uuid                                     @map("ptv_approved_by")
+
+  ptvIsDeleted        Boolean   @default(false)                              @map("ptv_is_deleted")
+  ptvSyncDate         DateTime? @db.Timestamptz(6)                           @map("ptv_sync_date")
+  ptvCreatedOn        DateTime  @default(now()) @db.Timestamptz(6)           @map("ptv_created_on")
+  ptvCreatedBy        String?   @db.Uuid                                     @map("ptv_created_by")
+  ptvModifiedOn       DateTime? @db.Timestamptz(6)                           @map("ptv_modified_on")
+  ptvModifiedBy       String?   @db.Uuid                                     @map("ptv_modified_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  template            PrintTemplate @relation("PrintTemplateVersions",           fields: [ptvTemplateId], references: [ptlId], onUpdate: Cascade, onDelete: Cascade,  map: "fk_ptv_template")
+  approvedByUser      UserMaster?   @relation("PrintTemplateVersionApprovedBy",  fields: [ptvApprovedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptv_approved_by")
+  createdByUser       UserMaster?   @relation("PrintTemplateVersionCreatedBy",   fields: [ptvCreatedBy],  references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptv_created_by")
+  modifiedByUser      UserMaster?   @relation("PrintTemplateVersionModifiedBy",  fields: [ptvModifiedBy], references: [usrId], onUpdate: Cascade, onDelete: Restrict, map: "fk_ptv_modified_by")
+
+  /// The other half of the circular pair — the templates that publish this
+  /// version. At most one in practice; the schema does not say so.
+  publishedFor        PrintTemplate[]        @relation("PrintTemplatePublishedRev")
+  datasets            PrintTemplateDataset[] @relation("PrintTemplateDatasetVersion")
+
+  printLogs           PrintLog[]             @relation("PrintLogVersion")
+
+  /// Version numbers are dense and unique per template. NOT partial on
+  /// is_deleted, unlike every other unique index in this module, because the
+  /// history is append-only.
+  @@unique([ptvTemplateId, ptvRevNo], map: "ux_ptv_template_rev")
+  @@map("print_template_version")
   @@schema("public")
 }
 
@@ -4744,6 +5599,23 @@ model UserMaster {
   tenderDetails          AccTenderDetail[]
   appSettingValues       AppSettingValue[]
   approvedPromotionSchemes PromotionScheme[] @relation("PromotionSchemeApprovedBy")
+
+  // ── printing (17_printing.sql) — every *_created_by / *_modified_by in
+  // that schema carries a real FK, unlike the reports.* tables it replaces.
+  printPurposesCreated       PrintPurpose[]            @relation("PrintPurposeCreatedBy")
+  printPurposesModified      PrintPurpose[]            @relation("PrintPurposeModifiedBy")
+  printTemplatesCreated      PrintTemplate[]           @relation("PrintTemplateCreatedBy")
+  printTemplatesModified     PrintTemplate[]           @relation("PrintTemplateModifiedBy")
+  printVersionsApproved      PrintTemplateVersion[]    @relation("PrintTemplateVersionApprovedBy")
+  printVersionsCreated       PrintTemplateVersion[]    @relation("PrintTemplateVersionCreatedBy")
+  printVersionsModified      PrintTemplateVersion[]    @relation("PrintTemplateVersionModifiedBy")
+  printDatasetsCreated       PrintTemplateDataset[]    @relation("PrintTemplateDatasetCreatedBy")
+  printDatasetsModified      PrintTemplateDataset[]    @relation("PrintTemplateDatasetModifiedBy")
+  printAssignmentsCreated    PrintTemplateAssignment[] @relation("PrintTemplateAssignmentCreatedBy")
+  printAssignmentsModified   PrintTemplateAssignment[] @relation("PrintTemplateAssignmentModifiedBy")
+  printerProfilesCreated     PrinterProfile[]          @relation("PrinterProfileCreatedBy")
+  printerProfilesModified    PrinterProfile[]          @relation("PrinterProfileModifiedBy")
+  printLogs                  PrintLog[]                @relation("PrintLogPrintedBy")
 
   // ── Indexes ────────────────────────────────────────────────────────────────
   //   CREATE UNIQUE INDEX uix_user_login_name

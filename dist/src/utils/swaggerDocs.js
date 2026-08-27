@@ -15,6 +15,8 @@ const employee_master_module_1 = require("../modules/settings/employeeMaster/emp
 const user_administration_module_1 = require("../modules/settings/userAdministration/user-administration.module");
 const configs_module_1 = require("../modules/settings/configs/configs.module");
 const app_settings_module_1 = require("../modules/settings/appSettings/app-settings.module");
+const print_template_assignment_module_1 = require("../modules/settings/print-template-assignment/print-template-assignment.module");
+const print_template_module_1 = require("../modules/settings/print-template/print-template.module");
 const gsp_company_service_module_1 = require("../modules/settings/gspCompanyService/gsp-company-service.module");
 const gsp_provider_master_module_1 = require("../modules/accountsModule/gspProviderMaster/gsp-provider-master.module");
 const ledger_shipping_address_module_1 = require("../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module");
@@ -274,6 +276,24 @@ exports.swaggerModuleDocuments = [
         description: 'Setting overrides (app_setting_value) and the GLOBAL < COMPANY < BRANCH < DEVICE < USER ' +
             'resolver. The catalog (app_setting_def) is maintained in SQL and has no endpoints',
         include: [app_settings_module_1.AppSettingsModule],
+    },
+    {
+        path: 'print-template-assignments',
+        title: 'Print Template Assignments API',
+        description: 'Which print design wins, and where. One row IS one choice \u2014 there is no is_default ' +
+            'flag \u2014 so changing the design for a scope is an update of a single row. Resolution ' +
+            'walks narrowest first: counter, then branch, then company, then the every-company ' +
+            'default a shipped design may hold',
+        include: [print_template_assignment_module_1.PrintTemplateAssignmentModule],
+    },
+    {
+        path: 'print-template',
+        title: 'Print Template API',
+        description: 'Print template endpoints. One payload carries the design whole — the template, its ' +
+            "versions array, and each version's nested datasets array — because a dataset hangs off " +
+            'the VERSION, not the template. A published version is never updated: revisions are ' +
+            "appended, and publishing moves the template's published pointer",
+        include: [print_template_module_1.PrintTemplateModule],
     },
     {
         path: 'tender-master',

@@ -38,6 +38,7 @@ import { EmployeeMasterModule } from './modules/settings/employeeMaster/employee
 import { UserAdministrationModule } from './modules/settings/userAdministration/user-administration.module';
 import { ConfigsModule } from './modules/settings/configs/configs.module';
 import { AppSettingsModule } from './modules/settings/appSettings/app-settings.module';
+import { PrintTemplateModule } from './modules/settings/print-template/print-template.module';
 import { TenderMasterModule } from './modules/accountsModule/tenderMaster/tender-master.module';
 import { TenderTypeMasterModule } from './modules/accountsModule/tenderTypeMaster/tender-type-master.module';
 import { TenderDetailModule } from './modules/accountsModule/tenderDetail/tender-detail.module';
@@ -75,6 +76,7 @@ import { ChargeMasterModule } from './modules/master/charge-master/charge-master
 import { ChargeDetailModule } from './modules/master/charge-detail/charge-detail.module';
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
 import { PromotionSchemeModule } from './modules/sales/promotion-scheme/promotion-scheme.module';
+import { PrintTemplateAssignmentModule } from './modules/settings/print-template-assignment/print-template-assignment.module';
 // import { OpeningStockModule } from './modules/stocks/opening-stock/opening-stock.module';
 import { PhysicalStockModule } from './modules/stocks/physical-stock/physical-stock.module';
 import { ItemStockBalanceModule } from './modules/stocks/itemstockbalance/itemStockBalanceModule';
@@ -162,6 +164,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     UserAdministrationModule,
     ConfigsModule,
     AppSettingsModule,
+    PrintTemplateModule,
     TenderMasterModule,
     TenderTypeMasterModule,
     TenderDetailModule,
@@ -202,6 +205,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     ItemBatchStockModule,
     PromotionLoyaltyPointsModule,
     PromotionSchemeModule,
+    PrintTemplateAssignmentModule,
     GodownsMasterModule,
     GridDetailsModule,
     DropdownDetailsModule,
@@ -216,11 +220,11 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     },
     ...(isThrottlerEnabled
       ? [
-        {
-          provide: APP_GUARD,
-          useClass: ThrottlerGuard,
-        },
-      ]
+          {
+            provide: APP_GUARD,
+            useClass: ThrottlerGuard,
+          },
+        ]
       : []),
     {
       provide: APP_FILTER,

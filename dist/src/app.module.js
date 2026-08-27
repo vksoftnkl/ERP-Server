@@ -47,6 +47,7 @@ const employee_master_module_1 = require("./modules/settings/employeeMaster/empl
 const user_administration_module_1 = require("./modules/settings/userAdministration/user-administration.module");
 const configs_module_1 = require("./modules/settings/configs/configs.module");
 const app_settings_module_1 = require("./modules/settings/appSettings/app-settings.module");
+const print_template_module_1 = require("./modules/settings/print-template/print-template.module");
 const tender_master_module_1 = require("./modules/accountsModule/tenderMaster/tender-master.module");
 const tender_type_master_module_1 = require("./modules/accountsModule/tenderTypeMaster/tender-type-master.module");
 const tender_detail_module_1 = require("./modules/accountsModule/tenderDetail/tender-detail.module");
@@ -84,6 +85,7 @@ const charge_master_module_1 = require("./modules/master/charge-master/charge-ma
 const charge_detail_module_1 = require("./modules/master/charge-detail/charge-detail.module");
 const promotion_loyalty_points_module_1 = require("./modules/sales/loyalty/promotion-loyalty-points.module");
 const promotion_scheme_module_1 = require("./modules/sales/promotion-scheme/promotion-scheme.module");
+const print_template_assignment_module_1 = require("./modules/settings/print-template-assignment/print-template-assignment.module");
 const physical_stock_module_1 = require("./modules/stocks/physical-stock/physical-stock.module");
 const itemStockBalanceModule_1 = require("./modules/stocks/itemstockbalance/itemStockBalanceModule");
 const itemBatchStockModule_1 = require("./modules/stocks/itembatchstock/itemBatchStockModule");
@@ -177,6 +179,7 @@ exports.AppModule = AppModule = __decorate([
             user_administration_module_1.UserAdministrationModule,
             configs_module_1.ConfigsModule,
             app_settings_module_1.AppSettingsModule,
+            print_template_module_1.PrintTemplateModule,
             tender_master_module_1.TenderMasterModule,
             tender_type_master_module_1.TenderTypeMasterModule,
             tender_detail_module_1.TenderDetailModule,
@@ -216,6 +219,7 @@ exports.AppModule = AppModule = __decorate([
             itemBatchStockModule_1.ItemBatchStockModule,
             promotion_loyalty_points_module_1.PromotionLoyaltyPointsModule,
             promotion_scheme_module_1.PromotionSchemeModule,
+            print_template_assignment_module_1.PrintTemplateAssignmentModule,
             godowns_master_module_1.GodownsMasterModule,
             grid_details_module_1.GridDetailsModule,
             dropdown_details_module_1.DropdownDetailsModule,

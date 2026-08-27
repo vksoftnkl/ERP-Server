@@ -1262,6 +1262,9 @@ Table device_master {
   txnHolds txn_hold [not null]
   txnHoldLocks txn_hold [not null]
   appSettingValues app_setting_value [not null]
+  printAssignments print_template_assignment [not null]
+  printerProfiles printer_profile [not null]
+  printLogs print_log [not null]
 }
 
 Table form_section {
@@ -2433,6 +2436,9 @@ Table branch_master {
   appSettingValues app_setting_value [not null]
   promotionSchemes promotion_scheme [not null]
   promotionSchemeBranches promotion_scheme_branch [not null]
+  printAssignments print_template_assignment [not null]
+  printerProfiles printer_profile [not null]
+  printLogs print_log [not null]
 }
 
 Table charge_master {
@@ -2572,6 +2578,11 @@ Table companys {
   tenderDetails acc_tender_detail [not null]
   appSettingValues app_setting_value [not null]
   promotionSchemes promotion_scheme [not null]
+  printPurposes print_purpose [not null]
+  printTemplates print_template [not null]
+  printAssignments print_template_assignment [not null]
+  printerProfiles printer_profile [not null]
+  printLogs print_log [not null]
 }
 
 Table company_group_master {
@@ -2627,6 +2638,660 @@ Table fiscal_years {
   deletedBy String
   prevFiscalYear fiscal_years
   nextFiscalYears fiscal_years [not null]
+}
+
+Table printer_profile {
+  prfId String [pk]
+  prfCompanyId String [not null]
+  prfBranchId String [note: 'NULL = available at every branch.']
+  prfDeviceId String [note: 'The counter this printer hangs off. NULL = a shared/server-side queue.']
+  prfCode String [not null]
+  prfName String [not null]
+  prfConnKind String [not null, default: 'CUPS']
+  prfQueueName String [note: 'The OS print queue, share name, or device path.']
+  prfHost String
+  prfPort Int
+  prfEmulation String [not null, default: 'ESCPOS']
+  prfCodepage String
+  prfPaperCode String [not null, default: 'A4']
+  prfWidthMm Decimal
+  prfHeightMm Decimal
+  prfColumns Int [note: 'Characters per line. The text-engine counterpart of ptv_columns.']
+  prfDpi Int
+  prfSupportsCut Boolean [not null, default: false]
+  prfSupportsDrawer Boolean [not null, default: false]
+  prfSupportsColor Boolean [not null, default: false]
+  prfInitSequence String [note: 'Raw escape sequences, hex or the printer\'s own notation.']
+  prfCutSequence String
+  prfSortOrder Int [not null, default: 100]
+  prfRemarks String
+  prfIsActive Boolean [not null, default: true]
+  prfIsDeleted Boolean [not null, default: false]
+  prfSyncDate DateTime
+  prfCreatedOn DateTime [default: `now()`, not null]
+  prfCreatedBy String
+  prfModifiedOn DateTime
+  prfModifiedBy String
+  company companys [not null]
+  branch branch_master
+  device device_master
+  createdByUser user_master
+  modifiedByUser user_master
+  assignments print_template_assignment [not null]
+  printLogs print_log [not null]
+
+  Note: 'public.printer_profile — §6, the physical device.
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ RECONSTRUCTED, NOT TRANSCRIBED. §6 of 17_printing.sql has not reached   │
+│ me — both pastes of the file hit the 50,000-character message limit     │
+│ before it. This model is derived from what the rest of the file states  │
+│ about printer_profile plus the house conventions, so the field list is  │
+│ a proposal. RECONCILE IT AGAINST §6 BEFORE GENERATING A CLIENT.         │
+│                                                                         │
+│ Load-bearing and safe (the file says so directly):                     │
+│   * prefix prf_, table public.printer_profile                          │
+│   * FK to fixed.device_master(dev_id) — "the counter, and its printer"  │
+│   * it "asserts compatibility against" §3\'s page geometry, so it must   │
+│     carry a paper code and dimensions of its own to assert with         │
+│   * the full audit block, _is_active included (it is a master)          │
+│   * NO is_default boolean — §5 owns that question, and the file is      │
+│     emphatic that a second place to say which one wins is one too many  │
+│                                                                         │
+│ Inferred, most likely to differ from §6: everything from prfConnKind    │
+│ down to prfCutSequence — the connection and capability block. The       │
+│ vocabularies below are guesses at the CHECK lists.                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Declared here WITHOUT any CHECK constraint, as every other model in this
+module is: the vocabularies live in the migration and in
+PrinterProfileService.
+prfConnKind     LOCAL | NETWORK | CUPS | WINDOWS | RAW_TCP | FILE
+prfEmulation    ESCPOS | ESCP2 | PCL | PDF | RAW
+
+DB-only objects Prisma cannot express, hand-authored in the migration:
+ux_prf_code    UNIQUE (prf_company_id, lower(prf_code)) WHERE NOT deleted
+ix_prf_device  (prf_device_id) — "which printers hang off this counter"
+ix_prf_company / ix_prf_branch / ix_prf_created_by / ix_prf_modified_by
+FK-covering, all partial'
+}
+
+Table print_log {
+  plgId String [not null]
+  plgAccYear String [not null, note: 'THE PARTITION KEY. One partition per accounting year.']
+  plgCompanyId String [not null]
+  plgBranchId String
+  plgDeviceId String [note: 'The counter the render came from.']
+  plgSrcModule String [not null, default: 'SALES']
+  plgSrcDocType String [not null]
+  plgSrcDocId String
+  plgSrcAccYear String [note: 'The DOCUMENT\'s accounting year, which is not necessarily the year the
+render happened in — a reprint of last year\'s bill is logged this year.']
+  plgPurposeId String [not null]
+  plgTemplateId String [not null]
+  plgVersionId String [not null, note: 'The exact bytes. A real FK, and the point of the whole versioning design.']
+  plgPrinterId String
+  plgOutputMode String [not null, default: 'PRINT']
+  plgCopyNo Int [not null, default: 1]
+  plgCopyLabel String [note: 'ORIGINAL / DUPLICATE / TRIPLICATE — what the paper actually said.']
+  plgLang String
+  plgParams Json [note: 'The answers to ptv_params, ONE object for the whole render.']
+  plgStatus String [not null, default: 'SUCCESS']
+  plgError String
+  plgPageCount Int
+  plgByteCount Int
+  plgDurationMs Int
+  plgPrintedOn DateTime [default: `now()`, not null]
+  plgPrintedBy String
+  company companys [not null]
+  branch branch_master
+  device device_master
+  purpose print_purpose [not null]
+  template print_template [not null]
+  version print_template_version [not null]
+  printer printer_profile
+  printedByUser user_master
+
+  indexes {
+    (plgId, plgAccYear) [pk]
+  }
+
+  Note: 'public.print_log — §7, every render, immutable.
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ RECONSTRUCTED, NOT TRANSCRIBED. §7 of 17_printing.sql has not reached   │
+│ me — both pastes of the file hit the 50,000-character message limit     │
+│ before it. RECONCILE AGAINST §7 BEFORE GENERATING A CLIENT.             │
+│                                                                         │
+│ Load-bearing and safe (the file states each of these directly):        │
+│   * prefix plg_, table public.print_log                                │
+│   * PARTITIONED BY LIST (plg_acc_year), one partition per accounting   │
+│     year, created by public.fn_create_printing_partitions(\'YYYY-YYYY\') │
+│     as public.print_log_YYYY_YYYY. Retiring a year is a DROP of one    │
+│     partition; retention is policy, not schema.                        │
+│   * plg_version_id is a REAL FK to print_template_version — "what did  │
+│     this bill look like when it was printed" is enforced, not          │
+│     snapshotted and hoped for. This is the whole reason the body lives │
+│     on the version rather than the template.                           │
+│   * NO foreign key to any document. The subject is named by the        │
+│     POLYMORPHIC SOURCE QUAD (module, doc type, doc id, acc year),      │
+│     because the documents are themselves partitioned by their own      │
+│     accounting year and a purpose may name a master or a report.       │
+│   * plg_copy_label records what was printed on the paper. Deciding that │
+│     the second print of a tax invoice is a DUPLICATE is a rule about   │
+│     GST and belongs to the service layer, not here.                    │
+│   * plg_params is ONE jsonb object per render — the answers to         │
+│     ptv_params — not one per dataset. §3 cites this table as the       │
+│     reason the declaration moved to the version.                       │
+│   * A REPRINT IS NOT A STATUS TRANSITION. This table is the record of  │
+│     printing; sale_bill.sb_print_count and its siblings stay a         │
+│     denormalised cache of COUNT(*) over it, never the truth.           │
+│                                                                         │
+│ Inferred, most likely to differ from §7: the outcome block             │
+│ (plgStatus … plgDurationMs) and the exact spelling of the quad.        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+The composite primary key is the house shape for a partitioned fact table —
+sale_bill does the same — because PostgreSQL requires the partition key to
+be part of every unique constraint.
+
+IMMUTABLE means immutable: there is no _is_deleted, no _modified_on and no
+_sync_date here. Enforce append-only with a REVOKE UPDATE, DELETE on the
+application role and, if you want it in the database, a BEFORE UPDATE OR
+DELETE trigger that raises. Prisma cannot express either.
+
+Declared here WITHOUT any CHECK constraint:
+ck_plg_acc_year_shape   ^[0-9]{4}-[0-9]{4}$ with consecutive years, the
+same rule fn_create_printing_partitions enforces
+ck_plg_src_module       the ppo_src_module vocabulary
+ck_plg_output_mode      PRINT | PREVIEW | EMAIL | FILE | REPRINT
+ck_plg_status           SUCCESS | FAILED | QUEUED | CANCELLED
+ck_plg_copy_no          >= 1
+
+DB-only objects Prisma cannot express, hand-authored in the migration:
+ix_plg_subject   (plg_src_module, plg_src_doc_type, plg_src_doc_id,
+plg_src_acc_year) — "how many times was this printed",
+the query sb_print_count caches
+ix_plg_recent    (plg_company_id, plg_printed_on DESC) per partition
+ix_plg_version / ix_plg_purpose / ix_plg_template / ix_plg_printer /
+ix_plg_device / ix_plg_branch / ix_plg_printed_by   FK-covering'
+}
+
+Table print_purpose {
+  ppoId String [pk]
+  ppoCompanyId String [note: 'NULL = shipped with the product, visible to every company.']
+  ppoCode String [not null]
+  ppoName String [not null]
+  ppoSrcModule String [not null, default: 'SALES']
+  ppoDocType String [not null]
+  ppoCopyCount Int [not null, default: 1]
+  ppoCopyLabels String
+  ppoAllowReprint Boolean [not null, default: true]
+  ppoSortOrder Int [not null, default: 100]
+  ppoNotes String
+  ppoIsActive Boolean [not null, default: true]
+  ppoIsDeleted Boolean [not null, default: false]
+  ppoSyncDate DateTime
+  ppoCreatedOn DateTime [default: `now()`, not null]
+  ppoCreatedBy String
+  ppoModifiedOn DateTime
+  ppoModifiedBy String
+  company companys
+  createdByUser user_master
+  modifiedByUser user_master
+  templates print_template [not null]
+  assignments print_template_assignment [not null]
+  printLogs print_log [not null]
+
+  Note: 'public.print_purpose — §1, WHAT can be printed.
+
+3.0 kept this list in C++ as a magic integer at ten call sites
+(PrintUtil(this, 9) = Sales Bill). It is a table now, and that is the first
+half of "printing is never controlled by code".
+
+A purpose is (document type, what you want printed OF it): the same sale
+bill is a tax invoice, a delivery slip and a godown slip.
+ppoCompanyId NULL = shipped with the product, visible to every company.
+
+Declared here WITHOUT any CHECK constraint, the same treatment
+promotion_scheme gets: ck_ppo_code_shape, ck_ppo_src_module, ck_ppo_copies
+and ck_ppo_sort live in the migration and in PrintPurposeService.
+
+DB-only objects Prisma cannot express, hand-authored in the migration:
+ux_ppo_code    UNIQUE (ppo_company_id, lower(ppo_code)) NULLS NOT DISTINCT
+WHERE NOT deleted. NOTE: NULLS NOT DISTINCT dedupes the
+SHIPPED rows against each other only — a shipped
+SALE_INVOICE and a company\'s own SALE_INVOICE coexist by
+design, which is what makes forking (§2) possible.
+ix_ppo_doc     (ppo_src_module, ppo_doc_type, ppo_sort_order), partial on
+(NOT deleted AND active)
+ix_ppo_company / ix_ppo_created_by / ix_ppo_modified_by
+FK-covering, all partial on IS NOT NULL'
+}
+
+Table print_template {
+  ptlId String [pk]
+  ptlCompanyId String [note: 'NULL = shipped with the product. The only scope column here.']
+  ptlPurposeId String [not null]
+  ptlCode String [not null]
+  ptlName String [not null]
+  ptlDescription String
+  ptlPublishedRevId String [note: 'The revision a render actually uses. NULL until something is published,
+which is why a template with only a draft simply does not resolve.']
+  ptlForkedFromId String
+  ptlForkedFromRev Int
+  ptlSortOrder Int [not null, default: 100]
+  ptlCompanyKey String [note: 'GENERATED ALWAYS ... STORED: the owner with NULL folded to the nil uuid,
+so that §5\'s composite fk_pta_template can point at (id, owner).
+Read-only — writing it raises 428C9; the no-arg dbgenerated() is what
+stops `migrate dev` emitting DROP DEFAULT.
+
+It exists because MATCH SIMPLE treats a composite key as satisfied the
+moment ANY of its columns is NULL, so a key on (ptl_id, ptl_company_id)
+would stop checking anything at all for a SHIPPED design — exactly the
+case the check is for. Folding NULL to the sentinel keeps every column
+non-null, so the key always fires.']
+  ptlIsActive Boolean [not null, default: true]
+  ptlIsDeleted Boolean [not null, default: false]
+  ptlSyncDate DateTime
+  ptlCreatedOn DateTime [default: `now()`, not null]
+  ptlCreatedBy String
+  ptlModifiedOn DateTime
+  ptlModifiedBy String
+  company companys
+  purpose print_purpose [not null]
+  forkedFrom print_template
+  createdByUser user_master
+  modifiedByUser user_master
+  publishedRev print_template_version [note: 'The circular half. Prisma needs both sides named; in SQL this is the
+ALTER at the end of §3, because neither table can be created with a
+foreign key to the other.']
+  forks print_template [not null]
+  versions print_template_version [not null]
+  assignments print_template_assignment [not null]
+  printLogs print_log [not null]
+
+  indexes {
+    (ptlId, ptlCompanyKey) [unique]
+  }
+
+  Note: 'public.print_template — §2, the design\'s IDENTITY, and nothing else.
+
+Deliberately almost empty: a name, an owner, and a pointer to the revision
+that is currently published. Everything editable — the body, the page, the
+datasets — lives on PrintTemplateVersion, because it is versioned and this
+row is not.
+
+It carries NO branch, NO device and NO isDefault. Every one of those is a
+RESOLUTION question and belongs to PrintTemplateAssignment. 3.0 split that
+question across pgrp_style_id (never read by anything) and pstyl_default
+(a boolean with no unique constraint), and both were wrong.
+
+ptlCompanyId NULL = shipped with the product. A company customises one by
+cloning it, which ptlForkedFromId/ptlForkedFromRev record — replacing 3.0\'s
+pstyl_id < 5000 reserved range, a convention nothing enforced.
+
+Declared here WITHOUT any CHECK constraint: ck_ptl_code_shape,
+ck_ptl_not_own_fork, ck_ptl_fork_pair and ck_ptl_sort live in the migration
+and in PrintTemplateService.
+
+DB-only objects Prisma cannot express, hand-authored in the migration:
+ux_ptl_code    UNIQUE (ptl_company_id, lower(ptl_code)) NULLS NOT DISTINCT
+WHERE NOT deleted. As with ux_ppo_code, a shipped code and
+a company\'s own code coexist — that is what forking means.
+ix_ptl_purpose (ptl_purpose_id, ptl_company_id, ptl_sort_order) INCLUDE
+(code, name, published_rev_id), partial on active AND NOT
+deleted — the "print in format" list.
+ix_ptl_company / ix_ptl_forked_from / ix_ptl_published_rev /
+ix_ptl_created_by / ix_ptl_modified_by     FK-covering, all partial
+
+NOT YET ENFORCED ANYWHERE, and worth adding: fk_ptl_published_rev points at
+ptv_id alone, so nothing stops it naming a DRAFT, a RETIRED version, or a
+version of a DIFFERENT template. The fix is a composite FK on
+(ptl_id, ptl_published_rev_id) against a UNIQUE (ptv_template_id, ptv_id)
+on the version table; status still needs a trigger. Until then it is
+PrintTemplateService\'s job.'
+}
+
+Table print_template_assignment {
+  ptaId String [pk]
+  ptaCompanyId String [note: 'NULL = EVERY COMPANY, the ladder\'s widest rung.
+
+A global row can only ever name a SHIPPED design, and that is enforced
+rather than trusted: ptaTemplateCompanyKey carries the template\'s owner
+and ck_pta_template_scope ties the two together. Without it a global
+assignment could point at one company\'s private design and every other
+company\'s till would render it — their logo, their address, on somebody
+else\'s paper.']
+  ptaBranchId String [note: 'NULL = every branch.']
+  ptaDeviceId String [note: 'NULL = every counter.']
+  ptaPurposeId String [not null]
+  ptaTemplateId String [not null]
+  ptaTemplateCompanyKey String [not null, note: 'The OWNER of ptaTemplateId, carried so that the composite fk_pta_template
+can exist. Same idiom as the promotion schema\'s benefit lock: a fact a
+single-column key cannot check is made checkable by carrying the second
+half of the parent\'s identity.
+
+NOT NULL, and the nil uuid means "a shipped design" — matching
+ptlCompanyKey rather than ptlCompanyId, so no NULL ever reaches the key
+and MATCH SIMPLE cannot quietly stop checking. There is no default: the
+writer must state which design\'s owner this is, because defaulting it to
+the sentinel would mean defaulting to "shipped", and that is the one
+answer that must never be assumed. PrintTemplateAssignmentService reads it
+off the template rather than trusting the caller.']
+  ptaOutputMode String [not null, default: 'PRINT']
+  ptaPrinterId String [note: 'Where the paper comes out for this scope. NULL = the server\'s default
+queue for the device.
+Points at public.printer_profile(prf_id) — §6.']
+  ptaPrinterName String [note: 'The same answer given as a bare queue or share name, for a scope whose
+printer nobody has registered as a profile.
+
+A FALLBACK, never a copy of the profile\'s name: ck_pta_printer_one_of
+refuses it alongside ptaPrinterId. Two columns answering "which printer"
+is the same defect §5 spent its whole argument removing from 3.0\'s default
+handling, and a denormalised name on a MASTER goes stale the day the
+profile is renamed — unlike plgPrinterName, which is a snapshot on an
+immutable log and is meant to be frozen.
+
+What it costs: a registered profile carries the family, the codepage, the
+column count and what the device can physically do. A bare name carries
+none of that, so a render through this column falls back to the counter\'s
+defaults for all of it and prfPaperCode cannot assert anything — which is
+exactly the check that stops an A4 invoice going to an 80mm roll.']
+  ptaCopies Int [note: 'Overrides the purpose\'s copy count for this scope. NULL = use it.']
+  ptaSpecificity Int [note: 'GENERATED ALWAYS ... STORED: 3 counter, 2 branch, 1 company, 0 every
+company. Read-only — writing it raises 428C9. The no-arg dbgenerated() is
+what stops `migrate dev` emitting DROP DEFAULT.
+
+A single CASE rather than added weights, because a counter row must also
+name its branch (ck_pta_device_needs_branch), so device 4 + branch 2 would
+score SIX and every reader would have to know that 6, not 4, means
+counter. Consecutive values cost nothing and cannot be misread.
+
+Rung 0 is its own rung and not shared with rung 1: if a global row and a
+company row both scored 0 the resolver would have a tie it cannot break,
+and ux_pta_scope would let both exist.']
+  ptaRemarks String
+  ptaIsActive Boolean [not null, default: true]
+  ptaIsDeleted Boolean [not null, default: false]
+  ptaSyncDate DateTime
+  ptaCreatedOn DateTime [default: `now()`, not null]
+  ptaCreatedBy String
+  ptaModifiedOn DateTime
+  ptaModifiedBy String
+  company companys
+  branch branch_master
+  device device_master
+  purpose print_purpose [not null]
+  template print_template [not null, note: 'COMPOSITE, against ux_ptl_id_company_key — (ptl_id, ptl_company_key) —
+so that a company cannot assign another company\'s private template. Both
+columns are NOT NULL on this side and generated non-null on the other, so
+the key always fires; it subsumes the plain existence check a
+single-column key would give.']
+  printer printer_profile
+  createdByUser user_master
+  modifiedByUser user_master
+
+  Note: 'public.print_template_assignment — §5, WHICH design wins, and WHERE.
+
+THERE IS DELIBERATELY NO isDefault COLUMN. Default-ness is the ROW\'S
+EXISTENCE. A pta_ row is the choice for one scope; templates that are merely
+available are PrintTemplate rows matching the purpose, which is what the
+"print in format" list shows.
+
+That removes three defects at once:
+* "exactly one default" becomes a plain unique index on the scope key,
+with no flag anyone can forget to clear.
+* THERE IS NO CLEAR STEP. Changing the default is an UPDATE of ONE row.
+3.0\'s clear-then-set was scope-unaware, so on a mixed site setting the
+Windows default silently unset the Linux one.
+* A partial unique index on a boolean cannot be DEFERRED, so flipping two
+rows in one UPDATE can fail on row order alone. With no boolean there is
+no swap to get wrong.
+
+Narrowest wins: counter -> branch -> company -> EVERY COMPANY, via
+ptaSpecificity. Four rungs, not three: ptaCompanyId is nullable, so a
+shipped design can be the default for every company that has not said
+otherwise.
+
+PAPER IS NOT IN THE KEY. Output mode is: a 3-inch thermal receipt genuinely
+is a different artifact from an A4 tax invoice. Paper is a PROPERTY of the
+chosen version, asserted against the counter\'s printer profile at render
+time.
+
+Declared here WITHOUT any CHECK constraint: ck_pta_output_mode,
+ck_pta_device_needs_branch, ck_pta_branch_needs_company,
+ck_pta_template_scope, ck_pta_copies and ck_pta_printer_one_of live in the
+migration and in PrintTemplateAssignmentService.
+
+DB-only objects Prisma cannot express, hand-authored in the migration:
+ux_pta_scope     UNIQUE (COALESCE(company, nil), purpose,
+COALESCE(branch, nil), COALESCE(device, nil),
+output_mode) WHERE NOT deleted — "exactly one default
+per scope", as an index rather than as care. COALESCE to
+the nil uuid rather than NULLS NOT DISTINCT, because it
+is the same expression the resolver uses.
+ix_pta_resolve   the render-time resolver, leading with the SAME COALESCE
+expression and ordered by specificity DESC, so that
+"this company\'s rows plus the global ones" is one index
+scan.
+ix_pta_company / ix_pta_branch / ix_pta_device / ix_pta_purpose /
+ix_pta_template / ix_pta_printer / ix_pta_created_by / ix_pta_modified_by
+FK-covering, all partial'
+}
+
+Table print_template_dataset {
+  ptdId String [pk]
+  ptdVersionId String [not null]
+  ptdRole String [not null, default: 'DETAIL', note: 'MASTER: exactly one, the header context, one row read (3.0\'s pstyl_sql).
+DETAIL: the repeating bands (3.0\'s printing_style_sql rows).']
+  ptdDatasetNo Int [not null, note: 'THE BINDING — what a band actually points at. Unique per version.']
+  ptdSortOrder Int [not null, default: 0, note: 'Display order in the designer. Binds nothing. Safe to reorder.']
+  ptdName String [not null, note: 'The same binding by name, so a later engine can address \'items\' rather
+than 2 and ptdDatasetNo becomes pure back-compatibility.']
+  ptdLabel String
+  ptdSourceKind String [not null, default: 'PROVIDER']
+  ptdProviderCode String
+  ptdSql String
+  ptdSqlNorm String [note: 'GENERATED ALWAYS ... STORED: comments stripped, literals and quoted
+identifiers replaced by tokens, casts flattened, lowercased. Read-only —
+writing it raises 428C9. The no-arg dbgenerated() is what stops
+`migrate dev` emitting DROP DEFAULT. EVERY sql guard reads this and not
+ptdSql, so a keyword inside a literal is neither a false positive nor a
+way through.']
+  ptdRequiresCompany Boolean [not null, default: true, note: 'A report that is not company-scoped shows one company another\'s numbers.
+Set false only for genuinely global data, such as a state-code list.']
+  ptdParentNo Int [note: 'Nested detail, which 3.0 could not express at all: this dataset\'s rows are
+the children of the current row of the dataset numbered ptdParentNo.
+
+ptdLinkFields says HOW they match, as parent=child pairs, comma separated
+for a composite — `sbi_id=line_id` or `sb_id=bill_id,sbi_slno=slno`. LEFT
+is a column the PARENT dataset returns; RIGHT is a column THIS dataset
+returns. Both are output columns, neither side is a bound parameter.
+
+THE CHILD QUERY RUNS ONCE FOR THE WHOLE RENDER, NOT ONCE PER PARENT ROW.
+It is bound with the same context every other dataset gets, returns the
+parent\'s key as an ordinary column, and the RENDERER groups on it. A
+14-line bill costs one query, not fifteen — which is also why ptdRowLimit
+and ptdTimeoutMs measure the whole band, not a single child execution.']
+  ptdLinkFields String
+  ptdRowLimit Int [not null, default: 5000]
+  ptdTimeoutMs Int [not null, default: 15000]
+  ptdRemarks String
+  ptdIsDeleted Boolean [not null, default: false]
+  ptdSyncDate DateTime
+  ptdCreatedOn DateTime [default: `now()`, not null]
+  ptdCreatedBy String
+  ptdModifiedOn DateTime
+  ptdModifiedBy String
+  version print_template_version [not null]
+  createdByUser user_master
+  modifiedByUser user_master
+
+  Note: 'public.print_template_dataset — §4, where the rows come from.
+
+This model and PrintTemplateAssignment are the whole point of the module. A
+layout has been data since 3.0; what was never data is WHICH QUERY feeds it.
+
+It hangs off the VERSION, not the template. A dataset is part of the report
+definition, not a setting beside it — if it hung off the template, editing a
+query would silently change what every past version rendered, and print_log\'s
+version reference would be a lie.
+
+THE 3.0 FIX, in two columns:
+ptdDatasetNo   THE BINDING. The body\'s bands reference this number. The
+master is always 0.
+ptdSortOrder   Display order in the designer. Binds nothing.
+pssql_slno was both jobs at once — documented as a serial number, actually
+the DataSet index — so reordering rows in the editor rebound every band to
+the wrong query, with no error and no visible cause.
+
+Declared here WITHOUT any CHECK constraint. That is a bigger omission than
+usual, so the full list is below and PrintTemplateDatasetService must carry
+every one of them:
+ck_ptd_role                  MASTER | DETAIL
+ck_ptd_source_kind           PROVIDER | SQL
+ck_ptd_source_biconditional  PROVIDER <=> provider_code, SQL <=> sql
+ck_ptd_master_is_zero        MASTER <=> dataset_no = 0
+ck_ptd_dataset_no            0..99
+ck_ptd_name_shape            ^[a-z][a-z0-9_]*$
+ck_ptd_provider_shape        dotted lower snake
+ck_ptd_parent                no self-parent, MASTER may not have one
+ck_ptd_parent_pair           parent_no <=> link_fields
+ck_ptd_link_fields_shape     parent=child, comma separated, no spaces
+ck_ptd_limits                row_limit 1..200000, timeout 100..120000 ms
+ck_ptd_sql_*                 the eleven stored-SQL guards, below
+
+── THE STORED-SQL GUARDS ARE AN AUTHORING LINT, NOT A SECURITY BOUNDARY ──
+The boundary is three runtime facts: parameters BOUND over the extended
+protocol (which makes a second statement structurally impossible rather than
+merely filtered), the query run in a READ ONLY transaction, and a role with
+no write privilege. A CHECK cannot parse SQL and never will.
+
+Verified behaviour of the guards against PostgreSQL 18, so the service layer
+can reproduce it exactly:
+REFUSED   \':iacc_year\' (3.0\'s quoted param), :1, arr[2:5], two statements,
+data-modifying CTE, $q$dollar quotes$q$, nested block comments,
+pg_sleep and friends, a query with no :company_id
+ACCEPTED  \'last updated\' AND x = :company_id (a literal BEFORE a param —
+the false positive the count-based check was written to kill),
+\'it\'\'s\', a \';\' inside a literal, last_updated_on, updated_at,
+E\'...\' and U&\'...\' (the comment claiming these are caught is
+wrong; they normalise harmlessly)
+KNOWN FALSE POSITIVES, both undocumented in §4 — the service layer should
+give a better message than the constraint name does:
+* a :name inside a "--" comment trips ck_ptd_sql_no_quoted_param, whose
+error talks about literals
+* a "--" inside a literal mangles the residue and the query is refused
+by ck_ptd_sql_company_scoped, i.e. a company-scoped query is told it
+is not company-scoped
+
+DB-only objects Prisma cannot express, hand-authored in the migration:
+ux_ptd_dataset_no   UNIQUE (ptd_version_id, ptd_dataset_no) WHERE NOT deleted
+ux_ptd_name         UNIQUE (ptd_version_id, ptd_name)       WHERE NOT deleted
+ux_ptd_one_master   UNIQUE (ptd_version_id) WHERE role = \'MASTER\' AND NOT deleted
+ix_ptd_version      (ptd_version_id, ptd_sort_order) WHERE NOT deleted
+ix_ptd_created_by / ix_ptd_modified_by   FK-covering, partial'
+}
+
+Table print_template_version {
+  ptvId String [pk]
+  ptvTemplateId String [not null]
+  ptvRevNo Int [not null]
+  ptvStatus String [not null, default: 'DRAFT']
+  ptvEngine String [not null, default: 'JSON_BANDS']
+  ptvBody String [not null]
+  ptvSchemaVer Int [not null, default: 1]
+  ptvPaperCode String [not null, default: 'A4']
+  ptvOrientation String [not null, default: 'PORTRAIT']
+  ptvWidthMm Decimal
+  ptvHeightMm Decimal
+  ptvMarginTopMm Decimal [not null, default: 0]
+  ptvMarginBottomMm Decimal [not null, default: 0]
+  ptvMarginLeftMm Decimal [not null, default: 0]
+  ptvMarginRightMm Decimal [not null, default: 0]
+  ptvColumns Int [note: 'Characters per line for the text engines. Meaningless for a page one.']
+  ptvLang String [not null, default: 'en-IN']
+  ptvFontFamily String
+  ptvParams Json [note: '── What the OPERATOR is asked, once, for the whole render ─────────────
+A JSON array, one entry per prompt:
+[{"name":"from_date","type":"DATE","required":true,"label":"From date"},
+{"name":"godown_id","type":"UUID","required":false,"label":"Godown"}]
+
+ON THE VERSION, not on the dataset. The operator is asked ONCE — if
+dataset 1 declared from_date as DATE required and dataset 3 declared it
+as TEXT optional there is no answer to what the screen should ask — and
+print_log.plg_params is one jsonb object per render, not one per dataset.
+
+CONTEXT PARAMETERS ARE NOT DECLARED ANYWHERE. :company_id, :branch_id,
+:acc_year, :doc_id, :user_id and :device_id are a closed set the server
+holds the types for, and it finds which of them a query uses by reading
+the query — exactly as ck_ptd_sql_company_scoped already reads
+ptd_sql_norm for :company_id. So there is no "source" field here:
+everything in this array is asked, everything else is context.
+
+ck_ptv_params_is_array (jsonb_typeof = \'array\') is enforced in the
+migration and in PrintTemplateVersionService.']
+  ptvNote String
+  ptvApprovedOn DateTime [note: 'Publishing is a privileged act: a version whose datasets carry stored SQL
+is, in every meaningful sense, code.']
+  ptvApprovedBy String
+  ptvIsDeleted Boolean [not null, default: false]
+  ptvSyncDate DateTime
+  ptvCreatedOn DateTime [default: `now()`, not null]
+  ptvCreatedBy String
+  ptvModifiedOn DateTime
+  ptvModifiedBy String
+  template print_template [not null]
+  approvedByUser user_master
+  createdByUser user_master
+  modifiedByUser user_master
+  publishedFor print_template [not null, note: 'The other half of the circular pair — the templates that publish this
+version. At most one in practice; the schema does not say so.']
+  datasets print_template_dataset [not null]
+  printLogs print_log [not null]
+
+  indexes {
+    (ptvTemplateId, ptvRevNo) [unique]
+  }
+
+  Note: 'public.print_template_version — §3, the design itself, frozen once published.
+
+THE BODY LIVES HERE, not on the template. That one decision is what makes
+the rest of the module honest:
+* print_log.plg_version_id is a real FK to the exact bytes that were
+rendered, so "what did this bill look like" is enforced, not hoped for.
+* Publishing and rolling back are a POINTER MOVE on ptl_published_rev_id
+— one row, atomic. Rollback writes FORWARD as a new version, so the
+history is append-only and a rolled-back design is still evidence.
+* A render in flight cannot see a half-saved template, because a
+published version is never UPDATEd.
+
+ptvEngine declares what ptvBody IS. 3.0 had no such column — "the body is
+QtRPT XML" lived in C++, so moving off QtRPT would have been a flag day for
+every customer at once.
+
+Declared here WITHOUT any CHECK constraint: ck_ptv_status, ck_ptv_engine,
+ck_ptv_body_is_json (ptv_body IS JSON OBJECT when engine = JSON_BANDS),
+ck_ptv_body_size, ck_ptv_rev_no, ck_ptv_orientation, ck_ptv_geometry,
+ck_ptv_published (a PUBLISHED row must name an approver, the same shape
+ck_prm_approved uses), ck_ptv_lang_shape and ck_ptv_params_is_array live in
+the migration and in PrintTemplateVersionService.
+
+Vocabularies, for the service layer:
+ptvStatus       DRAFT | PUBLISHED | RETIRED
+ptvEngine       JSON_BANDS | HTML_CSS | QTRPT_XML | ESCPOS_TEXT | RAW
+ptvOrientation  PORTRAIT | LANDSCAPE
+
+DB-only objects Prisma cannot express, hand-authored in the migration:
+ux_ptv_template_rev    UNIQUE (ptv_template_id, ptv_rev_no) — NOT partial
+on is_deleted, unlike every other unique index in
+this module, because the history is append-only.
+Note the tension with ptvIsDeleted existing at all;
+resolve it one way or the other.
+ix_ptv_template_recent (ptv_template_id, ptv_rev_no DESC) INCLUDE
+(status, engine, paper_code) WHERE NOT deleted
+ix_ptv_approved_by / ix_ptv_created_by / ix_ptv_modified_by  FK-covering'
 }
 
 Table txn_charge_detail {
@@ -2846,6 +3511,20 @@ Table user_master {
   tenderDetails acc_tender_detail [not null]
   appSettingValues app_setting_value [not null]
   approvedPromotionSchemes promotion_scheme [not null]
+  printPurposesCreated print_purpose [not null]
+  printPurposesModified print_purpose [not null]
+  printTemplatesCreated print_template [not null]
+  printTemplatesModified print_template [not null]
+  printVersionsApproved print_template_version [not null]
+  printVersionsCreated print_template_version [not null]
+  printVersionsModified print_template_version [not null]
+  printDatasetsCreated print_template_dataset [not null]
+  printDatasetsModified print_template_dataset [not null]
+  printAssignmentsCreated print_template_assignment [not null]
+  printAssignmentsModified print_template_assignment [not null]
+  printerProfilesCreated printer_profile [not null]
+  printerProfilesModified printer_profile [not null]
+  printLogs print_log [not null]
 }
 
 Table user_menus {
@@ -5169,6 +5848,80 @@ Ref: charge_master.chgLedgerCode > acc_ledger_master.ledId [delete: Restrict]
 Ref: companys.compStylesheetId > app_theme_master.thmId
 
 Ref: fiscal_years.fyPrevFyId - fiscal_years.fyId [delete: No Action]
+
+Ref: printer_profile.prfCompanyId > companys.compId [delete: Restrict]
+
+Ref: printer_profile.prfBranchId > branch_master.brId [delete: Restrict]
+
+Ref: printer_profile.prfDeviceId > device_master.devId [delete: Restrict]
+
+Ref: printer_profile.prfCreatedBy > user_master.usrId [delete: Restrict]
+
+Ref: printer_profile.prfModifiedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_log.plgCompanyId > companys.compId [delete: Restrict]
+
+Ref: print_log.plgBranchId > branch_master.brId [delete: Restrict]
+
+Ref: print_log.plgDeviceId > device_master.devId [delete: Restrict]
+
+Ref: print_log.plgPurposeId > print_purpose.ppoId [delete: Restrict]
+
+Ref: print_log.plgTemplateId > print_template.ptlId [delete: Restrict]
+
+Ref: print_log.plgVersionId > print_template_version.ptvId [delete: Restrict]
+
+Ref: print_log.plgPrinterId > printer_profile.prfId [delete: Restrict]
+
+Ref: print_log.plgPrintedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_purpose.ppoCompanyId > companys.compId [delete: Restrict]
+
+Ref: print_purpose.ppoCreatedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_purpose.ppoModifiedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template.ptlCompanyId > companys.compId [delete: Restrict]
+
+Ref: print_template.ptlPurposeId > print_purpose.ppoId [delete: Restrict]
+
+Ref: print_template.ptlForkedFromId - print_template.ptlId [delete: Restrict]
+
+Ref: print_template.ptlCreatedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template.ptlModifiedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template.ptlPublishedRevId - print_template_version.ptvId [delete: Restrict]
+
+Ref: print_template_assignment.ptaCompanyId > companys.compId [delete: Restrict]
+
+Ref: print_template_assignment.ptaBranchId > branch_master.brId [delete: Restrict]
+
+Ref: print_template_assignment.ptaDeviceId > device_master.devId [delete: Restrict]
+
+Ref: print_template_assignment.ptaPurposeId > print_purpose.ppoId [delete: Restrict]
+
+Ref: print_template_assignment.(ptaTemplateId, ptaTemplateCompanyKey) > print_template.(ptlId, ptlCompanyKey) [delete: Restrict]
+
+Ref: print_template_assignment.ptaPrinterId > printer_profile.prfId [delete: Restrict]
+
+Ref: print_template_assignment.ptaCreatedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template_assignment.ptaModifiedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template_dataset.ptdVersionId > print_template_version.ptvId [delete: Cascade]
+
+Ref: print_template_dataset.ptdCreatedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template_dataset.ptdModifiedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template_version.ptvTemplateId - print_template.ptlId [delete: Cascade]
+
+Ref: print_template_version.ptvApprovedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template_version.ptvCreatedBy > user_master.usrId [delete: Restrict]
+
+Ref: print_template_version.ptvModifiedBy > user_master.usrId [delete: Restrict]
 
 Ref: txn_charge_detail.cdChgId > charge_master.chgId [delete: No Action]
 

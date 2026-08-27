@@ -114,6 +114,15 @@ model Company {
   tenderDetails         AccTenderDetail[]
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
+
+  // ── printing (17_printing.sql) ─────────────────────────────────────────
+  printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")
+  printTemplates        PrintTemplate[]           @relation("PrintTemplateCompany")
+  printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentCompany")
+
+  printerProfiles       PrinterProfile[]          @relation("PrinterProfileCompany")
+  printLogs             PrintLog[]                @relation("PrintLogCompany")
+
   @@map("companys")
   @@schema("public")
 }

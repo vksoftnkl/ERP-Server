@@ -12,6 +12,8 @@ import { EmployeeMasterModule } from '../modules/settings/employeeMaster/employe
 import { UserAdministrationModule } from '../modules/settings/userAdministration/user-administration.module';
 import { ConfigsModule } from '../modules/settings/configs/configs.module';
 import { AppSettingsModule } from '../modules/settings/appSettings/app-settings.module';
+import { PrintTemplateAssignmentModule } from '../modules/settings/print-template-assignment/print-template-assignment.module';
+import { PrintTemplateModule } from '../modules/settings/print-template/print-template.module';
 import { GspCompanyServiceModule } from '../modules/settings/gspCompanyService/gsp-company-service.module';
 import { GspProviderMasterModule } from '../modules/accountsModule/gspProviderMaster/gsp-provider-master.module';
 import { LedgerShippingAddressModule } from '../modules/accountsModule/ledgerShippingAddress/ledger-shipping-address.module';
@@ -274,6 +276,26 @@ export const swaggerModuleDocuments = [
       'Setting overrides (app_setting_value) and the GLOBAL < COMPANY < BRANCH < DEVICE < USER ' +
       'resolver. The catalog (app_setting_def) is maintained in SQL and has no endpoints',
     include: [AppSettingsModule],
+  },
+  {
+    path: 'print-template-assignments',
+    title: 'Print Template Assignments API',
+    description:
+      'Which print design wins, and where. One row IS one choice \u2014 there is no is_default ' +
+      'flag \u2014 so changing the design for a scope is an update of a single row. Resolution ' +
+      'walks narrowest first: counter, then branch, then company, then the every-company ' +
+      'default a shipped design may hold',
+    include: [PrintTemplateAssignmentModule],
+  },
+  {
+    path: 'print-template',
+    title: 'Print Template API',
+    description:
+      'Print template endpoints. One payload carries the design whole — the template, its ' +
+      "versions array, and each version's nested datasets array — because a dataset hangs off " +
+      'the VERSION, not the template. A published version is never updated: revisions are ' +
+      "appended, and publishing moves the template's published pointer",
+    include: [PrintTemplateModule],
   },
   {
     path: 'tender-master',
