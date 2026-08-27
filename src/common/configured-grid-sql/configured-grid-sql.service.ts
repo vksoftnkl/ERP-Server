@@ -123,9 +123,9 @@ export class ConfiguredGridSqlService {
       };
     }
     // tableName is optional: a grid/dropdown query is anchored to one table, but
-    // a report dataset (reports.report_dataset) is not — it may join anything and
-    // is anchored by its p_company_id scope token instead. Absent tableName means
-    // "no anchor to check"; every other rule above still applies.
+    // a caller that may join anything is anchored by its p_company_id scope token
+    // instead. Absent tableName means "no anchor to check"; every other rule
+    // above still applies.
     if (options.tableName !== undefined) {
       const tableNameTerms = this.buildTableNameSearchTerms(options.tableName);
       const referencesConfiguredTable = tableNameTerms.some((term) => {

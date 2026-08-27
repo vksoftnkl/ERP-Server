@@ -67,7 +67,6 @@ import { ItemsReorderMasterModule } from 'src/modules/Inventory/items-reorder-ma
 import { ItemsQtyPriceMasterModule } from 'src/modules/Inventory/items-qty-price-master/items-qty-price-master.module';
 import { ItemsTaxHistoryMasterModule } from 'src/modules/Inventory/items-tax-history-master/items-tax-history-master.module';
 import { ItemsMasterModule } from 'src/modules/Inventory/items-master/items-master.module';
-import { ReportingModule } from 'src/modules/reporting/reporting.module';
 import { ItemsEanCodeMasterModule } from 'src/modules/Inventory/items-ean-code-master/items-ean-code-master.module';
 import { ItemsGstUnitsMasterModule } from 'src/modules/Inventory/items-gst-units-master/items-gst-units-master.module';
 import { GodownsMasterModule } from 'src/modules/Inventory/godowns-master/godowns-master.module';
@@ -533,15 +532,5 @@ export const swaggerModuleDocuments = [
     title: 'Audit Log API',
     description: 'Audit log module endpoints',
     include: [AuditLogModule],
-  },
-  {
-    path: 'reporting',
-    title: 'Reporting / Print API',
-    description:
-      'Band-based report templates and the print engine. Template CRUD with ' +
-      'version history and rollback, the dataset provider catalogue, single ' +
-      'and bulk document rendering to PDF / thermal / dot matrix, and the ' +
-      'designer preview.',
-    include: [ReportingModule],
   },
 ];

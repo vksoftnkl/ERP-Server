@@ -70,7 +70,6 @@ const items_reorder_master_module_1 = require("../modules/Inventory/items-reorde
 const items_qty_price_master_module_1 = require("../modules/Inventory/items-qty-price-master/items-qty-price-master.module");
 const items_tax_history_master_module_1 = require("../modules/Inventory/items-tax-history-master/items-tax-history-master.module");
 const items_master_module_1 = require("../modules/Inventory/items-master/items-master.module");
-const reporting_module_1 = require("../modules/reporting/reporting.module");
 const items_ean_code_master_module_1 = require("../modules/Inventory/items-ean-code-master/items-ean-code-master.module");
 const items_gst_units_master_module_1 = require("../modules/Inventory/items-gst-units-master/items-gst-units-master.module");
 const godowns_master_module_1 = require("../modules/Inventory/godowns-master/godowns-master.module");
@@ -529,15 +528,6 @@ exports.swaggerModuleDocuments = [
         title: 'Audit Log API',
         description: 'Audit log module endpoints',
         include: [audit_log_module_1.AuditLogModule],
-    },
-    {
-        path: 'reporting',
-        title: 'Reporting / Print API',
-        description: 'Band-based report templates and the print engine. Template CRUD with ' +
-            'version history and rollback, the dataset provider catalogue, single ' +
-            'and bulk document rendering to PDF / thermal / dot matrix, and the ' +
-            'designer preview.',
-        include: [reporting_module_1.ReportingModule],
     },
 ];
 //# sourceMappingURL=swaggerDocs.js.map

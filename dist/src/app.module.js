@@ -102,7 +102,6 @@ const items_reorder_master_module_1 = require("./modules/Inventory/items-reorder
 const items_qty_price_master_module_1 = require("./modules/Inventory/items-qty-price-master/items-qty-price-master.module");
 const items_tax_history_master_module_1 = require("./modules/Inventory/items-tax-history-master/items-tax-history-master.module");
 const items_master_module_1 = require("./modules/Inventory/items-master/items-master.module");
-const reporting_module_1 = require("./modules/reporting/reporting.module");
 const parseNumber = (value, fallback) => {
     if (!value) {
         return fallback;
@@ -165,7 +164,6 @@ exports.AppModule = AppModule = __decorate([
             items_qty_price_master_module_1.ItemsQtyPriceMasterModule,
             items_tax_history_master_module_1.ItemsTaxHistoryMasterModule,
             items_master_module_1.ItemsMasterModule,
-            reporting_module_1.ReportingModule,
             acc_group_master_module_1.AccGroupMasterModule,
             account_ledger_masters_module_1.AccountLedgerMastersModule,
             ledger_bank_account_module_1.LedgerBankAccountModule,

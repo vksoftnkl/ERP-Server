@@ -6124,3 +6124,44 @@ Invalid `this.prisma.reportDataset.findMany()` invocation in
   171 private async refresh(): Promise<void> {
 → 172   const rows = await this.prisma.reportDataset.findMany(
 The table `reports.report_dataset` does not exist in the current database.
+2026-08-27T05:37:09.084Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `prisma.reportDataset.aggregate()` invocation:
+
+
+The table `reports.report_dataset` does not exist in the current database.
+2026-08-27T05:37:39.072Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `prisma.reportDataset.aggregate()` invocation:
+
+
+The table `reports.report_dataset` does not exist in the current database.
+2026-08-27T05:38:09.072Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `prisma.reportDataset.aggregate()` invocation:
+
+
+The table `reports.report_dataset` does not exist in the current database.
+2026-08-27T05:38:39.083Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `prisma.reportDataset.aggregate()` invocation:
+
+
+The table `reports.report_dataset` does not exist in the current database.
+2026-08-27T05:39:09.076Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `prisma.reportDataset.aggregate()` invocation:
+
+
+The table `reports.report_dataset` does not exist in the current database.
+2026-08-27T05:39:39.072Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `prisma.reportDataset.aggregate()` invocation:
+
+
+The table `reports.report_dataset` does not exist in the current database.
+2026-08-27T05:40:09.072Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `prisma.reportDataset.aggregate()` invocation:
+
+
+The table `reports.report_dataset` does not exist in the current database.
+2026-08-27T05:40:39.071Z ERROR [DynamicDatasetSource] Runtime dataset refresh probe failed: 
+Invalid `prisma.reportDataset.aggregate()` invocation:
+
+
+The table `reports.report_dataset` does not exist in the current database.
+                                                                                                                                                                                                                                 

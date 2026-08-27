@@ -5,7 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  schemas  = ["public", "grid", "audit", "purchase", "sales", "settings", "fixed", "accounts", "inventory", "stock", "reports", "transport"]
+  schemas  = ["public", "grid", "audit", "purchase", "sales", "settings", "fixed", "accounts", "inventory", "stock", "transport"]
 }
 generator dbml {
   provider   = "node node_modules/prisma-dbml-generator/dist/generator.js"
