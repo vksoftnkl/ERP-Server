@@ -102,7 +102,7 @@ model PrintTemplateDataset {
 
   /// A report that is not company-scoped shows one company another's numbers.
   /// Set false only for genuinely global data, such as a state-code list.
-  ptdRequiresCompany  Boolean   @default(true)                               @map("ptd_requires_company")
+  ptdRequiresCompany  Boolean   @default(false)                               @map("ptd_requires_company")
 
   /// Nested detail, which 3.0 could not express at all: this dataset's rows are
   /// the children of the current row of the dataset numbered ptdParentNo.
