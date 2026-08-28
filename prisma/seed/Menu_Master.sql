@@ -1,4 +1,4 @@
--- Seed: fixed.menu_master -- the full application menu tree (224 rows).
+-- Seed: fixed.menu_master -- the full application menu tree (226 rows).
 --
 -- Exported from the reference database, so a fresh environment comes up with the
 -- same menu ids every other table points at.
@@ -39,7 +39,7 @@ INSERT INTO fixed.menu_master
      menu_icon_location_desktop, menu_icon_location_web, menu_icon_location_mobile,
      menu_is_active, menu_separator)
 VALUES
-    -- ============ &1 Sales (menu 1, 64 rows) ============
+    -- ============ &1 Sales (menu 1, 65 rows) ============
      (   1, NULL, '&1 Sales'                             , NULL                  , true ,   1.00, '0', NULL, NULL, true , true)
     ,(  10,    1, 'Customers'                            , 'CTRL+SHIFT+C'        , true ,   1.00, '0', NULL, NULL, true , true)
     ,(  11,    1, 'Sales Order'                          , 'CTRL+SHIFT+S'        , true ,   2.00, NULL, NULL, NULL, true , false)
@@ -53,7 +53,7 @@ VALUES
     ,(  19,   17, 'City Master'                          , NULL                  , true ,   2.00, '2', NULL, NULL, true , false)
     ,(  20,   17, 'Area Master'                          , NULL                  , true ,   3.00, '3', NULL, NULL, true , false)
     ,(  21,   17, 'Customer Type Master'                 , NULL                  , true ,   4.00, '4', NULL, NULL, true , false)
-    ,(  66,    1, 'Promotion Scheme'                     , NULL                  , false,  12.00, NULL, NULL, NULL, true , true)
+    ,(  66,    1, 'Offer & Schemes'                      , NULL                  , true ,  12.00, NULL, NULL, NULL, true , true)
     ,(  67,   75, 'Loyalty Programs'                     , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
     ,(  75,    1, 'Loyalty Schemes'                      , NULL                  , true ,  10.00, NULL, NULL, NULL, true , true)
     ,(  79,   75, 'Loyalty Status'                       , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
@@ -104,6 +104,7 @@ VALUES
     ,( 233,    1, 'Sales Bill - Loadman'                 , 'false'               , false,  24.00, NULL, NULL, NULL, true , false)
     ,( 235,   75, 'Loyalty Redemption (Item)'            , 'false'               , false,   4.00, NULL, NULL, NULL, true , true)
     ,( 236,   75, 'Loyalty Redemption Report (Item-wise)', 'false'               , false,   5.00, NULL, NULL, NULL, true , false)
+    ,( 247,   66, 'Promotion Scheme'                     , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
     -- ============ &2 Purchase (menu 2, 18 rows) ============
     ,(   2, NULL, '&2 Purchase'                          , NULL                  , true ,   2.00, '0', NULL, NULL, true , false)
     ,(  22,    2, 'Suppliers'                            , NULL                  , true ,   1.00, NULL, NULL, NULL, true , true)
@@ -209,7 +210,7 @@ VALUES
     ,( 194,  183, 'Customer Statement'                   , NULL                  , false,   3.00, NULL, NULL, NULL, true , false)
     ,( 232,  183, 'Dash Board'                           , 'true'                , false,   0.01, NULL, NULL, NULL, true , false)
     ,( 234,  183, 'Tender wise Collection'               , 'false'               , false,   5.00, NULL, NULL, NULL, true , false)
-    -- ============ &7 Settings (menu 7, 38 rows) ============
+    -- ============ &7 Settings (menu 7, 39 rows) ============
     ,(   7, NULL, '&7 Settings'                          , NULL                  , true ,   7.00, '0', NULL, NULL, true , false)
     ,(  56,    7, 'Company Master'                       , NULL                  , true ,   0.00, NULL, NULL, NULL, true , false)
     ,(  57,    7, 'Employee Master'                      , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
@@ -217,7 +218,7 @@ VALUES
     ,(  59,    7, 'Module Administration'                , NULL                  , true ,   5.00, NULL, NULL, NULL, true , true)
     ,(  60,    7, 'Configuration'                        , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
     ,(  61,   60, 'SMS Configuration'                    , NULL                  , false,   0.00, NULL, NULL, NULL, true , false)
-    ,(  62,   60, 'Printing Configuration'               , NULL                  , false,   1.00, NULL, NULL, NULL, true , false)
+    ,(  62,   60, 'Printing Configuration'               , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
     ,(  63,   60, 'Barcode Configuration'                , NULL                  , false,   2.00, NULL, NULL, NULL, true , false)
     ,(  64,    7, 'Financial Year'                       , NULL                  , false,   9.00, NULL, NULL, NULL, true , false)
     ,(  65,    7, 'Reset Sequence'                       , NULL                  , false,  10.00, NULL, NULL, NULL, true , false)
@@ -248,6 +249,7 @@ VALUES
     ,( 243,   60, 'widget-master'                        , NULL                  , true ,   6.00, NULL, NULL, NULL, true , false)
     ,( 245,   60, 'Charge master'                        , NULL                  , true ,   7.00, NULL, NULL, NULL, true , false)
     ,( 246,   60, 'app settings'                         , NULL                  , true ,   8.00, NULL, NULL, NULL, true , false)
+    ,( 248,   60, 'Printing Assignments'                 , NULL                  , true ,   1.20, NULL, NULL, NULL, true , false)
     -- ============ &8 Transport (menu 8, 9 rows) ============
     ,(   8, NULL, '&8 Transport'                         , NULL                  , false,   8.00, '0', NULL, NULL, true , false)
     ,( 126,    8, 'Tripsheet'                            , NULL                  , true ,   1.00, NULL, NULL, NULL, true , false)
