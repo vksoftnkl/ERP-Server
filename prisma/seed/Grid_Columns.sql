@@ -1,4 +1,4 @@
--- Seed: fixed.grid_columns -- the column layout of every configured grid (586 rows).
+-- Seed: fixed.grid_columns -- the column layout of every configured grid (771 rows).
 --
 -- Runs after Grid_Details.sql -- grid_id is a foreign key into it, ON DELETE CASCADE.
 --
@@ -28,7 +28,7 @@ SELECT v.* FROM (VALUES
     ,('019f2c86-ad81-76c4-986d-b5dde94608b7', 1 , 4 , 'Regional Name'      , 'item_name_ta'              , 'Text'         , 100.00, 4.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ebf8d-85c5-7561-82e7-8f7a71363e6d', 1 , 5 , 'kanada'             , NULL                        , 'Text'         , 100.00, 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     -- ============ state master (id 2) ============
-    ,('019eb6a3-cb45-76e1-8c14-657d065944fb', 2 , 1 , 'State Name'         , NULL                        , 'Text'         , 47.13 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019eb6a3-cb45-76e1-8c14-657d065944fb', 2 , 1 , 'State Name'         , NULL                        , 'Text'         , 123.75, NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eb6a3-cb45-762e-a0d5-cd7b213f09e8', 2 , 2 , 'Alias Name'         , NULL                        , 'Text'         , 300.00, NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eba3c-39fb-7f09-9d57-6e3d8dc383a4', 2 , 2 , 'State Name'         , NULL                        , 'Text'         , 40.41 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     ,('019eb6a3-cb45-780c-ac8b-b8e0248e50de', 2 , 3 , 'Code'               , NULL                        , 'Text'         , 48.24 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -268,6 +268,20 @@ SELECT v.* FROM (VALUES
     -- ============ loyalty points (id 30) ============
     ,('019eb6a3-cb45-791a-8b43-860985b653a3', 30, 1 , 'ID'                 , NULL                        , 'Text'         , NULL  , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eb6a3-cb45-791f-ab0a-09ac4fe3a2a2', 30, 2 , 'Sl no'              , NULL                        , 'Text'         , NULL  , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ DESKTOP - DEVICE MASTER LIST (id 31) ============
+    ,('01a038f8-b25b-7650-a9ca-64387f2492e4', 31, 1 , '#'                  , 'dev_id'                    , 'Text'         , 0.00  , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7c82-8d82-a69b53c30fdc', 31, 2 , 'Device'             , 'dev_device_name'           , 'Text'         , 11.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7ca9-b7a9-9e491be8dbd3', 31, 3 , 'Type'               , 'dev_device_type'           , 'Text'         , 7.00  , 3.00 , 'Center', true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7cbf-b371-12db9b252921', 31, 4 , 'Platform'           , 'dev_platform'              , 'Text'         , 7.00  , 4.00 , 'Center', true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7cd3-978f-4b0773d080bd', 31, 5 , 'Company'            , 'dev_company_name'          , 'Text'         , 11.00 , 5.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7cf9-bcae-a28a9ecaa5da', 31, 6 , 'Branch'             , 'dev_branch_name'           , 'Text'         , 14.00 , 6.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7d0c-b154-a5c85335f82a', 31, 7 , 'User'               , 'dev_user_name'             , 'Text'         , 9.00  , 7.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7d1d-84a2-eba90192a5e0', 31, 8 , 'Device UID'         , 'dev_device_uid'            , 'Text'         , 0.00  , 8.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7d2f-a2cf-00e4d5f7fa5f', 31, 9 , 'MAC'                , 'dev_mac_address'           , 'Text'         , 9.00  , 9.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7d48-a91d-585242d2f7f6', 31, 10, 'Last IP'            , 'dev_last_ip'               , 'Text'         , 8.00  , 10.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7d69-b22d-eb66542356e8', 31, 11, 'Last Login'         , 'dev_last_login'            , 'DateTime'     , 10.00 , 11.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7d7c-9eae-9809790edc0a', 31, 12, 'Active'             , 'dev_is_active'             , 'Boolean'      , 5.00  , 12.00, 'Center', true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a038f8-b25b-7d8d-9a78-4292c0ef5dac', 31, 13, 'Blocked'            , 'dev_is_blocked'            , 'Boolean'      , 6.00  , 13.00, 'Center', true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ Grid -master (id 33) ============
     ,('019eb6a3-cb45-7934-b171-243686870fd9', 33, 1 , 'Grid Id'            , NULL                        , 'Text'         , 100.00, NULL , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eb6a3-cb45-79e9-a2af-ace3e6e01e0d', 33, 1 , 'Grid name'          , NULL                        , 'Text'         , NULL  , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
@@ -291,7 +305,7 @@ SELECT v.* FROM (VALUES
     ,('019eb6a3-cb45-78f9-93b9-435d694133cb', 35, 3 , 'Devic type'         , NULL                        , 'Text'         , 10.00 , NULL , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eb6a3-cb45-7904-8db0-861b6fb894fb', 35, 4 , 'Editable'           , NULL                        , 'Text'         , 10.00 , NULL , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eb6a3-cb45-792f-b943-46dfa577761c', 35, 5 , 'Active'             , NULL                        , 'Text'         , 10.00 , NULL , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ UI TABLE LIST (id 38) ============
+    -- ============ MAIN LIST - UI TABLES (id 38) ============
     ,('019ebacb-b674-78d7-8ffd-128bf2e51625', 38, 1 , '#'                  , 'ui_tbl_id'                 , 'Text'         , 5.00  , 1.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ebacb-b675-76a3-8d90-1aed630f972b', 38, 2 , 'Table Name'         , 'ui_tbl_name'               , 'Text'         , 22.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ebacb-b676-70c5-888d-67ef722f0994', 38, 3 , 'Device Type'        , 'ui_tbl_device_type'        , 'Text'         , 10.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -304,10 +318,10 @@ SELECT v.* FROM (VALUES
     ,('019ebb6c-a70d-7e39-90a8-44445eb22257', 40, 4 , 'Status'             , 'ls_status'                 , 'Text'         , 12.00 , NULL , 'Center', true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ebb6c-a70d-7e68-9eab-09ac05e2fb6c', 40, 5 , 'Active'             , 'ls_is_active'              , 'Boolean'      , 10.00 , NULL , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ dropdown master (id 41) ============
-    ,('019ebbe1-7123-7f70-ae79-5e4ee32ac4db', 41, 1 , 'Id'                 , 'dropdown_id'               , 'Text'         , NULL  , 1.00 , 'left'  , true , false, false, false, NULL, NULL, NULL, 'dropdown_id'          , false, 'system')
+    ,('019ebbe1-7123-7f70-ae79-5e4ee32ac4db', 41, 1 , 'Id'                 , 'dropdown_id'               , 'Text'         , NULL  , 1.00 , 'left'  , true , true , false, false, NULL, NULL, NULL, 'dropdown_id'          , false, 'system')
     ,('019ebbe1-7125-721b-b381-5640a171f672', 41, 2 , 'Dropdown name'      , 'dropdown_name'             , 'Text'         , NULL  , 2.00 , 'left'  , true , false, false, false, NULL, NULL, NULL, 'dropdown_name'        , false, 'system')
     ,('019ebbe1-7125-79e3-83bd-0d61e78b7fb4', 41, 3 , 'Order'              , 'dropdown_sort_order'       , 'Text'         , NULL  , 3.00 , 'left'  , true , false, false, false, NULL, NULL, NULL, 'dropdown_sort_order'  , false, 'system')
-    -- ============ DROPDOWN LIST (id 43) ============
+    -- ============ MAIN LIST - DROPDOWN (id 43) ============
     ,('019ebfeb-010f-7ec9-aa1d-cce5de05d189', 43, 1 , '#'                  , 'dropdown_id'               , 'Text'         , 3.00  , 1.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ebfeb-0110-7a0d-be45-39499640729d', 43, 2 , 'Dropdown Name'      , 'dropdown_name'             , 'Text'         , 15.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ebfeb-0111-722e-b506-b88655251289', 43, 3 , 'Device Type'        , 'dropdown_device_type'      , 'Text'         , 14.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -318,7 +332,7 @@ SELECT v.* FROM (VALUES
     ,('019ec123-40c5-7fe2-90ef-9e255cf9de33', 44, 2 , 'Name'               , 'tnd_name'                  , 'Text'         , NULL  , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ec123-40c6-7e11-8c8c-1f56cc0d7a98', 44, 3 , 'Short'              , 'tnd_short_name'            , 'Text'         , NULL  , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ec123-40c7-79bd-9e60-e64afc52305e', 44, 4 , 'Active'             , 'tnd_is_active'             , 'Boolean'      , NULL  , 4.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
-    -- ============ ITEM UNIT MAIN LIST (id 45) ============
+    -- ============ MAIN LIST - ITEM UNIT (id 45) ============
     ,('019ec9b4-1f05-723b-80f9-74128f3936a0', 45, 1 , '#'                  , 'unit_id'                   , 'Text'         , 10.00 , 1.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ec9b4-1f06-7e35-aef0-7badc95d20cc', 45, 2 , 'Unit Name'          , 'unit_name'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ec9b4-1f07-7863-ac28-b413374c449a', 45, 3 , 'GST Unit'           , 'unit_code'                 , 'Text'         , 10.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -337,7 +351,7 @@ SELECT v.* FROM (VALUES
     ,('019ed056-cf76-7ee2-bdf2-e4d3880fa16c', 47, 3 , 'Section Name'       , 'section_gui_name'          , 'Text'         , 19.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ed056-cf78-7045-82de-0a4d56bc524f', 47, 4 , 'Position'           , 'section_position'          , 'Text'         , 22.00 , 4.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ed056-cf78-7e63-adf3-62b04e727389', 47, 5 , 'Visibility'         , 'section_visibility'        , 'Text'         , 15.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ ITEM GROUPS MAIN LIST (id 48) ============
+    -- ============ MAIN LIST - ITEM GROUPS (id 48) ============
     ,('019ed8fb-ba71-7dd0-a4f7-eda1dc2b0918', 48, 1 , '#'                  , 'itg_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ed8fb-ba73-75c4-8fbb-d35ba9460eae', 48, 2 , 'Group Name'         , 'itg_name'                  , 'Text'         , 22.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ed8fb-ba74-7029-9b2c-b96d1f7d1b27', 48, 3 , 'Short'              , 'itg_short'                 , 'Text'         , 10.00 , 3.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -346,7 +360,7 @@ SELECT v.* FROM (VALUES
     ,('019ed8fb-ba75-7c72-9613-f0f0d1475630', 48, 6 , 'Parent Group'       , 'itg_parent_id'             , 'Text'         , 10.00 , 6.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ed8fb-ba76-75c5-8646-9c72036f8877', 48, 7 , 'Position'           , 'itg_sort'                  , 'Text'         , 13.00 , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ed8fb-ba76-7f71-94db-755f4bd2299d', 48, 8 , 'Active'             , 'itg_is_active'             , 'Text'         , 10.00 , 8.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ ITEM BRAND MAIN LIST (id 49) ============
+    -- ============ MAIN LIST - ITEM BRAND (id 49) ============
     ,('019edacd-a582-74d9-8742-14ff42b9fa5d', 49, 1 , '#'                  , 'brand_id'                  , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019edacd-a583-7253-97e4-60f79eb1b96c', 49, 2 , 'Brand Name'         , 'brand_name'                , 'Text'         , 17.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019edacd-a583-7bfa-89e2-e42b03d846bf', 49, 3 , 'Short Name'         , 'brand_short'               , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -354,7 +368,7 @@ SELECT v.* FROM (VALUES
     ,('019edacd-a584-7e95-a6be-06c9e110fe66', 49, 5 , 'Description'        , 'brand_description'         , 'Text'         , 28.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019edacd-a585-75dc-9706-247536356294', 49, 6 , 'Position'           , 'brand_sort'                , 'Text'         , 10.00 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019edacd-a585-7e0c-a45f-fe9ea2ec1200', 49, 7 , 'Active'             , 'brand_is_active'           , 'Text'         , 10.00 , 7.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ ITEM SECTION MAIN LIST (id 50) ============
+    -- ============ MAIN LIST - ITEM SECTION (id 50) ============
     ,('019edfc0-06fa-77ae-8eab-49a4dc17efd1', 50, 1 , '#'                  , 'sec_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019edfc0-06fb-7482-bdbb-a7c4a9ad744d', 50, 2 , 'Short'              , 'sec_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019edfc0-06fb-7e1e-82fd-068269300d9d', 50, 3 , 'Section Name'       , 'sec_name'                  , 'Text'         , 20.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -362,7 +376,7 @@ SELECT v.* FROM (VALUES
     ,('019edfc0-06fc-7ecc-b690-188dc6780636', 50, 5 , 'Description'        , 'sec_description'           , 'Text'         , 31.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019edfc0-06fd-764d-90fd-66ced09fec8a', 50, 6 , 'Position'           , 'sec_sort'                  , 'Text'         , 10.00 , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019edfc0-06fd-7d82-9e42-8db3df8f1a07', 50, 7 , 'Active'             , 'sec_is_active'             , 'Text'         , 10.00 , 7.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ ITEM CATEGORY MAIN LIST (id 51) ============
+    -- ============ MAIN LIST - ITEM CATEGORY (id 51) ============
     ,('019ee36b-8246-7411-b92b-dac25104ba89', 51, 1 , '#'                  , 'category_id'               , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ee36b-8247-7d78-a482-e063ef7145c5', 51, 2 , 'Short'              , 'category_short'            , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ee36b-8248-7764-9d17-9ba846a13f8b', 51, 3 , 'Category Name'      , 'category_name'             , 'Text'         , 21.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -370,7 +384,7 @@ SELECT v.* FROM (VALUES
     ,('019ee36b-8249-77dc-ba23-b59a709c1594', 51, 5 , 'Description'        , 'category_description'      , 'Text'         , 29.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ee36b-8249-7f50-823a-01f59ddd9ea1', 51, 6 , 'Position'           , 'category_sort'             , 'Text'         , 10.00 , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ee36b-824a-7745-a86b-ab40610077b8', 51, 7 , 'Active'             , 'category_is_active'        , 'Text'         , 10.00 , 7.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ COMPANYS MAIN LIST (id 52) ============
+    -- ============ MAIN LIST - COMPANYS (id 52) ============
     ,('019ee3b3-395e-7623-abb5-382a32f04135', 52, 1 , '#'                  , 'comp_id'                   , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ee3b3-395f-7398-afe7-efd6c369fe7f', 52, 2 , 'Code'               , 'comp_code'                 , 'Text'         , 5.00  , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ee3b3-395f-7cbb-8129-954b1584db74', 52, 3 , 'Short'              , 'comp_short'                , 'Text'         , 7.00  , 3.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -380,7 +394,7 @@ SELECT v.* FROM (VALUES
     ,('019ee3b3-3961-7ed1-a8ad-3936f5578ec3', 52, 7 , 'GST Type'           , 'comp_gst_reg_type'         , 'Text'         , 12.00 , 7.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ee3b3-3962-762d-92ce-64dd1251e0fd', 52, 8 , 'State Name'         , 'comp_state'                , 'Text'         , 10.00 , 8.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ee3b3-3962-7f54-8d85-21145edde1c9', 52, 9 , 'Active'             , 'comp_is_active'            , 'Text'         , 5.00  , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ ACCOUNT GROUP MAIN LIST (id 53) ============
+    -- ============ MAIN LIST - ACCOUNT GROUP (id 53) ============
     ,('019eef5a-c270-7770-aeec-bd2e9c8d9c53', 53, 1 , '#'                  , 'acc_group_id'              , 'Text'         , 10.00 , 1.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eef5a-c272-710f-bae8-ae2bcbd61837', 53, 2 , 'Code'               , 'acc_group_short'           , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eef5a-c272-7d83-8c20-28f18261a40c', 53, 3 , 'Group Name'         , 'acc_group_name'            , 'Text'         , 18.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -390,7 +404,7 @@ SELECT v.* FROM (VALUES
     ,('019eef5a-c275-7a25-99dc-4c03b7f6c142', 53, 7 , 'Position'           , 'acc_group_sort'            , 'Text'         , 13.00 , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eef5a-c276-73d9-bdf0-b6bc8742df19', 53, 8 , 'Type'               , 'acc_group_type'            , 'Text'         , 10.00 , 8.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019eef5a-c276-7eab-87c6-065bb48f7d19', 53, 9 , 'Reserved'           , 'acc_group_is_reserved'     , 'Text'         , 10.00 , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ LEDGER MAIN LIST (id 54) ============
+    -- ============ MAIN LIST - LEDGERS (id 54) ============
     ,('019ef2d4-e070-7e81-b5cf-d6de6b055b6a', 54, 1 , '#'                  , 'led_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef2d4-e072-7b5a-a920-9037f062db5b', 54, 2 , 'Short'              , 'led_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef2d4-e073-767a-bf10-528a046c8fac', 54, 3 , 'Ledger Name'        , 'led_name'                  , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -401,7 +415,7 @@ SELECT v.* FROM (VALUES
     ,('019ef2d4-e076-7f8c-b10f-03d68c926bb2', 54, 8 , 'Tel No'             , 'led_tel'                   , 'Text'         , 10.00 , 8.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef2d4-e077-7c86-b758-ab440d5ed3c9', 54, 9 , 'City'               , 'led_city'                  , 'Text'         , 40.00 , 9.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef2d4-e078-757e-829c-8d11d54d5fc9', 54, 10, 'Active'             , 'led_is_active'             , 'Text'         , 10.00 , 10.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ GODOWN MAIN LIST (id 55) ============
+    -- ============ MAIN LIST - GODOWNS (id 55) ============
     ,('019ef9ce-a872-7592-b364-219b6abadf99', 55, 1 , '#'                  , 'gdl_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef9ce-a873-7397-8396-c2bb2370032c', 55, 2 , 'Code'               , 'gdl_code'                  , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef9ce-a873-7d0c-88d3-5ec99c909228', 55, 3 , 'Godown'             , 'gdl_name'                  , 'Text'         , 18.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -410,7 +424,7 @@ SELECT v.* FROM (VALUES
     ,('019ef9ce-a875-75b4-953e-eac47a67b89f', 55, 6 , 'Level'              , 'gdl_level'                 , 'Text'         , 10.00 , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef9ce-a875-7cf1-ae31-e1263b46021e', 55, 7 , 'Under'              , 'parent_name'               , 'Text'         , 10.00 , 7.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef9ce-a876-742a-8226-0c64b6032627', 55, 8 , 'Active'             , 'gdl_is_active'             , 'Text'         , 10.00 , 8.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ BRANCH MAIn LIST (id 56) ============
+    -- ============ MAIN LIST - BRANCHES (id 56) ============
     ,('019ef9ea-f960-7a5e-899c-09a933808e65', 56, 1 , '#'                  , 'br_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef9ea-f961-7b73-bd90-c94f59024e74', 56, 2 , 'Company'            , 'comp_name'                 , 'Text'         , 11.00 , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef9ea-f962-751c-9989-d26907cbcbc6', 56, 3 , 'Code'               , 'br_code'                   , 'Text'         , 10.00 , 3.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -423,14 +437,14 @@ SELECT v.* FROM (VALUES
     ,('019ef9ea-f966-704f-a501-1656d1aa4a4d', 56, 10, 'Phone'              , 'br_phone'                  , 'Text'         , 10.00 , 10.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef9ea-f966-7798-9854-032ea8ece7a4', 56, 11, 'Default'            , 'br_is_default'             , 'Text'         , 10.00 , 11.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019ef9ea-f966-7fd5-98ca-be95450f169d', 56, 12, 'Active'             , 'br_is_active'              , 'Text'         , 10.00 , 12.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ STATE MAIN LIST (id 57) ============
+    -- ============ MAIN LIST - CUSTOMER STATES (id 57) ============
     ,('019f07d3-a1df-7487-90ad-a745d72955c7', 57, 1 , '#'                  , 'stm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d3-a1e0-7d2f-9d64-1d566dec2cff', 57, 2 , 'State Name'         , 'stm_name'                  , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d3-a1e1-77cd-85a0-880d8196b641', 57, 3 , 'Short'              , 'stm_short'                 , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d3-a1e2-7187-8be1-2e263eb81d33', 57, 4 , 'Alias Name'         , 'stm_alias'                 , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d3-a1e2-7bc0-b4b3-0fae4ecfbb61', 57, 5 , 'Position'           , 'stm_order'                 , 'Text'         , 10.00 , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d3-a1e3-75b4-89c1-740267f607c8', 57, 6 , 'Active'             , 'stm_is_active'             , 'Text'         , 10.00 , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ CITY MAIN LIST (id 58) ============
+    -- ============ MAIN LIST - CUSTOMER CITES (id 58) ============
     ,('019f07d8-77da-72b6-bfaf-7999896e2092', 58, 1 , '#'                  , 'ctm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d8-77db-704c-916a-693f5a369e87', 58, 2 , 'City Name'          , 'ctm_name'                  , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d8-77db-7b20-8bfc-d7b3eae60402', 58, 3 , 'Short'              , 'ctm_short'                 , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -438,7 +452,7 @@ SELECT v.* FROM (VALUES
     ,('019f07d8-77dc-7e6a-8003-ed2d1892fbc7', 58, 5 , 'State Name'         , 'stm_name'                  , 'Text'         , 10.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d8-77dd-78ea-8cf4-50d627647255', 58, 6 , 'Position'           , 'ctm_order'                 , 'Text'         , 10.00 , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07d8-77de-7604-b097-ebb38814bb5f', 58, 7 , 'Active'             , 'ctm_is_active'             , 'Text'         , 10.00 , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ AREA MAIN LIST (id 59) ============
+    -- ============ MAIN LIST - CUSTOMER AREAS (id 59) ============
     ,('019f07e0-5849-7544-884d-17f4d16c6ad5', 59, 1 , '#'                  , 'arm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07e0-584a-7306-8344-28a1bacf472c', 59, 2 , 'Area Name'          , 'arm_name'                  , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f07e0-584a-7ca3-8563-0a1bb2881866', 59, 3 , 'Short'              , 'arm_short'                 , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -452,14 +466,14 @@ SELECT v.* FROM (VALUES
     ,('019f11f3-9597-7dd6-84cb-c858e2ae591f', 60, 2 , 'Type'               , 'saa_addr_type'             , 'Text'         , NULL  , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f11f3-9598-7685-9ff4-e1a8fd75043c', 60, 3 , 'Sort'               , 'saa_sort'                  , 'Text'         , NULL  , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f11f3-9599-71ab-8270-9e83e621a4b7', 60, 4 , 'Id'                 , 'saa_id'                    , 'Text'         , NULL  , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ SUPPLIER GROUP MAIN LIST (id 61) ============
+    -- ============ MAIN LIST - SUPPLIER GROUPS (id 61) ============
     ,('019f16cf-41f6-724c-bf7d-66a94e30fe18', 61, 1 , '#'                  , 'spg_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f16cf-41f7-77dd-bc7b-21cb6d897983', 61, 2 , 'Supplier Group'     , 'spg_name'                  , 'Text'         , 26.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f16cf-41f8-7206-ac54-9dd148e69057', 61, 3 , 'Short'              , 'spg_short'                 , 'Text'         , 22.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f16cf-41f8-7aba-979b-0c0bb56a5b47', 61, 4 , 'Alias Name'         , 'spg_alias'                 , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f16cf-41f9-72da-bee9-785af64ff858', 61, 5 , 'Notes'              , 'spg_desc'                  , 'Text'         , 36.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f16cf-41f9-7c5f-bfcf-28d191dd9e4d', 61, 6 , 'Active'             , 'spg_is_active'             , 'Text'         , 10.00 , 6.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ USERS MAIN LIST (id 62) ============
+    -- ============ MAIN LIST - COMPUTER USERS (id 62) ============
     ,('019f172f-f947-7c65-8c2d-c06ce2dd0b54', 62, 1 , '#'                  , 'usr_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f172f-f948-794d-a7ae-68f96e384e42', 62, 2 , 'Login Name'         , 'usr_login_name'            , 'Text'         , 17.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f172f-f949-7290-9f93-b14bbed00fae', 62, 3 , 'Display Name'       , 'usr_display_name'          , 'Text'         , 10.00 , 3.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -469,7 +483,7 @@ SELECT v.* FROM (VALUES
     ,('019f172f-f94b-7296-90be-be5ef95eeeb7', 62, 7 , 'Active'             , 'usr_is_active'             , 'Text'         , 10.00 , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f172f-f94b-7954-bea2-38830bdc66f5', 62, 8 , 'Locked'             , 'usr_is_locked'             , 'NumberTS'     , 10.00 , 8.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f172f-f94c-7058-9d2f-2163ec406caf', 62, 9 , 'Last Login'         , 'usr_last_login_on'         , 'DateTime'     , 10.00 , 9.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ SUPPLIER MAIN LIST (id 63) ============
+    -- ============ MAIN LIST - SUPPLIERS (id 63) ============
     ,('019f1774-ff5b-7c23-a2ad-6ec62620572c', 63, 1 , '#'                  , 'sup_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1774-ff5c-7d9f-87c2-ab8acac87162', 63, 2 , 'Short'              , 'sup_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1774-ff5d-78e4-8f7b-52e5b3189781', 63, 3 , 'Supplier Name'      , 'sup_name'                  , 'Text'         , 19.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -484,11 +498,11 @@ SELECT v.* FROM (VALUES
     ,('019f1c42-7419-79e0-9cc6-f6d34d62b9fc', 64, 1 , 'Id'                 , 'config_id'                 , 'Text'         , NULL  , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1c42-741b-763d-9a7a-e2feb949e675', 64, 2 , 'Name'               , 'config_name'               , 'Text'         , NULL  , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1c42-741c-7f38-a050-18cccacadddb', 64, 3 , 'Value'              , 'config_value'              , 'Text'         , NULL  , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ CUSTOMER MAIN LIST (id 65) ============
+    -- ============ MAIN LIST - CUSTOMERS (id 65) ============
     ,('019f1c8d-2c5a-7c99-b830-c3f237f72aa7', 65, 1 , '#'                  , 'cus_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1c8d-2c5b-7b78-a088-ea64028b79a8', 65, 2 , 'Short'              , 'cus_short'                 , 'Text'         , 42.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f1c8d-2c5c-7622-bd4a-34181a31f1a9', 65, 3 , 'Customer Name'      , 'cus_name'                  , 'Text'         , 90.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ CUSTOMER GROUP MAIN LIST (id 66) ============
+    -- ============ MAIN LIST - CUSTOMER GROUPS (id 66) ============
     ,('019f2134-2c19-79bc-bd51-c84a83f629c0', 66, 1 , '#'                  , 'cgr_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f2134-2c1d-7365-bafe-4c92dfd36f84', 66, 2 , 'Short'              , 'cgr_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f2134-2c1d-7dc3-9d5b-b4302858f334', 66, 3 , 'Group Name'         , 'cgr_name'                  , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -496,7 +510,7 @@ SELECT v.* FROM (VALUES
     ,('019f2134-2c1f-702d-a80f-fc145a8d7690', 66, 5 , 'Notes'              , 'cgr_narration'             , 'Text'         , 10.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f2134-2c1f-78c2-81fe-2a3c4d72072d', 66, 6 , 'Position'           , 'cgr_order'                 , 'Text'         , 10.00 , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f2134-2c20-7146-90cb-a1804d2fbe8a', 66, 7 , 'Active'             , 'cgr_is_active'             , 'Text'         , 10.00 , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ ITEM MAIN LIST (id 67) ============
+    -- ============ MAIN LIST - ITEMS (id 67) ============
     ,('019f264f-5796-7e50-83c7-d1227ef4ed75', 67, 1 , '#'                  , 'item_id'                   , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f264f-579a-7127-89df-65e76a00e877', 67, 2 , 'Code'               , 'item_code'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f264f-579a-7b16-bc47-88e3aaf4ddf8', 67, 3 , 'English Name'       , 'item_name_en'              , 'Text'         , 25.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -519,13 +533,13 @@ SELECT v.* FROM (VALUES
     -- ============ POPUP - COMPANYS (id 72) ============
     ,('019f6acc-9104-70ef-ac6f-c4b9c25a019f', 72, 1 , '#'                  , 'comp_id'                   , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f6acc-9106-761a-816c-164ddff82860', 72, 2 , 'Company'            , 'comp_name'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ EMP DEPARTMENT MAIN LIST (id 73) ============
+    -- ============ MAIN LIST - EMP DEPARTMENTS (id 73) ============
     ,('019f7efe-f98d-74bf-8f77-adbc22b34249', 73, 1 , '#'                  , 'edpt_id'                   , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f7efe-f98e-7ac7-9ef4-312b58f1e4ba', 73, 2 , 'Code'               , 'edpt_code'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f7efe-f98f-7596-b638-63d80581dfdf', 73, 3 , 'Department Name'    , 'edpt_name'                 , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f7efe-f98f-7e76-99f7-86b5a05fa357', 73, 4 , 'Alias Name'         , 'edpt_alias'                , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f7efe-f990-76fc-88d9-4338ab2cdcd5', 73, 5 , 'Remarks'            , 'edpt_remarks'              , 'Text'         , 10.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ FREIGHT CHARGES MAIN LIST (id 74) ============
+    -- ============ MAIN LIST - FREIGHT CHARGES (id 74) ============
     ,('019f8305-508a-793a-a5fe-91bcd688fd50', 74, 1 , '#'                  , 'fr_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f8305-508c-78ce-9061-a9da5cb23cf3', 74, 2 , 'Branch'             , 'br_name'                   , 'Text'         , 10.00 , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f8305-508d-76e9-82df-942d5f1f0f31', 74, 3 , 'Company'            , 'comp_name'                 , 'Text'         , 10.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -535,13 +549,13 @@ SELECT v.* FROM (VALUES
     ,('019f8305-5090-7ae8-bb3d-e03d3a4ca404', 74, 7 , 'To Weight'          , 'fr_to_weight'              , 'Text'         , 10.00 , 7.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f8305-5091-779e-9a0f-6aed1b4904ab', 74, 8 , 'Freight'            , 'fr_freight_chrg'           , 'Text'         , 10.00 , 8.00 , 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f8305-5092-725e-8d01-3fab1eaab0e9', 74, 9 , 'Active'             , 'fr_is_active'              , 'Text'         , 10.00 , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ EMP DESIGNATIONS MAIN LIST (id 75) ============
+    -- ============ MAIN LIST - EMP DESIGNATIONS (id 75) ============
     ,('019f830f-d3ac-79ad-9c87-f162633a8b1e', 75, 1 , '#'                  , 'ed_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f830f-d3ad-7927-9eda-5e7ff75f05eb', 75, 2 , 'Code'               , 'ed_code'                   , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f830f-d3ae-7485-b454-716122769198', 75, 3 , 'Desination'         , 'ed_name'                   , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f830f-d3af-719c-9339-4d95718516af', 75, 4 , 'Notes'              , 'ed_remarks'                , 'Text'         , 10.00 , 4.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f830f-d3af-7dd1-b514-71bdb1e6d93d', 75, 5 , 'Active'             , 'ed_is_active'              , 'Text'         , 10.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ LOADING CHARGES MAIN LIST (id 76) ============
+    -- ============ MAIN LIST - LOADING CHARGES (id 76) ============
     ,('019f8331-40d2-7dc5-9e7e-5db949b8b076', 76, 1 , '#'                  , 'ilc_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f8331-40d3-7cbd-8e90-248162cb0b8a', 76, 2 , 'Company'            , 'comp_name'                 , 'Text'         , 13.00 , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f8331-40d4-75ee-ac3e-8775e7ee7f8f', 76, 3 , 'Branch'             , 'br_name'                   , 'Text'         , 15.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -550,7 +564,7 @@ SELECT v.* FROM (VALUES
     ,('019f8331-40d6-7171-aea6-6dacc0e9260d', 76, 6 , 'Loading Charge'     , 'ilc_load_chrg'             , 'Text'         , 10.00 , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f8331-40d6-79a5-a0dc-7de89895decd', 76, 7 , 'UnLoading Charge'   , 'ilc_unload_chrg'           , 'Text'         , 10.00 , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f8331-40d7-7282-9ad3-96705b1821f2', 76, 8 , 'Active'             , 'ilc_is_active'             , 'Text'         , 10.00 , 8.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ EMPLOYEES MAIN LIST (id 77) ============
+    -- ============ MAIN LIST - EMPLOYEES (id 77) ============
     ,('019f837e-d6de-7303-8636-2c0948594a63', 77, 1 , '#'                  , 'emp_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f837e-d6df-70ea-bf70-ea27bfb28d1a', 77, 2 , 'Code'               , 'emp_code'                  , 'Text'         , 10.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f837e-d6df-7ae4-aece-f2e57ee0723a', 77, 3 , 'Employee'           , 'emp_name'                  , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -585,11 +599,11 @@ SELECT v.* FROM (VALUES
     ,('019f9300-92f5-7f47-9630-260348710320', 80, 13, 'Charge Tax Apl'     , 'chg_tax_apl'               , 'Text'         , NULL  , 13.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ CHARGES MAIN LIST (id 81) ============
     ,('019f9363-55dc-7df3-9c33-5d95fdf49fe1', 81, 1 , '#'                  , 'chg_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f9363-55de-73ab-801c-58724397d277', 81, 2 , 'Module'             , 'chg_module'                , 'Text'         , 6.00  , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f9363-55de-7dbb-9ed4-05d875df5d24', 81, 3 , 'Code'               , 'chg_code'                  , 'Text'         , 5.00  , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f9363-55df-769e-8a16-59b1ec73594a', 81, 4 , 'Charge Name'        , 'chg_name'                  , 'Text'         , 17.00 , 4.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f9363-55df-7f41-ade0-e013dd7a1cde', 81, 5 , 'Role'               , 'chg_role'                  , 'Text'         , 9.00  , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f9363-55e0-7707-af80-bf6b27e5369a', 81, 6 , 'Method'             , 'chg_method'                , 'Text'         , 8.00  , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019f9363-55de-73ab-801c-58724397d277', 81, 2 , 'Module'             , 'chg_module'                , 'Text'         , 38.00 , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019f9363-55de-7dbb-9ed4-05d875df5d24', 81, 3 , 'Code'               , 'chg_code'                  , 'Text'         , 26.13 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019f9363-55df-769e-8a16-59b1ec73594a', 81, 4 , 'Charge Name'        , 'chg_name'                  , 'Text'         , 29.00 , 4.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019f9363-55df-7f41-ade0-e013dd7a1cde', 81, 5 , 'Role'               , 'chg_role'                  , 'Text'         , 33.88 , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019f9363-55e0-7707-af80-bf6b27e5369a', 81, 6 , 'Method'             , 'chg_method'                , 'Text'         , 21.13 , 6.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f9363-55e0-7e99-a3da-0caa3ddfaede', 81, 7 , 'Type'               , 'chg_type'                  , 'Text'         , 9.00  , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f9363-55e1-7680-b34d-395731fdfafe', 81, 8 , 'Def.Rate'           , 'chg_default_rate'          , 'Text'         , 10.00 , 8.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f9363-55e1-7dd9-899c-183b035ea819', 81, 9 , 'Ledger'             , 'led_name'                  , 'Text'         , 13.00 , 9.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -599,7 +613,7 @@ SELECT v.* FROM (VALUES
     -- ============ POPUP - CHARGE MASTER (id 82) ============
     ,('019fa1dd-b87f-792d-a89f-668cc4316648', 82, 1 , '#'                  , 'chg_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fa1dd-b880-7f00-abe1-04b356debf42', 82, 2 , 'Charge Name'        , 'chg_name'                  , 'Text'         , 10.00 , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ QUOTATION - MAIN LIST (id 83) ============
+    -- ============ TXN MAIN LIST - QUOTATION (id 83) ============
     ,('019fb17c-e192-7a15-85d5-30fc921e5597', 83, 1 , '#'                  , 'sq_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb17c-e199-7aed-bd4a-6d4a3dc2d966', 83, 2 , 'Comp#'              , 'sq_company_id'             , 'Text'         , 10.00 , 2.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb17c-e19a-7786-a041-7fe8960faa11', 83, 3 , 'Branch#'            , 'sq_branch_id'              , 'Text'         , 10.00 , 3.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -624,11 +638,11 @@ SELECT v.* FROM (VALUES
     ,('019fb17c-e1a6-7912-bf68-8be1a957fe28', 83, 22, 'sq_cancelled_on'    , 'sq_cancelled_on'           , 'Text'         , 10.00 , 21.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     ,('019fb17c-e1a7-703d-9447-6c7f8631ce0e', 83, 23, 'sq_cancelled_on'    , 'sq_cancelled_on'           , 'Text'         , 10.00 , 22.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
     -- ============ Quotation (id 84) ============
-    ,('019fb2b9-c873-78eb-b266-f75a4b631329', 84, 1 , '#'                  , 'sq_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019fb2b9-c873-78eb-b266-f75a4b631329', 84, 1 , '#'                  , 'sq_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c874-7855-83ed-ac40245ed264', 84, 2 , 'Comp#'              , 'sq_company_id'             , 'Text'         , 10.00 , 2.00 , 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c875-7244-a03c-53cee8fda544', 84, 3 , 'Branch#'            , 'sq_branch_id'              , 'Text'         , 10.00 , 3.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c875-7ce5-af09-95affdad6957', 84, 4 , 'Year'               , 'sq_acc_year'               , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019fb2b9-c876-77de-8568-2cd2bf6e4c8a', 84, 5 , 'Date'               , 'sq_quote_date'             , 'Text'         , 33.01 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019fb2b9-c876-77de-8568-2cd2bf6e4c8a', 84, 5 , 'Date'               , 'sq_quote_date'             , 'Text'         , 22.13 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c877-721c-932e-63b904ed5c14', 84, 6 , 'Quote No'           , 'sq_quote_refno'            , 'Text'         , 25.18 , 6.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c877-7b87-bf04-3bda57b39346', 84, 7 , 'Ref No'             , 'sq_usr_refno'              , 'Text'         , 10.00 , 7.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c878-7407-ada0-345d7b4ac268', 84, 8 , 'Customer'           , 'sq_cust_name'              , 'Text'         , 20.54 , 8.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -644,7 +658,7 @@ SELECT v.* FROM (VALUES
     ,('019fb2b9-c87d-7e63-ac9b-0630e796b912', 84, 18, 'Deleted'            , 'sq_is_deleted'             , 'Text'         , 10.00 , 18.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c87e-75ef-96ed-ee1d93159d36', 84, 19, 'Doc#'               , 'sq_converted_doc_id'       , 'Text'         , 10.00 , 19.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fb2b9-c87e-7f23-9381-4996cb4d0443', 84, 20, 'Cancelled On'       , 'sq_cancelled_on'           , 'Text'         , 10.00 , 20.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ TENDERS - MAIN LIST (id 85) ============
+    -- ============ MAIN LIST - TENDERS (id 85) ============
     ,('019fbbcd-97f1-7bf0-8e8d-b76c13d27a51', 85, 1 , '#'                  , 'tnd_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fbbcd-97f3-74c5-a190-e8b622c90d6b', 85, 2 , 'Position'           , 'tnd_display_position'      , 'Text'         , 5.00  , 2.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fbbcd-97f3-7f14-8a98-11a267b575df', 85, 3 , 'Tender Name'        , 'tnd_name'                  , 'Text'         , 12.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -657,7 +671,7 @@ SELECT v.* FROM (VALUES
     ,('019fbbcd-97f7-7978-9a15-785cb1f12eb6', 85, 10, 'Company'            , 'tnd_company_name'          , 'Text'         , 10.00 , 10.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fbbcd-97f8-7076-a1cb-37c7840cad9f', 85, 11, 'Branch'             , 'tnd_branch_name'           , 'Text'         , 10.00 , 11.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fbbcd-97f8-77ea-8b65-ced9373df3e2', 85, 12, 'Active'             , 'tnd_is_active'             , 'Text'         , 10.00 , 12.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ BILLS - MAIN LIST (id 86) ============
+    -- ============ TXN MAIN LIST - BILLS (id 86) ============
     ,('019fd02d-008c-7097-b672-8f743a0ade0e', 86, 1 , '#'                  , 'sb_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fd02d-008f-79bd-bcce-3260c9dc6692', 86, 2 , 'Comp#'              , 'sb_company_id'             , 'Text'         , 10.00 , 2.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fd02d-0090-727a-9c22-cada24196d45', 86, 3 , 'Branch#'            , 'sb_branch_id'              , 'Text'         , 10.00 , 3.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -672,14 +686,14 @@ SELECT v.* FROM (VALUES
     ,('019fd02d-0094-7d4a-9cb1-0d821e8d7b47', 86, 12, 'Status'             , 'sb_status'                 , 'Text'         , 7.00  , 12.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fd02d-0095-7477-9c84-e4a4140c85f8', 86, 13, 'Prints'             , 'sb_print_count'            , 'Text'         , 6.00  , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019fd02d-0095-7ced-95fa-ae8514eeb898', 86, 14, 'By'                 , 'sb_created_by'             , 'Text'         , 10.00 , 14.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    -- ============ SO - MAIN LIST (id 87) ============
+    -- ============ TXN MAIN LIST - SALES ORDER (id 87) ============
     ,('019feac1-bb92-7438-a784-7be9689d97db', 87, 1 , '#'                  , 'so_id'                     , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb93-7a20-be81-e6a04d09fc94', 87, 2 , 'Comp#'              , 'so_company_id'             , 'Text'         , 10.00 , 2.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb94-767b-b95e-ba3e340d8c87', 87, 3 , 'Branch#'            , 'so_branch_id'              , 'Text'         , 10.00 , 3.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb95-7120-a3df-0d1ee808db39', 87, 4 , 'Year#'              , 'so_acc_year'               , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019feac1-bb95-7bf4-b33a-f5c19ef4a8c1', 87, 5 , 'Date'               , 'so_order_date'             , 'Text'         , 12.00 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019feac1-bb96-75ac-96ad-61e7d1380e7b', 87, 6 , 'Order No'           , 'so_order_refno'            , 'Text'         , 18.50 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019feac1-bb96-7f59-9235-dcedb888d591', 87, 7 , 'Type'               , 'so_order_type'             , 'Text'         , 10.00 , 7.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019feac1-bb95-7bf4-b33a-f5c19ef4a8c1', 87, 5 , 'Date'               , 'so_order_date'             , 'Text'         , 58.38 , 5.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019feac1-bb96-75ac-96ad-61e7d1380e7b', 87, 6 , 'Order No'           , 'so_order_refno'            , 'Text'         , 42.50 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019feac1-bb96-7f59-9235-dcedb888d591', 87, 7 , 'Type'               , 'so_order_type'             , 'Text'         , 56.38 , 7.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb97-7777-bf9e-16aa421d13a5', 87, 8 , 'Customer'           , 'cus_name'                  , 'Text'         , 33.00 , 8.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb97-7f98-add5-2ac79b41de51', 87, 9 , 'Place'              , 'cus_addr3'                 , 'Text'         , 14.00 , 9.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb98-7858-8cc0-df69a27d0839', 87, 10, 'Items'              , 'so_tot_items'              , 'Text'         , 10.00 , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
@@ -687,6 +701,186 @@ SELECT v.* FROM (VALUES
     ,('019feac1-bb99-77bd-aead-c8319173da11', 87, 12, 'Status'             , 'so_status'                 , 'Text'         , 33.00 , 12.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb99-7f37-8715-7a4fc854e604', 87, 13, 'Print'              , 'so_print_count'            , 'Text'         , 10.00 , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019feac1-bb9a-764c-923f-39e139b05973', 87, 14, 'By'                 , 'so_created_by'             , 'Text'         , 16.00 , 14.00, 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ POPUP - CUST AREAS (id 88) ============
+    ,('01a0322f-d992-7a25-88fb-767e98512188', 88, 1 , '#'                  , 'arm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a0322f-d99a-7a3b-8e28-0de575532813', 88, 2 , 'Code'               , 'arm_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a0322f-d99b-7561-822b-68192f9c8eeb', 88, 3 , 'Area Name'          , 'arm_name'                  , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a0322f-d99b-7ef0-be58-700394c45a09', 88, 4 , 'Area Name'          , 'arm_alias'                 , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ POPUP - CUST CITIES (id 89) ============
+    ,('01a03231-8986-716d-aab7-b26b40d14140', 89, 1 , '#'                  , 'ctm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03231-8986-7c46-b4ec-d2852b7cccee', 89, 2 , 'Code'               , 'ctm_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03231-8987-74f3-809c-6d07444edc96', 89, 3 , 'City Name'          , 'ctm_name'                  , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03231-8987-7c3e-8cdd-eca791a18124', 89, 4 , 'City Name'          , 'ctm_alias'                 , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ POPUP - ITEM GROUPS (id 90) ============
+    ,('01a03233-b29d-7f2d-bae9-2b8fd83819c4', 90, 1 , '#'                  , 'itg_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03233-b29f-79c1-84aa-3b3975e7dc0b', 90, 2 , 'Code'               , 'itg_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03233-b2a0-79ea-a4b8-95e5e2f98e84', 90, 3 , 'Group Name'         , 'itg_name'                  , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03233-b2a1-7a14-be02-bcc2d32f90a6', 90, 4 , 'Group Name'         , 'itg_alias'                 , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ POPUP - ITEM BRANDS (id 91) ============
+    ,('01a03235-adc3-7faa-a114-aa1e930806c1', 91, 1 , '#'                  , 'brand_id'                  , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03235-adc4-7ad4-aa28-108482ab8d43', 91, 2 , 'Code'               , 'brand_short'               , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03235-adc5-7833-9831-984b7c65d862', 91, 3 , 'Brand Name'         , 'brand_name'                , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03235-adc6-7232-ab11-28efee22892b', 91, 4 , 'Brand Name'         , 'brand_alias'               , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ POPUP - ITEM CATEGORY (id 92) ============
+    ,('01a03237-5b08-7f9a-b118-d4f43d543d03', 92, 1 , '#'                  , 'category_id'               , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03237-5b09-7bd1-8c09-9e0c65c4f505', 92, 2 , 'Code'               , 'category_short'            , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03237-5b0a-750a-b294-6eb5b588b1aa', 92, 3 , 'Category Name'      , 'category_name'             , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03237-5b0a-7cb8-ada9-42a13276ea52', 92, 4 , 'Category Name'      , 'category_alias'            , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ POPUP - ITEM SECTIONS (id 93) ============
+    ,('01a03239-12e1-7d84-b2bd-ff53b412ebec', 93, 1 , '#'                  , 'sec_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03239-12e2-77e9-92d1-54b84e37b108', 93, 2 , 'Code'               , 'sec_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03239-12e3-7116-86ed-716a65715268', 93, 3 , 'Section Name'       , 'sec_name'                  , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03239-12e3-7914-9c9a-46af62162b3c', 93, 4 , 'Section Name'       , 'sec_alias'                 , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ POPUP - CUST GROUPS (id 94) ============
+    ,('01a03240-c066-742b-b03f-83656892fe1e', 94, 1 , '#'                  , 'cgr_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03240-c067-7b53-bf2c-6b69b068e39a', 94, 2 , 'Code'               , 'cgr_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03240-c068-760e-b1f3-234589e46813', 94, 3 , 'Group Name'         , 'cgr_name'                  , 'Text'         , 10.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03240-c069-7152-8801-9708400c8370', 94, 4 , 'Group Name'         , 'cgr_alias'                 , 'Text'         , 10.00 , 4.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    -- ============ MAIN LIST - PROMOTION SCHEMES (id 95) ============
+    ,('01a03348-a80d-7275-b428-e9e7ec3f0c18', 95, 1 , '#'                  , 'prm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3703-76d9-8173-fc19e323c9d3', 95, 1 , '#'                  , 'prm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c3-7ad7-8802-d9b21bd0e2da', 95, 1 , '#'                  , 'prm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0460-792e-bf55-cd0106fa2960', 95, 1 , '#'                  , 'prm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aae7-75a1-a95c-0998c699ff2a', 95, 1 , '#'                  , 'prm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f62-7ed4-adbb-ab075276e2dd', 95, 1 , '#'                  , 'prm_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a80e-713d-91b3-1c20c9faf87f', 95, 2 , 'Code'               , 'prm_code'                  , 'Text'         , 8.00  , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3704-729e-8f52-8c0e719c1a11', 95, 2 , 'Code'               , 'prm_code'                  , 'Text'         , 8.00  , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c4-742c-abd9-7327e89a70b2', 95, 2 , 'Code'               , 'prm_code'                  , 'Text'         , 8.00  , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0461-7552-b7b7-dd76b32f110b', 95, 2 , 'Code'               , 'prm_code'                  , 'Text'         , 8.00  , 2.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aae7-7f1b-992e-cbe6570b2582', 95, 2 , 'Code'               , 'prm_code'                  , 'Text'         , 8.00  , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f63-78d5-97f0-8a93bbd6689a', 95, 2 , 'Code'               , 'prm_code'                  , 'Text'         , 7.00  , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a80e-7aed-bd92-ba1c2f436eaf', 95, 3 , 'Scheme'             , 'prm_name'                  , 'Text'         , 18.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3704-7aee-9c02-492885850488', 95, 3 , 'Scheme'             , 'prm_name'                  , 'Text'         , 18.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c4-7c71-9eea-775fc84b5284', 95, 3 , 'Scheme'             , 'prm_name'                  , 'Text'         , 18.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0461-7d23-bb7f-89816168d7f4', 95, 3 , 'Scheme'             , 'prm_name'                  , 'Text'         , 18.00 , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aae8-77ae-b379-affee410f735', 95, 3 , 'Scheme'             , 'prm_name'                  , 'Text'         , 18.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f64-7453-9819-5580e48de57b', 95, 3 , 'Scheme'             , 'prm_name'                  , 'Text'         , 16.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a80f-72e0-a8a1-50f2d1d0df26', 95, 4 , 'State'              , 'prm_state'                 , 'Text'         , 7.00  , 4.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3705-72e6-8ed5-3b5ddbedc49f', 95, 4 , 'State'              , 'prm_state'                 , 'Text'         , 7.00  , 4.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c5-73b5-807b-fe04db2963f4', 95, 4 , 'State'              , 'prm_state'                 , 'Text'         , 7.00  , 4.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0462-7455-ba64-28db684418a2', 95, 4 , 'State'              , 'prm_state'                 , 'Text'         , 7.00  , 4.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aae8-7e76-90d3-e0f9a0a34c34', 95, 4 , 'State'              , 'prm_state'                 , 'Text'         , 7.00  , 4.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f65-711c-bc6c-655171ec44d7', 95, 4 , 'State'              , 'prm_state'                 , 'Text'         , 7.00  , 4.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a80f-7a32-b0a9-e97f7b4b7917', 95, 5 , 'Status'             , 'prm_status'                , 'Text'         , 7.00  , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3705-7ae0-b6bc-b4d2f3a59976', 95, 5 , 'Status'             , 'prm_status'                , 'Text'         , 7.00  , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c5-7ad2-b3b8-fdb858039c9d', 95, 5 , 'Status'             , 'prm_status'                , 'Text'         , 7.00  , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0462-7b30-827f-566820ce6969', 95, 5 , 'Status'             , 'prm_status'                , 'Text'         , 7.00  , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aae9-750c-ba71-33ff630b2149', 95, 5 , 'Status'             , 'prm_status'                , 'Text'         , 7.00  , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f65-7b3a-b271-9a776a499839', 95, 5 , 'Status'             , 'prm_status'                , 'Text'         , 7.00  , 5.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a810-71a7-9e68-a7c06975eaf9', 95, 6 , 'Offer'              , 'prm_offer'                 , 'Text'         , 14.00 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3706-7325-901f-ae2c52625892', 95, 6 , 'Offer'              , 'prm_offer'                 , 'Text'         , 14.00 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c6-71f2-9208-0d8965cdc008', 95, 6 , 'Offer'              , 'prm_offer'                 , 'Text'         , 14.00 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0463-71bf-a14c-0d4996dbea4c', 95, 6 , 'Offer'              , 'prm_offer'                 , 'Text'         , 14.00 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aae9-7b92-aa5a-279ea3d0b8b8', 95, 6 , 'Offer'              , 'prm_offer'                 , 'Text'         , 14.00 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f67-779e-ab3b-ace9f8e0d1bf', 95, 6 , 'Offer'              , 'prm_offer'                 , 'Text'         , 14.00 , 6.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a810-78e1-bbd6-9010c7a792a7', 95, 7 , 'Pri'                , 'prm_priority'              , 'Number'       , 4.00  , 7.00 , 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3706-7ae1-a35d-b3ae46245187', 95, 7 , 'Pri'                , 'prm_priority'              , 'Number'       , 4.00  , 7.00 , 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c6-7913-b764-f7a5cbd81789', 95, 7 , 'Pri'                , 'prm_priority'              , 'Number'       , 4.00  , 7.00 , 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0463-783e-8a98-3f59828a6a9c', 95, 7 , 'Pri'                , 'prm_priority'              , 'Number'       , 4.00  , 7.00 , 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaea-7232-9fab-fa92a7ff902a', 95, 7 , 'Pri'                , 'prm_priority'              , 'Number'       , 4.00  , 7.00 , 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f68-773e-9cf5-c6ac7c2ee9e6', 95, 7 , 'Pri'                , 'prm_priority'              , 'Number'       , 4.00  , 7.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a810-7fc3-bebb-80bebe3b97b2', 95, 8 , 'Stacking'           , 'prm_stack_mode'            , 'Text'         , 10.00 , 8.00 , 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3707-71a9-bed9-c2494c064061', 95, 8 , 'Stacking'           , 'prm_stack_mode'            , 'Text'         , 10.00 , 8.00 , 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c6-7fe9-a83e-5976f7169d17', 95, 8 , 'Stacking'           , 'prm_stack_mode'            , 'Text'         , 10.00 , 8.00 , 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0464-70f2-8aeb-74d7bbf84c0d', 95, 8 , 'Stacking'           , 'prm_stack_mode'            , 'Text'         , 10.00 , 8.00 , 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaea-78d8-8dd6-a232a52074d4', 95, 8 , 'Stacking'           , 'prm_stack_mode'            , 'Text'         , 10.00 , 8.00 , 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f69-7286-a624-e33bb5585b2d', 95, 8 , 'Stacking'           , 'prm_stack_mode'            , 'Text'         , 10.00 , 8.00 , 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a811-770e-af6b-620b00f88413', 95, 9 , 'From'               , 'prm_start_date'            , 'Date'         , 7.00  , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3707-78d5-a41e-ca845d2eaab2', 95, 9 , 'From'               , 'prm_start_date'            , 'Date'         , 7.00  , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c7-76ff-b367-f221b7c208ab', 95, 9 , 'From'               , 'prm_start_date'            , 'Date'         , 7.00  , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0464-7759-b9a5-f51262a5bf6f', 95, 9 , 'From'               , 'prm_start_date'            , 'Date'         , 7.00  , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaea-7f6f-bbce-4c5b985370ca', 95, 9 , 'From'               , 'prm_start_date'            , 'Date'         , 7.00  , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f69-7dff-a2ba-f5e2c71a48c0', 95, 9 , 'From'               , 'prm_start_date'            , 'Date'         , 7.00  , 9.00 , 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a811-7eb9-a765-6326678dc47f', 95, 10, 'To'                 , 'prm_end_date'              , 'Date'         , 7.00  , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3707-7fbb-8f0f-7328a272a3f2', 95, 10, 'To'                 , 'prm_end_date'              , 'Date'         , 7.00  , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c7-7e51-916a-35d1f0111f9f', 95, 10, 'To'                 , 'prm_end_date'              , 'Date'         , 7.00  , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0464-7dd3-af5a-6b4082eec16d', 95, 10, 'To'                 , 'prm_end_date'              , 'Date'         , 7.00  , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaeb-7627-8e1e-5fb2cc42b041', 95, 10, 'To'                 , 'prm_end_date'              , 'Date'         , 7.00  , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6a-768f-ba3c-9a21a774af60', 95, 10, 'To'                 , 'prm_end_date'              , 'Date'         , 7.00  , 10.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a812-7543-ab9f-158591d67c18', 95, 11, 'Time'               , 'prm_time_window'           , 'Text'         , 10.00 , 11.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3708-766d-b412-e42e6058baef', 95, 11, 'Time'               , 'prm_time_window'           , 'Text'         , 10.00 , 11.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c8-7512-af3d-8d90b58fe079', 95, 11, 'Time'               , 'prm_time_window'           , 'Text'         , 10.00 , 11.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0465-7433-b927-3efd4873cb0d', 95, 11, 'Time'               , 'prm_time_window'           , 'Text'         , 10.00 , 11.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaeb-7d19-90f2-c59732f77818', 95, 11, 'Time'               , 'prm_time_window'           , 'Text'         , 10.00 , 11.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6b-7090-bce1-97906a00ad56', 95, 11, 'Time'               , 'prm_time_window'           , 'Text'         , 10.00 , 11.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a812-7ba7-8209-0623489bc440', 95, 12, 'Days'               , 'prm_valid_weekdays'        , 'Text'         , 10.00 , 12.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3708-7dba-8d37-a586063c3a09', 95, 12, 'Days'               , 'prm_valid_weekdays'        , 'Text'         , 10.00 , 12.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c8-7eaa-a80f-8d90f4b037c6', 95, 12, 'Days'               , 'prm_valid_weekdays'        , 'Text'         , 10.00 , 12.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0465-7b03-aecd-096d10bf29c4', 95, 12, 'Days'               , 'prm_valid_weekdays'        , 'Text'         , 10.00 , 12.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaec-73de-830d-48d4611994cd', 95, 12, 'Days'               , 'prm_valid_weekdays'        , 'Text'         , 10.00 , 12.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6b-791d-8ec3-e2f9d2d0f663', 95, 12, 'Days'               , 'prm_valid_weekdays'        , 'Text'         , 10.00 , 12.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a813-723e-8653-711d83d181da', 95, 13, 'Branches'           , 'prm_branch_count'          , 'Text'         , 6.00  , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3709-74bc-8bb0-71c0e8687a19', 95, 13, 'Branches'           , 'prm_branch_count'          , 'Text'         , 6.00  , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c9-75a6-a6ea-555f2ba01a28', 95, 13, 'Branches'           , 'prm_branch_count'          , 'Text'         , 6.00  , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0466-71d3-b57c-0426eb2467da', 95, 13, 'Branches'           , 'prm_branch_count'          , 'Text'         , 6.00  , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaec-7a41-aa01-1169255003c2', 95, 13, 'Branches'           , 'prm_branch_count'          , 'Text'         , 6.00  , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6c-7309-99cf-47eabfc29f56', 95, 13, 'Branches'           , 'prm_branch_count'          , 'Text'         , 6.00  , 13.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a813-7931-ba56-fe0960ba4c4c', 95, 14, 'Customers'          , 'prm_cust_count'            , 'Text'         , 6.00  , 14.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-3709-7b45-99ff-8e5531668d63', 95, 14, 'Customers'          , 'prm_cust_count'            , 'Text'         , 6.00  , 14.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88c9-7c63-a8a0-51bb51151984', 95, 14, 'Customers'          , 'prm_cust_count'            , 'Text'         , 6.00  , 14.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0466-7848-a539-a52587606d38', 95, 14, 'Customers'          , 'prm_cust_count'            , 'Text'         , 6.00  , 14.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaed-72a9-a466-9f823adbc65c', 95, 14, 'Customers'          , 'prm_cust_count'            , 'Text'         , 6.00  , 14.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6c-7ba8-863b-9ee660123ded', 95, 14, 'Customers'          , 'prm_cust_count'            , 'Text'         , 6.00  , 14.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a813-7fec-8a4c-f49e626c0544', 95, 15, 'Items'              , 'prm_item_count'            , 'Text'         , 6.00  , 15.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370a-7310-8c47-654b77c6504d', 95, 15, 'Items'              , 'prm_item_count'            , 'Text'         , 6.00  , 15.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88ca-7364-98bc-4a1728b869ae', 95, 15, 'Items'              , 'prm_item_count'            , 'Text'         , 6.00  , 15.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0466-7eb2-a124-c89d4aad8e41', 95, 15, 'Items'              , 'prm_item_count'            , 'Text'         , 6.00  , 15.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaed-79dd-8a74-102c081283d1', 95, 15, 'Items'              , 'prm_item_count'            , 'Text'         , 6.00  , 15.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6d-7335-bad6-a8c0e2661a23', 95, 15, 'Items'              , 'prm_item_count'            , 'Text'         , 6.00  , 15.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a814-76e6-a730-882435dfe04a', 95, 16, 'Bands'              , 'prm_band_count'            , 'Number'       , 5.00  , 16.00, 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370a-79e8-8859-3aaab2c311db', 95, 16, 'Bands'              , 'prm_band_count'            , 'Number'       , 5.00  , 16.00, 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88ca-7a30-8ec7-ea05b15613a5', 95, 16, 'Bands'              , 'prm_band_count'            , 'Number'       , 5.00  , 16.00, 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0467-752b-b369-bf1b594efeb7', 95, 16, 'Bands'              , 'prm_band_count'            , 'Number'       , 5.00  , 16.00, 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaee-715c-8bf8-56f2cc422b9a', 95, 16, 'Bands'              , 'prm_band_count'            , 'Number'       , 5.00  , 16.00, 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6d-7d2e-b29a-a5b8bcb1b22d', 95, 16, 'Bands'              , 'prm_band_count'            , 'Number'       , 5.00  , 16.00, 'Right' , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a814-7e91-8cfc-173c3d179d7d', 95, 17, 'Budget'             , 'prm_budget_amount'         , 'NumericTS'    , 10.00 , 17.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370b-71fe-9545-f5d6ab282018', 95, 17, 'Budget'             , 'prm_budget_amount'         , 'NumericTS'    , 10.00 , 17.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88cb-7118-93f1-b0b8a03d71d0', 95, 17, 'Budget'             , 'prm_budget_amount'         , 'NumericTS'    , 10.00 , 17.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0467-7b81-823e-e92154ce0747', 95, 17, 'Budget'             , 'prm_budget_amount'         , 'NumericTS'    , 10.00 , 17.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaee-796a-b10a-61e4d80c8d3d', 95, 17, 'Budget'             , 'prm_budget_amount'         , 'NumericTS'    , 10.00 , 17.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6e-749c-a2fe-437719f56fae', 95, 17, 'Budget'             , 'prm_budget_amount'         , 'NumericTS'    , 10.00 , 17.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a815-754c-9bf3-9c9e1eb878fe', 95, 18, 'Max/Bill'           , 'prm_max_benefit_per_bill'  , 'NumericTS'    , 10.00 , 18.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370b-79dc-bc10-bc15c0f3fb1a', 95, 18, 'Max/Bill'           , 'prm_max_benefit_per_bill'  , 'NumericTS'    , 10.00 , 18.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88cb-7897-98bb-12c606c3bed1', 95, 18, 'Max/Bill'           , 'prm_max_benefit_per_bill'  , 'NumericTS'    , 10.00 , 18.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0468-71e1-acc4-1d03eb266a54', 95, 18, 'Max/Bill'           , 'prm_max_benefit_per_bill'  , 'NumericTS'    , 10.00 , 18.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaef-71c8-9cc2-ba4a18175ca0', 95, 18, 'Max/Bill'           , 'prm_max_benefit_per_bill'  , 'NumericTS'    , 10.00 , 18.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6e-7dca-ae4e-4402ad52e627', 95, 18, 'Max/Bill'           , 'prm_max_benefit_per_bill'  , 'NumericTS'    , 10.00 , 18.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a815-7c72-a1e9-3aac01c1a3ae', 95, 19, 'Max Uses'           , 'prm_max_uses_total'        , 'Number'       , 10.00 , 19.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370c-70c3-9e06-ba2255fb4623', 95, 19, 'Max Uses'           , 'prm_max_uses_total'        , 'Number'       , 10.00 , 19.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88cb-7f97-ad12-7a49999a6372', 95, 19, 'Max Uses'           , 'prm_max_uses_total'        , 'Number'       , 10.00 , 19.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0468-784d-961a-b2f955d4f9d4', 95, 19, 'Max Uses'           , 'prm_max_uses_total'        , 'Number'       , 10.00 , 19.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaef-789e-a460-7ad662c46596', 95, 19, 'Max Uses'           , 'prm_max_uses_total'        , 'Number'       , 10.00 , 19.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6f-7787-986b-de84778c0921', 95, 19, 'Max Uses'           , 'prm_max_uses_total'        , 'Number'       , 10.00 , 19.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a816-731a-b146-45dd12d6335d', 95, 20, 'Max/Cust'           , 'prm_max_uses_per_cust'     , 'Number'       , 10.00 , 20.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370c-7815-ba49-708dfe1622ca', 95, 20, 'Max/Cust'           , 'prm_max_uses_per_cust'     , 'Number'       , 10.00 , 20.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88cc-7678-a408-5845af6308bf', 95, 20, 'Max/Cust'           , 'prm_max_uses_per_cust'     , 'Number'       , 10.00 , 20.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0468-7fd9-9c94-ede4cae28b51', 95, 20, 'Max/Cust'           , 'prm_max_uses_per_cust'     , 'Number'       , 10.00 , 20.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaf0-70ba-9307-2cee18b0ded5', 95, 20, 'Max/Cust'           , 'prm_max_uses_per_cust'     , 'Number'       , 10.00 , 20.00, 'Right' , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f6f-7fcb-b839-5db8d955dcce', 95, 20, 'Max/Cust'           , 'prm_max_uses_per_cust'     , 'Number'       , 10.00 , 20.00, 'Center', false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a816-7962-93fb-6f17a6fa2ad7', 95, 21, 'Company'            , 'prm_company_name'          , 'Text'         , 10.00 , 21.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370c-7eb3-b969-690dee17ae64', 95, 21, 'Company'            , 'prm_company_name'          , 'Text'         , 10.00 , 21.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88cc-7d5b-9db0-b6fb4af24424', 95, 21, 'Company'            , 'prm_company_name'          , 'Text'         , 10.00 , 21.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0469-7634-97a0-305f8276c149', 95, 21, 'Company'            , 'prm_company_name'          , 'Text'         , 10.00 , 21.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaf0-77c5-a088-1e99e909315f', 95, 21, 'Company'            , 'prm_company_name'          , 'Text'         , 10.00 , 21.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f70-78d7-bf83-04b75d86e617', 95, 21, 'Company'            , 'prm_company_name'          , 'Text'         , 10.00 , 21.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a817-7013-b239-ccab258e12c0', 95, 22, 'Branch'             , 'prm_branch_name'           , 'Text'         , 10.00 , 22.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370d-7529-b522-58229d0c84f3', 95, 22, 'Branch'             , 'prm_branch_name'           , 'Text'         , 10.00 , 22.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88cd-743a-9779-68bd56b481a6', 95, 22, 'Branch'             , 'prm_branch_name'           , 'Text'         , 10.00 , 22.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-0469-7cc6-b4c4-37592842974f', 95, 22, 'Branch'             , 'prm_branch_name'           , 'Text'         , 10.00 , 22.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaf0-7e89-97e5-d0ad67b15b0d', 95, 22, 'Branch'             , 'prm_branch_name'           , 'Text'         , 10.00 , 22.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f71-7233-beb0-ac2709471427', 95, 22, 'Branch'             , 'prm_branch_name'           , 'Text'         , 10.00 , 22.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a817-76b8-a8ba-e84313226844', 95, 23, 'Remarks'            , 'prm_remarks'               , 'Text'         , 10.00 , 23.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370d-7b95-b422-3eeb8883e57a', 95, 23, 'Remarks'            , 'prm_remarks'               , 'Text'         , 10.00 , 23.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88cd-7ae3-a318-f800e9b62e4d', 95, 23, 'Remarks'            , 'prm_remarks'               , 'Text'         , 10.00 , 23.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-046a-72fc-911f-70fccf72015f', 95, 23, 'Remarks'            , 'prm_remarks'               , 'Text'         , 10.00 , 23.00, 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaf1-7597-abe0-7d5f197b0010', 95, 23, 'Remarks'            , 'prm_remarks'               , 'Text'         , 10.00 , 23.00, 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f71-7a50-8eae-0fd8f9c93a3a', 95, 23, 'Remarks'            , 'prm_remarks'               , 'Text'         , 10.00 , 23.00, 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('01a03348-a817-7dd5-8d9c-d9bcb37097a2', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-370e-7215-bcb8-2d3d44c790a6', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334a-88ce-71db-90b7-f7798019ad04', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334b-046a-794b-91cd-a526ab6861ff', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334c-aaf1-7d15-9388-420f4e17e70d', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , true , 'system')
+    ,('01a0334d-6f72-7288-94de-5920ebc27f29', 95, 24, 'Active'             , 'prm_is_active'             , 'Boolean'      , 5.00  , 24.00, 'Center', true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
 ) AS v(grid_column_id, grid_id, grid_column_number, grid_column_name, grid_column_sql_field_name, grid_column_data_type, grid_column_width, grid_column_position, grid_column_alignment, grid_column_visibility, grid_column_filter, grid_column_group, grid_column_total, grid_column_color, grid_column_condition, grid_column_condition_color, grid_column_notes, grid_column_is_deleted, grid_column_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.grid_columns existing

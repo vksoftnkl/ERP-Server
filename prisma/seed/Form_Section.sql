@@ -1,4 +1,4 @@
--- Seed: fixed.form_section -- the widget-master tabs of each entry form (47 rows).
+-- Seed: fixed.form_section -- the widget-master tabs of each entry form (44 rows).
 --
 -- One row per group of fields on a screen ("Primary details", "Credit details", ...).
 -- Together with fixed.form_field (Form_Field.sql) this is what the widget master edits
@@ -27,12 +27,9 @@ INSERT INTO fixed.form_section
     (section_id, section_menu_id, section_name, section_gui_name, section_position, section_visibility, section_platform, section_created_by)
 SELECT v.* FROM (VALUES
     -- ============ Customers (id 10) ============
-     (25::integer, 10::integer, 'Customer'::text, 'Primary details'::text, 1::integer, true::boolean, 'Web'::varchar, 'system'::text)
-    ,(26, 10 , 'Customers'                , 'Basic details'    , 2, true, 'Web'    , 'system')
-    ,(31, 10 , 'customers'                , 'Credit details'   , 3, true, 'Web'    , 'system')
-    ,(34, 10 , 'Customers'                , 'Tax Details'      , 4, true, 'Web'    , 'system')
-    ,(29, 10 , 'Customer'                 , 'Region Details'   , 5, true, 'Web'    , 'system')
-    ,(36, 10 , 'Customers'                , 'Status and Notes' , 6, true, 'Web'    , 'system')
+     (66::integer, 10::integer, 'Customer-identify'::text, 'Identify'::text, 1::integer, true::boolean, 'Web'::varchar, 'system'::text)
+    ,(67, 10 , 'customer-notes'           , 'Notes'            , 2, true, 'Web'    , 'system')
+    ,(68, 10 , 'Customers-Region details' , 'Region Details'   , 3, true, 'Web'    , 'system')
     -- ============ Quotation (id 14) ============
     ,(61, 14 , 'Quoation'                 , 'Quoation entry'   , 1, true, 'Web'    , 'system')
     ,(65, 14 , 'Quotation-terms'          , 'Terms'            , 2, true, 'Web'    , 'system')

@@ -74,22 +74,10 @@
     },
     {
       "file": "Acc_Voucher_Types.sql",
-      "description": "accounts.acc_voucher_types — all document series; runs before the three single-type seeds and before Acc_Voucher_Seq_Sale_Bill.sql"
+      "description": "accounts.acc_voucher_types — all document series; runs before Acc_Voucher_Seq_Sale_Bill.sql"
     },
     { "file": "Hsn_Master.sql", "description": "fixed.hsn_master — GST HSN/SAC codes" },
     { "file": "Bank_Master.sql", "description": "fixed.bank_master — Indian banks" },
-    {
-      "file": "Acc_Voucher_Types_Sale_Bill.sql",
-      "description": "accounts.acc_voucher_types — voucher type 22 (Bil)"
-    },
-    {
-      "file": "Acc_Voucher_Types_Sale_Order.sql",
-      "description": "accounts.acc_voucher_types — sales order voucher type"
-    },
-    {
-      "file": "Acc_Voucher_Types_Order_Advance_Receipt.sql",
-      "description": "accounts.acc_voucher_types — order advance receipt voucher type"
-    },
     {
       "file": "Acc_Voucher_Seq_Sale_Bill.sql",
       "description": "accounts.acc_voucher_seq — counter row; joins the voucher type above, plus the company/branch masters, so it must run after them and stays 'always' (it inserts nothing until those rows exist)"

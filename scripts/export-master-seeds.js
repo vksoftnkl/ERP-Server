@@ -10,7 +10,7 @@
  *   Item_Gst_Units.sql        inventory.item_gst_units      (GST UQC list)
  *   Stock_Adjust_Reasons.sql  fixed.stock_adj_reasons
  *   Acc_Tender_Types.sql      accounts.acc_tender_types
- *   Acc_Voucher_Type.sql      accounts.acc_voucher_types
+ *   Acc_Voucher_Types.sql     accounts.acc_voucher_types
  *   Account_Groups.sql        accounts.acc_group_master      (reserved chart of accounts)
  *
  * Small, slow-moving lists that transactions point at: a sale bill picks a price
@@ -238,7 +238,7 @@ const TABLES = [
     ],
   },
   {
-    file: 'Acc_Voucher_Type.sql',
+    file: 'Acc_Voucher_Types.sql',
     table: 'accounts.acc_voucher_types',
     orderBy: 'vchr_type_id',
     // Untargeted ON CONFLICT: the table carries uq_acc_voucher_types_code and
@@ -257,11 +257,9 @@ const TABLES = [
       '-- vchr_no_prefix / _suffix / _width into the counter row as a format snapshot. Editing',
       '-- a type later therefore never rewrites numbers already issued.',
       '--',
-      '-- This file supersedes the three single-type seeds kept alongside it',
-      '-- (Acc_Voucher_Types_Sale_Bill / _Sale_Order / _Order_Advance_Receipt): it runs first',
-      '-- in the manifest, so those turn into no-ops. They are left in place because each one',
-      '-- documents the reasoning behind its row, and because they still add their type to a',
-      '-- database seeded before this export existed.',
+      '-- This file replaced the three single-type seeds that used to sit alongside it',
+      '-- (Acc_Voucher_Types_Sale_Bill / _Sale_Order / _Order_Advance_Receipt), which are now',
+      '-- deleted: every type they carried is in the VALUES list below.',
       '--',
       '-- The enum columns (vchr_category, vchr_nature, vchr_numbering_mode, vchr_reset_freq)',
       '-- are cast to their accounts."..." enum types on the first row; PostgreSQL resolves',

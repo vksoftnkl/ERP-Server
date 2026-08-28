@@ -6,18 +6,21 @@
 -- vchr_no_prefix / _suffix / _width into the counter row as a format snapshot. Editing
 -- a type later therefore never rewrites numbers already issued.
 --
--- This file supersedes the three single-type seeds kept alongside it
--- (Acc_Voucher_Types_Sale_Bill / _Sale_Order / _Order_Advance_Receipt): it runs first
--- in the manifest, so those turn into no-ops. They are left in place because each one
--- documents the reasoning behind its row, and because they still add their type to a
--- database seeded before this export existed.
+-- This file replaced the three single-type seeds that used to sit alongside it
+-- (Acc_Voucher_Types_Sale_Bill / _Sale_Order / _Order_Advance_Receipt), which are now
+-- deleted: every type they carried is in the VALUES list below.
 --
 -- The enum columns (vchr_category, vchr_nature, vchr_numbering_mode, vchr_reset_freq)
 -- are cast to their accounts."..." enum types on the first row; PostgreSQL resolves
 -- the rest of the VALUES list from it.
 --
--- Idempotent: ON CONFLICT (vchr_type_id) DO NOTHING, and the setval keeps the sequence
--- past the seeded ids.
+-- Idempotent: ON CONFLICT DO NOTHING with no target, so a row already present under
+-- ANY unique key -- vchr_type_id, vchr_type_code or vchr_type_name -- is left exactly
+-- as it is. That matters because a database seeded from Acc_Voucher_Types_Sale_Bill.sql
+-- carries Sales Bill as id 22: the id 3 row below is skipped there, the existing 22 is
+-- kept (acc_vouchers, acc_voucher_seq and acc_bill_balance all point at it), and only
+-- the types actually missing are inserted. The setval then keeps the sequence past
+-- whatever the highest id turns out to be.
 -- Regenerate with: npm run seed:export:masters
 -- Run: psql "$DATABASE_URL" -f prisma/seed/Acc_Voucher_Types.sql
 --      or: npm run seed:run -- --only=Acc_Voucher_Types.sql
@@ -32,7 +35,7 @@ VALUES
     ,(3, 'Bil', 'Sales Bill'           , 'Bil', 'BOTH'      , 'SALES'        , 'AUTO'  , 'bil', ''  , 5 , 'YEARLY', false, true , true , false, false, 'TAX INVOICE'    , 300, true, true , 'Sales'  , 'Sales'  , 'system')
     ,(4, 'SOr', 'Sales Order'          , 'SOr', 'INVENTORY' , 'SALES'        , 'AUTO'  , 'sor', ''  , 5 , 'YEARLY', false, false, true , false, false, 'SALES ORDER'    , 250, true, false, NULL     , NULL     , 'system')
     ,(5, 'ARc', 'Order Advance Receipt', 'ARc', 'ACCOUNTING', 'RECEIPT'      , 'AUTO'  , 'arc', ''  , 5 , 'YEARLY', false, true , false, false, false, 'ADVANCE RECEIPT', 260, true, true , 'Receipt', 'Receipt', 'system')
-ON CONFLICT (vchr_type_id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- Keep the identity sequence ahead of the seeded ids, so the next row created from
 -- the UI does not collide with one of them.

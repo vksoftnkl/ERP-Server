@@ -1,4 +1,4 @@
--- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (128 rows).
+-- Seed: fixed.dropdown_columns -- the column layout of every configured lookup popup (134 rows).
 --
 -- Runs after Dropdown_Details.sql -- dropdown_columns_dropdown_id is a foreign key
 -- into it, ON DELETE CASCADE.
@@ -190,6 +190,14 @@ SELECT v.* FROM (VALUES
     -- ============ INDIAN BANKS LIST (id 46) ============
     ,('019fcbd2-6554-73cc-a08d-6ba8fec791cd', 46, 0, '#'                   , 'bnk_name'          , NULL                  , 'Text', 10.00 , 'Left', false, false, 'system')
     ,('019fcbd2-6554-7db6-842a-e1d000077b77', 46, 1, 'Name'                , 'bnk_name'          , NULL                  , 'Text', 100.00, 'Left', true , true , 'system')
+    -- ============ PRINT PURPOSES (id 47) ============
+    ,('01a04345-0e1a-7a92-b83d-afbf321bce1a', 47, 0, '#'                   , 'ppo_id'            , NULL                  , 'Text', 10.00 , 'Left', false, false, 'system')
+    ,('01a04345-0e1b-74a8-b2d1-cc868b3c4593', 47, 1, 'Code'                , 'ppo_code'          , NULL                  , 'Text', 30.00 , 'Left', true , true , 'system')
+    ,('01a04345-0e1b-7c83-beca-c6e82a17abee', 47, 2, 'Purpose'             , 'ppo_name'          , NULL                  , 'Text', 100.00, 'Left', true , true , 'system')
+    ,('01a04345-0e1c-735d-9987-06337f83b50a', 47, 3, 'Module'              , 'ppo_src_module'    , NULL                  , 'Text', 30.00 , 'Left', true , true , 'system')
+    -- ============ PRINT PURPOSES - DESKTOP (id 48) ============
+    ,('01a04345-4501-720d-be0d-5e9ac70cf4e4', 48, 0, '#'                   , 'ppo_id'            , NULL                  , 'Text', 10.00 , 'Left', false, false, 'system')
+    ,('01a04345-4501-7cc4-b8f3-a0b893685c36', 48, 1, 'Code'                , 'ppo_code'          , NULL                  , 'Text', 100.00, 'Left', true , true , 'system')
 ) AS v(dropdown_columns_id, dropdown_columns_dropdown_id, dropdown_columns_no, dropdown_columns_name, dropdown_columns_sql_name, dropdown_columns_alias, dropdown_columns_data_type, dropdown_columns_width, dropdown_columns_allignment, dropdown_columns_visiblity, dropdown_columns_filter, dropdown_columns_created_by)
 WHERE NOT EXISTS (
   SELECT 1 FROM fixed.dropdown_columns existing
