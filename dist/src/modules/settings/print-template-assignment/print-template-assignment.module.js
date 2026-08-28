@@ -20,6 +20,7 @@ exports.PrintTemplateAssignmentModule = PrintTemplateAssignmentModule = __decora
         imports: [audit_log_module_1.AuditLogModule],
         controllers: [print_template_assignment_controller_1.PrintTemplateAssignmentController],
         providers: [print_template_assignment_service_1.PrintTemplateAssignmentService, print_template_assignment_exception_filter_1.PrintTemplateAssignmentExceptionFilter],
+        exports: [print_template_assignment_service_1.PrintTemplateAssignmentService],
     })
 ], PrintTemplateAssignmentModule);
 //# sourceMappingURL=print-template-assignment.module.js.map

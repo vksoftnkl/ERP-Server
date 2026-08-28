@@ -8,5 +8,6 @@ export declare class PgService implements OnModuleDestroy {
     constructor(configService: ConfigService);
     query<T extends QueryResultRow = QueryResultRow>(text: string, params?: readonly unknown[]): Promise<QueryResult<T>>;
     queryReadOnly<T extends QueryResultRow = QueryResultRow>(text: string, params?: readonly unknown[]): Promise<QueryResult<T>>;
+    queryReadOnlyTx<T extends QueryResultRow = QueryResultRow>(text: string, params: readonly unknown[] | undefined, timeoutMs: number): Promise<QueryResult<T>>;
     onModuleDestroy(): Promise<void>;
 }

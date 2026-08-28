@@ -35,7 +35,7 @@ const getDefaultDevCorsOrigins = (): string[] => [
   'http://127.0.0.1:3000',
   'https://127.0.0.1:3000',
   'https://192.168.0.101:3001',
-  'https://localhost:3001'
+  'https://localhost:3001',
 ];
 const resolveFilePath = (filePath: string): string => {
   const isPkgRuntime = Boolean((process as NodeJS.Process & { pkg?: unknown }).pkg);
@@ -152,6 +152,36 @@ async function bootstrap(): Promise<void> {
     app.enableCors({
       origin: allowAnyCorsOrigin ? true : corsOrigins,
       credentials: corsCredentials,
+      /*
+       * Response headers a cross-origin caller may READ.
+       *
+       * Without this list a browser hands the page the body and hides every
+       * header that is not one of the six CORS-safelisted ones — so a render's
+       * own account of itself (which revision drew it, how many pages came out,
+       * whether anything went wrong) reads as null in exactly the setup
+       * developers work in: client on :3000, API on :3011. In production nginx
+       * puts both behind one origin and the question never arises, which is the
+       * worst way for a header contract to be wrong — it works everywhere
+       * except where it is being written.
+       *
+       * `Content-Disposition` is here for the same reason: it carries the
+       * filename a print is saved under, and a download that loses its name
+       * cross-origin is a bug nobody sees until someone works off localhost.
+       */
+      exposedHeaders: [
+        'Content-Disposition',
+        'X-Print-Template-Id',
+        'X-Print-Version-Id',
+        'X-Print-Rev-No',
+        'X-Print-Output-Mode',
+        'X-Print-Pages',
+        'X-Print-Copies',
+        'X-Print-Warnings',
+        'X-Print-Log-Ids',
+        'X-Print-Scope',
+        // Set by HttpCacheInterceptor on every cacheable route.
+        'X-Cache',
+      ],
     });
   }
   app.useGlobalPipes(

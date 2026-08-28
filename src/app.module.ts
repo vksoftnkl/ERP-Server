@@ -77,6 +77,7 @@ import { ChargeDetailModule } from './modules/master/charge-detail/charge-detail
 import { PromotionLoyaltyPointsModule } from './modules/sales/loyalty/promotion-loyalty-points.module';
 import { PromotionSchemeModule } from './modules/sales/promotion-scheme/promotion-scheme.module';
 import { PrintTemplateAssignmentModule } from './modules/settings/print-template-assignment/print-template-assignment.module';
+import { PrintRenderModule } from './modules/settings/print-render/print-render.module';
 // import { OpeningStockModule } from './modules/stocks/opening-stock/opening-stock.module';
 import { PhysicalStockModule } from './modules/stocks/physical-stock/physical-stock.module';
 import { ItemStockBalanceModule } from './modules/stocks/itemstockbalance/itemStockBalanceModule';
@@ -206,6 +207,7 @@ const isThrottlerEnabled = parseBoolean(process.env.THROTTLE_ENABLED, true);
     PromotionLoyaltyPointsModule,
     PromotionSchemeModule,
     PrintTemplateAssignmentModule,
+    PrintRenderModule,
     GodownsMasterModule,
     GridDetailsModule,
     DropdownDetailsModule,

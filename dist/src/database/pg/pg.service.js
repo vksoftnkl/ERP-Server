@@ -45,6 +45,27 @@ let PgService = PgService_1 = class PgService {
     queryReadOnly(text, params) {
         return this.readOnlyPool.query(text, params);
     }
+    async queryReadOnlyTx(text, params, timeoutMs) {
+        const client = await this.readOnlyPool.connect();
+        try {
+            await client.query('BEGIN READ ONLY');
+            await client.query(`SET LOCAL statement_timeout = ${Math.trunc(timeoutMs)}`);
+            const result = await client.query(text, params);
+            await client.query('COMMIT');
+            return result;
+        }
+        catch (error) {
+            try {
+                await client.query('ROLLBACK');
+            }
+            catch {
+            }
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
     async onModuleDestroy() {
         await Promise.all([this.pool.end(), this.readOnlyPool.end()]);
     }

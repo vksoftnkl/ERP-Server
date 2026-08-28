@@ -37,7 +37,7 @@ const getDefaultDevCorsOrigins = () => [
     'http://127.0.0.1:3000',
     'https://127.0.0.1:3000',
     'https://192.168.0.101:3001',
-    'https://localhost:3001'
+    'https://localhost:3001',
 ];
 const resolveFilePath = (filePath) => {
     const isPkgRuntime = Boolean(process.pkg);
@@ -140,6 +140,19 @@ async function bootstrap() {
         app.enableCors({
             origin: allowAnyCorsOrigin ? true : corsOrigins,
             credentials: corsCredentials,
+            exposedHeaders: [
+                'Content-Disposition',
+                'X-Print-Template-Id',
+                'X-Print-Version-Id',
+                'X-Print-Rev-No',
+                'X-Print-Output-Mode',
+                'X-Print-Pages',
+                'X-Print-Copies',
+                'X-Print-Warnings',
+                'X-Print-Log-Ids',
+                'X-Print-Scope',
+                'X-Cache',
+            ],
         });
     }
     app.useGlobalPipes(new common_1.ValidationPipe({

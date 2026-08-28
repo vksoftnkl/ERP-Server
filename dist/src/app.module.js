@@ -86,6 +86,7 @@ const charge_detail_module_1 = require("./modules/master/charge-detail/charge-de
 const promotion_loyalty_points_module_1 = require("./modules/sales/loyalty/promotion-loyalty-points.module");
 const promotion_scheme_module_1 = require("./modules/sales/promotion-scheme/promotion-scheme.module");
 const print_template_assignment_module_1 = require("./modules/settings/print-template-assignment/print-template-assignment.module");
+const print_render_module_1 = require("./modules/settings/print-render/print-render.module");
 const physical_stock_module_1 = require("./modules/stocks/physical-stock/physical-stock.module");
 const itemStockBalanceModule_1 = require("./modules/stocks/itemstockbalance/itemStockBalanceModule");
 const itemBatchStockModule_1 = require("./modules/stocks/itembatchstock/itemBatchStockModule");
@@ -220,6 +221,7 @@ exports.AppModule = AppModule = __decorate([
             promotion_loyalty_points_module_1.PromotionLoyaltyPointsModule,
             promotion_scheme_module_1.PromotionSchemeModule,
             print_template_assignment_module_1.PrintTemplateAssignmentModule,
+            print_render_module_1.PrintRenderModule,
             godowns_master_module_1.GodownsMasterModule,
             grid_details_module_1.GridDetailsModule,
             dropdown_details_module_1.DropdownDetailsModule,

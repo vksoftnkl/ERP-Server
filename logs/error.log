@@ -6165,3 +6165,52 @@ Invalid `prisma.reportDataset.aggregate()` invocation:
 
 The table `reports.report_dataset` does not exist in the current database.
                                                                                                                                                                                                                                  2026-08-27T12:58:17.109Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:08:08.880Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:09:20.121Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:09:55.255Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:10:16.265Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:11:05.090Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:12:10.289Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:12:23.091Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:13:12.701Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:13:35.529Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:14:17.232Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:15:22.441Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:16:02.751Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:16:26.785Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:16:39.005Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:17:14.423Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:17:39.355Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:17:56.296Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:18:48.318Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:20:29.114Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:20:45.344Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:20:50.780Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:21:12.509Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:21:34.450Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:22:09.574Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:23:22.842Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:23:41.124Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:29:12.540Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:35:45.626Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:36:02.339Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:40:18.943Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:40:32.574Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:41:51.962Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:42:01.890Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:42:19.176Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:42:34.526Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:42:42.675Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:43:15.249Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:44:13.768Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:57:57.539Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T13:58:40.319Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T14:03:01.369Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T14:03:21.046Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-27T14:04:01.630Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-08-28T05:26:09.075Z ERROR [DatasetRunnerService] Dataset 'company' (01a046d4-ae81-7cfd-8284-961c661dc797) failed after binding :wantdelete, :company_id, :comp_code, :comp_short, :comp_name, :legal_name: invalid input syntax for type boolean: "ad"
+2026-08-28T05:26:33.362Z ERROR [DatasetRunnerService] Dataset 'company' (01a046d4-ae81-7cfd-8284-961c661dc797) failed after binding :wantdelete, :company_id, :comp_code, :comp_short, :comp_name, :legal_name: invalid input syntax for type boolean: "ad"
+2026-08-28T05:26:35.669Z ERROR [DatasetRunnerService] Dataset 'company' (01a046d4-ae81-7cfd-8284-961c661dc797) failed after binding :wantdelete, :company_id, :comp_code, :comp_short, :comp_name, :legal_name: invalid input syntax for type boolean: "ad"
+2026-08-28T05:26:48.516Z ERROR [DatasetRunnerService] Dataset 'company' (01a046d4-ae81-7cfd-8284-961c661dc797) failed after binding :wantdelete, :company_id, :comp_code, :comp_short, :comp_name, :legal_name: invalid input syntax for type boolean: "ad"
+2026-08-28T06:30:33.424Z ERROR [DatasetRunnerService] Dataset 'header' (01a04709-c982-7490-9ec9-a3b3c9e20f51) failed after binding :acc_year, :company_id, :branch_id, :quote_id: column q.sq_sq_acc_year does not exist
+2026-08-28T06:33:23.715Z ERROR [DatasetRunnerService] Dataset 'header' (01a04709-c982-7490-9ec9-a3b3c9e20f51) failed after binding :acc_year, :company_id, :branch_id, :quote_id: column q.sq_sq_acc_year does not exist

@@ -72,6 +72,52 @@ export class PgService implements OnModuleDestroy {
   ): Promise<QueryResult<T>> {
     return this.readOnlyPool.query<T>(text, params as unknown[] | undefined);
   }
+  /**
+   * Run one stored query inside an explicit `READ ONLY` transaction with its own statement timeout.
+   *
+   * `queryReadOnly` above already forces `default_transaction_read_only=on` at session level, which
+   * makes each statement its own implicit read-only transaction. This adds the two things a stored
+   * report query needs and an implicit transaction cannot give it:
+   *
+   *   * `BEGIN ... READ ONLY` explicitly, so the read-only property is a property of THIS
+   *     transaction rather than of a session setting that a future `SET` could move. The printing
+   *     engine's §4 names "the query run in a READ ONLY transaction" as one of its three runtime
+   *     boundaries, and this is the statement that makes that literally true rather than nearly so.
+   *   * `SET LOCAL statement_timeout`, which is per-transaction and reverts on COMMIT. A template
+   *     author sets `ptd_timeout_ms` per dataset, and a timeout applied to the pool would apply to
+   *     every other caller sharing it.
+   *
+   * A dedicated client is checked out for the transaction and always released, including when the
+   * statement is cancelled by the timeout — that path throws, and an unreleased client would leak a
+   * pool slot per bad query until the counter queue stalled.
+   */
+  async queryReadOnlyTx<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    params: readonly unknown[] | undefined,
+    timeoutMs: number,
+  ): Promise<QueryResult<T>> {
+    const client = await this.readOnlyPool.connect();
+    try {
+      await client.query('BEGIN READ ONLY');
+      // Bound as a literal because SET does not take parameters. The value is an
+      // integer this service computed, never caller text.
+      await client.query(`SET LOCAL statement_timeout = ${Math.trunc(timeoutMs)}`);
+      const result = await client.query<T>(text, params as unknown[] | undefined);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      // Best-effort: the transaction may already be aborted, and a rollback that
+      // throws must not replace the error that actually explains the failure.
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // ignored on purpose — see above
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
   async onModuleDestroy(): Promise<void> {
     await Promise.all([this.pool.end(), this.readOnlyPool.end()]);
   }
