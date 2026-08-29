@@ -5108,6 +5108,31 @@ model PrintTemplateVersion {
   @@schema("public")
 }
 
+// ----- prisma/public/seedHistory.prisma -----
+/// public._erp_seed_history — the seed runner's own bookkeeping table.
+///
+/// Created at runtime by `src/database/seed/seed-runner.ts` (CREATE TABLE IF
+/// NOT EXISTS) on every boot with DB_AUTO_SEED, which is why it is declared
+/// here as well: without a model and a migration, `prisma migrate dev` sees
+/// the table as DRIFT and demands a full reset of every schema.
+///
+/// It holds no business data — one row per seed file, recording what ran, the
+/// checksum it ran with, how long it took and how it ended.
+model SeedHistory {
+  seedName    String   @id                                    @map("seed_name")
+  seedKind    String                                          @map("seed_kind")
+  checksum    String
+  lastStatus  String                                          @map("last_status")
+  lastError   String?                                         @map("last_error")
+  durationMs  Int      @default(0)                            @map("duration_ms")
+  runCount    Int      @default(0)                            @map("run_count")
+  firstRunAt  DateTime @default(now()) @db.Timestamptz(6)     @map("first_run_at")
+  lastRunAt   DateTime @default(now()) @db.Timestamptz(6)     @map("last_run_at")
+
+  @@map("_erp_seed_history")
+  @@schema("public")
+}
+
 // ----- prisma/public/transactionChargeDetail.prisma -----
 /// Per-document applied charges — freight, loading, packing, cash discount, etc.
 /// One row per charge line on a document, shared by every module (sales,

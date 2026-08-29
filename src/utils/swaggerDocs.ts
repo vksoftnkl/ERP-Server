@@ -75,6 +75,10 @@ import { GodownsMasterModule } from 'src/modules/Inventory/godowns-master/godown
 // import { OpeningStockModule } from 'src/modules/stocks/opening-stock/opening-stock.module';
 import { ItemStockBalanceModule } from 'src/modules/stocks/itemstockbalance/itemStockBalanceModule';
 import { ItemBatchStockModule } from 'src/modules/stocks/itembatchstock/itemBatchStockModule';
+import { PhysicalStockModule } from 'src/modules/stocks/physical-stock/physical-stock.module';
+import { PrintRenderModule } from 'src/modules/settings/print-render/print-render.module';
+import { WidgetMasterModule } from 'src/modules/master/widget-master/widget-master.module';
+import { ConfiguredGridSqlModule } from 'src/common/configured-grid-sql/configured-grid-sql.module';
 export const swaggerModuleDocuments = [
   {
     path: 'auth',
@@ -298,6 +302,15 @@ export const swaggerModuleDocuments = [
     include: [PrintTemplateModule],
   },
   {
+    path: 'print-render',
+    title: 'Print Render API',
+    description:
+      'Print render endpoints: preview resolves a template against live data and returns the ' +
+      'rendered output, print sends it to a configured provider, and providers lists the ' +
+      'output targets available to the caller',
+    include: [PrintRenderModule],
+  },
+  {
     path: 'tender-master',
     title: 'Tender Master API',
     description: 'Tender master module endpoints',
@@ -359,12 +372,15 @@ export const swaggerModuleDocuments = [
     description: 'Godowns module endpoints',
     include: [GodownsMasterModule],
   },
-  {
-    path: 'opening-stocks',
-    title: 'Opening Stock API',
-    description: 'Opening stock module endpoints',
-    // include: [OpeningStockModule],
-  },
+  // OpeningStockModule is not registered in AppModule, so it has no routes to document.
+  // Re-enable this entry together with the AppModule import; leaving it here without an
+  // `include` makes SwaggerModule fall back to every controller in the app.
+  // {
+  //   path: 'opening-stocks',
+  //   title: 'Opening Stock API',
+  //   description: 'Opening stock module endpoints',
+  //   include: [OpeningStockModule],
+  // },
   {
     path: 'item-stock-balance',
     title: 'Item Stock Balance API',
@@ -376,6 +392,14 @@ export const swaggerModuleDocuments = [
     title: 'Item Batch Stock API',
     description: 'Item batch stock lookup endpoints',
     include: [ItemBatchStockModule],
+  },
+  {
+    path: 'physical-stock',
+    title: 'Physical Stock API',
+    description:
+      'Physical stock (stock take) document endpoints: create/update by ps_id presence, ' +
+      'list and fetch by ps_id or header id, and soft delete',
+    include: [PhysicalStockModule],
   },
   {
     path: 'promotion-loyalty-points',
@@ -396,6 +420,22 @@ export const swaggerModuleDocuments = [
     title: 'Grid Details API',
     description: 'Grid details module endpoints',
     include: [GridDetailsModule],
+  },
+  {
+    path: 'configured-grid-sql',
+    title: 'Configured Grid SQL API',
+    description:
+      "Configured grid endpoints: fetch a grid's columns by grid id, and run its stored base " +
+      'SQL to return rows plus column styles',
+    include: [ConfiguredGridSqlModule],
+  },
+  {
+    path: 'widget-masters',
+    title: 'Widget Master API',
+    description:
+      'Dashboard widget master endpoints: create (single and bulk), fetch, per-user config, ' +
+      'visibility toggle, and delete',
+    include: [WidgetMasterModule],
   },
   {
     path: 'dropdown-details',

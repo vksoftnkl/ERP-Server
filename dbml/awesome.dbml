@@ -3099,7 +3099,7 @@ writing it raises 428C9. The no-arg dbgenerated() is what stops
 `migrate dev` emitting DROP DEFAULT. EVERY sql guard reads this and not
 ptdSql, so a keyword inside a literal is neither a false positive nor a
 way through.']
-  ptdRequiresCompany Boolean [not null, default: true, note: 'A report that is not company-scoped shows one company another\'s numbers.
+  ptdRequiresCompany Boolean [not null, default: false, note: 'A report that is not company-scoped shows one company another\'s numbers.
 Set false only for genuinely global data, such as a state-code list.']
   ptdParentNo Int [note: 'Nested detail, which 3.0 could not express at all: this dataset\'s rows are
 the children of the current row of the dataset numbered ptdParentNo.
@@ -3292,6 +3292,28 @@ resolve it one way or the other.
 ix_ptv_template_recent (ptv_template_id, ptv_rev_no DESC) INCLUDE
 (status, engine, paper_code) WHERE NOT deleted
 ix_ptv_approved_by / ix_ptv_created_by / ix_ptv_modified_by  FK-covering'
+}
+
+Table _erp_seed_history {
+  seedName String [pk]
+  seedKind String [not null]
+  checksum String [not null]
+  lastStatus String [not null]
+  lastError String
+  durationMs Int [not null, default: 0]
+  runCount Int [not null, default: 0]
+  firstRunAt DateTime [default: `now()`, not null]
+  lastRunAt DateTime [default: `now()`, not null]
+
+  Note: 'public._erp_seed_history — the seed runner\'s own bookkeeping table.
+
+Created at runtime by `src/database/seed/seed-runner.ts` (CREATE TABLE IF
+NOT EXISTS) on every boot with DB_AUTO_SEED, which is why it is declared
+here as well: without a model and a migration, `prisma migrate dev` sees
+the table as DRIFT and demands a full reset of every schema.
+
+It holds no business data — one row per seed file, recording what ran, the
+checksum it ran with, how long it took and how it ended.'
 }
 
 Table txn_charge_detail {

@@ -77,6 +77,10 @@ const items_gst_units_master_module_1 = require("../modules/Inventory/items-gst-
 const godowns_master_module_1 = require("../modules/Inventory/godowns-master/godowns-master.module");
 const itemStockBalanceModule_1 = require("../modules/stocks/itemstockbalance/itemStockBalanceModule");
 const itemBatchStockModule_1 = require("../modules/stocks/itembatchstock/itemBatchStockModule");
+const physical_stock_module_1 = require("../modules/stocks/physical-stock/physical-stock.module");
+const print_render_module_1 = require("../modules/settings/print-render/print-render.module");
+const widget_master_module_1 = require("../modules/master/widget-master/widget-master.module");
+const configured_grid_sql_module_1 = require("../common/configured-grid-sql/configured-grid-sql.module");
 exports.swaggerModuleDocuments = [
     {
         path: 'auth',
@@ -296,6 +300,14 @@ exports.swaggerModuleDocuments = [
         include: [print_template_module_1.PrintTemplateModule],
     },
     {
+        path: 'print-render',
+        title: 'Print Render API',
+        description: 'Print render endpoints: preview resolves a template against live data and returns the ' +
+            'rendered output, print sends it to a configured provider, and providers lists the ' +
+            'output targets available to the caller',
+        include: [print_render_module_1.PrintRenderModule],
+    },
+    {
         path: 'tender-master',
         title: 'Tender Master API',
         description: 'Tender master module endpoints',
@@ -357,11 +369,6 @@ exports.swaggerModuleDocuments = [
         include: [godowns_master_module_1.GodownsMasterModule],
     },
     {
-        path: 'opening-stocks',
-        title: 'Opening Stock API',
-        description: 'Opening stock module endpoints',
-    },
-    {
         path: 'item-stock-balance',
         title: 'Item Stock Balance API',
         description: 'Item stock balance lookup endpoints',
@@ -372,6 +379,13 @@ exports.swaggerModuleDocuments = [
         title: 'Item Batch Stock API',
         description: 'Item batch stock lookup endpoints',
         include: [itemBatchStockModule_1.ItemBatchStockModule],
+    },
+    {
+        path: 'physical-stock',
+        title: 'Physical Stock API',
+        description: 'Physical stock (stock take) document endpoints: create/update by ps_id presence, ' +
+            'list and fetch by ps_id or header id, and soft delete',
+        include: [physical_stock_module_1.PhysicalStockModule],
     },
     {
         path: 'promotion-loyalty-points',
@@ -391,6 +405,20 @@ exports.swaggerModuleDocuments = [
         title: 'Grid Details API',
         description: 'Grid details module endpoints',
         include: [grid_details_module_1.GridDetailsModule],
+    },
+    {
+        path: 'configured-grid-sql',
+        title: 'Configured Grid SQL API',
+        description: "Configured grid endpoints: fetch a grid's columns by grid id, and run its stored base " +
+            'SQL to return rows plus column styles',
+        include: [configured_grid_sql_module_1.ConfiguredGridSqlModule],
+    },
+    {
+        path: 'widget-masters',
+        title: 'Widget Master API',
+        description: 'Dashboard widget master endpoints: create (single and bulk), fetch, per-user config, ' +
+            'visibility toggle, and delete',
+        include: [widget_master_module_1.WidgetMasterModule],
     },
     {
         path: 'dropdown-details',
