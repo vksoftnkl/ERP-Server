@@ -50,8 +50,9 @@ __decorate([
 ], RenderPreviewDto.prototype, "docId", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
-        description: "The DOCUMENT's accounting year ('2026-2027'), not the current one — a reprint of last " +
-            "year's bill needs last year's partition. Binds :acc_year.",
+        description: "The DOCUMENT's accounting year ('2026-2027'). Omitted, the company's current fiscal " +
+            "year is bound — a reprint of last year's bill is the case that has to name its own, " +
+            "because that is where last year's partition is. Binds :acc_year.",
         example: '2026-2027',
     }),
     (0, class_validator_1.IsOptional)(),
@@ -59,13 +60,20 @@ __decorate([
     __metadata("design:type", String)
 ], RenderPreviewDto.prototype, "accYear", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', description: 'Binds :branch_id.' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "Binds :branch_id. Defaults to the session's own branch.",
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
 ], RenderPreviewDto.prototype, "branchId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', description: 'The counter. Binds :device_id.' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "The counter. Binds :device_id. Defaults to the session's own counter, from the access " +
+            'token — no caller has to hold a device id.',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)

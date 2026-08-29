@@ -111,6 +111,8 @@ let TokenService = class TokenService {
         const tokenType = payload.typ;
         const userType = payload.user_type;
         const companyId = payload.company_id;
+        const branchId = payload.branch_id;
+        const deviceId = payload.device_id;
         if (typeof sub !== 'string' || sub.length === 0) {
             throw new common_1.UnauthorizedException('Invalid access token');
         }
@@ -140,12 +142,20 @@ let TokenService = class TokenService {
         if (companyId !== undefined && companyId !== null && typeof companyId !== 'string') {
             throw new common_1.UnauthorizedException('Invalid access token');
         }
+        if (branchId !== undefined && branchId !== null && typeof branchId !== 'string') {
+            throw new common_1.UnauthorizedException('Invalid access token');
+        }
+        if (deviceId !== undefined && deviceId !== null && typeof deviceId !== 'string') {
+            throw new common_1.UnauthorizedException('Invalid access token');
+        }
         const normalizedPayload = {
             sub,
             user_name: userName,
             sid: sessionId,
             user_type: typeof userType === 'string' && userType.length > 0 ? userType : null,
             company_id: typeof companyId === 'string' && companyId.length > 0 ? companyId : null,
+            branch_id: typeof branchId === 'string' && branchId.length > 0 ? branchId : null,
+            device_id: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : null,
             iat: issuedAt,
             exp: expiresAt,
             typ: expectedType,

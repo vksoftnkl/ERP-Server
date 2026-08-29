@@ -1,5 +1,5 @@
 export declare class ResolvePrintTemplateAssignmentQueryDto {
-    companyId: string;
+    companyId?: string | null;
     branchId?: string | null;
     deviceId?: string | null;
     purposeId: string;

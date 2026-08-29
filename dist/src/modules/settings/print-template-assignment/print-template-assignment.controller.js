@@ -47,7 +47,22 @@ let PrintTemplateAssignmentController = class PrintTemplateAssignmentController 
         return { success: true, message: 'Print template assignments fetched successfully', data };
     }
     async resolve(queryDto) {
-        const data = await this.printTemplateAssignmentService.resolve(queryDto);
+        const companyId = queryDto.companyId ?? this.requestContextService.getCompanyId();
+        if (!companyId) {
+            (0, module_service_utils_1.throwSettingsBadRequest)('No company to resolve against', [
+                {
+                    field: 'companyId',
+                    message: 'An assignment is resolved within one company. None was sent and the session carries ' +
+                        'none — re-authenticate against a company, or name one.',
+                },
+            ]);
+        }
+        const data = await this.printTemplateAssignmentService.resolve({
+            ...queryDto,
+            companyId,
+            branchId: queryDto.branchId ?? this.requestContextService.getBranchId(),
+            deviceId: queryDto.deviceId ?? this.requestContextService.getDeviceId(),
+        });
         return { success: true, message: 'Print template resolved successfully', data };
     }
     async getById(ptaId) {

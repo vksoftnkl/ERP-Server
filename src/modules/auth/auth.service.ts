@@ -56,12 +56,30 @@ export class AuthService {
             deviceType: loginAuthDto.device_type,
           })
         : null;
+    /*
+     * The counter and its branch go INTO the token.
+     *
+     * Both are already resolved above, from the `fixed.device_master` row this
+     * login matched — the same row `device_id` is reported back from. Carrying
+     * them as claims is what lets a request stop sending them: printing
+     * resolves its assignment ladder by device then branch, and a scope that
+     * arrives in a request body is a scope the caller chose.
+     *
+     * A session with no registered device (a plain web login that matched no
+     * row) carries nulls, which resolves the ladder from the company up. That
+     * is the honest reading, and the same one an omitted body field had.
+     */
+    const sessionScope = {
+      branch_id: device?.devBranchId ?? null,
+      device_id: device?.devId ?? null,
+    };
     const issuedAccessToken = this.tokenService.signAccessToken({
       sub: user.usrId,
       user_name: user.usrLoginName,
       sid: this.authSessionService.createSessionId(),
       user_type: user.usrType ?? null,
       company_id: user.usrCompanyId ?? null,
+      ...sessionScope,
     });
     const issuedRefreshToken = this.tokenService.signRefreshToken({
       sub: user.usrId,
@@ -69,6 +87,7 @@ export class AuthService {
       sid: issuedAccessToken.payload.sid,
       user_type: user.usrType ?? null,
       company_id: user.usrCompanyId ?? null,
+      ...sessionScope,
     });
     await this.authSessionService.storeTokenSession(
       issuedAccessToken.token,
@@ -135,6 +154,12 @@ export class AuthService {
       sid: refreshPayload.sid,
       user_type: user.usrType ?? null,
       company_id: user.usrCompanyId ?? null,
+      // Carried from the refresh token rather than re-resolved: no device is
+      // presented on a refresh, and re-reading one would be guessing. Dropping
+      // them would silently demote a counter session to a company-wide one
+      // fifteen minutes after login, and printing would change design.
+      branch_id: refreshPayload.branch_id,
+      device_id: refreshPayload.device_id,
     });
     await this.authSessionService.storeTokenSession(
       issuedAccessToken.token,

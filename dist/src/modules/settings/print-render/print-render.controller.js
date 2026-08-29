@@ -95,11 +95,11 @@ let PrintRenderController = class PrintRenderController {
         }
         return {
             companyId,
-            branchId: dto.branchId ?? null,
+            branchId: dto.branchId ?? this.requestContextService.getBranchId(),
             accYear: dto.accYear ?? null,
             docId: dto.docId ?? null,
             userId: this.requestContextService.getUserId(),
-            deviceId: dto.deviceId ?? null,
+            deviceId: dto.deviceId ?? this.requestContextService.getDeviceId(),
         };
     }
     send(response, outcome, stem) {

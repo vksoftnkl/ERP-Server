@@ -24,6 +24,8 @@ let RequestContextMiddleware = class RequestContextMiddleware {
             userId: this.extractUserIdHeader(request),
             userType: null,
             companyId: null,
+            branchId: null,
+            deviceId: null,
         }, next);
     }
     extractClientIp(request) {

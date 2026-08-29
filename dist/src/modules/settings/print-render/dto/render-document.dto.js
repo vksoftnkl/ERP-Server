@@ -49,11 +49,14 @@ __decorate([
     __metadata("design:type", String)
 ], RenderDocumentDto.prototype, "docId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({
-        description: "The DOCUMENT's accounting year — the partition it lives in. A reprint of last year's " +
-            'bill names last year here and is still logged in this year.',
+    (0, swagger_1.ApiPropertyOptional)({
+        description: "The DOCUMENT's accounting year — the partition it lives in. OPTIONAL: leave it out and " +
+            "the company's own current fiscal year (fiscal_years.fy_is_current) is used, which is " +
+            'right for everything printed in the year it was raised. Name it only for the case where ' +
+            "the two differ — a reprint of last year's bill, which is still logged in this year.",
         example: '2026-2027',
     }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.Matches)(print_render_constants_1.ACC_YEAR_PATTERN, { message: 'accYear must look like 2026-2027' }),
     __metadata("design:type", String)
 ], RenderDocumentDto.prototype, "accYear", void 0);
@@ -79,7 +82,12 @@ __decorate([
     __metadata("design:type", String)
 ], RenderDocumentDto.prototype, "srcDocType", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', description: 'Binds :branch_id and narrows the ladder.' }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        description: "Binds :branch_id and narrows the ladder. Defaults to the SESSION's branch — the one the " +
+            'counter this session logged in at belongs to — so an ordinary print says nothing here. ' +
+            'Send it only to print for a branch other than the one being sat at.',
+    }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsUUID)(),
     __metadata("design:type", String)
@@ -88,7 +96,9 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
         description: 'The counter. Binds :device_id and is the NARROWEST rung of the assignment ladder — a ' +
-            'till with its own receipt design is resolved by this.',
+            "till with its own receipt design is resolved by this. Defaults to the SESSION's own " +
+            'counter, from the access token, so no caller has to hold a device id or work out which ' +
+            'of the two ids it has is the registered one.',
     }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsUUID)(),

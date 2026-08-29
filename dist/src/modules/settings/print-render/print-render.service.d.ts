@@ -49,6 +49,7 @@ export declare class PrintRenderService {
     constructor(prisma: PrismaService, datasetRunner: DatasetRunnerService, assignments: PrintTemplateAssignmentService, printLog: PrintLogService, layout: LayoutEngine, pdf: PdfKitRenderer, escpos: EscPosRenderer, escp: EscPRenderer);
     preview(request: PreviewRequest): Promise<RenderOutcome>;
     print(request: PrintRequest): Promise<PrintOutcome>;
+    private withCurrentAccYear;
     private renderDefinition;
     private loadPurpose;
     private loadVersion;

@@ -22,6 +22,7 @@ import { PdfKitRenderer } from './engine/renderers/pdfkit.renderer';
 import { IRenderer } from './engine/renderers/renderer.types';
 import { PrintLogEntry, PrintLogService } from './print-log.service';
 import {
+  ACC_YEAR_PATTERN,
   IMPLEMENTED_RENDERERS,
   LAYOUT_MODE_FOR_RENDERER,
   MAX_COPIES,
@@ -144,6 +145,7 @@ export class PrintRenderService {
    */
   async preview(request: PreviewRequest): Promise<RenderOutcome> {
     const bundle = await this.loadVersion(request.versionId, request.context.companyId);
+    const context = await this.withCurrentAccYear(request.context);
 
     const definition = request.body
       ? this.buildFromUnsavedBody(bundle, request.body)
@@ -153,7 +155,7 @@ export class PrintRenderService {
       bundle,
       definition: definition.definition,
       layoutMode: definition.layoutMode,
-      context: request.context,
+      context,
       params: request.params,
       requestedMode: request.outputMode,
       copies: request.copies ?? 1,
@@ -173,7 +175,8 @@ export class PrintRenderService {
    * to decide, and the two would drift.
    */
   async print(request: PrintRequest): Promise<PrintOutcome> {
-    const purpose = await this.loadPurpose(request.purposeId, request.context.companyId);
+    const context = await this.withCurrentAccYear(request.context);
+    const purpose = await this.loadPurpose(request.purposeId, context.companyId);
 
     // ppo_allow_reprint is the purpose's own answer to whether this may be
     // printed twice. Refused here rather than at the printer, because the
@@ -194,9 +197,9 @@ export class PrintRenderService {
 
     const resolution = await this.assignments.resolve({
       purposeId: request.purposeId,
-      companyId: request.context.companyId,
-      branchId: request.context.branchId ?? undefined,
-      deviceId: request.context.deviceId ?? undefined,
+      companyId: context.companyId,
+      branchId: context.branchId ?? undefined,
+      deviceId: context.deviceId ?? undefined,
       ...(request.assignmentOutputMode ? { outputMode: request.assignmentOutputMode } : {}),
     });
 
@@ -211,7 +214,7 @@ export class PrintRenderService {
       );
     }
 
-    const bundle = await this.loadVersion(resolution.publishedRevId, request.context.companyId);
+    const bundle = await this.loadVersion(resolution.publishedRevId, context.companyId);
     const built = this.build(bundle);
 
     const copies = Math.min(request.copies ?? resolution.copies ?? 1, MAX_COPIES);
@@ -229,19 +232,19 @@ export class PrintRenderService {
     });
 
     const accYear = await this.printLog.currentAccYear(
-      request.context.companyId,
-      request.context.accYear,
+      context.companyId,
+      context.accYear,
     );
 
     const entries: PrintLogEntry[] = outcome.copyLabels.map((label, index) => ({
       accYear,
-      companyId: request.context.companyId,
-      branchId: request.context.branchId,
-      deviceId: request.context.deviceId,
+      companyId: context.companyId,
+      branchId: context.branchId,
+      deviceId: context.deviceId,
       srcModule: request.srcModule ?? purpose.ppoSrcModule,
       srcDocType: request.srcDocType ?? purpose.ppoDocType,
-      srcDocId: request.context.docId,
-      srcAccYear: request.context.accYear,
+      srcDocId: context.docId,
+      srcAccYear: context.accYear,
       purposeId: request.purposeId,
       templateId: bundle.template.ptlId,
       versionId: bundle.version.ptvId,
@@ -262,7 +265,7 @@ export class PrintRenderService {
       // approximation, and it is documented in the module README.
       byteCount: outcome.bytes.length,
       durationMs: outcome.layoutMs + outcome.renderMs,
-      printedBy: request.context.userId,
+      printedBy: context.userId,
     }));
 
     const printLogIds = await this.printLog.record(entries);
@@ -281,6 +284,32 @@ export class PrintRenderService {
   }
 
   // ─── The shared path ───────────────────────────────────────────────────
+
+  /**
+   * The context, with the accounting year filled in where the caller named none.
+   *
+   * `:acc_year` is a PARTITION key — `sales.sale_quotation` and its siblings are
+   * partitioned by list on it — so a dataset that binds it and gets null reads
+   * nothing, or is refused outright. Every screen printing today's document was
+   * therefore made to send a year it could only have got from the row it was
+   * already holding, which is asking a caller for something the server knows
+   * better: `fiscal_years.fy_is_current` is the company's OWN answer, and it
+   * outranks the calendar for a chain that has not yet rolled over.
+   *
+   * This only fills a BLANK; it never overrides. A reprint of last year's paper
+   * still names last year, and that is the one case where the caller genuinely
+   * knows something the session does not.
+   */
+  private async withCurrentAccYear(context: RenderContext): Promise<RenderContext> {
+    const named = context.accYear?.trim();
+    if (named && ACC_YEAR_PATTERN.test(named)) {
+      return { ...context, accYear: named };
+    }
+    return {
+      ...context,
+      accYear: await this.printLog.currentAccYear(context.companyId, null),
+    };
+  }
 
   private async renderDefinition(input: {
     bundle: RevisionBundle;

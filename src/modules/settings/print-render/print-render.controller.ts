@@ -44,9 +44,18 @@ import { PrintRenderExceptionFilter } from './print-render-exception.filter';
  *   /print    renders whatever the assignment ladder resolves to for this
  *             counter, and writes one print_log row per copy.
  *
- * Neither takes a company: it comes from the authenticated context. A render
- * reads a company's documents, and a company id in the body would make either
- * of these a cross-tenant read with a friendly name.
+ * Neither takes a company, a branch, a counter or an accounting year: all four
+ * come from the authenticated context. A render reads a company's documents,
+ * and a company id in the body would make either of these a cross-tenant read
+ * with a friendly name; branch and counter are the two rungs the assignment
+ * ladder resolves by, so a caller able to name them is a caller choosing its own
+ * print scope. The year the session is working in is the company's own
+ * `fy_is_current`.
+ *
+ * Branch, counter and year may still be SENT, and then they win — but only
+ * because a document genuinely can belong to a scope the session does not: a
+ * reprint of last year's bill names last year. Nothing has to send them, and
+ * nothing sends them to state the default.
  *
  * ── WHY THIS IS NOT UNDER /reports ─────────────────────────────────────────
  *
@@ -183,9 +192,16 @@ export class PrintRenderController {
    * The closed context set, assembled from the authenticated session and the
    * request.
    *
-   * The company comes from the session and CANNOT come from the body. Everything
-   * else is a property of what is being printed rather than of who is printing,
-   * so it arrives with the request.
+   * The company comes from the session and CANNOT come from the body. Branch and
+   * counter come from the session TOO, and a body value overrides them rather
+   * than being required: they are claims on the access token, resolved from the
+   * `fixed.device_master` row this session logged in at, so the ordinary print
+   * says nothing about scope and gets the scope it is sitting in.
+   *
+   * The document id is the one thing here that is genuinely the request's — it
+   * is WHAT is being printed, not who is printing — and the accounting year is
+   * filled in downstream from the company's current fiscal year when the body
+   * leaves it out.
    */
   private contextFrom(dto: RenderPreviewDto | RenderDocumentDto): RenderContext {
     const companyId = this.requestContextService.getCompanyId();
@@ -208,11 +224,11 @@ export class PrintRenderController {
 
     return {
       companyId,
-      branchId: dto.branchId ?? null,
+      branchId: dto.branchId ?? this.requestContextService.getBranchId(),
       accYear: dto.accYear ?? null,
       docId: dto.docId ?? null,
       userId: this.requestContextService.getUserId(),
-      deviceId: dto.deviceId ?? null,
+      deviceId: dto.deviceId ?? this.requestContextService.getDeviceId(),
     };
   }
 

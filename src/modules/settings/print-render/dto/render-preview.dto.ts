@@ -21,6 +21,10 @@ import { IMPLEMENTED_RENDERERS } from '../print-render.constants';
  * context and never from the body. A render reads a company's documents, and a
  * caller-supplied company id would make this endpoint a cross-tenant read with
  * a friendly name.
+ *
+ * The branch, the counter and the accounting year come from the session too, and
+ * are OPTIONAL rather than absent — a caller may still name one, and then it
+ * wins. Nothing has to name one to state the default.
  */
 export class RenderPreviewDto {
   @ApiProperty({
@@ -45,20 +49,29 @@ export class RenderPreviewDto {
 
   @ApiPropertyOptional({
     description:
-      "The DOCUMENT's accounting year ('2026-2027'), not the current one — a reprint of last " +
-      "year's bill needs last year's partition. Binds :acc_year.",
+      "The DOCUMENT's accounting year ('2026-2027'). Omitted, the company's current fiscal " +
+      "year is bound — a reprint of last year's bill is the case that has to name its own, " +
+      "because that is where last year's partition is. Binds :acc_year.",
     example: '2026-2027',
   })
   @IsOptional()
   @Matches(ACC_YEAR_PATTERN, { message: 'accYear must look like 2026-2027' })
   accYear?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Binds :branch_id.' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: "Binds :branch_id. Defaults to the session's own branch.",
+  })
   @IsOptional()
   @IsUUID()
   branchId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'The counter. Binds :device_id.' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "The counter. Binds :device_id. Defaults to the session's own counter, from the access " +
+      'token — no caller has to hold a device id.',
+  })
   @IsOptional()
   @IsUUID()
   deviceId?: string;

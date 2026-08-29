@@ -13,6 +13,8 @@ export class RequestContextMiddleware implements NestMiddleware {
         // Populated by AccessTokenGuard from the verified token — never from headers.
         userType: null,
         companyId: null,
+        branchId: null,
+        deviceId: null,
       },
       next,
     );

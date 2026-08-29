@@ -18,6 +18,8 @@ const buildPayload = (): AccessTokenPayload => {
     sid: '4e457f70-cc9b-4e8f-b7e4-35cc3f588c22',
     user_type: 'USER',
     company_id: null,
+    branch_id: null,
+    device_id: null,
     iat: now,
     exp: now + 900,
     typ: 'access',

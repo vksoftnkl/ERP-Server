@@ -55,12 +55,17 @@ let AuthService = AuthService_1 = class AuthService {
                 deviceType: loginAuthDto.device_type,
             })
             : null;
+        const sessionScope = {
+            branch_id: device?.devBranchId ?? null,
+            device_id: device?.devId ?? null,
+        };
         const issuedAccessToken = this.tokenService.signAccessToken({
             sub: user.usrId,
             user_name: user.usrLoginName,
             sid: this.authSessionService.createSessionId(),
             user_type: user.usrType ?? null,
             company_id: user.usrCompanyId ?? null,
+            ...sessionScope,
         });
         const issuedRefreshToken = this.tokenService.signRefreshToken({
             sub: user.usrId,
@@ -68,6 +73,7 @@ let AuthService = AuthService_1 = class AuthService {
             sid: issuedAccessToken.payload.sid,
             user_type: user.usrType ?? null,
             company_id: user.usrCompanyId ?? null,
+            ...sessionScope,
         });
         await this.authSessionService.storeTokenSession(issuedAccessToken.token, issuedAccessToken.payload, issuedRefreshToken.token);
         try {
@@ -118,6 +124,8 @@ let AuthService = AuthService_1 = class AuthService {
             sid: refreshPayload.sid,
             user_type: user.usrType ?? null,
             company_id: user.usrCompanyId ?? null,
+            branch_id: refreshPayload.branch_id,
+            device_id: refreshPayload.device_id,
         });
         await this.authSessionService.storeTokenSession(issuedAccessToken.token, issuedAccessToken.payload, refreshToken);
         return {

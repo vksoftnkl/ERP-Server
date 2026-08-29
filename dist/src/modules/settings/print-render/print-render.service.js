@@ -42,6 +42,7 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
     }
     async preview(request) {
         const bundle = await this.loadVersion(request.versionId, request.context.companyId);
+        const context = await this.withCurrentAccYear(request.context);
         const definition = request.body
             ? this.buildFromUnsavedBody(bundle, request.body)
             : this.build(bundle);
@@ -49,7 +50,7 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
             bundle,
             definition: definition.definition,
             layoutMode: definition.layoutMode,
-            context: request.context,
+            context,
             params: request.params,
             requestedMode: request.outputMode,
             copies: request.copies ?? 1,
@@ -58,7 +59,8 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
         });
     }
     async print(request) {
-        const purpose = await this.loadPurpose(request.purposeId, request.context.companyId);
+        const context = await this.withCurrentAccYear(request.context);
+        const purpose = await this.loadPurpose(request.purposeId, context.companyId);
         if (request.isReprint && !purpose.ppoAllowReprint) {
             (0, module_service_utils_1.throwSettingsBadRequest)('This purpose does not allow reprints', [
                 {
@@ -70,9 +72,9 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
         }
         const resolution = await this.assignments.resolve({
             purposeId: request.purposeId,
-            companyId: request.context.companyId,
-            branchId: request.context.branchId ?? undefined,
-            deviceId: request.context.deviceId ?? undefined,
+            companyId: context.companyId,
+            branchId: context.branchId ?? undefined,
+            deviceId: context.deviceId ?? undefined,
             ...(request.assignmentOutputMode ? { outputMode: request.assignmentOutputMode } : {}),
         });
         if (!resolution.publishedRevId) {
@@ -81,7 +83,7 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
                 'published yet, or the live revision was retired, which releases the pointer and is ' +
                 'what withdrawing a design means.');
         }
-        const bundle = await this.loadVersion(resolution.publishedRevId, request.context.companyId);
+        const bundle = await this.loadVersion(resolution.publishedRevId, context.companyId);
         const built = this.build(bundle);
         const copies = Math.min(request.copies ?? resolution.copies ?? 1, print_render_constants_1.MAX_COPIES);
         const outcome = await this.renderDefinition({
@@ -95,16 +97,16 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
             copyLabels: resolution.copyLabels,
             docType: request.srcDocType ?? purpose.ppoDocType,
         });
-        const accYear = await this.printLog.currentAccYear(request.context.companyId, request.context.accYear);
+        const accYear = await this.printLog.currentAccYear(context.companyId, context.accYear);
         const entries = outcome.copyLabels.map((label, index) => ({
             accYear,
-            companyId: request.context.companyId,
-            branchId: request.context.branchId,
-            deviceId: request.context.deviceId,
+            companyId: context.companyId,
+            branchId: context.branchId,
+            deviceId: context.deviceId,
             srcModule: request.srcModule ?? purpose.ppoSrcModule,
             srcDocType: request.srcDocType ?? purpose.ppoDocType,
-            srcDocId: request.context.docId,
-            srcAccYear: request.context.accYear,
+            srcDocId: context.docId,
+            srcAccYear: context.accYear,
             purposeId: request.purposeId,
             templateId: bundle.template.ptlId,
             versionId: bundle.version.ptvId,
@@ -119,7 +121,7 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
             pageCount: outcome.pagesPerCopy[index] ?? null,
             byteCount: outcome.bytes.length,
             durationMs: outcome.layoutMs + outcome.renderMs,
-            printedBy: request.context.userId,
+            printedBy: context.userId,
         }));
         const printLogIds = await this.printLog.record(entries);
         return {
@@ -132,6 +134,16 @@ let PrintRenderService = PrintRenderService_1 = class PrintRenderService {
                 printerSource: resolution.printerSource,
                 outputMode: resolution.ptaOutputMode,
             },
+        };
+    }
+    async withCurrentAccYear(context) {
+        const named = context.accYear?.trim();
+        if (named && print_render_constants_1.ACC_YEAR_PATTERN.test(named)) {
+            return { ...context, accYear: named };
+        }
+        return {
+            ...context,
+            accYear: await this.printLog.currentAccYear(context.companyId, null),
         };
     }
     async renderDefinition(input) {

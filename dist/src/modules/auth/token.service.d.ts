@@ -5,6 +5,8 @@ export type AccessTokenClaims = {
     sid: string;
     user_type: string | null;
     company_id: string | null;
+    branch_id: string | null;
+    device_id: string | null;
 };
 export type AccessTokenPayload = AccessTokenClaims & {
     iat: number;

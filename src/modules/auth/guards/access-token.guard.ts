@@ -37,6 +37,8 @@ export class AccessTokenGuard implements CanActivate {
     this.requestContextService.setUserId(request.user.sub);
     this.requestContextService.setUserType(request.user.user_type);
     this.requestContextService.setCompanyId(request.user.company_id);
+    this.requestContextService.setBranchId(request.user.branch_id);
+    this.requestContextService.setDeviceId(request.user.device_id);
     return true;
   }
   private extractBearerToken(request: Request): string | null {

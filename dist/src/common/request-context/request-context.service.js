@@ -47,6 +47,26 @@ let RequestContextService = class RequestContextService {
     getCompanyId() {
         return this.asyncLocalStorage.getStore()?.companyId ?? null;
     }
+    setBranchId(branchId) {
+        const store = this.asyncLocalStorage.getStore();
+        if (!store) {
+            return;
+        }
+        store.branchId = branchId;
+    }
+    getBranchId() {
+        return this.asyncLocalStorage.getStore()?.branchId ?? null;
+    }
+    setDeviceId(deviceId) {
+        const store = this.asyncLocalStorage.getStore();
+        if (!store) {
+            return;
+        }
+        store.deviceId = deviceId;
+    }
+    getDeviceId() {
+        return this.asyncLocalStorage.getStore()?.deviceId ?? null;
+    }
 };
 exports.RequestContextService = RequestContextService;
 exports.RequestContextService = RequestContextService = __decorate([

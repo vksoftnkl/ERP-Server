@@ -23,20 +23,28 @@ class ResolvePrintTemplateAssignmentQueryDto {
 }
 exports.ResolvePrintTemplateAssignmentQueryDto = ResolvePrintTemplateAssignmentQueryDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({
+    (0, swagger_1.ApiPropertyOptional)({
         format: 'uuid',
-        description: 'The company printing. Its own rows outrank the every-company rows, which are what it falls back to where it has said nothing.',
+        description: "The company printing. Defaults to the session's. Its own rows outrank the every-company rows, which are what it falls back to where it has said nothing.",
     }),
-    (0, dtoDecorators_1.RequiredUuid)(),
-    __metadata("design:type", String)
+    (0, dtoDecorators_1.NullableUuid)(),
+    __metadata("design:type", Object)
 ], ResolvePrintTemplateAssignmentQueryDto.prototype, "companyId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "Defaults to the session's branch.",
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], ResolvePrintTemplateAssignmentQueryDto.prototype, "branchId", void 0);
 __decorate([
-    (0, swagger_1.ApiPropertyOptional)({ format: 'uuid', nullable: true }),
+    (0, swagger_1.ApiPropertyOptional)({
+        format: 'uuid',
+        nullable: true,
+        description: "Defaults to the session's counter.",
+    }),
     (0, dtoDecorators_1.NullableUuid)(),
     __metadata("design:type", Object)
 ], ResolvePrintTemplateAssignmentQueryDto.prototype, "deviceId", void 0);

@@ -1,7 +1,7 @@
 export declare class RenderDocumentDto {
     purposeId: string;
     docId: string;
-    accYear: string;
+    accYear?: string;
     srcModule?: string;
     srcDocType?: string;
     branchId?: string;

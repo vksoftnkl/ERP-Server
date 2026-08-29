@@ -25,7 +25,7 @@ import {
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
 import { API_VERSION } from '../../../common/constants/api-version';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
-import { DEFAULT_ACTOR } from 'src/common/utils/module-service.utils';
+import { DEFAULT_ACTOR, throwSettingsBadRequest } from 'src/common/utils/module-service.utils';
 import { PrintTemplateAssignmentExceptionFilter } from './print-template-assignment-exception.filter';
 import { PrintTemplateAssignmentService } from './print-template-assignment.service';
 import { SavePrintTemplateAssignmentDto } from './dto/save-print-template-assignment.dto';
@@ -40,6 +40,8 @@ import {
   PrintTemplateAssignmentSuccessSingleDto,
 } from './dto/print-template-assignment-response.dto';
 import {
+  PrintTemplateAssignmentErrorDetail,
+  PrintTemplateAssignmentErrorResponse,
   PrintTemplateAssignmentListResult,
   PrintTemplateAssignmentPayload,
   PrintTemplateAssignmentResolution,
@@ -112,7 +114,42 @@ export class PrintTemplateAssignmentController {
   async resolve(
     @Query() queryDto: ResolvePrintTemplateAssignmentQueryDto,
   ): Promise<PrintTemplateAssignmentSuccessResponse<PrintTemplateAssignmentResolution>> {
-    const data = await this.printTemplateAssignmentService.resolve(queryDto);
+    /*
+     * A caller that says nothing about scope is asking about ITSELF.
+     *
+     * The three keys are optional so that a print button does not have to
+     * describe the counter it is sitting at — company, branch and counter are
+     * all claims on the access token. An administrator's "what would THIS
+     * counter print" still names them, and then they win: this fills blanks, it
+     * does not override.
+     *
+     * The company is filled even to null-check it, because the service builds
+     * `OR: [{ ptaCompanyId: null }, { ptaCompanyId: <this> }]` and Prisma DROPS
+     * an `undefined` from a where clause — which would silently turn the second
+     * arm into "match anything" and resolve another tenant's assignment.
+     */
+    const companyId = queryDto.companyId ?? this.requestContextService.getCompanyId();
+
+    if (!companyId) {
+      throwSettingsBadRequest<
+        PrintTemplateAssignmentErrorDetail,
+        PrintTemplateAssignmentErrorResponse
+      >('No company to resolve against', [
+        {
+          field: 'companyId',
+          message:
+            'An assignment is resolved within one company. None was sent and the session carries ' +
+            'none — re-authenticate against a company, or name one.',
+        },
+      ]);
+    }
+
+    const data = await this.printTemplateAssignmentService.resolve({
+      ...queryDto,
+      companyId,
+      branchId: queryDto.branchId ?? this.requestContextService.getBranchId(),
+      deviceId: queryDto.deviceId ?? this.requestContextService.getDeviceId(),
+    });
     return { success: true, message: 'Print template resolved successfully', data };
   }
 

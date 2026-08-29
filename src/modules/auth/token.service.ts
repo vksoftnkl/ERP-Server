@@ -9,6 +9,12 @@ export type AccessTokenClaims = {
   // issued before these claims existed keep verifying (they normalize to null).
   user_type: string | null;
   company_id: string | null;
+  // The COUNTER this session logged in at, and the branch that counter belongs
+  // to. Resolved from fixed.device_master at sign time so that no request has
+  // to send them: a caller-supplied branch or device is a caller-supplied scope,
+  // and the printing ladder resolves by exactly those two rungs.
+  branch_id: string | null;
+  device_id: string | null;
 };
 export type AccessTokenPayload = AccessTokenClaims & {
   iat: number;
@@ -139,6 +145,8 @@ export class TokenService {
     const tokenType = payload.typ;
     const userType = payload.user_type;
     const companyId = payload.company_id;
+    const branchId = payload.branch_id;
+    const deviceId = payload.device_id;
     if (typeof sub !== 'string' || sub.length === 0) {
       throw new UnauthorizedException('Invalid access token');
     }
@@ -172,12 +180,23 @@ export class TokenService {
     if (companyId !== undefined && companyId !== null && typeof companyId !== 'string') {
       throw new UnauthorizedException('Invalid access token');
     }
+    // Absent on every token minted before these claims existed. That is a
+    // session with no counter, not a bad token, so it normalizes to null the
+    // same way an unregistered device does rather than forcing a re-login.
+    if (branchId !== undefined && branchId !== null && typeof branchId !== 'string') {
+      throw new UnauthorizedException('Invalid access token');
+    }
+    if (deviceId !== undefined && deviceId !== null && typeof deviceId !== 'string') {
+      throw new UnauthorizedException('Invalid access token');
+    }
     const normalizedPayload = {
       sub,
       user_name: userName,
       sid: sessionId,
       user_type: typeof userType === 'string' && userType.length > 0 ? userType : null,
       company_id: typeof companyId === 'string' && companyId.length > 0 ? companyId : null,
+      branch_id: typeof branchId === 'string' && branchId.length > 0 ? branchId : null,
+      device_id: typeof deviceId === 'string' && deviceId.length > 0 ? deviceId : null,
       iat: issuedAt,
       exp: expiresAt,
       typ: expectedType,
