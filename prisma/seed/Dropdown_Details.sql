@@ -210,8 +210,7 @@ ORDER BY hsn_code;$seed$, NULL)
     emp_id,
     emp_code,
     emp_name,
-    emp_alias,
-    emp_branch_id
+    emp_alias
 FROM public.employee_master
 WHERE emp_is_active = true
     AND emp_is_deleted = false
@@ -259,13 +258,13 @@ FROM accounts.acc_tender_types
 WHERE ttm_is_active = true AND ttm_is_deleted = false
 ORDER BY ttm_type_id;$seed$, NULL)
     ,(45, 'SALES AGENTS'            , NULL, 'sa_name'             , 'asc', 10, false, 0   , 'Desktop', 'sa_name'           , 'system', $seed$SELECT
-	sa_id,
-	sa_code,
-	sa_name
+      sa_id,
+      sa_code,
+      sa_name
 FROM sales.sale_agents
 WHERE sa_is_active = true
-	AND sa_is_deleted = false
-	AND sa_branch_id IN (NULL, isa_branch_id);$seed$, NULL)
+      AND sa_is_deleted = false
+      AND sa_branch_id IN (NULL, isa_branch_id);$seed$, NULL)
     ,(46, 'INDIAN BANKS LIST'       , NULL, 'bnk_name'            , 'asc', 10, false, 0   , 'Desktop', 'bnk_name'          , 'system', $seed$SELECT
 	bnk_name,
 	bnk_name

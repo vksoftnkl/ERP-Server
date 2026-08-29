@@ -160,8 +160,8 @@ SELECT v.* FROM (VALUES
     ,('019f2688-4da3-7a78-ac1a-e20fe9e26e2b', 37, 2, 'Description'         , 'hsn_name'          , NULL                  , 'Text', 10.00 , 'Left', false, false, 'system')
     -- ============ EMPLOYEES (id 38) ============
     ,('019f4bf2-1c10-791d-bc6f-2598730890eb', 38, 0, '#'                   , 'emp_id'            , NULL                  , 'Text', 10.00 , 'Left', false, false, 'system')
-    ,('019f4bf2-1c11-7997-b0c0-e73479c0c896', 38, 1, 'Code'                , 'emp_code'          , NULL                  , 'Text', 10.00 , 'Left', false, true , 'system')
-    ,('019fcafb-6802-73fe-8cc3-f6594ec740df', 38, 2, 'Employee'            , 'emp_name'          , NULL                  , 'Text', 100.00, 'Left', false, true , 'system')
+    ,('019f4bf2-1c11-7997-b0c0-e73479c0c896', 38, 1, 'Code'                , 'emp_code'          , NULL                  , 'Text', 30.00 , 'Left', true , true , 'system')
+    ,('019fcafb-6802-73fe-8cc3-f6594ec740df', 38, 2, 'Employee'            , 'emp_name'          , NULL                  , 'Text', 70.00 , 'Left', true , true , 'system')
     ,('019fcafb-6802-7d23-a9aa-dda16fce0f53', 38, 3, 'Alias Name'          , 'emp_alias'         , NULL                  , 'Text', 10.00 , 'Left', false, false, 'system')
     -- ============ CUSTOMERS (id 39) ============
     ,('019f514e-9a4d-7366-96e8-b82f2bc280a2', 39, 0, '#'                   , 'cus_id'            , NULL                  , 'Text', 10.00 , 'Left', false, false, 'system')

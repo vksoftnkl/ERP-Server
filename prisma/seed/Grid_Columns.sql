@@ -500,8 +500,8 @@ SELECT v.* FROM (VALUES
     ,('019f1c42-741c-7f38-a050-18cccacadddb', 64, 3 , 'Value'              , 'config_value'              , 'Text'         , NULL  , 3.00 , 'Left'  , true , false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ MAIN LIST - CUSTOMERS (id 65) ============
     ,('019f1c8d-2c5a-7c99-b830-c3f237f72aa7', 65, 1 , '#'                  , 'cus_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f1c8d-2c5b-7b78-a088-ea64028b79a8', 65, 2 , 'Short'              , 'cus_short'                 , 'Text'         , 42.00 , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
-    ,('019f1c8d-2c5c-7622-bd4a-34181a31f1a9', 65, 3 , 'Customer Name'      , 'cus_name'                  , 'Text'         , 90.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019f1c8d-2c5b-7b78-a088-ea64028b79a8', 65, 2 , 'Short'              , 'cus_short'                 , 'Text'         , 6.00  , 2.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
+    ,('019f1c8d-2c5c-7622-bd4a-34181a31f1a9', 65, 3 , 'Customer Name'      , 'cus_name'                  , 'Text'         , 17.00 , 3.00 , 'Left'  , true , true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     -- ============ MAIN LIST - CUSTOMER GROUPS (id 66) ============
     ,('019f2134-2c19-79bc-bd51-c84a83f629c0', 66, 1 , '#'                  , 'cgr_id'                    , 'Text'         , 10.00 , 1.00 , 'Left'  , false, false, false, false, NULL, NULL, NULL, NULL                   , false, 'system')
     ,('019f2134-2c1d-7365-bafe-4c92dfd36f84', 66, 2 , 'Short'              , 'cgr_short'                 , 'Text'         , 10.00 , 2.00 , 'Left'  , false, true , false, false, NULL, NULL, NULL, NULL                   , false, 'system')
