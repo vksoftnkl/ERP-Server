@@ -1,63 +1,171 @@
 import { Injectable } from '@nestjs/common';
 import {
   LoyaltyScheme,
+  LoyaltySchemeBranch,
+  LoyaltySchemeGift,
+  LoyaltySchemeItem,
   LoyaltySchemeParty,
+  LoyaltySchemeSlab,
   Prisma,
 } from '@prisma/client';
 import { RequestContextService } from '../../../common/request-context/request-context.service';
 import { PrismaService } from '../../../database/prisma/prisma.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
-import { SaveLoyaltyGiftDto } from './dto/save-loyalty-gift.dto';
-import { SaveLoyaltyPartyDto } from './dto/save-loyalty-party.dto';
-import { SaveLoyaltyPointDto } from './dto/save-loyalty-point.dto';
+import type { AuditAction } from '../../audit-log/types/audit-log.types';
+import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
+import { LoyaltySchemeBranchRowDto } from './dto/save-loyalty-scheme-branch.dto';
+import { LoyaltySchemeGiftRowDto } from './dto/save-loyalty-scheme-gift.dto';
+import { LoyaltySchemeItemRowDto } from './dto/save-loyalty-scheme-item.dto';
+import { LoyaltySchemePartyRowDto } from './dto/save-loyalty-scheme-party.dto';
+import { LoyaltySchemeSlabRowDto } from './dto/save-loyalty-scheme-slab.dto';
 import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
 import {
-  LoyaltyGiftDeleteResult,
-  LoyaltyGiftPayload,
-  LoyaltyPointDeleteResult,
-  LoyaltyPointPayload,
   LoyaltySchemeDeleteResult,
+  LoyaltySchemeEligibilityPayload,
   LoyaltySchemePayload,
   PromotionLoyaltyPointsErrorDetail,
   PromotionLoyaltyPointsErrorResponse,
 } from './types/promotion-loyalty-points-api.types';
 import {
+  EffectiveBranchRow,
+  EffectiveGiftRow,
+  EffectiveItemRow,
+  EffectivePartyRow,
+  EffectiveScheme,
+  EffectiveSlabRow,
+  collectBranchInvariantErrors,
+  collectGiftInvariantErrors,
+  collectItemInvariantErrors,
+  collectPartyInvariantErrors,
+  collectSchemeInvariantErrors,
+  collectSlabInvariantErrors,
+} from './utils/loyalty-scheme-invariants';
+import {
+  BRANCH_LOOKUP,
+  BranchRow,
+  GIFT_LOOKUP,
+  GiftRow,
+  ITEM_LOOKUP,
+  ItemRow,
+  LSI_DEFAULT_MATCH_PRIORITY,
+  LSP_DEFAULT_MATCH_PRIORITY,
+  PARTY_LOOKUP,
+  PartyRow,
+  SCHEME_LOOKUP,
+  SLAB_LOOKUP,
+  SchemeWithChildren,
+  SlabRow,
+  handleLoyaltyWriteError,
+  normalizeEnum,
+  normalizeNullableString,
+  parseDateOnly,
+  parseNullableDateOnly,
+  parseTimeToUtcDate,
+  requireInteger,
+  requireString,
+  requireUuid,
+  resolveActor,
+  resolveActorUuid,
+  toBranchPayload,
+  toGiftPayload,
+  toItemPayload,
+  toPartyPayload,
+  toSchemePayload,
+  toSlabPayload,
+} from './utils/loyalty.utils';
+import {
   DEFAULT_AUDIT_ACTOR,
   SalesWriteClient,
-  buildSalesErrorResponse,
   hasOwnProperty,
   throwSalesBadRequest,
   throwSalesConflict,
   throwSalesNotFound,
+  toNumber,
 } from 'src/common/utils/module-service.utils';
-import {
-  SchemeWithChildren,
-  applyOptionalGiftFields,
-  applyOptionalPointFields,
-  applyOptionalSchemeFields,
-  buildGiftDisplayName,
-  buildPartyDisplayName,
-  buildPointDisplayName,
-  ensureDateRange,
-  handleLoyaltyWriteError,
-  normalizeNullableString,
-  requireDate,
-  requireInteger,
-  requireNumber,
-  requireString,
-  requireUuid,
-  resolveActorUuid,
-  toGiftPayload,
-  toPartyPayload,
-  toPointPayload,
-  toSchemePayload,
-} from './utils/loyalty.utils';
-const LOYALTY_SCREEN_NAME = 'Promotion Loyalty Points';
-const LOYALTY_SCHEME_TABLE_NAME = 'loyalty scheme list';
-const LOYALTY_POINTS_TABLE_NAME = 'loyalty scheme points';
-const LOYALTY_GIFT_TABLE_NAME = 'loyalty scheme gift';
-const LOYALTY_PARTY_TABLE_NAME = 'loyalty scheme party scope';
-type LoyaltyWriteClient = SalesWriteClient;
+
+const SCREEN_NAME = 'Promotion Loyalty Points';
+const SCHEME_TABLE_NAME = 'loyalty scheme';
+const BRANCH_TABLE_NAME = 'loyalty scheme branch';
+const PARTY_TABLE_NAME = 'loyalty scheme party';
+const ITEM_TABLE_NAME = 'loyalty scheme item';
+const SLAB_TABLE_NAME = 'loyalty scheme slab';
+const GIFT_TABLE_NAME = 'loyalty scheme gift';
+
+type WriteClient = SalesWriteClient;
+
+/** Every child row, deleted ones dropped, in entry order — the read the GRID needs. */
+const EDITABLE_CHILDREN_INCLUDE = {
+  branches: {
+    where: { lsbIsDeleted: false },
+    orderBy: [{ lsbSlno: 'asc' }, { lsbId: 'asc' }],
+    include: BRANCH_LOOKUP,
+  },
+  parties: {
+    where: { lspIsDeleted: false },
+    orderBy: [{ lspSlno: 'asc' }, { lspId: 'asc' }],
+    include: PARTY_LOOKUP,
+  },
+  items: {
+    where: { lsiIsDeleted: false },
+    orderBy: [{ lsiSlno: 'asc' }, { lsiId: 'asc' }],
+    include: ITEM_LOOKUP,
+  },
+  slabs: {
+    where: { lssIsDeleted: false },
+    orderBy: [{ lssExceeds: 'asc' }, { lssSlno: 'asc' }, { lssId: 'asc' }],
+    include: SLAB_LOOKUP,
+  },
+  gifts: {
+    where: { lsgIsDeleted: false },
+    orderBy: [{ lsgRedeemPoints: 'asc' }, { lsgSlno: 'asc' }, { lsgId: 'asc' }],
+    include: GIFT_LOOKUP,
+  },
+} satisfies Prisma.LoyaltySchemeInclude;
+
+/**
+ * The five grids as GET /list wants them: live rows only.
+ *
+ * Stricter than the include /get uses, which drops deleted rows but keeps
+ * deactivated ones so a grid can still show — and let the operator switch back
+ * on — a row somebody turned off. /list makes the same promise about the child
+ * rows that it makes about the header.
+ */
+const LIVE_CHILDREN_INCLUDE = {
+  branches: {
+    where: { lsbIsDeleted: false, lsbIsActive: true },
+    orderBy: [{ lsbSlno: 'asc' }, { lsbId: 'asc' }],
+    include: BRANCH_LOOKUP,
+  },
+  parties: {
+    where: { lspIsDeleted: false, lspIsActive: true },
+    orderBy: [{ lspSlno: 'asc' }, { lspId: 'asc' }],
+    include: PARTY_LOOKUP,
+  },
+  items: {
+    where: { lsiIsDeleted: false, lsiIsActive: true },
+    orderBy: [{ lsiSlno: 'asc' }, { lsiId: 'asc' }],
+    include: ITEM_LOOKUP,
+  },
+  slabs: {
+    where: { lssIsDeleted: false, lssIsActive: true },
+    orderBy: [{ lssExceeds: 'asc' }, { lssSlno: 'asc' }, { lssId: 'asc' }],
+    include: SLAB_LOOKUP,
+  },
+  gifts: {
+    where: { lsgIsDeleted: false, lsgIsActive: true },
+    orderBy: [{ lsgRedeemPoints: 'asc' }, { lsgSlno: 'asc' }, { lsgId: 'asc' }],
+    include: GIFT_LOOKUP,
+  },
+} satisfies Prisma.LoyaltySchemeInclude;
+
+const EMPTY_CHILDREN = {
+  branches: [] as BranchRow[],
+  parties: [] as PartyRow[],
+  items: [] as ItemRow[],
+  slabs: [] as SlabRow[],
+  gifts: [] as GiftRow[],
+};
+
 @Injectable()
 export class PromotionLoyaltyPointsService {
   constructor(
@@ -65,1095 +173,1483 @@ export class PromotionLoyaltyPointsService {
     private readonly auditLogService: AuditLogService,
     private readonly requestContextService: RequestContextService,
   ) {}
+
+  // ─── §1 the header ──────────────────────────────────────────────────────────
+
   async saveScheme(dto: SaveLoyaltySchemeDto): Promise<LoyaltySchemePayload> {
-    if (dto.ls_id) {
-      return this.updateScheme(dto);
-    }
-    return this.createScheme(dto);
+    return dto.lsc_id ? this.updateScheme(dto) : this.createScheme(dto);
   }
-  async getSchemeById(lsId: string): Promise<LoyaltySchemePayload> {
-    const scheme = await this.findActiveSchemeWithChildren(this.prisma, lsId);
+
+  /**
+   * Every live campaign, each one WHOLE — the header plus its branches,
+   * parties, items, slabs and gifts, the same graph GET /get answers with for a
+   * single scheme.
+   *
+   * Both parameters are optional narrowings, applied only when sent. Two
+   * filters are NOT parameters and cannot be turned off — is_deleted = false and
+   * is_active = true — and they are applied to the child rows as well as to the
+   * header, so a deactivated band cannot ride into a response on the back of a
+   * live scheme.
+   */
+  async listSchemes(query: ListLoyaltySchemeQueryDto): Promise<LoyaltySchemePayload[]> {
+    const schemes = await this.prisma.loyaltyScheme.findMany({
+      where: {
+        ...(query.lsc_comp_id ? { lscCompId: query.lsc_comp_id } : {}),
+        ...(query.lsc_branch_id ? { lscBranchId: query.lsc_branch_id } : {}),
+        lscIsDeleted: false,
+        lscIsActive: true,
+      },
+      orderBy: [{ lscCode: 'asc' }, { lscId: 'asc' }],
+      include: { ...SCHEME_LOOKUP, ...LIVE_CHILDREN_INCLUDE },
+    });
+
+    return schemes.map(toSchemePayload);
+  }
+
+  async getSchemeById(lscId: string): Promise<LoyaltySchemePayload> {
+    const scheme = await this.findSchemeWithChildren(this.prisma, lscId);
     if (!scheme) {
-      this.throwNotFound('ls_id', lsId, 'Loyalty scheme not found');
+      this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found');
     }
     return toSchemePayload(scheme);
   }
-  async softDeleteScheme(lsId: string, lsUpdatedBy?: string): Promise<LoyaltySchemeDeleteResult> {
+
+  /**
+   * The other direction: not "who does this scheme cover" but "does THIS
+   * customer earn on it". The question the till asks, one scheme at a time.
+   *
+   * A customer can be hit by two rows at once — by name and by their group. The
+   * winner is the highest lsp_match_priority (CUSTOMER 2, CUSTOMER_GROUP 1), and
+   * at equal priority an EXCLUDE beats an INCLUDE. No row touching them means
+   * NOT eligible, because the scheme said lsc_cust_scope = 'LIST'.
+   */
+  async checkEligibility(lscId: string, cusId: string): Promise<LoyaltySchemeEligibilityPayload> {
+    const scheme = await this.requireScheme(this.prisma, lscId);
+
+    if (scheme.lscCustScope !== 'LIST') {
+      return {
+        lsc_id: lscId,
+        cus_id: cusId,
+        qualifies: true,
+        decided_by: 'ALL',
+        matched_by: null,
+        matched_row_id: null,
+        match_priority: null,
+        is_exclude: null,
+        reason: `YES — lsc_cust_scope is ${scheme.lscCustScope}, the scheme covers every customer`,
+      };
+    }
+
+    const customer = await this.prisma.customer.findFirst({
+      where: { cusId, cusIsDeleted: false },
+      select: { cusId: true, cusGroupId: true },
+    });
+    if (!customer) {
+      this.throwNotFound('cus_id', cusId, 'Customer not found');
+    }
+
+    // Every branch of the OR must be a non-null id. `{ lspCustGroupId: null }`
+    // would not mean "this customer has no group", it would match every row that
+    // is not a group rule.
+    const scopeMatches: Prisma.LoyaltySchemePartyWhereInput[] = [{ lspCustId: customer.cusId }];
+    if (customer.cusGroupId) {
+      scopeMatches.push({ lspCustGroupId: customer.cusGroupId });
+    }
+
+    const decider = await this.prisma.loyaltySchemeParty.findFirst({
+      where: {
+        lspLscId: lscId,
+        lspIsDeleted: false,
+        lspIsActive: true,
+        OR: scopeMatches,
+      },
+      // The second key is the tie-break that makes an EXCLUDE win against an
+      // INCLUDE of equal specificity.
+      orderBy: [{ lspMatchPriority: 'desc' }, { lspIsExclude: 'desc' }],
+    });
+
+    if (!decider) {
+      return {
+        lsc_id: lscId,
+        cus_id: cusId,
+        qualifies: false,
+        decided_by: 'NO_RULE',
+        matched_by: null,
+        matched_row_id: null,
+        match_priority: null,
+        is_exclude: null,
+        reason: 'NO — the scheme is scoped to a list and no row on it reaches this customer',
+      };
+    }
+
+    return {
+      lsc_id: lscId,
+      cus_id: cusId,
+      qualifies: !decider.lspIsExclude,
+      decided_by: 'RULE',
+      matched_by: decider.lspKind,
+      matched_row_id: decider.lspId,
+      match_priority: decider.lspMatchPriority,
+      is_exclude: decider.lspIsExclude,
+      reason: decider.lspIsExclude
+        ? `NO — carved out by the ${decider.lspKind} rule`
+        : `YES — via ${decider.lspKind}`,
+    };
+  }
+
+  /**
+   * Soft delete, and take the five child sets down with it in the same
+   * transaction. A live child under a dead header is the state that makes a
+   * campaign reappear at a till after head office withdrew it.
+   */
+  async softDeleteScheme(lscId: string, modifiedBy?: string): Promise<LoyaltySchemeDeleteResult> {
     return this.prisma.$transaction(async (tx) => {
-      const existing = await this.findActiveSchemeWithChildren(tx, lsId);
+      const existing = await this.findSchemeWithChildren(tx, lscId);
       if (!existing) {
-        this.throwNotFound('ls_id', lsId, 'Loyalty scheme not found');
+        this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found');
       }
-      const updatedOn = new Date();
-      const updatedBy = resolveActorUuid(lsUpdatedBy, this.requestContextService.getUserId());
-      const updatedScheme = await tx.loyaltyScheme.update({
-        where: { lsId },
+
+      const modifiedOn = new Date();
+      const actor = this.resolveWriteActor(modifiedBy);
+
+      const updated = await tx.loyaltyScheme.update({
+        where: { lscId },
         data: {
-          lsIsDeleted: true,
-          lsIsActive: false,
-          lsUpdatedOn: updatedOn,
-          lsUpdatedBy: updatedBy,
+          lscIsDeleted: true,
+          lscIsActive: false,
+          lscModifiedOn: modifiedOn,
+          lscModifiedBy: actor,
         },
       });
+
       await Promise.all([
-        tx.loyaltySchemeParty.updateMany({
-          where: { lpsLsId: lsId, lpsIsDeleted: false },
+        tx.loyaltySchemeBranch.updateMany({
+          where: { lsbLscId: lscId, lsbIsDeleted: false },
           data: {
-            lpsIsDeleted: true,
-            lpsIsActive: false,
-            lpsUpdatedOn: updatedOn,
-            lpsUpdatedBy: updatedBy,
+            lsbIsDeleted: true,
+            lsbIsActive: false,
+            lsbModifiedOn: modifiedOn,
+            lsbModifiedBy: actor,
           },
         }),
-        tx.loyaltySchemePoint.updateMany({
-          where: { lsptLsId: lsId, lsptIsDeleted: false },
+        tx.loyaltySchemeParty.updateMany({
+          where: { lspLscId: lscId, lspIsDeleted: false },
           data: {
-            lsptIsDeleted: true,
-            lsptIsActive: false,
-            lsptUpdatedOn: updatedOn,
-            lsptUpdatedBy: updatedBy,
+            lspIsDeleted: true,
+            lspIsActive: false,
+            lspModifiedOn: modifiedOn,
+            lspModifiedBy: actor,
+          },
+        }),
+        tx.loyaltySchemeItem.updateMany({
+          where: { lsiLscId: lscId, lsiIsDeleted: false },
+          data: {
+            lsiIsDeleted: true,
+            lsiIsActive: false,
+            lsiModifiedOn: modifiedOn,
+            lsiModifiedBy: actor,
+          },
+        }),
+        tx.loyaltySchemeSlab.updateMany({
+          where: { lssLscId: lscId, lssIsDeleted: false },
+          data: {
+            lssIsDeleted: true,
+            lssIsActive: false,
+            lssModifiedOn: modifiedOn,
+            lssModifiedBy: actor,
           },
         }),
         tx.loyaltySchemeGift.updateMany({
-          where: { lsgLsId: lsId, lsgIsDeleted: false },
+          where: { lsgLscId: lscId, lsgIsDeleted: false },
           data: {
             lsgIsDeleted: true,
             lsgIsActive: false,
-            lsgUpdatedOn: updatedOn,
-            lsgUpdatedBy: updatedBy,
+            lsgModifiedOn: modifiedOn,
+            lsgModifiedBy: actor,
           },
         }),
       ]);
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: LOYALTY_SCHEME_TABLE_NAME,
-          screenName: LOYALTY_SCREEN_NAME,
-          screenType: 'master',
-          pk: lsId,
-          displayName: existing.lsName,
-          originalRecord: toSchemePayload(existing),
-          modifiedRecord: toSchemePayload({
-            ...updatedScheme,
-            parties: existing.parties.map((party) => ({
-              ...party,
-              lpsIsDeleted: true,
-              lpsIsActive: false,
-              lpsUpdatedOn: updatedOn,
-              lpsUpdatedBy: updatedBy,
-            })),
-            points: existing.points.map((point) => ({
-              ...point,
-              lsptIsDeleted: true,
-              lsptIsActive: false,
-              lsptUpdatedOn: updatedOn,
-              lsptUpdatedBy: updatedBy,
-            })),
-            gifts: existing.gifts.map((gift) => ({
-              ...gift,
-              lsgIsDeleted: true,
-              lsgIsActive: false,
-              lsgUpdatedOn: updatedOn,
-              lsgUpdatedBy: updatedBy,
-            })),
-          }),
-          userId: this.resolveAuditActor(),
-          notes: 'Loyalty scheme soft deleted',
-        },
+
+      await this.audit(
         tx,
-      );
-      return { ls_id: lsId, deleted: true };
-    });
-  }
-  async savePoint(dto: SaveLoyaltyPointDto): Promise<LoyaltyPointPayload> {
-    if (dto.lspt_id) {
-      return this.updatePoint(dto);
-    }
-    return this.createPoint(dto);
-  }
-  async getPointById(lsptId: string): Promise<LoyaltyPointPayload> {
-    const point = await this.prisma.loyaltySchemePoint.findFirst({
-      where: { lsptId, lsptIsDeleted: false },
-    });
-    if (!point) {
-      this.throwNotFound('lspt_id', lsptId, 'Loyalty point not found');
-    }
-    return toPointPayload(point);
-  }
-  async softDeletePoint(lsptId: string, lsptUpdatedBy?: string): Promise<LoyaltyPointDeleteResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.loyaltySchemePoint.findFirst({
-        where: { lsptId, lsptIsDeleted: false },
-      });
-      if (!existing) {
-        this.throwNotFound('lspt_id', lsptId, 'Loyalty point not found');
-      }
-      const updatedOn = new Date();
-      const updatedBy = resolveActorUuid(
-        lsptUpdatedBy,
-        this.requestContextService.getUserId(),
-      );
-      const updated = await tx.loyaltySchemePoint.update({
-        where: { lsptId },
-        data: {
-          lsptIsDeleted: true,
-          lsptIsActive: false,
-          lsptUpdatedOn: updatedOn,
-          lsptUpdatedBy: updatedBy,
-        },
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: LOYALTY_POINTS_TABLE_NAME,
-          screenName: LOYALTY_SCREEN_NAME,
-          screenType: 'master',
-          pk: lsptId,
-          displayName: buildPointDisplayName(existing.lsptLsId, existing.lsptSlno),
-          originalRecord: toPointPayload(existing),
-          modifiedRecord: toPointPayload(updated),
-          userId: this.resolveAuditActor(),
-          notes: 'Loyalty point soft deleted',
-        },
-        tx,
-      );
-      return { lspt_id: lsptId, deleted: true };
-    });
-  }
-  async saveGift(dto: SaveLoyaltyGiftDto): Promise<LoyaltyGiftPayload> {
-    if (dto.lsg_id) {
-      return this.updateGift(dto);
-    }
-    return this.createGift(dto);
-  }
-  async getGiftById(lsgId: string): Promise<LoyaltyGiftPayload> {
-    const gift = await this.prisma.loyaltySchemeGift.findFirst({
-      where: { lsgId, lsgIsDeleted: false },
-    });
-
-    if (!gift) {
-      this.throwNotFound('lsg_id', lsgId, 'Loyalty gift not found');
-    }
-
-    return toGiftPayload(gift);
-  }
-
-  async softDeleteGift(lsgId: string, lsgUpdatedBy?: string): Promise<LoyaltyGiftDeleteResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.loyaltySchemeGift.findFirst({
-        where: { lsgId, lsgIsDeleted: false },
-      });
-
-      if (!existing) {
-        this.throwNotFound('lsg_id', lsgId, 'Loyalty gift not found');
-      }
-
-      const updatedOn = new Date();
-      const updatedBy = resolveActorUuid(lsgUpdatedBy, this.requestContextService.getUserId());
-
-      const updated = await tx.loyaltySchemeGift.update({
-        where: { lsgId },
-        data: {
-          lsgIsDeleted: true,
-          lsgIsActive: false,
-          lsgUpdatedOn: updatedOn,
-          lsgUpdatedBy: updatedBy,
-        },
-      });
-
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: LOYALTY_GIFT_TABLE_NAME,
-          screenName: LOYALTY_SCREEN_NAME,
-          screenType: 'master',
-          pk: lsgId,
-          displayName: buildGiftDisplayName(existing.lsgLsId, existing.lsgSlno),
-          originalRecord: toGiftPayload(existing),
-          modifiedRecord: toGiftPayload(updated),
-          userId: this.resolveAuditActor(),
-          notes: 'Loyalty gift soft deleted',
-        },
-        tx,
+        'cancel',
+        SCHEME_TABLE_NAME,
+        lscId,
+        existing.lscName,
+        toSchemePayload(existing),
+        toSchemePayload({ ...updated, ...EMPTY_CHILDREN }),
+        'Loyalty scheme soft deleted with all scope, slab and gift rows',
       );
 
-      return { lsg_id: lsgId, deleted: true };
+      return { deleted: true as const, lsc_id: lscId };
     });
   }
 
   private async createScheme(dto: SaveLoyaltySchemeDto): Promise<LoyaltySchemePayload> {
-    const now = new Date();
-    const actorId = resolveActorUuid(this.requestContextService.getUserId());
-    const lsCode = normalizeNullableString(dto.ls_code);
-    const lsCompId = requireUuid(dto.ls_comp_id, 'ls_comp_id');
-    const lsStartDate = requireDate(dto.ls_start_date, 'ls_start_date');
-    const lsEndDate = requireDate(dto.ls_end_date, 'ls_end_date');
-    const lsCreatedBy = resolveActorUuid(dto.ls_created_by, actorId);
-    const lsUpdatedBy = resolveActorUuid(dto.ls_updated_by, lsCreatedBy, actorId);
+    const actor = this.resolveWriteActor(dto.lsc_created_by);
 
     const data: Prisma.LoyaltySchemeUncheckedCreateInput = {
-      lsName: requireString(dto.ls_name, 'ls_name'),
-      lsType: requireString(dto.ls_type, 'ls_type'),
-      lsStartDate,
-      lsEndDate,
-      lsCompId,
-      lsCode,
-      lsCreatedOn: now,
-      lsCreatedBy,
+      lscCompId: requireUuid(dto.lsc_comp_id, 'lsc_comp_id'),
+      lscCode: requireString(dto.lsc_code, 'lsc_code'),
+      lscName: requireString(dto.lsc_name, 'lsc_name'),
+      lscStartDate: parseDateOnly(dto.lsc_start_date, 'lsc_start_date'),
+      lscEndDate: parseDateOnly(dto.lsc_end_date, 'lsc_end_date'),
+      lscCreatedBy: actor,
     };
+    this.applySchemeFields(data, dto);
 
-    ensureDateRange(lsStartDate, lsEndDate);
-    applyOptionalSchemeFields(data, dto, actorId);
+    const effective = this.effectiveScheme(null, data);
+    this.assertSchemeInvariants(effective);
+    await this.assertCodeIsFree(this.prisma, data.lscCompId, effective.lscCode, null);
+    await this.assertPrimaryIsFree(this.prisma, data, effective, null);
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.ensureSchemeCodeUnique(tx, lsCompId, lsCode);
-
-        const created = await tx.loyaltyScheme.create({ data });
-        const parties = await this.syncSchemeParties(tx, created.lsId, dto.parties, actorId);
-        const payload = toSchemePayload({ ...created, parties, points: [], gifts: [] });
-
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'insert',
-            tableName: LOYALTY_SCHEME_TABLE_NAME,
-            screenName: LOYALTY_SCREEN_NAME,
-            screenType: 'master',
-            pk: created.lsId,
-            displayName: created.lsName,
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: this.resolveAuditActor(),
-            notes: 'Loyalty scheme created',
-          },
+    return this.prisma
+      .$transaction(async (tx) => {
+        const row = await tx.loyaltyScheme.create({ data });
+        await this.audit(
           tx,
+          'insert',
+          SCHEME_TABLE_NAME,
+          row.lscId,
+          row.lscName,
+          null,
+          toSchemePayload({ ...row, ...EMPTY_CHILDREN }),
+          'Loyalty scheme created',
         );
-
-        return payload;
+        // The grids audit themselves row by row as they are written, so the log
+        // stays chronological: header first, then each line it carried.
+        await this.syncChildren(tx, row, dto);
+        const after = await this.findSchemeWithChildren(tx, row.lscId);
+        return toSchemePayload(after ?? { ...row, ...EMPTY_CHILDREN });
+      })
+      .catch((error: unknown) => {
+        handleLoyaltyWriteError(error);
+        throw error;
       });
-    } catch (error) {
-      handleLoyaltyWriteError(error);
-      throw error;
-    }
   }
 
   private async updateScheme(dto: SaveLoyaltySchemeDto): Promise<LoyaltySchemePayload> {
-    const lsId = requireUuid(dto.ls_id, 'ls_id');
-    const actorId = resolveActorUuid(this.requestContextService.getUserId());
+    const lscId = requireUuid(dto.lsc_id, 'lsc_id');
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await this.findActiveSchemeWithChildren(tx, lsId);
+    return this.prisma
+      .$transaction(async (tx) => {
+        const existing = await this.findSchemeWithChildren(tx, lscId);
         if (!existing) {
-          this.throwNotFound('ls_id', lsId, 'Loyalty scheme not found');
+          this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found');
         }
-
-        const effectiveStartDate = hasOwnProperty(dto, 'ls_start_date')
-          ? requireDate(dto.ls_start_date, 'ls_start_date')
-          : existing.lsStartDate;
-        const effectiveEndDate = hasOwnProperty(dto, 'ls_end_date')
-          ? requireDate(dto.ls_end_date, 'ls_end_date')
-          : existing.lsEndDate;
-        const effectiveCompId = hasOwnProperty(dto, 'ls_comp_id')
-          ? requireUuid(dto.ls_comp_id, 'ls_comp_id')
-          : existing.lsCompId;
-        const effectiveCode = hasOwnProperty(dto, 'ls_code')
-          ? normalizeNullableString(dto.ls_code)
-          : existing.lsCode;
-
-        ensureDateRange(effectiveStartDate, effectiveEndDate);
-        await this.ensureSchemeCodeUnique(tx, effectiveCompId, effectiveCode, lsId);
 
         const data: Prisma.LoyaltySchemeUncheckedUpdateInput = {
-          lsUpdatedOn: new Date(),
-          lsUpdatedBy: resolveActorUuid(dto.ls_updated_by, actorId),
+          lscModifiedOn: new Date(),
+          lscModifiedBy: this.resolveWriteActor(dto.lsc_modified_by),
         };
+        if (hasOwnProperty(dto, 'lsc_comp_id')) {
+          data.lscCompId = requireUuid(dto.lsc_comp_id, 'lsc_comp_id');
+        }
+        if (hasOwnProperty(dto, 'lsc_code')) {
+          data.lscCode = requireString(dto.lsc_code, 'lsc_code');
+        }
+        if (hasOwnProperty(dto, 'lsc_name')) {
+          data.lscName = requireString(dto.lsc_name, 'lsc_name');
+        }
+        if (hasOwnProperty(dto, 'lsc_start_date')) {
+          data.lscStartDate = parseDateOnly(dto.lsc_start_date, 'lsc_start_date');
+        }
+        if (hasOwnProperty(dto, 'lsc_end_date')) {
+          data.lscEndDate = parseDateOnly(dto.lsc_end_date, 'lsc_end_date');
+        }
+        this.applySchemeFields(data, dto);
 
-        if (hasOwnProperty(dto, 'ls_name')) {
-          data.lsName = requireString(dto.ls_name, 'ls_name');
-        }
-        if (hasOwnProperty(dto, 'ls_type')) {
-          data.lsType = requireString(dto.ls_type, 'ls_type');
-        }
-        if (hasOwnProperty(dto, 'ls_start_date')) {
-          data.lsStartDate = effectiveStartDate;
-        }
-        if (hasOwnProperty(dto, 'ls_end_date')) {
-          data.lsEndDate = effectiveEndDate;
-        }
-        if (hasOwnProperty(dto, 'ls_comp_id')) {
-          data.lsCompId = effectiveCompId;
-        }
-        if (hasOwnProperty(dto, 'ls_code')) {
-          data.lsCode = effectiveCode;
-        }
+        const effective = this.effectiveScheme(existing, data);
+        this.assertSchemeInvariants(effective);
 
-        applyOptionalSchemeFields(data, dto, actorId);
+        const compId = (data.lscCompId as string | undefined) ?? existing.lscCompId;
+        await this.assertCodeIsFree(tx, compId, effective.lscCode, lscId);
+        await this.assertPrimaryIsFree(tx, { ...existing, ...data }, effective, lscId);
 
-        const updated = await tx.loyaltyScheme.update({
-          where: { lsId },
-          data,
-        });
+        const updated = await tx.loyaltyScheme.update({ where: { lscId }, data });
+        await this.syncChildren(tx, updated, dto);
+        const after = await this.findSchemeWithChildren(tx, lscId);
 
-        const parties = await this.syncSchemeParties(tx, lsId, dto.parties, actorId);
-        const payload = toSchemePayload({
-          ...updated,
-          parties: hasOwnProperty(dto, 'parties') ? parties : existing.parties,
-          points: existing.points,
-          gifts: existing.gifts,
-        });
-
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: LOYALTY_SCHEME_TABLE_NAME,
-            screenName: LOYALTY_SCREEN_NAME,
-            screenType: 'master',
-            pk: lsId,
-            displayName: updated.lsName,
-            originalRecord: toSchemePayload(existing),
-            modifiedRecord: payload,
-            userId: this.resolveAuditActor(),
-            notes: 'Loyalty scheme updated',
-          },
+        await this.audit(
           tx,
+          'update',
+          SCHEME_TABLE_NAME,
+          lscId,
+          updated.lscName,
+          toSchemePayload(existing),
+          after ? toSchemePayload(after) : null,
+          'Loyalty scheme updated',
         );
 
-        return payload;
+        return after ? toSchemePayload(after) : toSchemePayload({ ...updated, ...EMPTY_CHILDREN });
+      })
+      .catch((error: unknown) => {
+        handleLoyaltyWriteError(error);
+        throw error;
       });
-    } catch (error) {
-      handleLoyaltyWriteError(error);
-      throw error;
+  }
+
+  /** Only the keys actually present in the body are written. */
+  private applySchemeFields(
+    data: Prisma.LoyaltySchemeUncheckedCreateInput | Prisma.LoyaltySchemeUncheckedUpdateInput,
+    dto: SaveLoyaltySchemeDto,
+  ): void {
+    if (hasOwnProperty(dto, 'lsc_branch_id')) data.lscBranchId = dto.lsc_branch_id ?? null;
+    if (hasOwnProperty(dto, 'lsc_tenant_id')) data.lscTenantId = dto.lsc_tenant_id ?? null;
+    if (hasOwnProperty(dto, 'lsc_type')) data.lscType = normalizeEnum(dto.lsc_type);
+    if (hasOwnProperty(dto, 'lsc_status')) data.lscStatus = normalizeEnum(dto.lsc_status);
+    if (hasOwnProperty(dto, 'lsc_priority')) data.lscPriority = dto.lsc_priority as number;
+    if (hasOwnProperty(dto, 'lsc_auto_apply')) data.lscAutoApply = dto.lsc_auto_apply ?? true;
+
+    if (hasOwnProperty(dto, 'lsc_apply_on')) data.lscApplyOn = normalizeEnum(dto.lsc_apply_on);
+    if (hasOwnProperty(dto, 'lsc_calc_on_amount_type')) {
+      data.lscCalcOnAmountType = normalizeEnum(dto.lsc_calc_on_amount_type);
+    }
+    if (hasOwnProperty(dto, 'lsc_include_tax')) data.lscIncludeTax = dto.lsc_include_tax ?? false;
+    if (hasOwnProperty(dto, 'lsc_bill_type')) data.lscBillType = normalizeEnum(dto.lsc_bill_type);
+    if (hasOwnProperty(dto, 'lsc_min_bill_amount')) {
+      data.lscMinBillAmount = dto.lsc_min_bill_amount as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_max_earn_points')) {
+      data.lscMaxEarnPoints = dto.lsc_max_earn_points as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_earn_on_discounted')) {
+      data.lscEarnOnDiscounted = dto.lsc_earn_on_discounted ?? true;
+    }
+    if (hasOwnProperty(dto, 'lsc_earn_on_charges')) {
+      data.lscEarnOnCharges = dto.lsc_earn_on_charges ?? false;
+    }
+    if (hasOwnProperty(dto, 'lsc_earn_with_redeem')) {
+      data.lscEarnWithRedeem = dto.lsc_earn_with_redeem ?? false;
+    }
+    if (hasOwnProperty(dto, 'lsc_rounding_method')) {
+      data.lscRoundingMethod = normalizeEnum(dto.lsc_rounding_method);
+    }
+    if (hasOwnProperty(dto, 'lsc_points_decimals')) {
+      data.lscPointsDecimals = dto.lsc_points_decimals as number;
+    }
+
+    if (hasOwnProperty(dto, 'lsc_branch_scope')) {
+      data.lscBranchScope = normalizeEnum(dto.lsc_branch_scope);
+    }
+    if (hasOwnProperty(dto, 'lsc_cust_scope')) {
+      data.lscCustScope = normalizeEnum(dto.lsc_cust_scope);
+    }
+    if (hasOwnProperty(dto, 'lsc_item_scope')) {
+      data.lscItemScope = normalizeEnum(dto.lsc_item_scope);
+    }
+    if (hasOwnProperty(dto, 'lsc_price_level_id')) {
+      data.lscPriceLevelId = dto.lsc_price_level_id ?? null;
+    }
+
+    if (hasOwnProperty(dto, 'lsc_pool_mode')) data.lscPoolMode = normalizeEnum(dto.lsc_pool_mode);
+    if (hasOwnProperty(dto, 'lsc_allow_cross_branch_redeem')) {
+      data.lscAllowCrossBranchRedeem = dto.lsc_allow_cross_branch_redeem ?? true;
+    }
+
+    if (hasOwnProperty(dto, 'lsc_allow_point_redeem')) {
+      data.lscAllowPointRedeem = dto.lsc_allow_point_redeem ?? false;
+    }
+    if (hasOwnProperty(dto, 'lsc_allow_gift_redeem')) {
+      data.lscAllowGiftRedeem = dto.lsc_allow_gift_redeem ?? false;
+    }
+    if (hasOwnProperty(dto, 'lsc_redeem_tender_id')) {
+      data.lscRedeemTenderId = dto.lsc_redeem_tender_id ?? null;
+    }
+    if (hasOwnProperty(dto, 'lsc_redeem_value_per_point')) {
+      data.lscRedeemValuePerPoint = dto.lsc_redeem_value_per_point as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_min_redeem_points')) {
+      data.lscMinRedeemPoints = dto.lsc_min_redeem_points as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_max_redeem_points')) {
+      data.lscMaxRedeemPoints = dto.lsc_max_redeem_points as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_max_redeem_perc')) {
+      data.lscMaxRedeemPerc = dto.lsc_max_redeem_perc as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_redeem_min_bill_amount')) {
+      data.lscRedeemMinBillAmount = dto.lsc_redeem_min_bill_amount as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_redeem_multiple')) {
+      data.lscRedeemMultiple = dto.lsc_redeem_multiple as number;
+    }
+
+    if (hasOwnProperty(dto, 'lsc_expiry_basis')) {
+      data.lscExpiryBasis = normalizeEnum(dto.lsc_expiry_basis);
+    }
+    if (hasOwnProperty(dto, 'lsc_points_valid_days')) {
+      data.lscPointsValidDays = dto.lsc_points_valid_days as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_activation_days')) {
+      data.lscActivationDays = dto.lsc_activation_days as number;
+    }
+    if (hasOwnProperty(dto, 'lsc_return_mode')) {
+      data.lscReturnMode = normalizeEnum(dto.lsc_return_mode);
+    }
+
+    if (hasOwnProperty(dto, 'lsc_valid_from_time')) {
+      data.lscValidFromTime = dto.lsc_valid_from_time
+        ? parseTimeToUtcDate(dto.lsc_valid_from_time, 'lsc_valid_from_time')
+        : null;
+    }
+    if (hasOwnProperty(dto, 'lsc_valid_to_time')) {
+      data.lscValidToTime = dto.lsc_valid_to_time
+        ? parseTimeToUtcDate(dto.lsc_valid_to_time, 'lsc_valid_to_time')
+        : null;
+    }
+    if (hasOwnProperty(dto, 'lsc_valid_weekdays')) {
+      const weekdays = normalizeNullableString(dto.lsc_valid_weekdays);
+      data.lscValidWeekdays = weekdays ? weekdays.toUpperCase() : null;
+    }
+    if (hasOwnProperty(dto, 'lsc_remarks')) {
+      data.lscRemarks = normalizeNullableString(dto.lsc_remarks);
+    }
+    if (hasOwnProperty(dto, 'lsc_is_active')) data.lscIsActive = dto.lsc_is_active ?? true;
+    if (hasOwnProperty(dto, 'lsc_approved_on')) {
+      const value = normalizeNullableString(dto.lsc_approved_on);
+      if (value === null) {
+        data.lscApprovedOn = null;
+      } else {
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+          this.throwBadRequest('Validation failed', [
+            { field: 'lsc_approved_on', message: 'lsc_approved_on must be a valid datetime' },
+          ]);
+        }
+        data.lscApprovedOn = parsed;
+      }
+    }
+    if (hasOwnProperty(dto, 'lsc_approved_by')) {
+      data.lscApprovedBy = resolveActorUuid(dto.lsc_approved_by);
     }
   }
 
-  private calculatePointFactor(points: number | undefined, each: number | undefined): number {
-    const normalizedPoints = requireNumber(points, 'lspt_points', 0);
-    const normalizedEach = requireNumber(each, 'lspt_each', Number.EPSILON);
+  /** Existing row overlaid with whatever this request writes. */
+  private effectiveScheme(
+    existing: LoyaltyScheme | null,
+    data: Prisma.LoyaltySchemeUncheckedCreateInput | Prisma.LoyaltySchemeUncheckedUpdateInput,
+  ): EffectiveScheme {
+    const pick = <T>(key: string, fallback: T): T => {
+      const value = (data as Record<string, unknown>)[key];
+      return value === undefined ? fallback : (value as T);
+    };
 
-    if (normalizedEach <= 0) {
-      this.throwBadRequest('Validation failed', [
+    return {
+      lscCode: pick('lscCode', existing?.lscCode ?? ''),
+      lscType: pick('lscType', existing?.lscType ?? 'BOTH'),
+      lscStatus: pick('lscStatus', existing?.lscStatus ?? 'DRAFT'),
+      lscApplyOn: pick('lscApplyOn', existing?.lscApplyOn ?? 'BILL_AMOUNT'),
+      lscCalcOnAmountType: pick(
+        'lscCalcOnAmountType',
+        existing?.lscCalcOnAmountType ?? 'NET_AMOUNT',
+      ),
+      lscBillType: pick('lscBillType', existing?.lscBillType ?? 'ALL'),
+      lscRoundingMethod: pick('lscRoundingMethod', existing?.lscRoundingMethod ?? 'FLOOR'),
+      lscBranchScope: pick('lscBranchScope', existing?.lscBranchScope ?? 'ALL'),
+      lscCustScope: pick('lscCustScope', existing?.lscCustScope ?? 'ALL'),
+      lscItemScope: pick('lscItemScope', existing?.lscItemScope ?? 'ALL'),
+      lscPoolMode: pick('lscPoolMode', existing?.lscPoolMode ?? 'COMPANY'),
+      lscReturnMode: pick('lscReturnMode', existing?.lscReturnMode ?? 'REVERSE'),
+      lscExpiryBasis: pick('lscExpiryBasis', existing?.lscExpiryBasis ?? 'EARN_DATE'),
+      lscPriority: pick('lscPriority', existing?.lscPriority ?? 1),
+      lscPointsDecimals: pick('lscPointsDecimals', existing?.lscPointsDecimals ?? 2),
+      lscActivationDays: pick('lscActivationDays', existing?.lscActivationDays ?? 0),
+      lscPointsValidDays: pick('lscPointsValidDays', existing?.lscPointsValidDays ?? 0),
+      lscMinBillAmount: pick('lscMinBillAmount', toNumber(existing?.lscMinBillAmount ?? 0)),
+      lscMaxEarnPoints: pick('lscMaxEarnPoints', toNumber(existing?.lscMaxEarnPoints ?? 0)),
+      lscAllowPointRedeem: pick('lscAllowPointRedeem', existing?.lscAllowPointRedeem ?? false),
+      lscRedeemValuePerPoint: pick(
+        'lscRedeemValuePerPoint',
+        toNumber(existing?.lscRedeemValuePerPoint ?? 0),
+      ),
+      lscMinRedeemPoints: pick('lscMinRedeemPoints', toNumber(existing?.lscMinRedeemPoints ?? 0)),
+      lscMaxRedeemPoints: pick('lscMaxRedeemPoints', toNumber(existing?.lscMaxRedeemPoints ?? 0)),
+      lscMaxRedeemPerc: pick('lscMaxRedeemPerc', toNumber(existing?.lscMaxRedeemPerc ?? 100)),
+      lscRedeemMinBillAmount: pick(
+        'lscRedeemMinBillAmount',
+        toNumber(existing?.lscRedeemMinBillAmount ?? 0),
+      ),
+      lscRedeemMultiple: pick('lscRedeemMultiple', toNumber(existing?.lscRedeemMultiple ?? 0)),
+      lscStartDate: pick('lscStartDate', existing?.lscStartDate ?? new Date(0)),
+      lscEndDate: pick('lscEndDate', existing?.lscEndDate ?? new Date(0)),
+      lscValidFromTime: pick('lscValidFromTime', existing?.lscValidFromTime ?? null),
+      lscValidToTime: pick('lscValidToTime', existing?.lscValidToTime ?? null),
+      lscValidWeekdays: pick('lscValidWeekdays', existing?.lscValidWeekdays ?? null),
+      lscApprovedBy: pick('lscApprovedBy', existing?.lscApprovedBy ?? null),
+    };
+  }
+
+  /**
+   * Every CHECK the table carries, run first — see
+   * utils/loyalty-scheme-invariants.ts, where each one is a named function.
+   * Collected rather than short-circuited so a bad payload is answered with all
+   * of its problems at once.
+   */
+  private assertSchemeInvariants(scheme: EffectiveScheme): void {
+    const errors = collectSchemeInvariantErrors(scheme);
+    if (errors.length > 0) {
+      this.throwBadRequest('Validation failed', errors);
+    }
+  }
+
+  /**
+   * ux_lsc_code is a PARTIAL unique index, so Prisma neither declares nor
+   * necessarily creates it — check here rather than hoping for a P2002.
+   */
+  private async assertCodeIsFree(
+    client: WriteClient,
+    compId: string,
+    code: string,
+    ignoreLscId: string | null,
+  ): Promise<void> {
+    const clash = await client.loyaltyScheme.findFirst({
+      where: {
+        lscCompId: compId,
+        lscIsDeleted: false,
+        lscCode: { equals: code, mode: 'insensitive' },
+        ...(ignoreLscId ? { lscId: { not: ignoreLscId } } : {}),
+      },
+      select: { lscId: true },
+    });
+    if (clash) {
+      this.throwConflict('Duplicate loyalty scheme code', [
+        { field: 'lsc_code', message: `lsc_code ${code} already exists for this company` },
+      ]);
+    }
+  }
+
+  /**
+   * ux_lsc_primary — one APPROVED, active, priority-1 scheme per company /
+   * branch / type. Also a partial index Prisma cannot see, and the tie it
+   * prevents is the one the resolver cannot break: two primaries on the same
+   * bill and whichever the till reads first wins.
+   */
+  private async assertPrimaryIsFree(
+    client: WriteClient,
+    data: { lscCompId?: unknown; lscBranchId?: unknown; lscIsActive?: unknown },
+    effective: EffectiveScheme,
+    ignoreLscId: string | null,
+  ): Promise<void> {
+    // The index is partial on all four: a scheme written inactive, or not yet
+    // approved, or at a lower priority, cannot clash — and must not be blocked.
+    // lscIsActive is not part of EffectiveScheme, so it is read off the merged
+    // row, where it defaults true exactly as the column does.
+    const isActive = data.lscIsActive === undefined ? true : Boolean(data.lscIsActive);
+    if (effective.lscPriority !== 1 || effective.lscStatus !== 'APPROVED' || !isActive) {
+      return;
+    }
+
+    const compId = data.lscCompId as string | undefined;
+    if (!compId) {
+      return;
+    }
+    const branchId = (data.lscBranchId as string | null | undefined) ?? null;
+
+    const clash = await client.loyaltyScheme.findFirst({
+      where: {
+        lscCompId: compId,
+        lscBranchId: branchId,
+        lscType: effective.lscType,
+        lscPriority: 1,
+        lscStatus: 'APPROVED',
+        lscIsActive: true,
+        lscIsDeleted: false,
+        ...(ignoreLscId ? { lscId: { not: ignoreLscId } } : {}),
+      },
+      select: { lscId: true, lscCode: true },
+    });
+    if (clash) {
+      this.throwConflict('Conflicting primary loyalty scheme', [
         {
-          field: 'lspt_each',
-          message: 'lspt_each must be greater than 0',
+          field: 'lsc_priority',
+          message:
+            `Scheme ${clash.lscCode} is already the approved primary (priority 1) ` +
+            `${effective.lscType} scheme for this company and branch. Lower this scheme's ` +
+            'priority, or retire that one.',
         },
       ]);
     }
-
-    return normalizedPoints / normalizedEach;
   }
 
-  private async createPoint(dto: SaveLoyaltyPointDto): Promise<LoyaltyPointPayload> {
-    const now = new Date();
-    const actorId = resolveActorUuid(this.requestContextService.getUserId());
-    const lsptLsId = requireUuid(dto.lspt_ls_id, 'lspt_ls_id');
-    const lsptCreatedBy = resolveActorUuid(dto.lspt_created_by, actorId);
-    const lsptUpdatedBy = resolveActorUuid(dto.lspt_updated_by, lsptCreatedBy, actorId);
+  // ─── §2 branch rows ─────────────────────────────────────────────────────────
 
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const scheme = await this.getActiveScheme(tx, lsptLsId);
-        await this.ensurePointReferenceRecords(tx, scheme.lsItemType, dto);
+  private async saveBranchRow(
+    tx: Prisma.TransactionClient,
+    lscId: string,
+    row: LoyaltySchemeBranchRowDto,
+    index: number,
+  ): Promise<BranchRow> {
+    const slno = row.lsb_slno ?? index + 1;
+    requireInteger(slno, 'lsb_slno', 1);
+    this.assertBranchInvariants({ lsbSlno: slno });
 
-        const lsptSlno = dto.lspt_slno ?? (await this.getNextPointSlno(tx, lsptLsId));
-        await this.ensurePointSlnoUnique(tx, lsptLsId, lsptSlno);
-
-        const lsptPoints = requireNumber(dto.lspt_points, 'lspt_points', 0);
-        const lsptEach = requireNumber(dto.lspt_each, 'lspt_each', Number.EPSILON);
-        const lsptFactor = this.calculatePointFactor(lsptPoints, lsptEach);
-
-        const data: Prisma.LoyaltySchemePointUncheckedCreateInput = {
-          lsptLsId,
-          lsptSlno,
-          lsptPoints,
-          lsptEach,
-          lsptFactor,
-          lsptCreatedOn: now,
-          lsptCreatedBy,
-          lsptUpdatedOn: now,
-          lsptUpdatedBy,
-        };
-
-        applyOptionalPointFields(data, dto);
-
-        data.lsptEach = lsptEach;
-        data.lsptFactor = lsptFactor;
-
-        const created = await tx.loyaltySchemePoint.create({ data });
-        const payload = toPointPayload(created);
-
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'insert',
-            tableName: LOYALTY_POINTS_TABLE_NAME,
-            screenName: LOYALTY_SCREEN_NAME,
-            screenType: 'master',
-            pk: created.lsptId,
-            displayName: buildPointDisplayName(created.lsptLsId, created.lsptSlno),
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: this.resolveAuditActor(),
-            notes: 'Loyalty point created',
-          },
-          tx,
-        );
-
-        return payload;
+    if (row.lsb_id) {
+      const existing = await tx.loyaltySchemeBranch.findFirst({
+        where: { lsbId: row.lsb_id, lsbLscId: lscId, lsbIsDeleted: false },
       });
-    } catch (error) {
-      handleLoyaltyWriteError(error);
-      throw error;
+      if (!existing) {
+        this.throwNotFound('lsb_id', row.lsb_id, 'Loyalty scheme branch row not found');
+      }
+      const data: Prisma.LoyaltySchemeBranchUncheckedUpdateInput = {
+        lsbModifiedOn: new Date(),
+        lsbModifiedBy: this.resolveWriteActor(row.lsb_modified_by),
+      };
+      if (hasOwnProperty(row, 'lsb_slno')) data.lsbSlno = slno;
+      if (hasOwnProperty(row, 'lsb_branch_id')) {
+        data.lsbBranchId = requireUuid(row.lsb_branch_id, 'lsb_branch_id');
+      }
+      if (hasOwnProperty(row, 'lsb_is_exclude')) data.lsbIsExclude = row.lsb_is_exclude ?? false;
+      if (hasOwnProperty(row, 'lsb_notes')) data.lsbNotes = normalizeNullableString(row.lsb_notes);
+      if (hasOwnProperty(row, 'lsb_is_active')) data.lsbIsActive = row.lsb_is_active ?? true;
+
+      const updated = await tx.loyaltySchemeBranch.update({
+        where: { lsbId: row.lsb_id },
+        data,
+        include: BRANCH_LOOKUP,
+      });
+      await this.audit(
+        tx,
+        'update',
+        BRANCH_TABLE_NAME,
+        updated.lsbId,
+        `Scheme ${lscId} / Branch ${updated.lsbSlno}`,
+        toBranchPayload(existing),
+        toBranchPayload(updated),
+        'Loyalty scheme branch row updated',
+      );
+      return updated;
+    }
+
+    const created = await tx.loyaltySchemeBranch.create({
+      data: {
+        lsbLscId: lscId,
+        lsbSlno: slno,
+        lsbBranchId: requireUuid(row.lsb_branch_id, 'lsb_branch_id'),
+        lsbIsExclude: row.lsb_is_exclude ?? false,
+        lsbNotes: normalizeNullableString(row.lsb_notes),
+        lsbIsActive: row.lsb_is_active ?? true,
+        lsbCreatedBy: this.resolveWriteActor(row.lsb_created_by),
+      },
+      include: BRANCH_LOOKUP,
+    });
+    await this.audit(
+      tx,
+      'insert',
+      BRANCH_TABLE_NAME,
+      created.lsbId,
+      `Scheme ${lscId} / Branch ${created.lsbSlno}`,
+      null,
+      toBranchPayload(created),
+      'Loyalty scheme branch row created',
+    );
+    return created;
+  }
+
+  // ─── §3 party rows ──────────────────────────────────────────────────────────
+
+  private async savePartyRow(
+    tx: Prisma.TransactionClient,
+    lscId: string,
+    row: LoyaltySchemePartyRowDto,
+    index: number,
+  ): Promise<PartyRow> {
+    const existing = row.lsp_id
+      ? await tx.loyaltySchemeParty.findFirst({
+          where: { lspId: row.lsp_id, lspLscId: lscId, lspIsDeleted: false },
+        })
+      : null;
+    if (row.lsp_id && !existing) {
+      this.throwNotFound('lsp_id', row.lsp_id, 'Loyalty scheme party row not found');
+    }
+
+    // The row as it will stand once this write lands — the stored values
+    // overlaid with whatever the caller sent — which is what the constraints are
+    // actually about.
+    const slno = row.lsp_slno ?? existing?.lspSlno ?? index + 1;
+    const kind = hasOwnProperty(row, 'lsp_kind')
+      ? normalizeEnum(row.lsp_kind)
+      : (existing?.lspKind ?? normalizeEnum(row.lsp_kind));
+    const matchPriority = hasOwnProperty(row, 'lsp_match_priority')
+      ? (row.lsp_match_priority as number)
+      : (existing?.lspMatchPriority ?? LSP_DEFAULT_MATCH_PRIORITY[kind] ?? 1);
+
+    this.assertPartyInvariants({
+      lspSlno: slno,
+      lspKind: kind,
+      lspMatchPriority: matchPriority,
+    });
+
+    if (existing) {
+      const data: Prisma.LoyaltySchemePartyUncheckedUpdateInput = {
+        lspModifiedOn: new Date(),
+        lspModifiedBy: this.resolveWriteActor(row.lsp_modified_by),
+      };
+      if (hasOwnProperty(row, 'lsp_slno')) data.lspSlno = slno;
+      if (hasOwnProperty(row, 'lsp_kind')) data.lspKind = kind;
+      if (hasOwnProperty(row, 'lsp_scope_id')) {
+        data.lspScopeId = requireUuid(row.lsp_scope_id, 'lsp_scope_id');
+      }
+      if (hasOwnProperty(row, 'lsp_is_exclude')) data.lspIsExclude = row.lsp_is_exclude ?? false;
+      if (hasOwnProperty(row, 'lsp_match_priority')) data.lspMatchPriority = matchPriority;
+      if (hasOwnProperty(row, 'lsp_notes')) data.lspNotes = normalizeNullableString(row.lsp_notes);
+      if (hasOwnProperty(row, 'lsp_is_active')) data.lspIsActive = row.lsp_is_active ?? true;
+
+      const updated = await tx.loyaltySchemeParty.update({
+        where: { lspId: existing.lspId },
+        data,
+        include: PARTY_LOOKUP,
+      });
+      await this.audit(
+        tx,
+        'update',
+        PARTY_TABLE_NAME,
+        updated.lspId,
+        `Scheme ${lscId} / ${updated.lspKind} ${updated.lspScopeId}`,
+        toPartyPayload(existing),
+        toPartyPayload(updated),
+        'Loyalty scheme party row updated',
+      );
+      return updated;
+    }
+
+    const created = await tx.loyaltySchemeParty.create({
+      data: {
+        lspLscId: lscId,
+        lspSlno: slno,
+        lspKind: kind,
+        lspScopeId: requireUuid(row.lsp_scope_id, 'lsp_scope_id'),
+        lspIsExclude: row.lsp_is_exclude ?? false,
+        lspMatchPriority: matchPriority,
+        lspNotes: normalizeNullableString(row.lsp_notes),
+        lspIsActive: row.lsp_is_active ?? true,
+        lspCreatedBy: this.resolveWriteActor(row.lsp_created_by),
+      },
+      include: PARTY_LOOKUP,
+    });
+    await this.audit(
+      tx,
+      'insert',
+      PARTY_TABLE_NAME,
+      created.lspId,
+      `Scheme ${lscId} / ${created.lspKind} ${created.lspScopeId}`,
+      null,
+      toPartyPayload(created),
+      'Loyalty scheme party row created',
+    );
+    return created;
+  }
+
+  // ─── §4 item rows ───────────────────────────────────────────────────────────
+
+  private async saveItemRow(
+    tx: Prisma.TransactionClient,
+    lscId: string,
+    row: LoyaltySchemeItemRowDto,
+    index: number,
+  ): Promise<ItemRow> {
+    const existing = row.lsi_id
+      ? await tx.loyaltySchemeItem.findFirst({
+          where: { lsiId: row.lsi_id, lsiLscId: lscId, lsiIsDeleted: false },
+        })
+      : null;
+    if (row.lsi_id && !existing) {
+      this.throwNotFound('lsi_id', row.lsi_id, 'Loyalty scheme item row not found');
+    }
+
+    const slno = row.lsi_slno ?? existing?.lsiSlno ?? index + 1;
+    const kind = hasOwnProperty(row, 'lsi_kind')
+      ? normalizeEnum(row.lsi_kind)
+      : (existing?.lsiKind ?? normalizeEnum(row.lsi_kind));
+
+    const factor = this.pickNumber(row, 'lsi_factor', existing?.lsiFactor, 1);
+    const points = this.pickNumber(row, 'lsi_points', existing?.lsiPoints, 0);
+    const maxPoints = this.pickNumber(row, 'lsi_max_points', existing?.lsiMaxPoints, 0);
+    const isExclude = hasOwnProperty(row, 'lsi_is_exclude')
+      ? (row.lsi_is_exclude ?? false)
+      : (existing?.lsiIsExclude ?? false);
+    const matchPriority = hasOwnProperty(row, 'lsi_match_priority')
+      ? (row.lsi_match_priority as number)
+      : (existing?.lsiMatchPriority ?? LSI_DEFAULT_MATCH_PRIORITY[kind] ?? 1);
+
+    this.assertItemInvariants({
+      lsiSlno: slno,
+      lsiKind: kind,
+      lsiIsExclude: isExclude,
+      lsiFactor: factor,
+      lsiPoints: points,
+      lsiMaxPoints: maxPoints,
+      lsiMatchPriority: matchPriority,
+    });
+
+    if (existing) {
+      const data: Prisma.LoyaltySchemeItemUncheckedUpdateInput = {
+        lsiModifiedOn: new Date(),
+        lsiModifiedBy: this.resolveWriteActor(row.lsi_modified_by),
+      };
+      if (hasOwnProperty(row, 'lsi_slno')) data.lsiSlno = slno;
+      if (hasOwnProperty(row, 'lsi_kind')) data.lsiKind = kind;
+      if (hasOwnProperty(row, 'lsi_scope_id')) {
+        data.lsiScopeId = requireUuid(row.lsi_scope_id, 'lsi_scope_id');
+      }
+      if (hasOwnProperty(row, 'lsi_is_exclude')) data.lsiIsExclude = isExclude;
+      if (hasOwnProperty(row, 'lsi_factor')) data.lsiFactor = factor;
+      if (hasOwnProperty(row, 'lsi_points')) data.lsiPoints = points;
+      if (hasOwnProperty(row, 'lsi_max_points')) data.lsiMaxPoints = maxPoints;
+      if (hasOwnProperty(row, 'lsi_match_priority')) data.lsiMatchPriority = matchPriority;
+      if (hasOwnProperty(row, 'lsi_notes')) data.lsiNotes = normalizeNullableString(row.lsi_notes);
+      if (hasOwnProperty(row, 'lsi_is_active')) data.lsiIsActive = row.lsi_is_active ?? true;
+
+      const updated = await tx.loyaltySchemeItem.update({
+        where: { lsiId: existing.lsiId },
+        data,
+        include: ITEM_LOOKUP,
+      });
+      await this.audit(
+        tx,
+        'update',
+        ITEM_TABLE_NAME,
+        updated.lsiId,
+        `Scheme ${lscId} / ${updated.lsiKind} ${updated.lsiScopeId}`,
+        toItemPayload(existing),
+        toItemPayload(updated),
+        'Loyalty scheme item row updated',
+      );
+      return updated;
+    }
+
+    const created = await tx.loyaltySchemeItem.create({
+      data: {
+        lsiLscId: lscId,
+        lsiSlno: slno,
+        lsiKind: kind,
+        lsiScopeId: requireUuid(row.lsi_scope_id, 'lsi_scope_id'),
+        lsiIsExclude: isExclude,
+        lsiFactor: factor,
+        lsiPoints: points,
+        lsiMaxPoints: maxPoints,
+        lsiMatchPriority: matchPriority,
+        lsiNotes: normalizeNullableString(row.lsi_notes),
+        lsiIsActive: row.lsi_is_active ?? true,
+        lsiCreatedBy: this.resolveWriteActor(row.lsi_created_by),
+      },
+      include: ITEM_LOOKUP,
+    });
+    await this.audit(
+      tx,
+      'insert',
+      ITEM_TABLE_NAME,
+      created.lsiId,
+      `Scheme ${lscId} / ${created.lsiKind} ${created.lsiScopeId}`,
+      null,
+      toItemPayload(created),
+      'Loyalty scheme item row created',
+    );
+    return created;
+  }
+
+  // ─── §5 slab rows ───────────────────────────────────────────────────────────
+
+  private async saveSlabRow(
+    tx: Prisma.TransactionClient,
+    lscId: string,
+    row: LoyaltySchemeSlabRowDto,
+    index: number,
+  ): Promise<SlabRow> {
+    const existing = row.lss_id
+      ? await tx.loyaltySchemeSlab.findFirst({
+          where: { lssId: row.lss_id, lssLscId: lscId, lssIsDeleted: false },
+        })
+      : null;
+    if (row.lss_id && !existing) {
+      this.throwNotFound('lss_id', row.lss_id, 'Loyalty scheme slab row not found');
+    }
+
+    const band: EffectiveSlabRow = {
+      lssSlno: row.lss_slno ?? existing?.lssSlno ?? index + 1,
+      lssExceeds: this.pickNumber(row, 'lss_exceeds', existing?.lssExceeds, 0),
+      lssUpto: this.pickNullableNumber(row, 'lss_upto', existing?.lssUpto),
+      lssEach: this.pickNumber(row, 'lss_each', existing?.lssEach, 1),
+      lssPoints: this.pickNumber(row, 'lss_points', existing?.lssPoints, 0),
+      lssFactor: this.pickNumber(row, 'lss_factor', existing?.lssFactor, 1),
+      lssMaxPoints: this.pickNumber(row, 'lss_max_points', existing?.lssMaxPoints, 0),
+    };
+    this.assertSlabInvariants(band);
+
+    if (existing) {
+      const data: Prisma.LoyaltySchemeSlabUncheckedUpdateInput = {
+        lssModifiedOn: new Date(),
+        lssModifiedBy: this.resolveWriteActor(row.lss_modified_by),
+      };
+      if (hasOwnProperty(row, 'lss_slno')) data.lssSlno = band.lssSlno;
+      if (hasOwnProperty(row, 'lss_item_id')) data.lssItemId = row.lss_item_id ?? null;
+      if (hasOwnProperty(row, 'lss_unit_id')) data.lssUnitId = row.lss_unit_id ?? null;
+      if (hasOwnProperty(row, 'lss_exceeds')) data.lssExceeds = band.lssExceeds;
+      if (hasOwnProperty(row, 'lss_upto')) data.lssUpto = band.lssUpto;
+      if (hasOwnProperty(row, 'lss_each')) data.lssEach = band.lssEach;
+      if (hasOwnProperty(row, 'lss_points')) data.lssPoints = band.lssPoints;
+      if (hasOwnProperty(row, 'lss_factor')) data.lssFactor = band.lssFactor;
+      if (hasOwnProperty(row, 'lss_max_points')) data.lssMaxPoints = band.lssMaxPoints;
+      if (hasOwnProperty(row, 'lss_notes')) data.lssNotes = normalizeNullableString(row.lss_notes);
+      if (hasOwnProperty(row, 'lss_is_active')) data.lssIsActive = row.lss_is_active ?? true;
+
+      const updated = await tx.loyaltySchemeSlab.update({
+        where: { lssId: existing.lssId },
+        data,
+        include: SLAB_LOOKUP,
+      });
+      await this.audit(
+        tx,
+        'update',
+        SLAB_TABLE_NAME,
+        updated.lssId,
+        `Scheme ${lscId} / Band ${updated.lssSlno}`,
+        toSlabPayload(existing),
+        toSlabPayload(updated),
+        'Loyalty scheme slab row updated',
+      );
+      return updated;
+    }
+
+    const created = await tx.loyaltySchemeSlab.create({
+      data: {
+        lssLscId: lscId,
+        lssSlno: band.lssSlno,
+        lssItemId: row.lss_item_id ?? null,
+        lssUnitId: row.lss_unit_id ?? null,
+        lssExceeds: band.lssExceeds,
+        lssUpto: band.lssUpto,
+        lssEach: band.lssEach,
+        lssPoints: band.lssPoints,
+        lssFactor: band.lssFactor,
+        lssMaxPoints: band.lssMaxPoints,
+        lssNotes: normalizeNullableString(row.lss_notes),
+        lssIsActive: row.lss_is_active ?? true,
+        lssCreatedBy: this.resolveWriteActor(row.lss_created_by),
+      },
+      include: SLAB_LOOKUP,
+    });
+    await this.audit(
+      tx,
+      'insert',
+      SLAB_TABLE_NAME,
+      created.lssId,
+      `Scheme ${lscId} / Band ${created.lssSlno}`,
+      null,
+      toSlabPayload(created),
+      'Loyalty scheme slab row created',
+    );
+    return created;
+  }
+
+  // ─── §6 gift rows ───────────────────────────────────────────────────────────
+
+  private async saveGiftRow(
+    tx: Prisma.TransactionClient,
+    lscId: string,
+    row: LoyaltySchemeGiftRowDto,
+    index: number,
+  ): Promise<GiftRow> {
+    const existing = row.lsg_id
+      ? await tx.loyaltySchemeGift.findFirst({
+          where: { lsgId: row.lsg_id, lsgLscId: lscId, lsgIsDeleted: false },
+        })
+      : null;
+    if (row.lsg_id && !existing) {
+      this.throwNotFound('lsg_id', row.lsg_id, 'Loyalty scheme gift row not found');
+    }
+
+    const validFrom = hasOwnProperty(row, 'lsg_valid_from')
+      ? parseNullableDateOnly(row.lsg_valid_from, 'lsg_valid_from')
+      : (existing?.lsgValidFrom ?? null);
+    const validUpto = hasOwnProperty(row, 'lsg_valid_upto')
+      ? parseNullableDateOnly(row.lsg_valid_upto, 'lsg_valid_upto')
+      : (existing?.lsgValidUpto ?? null);
+
+    const gift: EffectiveGiftRow = {
+      lsgSlno: row.lsg_slno ?? existing?.lsgSlno ?? index + 1,
+      lsgItemQty: this.pickNumber(row, 'lsg_item_qty', existing?.lsgItemQty, 1),
+      lsgRedeemPoints: this.pickNumber(row, 'lsg_redeem_points', existing?.lsgRedeemPoints, 0),
+      lsgMaxQtyPerBill: this.pickNumber(row, 'lsg_max_qty_per_bill', existing?.lsgMaxQtyPerBill, 0),
+      lsgValidFrom: validFrom,
+      lsgValidUpto: validUpto,
+    };
+    this.assertGiftInvariants(gift);
+
+    if (existing) {
+      const data: Prisma.LoyaltySchemeGiftUncheckedUpdateInput = {
+        lsgModifiedOn: new Date(),
+        lsgModifiedBy: this.resolveWriteActor(row.lsg_modified_by),
+      };
+      if (hasOwnProperty(row, 'lsg_slno')) data.lsgSlno = gift.lsgSlno;
+      if (hasOwnProperty(row, 'lsg_item_id')) {
+        data.lsgItemId = requireUuid(row.lsg_item_id, 'lsg_item_id');
+      }
+      if (hasOwnProperty(row, 'lsg_unit_id')) {
+        data.lsgUnitId = requireUuid(row.lsg_unit_id, 'lsg_unit_id');
+      }
+      if (hasOwnProperty(row, 'lsg_item_qty')) data.lsgItemQty = gift.lsgItemQty;
+      if (hasOwnProperty(row, 'lsg_redeem_points')) data.lsgRedeemPoints = gift.lsgRedeemPoints;
+      if (hasOwnProperty(row, 'lsg_repeat')) data.lsgRepeat = row.lsg_repeat ?? false;
+      if (hasOwnProperty(row, 'lsg_max_qty_per_bill')) {
+        data.lsgMaxQtyPerBill = gift.lsgMaxQtyPerBill;
+      }
+      if (hasOwnProperty(row, 'lsg_stock_check')) data.lsgStockCheck = row.lsg_stock_check ?? true;
+      if (hasOwnProperty(row, 'lsg_valid_from')) data.lsgValidFrom = validFrom;
+      if (hasOwnProperty(row, 'lsg_valid_upto')) data.lsgValidUpto = validUpto;
+      if (hasOwnProperty(row, 'lsg_notes')) data.lsgNotes = normalizeNullableString(row.lsg_notes);
+      if (hasOwnProperty(row, 'lsg_is_active')) data.lsgIsActive = row.lsg_is_active ?? true;
+
+      const updated = await tx.loyaltySchemeGift.update({
+        where: { lsgId: existing.lsgId },
+        data,
+        include: GIFT_LOOKUP,
+      });
+      await this.audit(
+        tx,
+        'update',
+        GIFT_TABLE_NAME,
+        updated.lsgId,
+        `Scheme ${lscId} / Gift ${updated.lsgSlno}`,
+        toGiftPayload(existing),
+        toGiftPayload(updated),
+        'Loyalty scheme gift row updated',
+      );
+      return updated;
+    }
+
+    const created = await tx.loyaltySchemeGift.create({
+      data: {
+        lsgLscId: lscId,
+        lsgSlno: gift.lsgSlno,
+        lsgItemId: requireUuid(row.lsg_item_id, 'lsg_item_id'),
+        lsgUnitId: requireUuid(row.lsg_unit_id, 'lsg_unit_id'),
+        lsgItemQty: gift.lsgItemQty,
+        lsgRedeemPoints: gift.lsgRedeemPoints,
+        lsgRepeat: row.lsg_repeat ?? false,
+        lsgMaxQtyPerBill: gift.lsgMaxQtyPerBill,
+        lsgStockCheck: row.lsg_stock_check ?? true,
+        lsgValidFrom: validFrom,
+        lsgValidUpto: validUpto,
+        lsgNotes: normalizeNullableString(row.lsg_notes),
+        lsgIsActive: row.lsg_is_active ?? true,
+        lsgCreatedBy: this.resolveWriteActor(row.lsg_created_by),
+      },
+      include: GIFT_LOOKUP,
+    });
+    await this.audit(
+      tx,
+      'insert',
+      GIFT_TABLE_NAME,
+      created.lsgId,
+      `Scheme ${lscId} / Gift ${created.lsgSlno}`,
+      null,
+      toGiftPayload(created),
+      'Loyalty scheme gift row created',
+    );
+    return created;
+  }
+
+  /** ck_lsb_slno. */
+  private assertBranchInvariants(row: EffectiveBranchRow): void {
+    const errors = collectBranchInvariantErrors(row);
+    if (errors.length > 0) {
+      this.throwBadRequest('Validation failed', errors);
     }
   }
-  private async updatePoint(dto: SaveLoyaltyPointDto): Promise<LoyaltyPointPayload> {
-    const lsptId = requireUuid(dto.lspt_id, 'lspt_id');
-    const actorId = resolveActorUuid(this.requestContextService.getUserId());
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.loyaltySchemePoint.findFirst({
-          where: { lsptId, lsptIsDeleted: false },
-        });
-        if (!existing) {
-          this.throwNotFound('lspt_id', lsptId, 'Loyalty point not found');
-        }
-        const effectiveSchemeId = hasOwnProperty(dto, 'lspt_ls_id')
-          ? requireUuid(dto.lspt_ls_id, 'lspt_ls_id')
-          : existing.lsptLsId;
-        const effectiveSlno = hasOwnProperty(dto, 'lspt_slno')
-          ? requireInteger(dto.lspt_slno, 'lspt_slno')
-          : existing.lsptSlno;
-        const scheme = await this.getActiveScheme(tx, effectiveSchemeId);
-        await this.ensurePointReferenceRecords(tx, scheme.lsItemType, dto);
-        await this.ensurePointSlnoUnique(tx, effectiveSchemeId, effectiveSlno, lsptId);
-        const effectivePoints = hasOwnProperty(dto, 'lspt_points')
-          ? requireNumber(dto.lspt_points, 'lspt_points', 0)
-          : requireNumber(existing.lsptPoints.toNumber(), 'lspt_points', 0);
-        const effectiveEach = hasOwnProperty(dto, 'lspt_each')
-          ? requireNumber(dto.lspt_each, 'lspt_each', Number.EPSILON)
-          : requireNumber(existing.lsptEach.toNumber(), 'lspt_each', Number.EPSILON);
-        const effectiveFactor = this.calculatePointFactor(effectivePoints, effectiveEach);
-        const data: Prisma.LoyaltySchemePointUncheckedUpdateInput = {
-          lsptUpdatedOn: new Date(),
-          lsptUpdatedBy: resolveActorUuid(dto.lspt_updated_by, actorId),
-        };
-        if (hasOwnProperty(dto, 'lspt_ls_id')) {
-          data.lsptLsId = effectiveSchemeId;
-        }
-        if (hasOwnProperty(dto, 'lspt_slno')) {
-          data.lsptSlno = effectiveSlno;
-        }
-        if (hasOwnProperty(dto, 'lspt_points')) {
-          data.lsptPoints = effectivePoints;
-        }
-        applyOptionalPointFields(data, dto);
-        data.lsptPoints = effectivePoints;
-        data.lsptEach = effectiveEach;
-        data.lsptFactor = effectiveFactor;
-        const updated = await tx.loyaltySchemePoint.update({
-          where: { lsptId },
-          data,
-        });
-        const payload = toPointPayload(updated);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: LOYALTY_POINTS_TABLE_NAME,
-            screenName: LOYALTY_SCREEN_NAME,
-            screenType: 'master',
-            pk: lsptId,
-            displayName: buildPointDisplayName(updated.lsptLsId, updated.lsptSlno),
-            originalRecord: toPointPayload(existing),
-            modifiedRecord: payload,
-            userId: this.resolveAuditActor(),
-            notes: 'Loyalty point updated',
-          },
-          tx,
-        );
-        return payload;
-      });
-    } catch (error) {
-      handleLoyaltyWriteError(error);
-      throw error;
+
+  /** ck_lsp_kind, ck_lsp_slno and ck_lsp_match_priority, collected. */
+  private assertPartyInvariants(row: EffectivePartyRow): void {
+    const errors = collectPartyInvariantErrors(row);
+    if (errors.length > 0) {
+      this.throwBadRequest('Validation failed', errors);
     }
   }
-  private async createGift(dto: SaveLoyaltyGiftDto): Promise<LoyaltyGiftPayload> {
-    const now = new Date();
-    const actorId = resolveActorUuid(this.requestContextService.getUserId());
-    const lsgLsId = requireUuid(dto.lsg_ls_id, 'lsg_ls_id');
-    const lsgCreatedBy = resolveActorUuid(dto.lsg_created_by, actorId);
-    const lsgUpdatedBy = resolveActorUuid(dto.lsg_updated_by, lsgCreatedBy, actorId);
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        await this.ensureSchemeExists(tx, lsgLsId);
-        await this.ensureGiftReferenceRecords(tx, dto);
-        const lsgSlno = dto.lsg_slno ?? (await this.getNextGiftSlno(tx, lsgLsId));
-        await this.ensureGiftSlnoUnique(tx, lsgLsId, lsgSlno);
-        const data: Prisma.LoyaltySchemeGiftUncheckedCreateInput = {
-          lsgLsId,
-          lsgSlno,
-          lsgItemId: requireUuid(dto.lsg_item_id, 'lsg_item_id'),
-          lsgUnitId: requireUuid(dto.lsg_unit_id, 'lsg_unit_id'),
-          lsgItemQty: requireNumber(dto.lsg_item_qty, 'lsg_item_qty', Number.EPSILON),
-          lsgRedeemPoints: requireNumber(dto.lsg_redeem_points, 'lsg_redeem_points', 0),
-          lsgCreatedOn: now,
-          lsgCreatedBy,
-          lsgUpdatedOn: now,
-          lsgUpdatedBy,
-        };
-        applyOptionalGiftFields(data, dto);
-        const created = await tx.loyaltySchemeGift.create({ data });
-        const payload = toGiftPayload(created);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'insert',
-            tableName: LOYALTY_GIFT_TABLE_NAME,
-            screenName: LOYALTY_SCREEN_NAME,
-            screenType: 'master',
-            pk: created.lsgId,
-            displayName: buildGiftDisplayName(created.lsgLsId, created.lsgSlno),
-            originalRecord: null,
-            modifiedRecord: payload,
-            userId: this.resolveAuditActor(),
-            notes: 'Loyalty gift created',
-          },
-          tx,
-        );
-        return payload;
-      });
-    } catch (error) {
-      handleLoyaltyWriteError(error);
-      throw error;
+
+  /** ck_lsi_kind, ck_lsi_exclude, ck_lsi_values, ck_lsi_slno and
+   *  ck_lsi_match_priority, collected. */
+  private assertItemInvariants(row: EffectiveItemRow): void {
+    const errors = collectItemInvariantErrors(row);
+    if (errors.length > 0) {
+      this.throwBadRequest('Validation failed', errors);
     }
   }
-  private async updateGift(dto: SaveLoyaltyGiftDto): Promise<LoyaltyGiftPayload> {
-    const lsgId = requireUuid(dto.lsg_id, 'lsg_id');
-    const actorId = resolveActorUuid(this.requestContextService.getUserId());
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        const existing = await tx.loyaltySchemeGift.findFirst({
-          where: { lsgId, lsgIsDeleted: false },
-        });
-        if (!existing) {
-          this.throwNotFound('lsg_id', lsgId, 'Loyalty gift not found');
-        }
-        const effectiveSchemeId = hasOwnProperty(dto, 'lsg_ls_id')
-          ? requireUuid(dto.lsg_ls_id, 'lsg_ls_id')
-          : existing.lsgLsId;
-        const effectiveSlno = hasOwnProperty(dto, 'lsg_slno')
-          ? requireInteger(dto.lsg_slno, 'lsg_slno')
-          : existing.lsgSlno;
-        await this.ensureSchemeExists(tx, effectiveSchemeId);
-        await this.ensureGiftReferenceRecords(tx, dto);
-        await this.ensureGiftSlnoUnique(tx, effectiveSchemeId, effectiveSlno, lsgId);
-        const data: Prisma.LoyaltySchemeGiftUncheckedUpdateInput = {
-          lsgUpdatedOn: new Date(),
-          lsgUpdatedBy: resolveActorUuid(dto.lsg_updated_by, actorId),
-        };
-        if (hasOwnProperty(dto, 'lsg_ls_id')) {
-          data.lsgLsId = effectiveSchemeId;
-        }
-        if (hasOwnProperty(dto, 'lsg_slno')) {
-          data.lsgSlno = effectiveSlno;
-        }
-        if (hasOwnProperty(dto, 'lsg_item_id')) {
-          data.lsgItemId = requireUuid(dto.lsg_item_id, 'lsg_item_id');
-        }
-        if (hasOwnProperty(dto, 'lsg_unit_id')) {
-          data.lsgUnitId = requireUuid(dto.lsg_unit_id, 'lsg_unit_id');
-        }
-        if (hasOwnProperty(dto, 'lsg_item_qty')) {
-          data.lsgItemQty = requireNumber(dto.lsg_item_qty, 'lsg_item_qty', Number.EPSILON);
-        }
-        if (hasOwnProperty(dto, 'lsg_redeem_points')) {
-          data.lsgRedeemPoints = requireNumber(dto.lsg_redeem_points, 'lsg_redeem_points', 0);
-        }
-        applyOptionalGiftFields(data, dto);
-        const updated = await tx.loyaltySchemeGift.update({
-          where: { lsgId },
-          data,
-        });
-        const payload = toGiftPayload(updated);
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: LOYALTY_GIFT_TABLE_NAME,
-            screenName: LOYALTY_SCREEN_NAME,
-            screenType: 'master',
-            pk: lsgId,
-            displayName: buildGiftDisplayName(updated.lsgLsId, updated.lsgSlno),
-            originalRecord: toGiftPayload(existing),
-            modifiedRecord: payload,
-            userId: this.resolveAuditActor(),
-            notes: 'Loyalty gift updated',
-          },
-          tx,
-        );
-        return payload;
-      });
-    } catch (error) {
-      handleLoyaltyWriteError(error);
-      throw error;
+
+  /** ck_lss_band, ck_lss_values and ck_lss_slno, collected. */
+  private assertSlabInvariants(band: EffectiveSlabRow): void {
+    const errors = collectSlabInvariantErrors(band);
+    if (errors.length > 0) {
+      this.throwBadRequest('Validation failed', errors);
     }
   }
-  private async findActiveSchemeWithChildren(
-    client: LoyaltyWriteClient,
-    lsId: string,
+
+  /** ck_lsg_qty, ck_lsg_points, ck_lsg_validity and ck_lsg_slno, collected. */
+  private assertGiftInvariants(row: EffectiveGiftRow): void {
+    const errors = collectGiftInvariantErrors(row);
+    if (errors.length > 0) {
+      this.throwBadRequest('Validation failed', errors);
+    }
+  }
+
+  // ─── Shared plumbing ────────────────────────────────────────────────────────
+
+  private async findSchemeWithChildren(
+    client: WriteClient,
+    lscId: string,
   ): Promise<SchemeWithChildren | null> {
     return client.loyaltyScheme.findFirst({
-      where: { lsId, lsIsDeleted: false },
-      include: {
-        parties: {
-          where: { lpsIsDeleted: false, lpsIsActive: true },
-          orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }],
-        },
-        points: {
-          where: { lsptIsDeleted: false, lsptIsActive: true },
-          orderBy: [{ lsptSlno: 'asc' }, { lsptId: 'asc' }],
-        },
-        gifts: {
-          where: { lsgIsDeleted: false, lsgIsActive: true },
-          orderBy: [{ lsgSlno: 'asc' }, { lsgId: 'asc' }],
-        },
-      },
+      where: { lscId, lscIsDeleted: false },
+      include: { ...SCHEME_LOOKUP, ...EDITABLE_CHILDREN_INCLUDE },
     });
   }
-  private async syncSchemeParties(
-    client: LoyaltyWriteClient,
-    lsId: string,
-    inputParties: SaveLoyaltyPartyDto[] | undefined,
-    actorId: string | null,
-  ): Promise<LoyaltySchemeParty[]> {
-    const existing = await client.loyaltySchemeParty.findMany({
-      where: { lpsLsId: lsId, lpsIsDeleted: false },
-      orderBy: [{ lpsSlno: 'asc' }, { lpsId: 'asc' }],
-    });
-    if (inputParties === undefined) {
-      return existing;
-    }
-    const existingMap = new Map(existing.map((party) => [party.lpsId, party]));
-    const keptIds = new Set<string>();
-    const seenSlnos = new Set<number>();
-    const now = new Date();
-    const persisted: LoyaltySchemeParty[] = [];
-    for (const [index, inputParty] of inputParties.entries()) {
-      const lpsSlno = inputParty.lps_slno ?? index + 1;
-      if (seenSlnos.has(lpsSlno)) {
-        this.throwConflict('Duplicate loyalty party serial number is not allowed', [
-          {
-            field: 'lps_slno',
-            message: `A loyalty party scope row already exists with serial number ${lpsSlno}`,
-          },
-        ]);
-      }
-      seenSlnos.add(lpsSlno);
-      if (inputParty.lps_id) {
-        const existingParty = existingMap.get(inputParty.lps_id);
-        if (!existingParty) {
-          this.throwNotFound('lps_id', inputParty.lps_id, 'Loyalty party scope row not found');
-        }
-        const updated = await client.loyaltySchemeParty.update({
-          where: { lpsId: inputParty.lps_id },
-          data: {
-            lpsSlno,
-            lpsScopeType: requireString(inputParty.lps_scope_type, 'lps_scope_type'),
-            lpsScopeId: requireUuid(inputParty.lps_scope_id, 'lps_scope_id'),
-            lpsIsExclude: inputParty.lps_is_exclude ?? false,
-            lpsNotes: inputParty.lps_notes ?? null,
-            lpsIsActive: inputParty.lps_is_active ?? true,
-            lpsUpdatedOn: now,
-            lpsUpdatedBy: resolveActorUuid(inputParty.lps_updated_by, actorId),
-          },
-        });
-        await this.auditLogService.logEntityChange(
-          {
-            action: 'update',
-            tableName: LOYALTY_PARTY_TABLE_NAME,
-            screenName: LOYALTY_SCREEN_NAME,
-            screenType: 'master',
-            pk: updated.lpsId,
-            displayName: buildPartyDisplayName(updated.lpsLsId, updated.lpsSlno),
-            originalRecord: toPartyPayload(existingParty),
-            modifiedRecord: toPartyPayload(updated),
-            userId: this.resolveAuditActor(),
-            notes: 'Loyalty party scope updated',
-          },
-          client,
-        );
-        keptIds.add(updated.lpsId);
-        persisted.push(updated);
-        continue;
-      }
-      const createdBy = resolveActorUuid(inputParty.lps_created_by, actorId);
-      const updatedBy = resolveActorUuid(inputParty.lps_updated_by, createdBy, actorId);
-      const created = await client.loyaltySchemeParty.create({
-        data: {
-          lpsLsId: lsId,
-          lpsSlno,
-          lpsScopeType: requireString(inputParty.lps_scope_type, 'lps_scope_type'),
-          lpsScopeId: requireUuid(inputParty.lps_scope_id, 'lps_scope_id'),
-          lpsIsExclude: inputParty.lps_is_exclude ?? false,
-          lpsNotes: inputParty.lps_notes ?? null,
-          lpsIsActive: inputParty.lps_is_active ?? true,
-          lpsCreatedOn: now,
-          lpsCreatedBy: createdBy,
-          lpsUpdatedOn: now,
-          lpsUpdatedBy: updatedBy,
-        },
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'insert',
-          tableName: LOYALTY_PARTY_TABLE_NAME,
-          screenName: LOYALTY_SCREEN_NAME,
-          screenType: 'master',
-          pk: created.lpsId,
-          displayName: buildPartyDisplayName(created.lpsLsId, created.lpsSlno),
-          originalRecord: null,
-          modifiedRecord: toPartyPayload(created),
-          userId: this.resolveAuditActor(),
-          notes: 'Loyalty party scope created',
-        },
-        client,
-      );
-      keptIds.add(created.lpsId);
-      persisted.push(created);
-    }
-    const removedParties = existing.filter((party) => !keptIds.has(party.lpsId));
-    for (const removedParty of removedParties) {
-      const deleted = await client.loyaltySchemeParty.update({
-        where: { lpsId: removedParty.lpsId },
-        data: {
-          lpsIsDeleted: true,
-          lpsIsActive: false,
-          lpsUpdatedOn: now,
-          lpsUpdatedBy: resolveActorUuid(actorId),
-        },
-      });
-      await this.auditLogService.logEntityChange(
-        {
-          action: 'cancel',
-          tableName: LOYALTY_PARTY_TABLE_NAME,
-          screenName: LOYALTY_SCREEN_NAME,
-          screenType: 'master',
-          pk: deleted.lpsId,
-          displayName: buildPartyDisplayName(deleted.lpsLsId, deleted.lpsSlno),
-          originalRecord: toPartyPayload(removedParty),
-          modifiedRecord: toPartyPayload(deleted),
-          userId: this.resolveAuditActor(),
-          notes: 'Loyalty party scope soft deleted',
-        },
-        client,
-      );
-    }
-    return persisted.sort((left, right) => {
-      if (left.lpsSlno === right.lpsSlno) {
-        return left.lpsId.localeCompare(right.lpsId);
-      }
-      return left.lpsSlno - right.lpsSlno;
-    });
-  }
-  private async ensureSchemeExists(client: LoyaltyWriteClient, lsId: string): Promise<void> {
+
+  private async requireScheme(client: WriteClient, lscId: string): Promise<LoyaltyScheme> {
     const scheme = await client.loyaltyScheme.findFirst({
-      where: { lsId, lsIsDeleted: false },
-      select: { lsId: true },
+      where: { lscId, lscIsDeleted: false },
     });
     if (!scheme) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'ls_id',
-          message: `No active loyalty scheme found with id ${lsId}`,
-        },
-      ]);
-    }
-  }
-  private async getActiveScheme(
-    client: LoyaltyWriteClient,
-    lsId: string,
-  ): Promise<Pick<LoyaltyScheme, 'lsId' | 'lsItemType'>> {
-    const scheme = await client.loyaltyScheme.findFirst({
-      where: { lsId, lsIsDeleted: false },
-      select: {
-        lsId: true,
-        lsItemType: true,
-      },
-    });
-    if (!scheme) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field: 'ls_id',
-          message: `No active loyalty scheme found with id ${lsId}`,
-        },
-      ]);
+      this.throwNotFound('lsc_id', lscId, 'Loyalty scheme not found');
     }
     return scheme;
   }
-  private async ensureItemExists(
-    client: LoyaltyWriteClient,
-    itemId: string,
-    field: string,
+
+  /**
+   * The five grids, saved alongside the header in the same transaction.
+   *
+   * An array that is PRESENT replaces its grid: every row is upserted in the
+   * order it arrived, then anything still on the scheme but missing from the
+   * array is soft deleted. That is the whole point of the single call — the
+   * screen posts the grid it is showing and the server makes the table match.
+   *
+   * An array that is ABSENT leaves its grid untouched, so a header-only save (a
+   * status flip, an approval) can never wipe rows the caller never loaded.
+   */
+  private async syncChildren(
+    tx: Prisma.TransactionClient,
+    scheme: LoyaltyScheme,
+    dto: SaveLoyaltySchemeDto,
   ): Promise<void> {
-    const item = await client.itemMaster.findFirst({
-      where: {
-        itemId,
-        itemIsDeleted: false,
-        itemIsActive: true,
-      },
-      select: { itemId: true },
-    });
-    if (!item) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field,
-          message: `${field} does not reference an active item`,
-        },
-      ]);
-    }
-  }
-  private async ensureUnitExists(
-    client: LoyaltyWriteClient,
-    unitId: string,
-    field: string,
-  ): Promise<void> {
-    const unit = await client.unit.findFirst({
-      where: {
-        unit_id: unitId,
-        unit_is_deleted: false,
-        unit_is_active: true,
-      },
-      select: { unit_id: true },
-    });
-    if (!unit) {
-      this.throwBadRequest('Validation failed', [
-        {
-          field,
-          message: `${field} does not reference an active unit`,
-        },
-      ]);
-    }
-  }
-  private async ensurePointReferenceRecords(
-    client: LoyaltyWriteClient,
-    schemeItemType: string,
-    dto: SaveLoyaltyPointDto,
-  ): Promise<void> {
-    if (dto.lspt_item_id) {
-      await this.ensurePointScopeReference(
-        client,
-        schemeItemType,
-        dto.lspt_item_id,
-        'lspt_item_id',
+    const actor = dto.lsc_modified_by ?? dto.lsc_created_by;
+
+    if (dto.branches !== undefined) {
+      this.assertNoDuplicates(
+        dto.branches.map((row, index) => ({ key: row.lsb_branch_id ?? `#${index}`, index })),
+        'lsb_branch_id',
       );
+      const kept: string[] = [];
+      for (let index = 0; index < dto.branches.length; index += 1) {
+        const saved = await this.saveBranchRow(tx, scheme.lscId, dto.branches[index], index);
+        kept.push(saved.lsbId);
+      }
+      const stale = await tx.loyaltySchemeBranch.findMany({
+        where: { lsbLscId: scheme.lscId, lsbIsDeleted: false, lsbId: { notIn: kept } },
+      });
+      for (const row of stale) {
+        await this.softDeleteBranchRow(tx, row, actor);
+      }
     }
-    if (dto.lspt_unit_id) {
-      await this.ensureUnitExists(client, dto.lspt_unit_id, 'lspt_unit_id');
+
+    if (dto.parties !== undefined) {
+      this.assertNoDuplicates(
+        dto.parties.map((row, index) => ({
+          key: `${(row.lsp_kind ?? '').toUpperCase()}:${row.lsp_scope_id ?? `#${index}`}`,
+          index,
+        })),
+        'lsp_scope_id',
+      );
+      const kept: string[] = [];
+      for (let index = 0; index < dto.parties.length; index += 1) {
+        const saved = await this.savePartyRow(tx, scheme.lscId, dto.parties[index], index);
+        kept.push(saved.lspId);
+      }
+      const stale = await tx.loyaltySchemeParty.findMany({
+        where: { lspLscId: scheme.lscId, lspIsDeleted: false, lspId: { notIn: kept } },
+      });
+      for (const row of stale) {
+        await this.softDeletePartyRow(tx, row, actor);
+      }
+    }
+
+    if (dto.items !== undefined) {
+      this.assertNoDuplicates(
+        dto.items.map((row, index) => ({
+          key: `${(row.lsi_kind ?? '').toUpperCase()}:${row.lsi_scope_id ?? `#${index}`}`,
+          index,
+        })),
+        'lsi_scope_id',
+      );
+      const kept: string[] = [];
+      for (let index = 0; index < dto.items.length; index += 1) {
+        const saved = await this.saveItemRow(tx, scheme.lscId, dto.items[index], index);
+        kept.push(saved.lsiId);
+      }
+      const stale = await tx.loyaltySchemeItem.findMany({
+        where: { lsiLscId: scheme.lscId, lsiIsDeleted: false, lsiId: { notIn: kept } },
+      });
+      for (const row of stale) {
+        await this.softDeleteItemRow(tx, row, actor);
+      }
+    }
+
+    if (dto.slabs !== undefined) {
+      // ux_lss_band is (scheme, COALESCE(item, nil uuid), exceeds): two bands
+      // may share a lower bound only if they name different items.
+      this.assertNoDuplicates(
+        dto.slabs.map((row, index) => ({
+          key: `${row.lss_item_id ?? '-'}:${row.lss_exceeds ?? 0}`,
+          index,
+        })),
+        'lss_exceeds',
+      );
+      const kept: string[] = [];
+      for (let index = 0; index < dto.slabs.length; index += 1) {
+        const saved = await this.saveSlabRow(tx, scheme.lscId, dto.slabs[index], index);
+        kept.push(saved.lssId);
+      }
+      const stale = await tx.loyaltySchemeSlab.findMany({
+        where: { lssLscId: scheme.lscId, lssIsDeleted: false, lssId: { notIn: kept } },
+      });
+      for (const row of stale) {
+        await this.softDeleteSlabRow(tx, row, actor);
+      }
+    }
+
+    if (dto.gifts !== undefined) {
+      this.assertNoDuplicates(
+        dto.gifts.map((row, index) => ({
+          key: `${row.lsg_item_id ?? `#${index}`}:${row.lsg_unit_id ?? '-'}`,
+          index,
+        })),
+        'lsg_item_id',
+      );
+      const kept: string[] = [];
+      for (let index = 0; index < dto.gifts.length; index += 1) {
+        const saved = await this.saveGiftRow(tx, scheme.lscId, dto.gifts[index], index);
+        kept.push(saved.lsgId);
+      }
+      const stale = await tx.loyaltySchemeGift.findMany({
+        where: { lsgLscId: scheme.lscId, lsgIsDeleted: false, lsgId: { notIn: kept } },
+      });
+      for (const row of stale) {
+        await this.softDeleteGiftRow(tx, row, actor);
+      }
     }
   }
-  private async ensureGiftReferenceRecords(
-    client: LoyaltyWriteClient,
-    dto: SaveLoyaltyGiftDto,
+
+  /** Soft delete one row plus its audit entry, inside a caller's transaction. */
+  private async softDeleteBranchRow(
+    tx: Prisma.TransactionClient,
+    existing: LoyaltySchemeBranch,
+    modifiedBy?: string,
   ): Promise<void> {
-    await this.ensureItemExists(
-      client,
-      requireUuid(dto.lsg_item_id, 'lsg_item_id'),
-      'lsg_item_id',
+    const updated = await tx.loyaltySchemeBranch.update({
+      where: { lsbId: existing.lsbId },
+      data: {
+        lsbIsDeleted: true,
+        lsbIsActive: false,
+        lsbModifiedOn: new Date(),
+        lsbModifiedBy: this.resolveWriteActor(modifiedBy),
+      },
+    });
+    await this.audit(
+      tx,
+      'cancel',
+      BRANCH_TABLE_NAME,
+      existing.lsbId,
+      `Scheme ${existing.lsbLscId} / Branch ${existing.lsbSlno}`,
+      toBranchPayload(existing),
+      toBranchPayload(updated),
+      'Loyalty scheme branch row soft deleted',
     );
-    await this.ensureUnitExists(
-      client,
-      requireUuid(dto.lsg_unit_id, 'lsg_unit_id'),
-      'lsg_unit_id',
+  }
+
+  /** Soft delete one row plus its audit entry, inside a caller's transaction. */
+  private async softDeletePartyRow(
+    tx: Prisma.TransactionClient,
+    existing: LoyaltySchemeParty,
+    modifiedBy?: string,
+  ): Promise<void> {
+    const updated = await tx.loyaltySchemeParty.update({
+      where: { lspId: existing.lspId },
+      data: {
+        lspIsDeleted: true,
+        lspIsActive: false,
+        lspModifiedOn: new Date(),
+        lspModifiedBy: this.resolveWriteActor(modifiedBy),
+      },
+    });
+    await this.audit(
+      tx,
+      'cancel',
+      PARTY_TABLE_NAME,
+      existing.lspId,
+      `Scheme ${existing.lspLscId} / ${existing.lspKind} ${existing.lspScopeId}`,
+      toPartyPayload(existing),
+      toPartyPayload(updated),
+      'Loyalty scheme party row soft deleted',
     );
   }
-  private async ensurePointScopeReference(
-    client: LoyaltyWriteClient,
-    schemeItemType: string,
-    scopeId: string,
-    field: string,
+
+  /** Soft delete one row plus its audit entry, inside a caller's transaction. */
+  private async softDeleteItemRow(
+    tx: Prisma.TransactionClient,
+    existing: LoyaltySchemeItem,
+    modifiedBy?: string,
   ): Promise<void> {
-    switch (schemeItemType) {
-      case 'ITEM_GROUP': {
-        const itemGroup = await client.itemGroupMaster.findFirst({
-          where: {
-            itgId: scopeId,
-            itgIsDeleted: false,
-            itgIsActive: true,
-          },
-          select: { itgId: true },
-        });
-        if (!itemGroup) {
-          this.throwBadRequest('Validation failed', [
-            {
-              field,
-              message: `${field} does not reference an active item group`,
-            },
-          ]);
-        }
-        return;
-      }
-      case 'ITEM_BRAND': {
-        const itemBrand = await client.itemBrandMaster.findFirst({
-          where: {
-            brand_id: scopeId,
-            brand_is_deleted: false,
-            brand_is_active: true,
-          },
-          select: { brand_id: true },
-        });
-
-        if (!itemBrand) {
-          this.throwBadRequest('Validation failed', [
-            {
-              field,
-              message: `${field} does not reference an active item brand`,
-            },
-          ]);
-        }
-        return;
-      }
-      case 'ITEM_CATEGORY': {
-        const itemCategory = await client.categoryMaster.findFirst({
-          where: {
-            categoryId: scopeId,
-            categoryIsDeleted: false,
-            categoryIsActive: true,
-          },
-          select: { categoryId: true },
-        });
-
-        if (!itemCategory) {
-          this.throwBadRequest('Validation failed', [
-            {
-              field,
-              message: `${field} does not reference an active item category`,
-            },
-          ]);
-        }
-        return;
-      }
-      case 'ITEM_SECTION': {
-        const itemSection = await client.itemSectionMaster.findFirst({
-          where: {
-            secId: scopeId,
-            secIsDeleted: false,
-            secIsActive: true,
-          },
-          select: { secId: true },
-        });
-
-        if (!itemSection) {
-          this.throwBadRequest('Validation failed', [
-            {
-              field,
-              message: `${field} does not reference an active item section`,
-            },
-          ]);
-        }
-        return;
-      }
-      case 'ALL':
-      case 'ITEM':
-      default:
-        await this.ensureItemExists(client, scopeId, field);
-    }
-  }
-  private async ensureSchemeCodeUnique(
-    client: LoyaltyWriteClient,
-    lsCompId: string,
-    lsCode: string | null,
-    excludeId?: string,
-  ): Promise<void> {
-    if (!lsCode) {
-      return;
-    }
-    const existing = await client.loyaltyScheme.findFirst({
-      where: {
-        lsCompId,
-        lsIsDeleted: false,
-        lsCode: { equals: lsCode, mode: Prisma.QueryMode.insensitive },
-        ...(excludeId ? { NOT: { lsId: excludeId } } : {}),
+    const updated = await tx.loyaltySchemeItem.update({
+      where: { lsiId: existing.lsiId },
+      data: {
+        lsiIsDeleted: true,
+        lsiIsActive: false,
+        lsiModifiedOn: new Date(),
+        lsiModifiedBy: this.resolveWriteActor(modifiedBy),
       },
-      select: { lsId: true },
     });
-    if (existing) {
-      this.throwConflict('Duplicate loyalty scheme code is not allowed', [
-        {
-          field: 'ls_code',
-          message: `A loyalty scheme already exists with code ${lsCode}`,
-        },
-      ]);
-    }
+    await this.audit(
+      tx,
+      'cancel',
+      ITEM_TABLE_NAME,
+      existing.lsiId,
+      `Scheme ${existing.lsiLscId} / ${existing.lsiKind} ${existing.lsiScopeId}`,
+      toItemPayload(existing),
+      toItemPayload(updated),
+      'Loyalty scheme item row soft deleted',
+    );
   }
-  private async ensurePointSlnoUnique(
-    client: LoyaltyWriteClient,
-    lsptLsId: string,
-    lsptSlno: number,
-    excludeId?: string,
+
+  /** Soft delete one row plus its audit entry, inside a caller's transaction. */
+  private async softDeleteSlabRow(
+    tx: Prisma.TransactionClient,
+    existing: LoyaltySchemeSlab,
+    modifiedBy?: string,
   ): Promise<void> {
-    const existing = await client.loyaltySchemePoint.findFirst({
-      where: {
-        lsptLsId,
-        lsptSlno,
-        lsptIsDeleted: false,
-        ...(excludeId ? { NOT: { lsptId: excludeId } } : {}),
+    const updated = await tx.loyaltySchemeSlab.update({
+      where: { lssId: existing.lssId },
+      data: {
+        lssIsDeleted: true,
+        lssIsActive: false,
+        lssModifiedOn: new Date(),
+        lssModifiedBy: this.resolveWriteActor(modifiedBy),
       },
-      select: { lsptId: true },
     });
-
-    if (existing) {
-      this.throwConflict('Duplicate loyalty point serial number is not allowed', [
-        {
-          field: 'lspt_slno',
-          message: `A loyalty point slab already exists with serial number ${lsptSlno}`,
-        },
-      ]);
-    }
+    await this.audit(
+      tx,
+      'cancel',
+      SLAB_TABLE_NAME,
+      existing.lssId,
+      `Scheme ${existing.lssLscId} / Band ${existing.lssSlno}`,
+      toSlabPayload(existing),
+      toSlabPayload(updated),
+      'Loyalty scheme slab row soft deleted',
+    );
   }
 
-  private async ensureGiftSlnoUnique(
-    client: LoyaltyWriteClient,
-    lsgLsId: string,
-    lsgSlno: number,
-    excludeId?: string,
+  /** Soft delete one row plus its audit entry, inside a caller's transaction. */
+  private async softDeleteGiftRow(
+    tx: Prisma.TransactionClient,
+    existing: LoyaltySchemeGift,
+    modifiedBy?: string,
   ): Promise<void> {
-    const existing = await client.loyaltySchemeGift.findFirst({
-      where: {
-        lsgLsId,
-        lsgSlno,
-        lsgIsDeleted: false,
-        ...(excludeId ? { NOT: { lsgId: excludeId } } : {}),
+    const updated = await tx.loyaltySchemeGift.update({
+      where: { lsgId: existing.lsgId },
+      data: {
+        lsgIsDeleted: true,
+        lsgIsActive: false,
+        lsgModifiedOn: new Date(),
+        lsgModifiedBy: this.resolveWriteActor(modifiedBy),
       },
-      select: { lsgId: true },
     });
+    await this.audit(
+      tx,
+      'cancel',
+      GIFT_TABLE_NAME,
+      existing.lsgId,
+      `Scheme ${existing.lsgLscId} / Gift ${existing.lsgSlno}`,
+      toGiftPayload(existing),
+      toGiftPayload(updated),
+      'Loyalty scheme gift row soft deleted',
+    );
+  }
 
-    if (existing) {
-      this.throwConflict('Duplicate loyalty gift serial number is not allowed', [
-        {
-          field: 'lsg_slno',
-          message: `A loyalty gift rule already exists with serial number ${lsgSlno}`,
-        },
-      ]);
+  /**
+   * The ux_* uniques on all five child tables are partial, so Prisma may not
+   * have created them. Catch the same-batch duplicate here — two grid rows for
+   * one brand is a typo the user can fix, not a 500 later.
+   */
+  private assertNoDuplicates(keys: Array<{ key: string; index: number }>, field: string): void {
+    const seen = new Map<string, number>();
+    for (const { key, index } of keys) {
+      const first = seen.get(key);
+      if (first !== undefined) {
+        this.throwBadRequest('Validation failed', [
+          { field, message: `Rows ${first + 1} and ${index + 1} target the same scope` },
+        ]);
+      }
+      seen.set(key, index);
     }
   }
 
-  private async getNextPointSlno(client: LoyaltyWriteClient, lsptLsId: string): Promise<number> {
-    const result = await client.loyaltySchemePoint.aggregate({
-      where: { lsptLsId, lsptIsDeleted: false },
-      _max: { lsptSlno: true },
-    });
-
-    return (result._max.lsptSlno ?? 0) + 1;
+  private pickNumber(
+    row: object,
+    key: string,
+    existing: Prisma.Decimal | null | undefined,
+    fallback: number,
+  ): number {
+    if (hasOwnProperty(row, key)) {
+      const value = (row as Record<string, unknown>)[key];
+      return typeof value === 'number' ? value : fallback;
+    }
+    if (existing === null || existing === undefined) {
+      return fallback;
+    }
+    return Number(existing.toString());
   }
 
-  private async getNextGiftSlno(client: LoyaltyWriteClient, lsgLsId: string): Promise<number> {
-    const result = await client.loyaltySchemeGift.aggregate({
-      where: { lsgLsId, lsgIsDeleted: false },
-      _max: { lsgSlno: true },
-    });
+  private pickNullableNumber(
+    row: object,
+    key: string,
+    existing: Prisma.Decimal | null | undefined,
+  ): number | null {
+    if (hasOwnProperty(row, key)) {
+      const value = (row as Record<string, unknown>)[key];
+      return typeof value === 'number' ? value : null;
+    }
+    return existing === null || existing === undefined ? null : Number(existing.toString());
+  }
 
-    return (result._max.lsgSlno ?? 0) + 1;
+  private resolveWriteActor(explicit?: string | null): string {
+    return resolveActor(explicit, this.requestContextService.getUserId()) ?? DEFAULT_AUDIT_ACTOR;
   }
 
   private resolveAuditActor(): string {
     return this.requestContextService.getUserId() ?? DEFAULT_AUDIT_ACTOR;
+  }
+
+  private async audit(
+    tx: Prisma.TransactionClient,
+    action: Extract<AuditAction, 'insert' | 'update' | 'cancel'>,
+    tableName: string,
+    pk: string,
+    displayName: string,
+    originalRecord: unknown,
+    modifiedRecord: unknown,
+    notes: string,
+  ): Promise<void> {
+    await this.auditLogService.logEntityChange(
+      {
+        action,
+        tableName,
+        screenName: SCREEN_NAME,
+        screenType: 'master',
+        pk,
+        displayName,
+        originalRecord,
+        modifiedRecord,
+        userId: this.resolveAuditActor(),
+        notes,
+      },
+      tx,
+    );
   }
 
   private throwBadRequest(message: string, errors: PromotionLoyaltyPointsErrorDetail[]): never {
@@ -1176,15 +1672,5 @@ export class PromotionLoyaltyPointsService {
       field,
       `${field} ${value} was not found`,
     );
-  }
-
-  private buildErrorResponse(
-    message: string,
-    errors: PromotionLoyaltyPointsErrorDetail[],
-  ): PromotionLoyaltyPointsErrorResponse {
-    return buildSalesErrorResponse<
-      PromotionLoyaltyPointsErrorDetail,
-      PromotionLoyaltyPointsErrorResponse
-    >(message, errors);
   }
 }

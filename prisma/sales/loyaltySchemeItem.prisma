@@ -1,0 +1,74 @@
+/// sales.loyalty_scheme_item — §4, which stock the campaign applies to.
+///
+/// One kind + one scope id, with five GENERATED ALWAYS ... STORED columns
+/// carrying the foreign keys — the same shape as LoyaltySchemeParty, read that
+/// model's header for the write rules and the migration caveat. In short: set
+/// lsiKind + lsiScopeId and never touch itemId / groupId / categoryId / brandId
+/// / sectionId.
+///
+///     lsiKind = 'ITEM' | 'ITEM_GROUP' | 'ITEM_CATEGORY' | 'ITEM_BRAND' | 'ITEM_SECTION'
+///
+/// The vocabulary is the live one: loyalty_sch_list.ls_item_type already used
+/// exactly these five values, so the new screen and the old data agree.
+///
+/// This is what makes "double points on own-brand, but nothing on tobacco"
+/// expressible in ONE scheme — the predecessor could hold only one kind of
+/// grouping per scheme and could not exclude at all.
+///
+/// lsiFactor multiplies whatever the slab computed for the line (2.0 = double
+/// points); a non-zero lsiPoints replaces the slab result outright instead of
+/// scaling it.
+///
+/// lsiMatchPriority: most specific wins. Seed ITEM 4, ITEM_BRAND 3,
+/// ITEM_CATEGORY 2, ITEM_SECTION 1, ITEM_GROUP 0 — data, not a hard-coded rule.
+/// An EXCLUDE row earns nothing regardless of any broader rule.
+///
+/// Read only when lsc_item_scope = 'LIST'.
+///
+/// DB-only objects to hand-author:
+///   ux_lsi_row     UNIQUE (lsc_id, kind, scope_id) WHERE NOT deleted
+///   ix_lsi_scheme  (lsc_id, match_priority DESC) INCLUDE (...), partial
+///   ix_lsi_item / _group / _category / _brand / _section, all partial
+model LoyaltySchemeItem {
+  lsiId            String    @id(map: "pk_loyalty_scheme_item") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsi_id")
+  lsiLscId         String    @db.Uuid                                       @map("lsi_lsc_id")
+  lsiSlno          Int       @default(1)                                    @map("lsi_slno")
+
+  // The GRID COLUMNS.
+  lsiKind          String    @db.VarChar(20)                                @map("lsi_kind")
+  lsiScopeId       String    @db.Uuid                                       @map("lsi_scope_id")
+
+  // GENERATED ALWAYS ... STORED. Read-only.
+  lsiItemId        String?   @default(dbgenerated()) @db.Uuid               @map("lsi_item_id")
+  lsiGroupId       String?   @default(dbgenerated()) @db.Uuid               @map("lsi_group_id")
+  lsiCategoryId    String?   @default(dbgenerated()) @db.Uuid               @map("lsi_category_id")
+  lsiBrandId       String?   @default(dbgenerated()) @db.Uuid               @map("lsi_brand_id")
+  lsiSectionId     String?   @default(dbgenerated()) @db.Uuid               @map("lsi_section_id")
+
+  lsiIsExclude     Boolean   @default(false)                                @map("lsi_is_exclude")
+  /// Multiplies whatever the slab computed for the line. 2.0 = double points.
+  lsiFactor        Decimal   @default(1) @db.Decimal(18, 4)                 @map("lsi_factor")
+  /// Non-zero REPLACES the slab result outright instead of scaling it.
+  lsiPoints        Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsi_points")
+  /// 0 = uncapped, per line.
+  lsiMaxPoints     Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsi_max_points")
+  lsiMatchPriority Int       @default(1) @db.SmallInt                       @map("lsi_match_priority")
+  lsiNotes         String?   @db.Text                                       @map("lsi_notes")
+  lsiIsActive      Boolean   @default(true)                                 @map("lsi_is_active")
+  lsiIsDeleted     Boolean   @default(false)                                @map("lsi_is_deleted")
+  lsiSyncDate      DateTime? @db.Timestamptz(6)                             @map("lsi_sync_date")
+  lsiCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)             @map("lsi_created_on")
+  lsiCreatedBy     String?   @db.VarChar(50)                                @map("lsi_created_by")
+  lsiModifiedOn    DateTime? @db.Timestamptz(6)                             @map("lsi_modified_on")
+  lsiModifiedBy    String?   @db.VarChar(50)                                @map("lsi_modified_by")
+
+  scheme           LoyaltyScheme      @relation("LoyaltySchemeItems",  fields: [lsiLscId],      references: [lscId],      onUpdate: Cascade,  onDelete: Cascade,  map: "fk_lsi_scheme")
+  item             ItemMaster?        @relation("LoyaltyItemItem",     fields: [lsiItemId],     references: [itemId],     onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_item")
+  itemGroup        ItemGroupMaster?   @relation("LoyaltyItemGroup",    fields: [lsiGroupId],    references: [itgId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_group")
+  itemCategory     categoryMaster?    @relation("LoyaltyItemCategory", fields: [lsiCategoryId], references: [categoryId], onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_category")
+  itemBrand        ItemBrandMaster?   @relation("LoyaltyItemBrand",    fields: [lsiBrandId],    references: [brand_id],   onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_brand")
+  itemSection      ItemSectionMaster? @relation("LoyaltyItemSection",  fields: [lsiSectionId],  references: [secId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_section")
+
+  @@map("loyalty_scheme_item")
+  @@schema("sales")
+}

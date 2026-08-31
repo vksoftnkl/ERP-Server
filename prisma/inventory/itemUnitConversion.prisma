@@ -30,6 +30,8 @@ model ItemUnitConversion {
   itemQtyPrices      ItemQtyPrice[]      @relation("ItemQtyPriceUnitConversion")
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemUnit")
   promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeUnit")
+  loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabUnit")
+  loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftUnit")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")

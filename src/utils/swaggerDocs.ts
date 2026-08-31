@@ -404,7 +404,9 @@ export const swaggerModuleDocuments = [
   {
     path: 'promotion-loyalty-points',
     title: 'Promotion Loyalty Points API',
-    description: 'Single-call loyalty scheme endpoints with nested parties, points, and gifts',
+    description:
+      'Single-call loyalty scheme endpoints with nested branches, parties, items, earn slabs ' +
+      'and gifts',
     include: [PromotionLoyaltyPointsModule],
   },
   {

@@ -84,12 +84,14 @@ model ItemMaster {
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
   company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  loyaltySchemeGifts   LoyaltySchemeGift[]
   saleQuotationItems   SaleQuotationItem[]
   saleBillItems        SaleBillItem[]
   saleOrderItems       SaleOrderItem[]
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemItem")
   promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeItem")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemItem")
+  loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabItem")
+  loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftItem")
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)

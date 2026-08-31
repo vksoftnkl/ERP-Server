@@ -12,6 +12,7 @@ model ItemGroupMaster {
   children          ItemGroupMaster[] @relation("ItemGroupParent")
   items             ItemMaster[]
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemGroup")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemGroup")
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")

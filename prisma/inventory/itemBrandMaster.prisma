@@ -28,6 +28,7 @@ model ItemBrandMaster {
   children ItemBrandMaster[] @relation("BrandHierarchy")
 
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemBrand")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemBrand")
 
   @@map("item_brand_master")
    @@schema("inventory")

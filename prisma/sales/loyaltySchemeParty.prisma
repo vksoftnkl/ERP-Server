@@ -1,22 +1,71 @@
+/// sales.loyalty_scheme_party — §3, who the campaign applies to.
+///
+/// ONE KIND + ONE SCOPE ID, the shape the entry grid needs. The screen binds to
+/// exactly two columns, lspKind and lspScopeId; the two *_id fields below are
+/// GENERATED ALWAYS ... STORED in Postgres and exist only to carry a real
+/// foreign key per kind.
+///
+///     lspKind = 'CUSTOMER' | 'CUSTOMER_GROUP'
+///
+/// Loyalty deliberately has NO AREA or CITY, unlike promotion_scheme_party: a
+/// wallet follows the person, not the route. Adding them would be one generated
+/// column and one FK each.
+///
+/// lspMatchPriority makes "a rule naming one CUSTOMER beats one naming their
+/// GROUP" data rather than an assumption: CUSTOMER 2, CUSTOMER_GROUP 1. An
+/// EXCLUDE row beats an INCLUDE row at equal priority.
+///
+/// Read only when lsc_cust_scope = 'LIST'.
+///
+/// ── WRITING THIS MODEL ──────────────────────────────────────────────────
+/// NEVER set custId / custGroupId, and never use their nested `connect`s.
+/// Postgres computes those columns and rejects any write. Set lspKind +
+/// lspScopeId; read the relations back.
+///
+/// ── MIGRATION ───────────────────────────────────────────────────────────
+/// prisma migrate cannot emit a generated column; both are hand-authored, e.g.
+///   lsp_cust_id uuid GENERATED ALWAYS AS
+///     (CASE WHEN lsp_kind::text = 'CUSTOMER' THEN lsp_scope_id END) STORED
+/// The `@default(dbgenerated())` below is the no-argument form: it stops every
+/// later `migrate dev` emitting an ALTER COLUMN ... DROP DEFAULT that Postgres
+/// rejects with 42601 on a generated column.
+///
+/// The FKs are ON UPDATE NO ACTION, not CASCADE — Postgres forbids a cascading
+/// update on a key containing a generated column. Costs nothing: every master
+/// key here is a uuidv7() that is never reissued.
+///
+/// DB-only objects to hand-author:
+///   ux_lsp_row       UNIQUE (lsc_id, kind, scope_id) WHERE NOT deleted
+///   ix_lsp_scheme    (lsc_id, match_priority DESC) INCLUDE (...), partial
+///   ix_lsp_cust / ix_lsp_cust_group, both partial
 model LoyaltySchemeParty {
-  lpsId                          String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lps_id")
-  lpsLsId                        String         @db.Uuid                                @map("lps_ls_id")
-  lpsSlno                        Int                                                   @map("lps_slno")
-  lpsScopeType                   String         @db.VarChar(20)                         @map("lps_scope_type")
-  lpsScopeId                     String         @db.Uuid                                @map("lps_scope_id")
-  lpsIsExclude                   Boolean        @default(false)                         @map("lps_is_exclude")
-  lpsNotes                       String?        @db.Text                                @map("lps_notes")
-  lpsIsActive                    Boolean        @default(true)                          @map("lps_is_active")
-  lpsIsDeleted                   Boolean        @default(false)                         @map("lps_is_deleted")
-  lpsSyncDate                    DateTime?      @db.Timestamptz(6)                      @map("lps_sync_date")
-  lpsCreatedOn                   DateTime       @default(now()) @db.Timestamptz(6)     @map("lps_created_on")
-  lpsCreatedBy                   String?        @db.Uuid                                @map("lps_created_by")
-  lpsUpdatedOn                   DateTime?      @db.Timestamptz(6)                      @map("lps_updated_on")
-  lpsUpdatedBy                   String?        @db.Uuid                                @map("lps_updated_by")
+  lspId            String    @id(map: "pk_loyalty_scheme_party") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsp_id")
+  lspLscId         String    @db.Uuid                                       @map("lsp_lsc_id")
+  lspSlno          Int       @default(1)                                    @map("lsp_slno")
 
-  scheme                         LoyaltyScheme  @relation(fields: [lpsLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+  // The GRID COLUMNS — the only two the form reads and writes.
+  lspKind          String    @db.VarChar(20)                                @map("lsp_kind")
+  lspScopeId       String    @db.Uuid                                       @map("lsp_scope_id")
 
-  @@index([lpsLsId], map: "ix_loyalty_sch_party_scheme")
-  @@map("loyalty_sch_party")
+  // GENERATED ALWAYS ... STORED. Read-only. See the note above.
+  lspCustId        String?   @default(dbgenerated()) @db.Uuid               @map("lsp_cust_id")
+  lspCustGroupId   String?   @default(dbgenerated()) @db.Uuid               @map("lsp_cust_group_id")
+
+  lspIsExclude     Boolean   @default(false)                                @map("lsp_is_exclude")
+  lspMatchPriority Int       @default(1) @db.SmallInt                       @map("lsp_match_priority")
+  lspNotes         String?   @db.Text                                       @map("lsp_notes")
+  lspIsActive      Boolean   @default(true)                                 @map("lsp_is_active")
+  lspIsDeleted     Boolean   @default(false)                                @map("lsp_is_deleted")
+  lspSyncDate      DateTime? @db.Timestamptz(6)                             @map("lsp_sync_date")
+  lspCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)             @map("lsp_created_on")
+  lspCreatedBy     String?   @db.VarChar(50)                                @map("lsp_created_by")
+  lspModifiedOn    DateTime? @db.Timestamptz(6)                             @map("lsp_modified_on")
+  lspModifiedBy    String?   @db.VarChar(50)                                @map("lsp_modified_by")
+
+  scheme           LoyaltyScheme @relation("LoyaltySchemeParties",  fields: [lspLscId],       references: [lscId], onUpdate: Cascade,  onDelete: Cascade,  map: "fk_lsp_scheme")
+  customer         Customer?     @relation("LoyaltyPartyCustomer",  fields: [lspCustId],      references: [cusId], onUpdate: NoAction, onDelete: Restrict, map: "fk_lsp_cust")
+  customerGroup    CustGroup?    @relation("LoyaltyPartyCustGroup", fields: [lspCustGroupId], references: [cgrId], onUpdate: NoAction, onDelete: Restrict, map: "fk_lsp_cust_group")
+
+  @@map("loyalty_scheme_party")
   @@schema("sales")
 }

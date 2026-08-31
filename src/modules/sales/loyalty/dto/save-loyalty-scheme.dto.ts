@@ -1,18 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
-import {
-  IsArray,
-  IsDateString,
-  IsIn,
-  IsNotEmpty,
-  IsOptional,
-  Validate,
-  ValidateNested,
-  ValidateIf,
-  ValidatorConstraint,
-  ValidatorConstraintInterface,
-  ValidationArguments,
-} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsOptional, ValidateIf, ValidateNested } from 'class-validator';
+import { LoyaltySchemeBranchRowDto } from './save-loyalty-scheme-branch.dto';
+import { LoyaltySchemeGiftRowDto } from './save-loyalty-scheme-gift.dto';
+import { LoyaltySchemeItemRowDto } from './save-loyalty-scheme-item.dto';
+import { LoyaltySchemePartyRowDto } from './save-loyalty-scheme-party.dto';
+import { LoyaltySchemeSlabRowDto } from './save-loyalty-scheme-slab.dto';
 import {
   NullableString,
   NullableUuid,
@@ -25,251 +18,395 @@ import {
   OptionalUuid,
   RequiredUuid,
   TrimmedString,
-  toOptionalDateString,
 } from './loyalty-dto.helpers';
-import { SaveLoyaltyPartyDto } from './save-loyalty-party.dto';
+import {
+  LSC_APPLY_ON,
+  LSC_BILL_TYPES,
+  LSC_CALC_ON,
+  LSC_EXPIRY_BASES,
+  LSC_POOL_MODES,
+  LSC_RETURN_MODES,
+  LSC_ROUNDING,
+  LSC_SCOPES,
+  LSC_STATUSES,
+  LSC_TYPES,
+} from '../utils/loyalty.utils';
 
-const LOYALTY_SCHEME_TYPES = ['REDEEM', 'BOTH', 'GIFT'] as const;
-const LOYALTY_SCHEME_STATUSES = ['DRAFT', 'APPROVED', 'ACTIVE', 'CLOSED', 'CANCELLED'] as const;
-const LOYALTY_SCHEME_APPLY_ON = [
-  'BILL_AMOUNT',
-  'ITEM_AMOUNT',
-  'BILL_QTY',
-  'ITEM_QTY',
-  'MASTER_PV',
-] as const;
-const LOYALTY_SCHEME_CALC_AMOUNT_TYPES = ['NET_AMOUNT', 'GROSS_AMOUNT', 'TAXABLE_AMOUNT'] as const;
-const LOYALTY_SCHEME_BILL_TYPES = ['ALL', 'CASH', 'CREDIT'] as const;
-const LOYALTY_SCHEME_CUSTOMER_TYPES = ['ALL', 'CUSTOMER_GROUP', 'CUSTOMER'] as const;
-const LOYALTY_SCHEME_ITEM_TYPES = [
-  'ALL',
-  'ITEM_GROUP',
-  'ITEM_BRAND',
-  'ITEM_CATEGORY',
-  'ITEM_SECTION',
-  'ITEM',
-] as const;
-const LOYALTY_SCHEME_ROUNDING_METHODS = ['FLOOR', 'ROUND', 'CEIL'] as const;
-const LOYALTY_SCHEME_EXPIRY_BASIS = [
-  'EARN_DATE',
-  'SCHEME_END_DATE',
-  'MONTH_END',
-  'YEAR_END',
-  'NONE',
-] as const;
-
-@ValidatorConstraint({ name: 'LoyaltySchemeDateRange', async: false })
-class LoyaltySchemeDateRangeConstraint implements ValidatorConstraintInterface {
-  validate(value: unknown, args: ValidationArguments): boolean {
-    const dto = args.object as SaveLoyaltySchemeDto;
-    if (!dto.ls_start_date || typeof value !== 'string') {
-      return true;
-    }
-
-    const start = new Date(dto.ls_start_date);
-    const end = new Date(value);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return true;
-    }
-
-    return start.getTime() <= end.getTime();
-  }
-
-  defaultMessage(): string {
-    return 'ls_end_date must be greater than or equal to ls_start_date';
-  }
-}
-
+/**
+ * The loyalty campaign header — a PLAIN OBJECT body carrying its five grids
+ * along with it, so one call saves the whole campaign in one transaction.
+ *
+ * Send lsc_id to update, omit it to create. On update every field is optional
+ * and only the keys actually present are written, so a screen can PATCH one
+ * switch without resending the campaign. That is why the required-on-create
+ * fields carry a ValidateIf instead of a bare @ApiProperty.
+ *
+ * Vocabulary values (type, status, apply_on, …) are checked in the service
+ * rather than here, so one list governs both paths — and the table's own CHECK
+ * constraints stand behind that.
+ */
 export class SaveLoyaltySchemeDto {
   @ApiPropertyOptional({
-    description: 'When provided, updates an existing loyalty scheme',
+    description: 'When provided, updates the existing scheme instead of creating one',
     example: '01963d86-caf0-7b26-89f0-58ac380a2d5e',
   })
   @OptionalUuid()
-  ls_id?: string;
-
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  @NullableString(30)
-  ls_code?: string | null;
-
-  @ApiProperty({ maxLength: 150 })
-  @ValidateIf(
-    (object: SaveLoyaltySchemeDto) => object.ls_id === undefined || object.ls_name !== undefined,
-  )
-  @TrimmedString(150)
-  @IsNotEmpty()
-  ls_name?: string;
-
-  @ApiProperty({ maxLength: 20 })
-  @ValidateIf(
-    (object: SaveLoyaltySchemeDto) => object.ls_id === undefined || object.ls_type !== undefined,
-  )
-  @TrimmedString(20)
-  @IsNotEmpty()
-  @IsIn(LOYALTY_SCHEME_TYPES)
-  ls_type?: string;
-
-  @ApiPropertyOptional({ maxLength: 20, default: 'DRAFT' })
-  @OptionalTrimmedString(20)
-  @IsIn(LOYALTY_SCHEME_STATUSES)
-  ls_status?: string;
-
-  @ApiPropertyOptional({ default: true })
-  @OptionalQueryBoolean()
-  ls_auto_apply?: boolean;
-
-  @ApiPropertyOptional({ maxLength: 20, default: 'BILL_AMOUNT' })
-  @OptionalTrimmedString(20)
-  @IsIn(LOYALTY_SCHEME_APPLY_ON)
-  ls_apply_on?: string;
-
-  @ApiPropertyOptional({ maxLength: 20, default: 'NET_AMOUNT' })
-  @OptionalTrimmedString(20)
-  @IsIn(LOYALTY_SCHEME_CALC_AMOUNT_TYPES)
-  ls_calc_on_amount_type?: string;
-
-  @ApiPropertyOptional({ maxLength: 20, default: 'ALL' })
-  @OptionalTrimmedString(20)
-  @IsIn(LOYALTY_SCHEME_BILL_TYPES)
-  ls_bill_type?: string;
-
-  @ApiPropertyOptional({ maxLength: 20, default: 'ALL' })
-  @OptionalTrimmedString(20)
-  @IsIn(LOYALTY_SCHEME_CUSTOMER_TYPES)
-  ls_cust_type?: string;
-
-  @ApiPropertyOptional({ maxLength: 20, default: 'ALL' })
-  @OptionalTrimmedString(20)
-  @IsIn(LOYALTY_SCHEME_ITEM_TYPES)
-  ls_item_type?: string;
-
-  @ApiProperty({ format: 'date' })
-  @ValidateIf(
-    (object: SaveLoyaltySchemeDto) =>
-      object.ls_id === undefined || object.ls_start_date !== undefined,
-  )
-  @Transform(({ value }) => toOptionalDateString(value))
-  @IsDateString()
-  ls_start_date?: string;
-
-  @ApiProperty({ format: 'date' })
-  @ValidateIf(
-    (object: SaveLoyaltySchemeDto) =>
-      object.ls_id === undefined || object.ls_end_date !== undefined,
-  )
-  @Transform(({ value }) => toOptionalDateString(value))
-  @IsDateString()
-  @Validate(LoyaltySchemeDateRangeConstraint)
-  ls_end_date?: string;
-
-  @ApiPropertyOptional({ format: 'time', nullable: true })
-  @OptionalTimeString()
-  ls_valid_from_time?: string;
-
-  @ApiPropertyOptional({ format: 'time', nullable: true })
-  @OptionalTimeString()
-  ls_valid_to_time?: string;
-
-  @ApiPropertyOptional({ maxLength: 30, nullable: true })
-  @NullableString(30)
-  ls_valid_weekdays?: string | null;
+  lsc_id?: string;
 
   @ApiProperty({ example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
-  @ValidateIf(
-    (object: SaveLoyaltySchemeDto) => object.ls_id === undefined || object.ls_comp_id !== undefined,
-  )
+  @ValidateIf((o: SaveLoyaltySchemeDto) => o.lsc_id === undefined || o.lsc_comp_id !== undefined)
   @RequiredUuid()
-  ls_comp_id?: string;
+  lsc_comp_id?: string;
 
   @ApiPropertyOptional({
+    type: String,
     nullable: true,
-    example: '01963d86-caf0-7b26-89f0-58ac380a2d5e',
+    description: 'Single-shop shorthand. NULL = the whole company.',
   })
   @NullableUuid()
-  ls_branch_id?: string | null;
+  lsc_branch_id?: string | null;
 
-  @ApiPropertyOptional({ default: false })
-  @OptionalQueryBoolean()
-  ls_include_tax_for_points?: boolean;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  @NullableUuid()
+  lsc_tenant_id?: string | null;
 
-  @ApiPropertyOptional({ maxLength: 10, default: 'FLOOR' })
-  @OptionalTrimmedString(10)
-  @IsIn(LOYALTY_SCHEME_ROUNDING_METHODS)
-  ls_rounding_method?: string;
+  @ApiProperty({ maxLength: 30, example: 'DIWALI25', description: 'Letters, digits, _ and - only' })
+  @ValidateIf((o: SaveLoyaltySchemeDto) => o.lsc_id === undefined || o.lsc_code !== undefined)
+  @TrimmedString(30)
+  lsc_code?: string;
 
-  @ApiPropertyOptional({ default: false })
-  @OptionalQueryBoolean()
-  ls_recur_apl?: boolean;
+  @ApiProperty({ maxLength: 150, example: 'Diwali 2025 — 2x points on own brand' })
+  @ValidateIf((o: SaveLoyaltySchemeDto) => o.lsc_id === undefined || o.lsc_name !== undefined)
+  @TrimmedString(150)
+  lsc_name?: string;
 
-  @ApiPropertyOptional({ default: false })
-  @OptionalQueryBoolean()
-  ls_bal_apl?: boolean;
-
-  @ApiPropertyOptional({ default: false })
-  @OptionalQueryBoolean()
-  ls_allow_point_redeem?: boolean;
-
-  @ApiPropertyOptional({ default: false })
-  @OptionalQueryBoolean()
-  ls_allow_gift_redeem?: boolean;
-
-  @ApiPropertyOptional({ minimum: 0, default: 0 })
-  @OptionalNumber(0)
-  ls_redeem_value_per_point?: number;
-
-  @ApiPropertyOptional({ minimum: 0, default: 0 })
-  @OptionalNumber(0)
-  ls_min_redeem_points?: number;
-
-  @ApiPropertyOptional({ minimum: 0, default: 0 })
-  @OptionalNumber(0)
-  ls_max_redeem_points_per_bill?: number;
-
-  @ApiPropertyOptional({ minimum: 0, default: 0 })
-  @OptionalNumber(0)
-  ls_max_redeem_percent_per_bill?: number;
-
-  @ApiPropertyOptional({ default: false })
-  @OptionalNumber(0)
-  ls_redeem_min_bill_amount?: number;
-
-  @ApiPropertyOptional({ minimum: 0, default: 0 })
-  @OptionalInteger(0)
-  ls_points_valid_days?: number;
-
-  @ApiPropertyOptional({ maxLength: 20, default: 'EARN_DATE' })
+  @ApiPropertyOptional({ enum: LSC_TYPES, default: 'BOTH' })
   @OptionalTrimmedString(20)
-  @IsIn(LOYALTY_SCHEME_EXPIRY_BASIS)
-  ls_expiry_basis?: string;
+  lsc_type?: string;
 
-  @ApiPropertyOptional({ nullable: true })
-  @NullableString()
-  ls_remarks?: string | null;
+  @ApiPropertyOptional({ enum: LSC_STATUSES, default: 'DRAFT' })
+  @OptionalTrimmedString(20)
+  lsc_status?: string;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 9,
+    default: 1,
+    description:
+      'Which scheme wins when several match one bill. 1 = primary, and only one APPROVED, ' +
+      'active primary may exist per company/branch/type.',
+  })
+  @OptionalInteger(1, 9)
+  lsc_priority?: number;
 
   @ApiPropertyOptional({ default: true })
   @OptionalQueryBoolean()
-  ls_is_active?: boolean;
+  lsc_auto_apply?: boolean;
 
-  @ApiPropertyOptional({ nullable: true, example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  // ── What it earns on ──────────────────────────────────────────────────────
+
+  @ApiPropertyOptional({ enum: LSC_APPLY_ON, default: 'BILL_AMOUNT' })
+  @OptionalTrimmedString(20)
+  lsc_apply_on?: string;
+
+  @ApiPropertyOptional({ enum: LSC_CALC_ON, default: 'NET_AMOUNT' })
+  @OptionalTrimmedString(20)
+  lsc_calc_on_amount_type?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalQueryBoolean()
+  lsc_include_tax?: boolean;
+
+  @ApiPropertyOptional({ enum: LSC_BILL_TYPES, default: 'ALL' })
+  @OptionalTrimmedString(20)
+  lsc_bill_type?: string;
+
+  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'The earn floor' })
+  @OptionalNumber(0)
+  lsc_min_bill_amount?: number;
+
+  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'Per bill. 0 = uncapped.' })
+  @OptionalNumber(0)
+  lsc_max_earn_points?: number;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalQueryBoolean()
+  lsc_earn_on_discounted?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalQueryBoolean()
+  lsc_earn_on_charges?: boolean;
+
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Does a bill that spent points still earn on what was left to pay?',
+  })
+  @OptionalQueryBoolean()
+  lsc_earn_with_redeem?: boolean;
+
+  @ApiPropertyOptional({ enum: LSC_ROUNDING, default: 'FLOOR' })
+  @OptionalTrimmedString(10)
+  lsc_rounding_method?: string;
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 4, default: 2 })
+  @OptionalInteger(0, 4)
+  lsc_points_decimals?: number;
+
+  // ── Scope switches ────────────────────────────────────────────────────────
+
+  @ApiPropertyOptional({ enum: LSC_SCOPES, default: 'ALL' })
+  @OptionalTrimmedString(10)
+  lsc_branch_scope?: string;
+
+  @ApiPropertyOptional({ enum: LSC_SCOPES, default: 'ALL' })
+  @OptionalTrimmedString(10)
+  lsc_cust_scope?: string;
+
+  @ApiPropertyOptional({ enum: LSC_SCOPES, default: 'ALL' })
+  @OptionalTrimmedString(10)
+  lsc_item_scope?: string;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: 'inventory.item_price_levels(ipl_id). NULL = every price level.',
+  })
+  @OptionalInteger(1)
+  lsc_price_level_id?: number | null;
+
+  // ── Chain store ───────────────────────────────────────────────────────────
+
+  @ApiPropertyOptional({
+    enum: LSC_POOL_MODES,
+    default: 'COMPANY',
+    description:
+      'COMPANY = one wallet, earned anywhere and spent anywhere. BRANCH = a franchisee honours ' +
+      'only the points it issued.',
+  })
+  @OptionalTrimmedString(10)
+  lsc_pool_mode?: string;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalQueryBoolean()
+  lsc_allow_cross_branch_redeem?: boolean;
+
+  // ── Redemption ────────────────────────────────────────────────────────────
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalQueryBoolean()
+  lsc_allow_point_redeem?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @OptionalQueryBoolean()
+  lsc_allow_gift_redeem?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'accounts.acc_tender_master(tnd_id) — the LOYALTY tender (type 10)',
+  })
   @NullableUuid()
-  ls_created_by?: string | null;
+  lsc_redeem_tender_id?: string | null;
 
-  @ApiPropertyOptional({ nullable: true, example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
-  @NullableUuid()
-  ls_updated_by?: string | null;
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+    description:
+      'Rupees per point. WINS over acc_tender_master.tnd_conversion_rate whenever this scheme ' +
+      'matches. Required (> 0) once lsc_allow_point_redeem is true.',
+  })
+  @OptionalNumber(0)
+  lsc_redeem_value_per_point?: number;
 
-  @ApiPropertyOptional({ format: 'date-time', nullable: true })
+  @ApiPropertyOptional({ minimum: 0, default: 0 })
+  @OptionalNumber(0)
+  lsc_min_redeem_points?: number;
+
+  @ApiPropertyOptional({ minimum: 0, default: 0, description: 'Per bill. 0 = uncapped.' })
+  @OptionalNumber(0)
+  lsc_max_redeem_points?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 100,
+    default: 100,
+    description: 'Per bill: the percentage of it points may settle',
+  })
+  @OptionalNumber(0)
+  lsc_max_redeem_perc?: number;
+
+  @ApiPropertyOptional({ minimum: 0, default: 0 })
+  @OptionalNumber(0)
+  lsc_redeem_min_bill_amount?: number;
+
+  @ApiPropertyOptional({ minimum: 0, default: 0, description: '0 = any quantity' })
+  @OptionalNumber(0)
+  lsc_redeem_multiple?: number;
+
+  // ── Expiry and the return window ──────────────────────────────────────────
+
+  @ApiPropertyOptional({
+    enum: LSC_EXPIRY_BASES,
+    default: 'EARN_DATE',
+    description:
+      'NONE = never lapses. SCHEME_END_DATE takes the date from lsc_end_date. The rest are ' +
+      'computed from the earn date.',
+  })
+  @OptionalTrimmedString(20)
+  lsc_expiry_basis?: string;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    default: 0,
+    description: 'Must be greater than 0 when lsc_expiry_basis is EARN_DATE',
+  })
+  @OptionalInteger(0)
+  lsc_points_valid_days?: number;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 365,
+    default: 0,
+    description:
+      'THE CLAW-BACK DEFENCE. Days a lot must age before it may be REDEEMED — long enough for ' +
+      'the return window to close. Points still earn on bill save. 0 = redeemable immediately.',
+  })
+  @OptionalInteger(0, 365)
+  lsc_activation_days?: number;
+
+  @ApiPropertyOptional({ enum: LSC_RETURN_MODES, default: 'REVERSE' })
+  @OptionalTrimmedString(10)
+  lsc_return_mode?: string;
+
+  // ── When it runs ──────────────────────────────────────────────────────────
+
+  @ApiProperty({ example: '2025-10-01' })
+  @ValidateIf((o: SaveLoyaltySchemeDto) => o.lsc_id === undefined || o.lsc_start_date !== undefined)
   @OptionalDateString()
-  ls_approved_on?: string;
+  lsc_start_date?: string;
 
-  @ApiPropertyOptional({ nullable: true, example: '01963d86-caf0-7b26-89f0-58ac380a2d5e' })
+  @ApiProperty({ example: '2025-10-31' })
+  @ValidateIf((o: SaveLoyaltySchemeDto) => o.lsc_id === undefined || o.lsc_end_date !== undefined)
+  @OptionalDateString()
+  lsc_end_date?: string;
+
+  @ApiPropertyOptional({
+    example: '22:22',
+    type: String,
+    nullable: true,
+    description: 'Both time bounds or neither. from > to legitimately means "spans midnight".',
+  })
+  @OptionalTimeString()
+  lsc_valid_from_time?: string | null;
+
+  @ApiPropertyOptional({ example: '04:44', type: String, nullable: true })
+  @OptionalTimeString()
+  lsc_valid_to_time?: string | null;
+
+  @ApiPropertyOptional({
+    example: 'MON,TUE,WED',
+    type: String,
+    nullable: true,
+    description: 'Three-letter day names, comma separated. NULL = every day.',
+  })
+  @NullableString(30)
+  lsc_valid_weekdays?: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true })
+  @NullableString(65535)
+  lsc_remarks?: string | null;
+
+  @ApiPropertyOptional({ default: true })
+  @OptionalQueryBoolean()
+  lsc_is_active?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 50 })
+  @OptionalTrimmedString(50)
+  lsc_created_by?: string;
+
+  @ApiPropertyOptional({ maxLength: 50 })
+  @OptionalTrimmedString(50)
+  lsc_modified_by?: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: '2025-09-28T09:30:00.000Z' })
+  @NullableString(40)
+  lsc_approved_on?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: 'public.user_master(usr_id). Required once lsc_status is APPROVED.',
+  })
   @NullableUuid()
-  ls_approved_by?: string | null;
+  lsc_approved_by?: string | null;
 
-  @ApiPropertyOptional({ type: SaveLoyaltyPartyDto, isArray: true })
+  // ─── the five child grids ───────────────────────────────────────────────────
+  //
+  // Each array REPLACES that grid: a row carrying its own id is updated, a row
+  // without one is inserted, and a row already on the scheme but missing from
+  // the array is soft deleted. That is what lets one POST save a grid the user
+  // edited — including the lines they removed — without a second call.
+  //
+  // OMIT the key entirely to leave that grid untouched. A header-only save must
+  // send no `slabs` key at all; `"slabs": []` means "delete every band".
+
+  @ApiPropertyOptional({
+    type: LoyaltySchemeBranchRowDto,
+    isArray: true,
+    description: 'Branch scope grid. Read only when lsc_branch_scope is LIST.',
+  })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(1000)
   @ValidateNested({ each: true })
-  @Type(() => SaveLoyaltyPartyDto)
-  parties?: SaveLoyaltyPartyDto[];
+  @Type(() => LoyaltySchemeBranchRowDto)
+  branches?: LoyaltySchemeBranchRowDto[];
+
+  @ApiPropertyOptional({
+    type: LoyaltySchemePartyRowDto,
+    isArray: true,
+    description: 'Customer / customer-group scope grid. Read only when lsc_cust_scope is LIST.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => LoyaltySchemePartyRowDto)
+  parties?: LoyaltySchemePartyRowDto[];
+
+  @ApiPropertyOptional({
+    type: LoyaltySchemeItemRowDto,
+    isArray: true,
+    description: 'Item scope grid. Read only when lsc_item_scope is LIST.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => LoyaltySchemeItemRowDto)
+  items?: LoyaltySchemeItemRowDto[];
+
+  @ApiPropertyOptional({
+    type: LoyaltySchemeSlabRowDto,
+    isArray: true,
+    description: 'Earn rate bands. One row = one band; bands are rows, not columns.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => LoyaltySchemeSlabRowDto)
+  slabs?: LoyaltySchemeSlabRowDto[];
+
+  @ApiPropertyOptional({
+    type: LoyaltySchemeGiftRowDto,
+    isArray: true,
+    description: 'The catalogue of what points may be exchanged for.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(1000)
+  @ValidateNested({ each: true })
+  @Type(() => LoyaltySchemeGiftRowDto)
+  gifts?: LoyaltySchemeGiftRowDto[];
 }

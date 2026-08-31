@@ -851,6 +851,7 @@ model AccTenderMaster {
   surchargeLedger         AccLedgerMaster?      @relation("TenderSurchargeLedger", fields: [tndSurchargeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_surcharge_ledger")
   bankAccount             AccLedgerBankAccount? @relation(fields: [tndBankAccountId], references: [lbaId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_bank_account")
   tenderDetails           AccTenderDetail[]
+  loyaltySchemes          LoyaltyScheme[]       @relation("LoyaltySchemeRedeemTender")
 
   @@index([tndTypeId], map: "ix_tnd_type")
   @@index([tndLedgerId], map: "ix_tnd_ledger")
@@ -2578,6 +2579,7 @@ model categoryMaster {
   children               categoryMaster[] @relation("CategoryParent")
   items                  ItemMaster[]
   promotionSchemeItems   PromotionSchemeItem[] @relation("PromotionItemCategory")
+  loyaltySchemeItems     LoyaltySchemeItem[]   @relation("LoyaltyItemCategory")
   categorySort           Int?     @map("category_sort")
   categoryLevel          Int?     @map("category_level")
   categoryPathIdsCache   String[] @default([]) @db.Uuid @map("category_path_ids_cache")
@@ -2797,6 +2799,7 @@ model ItemBrandMaster {
   children ItemBrandMaster[] @relation("BrandHierarchy")
 
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemBrand")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemBrand")
 
   @@map("item_brand_master")
    @@schema("inventory")
@@ -2856,6 +2859,7 @@ model ItemGroupMaster {
   children          ItemGroupMaster[] @relation("ItemGroupParent")
   items             ItemMaster[]
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemGroup")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemGroup")
 
   itgSort           Int?     @map("itg_sort")
   itgLevel          Int?     @map("itg_level")
@@ -2992,12 +2996,14 @@ model ItemMaster {
   reorders             ItemReorder[]
   taxHistory           ItemTaxHistory[]
   company              Company? @relation(fields: [itemCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
-  loyaltySchemeGifts   LoyaltySchemeGift[]
   saleQuotationItems   SaleQuotationItem[]
   saleBillItems        SaleBillItem[]
   saleOrderItems       SaleOrderItem[]
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemItem")
   promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeItem")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemItem")
+  loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabItem")
+  loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftItem")
   @@map("item_master")
   @@schema("inventory")
   // UNIQUE item_name_en globally (since company removed)
@@ -3030,6 +3036,7 @@ model ItemPriceLevel {
   saleOrders         SaleOrder[]     @relation("SaleOrderPriceLevel")
   saleOrderItems     SaleOrderItem[] @relation("SaleOrderItemPriceLevel")
   promotionSchemes   PromotionScheme[] @relation("PromotionSchemePriceLevel")
+  loyaltySchemes     LoyaltyScheme[]   @relation("LoyaltySchemePriceLevel")
   @@map("item_price_levels")
   @@schema("inventory")
 }
@@ -3213,6 +3220,7 @@ model ItemSectionMaster {
   parent         ItemSectionMaster?  @relation("SectionParent", fields: [secParentId], references: [secId], onUpdate: Cascade, onDelete: Restrict)
   children       ItemSectionMaster[] @relation("SectionParent")
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemSection")
+  loyaltySchemeItems   LoyaltySchemeItem[]   @relation("LoyaltyItemSection")
 
   secSort        Int?     @map("sec_sort")
   secLevel       Int?     @map("sec_level")
@@ -3507,6 +3515,8 @@ model ItemUnitConversion {
   itemQtyPrices      ItemQtyPrice[]      @relation("ItemQtyPriceUnitConversion")
   promotionSchemeItems PromotionSchemeItem[] @relation("PromotionItemUnit")
   promotionSchemeSlabs PromotionSchemeSlab[] @relation("PromotionSlabFreeUnit")
+  loyaltySchemeSlabs   LoyaltySchemeSlab[]   @relation("LoyaltySlabUnit")
+  loyaltySchemeGifts   LoyaltySchemeGift[]   @relation("LoyaltyGiftUnit")
   @@index([iucItemId, iucUnitSlno], map: "idx_item_unit_conversion_item")
   @@map("item_unit_conversion")
   @@schema("inventory")
@@ -3570,8 +3580,6 @@ model Unit {
 
   // Back-relations — others
   itemMasters  ItemMaster[]
-  loyaltySchemePoints LoyaltySchemePoint[]
-  loyaltySchemeGifts  LoyaltySchemeGift[]
 
   @@map("item_unit_master")
   @@schema("inventory")
@@ -3986,7 +3994,6 @@ model BranchMaster {
   itemQtyPrices         ItemQtyPrice[]    @relation("BranchItemQtyPrices")
   freightCharges        SaleFreightCharge[] @relation("BranchFreightCharges")
   loadingCharges        SaleLoadingCharge[] @relation("BranchLoadingCharges")
-  loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
   saleAgents            SaleAgent[]       @relation("BranchSaleAgents")
   chargeDetails         TransactionChargeDetail[] @relation("BranchChargeDetails")
@@ -3995,6 +4002,8 @@ model BranchMaster {
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[]       @relation("PromotionSchemeBranchRef")
   promotionSchemeBranches PromotionSchemeBranch[] @relation("PromotionSchemeBranchBranch")
+  loyaltySchemes        LoyaltyScheme[]         @relation("LoyaltySchemeBranchRef")
+  loyaltySchemeBranches LoyaltySchemeBranch[]   @relation("LoyaltySchemeBranchBranch")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")
@@ -4164,13 +4173,13 @@ model Company {
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
   physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailCompany")
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
-  loyaltySchemes        LoyaltyScheme[]
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
   chargeDetails         TransactionChargeDetail[] @relation("CompanyChargeDetails")
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
+  loyaltySchemes        LoyaltyScheme[]   @relation("LoyaltySchemeCompany")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")
@@ -5624,6 +5633,7 @@ model UserMaster {
   tenderDetails          AccTenderDetail[]
   appSettingValues       AppSettingValue[]
   approvedPromotionSchemes PromotionScheme[] @relation("PromotionSchemeApprovedBy")
+  approvedLoyaltySchemes   LoyaltyScheme[]   @relation("LoyaltySchemeApprovedBy")
 
   // ── printing (17_printing.sql) — every *_created_by / *_modified_by in
   // that schema carries a real FK, unlike the reports.* tables it replaces.
@@ -5950,6 +5960,7 @@ model Customer {
   saleOrders           SaleOrder[]
   itemQtyPrices        ItemQtyPrice[] @relation("CustomerItemQtyPrices")
   promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustomer")
+  loyaltySchemeParties   LoyaltySchemeParty[]   @relation("LoyaltyPartyCustomer")
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")
   @@index([cusGstNo],    name: "idx_cus_gst_no")
@@ -5994,6 +6005,7 @@ model CustGroup {
   company            Company?  @relation(fields: [cgrCompanyId], references: [compId], onUpdate: Cascade, onDelete: Restrict)
   customers          Customer[]
   promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustGroup")
+  loyaltySchemeParties   LoyaltySchemeParty[]   @relation("LoyaltyPartyCustGroup")
 
   @@map("cust_groups")
   @@index([cgrCompanyId], map: "idx_cgr_company")
@@ -6169,137 +6181,429 @@ model CustItemRate {
 }
 
 // ----- prisma/sales/loyaltyScheme.prisma -----
+/// sales.loyalty_scheme — §1, the loyalty campaign header.
+///
+/// The RULES: who earns, on what, how fast, and what a point is worth. It holds
+/// no balances and no movements — those belong to the points ledger (13) and the
+/// coupon/gift tables (14), neither of which is in this schema yet.
+///
+/// Supersedes sales.loyalty_sch_list / _party / _points / _gift, which
+/// 20260831060000_replace_loyalty_scheme_tables drops.
+///
+/// Declared here WITHOUT its CHECK constraints expressed in Prisma — Prisma has
+/// no concept of them. The migration DOES create them, and
+/// utils/loyalty-scheme-invariants.ts mirrors every one so a rejected campaign
+/// comes back as a field-addressed 400 rather than a Postgres error string the
+/// screen cannot place on an input.
+///
+/// DB-only objects the migration hand-authors, none of them expressible here:
+///   ux_lsc_code       UNIQUE (lsc_comp_id, lower(lsc_code)) WHERE NOT deleted
+///   ux_lsc_primary    UNIQUE (comp, branch, type) NULLS NOT DISTINCT
+///                     WHERE priority = 1 AND APPROVED AND active AND NOT deleted
+///   ix_lsc_resolve    the per-bill resolver, covering, partial
+///   ix_lsc_branch / ix_lsc_price_level / ix_lsc_redeem_tender /
+///   ix_lsc_approved_by   FK-covering, all partial
 model LoyaltyScheme {
-  lsId                           String              @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("ls_id")
-  lsCode                         String?             @db.VarChar(30)                         @map("ls_code")
-  lsName                         String              @db.VarChar(150)                        @map("ls_name")
-  lsType                         String              @db.VarChar(20)                         @map("ls_type")
-  lsStatus                       String              @default("DRAFT") @db.VarChar(20)      @map("ls_status")
-  lsAutoApply                    Boolean             @default(true)                          @map("ls_auto_apply")
-  lsApplyOn                      String              @default("BILL_AMOUNT") @db.VarChar(20) @map("ls_apply_on")
-  lsCalcOnAmountType             String              @default("NET_AMOUNT") @db.VarChar(20) @map("ls_calc_on_amount_type")
-  lsBillType                     String              @default("ALL") @db.VarChar(20)        @map("ls_bill_type")
-  lsCustType                     String              @default("ALL") @db.VarChar(20)        @map("ls_cust_type")
-  lsItemType                     String              @default("ALL") @db.VarChar(20)        @map("ls_item_type")
-  lsStartDate                    DateTime            @db.Date                                @map("ls_start_date")
-  lsEndDate                      DateTime            @db.Date                                @map("ls_end_date")
-  lsValidFromTime                DateTime?           @db.Time(6)                             @map("ls_valid_from_time")
-  lsValidToTime                  DateTime?           @db.Time(6)                             @map("ls_valid_to_time")
-  lsValidWeekdays                String?             @db.VarChar(30)                         @map("ls_valid_weekdays")
-  lsCompId                       String              @db.Uuid                                @map("ls_comp_id")
-  lsBranchId                     String?             @db.Uuid                                @map("ls_branch_id")
-  lsIncludeTaxForPoints          Boolean             @default(false)                         @map("ls_include_tax_for_points")
-  lsRoundingMethod               String              @default("FLOOR") @db.VarChar(10)      @map("ls_rounding_method")
-  lsRecurApl                     Boolean             @default(false)                         @map("ls_recur_apl")
-  lsBalApl                       Boolean             @default(false)                         @map("ls_bal_apl")
-  lsAllowPointRedeem             Boolean             @default(false)                         @map("ls_allow_point_redeem")
-  lsAllowGiftRedeem              Boolean             @default(false)                         @map("ls_allow_gift_redeem")
-  lsRedeemValuePerPoint          Decimal             @default(0) @db.Decimal(18, 4)         @map("ls_redeem_value_per_point")
-  lsMinRedeemPoints              Decimal             @default(0) @db.Decimal(18, 4)         @map("ls_min_redeem_points")
-  lsMaxRedeemPointsPerBill       Decimal             @default(0) @db.Decimal(18, 4)         @map("ls_max_redeem_points_per_bill")
-  lsMaxRedeemPercentPerBill      Decimal             @default(0) @db.Decimal(18, 4)         @map("ls_max_redeem_percent_per_bill")
-  lsRedeemMinBillAmount          Decimal             @default(0) @db.Decimal(18, 2)         @map("ls_redeem_min_bill_amount")
-  lsPointsValidDays              Int                 @default(0)                             @map("ls_points_valid_days")
-  lsExpiryBasis                  String              @default("EARN_DATE") @db.VarChar(20)  @map("ls_expiry_basis")
-  lsRemarks                      String?             @db.Text                                @map("ls_remarks")
-  lsIsActive                     Boolean             @default(true)                          @map("ls_is_active")
-  lsIsDeleted                    Boolean             @default(false)                         @map("ls_is_deleted")
-  lsSyncDate                     DateTime?           @db.Timestamptz(6)                      @map("ls_sync_date")
-  lsCreatedOn                    DateTime            @default(now()) @db.Timestamptz(6)     @map("ls_created_on")
-  lsCreatedBy                    String?             @db.Uuid                                @map("ls_created_by")
-  lsUpdatedOn                    DateTime?           @db.Timestamptz(6)                      @map("ls_updated_on")
-  lsUpdatedBy                    String?             @db.Uuid                                @map("ls_updated_by")
-  lsApprovedOn                   DateTime?           @db.Timestamptz(6)                      @map("ls_approved_on")
-  lsApprovedBy                   String?             @db.Uuid                                @map("ls_approved_by")
+  lscId                     String    @id(map: "pk_loyalty_scheme") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsc_id")
+  lscCompId                 String    @db.Uuid                                       @map("lsc_comp_id")
+  /// Single-shop shorthand. NULL = every branch.
+  lscBranchId               String?   @db.Uuid                                       @map("lsc_branch_id")
+  lscTenantId               String?   @db.Uuid                                       @map("lsc_tenant_id")
 
-  company                        Company             @relation(fields: [lsCompId], references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_list_company")
-  branch                         BranchMaster?       @relation(fields: [lsBranchId], references: [brId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_list_branch")
-  parties                        LoyaltySchemeParty[]
-  points                         LoyaltySchemePoint[]
-  gifts                          LoyaltySchemeGift[]
+  lscCode                   String    @db.VarChar(30)                                @map("lsc_code")
+  lscName                   String    @db.VarChar(150)                               @map("lsc_name")
+  lscType                   String    @default("BOTH") @db.VarChar(20)               @map("lsc_type")
+  lscStatus                 String    @default("DRAFT") @db.VarChar(20)              @map("lsc_status")
+  /// Which scheme wins when several match one bill. 1 = primary.
+  lscPriority               Int       @default(1) @db.SmallInt                       @map("lsc_priority")
+  lscAutoApply              Boolean   @default(true)                                 @map("lsc_auto_apply")
 
-  @@index([lsCompId, lsBranchId, lsIsActive, lsIsDeleted, lsStartDate, lsEndDate], map: "ix_loyalty_sch_list_active_dates")
-  @@map("loyalty_sch_list")
+  // ── What it earns on ────────────────────────────────────────────────────
+  lscApplyOn                String    @default("BILL_AMOUNT") @db.VarChar(20)        @map("lsc_apply_on")
+  lscCalcOnAmountType       String    @default("NET_AMOUNT") @db.VarChar(20)         @map("lsc_calc_on_amount_type")
+  lscIncludeTax             Boolean   @default(false)                                @map("lsc_include_tax")
+  lscBillType               String    @default("ALL") @db.VarChar(20)                @map("lsc_bill_type")
+  lscMinBillAmount          Decimal   @default(0) @db.Decimal(18, 2)                 @map("lsc_min_bill_amount")
+  /// Per bill. 0 = uncapped.
+  lscMaxEarnPoints          Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_max_earn_points")
+  lscEarnOnDiscounted       Boolean   @default(true)                                 @map("lsc_earn_on_discounted")
+  lscEarnOnCharges          Boolean   @default(false)                                @map("lsc_earn_on_charges")
+  lscEarnWithRedeem         Boolean   @default(false)                                @map("lsc_earn_with_redeem")
+  lscRoundingMethod         String    @default("FLOOR") @db.VarChar(10)              @map("lsc_rounding_method")
+  lscPointsDecimals         Int       @default(2) @db.SmallInt                       @map("lsc_points_decimals")
+
+  // ── Scope switches: 'ALL' = everything, 'LIST' = read the child table ────
+  lscBranchScope            String    @default("ALL") @db.VarChar(10)                @map("lsc_branch_scope")
+  lscCustScope              String    @default("ALL") @db.VarChar(10)                @map("lsc_cust_scope")
+  lscItemScope              String    @default("ALL") @db.VarChar(10)                @map("lsc_item_scope")
+  lscPriceLevelId           Int?                                                     @map("lsc_price_level_id")
+
+  // ── Chain store ─────────────────────────────────────────────────────────
+  /// COMPANY = one wallet, earned anywhere, spent anywhere (the default, and
+  /// what a chain wants). BRANCH = a franchisee honours only what it issued.
+  lscPoolMode               String    @default("COMPANY") @db.VarChar(10)            @map("lsc_pool_mode")
+  lscAllowCrossBranchRedeem Boolean   @default(true)                                 @map("lsc_allow_cross_branch_redeem")
+
+  // ── Redemption ──────────────────────────────────────────────────────────
+  lscAllowPointRedeem       Boolean   @default(false)                                @map("lsc_allow_point_redeem")
+  lscAllowGiftRedeem        Boolean   @default(false)                                @map("lsc_allow_gift_redeem")
+  /// accounts.acc_tender_master(tnd_id) — the LOYALTY tender (type 10).
+  lscRedeemTenderId         String?   @db.Uuid                                       @map("lsc_redeem_tender_id")
+  /// Rupees per point. WINS over acc_tender_master.tnd_conversion_rate whenever
+  /// a scheme matches; the tender master is the fallback for a company running
+  /// no scheme, and acc_tender_detail.td_conversion_rate snapshots whichever was
+  /// used. A write-path rule the schema cannot enforce.
+  lscRedeemValuePerPoint    Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_redeem_value_per_point")
+  lscMinRedeemPoints        Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_min_redeem_points")
+  /// Per bill. 0 = uncapped.
+  lscMaxRedeemPoints        Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_max_redeem_points")
+  /// Per bill: the % of it points may settle.
+  lscMaxRedeemPerc          Decimal   @default(100) @db.Decimal(6, 3)                @map("lsc_max_redeem_perc")
+  lscRedeemMinBillAmount    Decimal   @default(0) @db.Decimal(18, 2)                 @map("lsc_redeem_min_bill_amount")
+  /// 0 = any quantity.
+  lscRedeemMultiple         Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsc_redeem_multiple")
+
+  // ── Expiry and the return window ────────────────────────────────────────
+  lscExpiryBasis            String    @default("EARN_DATE") @db.VarChar(20)          @map("lsc_expiry_basis")
+  lscPointsValidDays        Int       @default(0)                                    @map("lsc_points_valid_days")
+  /// THE CLAW-BACK DEFENCE. Points earn on bill save (offline included) but are
+  /// not REDEEMABLE until this many days have passed — long enough for the
+  /// return window to close. 0 = redeemable immediately.
+  lscActivationDays         Int       @default(0) @db.SmallInt                       @map("lsc_activation_days")
+  lscReturnMode             String    @default("REVERSE") @db.VarChar(10)            @map("lsc_return_mode")
+
+  // ── When it runs ────────────────────────────────────────────────────────
+  lscStartDate              DateTime  @db.Date                                       @map("lsc_start_date")
+  lscEndDate                DateTime  @db.Date                                       @map("lsc_end_date")
+  /// Both bounds or neither. from > to legitimately means "spans midnight" —
+  /// 22:22 to 04:44 is a late-night promotion, not a typo.
+  lscValidFromTime          DateTime? @db.Time(6)                                    @map("lsc_valid_from_time")
+  lscValidToTime            DateTime? @db.Time(6)                                    @map("lsc_valid_to_time")
+  /// 'MON,TUE,...'; NULL = every day.
+  lscValidWeekdays          String?   @db.VarChar(30)                                @map("lsc_valid_weekdays")
+
+  lscRemarks                String?   @db.Text                                       @map("lsc_remarks")
+  lscIsActive               Boolean   @default(true)                                 @map("lsc_is_active")
+  lscIsDeleted              Boolean   @default(false)                                @map("lsc_is_deleted")
+  lscSyncDate               DateTime? @db.Timestamptz(6)                             @map("lsc_sync_date")
+  lscCreatedOn              DateTime  @default(now()) @db.Timestamptz(6)             @map("lsc_created_on")
+  lscCreatedBy              String?   @db.VarChar(50)                                @map("lsc_created_by")
+  lscModifiedOn             DateTime? @db.Timestamptz(6)                             @map("lsc_modified_on")
+  lscModifiedBy             String?   @db.VarChar(50)                                @map("lsc_modified_by")
+  lscApprovedOn             DateTime? @db.Timestamptz(6)                             @map("lsc_approved_on")
+  lscApprovedBy             String?   @db.Uuid                                       @map("lsc_approved_by")
+
+  // ── Relations ───────────────────────────────────────────────────────────
+  company                   Company         @relation("LoyaltySchemeCompany",    fields: [lscCompId],          references: [compId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_company")
+  branch                    BranchMaster?   @relation("LoyaltySchemeBranchRef",  fields: [lscBranchId],        references: [brId],   onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_branch")
+  priceLevel                ItemPriceLevel? @relation("LoyaltySchemePriceLevel", fields: [lscPriceLevelId],    references: [iplId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_price_level")
+  redeemTender              AccTenderMaster? @relation("LoyaltySchemeRedeemTender", fields: [lscRedeemTenderId], references: [tndId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_redeem_tender")
+  approvedBy                UserMaster?     @relation("LoyaltySchemeApprovedBy", fields: [lscApprovedBy],      references: [usrId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsc_approved_by")
+
+  branches                  LoyaltySchemeBranch[] @relation("LoyaltySchemeBranches")
+  parties                   LoyaltySchemeParty[]  @relation("LoyaltySchemeParties")
+  items                     LoyaltySchemeItem[]   @relation("LoyaltySchemeItems")
+  slabs                     LoyaltySchemeSlab[]   @relation("LoyaltySchemeSlabs")
+  gifts                     LoyaltySchemeGift[]   @relation("LoyaltySchemeGifts")
+
+  @@map("loyalty_scheme")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltySchemeBranch.prisma -----
+/// sales.loyalty_scheme_branch — §2, which branches run the campaign.
+///
+/// Read only when lsc_branch_scope = 'LIST'. lsbIsExclude makes "every branch
+/// except two" two rows rather than thirty-eight; an EXCLUDE row always beats an
+/// INCLUDE row for the same branch.
+///
+/// DB-only objects the migration hand-authors:
+///   ux_lsb_row     UNIQUE (lsb_lsc_id, lsb_branch_id) WHERE NOT deleted
+///   ix_lsb_scheme  (lsb_lsc_id), partial
+///   ix_lsb_branch  (lsb_branch_id), partial
+model LoyaltySchemeBranch {
+  lsbId          String    @id(map: "pk_loyalty_scheme_branch") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsb_id")
+  lsbLscId       String    @db.Uuid                                       @map("lsb_lsc_id")
+  lsbSlno        Int       @default(1)                                    @map("lsb_slno")
+  lsbBranchId    String    @db.Uuid                                       @map("lsb_branch_id")
+  lsbIsExclude   Boolean   @default(false)                                @map("lsb_is_exclude")
+  lsbNotes       String?   @db.Text                                       @map("lsb_notes")
+  lsbIsActive    Boolean   @default(true)                                 @map("lsb_is_active")
+  lsbIsDeleted   Boolean   @default(false)                                @map("lsb_is_deleted")
+  lsbSyncDate    DateTime? @db.Timestamptz(6)                             @map("lsb_sync_date")
+  lsbCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)             @map("lsb_created_on")
+  lsbCreatedBy   String?   @db.VarChar(50)                                @map("lsb_created_by")
+  lsbModifiedOn  DateTime? @db.Timestamptz(6)                             @map("lsb_modified_on")
+  lsbModifiedBy  String?   @db.VarChar(50)                                @map("lsb_modified_by")
+
+  scheme         LoyaltyScheme @relation("LoyaltySchemeBranches",     fields: [lsbLscId],    references: [lscId], onUpdate: Cascade, onDelete: Cascade,  map: "fk_lsb_scheme")
+  branch         BranchMaster  @relation("LoyaltySchemeBranchBranch", fields: [lsbBranchId], references: [brId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsb_branch")
+
+  @@map("loyalty_scheme_branch")
   @@schema("sales")
 }
 
 // ----- prisma/sales/loyaltySchemeGift.prisma -----
+/// sales.loyalty_scheme_gift — §6, points buy an ITEM.
+///
+/// The CATALOGUE of what MAY be claimed. What was actually handed over belongs
+/// in sales.loyalty_gift_issue (13), which is not in this schema yet.
+///
+/// A gift redemption is NOT a tender: no money crosses the counter, stock does.
+/// lsgUnitId references inventory.item_unit_conversion(iuc_id) — the same target
+/// sale_bill_item.fk_sbi_item_unit uses — because the gift becomes a bill line
+/// and the two must agree without a conversion lookup.
+///
+/// DB-only objects to hand-author:
+///   ux_lsg_item    UNIQUE (lsc_id, item_id, unit_id) WHERE NOT deleted
+///   ix_lsg_scheme  (lsc_id, redeem_points) INCLUDE (...), partial
+///   ix_lsg_item / ix_lsg_unit, both partial
 model LoyaltySchemeGift {
-  lsgId                          String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsg_id")
-  lsgLsId                        String         @db.Uuid                                @map("lsg_ls_id")
-  lsgSlno                        Int                                                   @map("lsg_slno")
-  lsgItemId                      String         @db.Uuid                                @map("lsg_item_id")
-  lsgUnitId                      String         @db.Uuid                                @map("lsg_unit_id")
-  lsgItemQty                     Decimal        @default(1) @db.Decimal(18, 3)         @map("lsg_item_qty")
-  lsgRedeemPoints                Decimal        @default(0) @db.Decimal(18, 2)         @map("lsg_redeem_points")
-  lsgRepeat                      Boolean        @default(false)                         @map("lsg_repeat")
-  lsgNotes                       String?        @db.Text                                @map("lsg_notes")
-  lsgIsActive                    Boolean        @default(true)                          @map("lsg_is_active")
-  lsgIsDeleted                   Boolean        @default(false)                         @map("lsg_is_deleted")
-  lsgSyncDate                    DateTime?      @db.Timestamptz(6)                      @map("lsg_sync_date")
-  lsgCreatedOn                   DateTime       @default(now()) @db.Timestamptz(6)     @map("lsg_created_on")
-  lsgCreatedBy                   String?        @db.Uuid                                @map("lsg_created_by")
-  lsgUpdatedOn                   DateTime?      @db.Timestamptz(6)                      @map("lsg_updated_on")
-  lsgUpdatedBy                   String?        @db.Uuid                                @map("lsg_updated_by")
+  lsgId             String    @id(map: "pk_loyalty_scheme_gift") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsg_id")
+  lsgLscId          String    @db.Uuid                                       @map("lsg_lsc_id")
+  lsgSlno           Int       @default(1)                                    @map("lsg_slno")
 
-  scheme                         LoyaltyScheme  @relation(fields: [lsgLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
-  item                           ItemMaster     @relation(fields: [lsgItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_gift_item")
-  unit                           Unit           @relation(fields: [lsgUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_gift_unit")
+  lsgItemId         String    @db.Uuid                                       @map("lsg_item_id")
+  lsgUnitId         String    @db.Uuid                                       @map("lsg_unit_id")
+  lsgItemQty        Decimal   @default(1) @db.Decimal(18, 3)                 @map("lsg_item_qty")
+  lsgRedeemPoints   Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsg_redeem_points")
 
-  @@index([lsgLsId], map: "ix_loyalty_sch_gift_scheme")
-  @@map("loyalty_sch_gift")
+  /// Claimable more than once.
+  lsgRepeat         Boolean   @default(false)                                @map("lsg_repeat")
+  /// 0 = uncapped.
+  lsgMaxQtyPerBill  Decimal   @default(0) @db.Decimal(18, 3)                 @map("lsg_max_qty_per_bill")
+  /// Block the claim when the item is not in stock at the issuing branch. A
+  /// gift the shop cannot hand over is worse than one it never offered.
+  lsgStockCheck     Boolean   @default(true)                                 @map("lsg_stock_check")
+  lsgValidFrom      DateTime? @db.Date                                       @map("lsg_valid_from")
+  lsgValidUpto      DateTime? @db.Date                                       @map("lsg_valid_upto")
+
+  lsgNotes          String?   @db.Text                                       @map("lsg_notes")
+  lsgIsActive       Boolean   @default(true)                                 @map("lsg_is_active")
+  lsgIsDeleted      Boolean   @default(false)                                @map("lsg_is_deleted")
+  lsgSyncDate       DateTime? @db.Timestamptz(6)                             @map("lsg_sync_date")
+  lsgCreatedOn      DateTime  @default(now()) @db.Timestamptz(6)             @map("lsg_created_on")
+  lsgCreatedBy      String?   @db.VarChar(50)                                @map("lsg_created_by")
+  lsgModifiedOn     DateTime? @db.Timestamptz(6)                             @map("lsg_modified_on")
+  lsgModifiedBy     String?   @db.VarChar(50)                                @map("lsg_modified_by")
+
+  scheme            LoyaltyScheme      @relation("LoyaltySchemeGifts", fields: [lsgLscId],  references: [lscId],  onUpdate: Cascade, onDelete: Cascade,  map: "fk_lsg_scheme")
+  item              ItemMaster         @relation("LoyaltyGiftItem",    fields: [lsgItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lsg_item")
+  unit              ItemUnitConversion @relation("LoyaltyGiftUnit",    fields: [lsgUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lsg_unit")
+
+  @@map("loyalty_scheme_gift")
+  @@schema("sales")
+}
+
+// ----- prisma/sales/loyaltySchemeItem.prisma -----
+/// sales.loyalty_scheme_item — §4, which stock the campaign applies to.
+///
+/// One kind + one scope id, with five GENERATED ALWAYS ... STORED columns
+/// carrying the foreign keys — the same shape as LoyaltySchemeParty, read that
+/// model's header for the write rules and the migration caveat. In short: set
+/// lsiKind + lsiScopeId and never touch itemId / groupId / categoryId / brandId
+/// / sectionId.
+///
+///     lsiKind = 'ITEM' | 'ITEM_GROUP' | 'ITEM_CATEGORY' | 'ITEM_BRAND' | 'ITEM_SECTION'
+///
+/// The vocabulary is the live one: loyalty_sch_list.ls_item_type already used
+/// exactly these five values, so the new screen and the old data agree.
+///
+/// This is what makes "double points on own-brand, but nothing on tobacco"
+/// expressible in ONE scheme — the predecessor could hold only one kind of
+/// grouping per scheme and could not exclude at all.
+///
+/// lsiFactor multiplies whatever the slab computed for the line (2.0 = double
+/// points); a non-zero lsiPoints replaces the slab result outright instead of
+/// scaling it.
+///
+/// lsiMatchPriority: most specific wins. Seed ITEM 4, ITEM_BRAND 3,
+/// ITEM_CATEGORY 2, ITEM_SECTION 1, ITEM_GROUP 0 — data, not a hard-coded rule.
+/// An EXCLUDE row earns nothing regardless of any broader rule.
+///
+/// Read only when lsc_item_scope = 'LIST'.
+///
+/// DB-only objects to hand-author:
+///   ux_lsi_row     UNIQUE (lsc_id, kind, scope_id) WHERE NOT deleted
+///   ix_lsi_scheme  (lsc_id, match_priority DESC) INCLUDE (...), partial
+///   ix_lsi_item / _group / _category / _brand / _section, all partial
+model LoyaltySchemeItem {
+  lsiId            String    @id(map: "pk_loyalty_scheme_item") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsi_id")
+  lsiLscId         String    @db.Uuid                                       @map("lsi_lsc_id")
+  lsiSlno          Int       @default(1)                                    @map("lsi_slno")
+
+  // The GRID COLUMNS.
+  lsiKind          String    @db.VarChar(20)                                @map("lsi_kind")
+  lsiScopeId       String    @db.Uuid                                       @map("lsi_scope_id")
+
+  // GENERATED ALWAYS ... STORED. Read-only.
+  lsiItemId        String?   @default(dbgenerated()) @db.Uuid               @map("lsi_item_id")
+  lsiGroupId       String?   @default(dbgenerated()) @db.Uuid               @map("lsi_group_id")
+  lsiCategoryId    String?   @default(dbgenerated()) @db.Uuid               @map("lsi_category_id")
+  lsiBrandId       String?   @default(dbgenerated()) @db.Uuid               @map("lsi_brand_id")
+  lsiSectionId     String?   @default(dbgenerated()) @db.Uuid               @map("lsi_section_id")
+
+  lsiIsExclude     Boolean   @default(false)                                @map("lsi_is_exclude")
+  /// Multiplies whatever the slab computed for the line. 2.0 = double points.
+  lsiFactor        Decimal   @default(1) @db.Decimal(18, 4)                 @map("lsi_factor")
+  /// Non-zero REPLACES the slab result outright instead of scaling it.
+  lsiPoints        Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsi_points")
+  /// 0 = uncapped, per line.
+  lsiMaxPoints     Decimal   @default(0) @db.Decimal(18, 4)                 @map("lsi_max_points")
+  lsiMatchPriority Int       @default(1) @db.SmallInt                       @map("lsi_match_priority")
+  lsiNotes         String?   @db.Text                                       @map("lsi_notes")
+  lsiIsActive      Boolean   @default(true)                                 @map("lsi_is_active")
+  lsiIsDeleted     Boolean   @default(false)                                @map("lsi_is_deleted")
+  lsiSyncDate      DateTime? @db.Timestamptz(6)                             @map("lsi_sync_date")
+  lsiCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)             @map("lsi_created_on")
+  lsiCreatedBy     String?   @db.VarChar(50)                                @map("lsi_created_by")
+  lsiModifiedOn    DateTime? @db.Timestamptz(6)                             @map("lsi_modified_on")
+  lsiModifiedBy    String?   @db.VarChar(50)                                @map("lsi_modified_by")
+
+  scheme           LoyaltyScheme      @relation("LoyaltySchemeItems",  fields: [lsiLscId],      references: [lscId],      onUpdate: Cascade,  onDelete: Cascade,  map: "fk_lsi_scheme")
+  item             ItemMaster?        @relation("LoyaltyItemItem",     fields: [lsiItemId],     references: [itemId],     onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_item")
+  itemGroup        ItemGroupMaster?   @relation("LoyaltyItemGroup",    fields: [lsiGroupId],    references: [itgId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_group")
+  itemCategory     categoryMaster?    @relation("LoyaltyItemCategory", fields: [lsiCategoryId], references: [categoryId], onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_category")
+  itemBrand        ItemBrandMaster?   @relation("LoyaltyItemBrand",    fields: [lsiBrandId],    references: [brand_id],   onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_brand")
+  itemSection      ItemSectionMaster? @relation("LoyaltyItemSection",  fields: [lsiSectionId],  references: [secId],      onUpdate: NoAction, onDelete: Restrict, map: "fk_lsi_section")
+
+  @@map("loyalty_scheme_item")
   @@schema("sales")
 }
 
 // ----- prisma/sales/loyaltySchemeParty.prisma -----
+/// sales.loyalty_scheme_party — §3, who the campaign applies to.
+///
+/// ONE KIND + ONE SCOPE ID, the shape the entry grid needs. The screen binds to
+/// exactly two columns, lspKind and lspScopeId; the two *_id fields below are
+/// GENERATED ALWAYS ... STORED in Postgres and exist only to carry a real
+/// foreign key per kind.
+///
+///     lspKind = 'CUSTOMER' | 'CUSTOMER_GROUP'
+///
+/// Loyalty deliberately has NO AREA or CITY, unlike promotion_scheme_party: a
+/// wallet follows the person, not the route. Adding them would be one generated
+/// column and one FK each.
+///
+/// lspMatchPriority makes "a rule naming one CUSTOMER beats one naming their
+/// GROUP" data rather than an assumption: CUSTOMER 2, CUSTOMER_GROUP 1. An
+/// EXCLUDE row beats an INCLUDE row at equal priority.
+///
+/// Read only when lsc_cust_scope = 'LIST'.
+///
+/// ── WRITING THIS MODEL ──────────────────────────────────────────────────
+/// NEVER set custId / custGroupId, and never use their nested `connect`s.
+/// Postgres computes those columns and rejects any write. Set lspKind +
+/// lspScopeId; read the relations back.
+///
+/// ── MIGRATION ───────────────────────────────────────────────────────────
+/// prisma migrate cannot emit a generated column; both are hand-authored, e.g.
+///   lsp_cust_id uuid GENERATED ALWAYS AS
+///     (CASE WHEN lsp_kind::text = 'CUSTOMER' THEN lsp_scope_id END) STORED
+/// The `@default(dbgenerated())` below is the no-argument form: it stops every
+/// later `migrate dev` emitting an ALTER COLUMN ... DROP DEFAULT that Postgres
+/// rejects with 42601 on a generated column.
+///
+/// The FKs are ON UPDATE NO ACTION, not CASCADE — Postgres forbids a cascading
+/// update on a key containing a generated column. Costs nothing: every master
+/// key here is a uuidv7() that is never reissued.
+///
+/// DB-only objects to hand-author:
+///   ux_lsp_row       UNIQUE (lsc_id, kind, scope_id) WHERE NOT deleted
+///   ix_lsp_scheme    (lsc_id, match_priority DESC) INCLUDE (...), partial
+///   ix_lsp_cust / ix_lsp_cust_group, both partial
 model LoyaltySchemeParty {
-  lpsId                          String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lps_id")
-  lpsLsId                        String         @db.Uuid                                @map("lps_ls_id")
-  lpsSlno                        Int                                                   @map("lps_slno")
-  lpsScopeType                   String         @db.VarChar(20)                         @map("lps_scope_type")
-  lpsScopeId                     String         @db.Uuid                                @map("lps_scope_id")
-  lpsIsExclude                   Boolean        @default(false)                         @map("lps_is_exclude")
-  lpsNotes                       String?        @db.Text                                @map("lps_notes")
-  lpsIsActive                    Boolean        @default(true)                          @map("lps_is_active")
-  lpsIsDeleted                   Boolean        @default(false)                         @map("lps_is_deleted")
-  lpsSyncDate                    DateTime?      @db.Timestamptz(6)                      @map("lps_sync_date")
-  lpsCreatedOn                   DateTime       @default(now()) @db.Timestamptz(6)     @map("lps_created_on")
-  lpsCreatedBy                   String?        @db.Uuid                                @map("lps_created_by")
-  lpsUpdatedOn                   DateTime?      @db.Timestamptz(6)                      @map("lps_updated_on")
-  lpsUpdatedBy                   String?        @db.Uuid                                @map("lps_updated_by")
+  lspId            String    @id(map: "pk_loyalty_scheme_party") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lsp_id")
+  lspLscId         String    @db.Uuid                                       @map("lsp_lsc_id")
+  lspSlno          Int       @default(1)                                    @map("lsp_slno")
 
-  scheme                         LoyaltyScheme  @relation(fields: [lpsLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
+  // The GRID COLUMNS — the only two the form reads and writes.
+  lspKind          String    @db.VarChar(20)                                @map("lsp_kind")
+  lspScopeId       String    @db.Uuid                                       @map("lsp_scope_id")
 
-  @@index([lpsLsId], map: "ix_loyalty_sch_party_scheme")
-  @@map("loyalty_sch_party")
+  // GENERATED ALWAYS ... STORED. Read-only. See the note above.
+  lspCustId        String?   @default(dbgenerated()) @db.Uuid               @map("lsp_cust_id")
+  lspCustGroupId   String?   @default(dbgenerated()) @db.Uuid               @map("lsp_cust_group_id")
+
+  lspIsExclude     Boolean   @default(false)                                @map("lsp_is_exclude")
+  lspMatchPriority Int       @default(1) @db.SmallInt                       @map("lsp_match_priority")
+  lspNotes         String?   @db.Text                                       @map("lsp_notes")
+  lspIsActive      Boolean   @default(true)                                 @map("lsp_is_active")
+  lspIsDeleted     Boolean   @default(false)                                @map("lsp_is_deleted")
+  lspSyncDate      DateTime? @db.Timestamptz(6)                             @map("lsp_sync_date")
+  lspCreatedOn     DateTime  @default(now()) @db.Timestamptz(6)             @map("lsp_created_on")
+  lspCreatedBy     String?   @db.VarChar(50)                                @map("lsp_created_by")
+  lspModifiedOn    DateTime? @db.Timestamptz(6)                             @map("lsp_modified_on")
+  lspModifiedBy    String?   @db.VarChar(50)                                @map("lsp_modified_by")
+
+  scheme           LoyaltyScheme @relation("LoyaltySchemeParties",  fields: [lspLscId],       references: [lscId], onUpdate: Cascade,  onDelete: Cascade,  map: "fk_lsp_scheme")
+  customer         Customer?     @relation("LoyaltyPartyCustomer",  fields: [lspCustId],      references: [cusId], onUpdate: NoAction, onDelete: Restrict, map: "fk_lsp_cust")
+  customerGroup    CustGroup?    @relation("LoyaltyPartyCustGroup", fields: [lspCustGroupId], references: [cgrId], onUpdate: NoAction, onDelete: Restrict, map: "fk_lsp_cust_group")
+
+  @@map("loyalty_scheme_party")
   @@schema("sales")
 }
 
-// ----- prisma/sales/loyaltySchemePoint.prisma -----
-model LoyaltySchemePoint {
-  lsptId                         String         @id @default(dbgenerated("uuidv7()")) @db.Uuid @map("lspt_id")
-  lsptLsId                       String         @db.Uuid                                @map("lspt_ls_id")
-  lsptSlno                       Int                                                   @map("lspt_slno")
-  lsptItemId                     String?        @db.Uuid                                @map("lspt_item_id")
-  lsptUnitId                     String?        @db.Uuid                                @map("lspt_unit_id")
-  lsptExceeds                    Decimal        @default(0) @db.Decimal(18, 3)         @map("lspt_exceeds")
-  lsptEach                       Decimal        @default(1) @db.Decimal(18, 3)         @map("lspt_each")
-  lsptFactor                     Decimal        @default(1) @db.Decimal(18, 4)         @map("lspt_factor")
-  lsptPoints                     Decimal        @default(0) @db.Decimal(18, 2)         @map("lspt_points")
-  lsptNotes                      String?        @db.Text                                @map("lspt_notes")
-  lsptIsActive                   Boolean        @default(true)                          @map("lspt_is_active")
-  lsptIsDeleted                  Boolean        @default(false)                         @map("lspt_is_deleted")
-  lsptSyncDate                   DateTime?      @db.Timestamptz(6)                      @map("lspt_sync_date")
-  lsptCreatedOn                  DateTime       @default(now()) @db.Timestamptz(6)     @map("lspt_created_on")
-  lsptCreatedBy                  String?        @db.Uuid                                @map("lspt_created_by")
-  lsptUpdatedOn                  DateTime?      @db.Timestamptz(6)                      @map("lspt_updated_on")
-  lsptUpdatedBy                  String?        @db.Uuid                                @map("lspt_updated_by")
+// ----- prisma/sales/loyaltySchemeSlab.prisma -----
+/// sales.loyalty_scheme_slab — §5, the earn rates.
+///
+/// One row = one rate band. Read as: for every lssEach units ABOVE lssExceeds,
+/// award lssPoints, scaled by lssFactor.
+///
+/// "units" are RUPEES when lsc_apply_on is BILL_AMOUNT / ITEM_AMOUNT, and
+/// QUANTITY when it is BILL_QTY / ITEM_QTY — one column pair serving both.
+///
+/// Bill-value slabs are ROWS, not columns: 0-999 -> 1pt/100, 1000-4999 ->
+/// 2pt/100, 5000+ -> 3pt/100 is three rows.
+///
+/// lssItemId narrows a band to ONE item; leave it NULL for a whole-bill band.
+/// Anything broader than one item (group, brand, category) belongs in
+/// LoyaltySchemeItem, which multiplies what this computes.
+///
+/// lssUnitId references inventory.item_unit_conversion(iuc_id) — the same target
+/// sale_bill_item.fk_sbi_item_unit uses, NOT item_unit_master(unit_id).
+///
+/// DB-only objects to hand-author:
+///   ux_lss_band    UNIQUE (lsc_id, COALESCE(item_id, nil uuid), exceeds)
+///                  WHERE NOT deleted
+///   ix_lss_scheme  (lsc_id, exceeds) INCLUDE (...), partial
+///   ix_lss_item / ix_lss_unit, both partial
+model LoyaltySchemeSlab {
+  lssId          String    @id(map: "pk_loyalty_scheme_slab") @default(dbgenerated("uuidv7()")) @db.Uuid @map("lss_id")
+  lssLscId       String    @db.Uuid                                       @map("lss_lsc_id")
+  lssSlno        Int       @default(1)                                    @map("lss_slno")
 
-  scheme                         LoyaltyScheme  @relation(fields: [lsptLsId], references: [lsId], onUpdate: Cascade, onDelete: Cascade)
-  unit                           Unit?          @relation(fields: [lsptUnitId], references: [unit_id], onUpdate: Cascade, onDelete: Restrict, map: "fk_loyalty_sch_points_unit")
+  /// NULL = applies to the whole bill.
+  lssItemId      String?   @db.Uuid                                       @map("lss_item_id")
+  /// item_unit_conversion, as on a bill line.
+  lssUnitId      String?   @db.Uuid                                       @map("lss_unit_id")
 
-  @@index([lsptLsId], map: "ix_loyalty_sch_points_scheme")
-  @@map("loyalty_sch_points")
+  /// Band lower bound.
+  lssExceeds     Decimal   @default(0) @db.Decimal(18, 3)                 @map("lss_exceeds")
+  /// Band ceiling. NULL = open-ended.
+  lssUpto        Decimal?  @db.Decimal(18, 3)                             @map("lss_upto")
+  /// Granularity.
+  lssEach        Decimal   @default(1) @db.Decimal(18, 3)                 @map("lss_each")
+  /// Awarded per lssEach.
+  lssPoints      Decimal   @default(0) @db.Decimal(18, 4)                 @map("lss_points")
+  lssFactor      Decimal   @default(1) @db.Decimal(18, 4)                 @map("lss_factor")
+  /// 0 = uncapped.
+  lssMaxPoints   Decimal   @default(0) @db.Decimal(18, 4)                 @map("lss_max_points")
+
+  lssNotes       String?   @db.Text                                       @map("lss_notes")
+  lssIsActive    Boolean   @default(true)                                 @map("lss_is_active")
+  lssIsDeleted   Boolean   @default(false)                                @map("lss_is_deleted")
+  lssSyncDate    DateTime? @db.Timestamptz(6)                             @map("lss_sync_date")
+  lssCreatedOn   DateTime  @default(now()) @db.Timestamptz(6)             @map("lss_created_on")
+  lssCreatedBy   String?   @db.VarChar(50)                                @map("lss_created_by")
+  lssModifiedOn  DateTime? @db.Timestamptz(6)                             @map("lss_modified_on")
+  lssModifiedBy  String?   @db.VarChar(50)                                @map("lss_modified_by")
+
+  scheme         LoyaltyScheme       @relation("LoyaltySchemeSlabs", fields: [lssLscId],  references: [lscId],  onUpdate: Cascade, onDelete: Cascade,  map: "fk_lss_scheme")
+  item           ItemMaster?         @relation("LoyaltySlabItem",    fields: [lssItemId], references: [itemId], onUpdate: Cascade, onDelete: Restrict, map: "fk_lss_item")
+  unit           ItemUnitConversion? @relation("LoyaltySlabUnit",    fields: [lssUnitId], references: [iucId],  onUpdate: Cascade, onDelete: Restrict, map: "fk_lss_unit")
+
+  @@map("loyalty_scheme_slab")
   @@schema("sales")
 }
 

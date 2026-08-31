@@ -25,7 +25,7 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
     const exception = new BadRequestException({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'ls_name', message: 'ls_name is required' }],
+      errors: [{ field: 'lsc_name', message: 'lsc_name is required' }],
     });
 
     filter.catch(exception, createHost(response));
@@ -34,7 +34,7 @@ describe('PromotionLoyaltyPointsExceptionFilter', () => {
     expect(response.json).toHaveBeenCalledWith({
       success: false,
       message: 'Validation failed',
-      errors: [{ field: 'ls_name', message: 'ls_name is required' }],
+      errors: [{ field: 'lsc_name', message: 'lsc_name is required' }],
     });
   });
 

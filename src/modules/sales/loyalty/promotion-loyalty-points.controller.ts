@@ -11,38 +11,43 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { API_VERSION } from '../../../common/constants/api-version';
 import { HttpErrorResponseDto } from '../../../common/dto/http-error-response.dto';
-import { DeleteLoyaltyGiftQueryDto } from './dto/delete-loyalty-gift-query.dto';
-import { DeleteLoyaltyPointQueryDto } from './dto/delete-loyalty-point-query.dto';
-import { DeleteLoyaltySchemeQueryDto } from './dto/delete-loyalty-scheme-query.dto';
-import { LoyaltyGiftIdQueryDto } from './dto/loyalty-gift-id-query.dto';
-import { LoyaltyPointIdQueryDto } from './dto/loyalty-point-id-query.dto';
-import { LoyaltySchemeIdQueryDto } from './dto/loyalty-scheme-id-query.dto';
+import { ListLoyaltySchemeQueryDto } from './dto/list-loyalty-scheme-query.dto';
 import {
-  LoyaltyGiftSuccessDeleteDto,
-  LoyaltyGiftSuccessSingleDto,
-  LoyaltyPointSuccessDeleteDto,
-  LoyaltyPointSuccessSingleDto,
+  DeleteLoyaltySchemeQueryDto,
+  LoyaltySchemeEligibilityQueryDto,
+  LoyaltySchemeIdQueryDto,
+} from './dto/loyalty-scheme-id-query.dto';
+import {
+  LoyaltySchemeEligibilitySuccessDto,
   LoyaltySchemeSuccessDeleteDto,
+  LoyaltySchemeSuccessListDto,
   LoyaltySchemeSuccessSingleDto,
   PromotionLoyaltyPointsErrorResponseDto,
 } from './dto/promotion-loyalty-points-response.dto';
-import { SaveLoyaltyGiftDto } from './dto/save-loyalty-gift.dto';
-import { SaveLoyaltyPointDto } from './dto/save-loyalty-point.dto';
 import { SaveLoyaltySchemeDto } from './dto/save-loyalty-scheme.dto';
 import { PromotionLoyaltyPointsExceptionFilter } from './promotion-loyalty-points-exception.filter';
 import { PromotionLoyaltyPointsService } from './promotion-loyalty-points.service';
 import {
-  LoyaltyGiftDeleteResult,
-  LoyaltyGiftPayload,
-  LoyaltyPointDeleteResult,
-  LoyaltyPointPayload,
   LoyaltySchemeDeleteResult,
+  LoyaltySchemeEligibilityPayload,
   LoyaltySchemePayload,
   PromotionLoyaltyPointsSuccessResponse,
 } from './types/promotion-loyalty-points-api.types';
-import { API_VERSION } from '../../../common/constants/api-version';
 
+/**
+ * One module, six tables, one URL.
+ *
+ * POST /create saves the campaign whole: the header plus the five scope/rate
+ * grids (branches, parties, items, slabs, gifts) nested in the same body, in one
+ * transaction. GET /get returns the same shape back, names resolved and ready to
+ * edit. There is deliberately no per-grid endpoint — a grid row is created,
+ * changed and removed by posting the array it belongs to.
+ *
+ * This replaces the old per-child endpoints (`points/*`, `gifts/*`), which wrote
+ * sales.loyalty_sch_points and sales.loyalty_sch_gift. Those tables are gone.
+ */
 @ApiTags('Promotion Loyalty Points')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
@@ -50,23 +55,32 @@ import { API_VERSION } from '../../../common/constants/api-version';
 @Controller('promotion-loyalty-points')
 @UseFilters(PromotionLoyaltyPointsExceptionFilter)
 export class PromotionLoyaltyPointsController {
-  constructor(private readonly promotionLoyaltyPointsService: PromotionLoyaltyPointsService) { }
+  constructor(private readonly promotionLoyaltyPointsService: PromotionLoyaltyPointsService) {}
 
   @Post('create')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update loyalty scheme by ls_id presence' })
+  @ApiOperation({
+    summary: 'Create or update a whole loyalty scheme — header and all five grids — in one call',
+    description:
+      'Object payload. Omit lsc_id to create, send it to update — on update only the keys ' +
+      'present in the body are written.\n\n' +
+      'The `branches`, `parties`, `items`, `slabs` and `gifts` arrays are optional and save ' +
+      'with the header in the same transaction. An array that is present REPLACES that grid: ' +
+      'rows carrying their own id are updated, rows without one are inserted, and rows already ' +
+      'on the scheme but missing from the array are soft deleted. Omit the key to leave the ' +
+      'grid untouched — `"slabs": []` means "delete every band", which is not the same thing.',
+  })
   @ApiCreatedResponse({ type: LoyaltySchemeSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiConflictResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   async saveScheme(
-    @Body() saveLoyaltySchemeDto: SaveLoyaltySchemeDto,
+    @Body() dto: SaveLoyaltySchemeDto,
   ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemePayload>> {
-    const data = await this.promotionLoyaltyPointsService.saveScheme(saveLoyaltySchemeDto);
-
+    const data = await this.promotionLoyaltyPointsService.saveScheme(dto);
     return {
       success: true,
-      message: saveLoyaltySchemeDto.ls_id
+      message: dto.lsc_id
         ? 'Loyalty scheme updated successfully'
         : 'Loyalty scheme created successfully',
       data,
@@ -76,170 +90,84 @@ export class PromotionLoyaltyPointsController {
   @Get('get')
   @Version(API_VERSION)
   @ApiOperation({
-    summary: 'Get a full loyalty scheme graph by ls_id in a single response',
+    summary: 'Get one loyalty scheme with its branches, parties, items, slabs and gifts',
+    description: 'Returns the same shape POST /create accepts, ready to edit and post back.',
   })
-  @ApiOkResponse({
-    type: LoyaltySchemeSuccessSingleDto,
-    description: 'Returns the scheme header along with nested parties, points, and gifts.',
-  })
+  @ApiOkResponse({ type: LoyaltySchemeSuccessSingleDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async getSchemeById(
-    @Query() queryDto: LoyaltySchemeIdQueryDto,
+  async getScheme(
+    @Query() query: LoyaltySchemeIdQueryDto,
   ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemePayload>> {
-    const data = await this.promotionLoyaltyPointsService.getSchemeById(queryDto.ls_id);
+    const data = await this.promotionLoyaltyPointsService.getSchemeById(query.lsc_id);
+    return { success: true, message: 'Loyalty scheme fetched successfully', data };
+  }
 
+  @Get('list')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'List the live loyalty schemes, optionally narrowed to a company and a branch',
+    description:
+      'Each scheme comes back WHOLE — the header plus its five grids, the same shape GET /get ' +
+      'answers with for one scheme and POST /create accepts back.\n\n' +
+      'Only rows with is_deleted = false AND is_active = true are returned, and that is not a ' +
+      'parameter. It holds for the child rows too: a deactivated band or party rule is absent ' +
+      'from the arrays, not present and flagged.\n\n' +
+      'Both `company` and `branch` are OPTIONAL narrowings, applied only when sent. `branch` ' +
+      'matches the lsc_branch_id column literally, so company-wide schemes (lsc_branch_id ' +
+      'NULL) come back only when no branch is named. Ordered by lsc_code.',
+  })
+  @ApiOkResponse({ type: LoyaltySchemeSuccessListDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async listSchemes(
+    @Query() query: ListLoyaltySchemeQueryDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemePayload[]>> {
+    const data = await this.promotionLoyaltyPointsService.listSchemes(query);
+    return { success: true, message: 'Loyalty schemes fetched successfully', data };
+  }
+
+  @Get('eligibility')
+  @Version(API_VERSION)
+  @ApiOperation({
+    summary: 'Ask whether one customer earns on one scheme',
+    description:
+      'The read the till needs, as opposed to /get which is the read the grid needs. A customer ' +
+      'can be reached by two party rows at once — by name and by their group — so the answer ' +
+      'names the row that decided it: highest lsp_match_priority wins, and at equal priority an ' +
+      'EXCLUDE beats an INCLUDE.\n\n' +
+      'A scheme whose lsc_cust_scope is ALL answers YES without reading a single party row. A ' +
+      'scheme scoped to a LIST that no row reaches answers NO.',
+  })
+  @ApiOkResponse({ type: LoyaltySchemeEligibilitySuccessDto })
+  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
+  async checkEligibility(
+    @Query() query: LoyaltySchemeEligibilityQueryDto,
+  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemeEligibilityPayload>> {
+    const data = await this.promotionLoyaltyPointsService.checkEligibility(
+      query.lsc_id,
+      query.cus_id,
+    );
     return {
       success: true,
-      message: 'Loyalty scheme fetched successfully',
+      message: 'Loyalty scheme eligibility evaluated successfully',
       data,
     };
   }
 
   @Delete('delete')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete loyalty scheme by ls_id' })
+  @ApiOperation({ summary: 'Soft delete a loyalty scheme and every one of its child rows' })
   @ApiOkResponse({ type: LoyaltySchemeSuccessDeleteDto })
   @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
   async deleteScheme(
-    @Query() queryDto: DeleteLoyaltySchemeQueryDto,
+    @Query() query: DeleteLoyaltySchemeQueryDto,
   ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltySchemeDeleteResult>> {
     const data = await this.promotionLoyaltyPointsService.softDeleteScheme(
-      queryDto.ls_id,
-      queryDto.ls_updated_by,
+      query.lsc_id,
+      query.lsc_modified_by,
     );
-
-    return {
-      success: true,
-      message: 'Loyalty scheme deleted successfully',
-      data,
-    };
-  }
-
-  @Post('points/create')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update loyalty point slab by lspt_id presence' })
-  @ApiCreatedResponse({ type: LoyaltyPointSuccessSingleDto })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  @ApiConflictResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async savePoint(
-    @Body() saveLoyaltyPointDto: SaveLoyaltyPointDto,
-  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyPointPayload>> {
-    const data = await this.promotionLoyaltyPointsService.savePoint(saveLoyaltyPointDto);
-
-    return {
-      success: true,
-      message: saveLoyaltyPointDto.lspt_id
-        ? 'Loyalty point updated successfully'
-        : 'Loyalty point created successfully',
-      data,
-    };
-  }
-
-  @Get('points/get')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Compatibility endpoint for a single loyalty point slab',
-    deprecated: true,
-  })
-  @ApiOkResponse({ type: LoyaltyPointSuccessSingleDto })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async getPointById(
-    @Query() queryDto: LoyaltyPointIdQueryDto,
-  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyPointPayload>> {
-    const data = await this.promotionLoyaltyPointsService.getPointById(queryDto.lspt_id);
-
-    return {
-      success: true,
-      message: 'Loyalty point fetched successfully',
-      data,
-    };
-  }
-
-  @Delete('points/delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete loyalty point slab by lspt_id' })
-  @ApiOkResponse({ type: LoyaltyPointSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async deletePoint(
-    @Query() queryDto: DeleteLoyaltyPointQueryDto,
-  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyPointDeleteResult>> {
-    const data = await this.promotionLoyaltyPointsService.softDeletePoint(
-      queryDto.lspt_id,
-      queryDto.lspt_updated_by,
-    );
-
-    return {
-      success: true,
-      message: 'Loyalty point deleted successfully',
-      data,
-    };
-  }
-
-  @Post('gifts/create')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Create or update loyalty gift rule by lsg_id presence' })
-  @ApiCreatedResponse({ type: LoyaltyGiftSuccessSingleDto })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  @ApiConflictResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async saveGift(
-    @Body() saveLoyaltyGiftDto: SaveLoyaltyGiftDto,
-  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftPayload>> {
-    const data = await this.promotionLoyaltyPointsService.saveGift(saveLoyaltyGiftDto);
-
-    return {
-      success: true,
-      message: saveLoyaltyGiftDto.lsg_id
-        ? 'Loyalty gift updated successfully'
-        : 'Loyalty gift created successfully',
-      data,
-    };
-  }
-
-  @Get('gifts/get')
-  @Version(API_VERSION)
-  @ApiOperation({
-    summary: 'Compatibility endpoint for a single loyalty gift rule',
-    deprecated: true,
-  })
-  @ApiOkResponse({ type: LoyaltyGiftSuccessSingleDto })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async getGiftById(
-    @Query() queryDto: LoyaltyGiftIdQueryDto,
-  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftPayload>> {
-    const data = await this.promotionLoyaltyPointsService.getGiftById(queryDto.lsg_id);
-
-    return {
-      success: true,
-      message: 'Loyalty gift fetched successfully',
-      data,
-    };
-  }
-
-  @Delete('gifts/delete')
-  @Version(API_VERSION)
-  @ApiOperation({ summary: 'Soft delete loyalty gift rule by lsg_id' })
-  @ApiOkResponse({ type: LoyaltyGiftSuccessDeleteDto })
-  @ApiBadRequestResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  @ApiNotFoundResponse({ type: PromotionLoyaltyPointsErrorResponseDto })
-  async deleteGift(
-    @Query() queryDto: DeleteLoyaltyGiftQueryDto,
-  ): Promise<PromotionLoyaltyPointsSuccessResponse<LoyaltyGiftDeleteResult>> {
-    const data = await this.promotionLoyaltyPointsService.softDeleteGift(
-      queryDto.lsg_id,
-      queryDto.lsg_updated_by,
-    );
-
-    return {
-      success: true,
-      message: 'Loyalty gift deleted successfully',
-      data,
-    };
+    return { success: true, message: 'Loyalty scheme deleted successfully', data };
   }
 }

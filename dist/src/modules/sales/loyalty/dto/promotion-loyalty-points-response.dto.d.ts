@@ -1,146 +1,215 @@
 import { SalesErrorFieldDto, SalesErrorResponseDto } from "../../../../common/utils/module-response.dto";
 export { SalesErrorFieldDto as PromotionLoyaltyPointsErrorFieldDto };
 export { SalesErrorResponseDto as PromotionLoyaltyPointsErrorResponseDto };
-export declare class LoyaltyPointPayloadDto {
-    lspt_id: string;
-    lspt_ls_id: string;
-    lspt_slno: number;
-    lspt_item_id: string | null;
-    lspt_unit_id: string | null;
-    lspt_exceeds: number;
-    lspt_each: number;
-    lspt_factor: number;
-    lspt_points: number;
-    lspt_notes: string | null;
-    lspt_is_active: boolean;
-    lspt_is_deleted: boolean;
-    lspt_sync_date: string | null;
-    lspt_created_on: string;
-    lspt_created_by: string | null;
-    lspt_updated_on: string | null;
-    lspt_updated_by: string | null;
+export declare class LoyaltySchemeBranchPayloadDto {
+    lsb_id: string;
+    lsb_lsc_id: string;
+    lsb_slno: number;
+    lsb_branch_id: string;
+    lsb_branch_name: string | null;
+    lsb_branch_code: string | null;
+    lsb_is_exclude: boolean;
+    lsb_notes: string | null;
+    lsb_is_active: boolean;
+    lsb_is_deleted: boolean;
+    lsb_sync_date: string | null;
+    lsb_created_on: string;
+    lsb_created_by: string | null;
+    lsb_modified_on: string | null;
+    lsb_modified_by: string | null;
 }
-export declare class LoyaltyGiftPayloadDto {
+export declare class LoyaltySchemePartyPayloadDto {
+    lsp_id: string;
+    lsp_lsc_id: string;
+    lsp_slno: number;
+    lsp_kind: string;
+    lsp_scope_id: string;
+    lsp_cust_id: string | null;
+    lsp_cust_group_id: string | null;
+    lsp_scope_name: string | null;
+    lsp_scope_code: string | null;
+    lsp_is_exclude: boolean;
+    lsp_match_priority: number;
+    lsp_notes: string | null;
+    lsp_is_active: boolean;
+    lsp_is_deleted: boolean;
+    lsp_sync_date: string | null;
+    lsp_created_on: string;
+    lsp_created_by: string | null;
+    lsp_modified_on: string | null;
+    lsp_modified_by: string | null;
+}
+export declare class LoyaltySchemeItemPayloadDto {
+    lsi_id: string;
+    lsi_lsc_id: string;
+    lsi_slno: number;
+    lsi_kind: string;
+    lsi_scope_id: string;
+    lsi_item_id: string | null;
+    lsi_group_id: string | null;
+    lsi_category_id: string | null;
+    lsi_brand_id: string | null;
+    lsi_section_id: string | null;
+    lsi_scope_name: string | null;
+    lsi_is_exclude: boolean;
+    lsi_factor: number;
+    lsi_points: number;
+    lsi_max_points: number;
+    lsi_match_priority: number;
+    lsi_notes: string | null;
+    lsi_is_active: boolean;
+    lsi_is_deleted: boolean;
+    lsi_sync_date: string | null;
+    lsi_created_on: string;
+    lsi_created_by: string | null;
+    lsi_modified_on: string | null;
+    lsi_modified_by: string | null;
+}
+export declare class LoyaltySchemeSlabPayloadDto {
+    lss_id: string;
+    lss_lsc_id: string;
+    lss_slno: number;
+    lss_item_id: string | null;
+    lss_unit_id: string | null;
+    lss_item_name: string | null;
+    lss_unit_name: string | null;
+    lss_exceeds: number;
+    lss_upto: number | null;
+    lss_each: number;
+    lss_points: number;
+    lss_factor: number;
+    lss_max_points: number;
+    lss_notes: string | null;
+    lss_is_active: boolean;
+    lss_is_deleted: boolean;
+    lss_sync_date: string | null;
+    lss_created_on: string;
+    lss_created_by: string | null;
+    lss_modified_on: string | null;
+    lss_modified_by: string | null;
+}
+export declare class LoyaltySchemeGiftPayloadDto {
     lsg_id: string;
-    lsg_ls_id: string;
+    lsg_lsc_id: string;
     lsg_slno: number;
     lsg_item_id: string;
     lsg_unit_id: string;
+    lsg_item_name: string | null;
+    lsg_unit_name: string | null;
     lsg_item_qty: number;
     lsg_redeem_points: number;
     lsg_repeat: boolean;
+    lsg_max_qty_per_bill: number;
+    lsg_stock_check: boolean;
+    lsg_valid_from: string | null;
+    lsg_valid_upto: string | null;
     lsg_notes: string | null;
     lsg_is_active: boolean;
     lsg_is_deleted: boolean;
     lsg_sync_date: string | null;
     lsg_created_on: string;
     lsg_created_by: string | null;
-    lsg_updated_on: string | null;
-    lsg_updated_by: string | null;
-}
-export declare class LoyaltyPartyPayloadDto {
-    lps_id: string;
-    lps_ls_id: string;
-    lps_slno: number;
-    lps_scope_type: string;
-    lps_scope_id: string;
-    lps_is_exclude: boolean;
-    lps_notes: string | null;
-    lps_is_active: boolean;
-    lps_is_deleted: boolean;
-    lps_sync_date: string | null;
-    lps_created_on: string;
-    lps_created_by: string | null;
-    lps_updated_on: string | null;
-    lps_updated_by: string | null;
+    lsg_modified_on: string | null;
+    lsg_modified_by: string | null;
 }
 export declare class LoyaltySchemeSummaryPayloadDto {
-    ls_id: string;
-    ls_code: string | null;
-    ls_name: string;
-    ls_type: string;
-    ls_status: string;
-    ls_auto_apply: boolean;
-    ls_apply_on: string;
-    ls_calc_on_amount_type: string;
-    ls_bill_type: string;
-    ls_cust_type: string;
-    ls_item_type: string;
-    ls_start_date: string;
-    ls_end_date: string;
-    ls_valid_from_time: string | null;
-    ls_valid_to_time: string | null;
-    ls_valid_weekdays: string | null;
-    ls_comp_id: string;
-    ls_branch_id: string | null;
-    ls_include_tax_for_points: boolean;
-    ls_rounding_method: string;
-    ls_recur_apl: boolean;
-    ls_bal_apl: boolean;
-    ls_allow_point_redeem: boolean;
-    ls_allow_gift_redeem: boolean;
-    ls_redeem_value_per_point: number;
-    ls_min_redeem_points: number;
-    ls_max_redeem_points_per_bill: number;
-    ls_max_redeem_percent_per_bill: number;
-    ls_redeem_min_bill_amount: number;
-    ls_points_valid_days: number;
-    ls_expiry_basis: string;
-    ls_remarks: string | null;
-    ls_is_active: boolean;
-    ls_is_deleted: boolean;
-    ls_sync_date: string | null;
-    ls_created_on: string;
-    ls_created_by: string | null;
-    ls_updated_on: string | null;
-    ls_updated_by: string | null;
-    ls_approved_on: string | null;
-    ls_approved_by: string | null;
+    lsc_id: string;
+    lsc_comp_id: string;
+    lsc_branch_id: string | null;
+    lsc_comp_name: string | null;
+    lsc_branch_name: string | null;
+    lsc_tenant_id: string | null;
+    lsc_code: string;
+    lsc_name: string;
+    lsc_type: string;
+    lsc_status: string;
+    lsc_priority: number;
+    lsc_auto_apply: boolean;
+    lsc_apply_on: string;
+    lsc_calc_on_amount_type: string;
+    lsc_include_tax: boolean;
+    lsc_bill_type: string;
+    lsc_min_bill_amount: number;
+    lsc_max_earn_points: number;
+    lsc_earn_on_discounted: boolean;
+    lsc_earn_on_charges: boolean;
+    lsc_earn_with_redeem: boolean;
+    lsc_rounding_method: string;
+    lsc_points_decimals: number;
+    lsc_branch_scope: string;
+    lsc_cust_scope: string;
+    lsc_item_scope: string;
+    lsc_price_level_id: number | null;
+    lsc_pool_mode: string;
+    lsc_allow_cross_branch_redeem: boolean;
+    lsc_allow_point_redeem: boolean;
+    lsc_allow_gift_redeem: boolean;
+    lsc_redeem_tender_id: string | null;
+    lsc_redeem_value_per_point: number;
+    lsc_min_redeem_points: number;
+    lsc_max_redeem_points: number;
+    lsc_max_redeem_perc: number;
+    lsc_redeem_min_bill_amount: number;
+    lsc_redeem_multiple: number;
+    lsc_expiry_basis: string;
+    lsc_points_valid_days: number;
+    lsc_activation_days: number;
+    lsc_return_mode: string;
+    lsc_start_date: string;
+    lsc_end_date: string;
+    lsc_valid_from_time: string | null;
+    lsc_valid_to_time: string | null;
+    lsc_valid_weekdays: string | null;
+    lsc_remarks: string | null;
+    lsc_is_active: boolean;
+    lsc_is_deleted: boolean;
+    lsc_sync_date: string | null;
+    lsc_created_on: string;
+    lsc_created_by: string | null;
+    lsc_modified_on: string | null;
+    lsc_modified_by: string | null;
+    lsc_approved_on: string | null;
+    lsc_approved_by: string | null;
 }
 export declare class LoyaltySchemePayloadDto extends LoyaltySchemeSummaryPayloadDto {
-    parties: LoyaltyPartyPayloadDto[];
-    points: LoyaltyPointPayloadDto[];
-    gifts: LoyaltyGiftPayloadDto[];
+    branches: LoyaltySchemeBranchPayloadDto[];
+    parties: LoyaltySchemePartyPayloadDto[];
+    items: LoyaltySchemeItemPayloadDto[];
+    slabs: LoyaltySchemeSlabPayloadDto[];
+    gifts: LoyaltySchemeGiftPayloadDto[];
 }
 export declare class LoyaltySchemeDeleteResultDto {
-    ls_id: string;
     deleted: true;
-}
-export declare class LoyaltyPointDeleteResultDto {
-    lspt_id: string;
-    deleted: true;
-}
-export declare class LoyaltyGiftDeleteResultDto {
-    lsg_id: string;
-    deleted: true;
+    lsc_id: string;
 }
 export declare class LoyaltySchemeSuccessSingleDto {
     success: true;
     message: string;
     data: LoyaltySchemePayloadDto;
 }
+export declare class LoyaltySchemeSuccessListDto {
+    success: true;
+    message: string;
+    data: LoyaltySchemePayloadDto[];
+}
 export declare class LoyaltySchemeSuccessDeleteDto {
     success: true;
     message: string;
     data: LoyaltySchemeDeleteResultDto;
 }
-export declare class LoyaltyPointSuccessSingleDto {
-    success: true;
-    message: string;
-    data: LoyaltyPointPayloadDto;
+export declare class LoyaltySchemeEligibilityPayloadDto {
+    lsc_id: string;
+    cus_id: string;
+    qualifies: boolean;
+    decided_by: 'ALL' | 'RULE' | 'NO_RULE';
+    matched_by: string | null;
+    matched_row_id: string | null;
+    match_priority: number | null;
+    is_exclude: boolean | null;
+    reason: string;
 }
-export declare class LoyaltyPointSuccessDeleteDto {
+export declare class LoyaltySchemeEligibilitySuccessDto {
     success: true;
     message: string;
-    data: LoyaltyPointDeleteResultDto;
-}
-export declare class LoyaltyGiftSuccessSingleDto {
-    success: true;
-    message: string;
-    data: LoyaltyGiftPayloadDto;
-}
-export declare class LoyaltyGiftSuccessDeleteDto {
-    success: true;
-    message: string;
-    data: LoyaltyGiftDeleteResultDto;
+    data: LoyaltySchemeEligibilityPayloadDto;
 }

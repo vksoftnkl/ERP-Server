@@ -20,6 +20,7 @@ model ItemPriceLevel {
   saleOrders         SaleOrder[]     @relation("SaleOrderPriceLevel")
   saleOrderItems     SaleOrderItem[] @relation("SaleOrderItemPriceLevel")
   promotionSchemes   PromotionScheme[] @relation("PromotionSchemePriceLevel")
+  loyaltySchemes     LoyaltyScheme[]   @relation("LoyaltySchemePriceLevel")
   @@map("item_price_levels")
   @@schema("inventory")
 }

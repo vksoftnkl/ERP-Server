@@ -107,13 +107,13 @@ model Company {
   physicalStockHeaders  PhysicalStockHeader[] @relation("PhysicalStockHeaderCompany")
   physicalStockDetails  PhysicalStockDetail[] @relation("PhysicalStockDetailCompany")
   physicalStockBatchDetails PhysicalStockBatchDetail[] @relation("PhysicalStockBatchDetailCompany")
-  loyaltySchemes        LoyaltyScheme[]
   saleAgents            SaleAgent[]       @relation("CompanySaleAgents")
   chargeDetails         TransactionChargeDetail[] @relation("CompanyChargeDetails")
   tenderMasters         AccTenderMaster[]
   tenderDetails         AccTenderDetail[]
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[] @relation("PromotionSchemeCompany")
+  loyaltySchemes        LoyaltyScheme[]   @relation("LoyaltySchemeCompany")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printPurposes         PrintPurpose[]            @relation("PrintPurposeCompany")

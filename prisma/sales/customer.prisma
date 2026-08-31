@@ -94,6 +94,7 @@ model Customer {
   saleOrders           SaleOrder[]
   itemQtyPrices        ItemQtyPrice[] @relation("CustomerItemQtyPrices")
   promotionSchemeParties PromotionSchemeParty[] @relation("PromotionPartyCustomer")
+  loyaltySchemeParties   LoyaltySchemeParty[]   @relation("LoyaltyPartyCustomer")
   @@index([cusAreaId],   name: "idx_cus_area")
   @@index([cusPhone1],   name: "idx_cus_phone1")
   @@index([cusGstNo],    name: "idx_cus_gst_no")

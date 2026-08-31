@@ -534,13 +534,13 @@ ORDER BY unit_name`,
 
   it('binds named grid_param placeholder tokens into positional parameters', () => {
     const result = service.bindGridParams(
-      "SELECT * FROM sales.loyalty_sch_list ls WHERE ls.ls_comp_id = p_comp_id::uuid " +
-        "AND (NULLIF(p_branch_id, '') IS NULL OR ls.ls_branch_id = NULLIF(p_branch_id, '')::uuid)",
+      'SELECT * FROM sales.loyalty_scheme lsc WHERE lsc.lsc_comp_id = p_comp_id::uuid ' +
+        "AND (NULLIF(p_branch_id, '') IS NULL OR lsc.lsc_branch_id = NULLIF(p_branch_id, '')::uuid)",
       { p_comp_id: 'c1', p_branch_id: 'b1' },
     );
 
     expect(result.params).toEqual(['c1', 'b1']);
-    expect(result.sql).toContain('ls.ls_comp_id = $1::uuid');
+    expect(result.sql).toContain('lsc.lsc_comp_id = $1::uuid');
     expect(result.sql).toContain("NULLIF($2, '')");
     // The bare placeholder tokens must be fully replaced, leaving no unbound identifier behind.
     expect(result.sql).not.toMatch(/\bp_comp_id\b|\bp_branch_id\b/);

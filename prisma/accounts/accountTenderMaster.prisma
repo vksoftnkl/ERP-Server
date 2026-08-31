@@ -72,6 +72,7 @@ model AccTenderMaster {
   surchargeLedger         AccLedgerMaster?      @relation("TenderSurchargeLedger", fields: [tndSurchargeLedgerId], references: [ledId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_surcharge_ledger")
   bankAccount             AccLedgerBankAccount? @relation(fields: [tndBankAccountId], references: [lbaId], onUpdate: Cascade, onDelete: Restrict, map: "fk_tnd_bank_account")
   tenderDetails           AccTenderDetail[]
+  loyaltySchemes          LoyaltyScheme[]       @relation("LoyaltySchemeRedeemTender")
 
   @@index([tndTypeId], map: "ix_tnd_type")
   @@index([tndLedgerId], map: "ix_tnd_ledger")

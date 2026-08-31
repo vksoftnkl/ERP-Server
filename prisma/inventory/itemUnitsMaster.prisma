@@ -50,8 +50,6 @@ model Unit {
 
   // Back-relations — others
   itemMasters  ItemMaster[]
-  loyaltySchemePoints LoyaltySchemePoint[]
-  loyaltySchemeGifts  LoyaltySchemeGift[]
 
   @@map("item_unit_master")
   @@schema("inventory")

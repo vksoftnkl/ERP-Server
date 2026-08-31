@@ -80,7 +80,6 @@ model BranchMaster {
   itemQtyPrices         ItemQtyPrice[]    @relation("BranchItemQtyPrices")
   freightCharges        SaleFreightCharge[] @relation("BranchFreightCharges")
   loadingCharges        SaleLoadingCharge[] @relation("BranchLoadingCharges")
-  loyaltySchemes        LoyaltyScheme[]
   deviceMasters         DeviceMaster[]
   saleAgents            SaleAgent[]       @relation("BranchSaleAgents")
   chargeDetails         TransactionChargeDetail[] @relation("BranchChargeDetails")
@@ -89,6 +88,8 @@ model BranchMaster {
   appSettingValues      AppSettingValue[]
   promotionSchemes      PromotionScheme[]       @relation("PromotionSchemeBranchRef")
   promotionSchemeBranches PromotionSchemeBranch[] @relation("PromotionSchemeBranchBranch")
+  loyaltySchemes        LoyaltyScheme[]         @relation("LoyaltySchemeBranchRef")
+  loyaltySchemeBranches LoyaltySchemeBranch[]   @relation("LoyaltySchemeBranchBranch")
 
   // ── printing (17_printing.sql) ─────────────────────────────────────────
   printAssignments      PrintTemplateAssignment[] @relation("PrintTemplateAssignmentBranch")
