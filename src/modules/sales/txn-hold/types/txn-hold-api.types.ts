@@ -189,8 +189,9 @@ export interface TxnHoldPayload {
   txhKind: TxnHoldKind;
   txhSrcModule: TxnHoldSrcModule;
   txhDocType: TxnHoldDocType;
-  txhHoldNo: string;
-  txhHoldSlno: number;
+  // Null on a hold that was never numbered — only a HOLD prints a token slip.
+  txhHoldNo: string | null;
+  txhHoldSlno: number | null;
   txhHoldOn: string;
   txhDeviceId: string;
   txhCounterId: string | null;

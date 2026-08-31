@@ -534,6 +534,7 @@ Table acc_tender_master {
   surchargeLedger acc_ledger_master
   bankAccount acc_ledger_bank_accounts
   tenderDetails acc_tender_detail [not null]
+  loyaltySchemes loyalty_scheme [not null]
 }
 
 Table acc_tender_types {
@@ -1510,6 +1511,7 @@ Table item_category_master {
   children item_category_master [not null]
   items item_master [not null]
   promotionSchemeItems promotion_scheme_item [not null]
+  loyaltySchemeItems loyalty_scheme_item [not null]
   categorySort Int
   categoryLevel Int
   categoryPathIdsCache String[] [not null]
@@ -1653,6 +1655,7 @@ Table item_brand_master {
   parent item_brand_master
   children item_brand_master [not null]
   promotionSchemeItems promotion_scheme_item [not null]
+  loyaltySchemeItems loyalty_scheme_item [not null]
 }
 
 Table item_ean_codes {
@@ -1683,6 +1686,7 @@ Table item_group_master {
   children item_group_master [not null]
   items item_master [not null]
   promotionSchemeItems promotion_scheme_item [not null]
+  loyaltySchemeItems loyalty_scheme_item [not null]
   itgSort Int
   itgLevel Int
   itgPathIdsCache String[] [not null]
@@ -1790,12 +1794,14 @@ Table item_master {
   reorders item_reorders [not null]
   taxHistory item_tax_history [not null]
   company companys
-  loyaltySchemeGifts loyalty_sch_gift [not null]
   saleQuotationItems sale_quotation_item [not null]
   saleBillItems sale_bill_item [not null]
   saleOrderItems sale_order_item [not null]
   promotionSchemeItems promotion_scheme_item [not null]
   promotionSchemeSlabs promotion_scheme_slab [not null]
+  loyaltySchemeItems loyalty_scheme_item [not null]
+  loyaltySchemeSlabs loyalty_scheme_slab [not null]
+  loyaltySchemeGifts loyalty_scheme_gift [not null]
 }
 
 Table item_price_levels {
@@ -1819,6 +1825,7 @@ Table item_price_levels {
   saleOrders sale_order [not null]
   saleOrderItems sale_order_item [not null]
   promotionSchemes promotion_scheme [not null]
+  loyaltySchemes loyalty_scheme [not null]
 }
 
 Table item_price_master {
@@ -1943,6 +1950,7 @@ Table item_section_master {
   parent item_section_master
   children item_section_master [not null]
   promotionSchemeItems promotion_scheme_item [not null]
+  loyaltySchemeItems loyalty_scheme_item [not null]
   secSort Int
   secLevel Int
   secPathIds String[] [not null]
@@ -2135,6 +2143,8 @@ Table item_unit_conversion {
   itemQtyPrices item_qty_price [not null]
   promotionSchemeItems promotion_scheme_item [not null]
   promotionSchemeSlabs promotion_scheme_slab [not null]
+  loyaltySchemeSlabs loyalty_scheme_slab [not null]
+  loyaltySchemeGifts loyalty_scheme_gift [not null]
 }
 
 Table item_unit_master {
@@ -2169,8 +2179,6 @@ Table item_unit_master {
   physicalStockBatchUnits physical_stock_batch_detail [not null]
   physicalStockBatchBaseUnits physical_stock_batch_detail [not null]
   itemMasters item_master [not null]
-  loyaltySchemePoints loyalty_sch_points [not null]
-  loyaltySchemeGifts loyalty_sch_gift [not null]
 }
 
 Table opening_stock_detail {
@@ -2427,7 +2435,6 @@ Table branch_master {
   itemQtyPrices item_qty_price [not null]
   freightCharges sale_freight_charges [not null]
   loadingCharges sale_loading_charges [not null]
-  loyaltySchemes loyalty_sch_list [not null]
   deviceMasters device_master [not null]
   saleAgents sale_agents [not null]
   chargeDetails txn_charge_detail [not null]
@@ -2436,6 +2443,8 @@ Table branch_master {
   appSettingValues app_setting_value [not null]
   promotionSchemes promotion_scheme [not null]
   promotionSchemeBranches promotion_scheme_branch [not null]
+  loyaltySchemes loyalty_scheme [not null]
+  loyaltySchemeBranches loyalty_scheme_branch [not null]
   printAssignments print_template_assignment [not null]
   printerProfiles printer_profile [not null]
   printLogs print_log [not null]
@@ -2571,13 +2580,13 @@ Table companys {
   physicalStockHeaders physical_stock_header [not null]
   physicalStockDetails physical_stock_detail [not null]
   physicalStockBatchDetails physical_stock_batch_detail [not null]
-  loyaltySchemes loyalty_sch_list [not null]
   saleAgents sale_agents [not null]
   chargeDetails txn_charge_detail [not null]
   tenderMasters acc_tender_master [not null]
   tenderDetails acc_tender_detail [not null]
   appSettingValues app_setting_value [not null]
   promotionSchemes promotion_scheme [not null]
+  loyaltySchemes loyalty_scheme [not null]
   printPurposes print_purpose [not null]
   printTemplates print_template [not null]
   printAssignments print_template_assignment [not null]
@@ -3400,8 +3409,8 @@ Table txn_hold {
   txhKind String [not null, default: 'HOLD']
   txhSrcModule String [not null]
   txhDocType String [not null]
-  txhHoldNo String [not null]
-  txhHoldSlno Int [not null]
+  txhHoldNo String
+  txhHoldSlno Int
   txhHoldOn DateTime [default: `now()`, not null]
   txhDeviceId String [not null]
   txhCounterId String
@@ -3533,6 +3542,7 @@ Table user_master {
   tenderDetails acc_tender_detail [not null]
   appSettingValues app_setting_value [not null]
   approvedPromotionSchemes promotion_scheme [not null]
+  approvedLoyaltySchemes loyalty_scheme [not null]
   printPurposesCreated print_purpose [not null]
   printPurposesModified print_purpose [not null]
   printTemplatesCreated print_template [not null]
@@ -3774,6 +3784,7 @@ Table customers {
   saleOrders sale_order [not null]
   itemQtyPrices item_qty_price [not null]
   promotionSchemeParties promotion_scheme_party [not null]
+  loyaltySchemeParties loyalty_scheme_party [not null]
 }
 
 Table cust_groups {
@@ -3799,6 +3810,7 @@ Table cust_groups {
   company companys
   customers customers [not null]
   promotionSchemeParties promotion_scheme_party [not null]
+  loyaltySchemeParties loyalty_scheme_party [not null]
 }
 
 Table employee_departments {
@@ -3920,115 +3932,350 @@ Table cust_item_rates {
   csrRemarks String
 }
 
-Table loyalty_sch_list {
-  lsId String [pk]
-  lsCode String
-  lsName String [not null]
-  lsType String [not null]
-  lsStatus String [not null, default: 'DRAFT']
-  lsAutoApply Boolean [not null, default: true]
-  lsApplyOn String [not null, default: 'BILL_AMOUNT']
-  lsCalcOnAmountType String [not null, default: 'NET_AMOUNT']
-  lsBillType String [not null, default: 'ALL']
-  lsCustType String [not null, default: 'ALL']
-  lsItemType String [not null, default: 'ALL']
-  lsStartDate DateTime [not null]
-  lsEndDate DateTime [not null]
-  lsValidFromTime DateTime
-  lsValidToTime DateTime
-  lsValidWeekdays String
-  lsCompId String [not null]
-  lsBranchId String
-  lsIncludeTaxForPoints Boolean [not null, default: false]
-  lsRoundingMethod String [not null, default: 'FLOOR']
-  lsRecurApl Boolean [not null, default: false]
-  lsBalApl Boolean [not null, default: false]
-  lsAllowPointRedeem Boolean [not null, default: false]
-  lsAllowGiftRedeem Boolean [not null, default: false]
-  lsRedeemValuePerPoint Decimal [not null, default: 0]
-  lsMinRedeemPoints Decimal [not null, default: 0]
-  lsMaxRedeemPointsPerBill Decimal [not null, default: 0]
-  lsMaxRedeemPercentPerBill Decimal [not null, default: 0]
-  lsRedeemMinBillAmount Decimal [not null, default: 0]
-  lsPointsValidDays Int [not null, default: 0]
-  lsExpiryBasis String [not null, default: 'EARN_DATE']
-  lsRemarks String
-  lsIsActive Boolean [not null, default: true]
-  lsIsDeleted Boolean [not null, default: false]
-  lsSyncDate DateTime
-  lsCreatedOn DateTime [default: `now()`, not null]
-  lsCreatedBy String
-  lsUpdatedOn DateTime
-  lsUpdatedBy String
-  lsApprovedOn DateTime
-  lsApprovedBy String
+Table loyalty_scheme {
+  lscId String [pk]
+  lscCompId String [not null]
+  lscBranchId String [note: 'Single-shop shorthand. NULL = every branch.']
+  lscTenantId String
+  lscCode String [not null]
+  lscName String [not null]
+  lscType String [not null, default: 'BOTH']
+  lscStatus String [not null, default: 'DRAFT']
+  lscPriority Int [not null, default: 1, note: 'Which scheme wins when several match one bill. 1 = primary.']
+  lscAutoApply Boolean [not null, default: true]
+  lscApplyOn String [not null, default: 'BILL_AMOUNT']
+  lscCalcOnAmountType String [not null, default: 'NET_AMOUNT']
+  lscIncludeTax Boolean [not null, default: false]
+  lscBillType String [not null, default: 'ALL']
+  lscMinBillAmount Decimal [not null, default: 0]
+  lscMaxEarnPoints Decimal [not null, default: 0, note: 'Per bill. 0 = uncapped.']
+  lscEarnOnDiscounted Boolean [not null, default: true]
+  lscEarnOnCharges Boolean [not null, default: false]
+  lscEarnWithRedeem Boolean [not null, default: false]
+  lscRoundingMethod String [not null, default: 'FLOOR']
+  lscPointsDecimals Int [not null, default: 2]
+  lscBranchScope String [not null, default: 'ALL']
+  lscCustScope String [not null, default: 'ALL']
+  lscItemScope String [not null, default: 'ALL']
+  lscPriceLevelId Int
+  lscPoolMode String [not null, default: 'COMPANY', note: 'COMPANY = one wallet, earned anywhere, spent anywhere (the default, and
+what a chain wants). BRANCH = a franchisee honours only what it issued.']
+  lscAllowCrossBranchRedeem Boolean [not null, default: true]
+  lscAllowPointRedeem Boolean [not null, default: false]
+  lscAllowGiftRedeem Boolean [not null, default: false]
+  lscRedeemTenderId String [note: 'accounts.acc_tender_master(tnd_id) — the LOYALTY tender (type 10).']
+  lscRedeemValuePerPoint Decimal [not null, default: 0, note: 'Rupees per point. WINS over acc_tender_master.tnd_conversion_rate whenever
+a scheme matches; the tender master is the fallback for a company running
+no scheme, and acc_tender_detail.td_conversion_rate snapshots whichever was
+used. A write-path rule the schema cannot enforce.']
+  lscMinRedeemPoints Decimal [not null, default: 0]
+  lscMaxRedeemPoints Decimal [not null, default: 0, note: 'Per bill. 0 = uncapped.']
+  lscMaxRedeemPerc Decimal [not null, default: 100, note: 'Per bill: the % of it points may settle.']
+  lscRedeemMinBillAmount Decimal [not null, default: 0]
+  lscRedeemMultiple Decimal [not null, default: 0, note: '0 = any quantity.']
+  lscExpiryBasis String [not null, default: 'EARN_DATE']
+  lscPointsValidDays Int [not null, default: 0]
+  lscActivationDays Int [not null, default: 0, note: 'THE CLAW-BACK DEFENCE. Points earn on bill save (offline included) but are
+not REDEEMABLE until this many days have passed — long enough for the
+return window to close. 0 = redeemable immediately.']
+  lscReturnMode String [not null, default: 'REVERSE']
+  lscStartDate DateTime [not null]
+  lscEndDate DateTime [not null]
+  lscValidFromTime DateTime [note: 'Both bounds or neither. from > to legitimately means "spans midnight" —
+22:22 to 04:44 is a late-night promotion, not a typo.']
+  lscValidToTime DateTime
+  lscValidWeekdays String [note: '\'MON,TUE,...\'; NULL = every day.']
+  lscRemarks String
+  lscIsActive Boolean [not null, default: true]
+  lscIsDeleted Boolean [not null, default: false]
+  lscSyncDate DateTime
+  lscCreatedOn DateTime [default: `now()`, not null]
+  lscCreatedBy String
+  lscModifiedOn DateTime
+  lscModifiedBy String
+  lscApprovedOn DateTime
+  lscApprovedBy String
   company companys [not null]
   branch branch_master
-  parties loyalty_sch_party [not null]
-  points loyalty_sch_points [not null]
-  gifts loyalty_sch_gift [not null]
+  priceLevel item_price_levels
+  redeemTender acc_tender_master
+  approvedBy user_master
+  branches loyalty_scheme_branch [not null]
+  parties loyalty_scheme_party [not null]
+  items loyalty_scheme_item [not null]
+  slabs loyalty_scheme_slab [not null]
+  gifts loyalty_scheme_gift [not null]
+
+  Note: 'sales.loyalty_scheme — §1, the loyalty campaign header.
+
+The RULES: who earns, on what, how fast, and what a point is worth. It holds
+no balances and no movements — those belong to the points ledger (13) and the
+coupon/gift tables (14), neither of which is in this schema yet.
+
+Supersedes sales.loyalty_sch_list / _party / _points / _gift, which
+20260831060000_replace_loyalty_scheme_tables drops.
+
+Declared here WITHOUT its CHECK constraints expressed in Prisma — Prisma has
+no concept of them. The migration DOES create them, and
+utils/loyalty-scheme-invariants.ts mirrors every one so a rejected campaign
+comes back as a field-addressed 400 rather than a Postgres error string the
+screen cannot place on an input.
+
+DB-only objects the migration hand-authors, none of them expressible here:
+ux_lsc_code       UNIQUE (lsc_comp_id, lower(lsc_code)) WHERE NOT deleted
+ux_lsc_primary    UNIQUE (comp, branch, type) NULLS NOT DISTINCT
+WHERE priority = 1 AND APPROVED AND active AND NOT deleted
+ix_lsc_resolve    the per-bill resolver, covering, partial
+ix_lsc_branch / ix_lsc_price_level / ix_lsc_redeem_tender /
+ix_lsc_approved_by   FK-covering, all partial'
 }
 
-Table loyalty_sch_gift {
+Table loyalty_scheme_branch {
+  lsbId String [pk]
+  lsbLscId String [not null]
+  lsbSlno Int [not null, default: 1]
+  lsbBranchId String [not null]
+  lsbIsExclude Boolean [not null, default: false]
+  lsbNotes String
+  lsbIsActive Boolean [not null, default: true]
+  lsbIsDeleted Boolean [not null, default: false]
+  lsbSyncDate DateTime
+  lsbCreatedOn DateTime [default: `now()`, not null]
+  lsbCreatedBy String
+  lsbModifiedOn DateTime
+  lsbModifiedBy String
+  scheme loyalty_scheme [not null]
+  branch branch_master [not null]
+
+  Note: 'sales.loyalty_scheme_branch — §2, which branches run the campaign.
+
+Read only when lsc_branch_scope = \'LIST\'. lsbIsExclude makes "every branch
+except two" two rows rather than thirty-eight; an EXCLUDE row always beats an
+INCLUDE row for the same branch.
+
+DB-only objects the migration hand-authors:
+ux_lsb_row     UNIQUE (lsb_lsc_id, lsb_branch_id) WHERE NOT deleted
+ix_lsb_scheme  (lsb_lsc_id), partial
+ix_lsb_branch  (lsb_branch_id), partial'
+}
+
+Table loyalty_scheme_gift {
   lsgId String [pk]
-  lsgLsId String [not null]
-  lsgSlno Int [not null]
+  lsgLscId String [not null]
+  lsgSlno Int [not null, default: 1]
   lsgItemId String [not null]
   lsgUnitId String [not null]
   lsgItemQty Decimal [not null, default: 1]
   lsgRedeemPoints Decimal [not null, default: 0]
-  lsgRepeat Boolean [not null, default: false]
+  lsgRepeat Boolean [not null, default: false, note: 'Claimable more than once.']
+  lsgMaxQtyPerBill Decimal [not null, default: 0, note: '0 = uncapped.']
+  lsgStockCheck Boolean [not null, default: true, note: 'Block the claim when the item is not in stock at the issuing branch. A
+gift the shop cannot hand over is worse than one it never offered.']
+  lsgValidFrom DateTime
+  lsgValidUpto DateTime
   lsgNotes String
   lsgIsActive Boolean [not null, default: true]
   lsgIsDeleted Boolean [not null, default: false]
   lsgSyncDate DateTime
   lsgCreatedOn DateTime [default: `now()`, not null]
   lsgCreatedBy String
-  lsgUpdatedOn DateTime
-  lsgUpdatedBy String
-  scheme loyalty_sch_list [not null]
+  lsgModifiedOn DateTime
+  lsgModifiedBy String
+  scheme loyalty_scheme [not null]
   item item_master [not null]
-  unit item_unit_master [not null]
+  unit item_unit_conversion [not null]
+
+  Note: 'sales.loyalty_scheme_gift — §6, points buy an ITEM.
+
+The CATALOGUE of what MAY be claimed. What was actually handed over belongs
+in sales.loyalty_gift_issue (13), which is not in this schema yet.
+
+A gift redemption is NOT a tender: no money crosses the counter, stock does.
+lsgUnitId references inventory.item_unit_conversion(iuc_id) — the same target
+sale_bill_item.fk_sbi_item_unit uses — because the gift becomes a bill line
+and the two must agree without a conversion lookup.
+
+DB-only objects to hand-author:
+ux_lsg_item    UNIQUE (lsc_id, item_id, unit_id) WHERE NOT deleted
+ix_lsg_scheme  (lsc_id, redeem_points) INCLUDE (...), partial
+ix_lsg_item / ix_lsg_unit, both partial'
 }
 
-Table loyalty_sch_party {
-  lpsId String [pk]
-  lpsLsId String [not null]
-  lpsSlno Int [not null]
-  lpsScopeType String [not null]
-  lpsScopeId String [not null]
-  lpsIsExclude Boolean [not null, default: false]
-  lpsNotes String
-  lpsIsActive Boolean [not null, default: true]
-  lpsIsDeleted Boolean [not null, default: false]
-  lpsSyncDate DateTime
-  lpsCreatedOn DateTime [default: `now()`, not null]
-  lpsCreatedBy String
-  lpsUpdatedOn DateTime
-  lpsUpdatedBy String
-  scheme loyalty_sch_list [not null]
+Table loyalty_scheme_item {
+  lsiId String [pk]
+  lsiLscId String [not null]
+  lsiSlno Int [not null, default: 1]
+  lsiKind String [not null]
+  lsiScopeId String [not null]
+  lsiItemId String
+  lsiGroupId String
+  lsiCategoryId String
+  lsiBrandId String
+  lsiSectionId String
+  lsiIsExclude Boolean [not null, default: false]
+  lsiFactor Decimal [not null, default: 1, note: 'Multiplies whatever the slab computed for the line. 2.0 = double points.']
+  lsiPoints Decimal [not null, default: 0, note: 'Non-zero REPLACES the slab result outright instead of scaling it.']
+  lsiMaxPoints Decimal [not null, default: 0, note: '0 = uncapped, per line.']
+  lsiMatchPriority Int [not null, default: 1]
+  lsiNotes String
+  lsiIsActive Boolean [not null, default: true]
+  lsiIsDeleted Boolean [not null, default: false]
+  lsiSyncDate DateTime
+  lsiCreatedOn DateTime [default: `now()`, not null]
+  lsiCreatedBy String
+  lsiModifiedOn DateTime
+  lsiModifiedBy String
+  scheme loyalty_scheme [not null]
+  item item_master
+  itemGroup item_group_master
+  itemCategory item_category_master
+  itemBrand item_brand_master
+  itemSection item_section_master
+
+  Note: 'sales.loyalty_scheme_item — §4, which stock the campaign applies to.
+
+One kind + one scope id, with five GENERATED ALWAYS ... STORED columns
+carrying the foreign keys — the same shape as LoyaltySchemeParty, read that
+model\'s header for the write rules and the migration caveat. In short: set
+lsiKind + lsiScopeId and never touch itemId / groupId / categoryId / brandId
+/ sectionId.
+
+lsiKind = \'ITEM\' | \'ITEM_GROUP\' | \'ITEM_CATEGORY\' | \'ITEM_BRAND\' | \'ITEM_SECTION\'
+
+The vocabulary is the live one: loyalty_sch_list.ls_item_type already used
+exactly these five values, so the new screen and the old data agree.
+
+This is what makes "double points on own-brand, but nothing on tobacco"
+expressible in ONE scheme — the predecessor could hold only one kind of
+grouping per scheme and could not exclude at all.
+
+lsiFactor multiplies whatever the slab computed for the line (2.0 = double
+points); a non-zero lsiPoints replaces the slab result outright instead of
+scaling it.
+
+lsiMatchPriority: most specific wins. Seed ITEM 4, ITEM_BRAND 3,
+ITEM_CATEGORY 2, ITEM_SECTION 1, ITEM_GROUP 0 — data, not a hard-coded rule.
+An EXCLUDE row earns nothing regardless of any broader rule.
+
+Read only when lsc_item_scope = \'LIST\'.
+
+DB-only objects to hand-author:
+ux_lsi_row     UNIQUE (lsc_id, kind, scope_id) WHERE NOT deleted
+ix_lsi_scheme  (lsc_id, match_priority DESC) INCLUDE (...), partial
+ix_lsi_item / _group / _category / _brand / _section, all partial'
 }
 
-Table loyalty_sch_points {
-  lsptId String [pk]
-  lsptLsId String [not null]
-  lsptSlno Int [not null]
-  lsptItemId String
-  lsptUnitId String
-  lsptExceeds Decimal [not null, default: 0]
-  lsptEach Decimal [not null, default: 1]
-  lsptFactor Decimal [not null, default: 1]
-  lsptPoints Decimal [not null, default: 0]
-  lsptNotes String
-  lsptIsActive Boolean [not null, default: true]
-  lsptIsDeleted Boolean [not null, default: false]
-  lsptSyncDate DateTime
-  lsptCreatedOn DateTime [default: `now()`, not null]
-  lsptCreatedBy String
-  lsptUpdatedOn DateTime
-  lsptUpdatedBy String
-  scheme loyalty_sch_list [not null]
-  unit item_unit_master
+Table loyalty_scheme_party {
+  lspId String [pk]
+  lspLscId String [not null]
+  lspSlno Int [not null, default: 1]
+  lspKind String [not null]
+  lspScopeId String [not null]
+  lspCustId String
+  lspCustGroupId String
+  lspIsExclude Boolean [not null, default: false]
+  lspMatchPriority Int [not null, default: 1]
+  lspNotes String
+  lspIsActive Boolean [not null, default: true]
+  lspIsDeleted Boolean [not null, default: false]
+  lspSyncDate DateTime
+  lspCreatedOn DateTime [default: `now()`, not null]
+  lspCreatedBy String
+  lspModifiedOn DateTime
+  lspModifiedBy String
+  scheme loyalty_scheme [not null]
+  customer customers
+  customerGroup cust_groups
+
+  Note: 'sales.loyalty_scheme_party — §3, who the campaign applies to.
+
+ONE KIND + ONE SCOPE ID, the shape the entry grid needs. The screen binds to
+exactly two columns, lspKind and lspScopeId; the two *_id fields below are
+GENERATED ALWAYS ... STORED in Postgres and exist only to carry a real
+foreign key per kind.
+
+lspKind = \'CUSTOMER\' | \'CUSTOMER_GROUP\'
+
+Loyalty deliberately has NO AREA or CITY, unlike promotion_scheme_party: a
+wallet follows the person, not the route. Adding them would be one generated
+column and one FK each.
+
+lspMatchPriority makes "a rule naming one CUSTOMER beats one naming their
+GROUP" data rather than an assumption: CUSTOMER 2, CUSTOMER_GROUP 1. An
+EXCLUDE row beats an INCLUDE row at equal priority.
+
+Read only when lsc_cust_scope = \'LIST\'.
+
+── WRITING THIS MODEL ──────────────────────────────────────────────────
+NEVER set custId / custGroupId, and never use their nested `connect`s.
+Postgres computes those columns and rejects any write. Set lspKind +
+lspScopeId; read the relations back.
+
+── MIGRATION ───────────────────────────────────────────────────────────
+prisma migrate cannot emit a generated column; both are hand-authored, e.g.
+lsp_cust_id uuid GENERATED ALWAYS AS
+(CASE WHEN lsp_kind::text = \'CUSTOMER\' THEN lsp_scope_id END) STORED
+The `@default(dbgenerated())` below is the no-argument form: it stops every
+later `migrate dev` emitting an ALTER COLUMN ... DROP DEFAULT that Postgres
+rejects with 42601 on a generated column.
+
+The FKs are ON UPDATE NO ACTION, not CASCADE — Postgres forbids a cascading
+update on a key containing a generated column. Costs nothing: every master
+key here is a uuidv7() that is never reissued.
+
+DB-only objects to hand-author:
+ux_lsp_row       UNIQUE (lsc_id, kind, scope_id) WHERE NOT deleted
+ix_lsp_scheme    (lsc_id, match_priority DESC) INCLUDE (...), partial
+ix_lsp_cust / ix_lsp_cust_group, both partial'
+}
+
+Table loyalty_scheme_slab {
+  lssId String [pk]
+  lssLscId String [not null]
+  lssSlno Int [not null, default: 1]
+  lssItemId String [note: 'NULL = applies to the whole bill.']
+  lssUnitId String [note: 'item_unit_conversion, as on a bill line.']
+  lssExceeds Decimal [not null, default: 0, note: 'Band lower bound.']
+  lssUpto Decimal [note: 'Band ceiling. NULL = open-ended.']
+  lssEach Decimal [not null, default: 1, note: 'Granularity.']
+  lssPoints Decimal [not null, default: 0, note: 'Awarded per lssEach.']
+  lssFactor Decimal [not null, default: 1]
+  lssMaxPoints Decimal [not null, default: 0, note: '0 = uncapped.']
+  lssNotes String
+  lssIsActive Boolean [not null, default: true]
+  lssIsDeleted Boolean [not null, default: false]
+  lssSyncDate DateTime
+  lssCreatedOn DateTime [default: `now()`, not null]
+  lssCreatedBy String
+  lssModifiedOn DateTime
+  lssModifiedBy String
+  scheme loyalty_scheme [not null]
+  item item_master
+  unit item_unit_conversion
+
+  Note: 'sales.loyalty_scheme_slab — §5, the earn rates.
+
+One row = one rate band. Read as: for every lssEach units ABOVE lssExceeds,
+award lssPoints, scaled by lssFactor.
+
+"units" are RUPEES when lsc_apply_on is BILL_AMOUNT / ITEM_AMOUNT, and
+QUANTITY when it is BILL_QTY / ITEM_QTY — one column pair serving both.
+
+Bill-value slabs are ROWS, not columns: 0-999 -> 1pt/100, 1000-4999 ->
+2pt/100, 5000+ -> 3pt/100 is three rows.
+
+lssItemId narrows a band to ONE item; leave it NULL for a whole-bill band.
+Anything broader than one item (group, brand, category) belongs in
+LoyaltySchemeItem, which multiplies what this computes.
+
+lssUnitId references inventory.item_unit_conversion(iuc_id) — the same target
+sale_bill_item.fk_sbi_item_unit uses, NOT item_unit_master(unit_id).
+
+DB-only objects to hand-author:
+ux_lss_band    UNIQUE (lsc_id, COALESCE(item_id, nil uuid), exceeds)
+WHERE NOT deleted
+ix_lss_scheme  (lsc_id, exceeds) INCLUDE (...), partial
+ix_lss_item / ix_lss_unit, both partial'
 }
 
 Table promotion_scheme {
@@ -5987,21 +6234,49 @@ Ref: employee_master.empDesignationId > employee_designations.edId
 
 Ref: employee_master.empDepartmentId > employee_departments.edptId
 
-Ref: loyalty_sch_list.lsCompId > companys.compId [delete: Restrict]
+Ref: loyalty_scheme.lscCompId > companys.compId [delete: Restrict]
 
-Ref: loyalty_sch_list.lsBranchId > branch_master.brId [delete: Restrict]
+Ref: loyalty_scheme.lscBranchId > branch_master.brId [delete: Restrict]
 
-Ref: loyalty_sch_gift.lsgLsId > loyalty_sch_list.lsId [delete: Cascade]
+Ref: loyalty_scheme.lscPriceLevelId > item_price_levels.iplId [delete: Restrict]
 
-Ref: loyalty_sch_gift.lsgItemId > item_master.itemId [delete: Restrict]
+Ref: loyalty_scheme.lscRedeemTenderId > acc_tender_master.tndId [delete: Restrict]
 
-Ref: loyalty_sch_gift.lsgUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: loyalty_scheme.lscApprovedBy > user_master.usrId [delete: Restrict]
 
-Ref: loyalty_sch_party.lpsLsId > loyalty_sch_list.lsId [delete: Cascade]
+Ref: loyalty_scheme_branch.lsbLscId > loyalty_scheme.lscId [delete: Cascade]
 
-Ref: loyalty_sch_points.lsptLsId > loyalty_sch_list.lsId [delete: Cascade]
+Ref: loyalty_scheme_branch.lsbBranchId > branch_master.brId [delete: Restrict]
 
-Ref: loyalty_sch_points.lsptUnitId > item_unit_master.unit_id [delete: Restrict]
+Ref: loyalty_scheme_gift.lsgLscId > loyalty_scheme.lscId [delete: Cascade]
+
+Ref: loyalty_scheme_gift.lsgItemId > item_master.itemId [delete: Restrict]
+
+Ref: loyalty_scheme_gift.lsgUnitId > item_unit_conversion.iucId [delete: Restrict]
+
+Ref: loyalty_scheme_item.lsiLscId > loyalty_scheme.lscId [delete: Cascade]
+
+Ref: loyalty_scheme_item.lsiItemId > item_master.itemId [delete: Restrict]
+
+Ref: loyalty_scheme_item.lsiGroupId > item_group_master.itgId [delete: Restrict]
+
+Ref: loyalty_scheme_item.lsiCategoryId > item_category_master.categoryId [delete: Restrict]
+
+Ref: loyalty_scheme_item.lsiBrandId > item_brand_master.brand_id [delete: Restrict]
+
+Ref: loyalty_scheme_item.lsiSectionId > item_section_master.secId [delete: Restrict]
+
+Ref: loyalty_scheme_party.lspLscId > loyalty_scheme.lscId [delete: Cascade]
+
+Ref: loyalty_scheme_party.lspCustId > customers.cusId [delete: Restrict]
+
+Ref: loyalty_scheme_party.lspCustGroupId > cust_groups.cgrId [delete: Restrict]
+
+Ref: loyalty_scheme_slab.lssLscId > loyalty_scheme.lscId [delete: Cascade]
+
+Ref: loyalty_scheme_slab.lssItemId > item_master.itemId [delete: Restrict]
+
+Ref: loyalty_scheme_slab.lssUnitId > item_unit_conversion.iucId [delete: Restrict]
 
 Ref: promotion_scheme.prmCompId > companys.compId [delete: Restrict]
 

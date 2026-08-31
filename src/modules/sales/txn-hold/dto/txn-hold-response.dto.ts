@@ -39,10 +39,18 @@ export class TxnHoldPayloadDto {
   txhSrcModule!: TxnHoldSrcModule;
   @ApiProperty({ enum: TxnHoldDocType, enumName: 'TxnHoldDocType' })
   txhDocType!: TxnHoldDocType;
-  @ApiProperty({ maxLength: 30, description: 'Printed on the token slip' })
-  txhHoldNo!: string;
-  @ApiProperty({ minimum: 1, description: 'Per-device counter behind txhHoldNo' })
-  txhHoldSlno!: number;
+  @ApiPropertyOptional({
+    maxLength: 30,
+    nullable: true,
+    description: 'Printed on the token slip. Null on a hold that was never numbered',
+  })
+  txhHoldNo!: string | null;
+  @ApiPropertyOptional({
+    minimum: 1,
+    nullable: true,
+    description: 'Per-device counter behind txhHoldNo. Null whenever txhHoldNo is',
+  })
+  txhHoldSlno!: number | null;
   @ApiProperty({ format: 'date-time' })
   txhHoldOn!: string;
   @ApiProperty({ format: 'uuid', description: 'fixed.device_master.dev_id' })

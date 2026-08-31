@@ -48,10 +48,15 @@ Two facts shape everything below:
 
 - **`POST /txn-holds/create`**
   - Create requires `txhCompanyId`, `txhBranchId`, `txhAccYear`, `txhSrcModule`,
-    `txhDocType`, `txhHoldNo`, `txhHoldSlno`, `txhDeviceId`, `txhHeldBy` and
-    `txhPayload`. Only `txhPayload` is marked required in the DTO, because an
-    update needs `txhId` plus what changes — "required on create" is enforced in
-    the service (`requireField`).
+    `txhDocType`, `txhDeviceId`, `txhHeldBy` and `txhPayload`. Only `txhPayload`
+    is marked required in the DTO, because an update needs `txhId` plus what
+    changes — "required on create" is enforced in the service (`requireField`).
+  - `txhHoldNo` and `txhHoldSlno` are **optional and nullable** (both columns
+    dropped their `NOT NULL` in `20260831070000_txn_hold_optional_hold_no`).
+    Only a `HOLD` prints a token slip, so an `AUTOSAVE` snapshot or a `TEMPLATE`
+    parks unnumbered instead of burning a slot in the device's series on a
+    throwaway value. On update, sending `null` clears a number the row already
+    carries; omitting the field leaves it alone.
   - The **scope is immutable** on update: `txhCompanyId`, `txhBranchId` and
     `txhAccYear` may be resent but never changed (400). The year is half the
     primary key *and* the partition key, so re-scoping means moving the row to
@@ -75,8 +80,10 @@ Two facts shape everything below:
   counter behind it — split so an offline till can number a hold with no server
   round trip, the same split as `sale_order`'s `so_order_slno` / `so_order_refno`.
   Numbers are the device's, not the server's, which is why they are not drawn
-  from `acc_voucher_seq` the way a bill number is. An update re-runs each check
-  whenever **any** column its index keys on moves. A `P2002` from two tills
+  from `acc_voucher_seq` the way a bill number is. Both may be null, and Postgres
+  treats NULLs as distinct, so unnumbered holds never collide with each other —
+  `ensureHoldNoIsUnique` / `ensureHoldSlnoIsUnique` return early on one. An
+  update re-runs each check whenever **any** column its index keys on moves. A `P2002` from two tills
   racing the same number is mapped to the same 409 rather than a 500.
 - **`txhKind` decides what a row is.** `HOLD` appears in the pick list;
   `TEMPLATE` is copied on resume and never consumed; `AUTOSAVE` is the screen's

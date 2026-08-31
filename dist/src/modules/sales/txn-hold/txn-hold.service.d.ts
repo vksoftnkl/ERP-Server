@@ -53,7 +53,6 @@ export declare class TxnHoldService {
     private mergedNumber;
     private parseDate;
     private requireField;
-    private requireNumberField;
     private requirePayload;
     private requireAccYear;
     private handleWriteError;

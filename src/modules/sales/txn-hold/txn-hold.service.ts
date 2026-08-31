@@ -777,8 +777,11 @@ export class TxnHoldService {
     };
     const txhSrcModule = this.requireField(saveTxnHoldDto.txhSrcModule, 'txhSrcModule');
     const txhDocType = this.requireField(saveTxnHoldDto.txhDocType, 'txhDocType');
-    const txhHoldNo = this.requireField(saveTxnHoldDto.txhHoldNo, 'txhHoldNo');
-    const txhHoldSlno = this.requireNumberField(saveTxnHoldDto.txhHoldSlno, 'txhHoldSlno');
+    // Optional, both of them: only a HOLD prints a token slip, so an AUTOSAVE
+    // snapshot or a TEMPLATE parks with no number at all rather than burning a
+    // slot in the device's series on a throwaway one.
+    const txhHoldNo = saveTxnHoldDto.txhHoldNo ?? null;
+    const txhHoldSlno = saveTxnHoldDto.txhHoldSlno ?? null;
     const txhDeviceId = this.requireField(saveTxnHoldDto.txhDeviceId, 'txhDeviceId');
     const txhHeldBy = this.requireField(saveTxnHoldDto.txhHeldBy, 'txhHeldBy');
     const txhPayload = this.requirePayload(saveTxnHoldDto.txhPayload);
@@ -895,8 +898,14 @@ export class TxnHoldService {
         // half of a pair can collide with a row that was fine a moment ago — the
         // merged values are what the index will judge.
         const nextDocType = saveTxnHoldDto.txhDocType ?? existing.txhDocType;
-        const nextHoldNo = saveTxnHoldDto.txhHoldNo ?? existing.txhHoldNo;
-        const nextSlno = saveTxnHoldDto.txhHoldSlno ?? existing.txhHoldSlno;
+        // `??` would read an explicit null as "unchanged" and re-check the
+        // stored number; clearing one is exactly what a null means here.
+        const nextHoldNo =
+          saveTxnHoldDto.txhHoldNo === undefined ? existing.txhHoldNo : saveTxnHoldDto.txhHoldNo;
+        const nextSlno =
+          saveTxnHoldDto.txhHoldSlno === undefined
+            ? existing.txhHoldSlno
+            : saveTxnHoldDto.txhHoldSlno;
         const nextDeviceId = saveTxnHoldDto.txhDeviceId ?? existing.txhDeviceId;
         const holdNoScope: TxnHoldHoldNoScope = {
           txhCompanyId: existing.txhCompanyId,
@@ -1058,10 +1067,15 @@ export class TxnHoldService {
   // ck_txh_hold_no_shape has already forced to upper case.
   private async ensureHoldNoIsUnique(
     tx: TxnHoldWriteClient,
-    txhHoldNo: string,
+    txhHoldNo: string | null | undefined,
     scope: TxnHoldHoldNoScope,
     excludeTxhId?: string,
   ): Promise<void> {
+    // NULLs are distinct to a Postgres unique index, so an unnumbered hold
+    // collides with nothing and has nothing to check.
+    if (txhHoldNo === null || txhHoldNo === undefined) {
+      return;
+    }
     const existing = await tx.txnHold.findFirst({
       where: {
         txhIsDeleted: false,
@@ -1090,10 +1104,13 @@ export class TxnHoldService {
   // the same token number from different series.
   private async ensureHoldSlnoIsUnique(
     tx: TxnHoldWriteClient,
-    txhHoldSlno: number,
+    txhHoldSlno: number | null | undefined,
     scope: TxnHoldSlnoScope,
     excludeTxhId?: string,
   ): Promise<void> {
+    if (txhHoldSlno === null || txhHoldSlno === undefined) {
+      return;
+    }
     const existing = await tx.txnHold.findFirst({
       where: {
         txhIsDeleted: false,
@@ -1449,14 +1466,6 @@ export class TxnHoldService {
   }
   private requireField<T extends string>(value: T | undefined, field: string): T {
     if (!value) {
-      throwSalesBadRequest<TxnHoldErrorDetail>(`${field} is required`, [
-        { field, message: `${field} must be provided when creating a hold` },
-      ]);
-    }
-    return value;
-  }
-  private requireNumberField(value: number | undefined, field: string): number {
-    if (value === undefined || value === null) {
       throwSalesBadRequest<TxnHoldErrorDetail>(`${field} is required`, [
         { field, message: `${field} must be provided when creating a hold` },
       ]);

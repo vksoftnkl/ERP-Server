@@ -108,8 +108,8 @@ export interface TxnHoldPayload {
     txhKind: TxnHoldKind;
     txhSrcModule: TxnHoldSrcModule;
     txhDocType: TxnHoldDocType;
-    txhHoldNo: string;
-    txhHoldSlno: number;
+    txhHoldNo: string | null;
+    txhHoldSlno: number | null;
     txhHoldOn: string;
     txhDeviceId: string;
     txhCounterId: string | null;

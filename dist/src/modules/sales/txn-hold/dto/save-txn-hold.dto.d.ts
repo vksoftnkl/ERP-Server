@@ -8,8 +8,8 @@ export declare class SaveTxnHoldDto {
     txhKind?: TxnHoldKind;
     txhSrcModule?: TxnHoldSrcModule;
     txhDocType?: TxnHoldDocType;
-    txhHoldNo?: string;
-    txhHoldSlno?: number;
+    txhHoldNo?: string | null;
+    txhHoldSlno?: number | null;
     txhHoldOn?: Date;
     txhDeviceId?: string;
     txhCounterId?: string | null;

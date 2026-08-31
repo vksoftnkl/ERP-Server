@@ -120,7 +120,8 @@ __decorate([
     (0, swagger_1.ApiOperation)({
         summary: 'Create or update one hold (by txhId presence)',
         description: 'A create needs txhCompanyId, txhBranchId, txhAccYear, txhSrcModule, txhDocType, ' +
-            'txhHoldNo, txhHoldSlno, txhDeviceId, txhHeldBy and txhPayload. An update needs txhId ' +
+            'txhDeviceId, txhHeldBy and txhPayload; txhHoldNo / txhHoldSlno are optional, since ' +
+            'only a HOLD prints a token slip. An update needs txhId ' +
             'plus the fields that change; the company / branch / accounting year scope is immutable ' +
             '(the year is half the primary key), and a hold already CONVERTED, EXPIRED, CANCELLED or ' +
             'ABANDONED cannot be reopened. Posting txhKind=AUTOSAVE OVERWRITES this screen’s live ' +

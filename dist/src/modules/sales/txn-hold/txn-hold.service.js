@@ -490,8 +490,8 @@ let TxnHoldService = class TxnHoldService {
         };
         const txhSrcModule = this.requireField(saveTxnHoldDto.txhSrcModule, 'txhSrcModule');
         const txhDocType = this.requireField(saveTxnHoldDto.txhDocType, 'txhDocType');
-        const txhHoldNo = this.requireField(saveTxnHoldDto.txhHoldNo, 'txhHoldNo');
-        const txhHoldSlno = this.requireNumberField(saveTxnHoldDto.txhHoldSlno, 'txhHoldSlno');
+        const txhHoldNo = saveTxnHoldDto.txhHoldNo ?? null;
+        const txhHoldSlno = saveTxnHoldDto.txhHoldSlno ?? null;
         const txhDeviceId = this.requireField(saveTxnHoldDto.txhDeviceId, 'txhDeviceId');
         const txhHeldBy = this.requireField(saveTxnHoldDto.txhHeldBy, 'txhHeldBy');
         const txhPayload = this.requirePayload(saveTxnHoldDto.txhPayload);
@@ -585,8 +585,10 @@ let TxnHoldService = class TxnHoldService {
                 };
                 (0, module_service_utils_1.applyPresentFields)(data, saveTxnHoldDto, TXN_HOLD_OPTIONAL_FIELDS, TXN_HOLD_FIELD_TRANSFORMS);
                 const nextDocType = saveTxnHoldDto.txhDocType ?? existing.txhDocType;
-                const nextHoldNo = saveTxnHoldDto.txhHoldNo ?? existing.txhHoldNo;
-                const nextSlno = saveTxnHoldDto.txhHoldSlno ?? existing.txhHoldSlno;
+                const nextHoldNo = saveTxnHoldDto.txhHoldNo === undefined ? existing.txhHoldNo : saveTxnHoldDto.txhHoldNo;
+                const nextSlno = saveTxnHoldDto.txhHoldSlno === undefined
+                    ? existing.txhHoldSlno
+                    : saveTxnHoldDto.txhHoldSlno;
                 const nextDeviceId = saveTxnHoldDto.txhDeviceId ?? existing.txhDeviceId;
                 const holdNoScope = {
                     txhCompanyId: existing.txhCompanyId,
@@ -705,6 +707,9 @@ let TxnHoldService = class TxnHoldService {
         }
     }
     async ensureHoldNoIsUnique(tx, txhHoldNo, scope, excludeTxhId) {
+        if (txhHoldNo === null || txhHoldNo === undefined) {
+            return;
+        }
         const existing = await tx.txnHold.findFirst({
             where: {
                 txhIsDeleted: false,
@@ -728,6 +733,9 @@ let TxnHoldService = class TxnHoldService {
         }
     }
     async ensureHoldSlnoIsUnique(tx, txhHoldSlno, scope, excludeTxhId) {
+        if (txhHoldSlno === null || txhHoldSlno === undefined) {
+            return;
+        }
         const existing = await tx.txnHold.findFirst({
             where: {
                 txhIsDeleted: false,
@@ -1041,14 +1049,6 @@ let TxnHoldService = class TxnHoldService {
     }
     requireField(value, field) {
         if (!value) {
-            (0, module_service_utils_1.throwSalesBadRequest)(`${field} is required`, [
-                { field, message: `${field} must be provided when creating a hold` },
-            ]);
-        }
-        return value;
-    }
-    requireNumberField(value, field) {
-        if (value === undefined || value === null) {
             (0, module_service_utils_1.throwSalesBadRequest)(`${field} is required`, [
                 { field, message: `${field} must be provided when creating a hold` },
             ]);

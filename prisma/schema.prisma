@@ -5305,8 +5305,11 @@ model TxnHold {
   // txhHoldNo is what gets printed on the token slip; txhHoldSlno is the raw
   // per-device counter behind it, so an offline till can number holds with no
   // server round trip (same split as soOrderSlno / soOrderRefno).
-  txhHoldNo           String    @db.VarChar(30)                               @map("txh_hold_no")
-  txhHoldSlno         Int                                                     @map("txh_hold_slno")
+  // Both are OPTIONAL: only a HOLD prints a slip — an AUTOSAVE snapshot and a
+  // TEMPLATE carry no number at all, and NULLs are distinct to the two partial
+  // unique indexes below, so the unnumbered rows never collide.
+  txhHoldNo           String?   @db.VarChar(30)                               @map("txh_hold_no")
+  txhHoldSlno         Int?                                                    @map("txh_hold_slno")
   txhHoldOn           DateTime  @default(now()) @db.Timestamptz(6)            @map("txh_hold_on")
 
   // ── Where it was parked ──────────────────────────────────────────────

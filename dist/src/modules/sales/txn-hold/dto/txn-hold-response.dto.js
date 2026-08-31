@@ -132,12 +132,20 @@ __decorate([
     __metadata("design:type", String)
 ], TxnHoldPayloadDto.prototype, "txhDocType", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ maxLength: 30, description: 'Printed on the token slip' }),
-    __metadata("design:type", String)
+    (0, swagger_1.ApiPropertyOptional)({
+        maxLength: 30,
+        nullable: true,
+        description: 'Printed on the token slip. Null on a hold that was never numbered',
+    }),
+    __metadata("design:type", Object)
 ], TxnHoldPayloadDto.prototype, "txhHoldNo", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ minimum: 1, description: 'Per-device counter behind txhHoldNo' }),
-    __metadata("design:type", Number)
+    (0, swagger_1.ApiPropertyOptional)({
+        minimum: 1,
+        nullable: true,
+        description: 'Per-device counter behind txhHoldNo. Null whenever txhHoldNo is',
+    }),
+    __metadata("design:type", Object)
 ], TxnHoldPayloadDto.prototype, "txhHoldSlno", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ format: 'date-time' }),

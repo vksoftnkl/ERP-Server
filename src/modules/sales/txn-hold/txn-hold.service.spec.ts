@@ -309,8 +309,6 @@ describe('TxnHoldService', () => {
         'txhAccYear',
         'txhSrcModule',
         'txhDocType',
-        'txhHoldNo',
-        'txhHoldSlno',
         'txhDeviceId',
         'txhHeldBy',
         'txhPayload',
@@ -321,6 +319,28 @@ describe('TxnHoldService', () => {
         await expect(service.save(dto)).rejects.toBeInstanceOf(BadRequestException);
       }
       expect(prisma.txnHold.create).not.toHaveBeenCalled();
+    });
+
+    // Only a HOLD prints a token slip, so the number and the device serial are
+    // optional: an AUTOSAVE snapshot or a TEMPLATE parks unnumbered rather than
+    // burning a slot in the device's series on a throwaway value.
+    it('parks an unnumbered hold and probes neither number index', async () => {
+      const dto = createDto();
+      delete dto.txhHoldNo;
+      delete dto.txhHoldSlno;
+
+      await service.save(dto);
+
+      const { data } = prisma.txnHold.create.mock.calls[0][0];
+      expect(data.txhHoldNo).toBeNull();
+      expect(data.txhHoldSlno).toBeNull();
+      // Only the existence probes (company / branch / device / operator) ran —
+      // NULLs are distinct to a unique index, so there is nothing to collide
+      // with and no uniqueness query to make.
+      const probedANumber = prisma.txnHold.findFirst.mock.calls
+        .map((call) => (call[0] as { where: Record<string, unknown> }).where)
+        .some((where) => 'txhHoldNo' in where || 'txhHoldSlno' in where);
+      expect(probedANumber).toBe(false);
     });
 
     // The partition key: a year that is not YYYY-YYYY has no partition to land
