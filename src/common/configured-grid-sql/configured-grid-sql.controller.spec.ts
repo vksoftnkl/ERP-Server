@@ -46,6 +46,7 @@ describe('ConfiguredGridSqlController', () => {
         grid_column_data_type: 'text',
         grid_column_color: null,
         grid_column_notes: null,
+        grid_column_px: '180px',
         grid_column_sql_field_name: 'unit_name',
       },
     ];

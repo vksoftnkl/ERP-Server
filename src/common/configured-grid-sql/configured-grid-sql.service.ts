@@ -238,6 +238,7 @@ export class ConfiguredGridSqlService {
         gridColumnDataType: true,
         gridColumnColor: true,
         gridColumnNotes: true,
+        gridColumnPx: true,
         gridColumnSqlFieldName: true,
       },
     });
@@ -258,6 +259,7 @@ export class ConfiguredGridSqlService {
       grid_column_data_type: col.gridColumnDataType,
       grid_column_color: col.gridColumnColor,
       grid_column_notes: col.gridColumnNotes,
+      grid_column_px: col.gridColumnPx,
       grid_column_sql_field_name: col.gridColumnSqlFieldName,
     }));
   }
@@ -303,6 +305,7 @@ export class ConfiguredGridSqlService {
       grid_column_data_type: null,
       grid_column_color: null,
       grid_column_notes: null,
+      grid_column_px: null,
       grid_column_sql_field_name: col.sqlFieldName,
     }));
     return this.deriveSearchableFieldNames(mapped, baseSql);

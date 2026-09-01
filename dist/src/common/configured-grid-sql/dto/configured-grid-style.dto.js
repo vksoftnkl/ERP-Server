@@ -27,6 +27,7 @@ class ConfiguredGridStyleDto {
     grid_column_data_type;
     grid_column_color;
     grid_column_notes;
+    grid_column_px;
     grid_column_sql_field_name;
 }
 exports.ConfiguredGridStyleDto = ConfiguredGridStyleDto;
@@ -90,6 +91,10 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: null }),
     __metadata("design:type", Object)
 ], ConfiguredGridStyleDto.prototype, "grid_column_notes", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: '180px' }),
+    __metadata("design:type", Object)
+], ConfiguredGridStyleDto.prototype, "grid_column_px", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: 'unit_name' }),
     __metadata("design:type", Object)

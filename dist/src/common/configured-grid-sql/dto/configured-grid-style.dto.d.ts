@@ -14,5 +14,6 @@ export declare class ConfiguredGridStyleDto {
     grid_column_data_type: string | null;
     grid_column_color: string | null;
     grid_column_notes: string | null;
+    grid_column_px: string | null;
     grid_column_sql_field_name: string | null;
 }

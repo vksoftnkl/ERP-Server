@@ -13,7 +13,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppSettingValueController = void 0;
-const cache_manager_1 = require("@nestjs/cache-manager");
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const http_error_response_dto_1 = require("../../../common/dto/http-error-response.dto");
@@ -132,7 +131,6 @@ exports.AppSettingValueController = AppSettingValueController = __decorate([
     (0, swagger_1.ApiTags)('App Setting Values'),
     (0, swagger_1.ApiBearerAuth)('access-token'),
     (0, swagger_1.ApiUnauthorizedResponse)({ type: http_error_response_dto_1.HttpErrorResponseDto }),
-    (0, cache_manager_1.CacheTTL)(1),
     (0, common_1.Controller)('app-setting-values'),
     (0, common_1.UseFilters)(app_settings_exception_filter_1.AppSettingsExceptionFilter),
     __metadata("design:paramtypes", [app_setting_value_service_1.AppSettingValueService])

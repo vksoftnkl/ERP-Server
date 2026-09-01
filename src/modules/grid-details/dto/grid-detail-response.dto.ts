@@ -58,6 +58,9 @@ export class GridColumnPayloadDto {
   @ApiPropertyOptional({ nullable: true })
   grid_column_notes!: string | null;
 
+  @ApiPropertyOptional({ nullable: true, example: '120px' })
+  grid_column_px!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   grid_column_sql_field_name!: string | null;
 

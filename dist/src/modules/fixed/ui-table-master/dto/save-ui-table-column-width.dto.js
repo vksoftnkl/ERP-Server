@@ -17,6 +17,7 @@ const dtoDecorators_1 = require("../../../../common/dto/dtoDecorators");
 class UiTableColumnWidthItemDto {
     uiTblClmId;
     uiTblClmColumnWidth;
+    uiTblClmPx;
 }
 exports.UiTableColumnWidthItemDto = UiTableColumnWidthItemDto;
 __decorate([
@@ -31,6 +32,11 @@ __decorate([
     (0, dtoDecorators_1.NullableNumber)(),
     __metadata("design:type", Object)
 ], UiTableColumnWidthItemDto.prototype, "uiTblClmColumnWidth", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, maxLength: 100, type: String, example: '120px' }),
+    (0, dtoDecorators_1.NullableString)(100),
+    __metadata("design:type", Object)
+], UiTableColumnWidthItemDto.prototype, "uiTblClmPx", void 0);
 class SaveUiTableColumnWidthDto {
     columns;
 }

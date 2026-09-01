@@ -31,6 +31,8 @@ export class ConfiguredGridStyleDto {
   grid_column_color!: string | null;
   @ApiPropertyOptional({ nullable: true, example: null })
   grid_column_notes!: string | null;
+  @ApiPropertyOptional({ nullable: true, example: '180px' })
+  grid_column_px!: string | null;
 
   @ApiPropertyOptional({ nullable: true, example: 'unit_name' })
   grid_column_sql_field_name!: string | null;

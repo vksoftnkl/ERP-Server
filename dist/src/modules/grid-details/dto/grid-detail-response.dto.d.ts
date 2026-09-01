@@ -17,6 +17,7 @@ export declare class GridColumnPayloadDto {
     grid_column_data_type: string | null;
     grid_column_color: string | null;
     grid_column_notes: string | null;
+    grid_column_px: string | null;
     grid_column_sql_field_name: string | null;
     grid_column_is_deleted: boolean;
     grid_column_created_on: string;

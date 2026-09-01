@@ -27,6 +27,7 @@ const UI_TABLE_VISIBILITY_SETTING_FIELDS = [
     'uiTblClmColumnNecessity',
     'uiTblClmNextColumn',
     'uiTblClmPreviousColumn',
+    'uiTblClmPx',
 ];
 const UI_TABLE_COLUMN_OPTIONAL_FIELDS = [
     'uiTblClmColumnWidth',
@@ -36,6 +37,7 @@ const UI_TABLE_COLUMN_OPTIONAL_FIELDS = [
     'uiTblClmColumnNecessity',
     'uiTblClmNextColumn',
     'uiTblClmPreviousColumn',
+    'uiTblClmPx',
     'uiTblClmIsActive',
 ];
 let UiTableMasterService = class UiTableMasterService {
@@ -105,14 +107,15 @@ let UiTableMasterService = class UiTableMasterService {
                 if (!existing) {
                     (0, module_service_utils_1.throwFixedNotFound)('UI table column not found', 'uiTblClmId', `No active UI table column found with id ${item.uiTblClmId}`);
                 }
-                await tx.uitableColumns.update({
-                    where: { uiTblClmId: columnId },
-                    data: {
-                        uiTblClmColumnWidth: item.uiTblClmColumnWidth,
-                        uiTblClmModifiedOn: new Date(),
-                        uiTblClmModifiedBy: actor,
-                    },
-                });
+                const data = {
+                    uiTblClmColumnWidth: item.uiTblClmColumnWidth,
+                    uiTblClmModifiedOn: new Date(),
+                    uiTblClmModifiedBy: actor,
+                };
+                if ((0, module_service_utils_1.hasOwnProperty)(item, 'uiTblClmPx')) {
+                    data.uiTblClmPx = item.uiTblClmPx;
+                }
+                await tx.uitableColumns.update({ where: { uiTblClmId: columnId }, data });
                 count++;
             }
         });
@@ -446,6 +449,7 @@ let UiTableMasterService = class UiTableMasterService {
             uiTblClmColumnNecessity: record.uiTblClmColumnNecessity,
             uiTblClmNextColumn: record.uiTblClmNextColumn,
             uiTblClmPreviousColumn: record.uiTblClmPreviousColumn,
+            uiTblClmPx: record.uiTblClmPx,
             uiTblClmIsActive: record.uiTblClmIsActive,
             uiTblClmIsDeleted: record.uiTblClmIsDeleted,
             uiTblClmSyncDate: record.uiTblClmSyncDate ? record.uiTblClmSyncDate.toISOString() : null,

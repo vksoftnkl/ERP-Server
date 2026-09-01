@@ -10,6 +10,7 @@ export declare class UiTableColumnPayloadDto {
     uiTblClmColumnNecessity: boolean;
     uiTblClmNextColumn: number | null;
     uiTblClmPreviousColumn: number | null;
+    uiTblClmPx: string | null;
     uiTblClmIsActive: boolean;
     uiTblClmIsDeleted: boolean;
     uiTblClmSyncDate: string | null;

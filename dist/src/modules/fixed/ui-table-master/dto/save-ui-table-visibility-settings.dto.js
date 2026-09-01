@@ -23,6 +23,7 @@ class UiTableVisibilitySettingItemDto {
     uiTblClmColumnNecessity;
     uiTblClmNextColumn;
     uiTblClmPreviousColumn;
+    uiTblClmPx;
 }
 exports.UiTableVisibilitySettingItemDto = UiTableVisibilitySettingItemDto;
 __decorate([
@@ -68,6 +69,11 @@ __decorate([
     (0, dtoDecorators_1.NullableInteger)(),
     __metadata("design:type", Object)
 ], UiTableVisibilitySettingItemDto.prototype, "uiTblClmPreviousColumn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ type: String, nullable: true, example: '120px' }),
+    (0, dtoDecorators_1.NullableString)(100),
+    __metadata("design:type", Object)
+], UiTableVisibilitySettingItemDto.prototype, "uiTblClmPx", void 0);
 class SaveUiTableVisibilitySettingsDto {
     columns;
 }

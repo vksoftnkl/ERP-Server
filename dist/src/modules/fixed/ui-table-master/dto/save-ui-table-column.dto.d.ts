@@ -10,5 +10,6 @@ export declare class SaveUiTableColumnDto {
     uiTblClmColumnNecessity?: boolean;
     uiTblClmNextColumn?: number | null;
     uiTblClmPreviousColumn?: number | null;
+    uiTblClmPx?: string | null;
     uiTblClmIsActive?: boolean;
 }

@@ -82,6 +82,9 @@ export class SaveUiTableColumnDto {
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsInt()
   uiTblClmPreviousColumn?: number | null;
+  @ApiPropertyOptional({ example: '120px', nullable: true, maxLength: 100, type: String })
+  @NullableString(100)
+  uiTblClmPx?: string | null;
   @ApiPropertyOptional({ example: true })
   @OptionalBoolean()
   uiTblClmIsActive?: boolean;

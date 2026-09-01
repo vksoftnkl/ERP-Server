@@ -23,6 +23,7 @@ class UiTableColumnPayloadDto {
     uiTblClmColumnNecessity;
     uiTblClmNextColumn;
     uiTblClmPreviousColumn;
+    uiTblClmPx;
     uiTblClmIsActive;
     uiTblClmIsDeleted;
     uiTblClmSyncDate;
@@ -76,6 +77,10 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ example: null, nullable: true }),
     __metadata("design:type", Object)
 ], UiTableColumnPayloadDto.prototype, "uiTblClmPreviousColumn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: '120px', nullable: true }),
+    __metadata("design:type", Object)
+], UiTableColumnPayloadDto.prototype, "uiTblClmPx", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: true }),
     __metadata("design:type", Boolean)

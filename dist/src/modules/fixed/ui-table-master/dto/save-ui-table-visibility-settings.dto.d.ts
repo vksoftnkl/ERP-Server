@@ -7,6 +7,7 @@ export declare class UiTableVisibilitySettingItemDto {
     uiTblClmColumnNecessity?: boolean;
     uiTblClmNextColumn?: number | null;
     uiTblClmPreviousColumn?: number | null;
+    uiTblClmPx?: string | null;
 }
 export declare class SaveUiTableVisibilitySettingsDto {
     columns: UiTableVisibilitySettingItemDto[];

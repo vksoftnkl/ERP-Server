@@ -1,4 +1,3 @@
-import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
@@ -44,7 +43,6 @@ import {
 @ApiTags('App Setting Values')
 @ApiBearerAuth('access-token')
 @ApiUnauthorizedResponse({ type: HttpErrorResponseDto })
-@CacheTTL(1)
 @Controller('app-setting-values')
 @UseFilters(AppSettingsExceptionFilter)
 export class AppSettingValueController {

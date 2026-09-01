@@ -21,6 +21,7 @@ import {
   DEFAULT_ACTOR,
   FixedWriteClient,
   applyPresentFields,
+  hasOwnProperty,
   resolveActor,
   throwFixedBadRequest,
   throwFixedConflict,
@@ -42,6 +43,7 @@ const UI_TABLE_VISIBILITY_SETTING_FIELDS = [
   'uiTblClmColumnNecessity',
   'uiTblClmNextColumn',
   'uiTblClmPreviousColumn',
+  'uiTblClmPx',
 ] as const satisfies readonly (keyof UiTableVisibilitySettingItemDto)[];
 
 const UI_TABLE_COLUMN_OPTIONAL_FIELDS = [
@@ -52,6 +54,7 @@ const UI_TABLE_COLUMN_OPTIONAL_FIELDS = [
   'uiTblClmColumnNecessity',
   'uiTblClmNextColumn',
   'uiTblClmPreviousColumn',
+  'uiTblClmPx',
   'uiTblClmIsActive',
 ];
 
@@ -136,14 +139,17 @@ export class UiTableMasterService {
             `No active UI table column found with id ${item.uiTblClmId}`,
           );
         }
-        await tx.uitableColumns.update({
-          where: { uiTblClmId: columnId },
-          data: {
-            uiTblClmColumnWidth: item.uiTblClmColumnWidth,
-            uiTblClmModifiedOn: new Date(),
-            uiTblClmModifiedBy: actor,
-          },
-        });
+        const data: Prisma.UitableColumnsUncheckedUpdateInput = {
+          uiTblClmColumnWidth: item.uiTblClmColumnWidth,
+          uiTblClmModifiedOn: new Date(),
+          uiTblClmModifiedBy: actor,
+        };
+        // Only touch the px sizing when the caller actually sent it, so a client that
+        // still posts width alone leaves an existing px value intact.
+        if (hasOwnProperty(item, 'uiTblClmPx')) {
+          data.uiTblClmPx = item.uiTblClmPx;
+        }
+        await tx.uitableColumns.update({ where: { uiTblClmId: columnId }, data });
         count++;
       }
     });
@@ -552,6 +558,7 @@ export class UiTableMasterService {
       uiTblClmColumnNecessity: record.uiTblClmColumnNecessity,
       uiTblClmNextColumn: record.uiTblClmNextColumn,
       uiTblClmPreviousColumn: record.uiTblClmPreviousColumn,
+      uiTblClmPx: record.uiTblClmPx,
       uiTblClmIsActive: record.uiTblClmIsActive,
       uiTblClmIsDeleted: record.uiTblClmIsDeleted,
       uiTblClmSyncDate: record.uiTblClmSyncDate ? record.uiTblClmSyncDate.toISOString() : null,

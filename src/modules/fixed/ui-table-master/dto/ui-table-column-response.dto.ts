@@ -34,6 +34,9 @@ export class UiTableColumnPayloadDto {
   @ApiPropertyOptional({ example: null, nullable: true })
   uiTblClmPreviousColumn!: number | null;
 
+  @ApiPropertyOptional({ example: '120px', nullable: true })
+  uiTblClmPx!: string | null;
+
   @ApiProperty({ example: true })
   uiTblClmIsActive!: boolean;
 

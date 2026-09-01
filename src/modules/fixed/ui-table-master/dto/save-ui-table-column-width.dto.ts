@@ -1,7 +1,7 @@
 import { IsArray, IsNotEmpty, IsNumberString, ValidateNested } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
-import { NullableNumber } from '../../../../common/dto/dtoDecorators';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { NullableNumber, NullableString } from '../../../../common/dto/dtoDecorators';
 
 export class UiTableColumnWidthItemDto {
   @ApiProperty({ type: String, description: 'UI table column id to update' })
@@ -13,6 +13,10 @@ export class UiTableColumnWidthItemDto {
   @ApiProperty({ nullable: true, type: Number })
   @NullableNumber()
   uiTblClmColumnWidth!: number | null;
+
+  @ApiPropertyOptional({ nullable: true, maxLength: 100, type: String, example: '120px' })
+  @NullableString(100)
+  uiTblClmPx?: string | null;
 }
 
 export class SaveUiTableColumnWidthDto {

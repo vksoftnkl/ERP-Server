@@ -1,7 +1,13 @@
 import { IsArray, IsBoolean, IsNotEmpty, IsNumberString, IsOptional, ValidateNested } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { NullableInteger, NullableNumber, OptionalBoolean, OptionalInteger } from 'src/common/dto/dtoDecorators';
+import {
+  NullableInteger,
+  NullableNumber,
+  NullableString,
+  OptionalBoolean,
+  OptionalInteger,
+} from 'src/common/dto/dtoDecorators';
 
 export class UiTableVisibilitySettingItemDto {
   @ApiProperty({ type: String, description: 'UI table column id to update' })
@@ -38,6 +44,10 @@ export class UiTableVisibilitySettingItemDto {
   @ApiPropertyOptional({ type: Number, nullable: true, example: null })
   @NullableInteger()
   uiTblClmPreviousColumn?: number | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: '120px' })
+  @NullableString(100)
+  uiTblClmPx?: string | null;
 }
 
 export class SaveUiTableVisibilitySettingsDto {

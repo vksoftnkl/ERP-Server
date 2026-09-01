@@ -31,6 +31,7 @@ class GridColumnPayloadDto {
     grid_column_data_type;
     grid_column_color;
     grid_column_notes;
+    grid_column_px;
     grid_column_sql_field_name;
     grid_column_is_deleted;
     grid_column_created_on;
@@ -104,6 +105,10 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)
 ], GridColumnPayloadDto.prototype, "grid_column_notes", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ nullable: true, example: '120px' }),
+    __metadata("design:type", Object)
+], GridColumnPayloadDto.prototype, "grid_column_px", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ nullable: true }),
     __metadata("design:type", Object)

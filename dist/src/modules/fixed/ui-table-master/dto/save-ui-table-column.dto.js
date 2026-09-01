@@ -58,6 +58,7 @@ class SaveUiTableColumnDto {
     uiTblClmColumnNecessity;
     uiTblClmNextColumn;
     uiTblClmPreviousColumn;
+    uiTblClmPx;
     uiTblClmIsActive;
 }
 exports.SaveUiTableColumnDto = SaveUiTableColumnDto;
@@ -132,6 +133,11 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Object)
 ], SaveUiTableColumnDto.prototype, "uiTblClmPreviousColumn", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ example: '120px', nullable: true, maxLength: 100, type: String }),
+    (0, dtoDecorators_1.NullableString)(100),
+    __metadata("design:type", Object)
+], SaveUiTableColumnDto.prototype, "uiTblClmPx", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({ example: true }),
     (0, dtoDecorators_1.OptionalBoolean)(),

@@ -361,6 +361,8 @@ let GridDetailsService = class GridDetailsService {
             data.gridColumnColor = dto.grid_column_color;
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_column_notes'))
             data.gridColumnNotes = dto.grid_column_notes;
+        if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_column_px'))
+            data.gridColumnPx = dto.grid_column_px;
         if ((0, module_service_utils_1.hasOwnProperty)(dto, 'grid_column_sql_field_name'))
             data.gridColumnSqlFieldName = dto.grid_column_sql_field_name;
     }
@@ -434,6 +436,7 @@ let GridDetailsService = class GridDetailsService {
             grid_column_data_type: record.gridColumnDataType,
             grid_column_color: record.gridColumnColor,
             grid_column_notes: record.gridColumnNotes,
+            grid_column_px: record.gridColumnPx,
             grid_column_sql_field_name: record.gridColumnSqlFieldName,
             grid_column_is_deleted: record.gridColumnIsDeleted,
             grid_column_created_on: record.gridColumnCreatedOn.toISOString(),

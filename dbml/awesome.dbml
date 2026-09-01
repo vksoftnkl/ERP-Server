@@ -1320,6 +1320,7 @@ Table grid_columns {
   gridColumnNotes String
   gridColumnIsDeleted Boolean [not null, default: false]
   gridColumnPosition Decimal
+  gridColumnPx String
   gridColumnSqlFieldName String
   gridColumnCreatedOn DateTime [default: `now()`, not null]
   gridColumnCreatedBy String
@@ -1490,6 +1491,7 @@ Table ui_table_columns {
   uiTblClmColumnNecessity Boolean [not null, default: false]
   uiTblClmNextColumn Int
   uiTblClmPreviousColumn Int
+  uiTblClmPx String
   uiTblClmIsActive Boolean [not null, default: true]
   uiTblClmIsDeleted Boolean [not null, default: false]
   uiTblClmSyncDate DateTime
