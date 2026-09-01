@@ -302,10 +302,14 @@ let QuotationService = class QuotationService {
         }
         return this.createQuotation(saveQuotationDto);
     }
-    async getById(sqId, sqCompanyId, sqBranchId, sqAccYear) {
+    async getById(sqId, sqQuoteNo, sqCompanyId, sqBranchId, sqAccYear) {
+        if (!sqId && !sqQuoteNo) {
+            (0, module_service_utils_1.throwSalesBadRequest)('Quotation lookup requires an identifier', [{ field: 'sqId', message: 'Provide either sqId or sqQuoteNo' }]);
+        }
         const record = await this.prisma.saleQuotation.findFirst({
             where: {
-                sqId,
+                ...(sqId ? { sqId } : {}),
+                ...(sqQuoteNo ? { sqQuoteRefno: sqQuoteNo } : {}),
                 sqCompanyId,
                 sqBranchId,
                 sqAccYear,
@@ -336,9 +340,11 @@ let QuotationService = class QuotationService {
             },
         });
         if (!record) {
-            (0, module_service_utils_1.throwSalesNotFound)('Quotation not found', 'sqId', `No active quotation found with id ${sqId}`);
+            (0, module_service_utils_1.throwSalesNotFound)('Quotation not found', sqId ? 'sqId' : 'sqQuoteNo', sqId
+                ? `No active quotation found with id ${sqId}`
+                : `No active quotation found with quote no ${sqQuoteNo}`);
         }
-        const charges = await this.findCharges(this.prisma, sqId);
+        const charges = await this.findCharges(this.prisma, record.sqId);
         const agent = await this.findAgent(record.sqAgentId);
         return this.toPayload({ ...record, charges, agent });
     }

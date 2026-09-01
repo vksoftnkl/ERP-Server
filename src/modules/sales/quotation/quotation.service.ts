@@ -385,15 +385,25 @@ export class QuotationService {
     }
     return this.createQuotation(saveQuotationDto);
   }
+  // A quotation is addressed either by its id or by its user-facing quote
+  // number; both are optional individually, but one of them must be given.
   async getById(
-    sqId: string,
+    sqId: string | undefined,
+    sqQuoteNo: string | undefined,
     sqCompanyId: string,
     sqBranchId: string,
     sqAccYear: string,
   ): Promise<QuotationPayload> {
+    if (!sqId && !sqQuoteNo) {
+      throwSalesBadRequest<QuotationErrorDetail, QuotationErrorResponse>(
+        'Quotation lookup requires an identifier',
+        [{ field: 'sqId', message: 'Provide either sqId or sqQuoteNo' }],
+      );
+    }
     const record = await this.prisma.saleQuotation.findFirst({
       where: {
-        sqId,
+        ...(sqId ? { sqId } : {}),
+        ...(sqQuoteNo ? { sqQuoteRefno: sqQuoteNo } : {}),
         sqCompanyId,
         sqBranchId,
         sqAccYear,
@@ -426,13 +436,15 @@ export class QuotationService {
     if (!record) {
       throwSalesNotFound<QuotationErrorDetail, QuotationErrorResponse>(
         'Quotation not found',
-        'sqId',
-        `No active quotation found with id ${sqId}`,
+        sqId ? 'sqId' : 'sqQuoteNo',
+        sqId
+          ? `No active quotation found with id ${sqId}`
+          : `No active quotation found with quote no ${sqQuoteNo}`,
       );
     }
     // txn_charge_detail is polymorphic (no FK to sale_quotation), so the
     // applied charges are fetched by discriminator rather than by `include`.
-    const charges = await this.findCharges(this.prisma, sqId);
+    const charges = await this.findCharges(this.prisma, record.sqId);
     const agent = await this.findAgent(record.sqAgentId);
     return this.toPayload({ ...record, charges, agent });
   }

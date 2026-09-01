@@ -2,6 +2,7 @@ import { CacheTTL } from '@nestjs/cache-manager';
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   Get,
   ParseUUIDPipe,
@@ -62,8 +63,12 @@ export class QuotationController {
   }
   @Get('get')
   @Version(API_VERSION)
-  @ApiOperation({ summary: 'Get quotation by id' })
-  @ApiQuery({ name: 'sqId', schema: { type: 'string', format: 'uuid' } })
+  @ApiOperation({
+    summary: 'Get quotation by id or quote no',
+    description: 'Pass sqId or sqQuoteNo — at least one is required; both may be given together.',
+  })
+  @ApiQuery({ name: 'sqId', schema: { type: 'string', format: 'uuid' }, required: false })
+  @ApiQuery({ name: 'sqQuoteNo', schema: { type: 'string' }, required: false })
   @ApiQuery({ name: 'sqCompanyId', schema: { type: 'string', format: 'uuid' } })
   @ApiQuery({ name: 'sqBranchId', schema: { type: 'string', format: 'uuid' } })
   @ApiQuery({ name: 'sqAccYear', schema: { type: 'string' } })
@@ -71,12 +76,18 @@ export class QuotationController {
   @ApiBadRequestResponse({ type: QuotationErrorResponseDto })
   @ApiNotFoundResponse({ type: QuotationErrorResponseDto })
   async getById(
-    @Query('sqId', new ParseUUIDPipe({ version: '7' })) sqId: string,
+    @Query(
+      'sqId',
+      new DefaultValuePipe(undefined),
+      new ParseUUIDPipe({ version: '7', optional: true }),
+    )
+    sqId: string | undefined,
+    @Query('sqQuoteNo') sqQuoteNo: string | undefined,
     @Query('sqCompanyId', new ParseUUIDPipe({ version: '7' })) sqCompanyId: string,
     @Query('sqBranchId', new ParseUUIDPipe({ version: '7' })) sqBranchId: string,
     @Query('sqAccYear') sqAccYear: string,
   ): Promise<QuotationSuccessResponse<QuotationPayload>> {
-    const data = await this.quotationService.getById(sqId, sqCompanyId, sqBranchId, sqAccYear);
+    const data = await this.quotationService.getById(sqId, sqQuoteNo, sqCompanyId, sqBranchId, sqAccYear);
     return {
       success: true,
       message: 'Quotation fetched successfully',

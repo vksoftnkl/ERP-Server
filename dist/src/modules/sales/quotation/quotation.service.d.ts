@@ -9,7 +9,7 @@ export declare class QuotationService {
     private readonly requestContextService;
     constructor(prisma: PrismaService, auditLogService: AuditLogService, requestContextService: RequestContextService);
     save(saveQuotationDto: SaveQuotationDto): Promise<QuotationPayload>;
-    getById(sqId: string, sqCompanyId: string, sqBranchId: string, sqAccYear: string): Promise<QuotationPayload>;
+    getById(sqId: string | undefined, sqQuoteNo: string | undefined, sqCompanyId: string, sqBranchId: string, sqAccYear: string): Promise<QuotationPayload>;
     softDelete(sqId: string, sqCompanyId: string, sqBranchId: string, sqAccYear: string): Promise<{
         sqId: string;
         deleted: true;

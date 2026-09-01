@@ -37,8 +37,8 @@ let QuotationController = class QuotationController {
             data,
         };
     }
-    async getById(sqId, sqCompanyId, sqBranchId, sqAccYear) {
-        const data = await this.quotationService.getById(sqId, sqCompanyId, sqBranchId, sqAccYear);
+    async getById(sqId, sqQuoteNo, sqCompanyId, sqBranchId, sqAccYear) {
+        const data = await this.quotationService.getById(sqId, sqQuoteNo, sqCompanyId, sqBranchId, sqAccYear);
         return {
             success: true,
             message: 'Quotation fetched successfully',
@@ -71,20 +71,25 @@ __decorate([
 __decorate([
     (0, common_1.Get)('get'),
     (0, common_1.Version)(api_version_1.API_VERSION),
-    (0, swagger_1.ApiOperation)({ summary: 'Get quotation by id' }),
-    (0, swagger_1.ApiQuery)({ name: 'sqId', schema: { type: 'string', format: 'uuid' } }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Get quotation by id or quote no',
+        description: 'Pass sqId or sqQuoteNo — at least one is required; both may be given together.',
+    }),
+    (0, swagger_1.ApiQuery)({ name: 'sqId', schema: { type: 'string', format: 'uuid' }, required: false }),
+    (0, swagger_1.ApiQuery)({ name: 'sqQuoteNo', schema: { type: 'string' }, required: false }),
     (0, swagger_1.ApiQuery)({ name: 'sqCompanyId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'sqBranchId', schema: { type: 'string', format: 'uuid' } }),
     (0, swagger_1.ApiQuery)({ name: 'sqAccYear', schema: { type: 'string' } }),
     (0, swagger_1.ApiOkResponse)({ type: quotation_response_dto_1.QuotationSuccessSingleDto }),
     (0, swagger_1.ApiBadRequestResponse)({ type: quotation_response_dto_1.QuotationErrorResponseDto }),
     (0, swagger_1.ApiNotFoundResponse)({ type: quotation_response_dto_1.QuotationErrorResponseDto }),
-    __param(0, (0, common_1.Query)('sqId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(1, (0, common_1.Query)('sqCompanyId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(2, (0, common_1.Query)('sqBranchId', new common_1.ParseUUIDPipe({ version: '7' }))),
-    __param(3, (0, common_1.Query)('sqAccYear')),
+    __param(0, (0, common_1.Query)('sqId', new common_1.DefaultValuePipe(undefined), new common_1.ParseUUIDPipe({ version: '7', optional: true }))),
+    __param(1, (0, common_1.Query)('sqQuoteNo')),
+    __param(2, (0, common_1.Query)('sqCompanyId', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __param(3, (0, common_1.Query)('sqBranchId', new common_1.ParseUUIDPipe({ version: '7' }))),
+    __param(4, (0, common_1.Query)('sqAccYear')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String]),
+    __metadata("design:paramtypes", [Object, Object, String, String, String]),
     __metadata("design:returntype", Promise)
 ], QuotationController.prototype, "getById", null);
 __decorate([

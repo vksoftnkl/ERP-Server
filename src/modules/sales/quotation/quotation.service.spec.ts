@@ -503,7 +503,7 @@ describe('QuotationService — applied charges', () => {
   it('returns the active charges on getById with cdVoucherNo serialized as a string', async () => {
     prisma.transactionChargeDetail.findMany.mockResolvedValue([makeCharge()]);
 
-    const payload = await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+    const payload = await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
     expect(prisma.transactionChargeDetail.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -526,7 +526,7 @@ describe('QuotationService — applied charges', () => {
       } as unknown as Partial<SaleQuotation>),
     );
 
-    const payload = await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+    const payload = await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
     expect(prisma.saleQuotation.findFirst).toHaveBeenCalledWith(
       containing({
@@ -552,7 +552,7 @@ describe('QuotationService — applied charges', () => {
   });
 
   it('leaves the master names null when the header carries no area/salesman/agent', async () => {
-    const payload = await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+    const payload = await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
     expect(prisma.saleAgent.findUnique).not.toHaveBeenCalled();
     expect(payload.sqCustAreaName).toBeNull();
@@ -585,7 +585,7 @@ describe('QuotationService — applied charges', () => {
       } as unknown as Partial<SaleQuotation>),
     );
 
-    const payload = await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR);
+    const payload = await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR);
 
     const line = payload.items?.[0];
     expect(line?.sqiItemName).toBe('Cement OPC 53');
@@ -606,7 +606,7 @@ describe('QuotationService — applied charges', () => {
       makeQuotation({ items: [makeItem()] } as unknown as Partial<SaleQuotation>),
     );
 
-    const line = (await service.getById(QUOTE_ID, COMPANY_ID, BRANCH_ID, ACC_YEAR)).items?.[0];
+    const line = (await service.getById(QUOTE_ID, undefined, COMPANY_ID, BRANCH_ID, ACC_YEAR)).items?.[0];
 
     expect(line?.sqiDecimalCount).toBeNull();
     expect(line?.sqiBatchConfig).toBeNull();
