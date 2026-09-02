@@ -20,6 +20,13 @@ import { AggregateFunction } from '../../definition/template-definition.schema';
  * means by an average rate.
  */
 
+/**
+ * The accumulator primitives are exported so the crosstab shares them.
+ *
+ * `count` counts rows and `avg` divides by non-null values -- decisions an
+ * accountant will argue about, and which must not be answered differently by a
+ * SUMMARY band's total and by the crosstab cell above it.
+ */
 export interface AggregateSpec {
   /** The element id, which is what the layout engine looks results up by. */
   readonly key: string;
@@ -27,7 +34,7 @@ export interface AggregateSpec {
   readonly dataset: string;
 }
 
-interface Accumulator {
+export interface Accumulator {
   sum: number;
   count: number;
   valueCount: number;
@@ -35,7 +42,7 @@ interface Accumulator {
   max: number | null;
 }
 
-const emptyAccumulator = (): Accumulator => ({
+export const emptyAccumulator = (): Accumulator => ({
   sum: 0,
   count: 0,
   valueCount: 0,
@@ -43,7 +50,7 @@ const emptyAccumulator = (): Accumulator => ({
   max: null,
 });
 
-const accumulate = (accumulator: Accumulator, value: number | null): void => {
+export const accumulate = (accumulator: Accumulator, value: number | null): void => {
   accumulator.count += 1;
   if (value === null || !Number.isFinite(value)) {
     return;
@@ -54,7 +61,10 @@ const accumulate = (accumulator: Accumulator, value: number | null): void => {
   accumulator.max = accumulator.max === null ? value : Math.max(accumulator.max, value);
 };
 
-const readAccumulator = (accumulator: Accumulator | undefined, fn: AggregateFunction): number => {
+export const readAccumulator = (
+  accumulator: Accumulator | undefined,
+  fn: AggregateFunction,
+): number => {
   if (!accumulator) {
     return 0;
   }

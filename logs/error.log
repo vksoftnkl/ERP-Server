@@ -6226,3 +6226,14 @@ Error: Cannot use a pool after calling end on the pool
 2026-09-01T11:35:33.416Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-09-01T11:36:53.984Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
 2026-09-01T11:37:59.101Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:14:54.625Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:15:20.749Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:15:43.702Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:16:08.680Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:18:55.728Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:19:37.562Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:21:28.059Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:23:56.680Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:38:53.468Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:40:09.868Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011
+2026-09-01T13:40:26.104Z ERROR [NestApplication] Error: listen EADDRINUSE: address already in use 0.0.0.0:3011

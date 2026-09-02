@@ -54,6 +54,7 @@ export const ELEMENT_KINDS = [
   'BARCODE',
   'QRCODE',
   'PAGEBREAK',
+  'CROSSTAB',
 ] as const;
 
 export const PRINT_ON = [
@@ -73,6 +74,45 @@ export const BARCODE_SYMBOLOGIES = ['code128', 'ean13', 'ean8', 'upca', 'code39'
 
 /** Symbologies bwip-js knows and we have committed to supporting. */
 export type BarcodeSymbology = (typeof BARCODE_SYMBOLOGIES)[number];
+
+/**
+ * How a crosstab orders its row and column dimensions.
+ *
+ * FIRST_SEEN is not a lazy default -- it is the only ordering that preserves a
+ * dataset's own ORDER BY, which is how a 'by month' crosstab gets April before
+ * August without the labels having to sort that way.
+ */
+export const CROSSTAB_SORTS = [
+  'LABEL_ASC',
+  'LABEL_DESC',
+  'VALUE_DESC',
+  'VALUE_ASC',
+  'FIRST_SEEN',
+] as const;
+
+/**
+ * What happens to the columns past the cap.
+ *
+ * FOLD accumulates them into one trailing column, so the row totals and the
+ * grand total still add up to the same figure the dataset carries. CLIP drops
+ * them, and the totals then describe only what is printed. Both are defensible;
+ * silently doing one while the operator assumes the other is not, which is why
+ * this is a stored property rather than an engine convention.
+ */
+export const CROSSTAB_OVERFLOWS = ['FOLD', 'CLIP'] as const;
+
+/**
+ * The bands a CROSSTAB may sit in: the ones that appear at most once.
+ *
+ * See the placement check in the definition's superRefine for why every other
+ * band is refused.
+ */
+export const CROSSTAB_BANDS: readonly string[] = [
+  'REPORT_HEADER',
+  'SUMMARY',
+  'REPORT_FOOTER',
+  'NO_DATA',
+];
 
 // ─── Primitive field schemas ─────────────────────────────────────────────────
 
@@ -283,6 +323,87 @@ export const pagebreakElementSchema = elementBase.extend({
   when: expressionString.optional(),
 });
 
+/**
+ * A CROSSTAB -- one element that prints a whole pivot table.
+ *
+ * ── WHY IT IS AN ELEMENT AND NOT A BAND ────────────────────────────────────
+ *
+ * A band repeats once per row of a dataset the DESIGNER named at design time.
+ * A crosstab's columns are not known until the data arrives: "sales by branch
+ * per month" has as many columns as the rows happen to contain, and no
+ * arrangement of bands can express a column count that the query decides. So
+ * the crosstab owns its own dataset, does its own aggregation, and expands at
+ * layout time into ordinary text, line and rect primitives. Every renderer
+ * therefore prints one without knowing crosstabs exist.
+ *
+ * ── THE THREE EXPRESSIONS ──────────────────────────────────────────────────
+ *
+ *   rowBy     -> the label down the left edge   ({{ row.itemName }})
+ *   columnBy  -> the label across the top       ({{ date(row.billDate, 'MMM') }})
+ *   measure   -> the number in the cell         ({{ row.netAmount }})
+ *
+ * They are evaluated once per source row against the same `row` context a
+ * DETAIL band would see, which is what lets `columnBy` be an expression rather
+ * than a column name: a month bucket, a size band, a yes/no flag are all just
+ * expressions over the row, and none of them exist as a field in the query.
+ *
+ * ── WIDTH IS A BUDGET, NOT A WISH ──────────────────────────────────────────
+ *
+ * `w` is the total width the table may occupy, and it is enforced. With
+ * `columnWidthMm` at 0 the columns share whatever `w` leaves after the row
+ * header and the totals column; with a fixed width, columns that would spill
+ * past `w` are folded or clipped per `overflow`. A crosstab never draws outside
+ * the box the designer drew, because the one thing worse than a missing column
+ * is a column printed over the page margin.
+ */
+export const crosstabElementSchema = elementBase.extend({
+  kind: z.literal('CROSSTAB'),
+  /** The total width the table may occupy. Enforced, not advisory. */
+  w: millimetreSize.positive(),
+  /**
+   * A MINIMUM height. The real height is header + one line per row group, and
+   * the layout engine grows the band to it -- which is why a crosstab in a band
+   * with autoGrow off still gets the space it needs.
+   */
+  h: millimetreSize.default(0),
+  /** The repeating dataset the pivot reads. Not the band's dataset. */
+  dataset: identifier,
+  /** Expression -> the row dimension label. */
+  rowBy: expressionString,
+  /** Expression -> the column dimension label. */
+  columnBy: expressionString,
+  /** Expression -> the number accumulated into the cell. */
+  measure: expressionString,
+  fn: z.enum(AGGREGATE_FUNCTIONS).default('sum'),
+  /** Number pattern for every cell and total, e.g. '#,##0.00'. */
+  format: z.string().max(60).default('#,##0.00'),
+  /** Print an empty cell instead of a zero. An empty grid reads far faster. */
+  blankWhenZero: z.boolean().default(true),
+  /** The top-left cell, above the row labels. Expression-capable. */
+  corner: expressionString.default(''),
+  rowHeaderWidthMm: millimetreSize.default(40),
+  /** 0 = share the width left after the row header and totals column. */
+  columnWidthMm: millimetreSize.default(0),
+  headerHeightMm: millimetreSize.default(6),
+  rowHeightMm: millimetreSize.positive().default(5),
+  showRowTotals: z.boolean().default(true),
+  showColumnTotals: z.boolean().default(true),
+  totalsLabel: z.string().max(60).default('Total'),
+  rowSort: z.enum(CROSSTAB_SORTS).default('LABEL_ASC'),
+  columnSort: z.enum(CROSSTAB_SORTS).default('LABEL_ASC'),
+  /** Hard ceiling on printed columns, before the width budget cuts further. */
+  maxColumns: z.number().int().min(1).max(200).default(12),
+  overflow: z.enum(CROSSTAB_OVERFLOWS).default('FOLD'),
+  overflowLabel: z.string().max(60).default('Other'),
+  font: fontSchema.partial().optional(),
+  /** Falls back to `font` with bold on. */
+  headerFont: fontSchema.partial().optional(),
+  gridLines: z.boolean().default(true),
+  headerFill: hexColour.optional(),
+  /** Reprint the column header at the top of each page the table spills onto. */
+  repeatHeader: z.boolean().default(true),
+});
+
 export const elementSchema = z.discriminatedUnion('kind', [
   textElementSchema,
   fieldElementSchema,
@@ -292,6 +413,7 @@ export const elementSchema = z.discriminatedUnion('kind', [
   barcodeElementSchema,
   qrcodeElementSchema,
   pagebreakElementSchema,
+  crosstabElementSchema,
 ]);
 
 // ─── Bands ───────────────────────────────────────────────────────────────────
@@ -466,6 +588,62 @@ export const templateDefinitionSchema = z
       }
     }
 
+    // ── Crosstab placement ──────────────────────────────────────────────
+    // A crosstab reads its whole dataset and prints a whole table, so a band
+    // that repeats would print the same table once per row. And in GRID mode
+    // there is no width to share out -- the columns are character cells and a
+    // dynamic column count has nowhere to go on a 48-column receipt. Both are
+    // refused here rather than rendered into something nobody meant.
+    for (const [bandIndex, band] of definition.bands.entries()) {
+      for (const [elementIndex, element] of band.elements.entries()) {
+        if (element.kind !== 'CROSSTAB') {
+          continue;
+        }
+        if (!CROSSTAB_BANDS.includes(band.type)) {
+          // Three separate reasons, one rule.
+          //
+          //   DETAIL and the GROUP bands REPEAT. A crosstab reads its whole
+          //     named dataset with no group filter, so it would print the same
+          //     complete table once per row, or once per group. (A crosstab
+          //     scoped to its enclosing group is a real feature; it is not this
+          //     one, and pretending otherwise prints a plausible wrong number.)
+          //   PAGE_HEADER and PAGE_FOOTER are redrawn on every page, and are
+          //     the one thing the engine clips by primitive COUNT when a band
+          //     is suppressed on the last page -- a variable primitive count
+          //     breaks that clip.
+          //
+          // What is left is the four bands that appear at most once in a
+          // report, which is exactly where a summary table belongs.
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bands', bandIndex, 'elements', elementIndex],
+            message: `a CROSSTAB cannot sit in a ${band.type} band; use one of ${CROSSTAB_BANDS.join(', ')}`,
+          });
+        }
+        if (definition.layoutMode === 'GRID') {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bands', bandIndex, 'elements', elementIndex],
+            message: 'CROSSTAB is a GRAPHIC-mode element; GRID stationery cannot size its columns',
+          });
+        }
+        if (!definition.datasets.some((dataset) => dataset.name === element.dataset)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bands', bandIndex, 'elements', elementIndex, 'dataset'],
+            message: `unknown dataset '${element.dataset}'`,
+          });
+        }
+        if (element.rowHeaderWidthMm >= element.w) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bands', bandIndex, 'elements', elementIndex, 'rowHeaderWidthMm'],
+            message: 'the row-label column leaves no width for the data columns',
+          });
+        }
+      }
+    }
+
     // ── Mode-specific geometry ──────────────────────────────────────────
     if (definition.layoutMode === 'GRID') {
       if (definition.paper.columns === undefined) {
@@ -554,6 +732,9 @@ export type HorizontalAlign = (typeof H_ALIGN)[number];
 export type VerticalAlign = (typeof V_ALIGN)[number];
 export type AggregateFunction = (typeof AGGREGATE_FUNCTIONS)[number];
 export type AggregateScope = (typeof AGGREGATE_SCOPES)[number];
+export type CrosstabSort = (typeof CROSSTAB_SORTS)[number];
+export type CrosstabOverflow = (typeof CROSSTAB_OVERFLOWS)[number];
+export type CrosstabElement = z.infer<typeof crosstabElementSchema>;
 
 /** Text-bearing elements share one shape; the engine measures them together. */
 export type TextLikeElement =

@@ -16,6 +16,7 @@ const expression_evaluator_1 = require("../expression/expression.evaluator");
 const text_1 = require("../expression/transforms/text");
 const aggregate_accumulator_1 = require("./aggregate.accumulator");
 const text_measure_1 = require("./text-measure");
+const crosstab_1 = require("./crosstab");
 const MAX_PAGES = 2_000;
 const MAX_DETAIL_ROWS = 100_000;
 let LayoutEngine = class LayoutEngine {
@@ -51,6 +52,7 @@ class LayoutRun {
     bodyHeightMm = 0;
     pageHeaderHeightMm = 0;
     pageFooterHeightMm = 0;
+    crosstabPlans = new Map();
     bandsByType;
     rootContext;
     constructor(measurer, input) {
@@ -328,6 +330,11 @@ class LayoutRun {
         }
         const heightMm = this.bandHeight(band, context);
         const reserveMm = options.reserveMm ?? 0;
+        const crosstab = this.soleCrosstab(band);
+        if (crosstab && !this.fitsInRemainingBody(heightMm + reserveMm)) {
+            this.emitCrosstabBand(band, context, crosstab, reserveMm);
+            return;
+        }
         if (this.needsPageBreak(heightMm + reserveMm)) {
             this.finishPage();
             this.startPage();
@@ -340,6 +347,129 @@ class LayoutRun {
             this.finishPage();
             this.startPage();
         }
+    }
+    soleCrosstab(band) {
+        const found = band.elements.filter((element) => element.kind === 'CROSSTAB');
+        return found.length === 1 ? found[0] : null;
+    }
+    crosstabPlanFor(element, context) {
+        const cached = this.crosstabPlans.get(element.id);
+        if (cached) {
+            return cached;
+        }
+        const rows = this.rowsOf(element.dataset);
+        const model = (0, crosstab_1.buildCrosstabModel)(element, rows, {
+            text: (expression, row, index, total) => this.evaluator.evaluateText(expression, this.crosstabRowContext(context, row, index, total)),
+            number: (expression, row, index, total) => this.evaluator.evaluateNumber(expression, this.crosstabRowContext(context, row, index, total)),
+        });
+        const plan = (0, crosstab_1.planCrosstab)(element, model, this.measurer);
+        this.crosstabPlans.set(element.id, plan);
+        if (plan.columnsCutForWidth > 0) {
+            this.warnings.push({
+                kind: 'overflow',
+                message: `Crosstab '${element.id}' dropped ${plan.columnsCutForWidth} column(s) that did not fit its ${element.w}mm width`,
+                detail: 'Widen the element, narrow columnWidthMm, or lower maxColumns.',
+            });
+        }
+        if (model.droppedColumns > 0) {
+            this.warnings.push({
+                kind: 'overflow',
+                message: `Crosstab '${element.id}' clipped ${model.droppedColumns} column(s) past maxColumns=${element.maxColumns}`,
+                detail: 'Its totals describe only the printed columns; set overflow to FOLD to keep them whole.',
+            });
+        }
+        return plan;
+    }
+    crosstabRowContext(context, row, index, totalRows) {
+        return { ...context, row: this.rowValue(row, index, totalRows) };
+    }
+    drawCrosstab(plan, context, xMm, yMm, slice) {
+        if (!this.currentPage) {
+            return;
+        }
+        const { element } = plan;
+        const primitives = (0, crosstab_1.emitCrosstab)(plan, {
+            xMm,
+            yMm,
+            slice,
+            cornerText: this.evaluator.evaluateText(element.corner, context),
+            strokeColour: this.resolveColour(element.style?.stroke, context, '#000000'),
+            textColour: this.resolveColour(element.style?.color, context, '#000000'),
+            headerFill: element.headerFill
+                ? this.resolveColour(element.headerFill, context, '#eeeeee')
+                : null,
+        });
+        this.currentPage.primitives.push(...primitives);
+    }
+    emitCrosstabBand(band, context, element, reserveMm) {
+        const plan = this.crosstabPlanFor(element, context);
+        const offsetMm = this.elementY(element);
+        if (this.needsPageBreak(offsetMm + plan.headerHeightMm + plan.rowHeightMm + reserveMm)) {
+            this.finishPage();
+            this.startPage();
+        }
+        const bandTopMm = this.bodyTopMm() + this.cursorMm;
+        this.drawBandElements(band, context, bandTopMm, { skipCrosstabId: element.id });
+        this.bandsEmitted += 1;
+        let tableTopMm = bandTopMm + offsetMm;
+        let fromRow = 0;
+        let withHeader = true;
+        let pagesBroken = 0;
+        for (let guard = 0; guard <= MAX_PAGES; guard += 1) {
+            if (!this.currentPage) {
+                return;
+            }
+            const availableMm = this.bodyTopMm() + this.bodyHeightMm - tableTopMm;
+            let slice = (0, crosstab_1.sliceCrosstab)(plan, fromRow, availableMm, withHeader);
+            const rowsRemain = fromRow < plan.model.rows.length;
+            if (slice.rowCount === 0 && rowsRemain) {
+                if (pagesBroken > 0 && tableTopMm <= this.bodyTopMm() + 0.001) {
+                    this.warnings.push({
+                        kind: 'band-too-tall',
+                        message: `Crosstab '${element.id}' needs ${(plan.headerHeightMm + plan.rowHeightMm).toFixed(1)}mm for a header and one row but the page body is ${this.bodyHeightMm.toFixed(1)}mm`,
+                        detail: 'It will overflow the page rather than loop.',
+                    });
+                    slice = {
+                        ...slice,
+                        rowCount: 1,
+                        heightMm: (withHeader ? plan.headerHeightMm : 0) + plan.rowHeightMm,
+                    };
+                }
+                else {
+                    this.finishPage();
+                    this.startPage();
+                    pagesBroken += 1;
+                    tableTopMm = this.bodyTopMm();
+                    withHeader = element.repeatHeader;
+                    continue;
+                }
+            }
+            this.drawCrosstab(plan, context, this.elementX(element), tableTopMm, slice);
+            fromRow = slice.fromRow + slice.rowCount;
+            if ((0, crosstab_1.crosstabIsComplete)(plan, slice)) {
+                const tableBottomMm = tableTopMm + slice.heightMm + this.spacingMm(band);
+                const bottomMm = pagesBroken === 0
+                    ? Math.max(tableBottomMm, bandTopMm + this.bandHeight(band, context))
+                    : tableBottomMm;
+                this.cursorMm = Math.max(0, bottomMm - this.bodyTopMm());
+                if (this.bandRequestsPageBreak(band, context)) {
+                    this.finishPage();
+                    this.startPage();
+                }
+                return;
+            }
+            this.finishPage();
+            this.startPage();
+            pagesBroken += 1;
+            tableTopMm = this.bodyTopMm();
+            withHeader = element.repeatHeader;
+        }
+    }
+    fitsInRemainingBody(requiredMm) {
+        if (this.bodyHeightMm === Number.POSITIVE_INFINITY) {
+            return true;
+        }
+        return this.cursorMm + requiredMm <= this.bodyHeightMm + 0.001;
     }
     needsPageBreak(requiredMm) {
         if (!this.currentPage) {
@@ -371,10 +501,21 @@ class LayoutRun {
     }
     bandHeight(band, context) {
         const declaredMm = this.definition.layoutMode === 'GRID' ? (band.heightRows ?? band.heightMm) : band.heightMm;
-        if (!band.autoGrow) {
-            return declaredMm + this.spacingMm(band);
+        let crosstabMm = declaredMm;
+        for (const element of band.elements) {
+            if (element.kind !== 'CROSSTAB') {
+                continue;
+            }
+            if (!this.evaluator.evaluateCondition(element.visible, context)) {
+                continue;
+            }
+            const plan = this.crosstabPlanFor(element, context);
+            crosstabMm = Math.max(crosstabMm, element.y + plan.fullHeightMm);
         }
-        let neededMm = declaredMm;
+        if (!band.autoGrow) {
+            return crosstabMm + this.spacingMm(band);
+        }
+        let neededMm = crosstabMm;
         for (const element of band.elements) {
             if (!(0, template_definition_schema_1.isTextLike)(element) || !element.wrap) {
                 continue;
@@ -457,7 +598,7 @@ class LayoutRun {
                 return true;
         }
     }
-    drawBandElements(band, context, bandTopMm) {
+    drawBandElements(band, context, bandTopMm, options = {}) {
         if (!this.currentPage) {
             return;
         }
@@ -468,6 +609,20 @@ class LayoutRun {
                 continue;
             }
             if (!this.evaluator.evaluateCondition(element.visible, context)) {
+                continue;
+            }
+            if (element.kind === 'CROSSTAB') {
+                if (element.id === options.skipCrosstabId) {
+                    continue;
+                }
+                const plan = this.crosstabPlanFor(element, context);
+                this.drawCrosstab(plan, context, this.elementX(element), bandTopMm + this.elementY(element), {
+                    fromRow: 0,
+                    rowCount: plan.model.rows.length,
+                    withHeader: true,
+                    withTotals: plan.totalsRowHeightMm > 0,
+                    heightMm: plan.fullHeightMm,
+                });
                 continue;
             }
             const primitive = this.buildPrimitive(element, context, bandTopMm);

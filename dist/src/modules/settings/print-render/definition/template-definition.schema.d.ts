@@ -4,7 +4,7 @@ export declare const LAYOUT_MODES: readonly ["GRAPHIC", "GRID"];
 export declare const OUTPUT_MODES: readonly ["PDF", "ESCPOS", "ESCP_DOTMATRIX", "HTML"];
 export declare const ORIENTATIONS: readonly ["PORTRAIT", "LANDSCAPE"];
 export declare const BAND_TYPES: readonly ["REPORT_HEADER", "PAGE_HEADER", "GROUP_HEADER", "DETAIL", "GROUP_FOOTER", "SUMMARY", "PAGE_FOOTER", "REPORT_FOOTER", "NO_DATA"];
-export declare const ELEMENT_KINDS: readonly ["TEXT", "FIELD", "LINE", "RECT", "IMAGE", "BARCODE", "QRCODE", "PAGEBREAK"];
+export declare const ELEMENT_KINDS: readonly ["TEXT", "FIELD", "LINE", "RECT", "IMAGE", "BARCODE", "QRCODE", "PAGEBREAK", "CROSSTAB"];
 export declare const PRINT_ON: readonly ["ALL_PAGES", "FIRST_PAGE", "LAST_PAGE", "NOT_FIRST_PAGE", "NOT_LAST_PAGE"];
 export declare const H_ALIGN: readonly ["left", "center", "right"];
 export declare const V_ALIGN: readonly ["top", "middle", "bottom"];
@@ -14,6 +14,9 @@ export declare const AGGREGATE_FUNCTIONS: readonly ["sum", "count", "avg", "min"
 export declare const AGGREGATE_SCOPES: readonly ["GROUP", "PAGE", "REPORT"];
 export declare const BARCODE_SYMBOLOGIES: readonly ["code128", "ean13", "ean8", "upca", "code39", "itf14"];
 export type BarcodeSymbology = (typeof BARCODE_SYMBOLOGIES)[number];
+export declare const CROSSTAB_SORTS: readonly ["LABEL_ASC", "LABEL_DESC", "VALUE_DESC", "VALUE_ASC", "FIRST_SEEN"];
+export declare const CROSSTAB_OVERFLOWS: readonly ["FOLD", "CLIP"];
+export declare const CROSSTAB_BANDS: readonly string[];
 export declare const marginsSchema: z.ZodObject<{
     top: z.ZodNumber;
     right: z.ZodNumber;
@@ -310,6 +313,84 @@ export declare const pagebreakElementSchema: z.ZodObject<{
     kind: z.ZodLiteral<"PAGEBREAK">;
     when: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
+export declare const crosstabElementSchema: z.ZodObject<{
+    id: z.ZodString;
+    x: z.ZodDefault<z.ZodNumber>;
+    y: z.ZodDefault<z.ZodNumber>;
+    col: z.ZodOptional<z.ZodNumber>;
+    row: z.ZodOptional<z.ZodNumber>;
+    cols: z.ZodOptional<z.ZodNumber>;
+    visible: z.ZodOptional<z.ZodString>;
+    style: z.ZodOptional<z.ZodObject<{
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        strokeWidthPt: z.ZodOptional<z.ZodNumber>;
+        padding: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    z: z.ZodDefault<z.ZodNumber>;
+    kind: z.ZodLiteral<"CROSSTAB">;
+    w: z.ZodNumber;
+    h: z.ZodDefault<z.ZodNumber>;
+    dataset: z.ZodString;
+    rowBy: z.ZodString;
+    columnBy: z.ZodString;
+    measure: z.ZodString;
+    fn: z.ZodDefault<z.ZodEnum<{
+        count: "count";
+        max: "max";
+        min: "min";
+        sum: "sum";
+        avg: "avg";
+    }>>;
+    format: z.ZodDefault<z.ZodString>;
+    blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+    corner: z.ZodDefault<z.ZodString>;
+    rowHeaderWidthMm: z.ZodDefault<z.ZodNumber>;
+    columnWidthMm: z.ZodDefault<z.ZodNumber>;
+    headerHeightMm: z.ZodDefault<z.ZodNumber>;
+    rowHeightMm: z.ZodDefault<z.ZodNumber>;
+    showRowTotals: z.ZodDefault<z.ZodBoolean>;
+    showColumnTotals: z.ZodDefault<z.ZodBoolean>;
+    totalsLabel: z.ZodDefault<z.ZodString>;
+    rowSort: z.ZodDefault<z.ZodEnum<{
+        LABEL_ASC: "LABEL_ASC";
+        LABEL_DESC: "LABEL_DESC";
+        VALUE_DESC: "VALUE_DESC";
+        VALUE_ASC: "VALUE_ASC";
+        FIRST_SEEN: "FIRST_SEEN";
+    }>>;
+    columnSort: z.ZodDefault<z.ZodEnum<{
+        LABEL_ASC: "LABEL_ASC";
+        LABEL_DESC: "LABEL_DESC";
+        VALUE_DESC: "VALUE_DESC";
+        VALUE_ASC: "VALUE_ASC";
+        FIRST_SEEN: "FIRST_SEEN";
+    }>>;
+    maxColumns: z.ZodDefault<z.ZodNumber>;
+    overflow: z.ZodDefault<z.ZodEnum<{
+        FOLD: "FOLD";
+        CLIP: "CLIP";
+    }>>;
+    overflowLabel: z.ZodDefault<z.ZodString>;
+    font: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    headerFont: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    gridLines: z.ZodDefault<z.ZodBoolean>;
+    headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    repeatHeader: z.ZodDefault<z.ZodBoolean>;
+}, z.core.$strip>;
 export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     id: z.ZodString;
     x: z.ZodDefault<z.ZodNumber>;
@@ -552,6 +633,83 @@ export declare const elementSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     z: z.ZodDefault<z.ZodNumber>;
     kind: z.ZodLiteral<"PAGEBREAK">;
     when: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    id: z.ZodString;
+    x: z.ZodDefault<z.ZodNumber>;
+    y: z.ZodDefault<z.ZodNumber>;
+    col: z.ZodOptional<z.ZodNumber>;
+    row: z.ZodOptional<z.ZodNumber>;
+    cols: z.ZodOptional<z.ZodNumber>;
+    visible: z.ZodOptional<z.ZodString>;
+    style: z.ZodOptional<z.ZodObject<{
+        color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        strokeWidthPt: z.ZodOptional<z.ZodNumber>;
+        padding: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strip>>;
+    z: z.ZodDefault<z.ZodNumber>;
+    kind: z.ZodLiteral<"CROSSTAB">;
+    w: z.ZodNumber;
+    h: z.ZodDefault<z.ZodNumber>;
+    dataset: z.ZodString;
+    rowBy: z.ZodString;
+    columnBy: z.ZodString;
+    measure: z.ZodString;
+    fn: z.ZodDefault<z.ZodEnum<{
+        count: "count";
+        max: "max";
+        min: "min";
+        sum: "sum";
+        avg: "avg";
+    }>>;
+    format: z.ZodDefault<z.ZodString>;
+    blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+    corner: z.ZodDefault<z.ZodString>;
+    rowHeaderWidthMm: z.ZodDefault<z.ZodNumber>;
+    columnWidthMm: z.ZodDefault<z.ZodNumber>;
+    headerHeightMm: z.ZodDefault<z.ZodNumber>;
+    rowHeightMm: z.ZodDefault<z.ZodNumber>;
+    showRowTotals: z.ZodDefault<z.ZodBoolean>;
+    showColumnTotals: z.ZodDefault<z.ZodBoolean>;
+    totalsLabel: z.ZodDefault<z.ZodString>;
+    rowSort: z.ZodDefault<z.ZodEnum<{
+        LABEL_ASC: "LABEL_ASC";
+        LABEL_DESC: "LABEL_DESC";
+        VALUE_DESC: "VALUE_DESC";
+        VALUE_ASC: "VALUE_ASC";
+        FIRST_SEEN: "FIRST_SEEN";
+    }>>;
+    columnSort: z.ZodDefault<z.ZodEnum<{
+        LABEL_ASC: "LABEL_ASC";
+        LABEL_DESC: "LABEL_DESC";
+        VALUE_DESC: "VALUE_DESC";
+        VALUE_ASC: "VALUE_ASC";
+        FIRST_SEEN: "FIRST_SEEN";
+    }>>;
+    maxColumns: z.ZodDefault<z.ZodNumber>;
+    overflow: z.ZodDefault<z.ZodEnum<{
+        FOLD: "FOLD";
+        CLIP: "CLIP";
+    }>>;
+    overflowLabel: z.ZodDefault<z.ZodString>;
+    font: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    headerFont: z.ZodOptional<z.ZodObject<{
+        family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+        size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+        bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+    }, z.core.$strip>>;
+    gridLines: z.ZodDefault<z.ZodBoolean>;
+    headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+    repeatHeader: z.ZodDefault<z.ZodBoolean>;
 }, z.core.$strip>], "kind">;
 export declare const bandSchema: z.ZodObject<{
     type: z.ZodEnum<{
@@ -825,6 +983,83 @@ export declare const bandSchema: z.ZodObject<{
         z: z.ZodDefault<z.ZodNumber>;
         kind: z.ZodLiteral<"PAGEBREAK">;
         when: z.ZodOptional<z.ZodString>;
+    }, z.core.$strip>, z.ZodObject<{
+        id: z.ZodString;
+        x: z.ZodDefault<z.ZodNumber>;
+        y: z.ZodDefault<z.ZodNumber>;
+        col: z.ZodOptional<z.ZodNumber>;
+        row: z.ZodOptional<z.ZodNumber>;
+        cols: z.ZodOptional<z.ZodNumber>;
+        visible: z.ZodOptional<z.ZodString>;
+        style: z.ZodOptional<z.ZodObject<{
+            color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            strokeWidthPt: z.ZodOptional<z.ZodNumber>;
+            padding: z.ZodOptional<z.ZodNumber>;
+        }, z.core.$strip>>;
+        z: z.ZodDefault<z.ZodNumber>;
+        kind: z.ZodLiteral<"CROSSTAB">;
+        w: z.ZodNumber;
+        h: z.ZodDefault<z.ZodNumber>;
+        dataset: z.ZodString;
+        rowBy: z.ZodString;
+        columnBy: z.ZodString;
+        measure: z.ZodString;
+        fn: z.ZodDefault<z.ZodEnum<{
+            count: "count";
+            max: "max";
+            min: "min";
+            sum: "sum";
+            avg: "avg";
+        }>>;
+        format: z.ZodDefault<z.ZodString>;
+        blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+        corner: z.ZodDefault<z.ZodString>;
+        rowHeaderWidthMm: z.ZodDefault<z.ZodNumber>;
+        columnWidthMm: z.ZodDefault<z.ZodNumber>;
+        headerHeightMm: z.ZodDefault<z.ZodNumber>;
+        rowHeightMm: z.ZodDefault<z.ZodNumber>;
+        showRowTotals: z.ZodDefault<z.ZodBoolean>;
+        showColumnTotals: z.ZodDefault<z.ZodBoolean>;
+        totalsLabel: z.ZodDefault<z.ZodString>;
+        rowSort: z.ZodDefault<z.ZodEnum<{
+            LABEL_ASC: "LABEL_ASC";
+            LABEL_DESC: "LABEL_DESC";
+            VALUE_DESC: "VALUE_DESC";
+            VALUE_ASC: "VALUE_ASC";
+            FIRST_SEEN: "FIRST_SEEN";
+        }>>;
+        columnSort: z.ZodDefault<z.ZodEnum<{
+            LABEL_ASC: "LABEL_ASC";
+            LABEL_DESC: "LABEL_DESC";
+            VALUE_DESC: "VALUE_DESC";
+            VALUE_ASC: "VALUE_ASC";
+            FIRST_SEEN: "FIRST_SEEN";
+        }>>;
+        maxColumns: z.ZodDefault<z.ZodNumber>;
+        overflow: z.ZodDefault<z.ZodEnum<{
+            FOLD: "FOLD";
+            CLIP: "CLIP";
+        }>>;
+        overflowLabel: z.ZodDefault<z.ZodString>;
+        font: z.ZodOptional<z.ZodObject<{
+            family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+            size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+            bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        }, z.core.$strip>>;
+        headerFont: z.ZodOptional<z.ZodObject<{
+            family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+            size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+            bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+        }, z.core.$strip>>;
+        gridLines: z.ZodDefault<z.ZodBoolean>;
+        headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+        repeatHeader: z.ZodDefault<z.ZodBoolean>;
     }, z.core.$strip>], "kind">>>;
 }, z.core.$strip>;
 export declare const templateDefinitionSchema: z.ZodObject<{
@@ -1132,6 +1367,83 @@ export declare const templateDefinitionSchema: z.ZodObject<{
             z: z.ZodDefault<z.ZodNumber>;
             kind: z.ZodLiteral<"PAGEBREAK">;
             when: z.ZodOptional<z.ZodString>;
+        }, z.core.$strip>, z.ZodObject<{
+            id: z.ZodString;
+            x: z.ZodDefault<z.ZodNumber>;
+            y: z.ZodDefault<z.ZodNumber>;
+            col: z.ZodOptional<z.ZodNumber>;
+            row: z.ZodOptional<z.ZodNumber>;
+            cols: z.ZodOptional<z.ZodNumber>;
+            visible: z.ZodOptional<z.ZodString>;
+            style: z.ZodOptional<z.ZodObject<{
+                color: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                fill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                stroke: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+                strokeWidthPt: z.ZodOptional<z.ZodNumber>;
+                padding: z.ZodOptional<z.ZodNumber>;
+            }, z.core.$strip>>;
+            z: z.ZodDefault<z.ZodNumber>;
+            kind: z.ZodLiteral<"CROSSTAB">;
+            w: z.ZodNumber;
+            h: z.ZodDefault<z.ZodNumber>;
+            dataset: z.ZodString;
+            rowBy: z.ZodString;
+            columnBy: z.ZodString;
+            measure: z.ZodString;
+            fn: z.ZodDefault<z.ZodEnum<{
+                count: "count";
+                max: "max";
+                min: "min";
+                sum: "sum";
+                avg: "avg";
+            }>>;
+            format: z.ZodDefault<z.ZodString>;
+            blankWhenZero: z.ZodDefault<z.ZodBoolean>;
+            corner: z.ZodDefault<z.ZodString>;
+            rowHeaderWidthMm: z.ZodDefault<z.ZodNumber>;
+            columnWidthMm: z.ZodDefault<z.ZodNumber>;
+            headerHeightMm: z.ZodDefault<z.ZodNumber>;
+            rowHeightMm: z.ZodDefault<z.ZodNumber>;
+            showRowTotals: z.ZodDefault<z.ZodBoolean>;
+            showColumnTotals: z.ZodDefault<z.ZodBoolean>;
+            totalsLabel: z.ZodDefault<z.ZodString>;
+            rowSort: z.ZodDefault<z.ZodEnum<{
+                LABEL_ASC: "LABEL_ASC";
+                LABEL_DESC: "LABEL_DESC";
+                VALUE_DESC: "VALUE_DESC";
+                VALUE_ASC: "VALUE_ASC";
+                FIRST_SEEN: "FIRST_SEEN";
+            }>>;
+            columnSort: z.ZodDefault<z.ZodEnum<{
+                LABEL_ASC: "LABEL_ASC";
+                LABEL_DESC: "LABEL_DESC";
+                VALUE_DESC: "VALUE_DESC";
+                VALUE_ASC: "VALUE_ASC";
+                FIRST_SEEN: "FIRST_SEEN";
+            }>>;
+            maxColumns: z.ZodDefault<z.ZodNumber>;
+            overflow: z.ZodDefault<z.ZodEnum<{
+                FOLD: "FOLD";
+                CLIP: "CLIP";
+            }>>;
+            overflowLabel: z.ZodDefault<z.ZodString>;
+            font: z.ZodOptional<z.ZodObject<{
+                family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+                size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+                bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            }, z.core.$strip>>;
+            headerFont: z.ZodOptional<z.ZodObject<{
+                family: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+                size: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+                bold: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                italic: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+                underline: z.ZodOptional<z.ZodDefault<z.ZodBoolean>>;
+            }, z.core.$strip>>;
+            gridLines: z.ZodDefault<z.ZodBoolean>;
+            headerFill: z.ZodOptional<z.ZodUnion<[z.ZodString, z.ZodString]>>;
+            repeatHeader: z.ZodDefault<z.ZodBoolean>;
         }, z.core.$strip>], "kind">>>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
@@ -1152,5 +1464,8 @@ export type HorizontalAlign = (typeof H_ALIGN)[number];
 export type VerticalAlign = (typeof V_ALIGN)[number];
 export type AggregateFunction = (typeof AGGREGATE_FUNCTIONS)[number];
 export type AggregateScope = (typeof AGGREGATE_SCOPES)[number];
+export type CrosstabSort = (typeof CROSSTAB_SORTS)[number];
+export type CrosstabOverflow = (typeof CROSSTAB_OVERFLOWS)[number];
+export type CrosstabElement = z.infer<typeof crosstabElementSchema>;
 export type TextLikeElement = z.infer<typeof textElementSchema> | z.infer<typeof fieldElementSchema>;
 export declare const isTextLike: (element: ReportElement) => element is TextLikeElement;

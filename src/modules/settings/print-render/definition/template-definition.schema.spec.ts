@@ -11,6 +11,7 @@ import { loadCanvasFixture } from '../__fixtures__/load-fixture';
 const CANVAS_FIXTURES: ReadonlyArray<readonly [string, unknown]> = [
   ['gst-invoice-a4', loadCanvasFixture('gst-invoice-a4')],
   ['thermal-receipt-t80', loadCanvasFixture('thermal-receipt-t80')],
+  ['quotation-rate-matrix-a4', loadCanvasFixture('quotation-rate-matrix-a4')],
 ];
 
 /**

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isTextLike = exports.templateDefinitionSchema = exports.bandSchema = exports.elementSchema = exports.pagebreakElementSchema = exports.qrcodeElementSchema = exports.barcodeElementSchema = exports.imageElementSchema = exports.rectElementSchema = exports.lineElementSchema = exports.fieldElementSchema = exports.textElementSchema = exports.styleSchema = exports.fontSchema = exports.datasetSchema = exports.paperSchema = exports.marginsSchema = exports.BARCODE_SYMBOLOGIES = exports.AGGREGATE_SCOPES = exports.AGGREGATE_FUNCTIONS = exports.CARDINALITY = exports.IMAGE_FIT = exports.V_ALIGN = exports.H_ALIGN = exports.PRINT_ON = exports.ELEMENT_KINDS = exports.BAND_TYPES = exports.ORIENTATIONS = exports.OUTPUT_MODES = exports.LAYOUT_MODES = exports.SCHEMA_VERSION = void 0;
+exports.isTextLike = exports.templateDefinitionSchema = exports.bandSchema = exports.elementSchema = exports.crosstabElementSchema = exports.pagebreakElementSchema = exports.qrcodeElementSchema = exports.barcodeElementSchema = exports.imageElementSchema = exports.rectElementSchema = exports.lineElementSchema = exports.fieldElementSchema = exports.textElementSchema = exports.styleSchema = exports.fontSchema = exports.datasetSchema = exports.paperSchema = exports.marginsSchema = exports.CROSSTAB_BANDS = exports.CROSSTAB_OVERFLOWS = exports.CROSSTAB_SORTS = exports.BARCODE_SYMBOLOGIES = exports.AGGREGATE_SCOPES = exports.AGGREGATE_FUNCTIONS = exports.CARDINALITY = exports.IMAGE_FIT = exports.V_ALIGN = exports.H_ALIGN = exports.PRINT_ON = exports.ELEMENT_KINDS = exports.BAND_TYPES = exports.ORIENTATIONS = exports.OUTPUT_MODES = exports.LAYOUT_MODES = exports.SCHEMA_VERSION = void 0;
 const zod_1 = require("zod");
 exports.SCHEMA_VERSION = 1;
 exports.LAYOUT_MODES = ['GRAPHIC', 'GRID'];
@@ -26,6 +26,7 @@ exports.ELEMENT_KINDS = [
     'BARCODE',
     'QRCODE',
     'PAGEBREAK',
+    'CROSSTAB',
 ];
 exports.PRINT_ON = [
     'ALL_PAGES',
@@ -41,6 +42,20 @@ exports.CARDINALITY = ['one', 'many'];
 exports.AGGREGATE_FUNCTIONS = ['sum', 'count', 'avg', 'min', 'max'];
 exports.AGGREGATE_SCOPES = ['GROUP', 'PAGE', 'REPORT'];
 exports.BARCODE_SYMBOLOGIES = ['code128', 'ean13', 'ean8', 'upca', 'code39', 'itf14'];
+exports.CROSSTAB_SORTS = [
+    'LABEL_ASC',
+    'LABEL_DESC',
+    'VALUE_DESC',
+    'VALUE_ASC',
+    'FIRST_SEEN',
+];
+exports.CROSSTAB_OVERFLOWS = ['FOLD', 'CLIP'];
+exports.CROSSTAB_BANDS = [
+    'REPORT_HEADER',
+    'SUMMARY',
+    'REPORT_FOOTER',
+    'NO_DATA',
+];
 const millimetres = zod_1.z.number().finite().min(-10_000).max(10_000);
 const millimetreSize = zod_1.z.number().finite().min(0).max(10_000);
 const cellIndex = zod_1.z.number().int().min(0).max(2_000);
@@ -163,6 +178,36 @@ exports.pagebreakElementSchema = elementBase.extend({
     kind: zod_1.z.literal('PAGEBREAK'),
     when: expressionString.optional(),
 });
+exports.crosstabElementSchema = elementBase.extend({
+    kind: zod_1.z.literal('CROSSTAB'),
+    w: millimetreSize.positive(),
+    h: millimetreSize.default(0),
+    dataset: identifier,
+    rowBy: expressionString,
+    columnBy: expressionString,
+    measure: expressionString,
+    fn: zod_1.z.enum(exports.AGGREGATE_FUNCTIONS).default('sum'),
+    format: zod_1.z.string().max(60).default('#,##0.00'),
+    blankWhenZero: zod_1.z.boolean().default(true),
+    corner: expressionString.default(''),
+    rowHeaderWidthMm: millimetreSize.default(40),
+    columnWidthMm: millimetreSize.default(0),
+    headerHeightMm: millimetreSize.default(6),
+    rowHeightMm: millimetreSize.positive().default(5),
+    showRowTotals: zod_1.z.boolean().default(true),
+    showColumnTotals: zod_1.z.boolean().default(true),
+    totalsLabel: zod_1.z.string().max(60).default('Total'),
+    rowSort: zod_1.z.enum(exports.CROSSTAB_SORTS).default('LABEL_ASC'),
+    columnSort: zod_1.z.enum(exports.CROSSTAB_SORTS).default('LABEL_ASC'),
+    maxColumns: zod_1.z.number().int().min(1).max(200).default(12),
+    overflow: zod_1.z.enum(exports.CROSSTAB_OVERFLOWS).default('FOLD'),
+    overflowLabel: zod_1.z.string().max(60).default('Other'),
+    font: exports.fontSchema.partial().optional(),
+    headerFont: exports.fontSchema.partial().optional(),
+    gridLines: zod_1.z.boolean().default(true),
+    headerFill: hexColour.optional(),
+    repeatHeader: zod_1.z.boolean().default(true),
+});
 exports.elementSchema = zod_1.z.discriminatedUnion('kind', [
     exports.textElementSchema,
     exports.fieldElementSchema,
@@ -172,6 +217,7 @@ exports.elementSchema = zod_1.z.discriminatedUnion('kind', [
     exports.barcodeElementSchema,
     exports.qrcodeElementSchema,
     exports.pagebreakElementSchema,
+    exports.crosstabElementSchema,
 ]);
 exports.bandSchema = zod_1.z.object({
     type: zod_1.z.enum(exports.BAND_TYPES),
@@ -294,6 +340,41 @@ exports.templateDefinitionSchema = zod_1.z
                 path: ['bands'],
                 message: `${bandType} may appear at most once (found ${occurrences.length})`,
             });
+        }
+    }
+    for (const [bandIndex, band] of definition.bands.entries()) {
+        for (const [elementIndex, element] of band.elements.entries()) {
+            if (element.kind !== 'CROSSTAB') {
+                continue;
+            }
+            if (!exports.CROSSTAB_BANDS.includes(band.type)) {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['bands', bandIndex, 'elements', elementIndex],
+                    message: `a CROSSTAB cannot sit in a ${band.type} band; use one of ${exports.CROSSTAB_BANDS.join(', ')}`,
+                });
+            }
+            if (definition.layoutMode === 'GRID') {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['bands', bandIndex, 'elements', elementIndex],
+                    message: 'CROSSTAB is a GRAPHIC-mode element; GRID stationery cannot size its columns',
+                });
+            }
+            if (!definition.datasets.some((dataset) => dataset.name === element.dataset)) {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['bands', bandIndex, 'elements', elementIndex, 'dataset'],
+                    message: `unknown dataset '${element.dataset}'`,
+                });
+            }
+            if (element.rowHeaderWidthMm >= element.w) {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['bands', bandIndex, 'elements', elementIndex, 'rowHeaderWidthMm'],
+                    message: 'the row-label column leaves no width for the data columns',
+                });
+            }
         }
     }
     if (definition.layoutMode === 'GRID') {

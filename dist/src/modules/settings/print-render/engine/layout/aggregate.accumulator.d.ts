@@ -4,6 +4,16 @@ export interface AggregateSpec {
     readonly fn: AggregateFunction;
     readonly dataset: string;
 }
+export interface Accumulator {
+    sum: number;
+    count: number;
+    valueCount: number;
+    min: number | null;
+    max: number | null;
+}
+export declare const emptyAccumulator: () => Accumulator;
+export declare const accumulate: (accumulator: Accumulator, value: number | null) => void;
+export declare const readAccumulator: (accumulator: Accumulator | undefined, fn: AggregateFunction) => number;
 export declare class PrecomputedAggregates {
     private readonly report;
     private readonly groups;

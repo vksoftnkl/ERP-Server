@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.buildGroupPath = exports.GROUP_PATH_SEPARATOR = exports.PageAggregates = exports.PrecomputedAggregates = void 0;
+exports.buildGroupPath = exports.GROUP_PATH_SEPARATOR = exports.PageAggregates = exports.PrecomputedAggregates = exports.readAccumulator = exports.accumulate = exports.emptyAccumulator = void 0;
 const emptyAccumulator = () => ({
     sum: 0,
     count: 0,
@@ -8,6 +8,7 @@ const emptyAccumulator = () => ({
     min: null,
     max: null,
 });
+exports.emptyAccumulator = emptyAccumulator;
 const accumulate = (accumulator, value) => {
     accumulator.count += 1;
     if (value === null || !Number.isFinite(value)) {
@@ -18,6 +19,7 @@ const accumulate = (accumulator, value) => {
     accumulator.min = accumulator.min === null ? value : Math.min(accumulator.min, value);
     accumulator.max = accumulator.max === null ? value : Math.max(accumulator.max, value);
 };
+exports.accumulate = accumulate;
 const readAccumulator = (accumulator, fn) => {
     if (!accumulator) {
         return 0;
@@ -37,16 +39,17 @@ const readAccumulator = (accumulator, fn) => {
             return 0;
     }
 };
+exports.readAccumulator = readAccumulator;
 class PrecomputedAggregates {
     report = new Map();
     groups = new Map();
     addReport(key, value) {
         let accumulator = this.report.get(key);
         if (!accumulator) {
-            accumulator = emptyAccumulator();
+            accumulator = (0, exports.emptyAccumulator)();
             this.report.set(key, accumulator);
         }
-        accumulate(accumulator, value);
+        (0, exports.accumulate)(accumulator, value);
     }
     addGroup(groupPath, key, value) {
         let groupBucket = this.groups.get(groupPath);
@@ -56,16 +59,16 @@ class PrecomputedAggregates {
         }
         let accumulator = groupBucket.get(key);
         if (!accumulator) {
-            accumulator = emptyAccumulator();
+            accumulator = (0, exports.emptyAccumulator)();
             groupBucket.set(key, accumulator);
         }
-        accumulate(accumulator, value);
+        (0, exports.accumulate)(accumulator, value);
     }
     readReport(key, fn) {
-        return readAccumulator(this.report.get(key), fn);
+        return (0, exports.readAccumulator)(this.report.get(key), fn);
     }
     readGroup(groupPath, key, fn) {
-        return readAccumulator(this.groups.get(groupPath)?.get(key), fn);
+        return (0, exports.readAccumulator)(this.groups.get(groupPath)?.get(key), fn);
     }
 }
 exports.PrecomputedAggregates = PrecomputedAggregates;
@@ -74,13 +77,13 @@ class PageAggregates {
     add(key, value) {
         let accumulator = this.accumulators.get(key);
         if (!accumulator) {
-            accumulator = emptyAccumulator();
+            accumulator = (0, exports.emptyAccumulator)();
             this.accumulators.set(key, accumulator);
         }
-        accumulate(accumulator, value);
+        (0, exports.accumulate)(accumulator, value);
     }
     read(key, fn) {
-        return readAccumulator(this.accumulators.get(key), fn);
+        return (0, exports.readAccumulator)(this.accumulators.get(key), fn);
     }
     reset() {
         this.accumulators = new Map();
