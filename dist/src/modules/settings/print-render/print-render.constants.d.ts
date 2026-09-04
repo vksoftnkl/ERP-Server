@@ -1,0 +1,17 @@
+import { OutputMode } from './definition/template-definition.schema';
+export declare const PRINT_RENDER_SCREEN_NAME = "Print Render";
+export declare const RENDERABLE_ENGINES: readonly ["JSON_BANDS", "ESCPOS_TEXT"];
+export type RenderableEngine = (typeof RENDERABLE_ENGINES)[number];
+export declare const LAYOUT_MODE_FOR_ENGINE: Readonly<Record<RenderableEngine, 'GRAPHIC' | 'GRID'>>;
+export declare const RENDERER_FOR_OUTPUT_MODE: Readonly<Record<string, OutputMode | 'BY_LAYOUT'>>;
+export declare const RENDERER_FOR_LAYOUT_MODE: Readonly<Record<'GRAPHIC' | 'GRID', OutputMode>>;
+export declare const LAYOUT_MODE_FOR_RENDERER: Readonly<Record<OutputMode, 'GRAPHIC' | 'GRID'>>;
+export declare const IMPLEMENTED_RENDERERS: readonly OutputMode[];
+export declare const PLG_OUTPUT_MODES: readonly ["PRINT", "PREVIEW", "EMAIL", "FILE", "REPRINT"];
+export type PlgOutputMode = (typeof PLG_OUTPUT_MODES)[number];
+export declare const PLG_STATUSES: readonly ["SUCCESS", "FAILED", "QUEUED", "CANCELLED"];
+export type PlgStatus = (typeof PLG_STATUSES)[number];
+export declare const RENDER_TIMEOUT_MS = 30000;
+export declare const RENDER_COPY_TIMEOUT_MS = 15000;
+export declare const MAX_COPIES = 10;
+export declare const ACC_YEAR_PATTERN: RegExp;
